@@ -711,7 +711,7 @@ function SessionRow({
       statusText = 'Ready to merge';
       statusColor = 'text-status-success';
     } else if (gs.hasUncommittedChanges) {
-      statusText = 'Uncommitted changes';
+      statusText = 'Uncommitted';
       statusColor = 'text-status-warning';
     } else if (gs.state === 'diverged') {
       statusText = 'Diverged';
@@ -792,7 +792,7 @@ function SessionRow({
               />
             ) : (
               <span className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">
-                {session.name || 'Untitled'}
+                {gs?.prTitle || session.name || 'Untitled'}
               </span>
             )}
             {!isEditing && hasDiff && (
@@ -809,14 +809,15 @@ function SessionRow({
             {gs?.prNumber && (
               <span className="text-text-secondary flex-shrink-0 flex items-center gap-1">
                 {gs.prState && (
-                  <span
-                    className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                      gs.prState === 'MERGED' ? 'bg-purple-400' :
-                      gs.prState === 'CLOSED' ? 'bg-red-400' :
-                      'bg-green-400'
-                    }`}
-                    title={`PR ${gs.prState?.toLowerCase()}`}
-                  />
+                  <Tooltip content={`PR ${gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase()}`} side="top">
+                    <span
+                      className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        gs.prState === 'MERGED' ? 'bg-purple-400' :
+                        gs.prState === 'CLOSED' ? 'bg-red-400' :
+                        'bg-green-400'
+                      }`}
+                    />
+                  </Tooltip>
                 )}
                 #{gs.prNumber}
               </span>
