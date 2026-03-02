@@ -57,6 +57,7 @@ export interface GitStatus {
   prUrl?: string;
   prTitle?: string;
   prState?: string; // 'OPEN' | 'MERGED' | 'CLOSED'
+  prBody?: string;
 }
 
 export interface CreateSessionRequest {

@@ -3,7 +3,7 @@ import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Info, Check, Edit, CircleArrowDown, AlertTriangle, GitMerge, ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
+import { Info, Check, Edit, CircleArrowDown, AlertTriangle, GitMerge, ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, Minus, RefreshCw, GitBranch, Clock, FileText, GitPullRequest } from 'lucide-react';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
 import { IconButton } from './ui/Button';
@@ -18,6 +18,156 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
+import type { Session } from '../types/session';
+
+// --- Collapsed sidebar tooltip content ---
+
+function formatTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function CollapsedProjectTooltip({ project, sessionCount }: { project: Project; sessionCount: number }) {
+  return (
+    <div className="max-w-xs space-y-1">
+      <p className="text-[11px] text-text-primary font-medium">{project.name}</p>
+      <p className="text-[10px] text-text-tertiary font-mono break-all">{project.path}</p>
+      <p className="text-[10px] text-text-tertiary">
+        {sessionCount} {sessionCount === 1 ? 'workspace' : 'workspaces'}
+      </p>
+    </div>
+  );
+}
+
+function CollapsedSessionTooltip({ session }: { session: Session }) {
+  const gs = session.gitStatus;
+  const branch = session.worktreePath?.replace(/\\/g, '/').split('/').pop() || '';
+  const createdDate = new Date(session.createdAt).toLocaleDateString(undefined, {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+  });
+  const lastActiveAgo = session.lastActivity ? formatTimeAgo(session.lastActivity) : null;
+
+  let statusText = '';
+  let statusColor = 'text-text-tertiary';
+  if (session.status === 'running' || session.status === 'initializing') {
+    statusText = session.status === 'initializing' ? 'Initializing' : 'Running';
+    statusColor = 'text-status-success';
+  } else if (session.status === 'waiting') {
+    statusText = 'Waiting for input';
+    statusColor = 'text-status-warning';
+  } else if (session.status === 'error') {
+    statusText = 'Error';
+    statusColor = 'text-status-error';
+  } else if (gs) {
+    if (gs.state === 'conflict') { statusText = 'Merge conflicts'; statusColor = 'text-status-error'; }
+    else if (gs.isReadyToMerge) { statusText = 'Ready to merge'; statusColor = 'text-status-success'; }
+    else if (gs.hasUncommittedChanges) { statusText = 'Uncommitted'; statusColor = 'text-status-warning'; }
+    else if (gs.state === 'diverged') { statusText = 'Diverged'; statusColor = 'text-status-warning'; }
+    else if (gs.state === 'ahead' && gs.ahead) { statusText = `${gs.ahead} ahead`; statusColor = 'text-status-warning'; }
+    else if (gs.state === 'behind' && gs.behind) { statusText = `${gs.behind} behind`; }
+    else if (gs.state === 'clean') { statusText = 'Up to date'; }
+  }
+
+  const adds = (gs?.commitAdditions ?? 0) + (gs?.additions ?? 0);
+  const dels = (gs?.commitDeletions ?? 0) + (gs?.deletions ?? 0);
+  const hasDiff = adds > 0 || dels > 0;
+  const filesChanged = (gs?.commitFilesChanged ?? 0) + (gs?.filesChanged ?? 0);
+
+  return (
+    <div className="max-w-xs space-y-1.5">
+      <p className="text-[11px] text-text-primary font-medium whitespace-pre-wrap break-words leading-snug">
+        {session.name || 'Untitled'}
+      </p>
+
+      <div className="border-t border-border-primary" />
+
+      <div className="space-y-0.5 text-[10px]">
+        {branch && (
+          <div className="flex items-center gap-1.5">
+            <GitBranch className="w-3 h-3 text-text-tertiary flex-shrink-0" />
+            <span className="text-text-secondary font-mono break-all">{branch}</span>
+          </div>
+        )}
+        {statusText && (
+          <div className="flex items-center gap-1.5">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full flex-shrink-0 ml-[3px] ${
+              statusColor.replace('text-', 'bg-')
+            }`} />
+            <span className={`${statusColor} ml-[3px]`}>{statusText}</span>
+          </div>
+        )}
+        <div className="flex items-center gap-1.5">
+          <Clock className="w-3 h-3 text-text-tertiary flex-shrink-0" />
+          <span className="text-text-secondary">
+            {createdDate}
+            {lastActiveAgo && <span className="text-text-tertiary"> · active {lastActiveAgo}</span>}
+          </span>
+        </div>
+      </div>
+
+      {hasDiff && (
+        <>
+          <div className="border-t border-border-primary" />
+          <div className="flex items-center gap-3 text-[10px]">
+            <span className="flex items-center gap-1 text-text-secondary">
+              <FileText className="w-3 h-3 text-text-tertiary" />
+              {filesChanged} {filesChanged === 1 ? 'file' : 'files'}
+            </span>
+            {adds > 0 && (
+              <span className="flex items-center gap-0.5 text-status-success">
+                <Plus className="w-3 h-3" />{adds}
+              </span>
+            )}
+            {dels > 0 && (
+              <span className="flex items-center gap-0.5 text-status-error">
+                <Minus className="w-3 h-3" />{dels}
+              </span>
+            )}
+          </div>
+        </>
+      )}
+
+      {gs?.prNumber && (
+        <>
+          <div className="border-t border-border-primary" />
+          <div className="space-y-1 text-[10px]">
+            <div className="flex items-center gap-1.5">
+              <GitPullRequest className="w-3 h-3 text-text-tertiary flex-shrink-0" />
+              <span className="text-text-secondary font-medium">
+                #{gs.prNumber}
+                {gs.prState && (
+                  <span className={`ml-1 ${
+                    gs.prState === 'MERGED' ? 'text-purple-400' :
+                    gs.prState === 'CLOSED' ? 'text-red-400' :
+                    'text-green-400'
+                  }`}>
+                    {gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase()}
+                  </span>
+                )}
+              </span>
+            </div>
+            {gs.prTitle && (
+              <p className="text-[11px] text-text-primary font-medium whitespace-pre-wrap break-words leading-snug pl-[18px]">
+                {gs.prTitle}
+              </p>
+            )}
+            {gs.prBody && (
+              <p className="text-[10px] text-text-tertiary whitespace-pre-wrap break-words leading-snug pl-[18px] line-clamp-4">
+                {gs.prBody}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 interface SidebarProps {
   onHelpClick: () => void;
@@ -165,19 +315,20 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
             {projects.map((project) => {
               const isActive = project.id === activeProject?.id;
               const initial = project.name.charAt(0).toUpperCase();
+              const projectSessionCount = sessions.filter(s => s.projectId === project.id && !s.archived).length;
               return (
-                <button
-                  key={project.id}
-                  onClick={() => navigateToProject(project.id)}
-                  className={`w-8 h-8 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
-                    isActive
-                      ? 'bg-interactive/20 text-interactive ring-1 ring-interactive/50'
-                      : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary'
-                  }`}
-                  title={project.name}
-                >
-                  {initial}
-                </button>
+                <Tooltip key={project.id} content={<CollapsedProjectTooltip project={project} sessionCount={projectSessionCount} />} side="right">
+                  <button
+                    onClick={() => navigateToProject(project.id)}
+                    className={`w-8 h-8 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
+                      isActive
+                        ? 'bg-interactive/20 text-interactive ring-1 ring-interactive/50'
+                        : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary'
+                    }`}
+                  >
+                    {initial}
+                  </button>
+                </Tooltip>
               );
             })}
           </div>
@@ -195,16 +346,16 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
                 : 'bg-status-neutral';
               const isAnimated = session.status === 'running' || session.status === 'initializing' || session.status === 'waiting';
               return (
-                <button
-                  key={session.id}
-                  onClick={() => setActiveSession(session.id)}
-                  className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
-                    isActive ? 'bg-interactive/20 ring-1 ring-interactive/50' : 'hover:bg-surface-hover'
-                  }`}
-                  title={session.name || session.id}
-                >
-                  <div className={`w-2.5 h-2.5 rounded-full ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
-                </button>
+                <Tooltip key={session.id} content={<CollapsedSessionTooltip session={session} />} side="right">
+                  <button
+                    onClick={() => setActiveSession(session.id)}
+                    className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
+                      isActive ? 'bg-interactive/20 ring-1 ring-interactive/50' : 'hover:bg-surface-hover'
+                    }`}
+                  >
+                    <div className={`w-2.5 h-2.5 rounded-full ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
+                  </button>
+                </Tooltip>
               );
             })}
             {/* New session button */}

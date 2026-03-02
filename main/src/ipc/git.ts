@@ -50,37 +50,38 @@ interface RawCommitData {
 
 
 // Module-level cache for PR data keyed by "projectPath:branchName"
-const prCache = new Map<string, { prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; fetchedAt: number }>();
+const prCache = new Map<string, { prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string; fetchedAt: number }>();
 const PR_CACHE_TTL = 2.5 * 60 * 1000; // 2.5 minutes
 
 export async function fetchPrForSession(
   branchName: string,
   projectPath: string,
   commandRunner: CommandRunner
-): Promise<{ prNumber?: number; prUrl?: string; prTitle?: string; prState?: string }> {
+): Promise<{ prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string }> {
   const cacheKey = `${projectPath}:${branchName}`;
   const cached = prCache.get(cacheKey);
   if (cached && Date.now() - cached.fetchedAt < PR_CACHE_TTL) {
-    return { prNumber: cached.prNumber, prUrl: cached.prUrl, prTitle: cached.prTitle, prState: cached.prState };
+    return { prNumber: cached.prNumber, prUrl: cached.prUrl, prTitle: cached.prTitle, prState: cached.prState, prBody: cached.prBody };
   }
 
   try {
     const result = await commandRunner.execAsync(
-      `gh pr list --head "${branchName}" --state all --json number,url,title,state --limit 1`,
+      `gh pr list --head "${branchName}" --state all --json number,url,title,state,body --limit 1`,
       projectPath,
       { timeout: 5000 }
     );
-    const prs = JSON.parse(result.stdout.trim() || '[]') as Array<{ number?: number; url?: string; title?: string; state?: string }>;
+    const prs = JSON.parse(result.stdout.trim() || '[]') as Array<{ number?: number; url?: string; title?: string; state?: string; body?: string }>;
     const pr = prs[0];
     const entry = {
       prNumber: pr?.number,
       prUrl: pr?.url,
       prTitle: pr?.title,
       prState: pr?.state,
+      prBody: pr?.body,
       fetchedAt: Date.now()
     };
     prCache.set(cacheKey, entry);
-    return { prNumber: entry.prNumber, prUrl: entry.prUrl, prTitle: entry.prTitle, prState: entry.prState };
+    return { prNumber: entry.prNumber, prUrl: entry.prUrl, prTitle: entry.prTitle, prState: entry.prState, prBody: entry.prBody };
   } catch {
     // gh not installed or network error — cache the miss so we don't retry immediately
     prCache.set(cacheKey, { fetchedAt: Date.now() });
@@ -1896,27 +1897,18 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
           if (currentStatus && (
             currentStatus.prNumber !== prData.prNumber ||
             currentStatus.prState !== prData.prState ||
-            currentStatus.prTitle !== prData.prTitle
+            currentStatus.prTitle !== prData.prTitle ||
+            currentStatus.prBody !== prData.prBody
           )) {
             const enrichedStatus = {
               ...currentStatus,
               prNumber: prData.prNumber,
               prUrl: prData.prUrl,
               prTitle: prData.prTitle,
-              prState: prData.prState
+              prState: prData.prState,
+              prBody: prData.prBody
             };
             gitStatusManager.emit('git-status-updated', sid, enrichedStatus);
-          }
-
-          // Auto-rename session to PR title (one-time)
-          if (prData.prTitle && !session.pr_renamed) {
-            const autoRenamePref = databaseService.getUserPreference('auto_rename_sessions_to_pr');
-            if (autoRenamePref !== 'false') {
-              databaseService.updateSession(sid, { name: prData.prTitle, pr_renamed: true });
-              session.name = prData.prTitle;
-              session.pr_renamed = true;
-              sessionManager.emit('session-updated', session);
-            }
           }
         }
       } catch {
