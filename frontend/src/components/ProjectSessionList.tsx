@@ -718,6 +718,7 @@ function SessionRow({
       statusColor = 'text-status-warning';
     } else if (gs.state === 'ahead' && gs.ahead) {
       statusText = `${gs.ahead} ahead`;
+      statusColor = 'text-status-warning';
     } else if (gs.state === 'behind' && gs.behind) {
       statusText = `${gs.behind} behind`;
     } else if (gs.state === 'clean') {
