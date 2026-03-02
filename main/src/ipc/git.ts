@@ -1910,17 +1910,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
             };
             gitStatusManager.emit('git-status-updated', sid, enrichedStatus);
           }
-
-          // Auto-rename session to PR title (one-time)
-          if (prData.prTitle && !session.pr_renamed) {
-            const autoRenamePref = databaseService.getUserPreference('auto_rename_sessions_to_pr');
-            if (autoRenamePref !== 'false') {
-              databaseService.updateSession(sid, { name: prData.prTitle, pr_renamed: true });
-              session.name = prData.prTitle;
-              session.pr_renamed = true;
-              sessionManager.emit('session-updated', session);
-            }
-          }
         }
       } catch {
         // Silent — PR enrichment is best-effort
