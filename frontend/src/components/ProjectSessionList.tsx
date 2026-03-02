@@ -771,8 +771,9 @@ function SessionRow({
       <Tooltip
         content={!isEditing ? <SessionTooltipContent session={session} branch={branch} statusText={statusText} statusColor={statusColor} gs={gs} /> : ''}
         side="right"
+        className="block flex-1 min-w-0"
       >
-        <button onClick={onClick} className="flex-1 text-left min-w-0">
+        <button onClick={onClick} className="w-full text-left min-w-0">
           {/* Row 1: icon + name + diff stats */}
           <div className="flex items-center gap-2 min-w-0">
             <GitBranch className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
@@ -790,12 +791,12 @@ function SessionRow({
                 className="text-sm font-medium text-text-primary bg-surface-secondary border border-border-primary rounded px-1.5 py-0.5 min-w-0 w-full outline-none focus:border-interactive"
               />
             ) : (
-              <span className="text-sm font-medium text-text-primary truncate">
+              <span className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">
                 {session.name || 'Untitled'}
               </span>
             )}
             {!isEditing && hasDiff && (
-              <span className="flex items-center gap-1 text-xs flex-shrink-0 ml-auto">
+              <span className="flex items-center gap-1 text-xs flex-shrink-0">
                 <span className="text-status-success font-semibold">+{adds}</span>
                 <span className="text-status-error font-semibold">-{dels}</span>
               </span>
@@ -803,7 +804,7 @@ function SessionRow({
           </div>
           {/* Row 2: branch · PR# · status + shortcut */}
           <div className="flex items-center gap-1 mt-0.5 pl-[22px] text-[11px] text-text-tertiary min-w-0">
-            {branch && <span className="truncate max-w-[120px]">{branch}</span>}
+            {branch && <span className="truncate flex-shrink min-w-0">{branch}</span>}
             {branch && (gs?.prNumber || statusText) && <span className="flex-shrink-0">·</span>}
             {gs?.prNumber && (
               <span className="text-text-secondary flex-shrink-0 flex items-center gap-1">
@@ -822,7 +823,7 @@ function SessionRow({
             )}
             {gs?.prNumber && statusText && <span className="flex-shrink-0">·</span>}
             {statusText && (
-              <span className={`truncate ${statusColor}`}>{statusText}</span>
+              <span className={`truncate flex-shrink min-w-0 ${statusColor}`}>{statusText}</span>
             )}
             {globalIndex >= 0 && globalIndex < 9 && (
               <span className="ml-auto flex-shrink-0 text-text-muted text-[10px]">⌘{globalIndex + 1}</span>
