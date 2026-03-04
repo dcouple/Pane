@@ -6,7 +6,7 @@ import { API, GitErrorResponse } from '../utils/api';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { Session, GitCommands, GitErrorDetails, AttachedImage, AttachedText } from '../types/session';
-import { getTerminalTheme, getScriptTerminalTheme } from '../utils/terminalTheme';
+import { getScriptTerminalTheme } from '../utils/terminalTheme';
 import { createVisibilityAwareInterval } from '../utils/performanceUtils';
 import { useHotkey } from './useHotkey';
 
@@ -24,14 +24,11 @@ interface PromptMarker {
 
 export const useSessionView = (
   activeSession: Session | undefined,
-  terminalRef: React.RefObject<HTMLDivElement | null> | undefined
 ) => {
   const { theme } = useTheme();
   const activeSessionId = activeSession?.id;
 
   // Terminal instances
-  const terminalInstance = useRef<Terminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
   const scriptTerminalInstance = useRef<Terminal | null>(null);
   const scriptFitAddon = useRef<FitAddon | null>(null);
 
@@ -39,8 +36,6 @@ export const useSessionView = (
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const [scriptOutput, setScriptOutput] = useState<string[]>([]);
-  const [formattedOutput, setFormattedOutput] = useState<string>('');
-  const [currentSessionIdForOutput, setCurrentSessionIdForOutput] = useState<string | null>(null);
   const [isPathCollapsed, setIsPathCollapsed] = useState(true);
   const [input, setInput] = useState('');
   const [ultrathink, setUltrathink] = useState(false);
@@ -82,8 +77,6 @@ export const useSessionView = (
   const previousSessionIdRef = useRef<string | null>(null);
   const loadingRef = useRef(false);
   const loadingSessionIdRef = useRef<string | null>(null); // Track which session is loading
-  const previousMessageCountRef = useRef(0);
-  const lastProcessedOutputLength = useRef(0);
   const lastProcessedScriptOutputLength = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousStatusRef = useRef<string | null>(null);
@@ -91,11 +84,6 @@ export const useSessionView = (
   const isContinuingConversationRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const outputLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Debug function to check state health
-  const debugState = useCallback(() => {
-    // Debug state tracking removed - development debugging only
-  }, [outputLoadState, activeSessionId, currentSessionIdForOutput, formattedOutput.length]);
   
   // Force reset stuck state
   const forceResetLoadingState = useCallback(() => {
@@ -151,12 +139,7 @@ export const useSessionView = (
     setIsLoadingOutput(true);
     setOutputLoadState('loading');
     setLoadError(null);
-    
-    // Show loading message in terminal if this is the first load
-    if (terminalInstance.current && retryCount === 0 && lastProcessedOutputLength.current === 0) {
-      terminalInstance.current.writeln('\r\n⏳ Loading pane output...\r\n');
-    }
-    
+
     // Create new AbortController for this request
     abortControllerRef.current = new AbortController();
 
@@ -170,11 +153,6 @@ export const useSessionView = (
           loadingSessionIdRef.current = null;
           setIsLoadingOutput(false);
           setOutputLoadState('idle');
-          // Clear any loading message
-          if (terminalInstance.current && lastProcessedOutputLength.current === 0) {
-            terminalInstance.current.clear();
-            terminalInstance.current.writeln('\r\n⚠️ Pane has been archived\r\n');
-          }
           return;
         }
         throw new Error(response.error || 'Failed to load output');
@@ -191,11 +169,6 @@ export const useSessionView = (
         setIsLoadingOutput(false);
         setOutputLoadState('idle');
         return;
-      }
-      
-      // Clear loading message if we showed one
-      if (terminalInstance.current && retryCount === 0 && lastProcessedOutputLength.current === 0) {
-        terminalInstance.current.clear();
       }
       
       // Set outputs
@@ -246,9 +219,6 @@ export const useSessionView = (
         }, delay);
       } else {
         setLoadError(error instanceof Error ? error.message : 'Failed to load output content');
-        if (terminalInstance.current && lastProcessedOutputLength.current === 0) {
-          terminalInstance.current.writeln(`\r\n❌ Error loading output: ${error instanceof Error ? error.message : 'Unknown error'}\r\n`);
-        }
       }
     } finally {
       // Always reset loading state
@@ -274,7 +244,6 @@ export const useSessionView = (
           // Only clear terminal and reload for new sessions, not when continuing conversations
           const hasExistingOutput = activeSession.output && activeSession.output.length > 0;
           if (!hasExistingOutput && !isContinuingConversationRef.current) {
-            terminalInstance.current?.clear();
             setShouldReloadOutput(true);
           }
         }
@@ -327,22 +296,12 @@ export const useSessionView = (
     setContextCompacted(false);
     setCompactedContext(null);
     
-    // Clear terminal immediately when session changes
-    if (terminalInstance.current) {
-      terminalInstance.current.clear();
-    }
-    setFormattedOutput('');
-    lastProcessedOutputLength.current = 0;
-
     if (!activeSession) {
-      setCurrentSessionIdForOutput(null);
       // Clear any error states when no session is active
       setLoadError(null);
       setOutputLoadState('idle');
       return;
     }
-
-    setCurrentSessionIdForOutput(activeSession.id);
     
     // Check if session has conversation history
     const checkConversationHistory = async () => {
@@ -364,7 +323,6 @@ export const useSessionView = (
     // }
     
     // Reset output tracking
-    lastProcessedOutputLength.current = 0;
     lastProcessedScriptOutputLength.current = 0;
 
     const hasOutput = activeSession.output && activeSession.output.length > 0;
@@ -380,97 +338,9 @@ export const useSessionView = (
     }
   }, [activeSession?.id, forceResetLoadingState]);
 
-  const messageCount = activeSession?.jsonMessages?.length || 0;
-  const outputCount = activeSession?.output?.length || 0;
-
-  // Performance optimization: Use useMemo to cache the expensive join operation
-  const formattedOutputMemo = useMemo(() => {
-    if (!activeSession || currentSessionIdForOutput !== activeSession.id) {
-      return '';
-    }
-    
-    const outputArray = activeSession.output || [];
-    if (outputArray.length === 0) {
-      return '';
-    }
-    
-    // CRITICAL PERFORMANCE FIX: Even more aggressive limiting to prevent 2800ms+ frames
-    // Reduced from 500 to 150 to avoid V8 string concatenation bailouts
-    const MAX_OUTPUT_TO_PROCESS = 150;
-    
-    // Early exit for extremely large outputs that would cause UI blocking
-    if (outputArray.length > 5000) {
-      console.warn(`[Performance] Output array too large (${outputArray.length} items), showing recent ${MAX_OUTPUT_TO_PROCESS} items only`);
-    }
-    
-    const outputToProcess = outputArray.length > MAX_OUTPUT_TO_PROCESS 
-      ? outputArray.slice(-MAX_OUTPUT_TO_PROCESS)
-      : outputArray;
-    
-    // PERFORMANCE: Optimized string building to prevent V8 bailouts
-    if (outputToProcess.length > 50) {
-      // Use a more efficient approach - build directly without intermediate arrays
-      let result = '';
-      const batchSize = 25; // Smaller batches for better V8 performance
-      
-      for (let i = 0; i < outputToProcess.length; i += batchSize) {
-        const endIndex = Math.min(i + batchSize, outputToProcess.length);
-        let batchResult = '';
-        
-        // Build each batch without creating intermediate arrays
-        for (let j = i; j < endIndex; j++) {
-          batchResult += outputToProcess[j];
-        }
-        result += batchResult;
-      }
-      
-      return result;
-    } else {
-      // For small arrays, direct join is still efficient
-      return outputToProcess.join('');
-    }
-  }, [activeSession?.id, currentSessionIdForOutput, outputCount]);
-  
-  useEffect(() => {
-    if (!activeSession) return;
-    
-    // Make sure we're tracking the right session for output
-    if (currentSessionIdForOutput !== activeSession.id) {
-      // If the session ID doesn't match, update it
-      if (activeSession.id) {
-        setCurrentSessionIdForOutput(activeSession.id);
-      }
-      return;
-    }
-    
-    if (messageCount === 0 && outputCount === 0) {
-      return;
-    }
-
-    if (isWaitingForFirstOutput && (messageCount > 0 || outputCount > 0)) {
-      setIsWaitingForFirstOutput(false);
-    }
-
-    // PERFORMANCE FIX: Even more aggressive debouncing for large outputs to prevent frame drops
-    let delay = 50; // Default delay
-    if (outputCount > 1000) {
-      delay = 500; // Much longer delay for very large outputs
-    } else if (outputCount > 500) {
-      delay = 300; // Longer delay for large outputs
-    } else if (outputCount > 100) {
-      delay = 150; // Moderate delay for medium outputs
-    }
-    
-    const timeoutId = setTimeout(() => {
-      setFormattedOutput(formattedOutputMemo);
-    }, delay);
-    
-    return () => clearTimeout(timeoutId);
-  }, [activeSession?.id, messageCount, outputCount, currentSessionIdForOutput, isWaitingForFirstOutput, formattedOutputMemo]);
-  
   // Consolidated effect for loading output
   useEffect(() => {
-    if (!activeSession || !currentSessionIdForOutput || currentSessionIdForOutput !== activeSession.id) {
+    if (!activeSession) {
       return;
     }
     
@@ -523,7 +393,6 @@ export const useSessionView = (
     activeSession?.status,
     activeSession?.output?.length,
     activeSession?.jsonMessages?.length,
-    currentSessionIdForOutput,
     outputLoadState,
     shouldReloadOutput,
     loadOutputContent,
@@ -583,77 +452,6 @@ export const useSessionView = (
     };
   }, [activeSession?.id, outputLoadState]);
 
-  // Terminal initialization removed - now handled by panels
-  /* const initTerminal = useCallback((termRef: React.RefObject<HTMLDivElement | null> | undefined, instanceRef: React.MutableRefObject<Terminal | null>, fitAddonRef: React.MutableRefObject<FitAddon | null>, isScript: boolean) => {
-    console.log(`[initTerminal] Called - termRef.current: ${!!termRef?.current}, instanceRef.current: ${!!instanceRef.current}, isScript: ${isScript}`);
-    
-    if (!termRef?.current) {
-      console.log(`[initTerminal] No terminal ref element, cannot initialize`);
-      return;
-    }
-    
-    if (instanceRef.current) {
-      console.log(`[initTerminal] Terminal instance already exists, skipping`);
-      return;
-    }
-
-    const term = new Terminal({
-        cursorBlink: !isScript,
-        convertEol: true,
-        rows: 30,
-        cols: 80,
-        scrollback: 10000, // Further reduced to prevent memory issues
-        fastScrollModifier: 'ctrl',
-        fastScrollSensitivity: 5,
-        scrollSensitivity: 1,
-        fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        fontSize: 13,
-        lineHeight: 1.2,
-        theme: isScript ? getScriptTerminalTheme() : getTerminalTheme(),
-        allowTransparency: false
-    });
-
-    const addon = new FitAddon();
-    term.loadAddon(addon);
-    term.open(termRef.current);
-    setTimeout(() => addon.fit(), 100);
-
-    instanceRef.current = term;
-    fitAddonRef.current = addon;
-    
-    console.log(`[initTerminal] Terminal initialized successfully`);
-
-    if (isScript) {
-        // Clear any existing content
-        term.clear();
-        
-        // Add keyboard handling for direct terminal input - pass everything through
-        term.onData((data) => {
-          // Pass all input directly to the PTY without buffering
-          if (activeSession && !activeSession.archived) {
-            API.sessions.sendTerminalInput(activeSession.id, data).catch(error => {
-              console.error('Failed to send terminal input:', error);
-            });
-          }
-        });
-        
-        // Send an initial empty input to ensure the PTY connection is established
-        // and any buffered output is sent to the terminal
-        if (activeSession && !activeSession.archived) {
-          setTimeout(() => {
-            API.sessions.sendTerminalInput(activeSession.id, '').catch(error => {
-              console.error('Failed to send initial terminal input:', error);
-            });
-          }, 100);
-        }
-    }
-  }, [theme, activeSession]); */
-
-  // Terminal output view has been removed - no terminal initialization needed  
-  // Terminal is now created on-demand when user clicks the terminal tab
-  // No pre-initialization to avoid unnecessary terminal output and activity indicators
-
-  
 
 
   useEffect(() => {
@@ -721,76 +519,6 @@ export const useSessionView = (
     }
   }, [activeSessionId]);
 
-  // Terminal writing useEffect - disabled since output view was removed
-  /* useEffect(() => {
-    // Output view removed - skip terminal writing entirely
-    if (!activeSession || !terminalInstance.current) return;
-    console.log(`[Terminal Write Effect] Called, formatted output length: ${formattedOutput.length}, session: ${currentSessionIdForOutput}, lastProcessed: ${lastProcessedOutputLength.current}`);
-    
-    // Skip if not in output view mode
-    // Output view removed - skip terminal writing
-    return;
-    
-    if (!terminalInstance.current) {
-      console.log(`[Terminal Write Effect] No terminal instance yet`);
-      // If we have formatted output but no terminal, retry after a delay
-      if (formattedOutput && formattedOutput.length > 0 && terminalRef?.current) {
-        console.log(`[Terminal Write Effect] Have output but no terminal, attempting init`);
-        initTerminal(terminalRef, terminalInstance, fitAddon, false);
-        // Give terminal time to initialize then write
-        setTimeout(() => {
-          if (terminalInstance.current && formattedOutput.length > 0 && lastProcessedOutputLength.current === 0) {
-            console.log(`[Terminal Write Effect] Writing buffered output after init`);
-            terminalInstance.current.write(formattedOutput);
-            lastProcessedOutputLength.current = formattedOutput.length;
-            // Only auto-scroll if user is already at the bottom
-            const buffer = terminalInstance.current.buffer.active;
-            const isAtBottom = buffer.viewportY >= buffer.length - terminalInstance.current.rows;
-            
-            if (isAtBottom) {
-              terminalInstance.current.scrollToBottom();
-            }
-          }
-        }, 100);
-      }
-      return;
-    }
-    
-    if (!formattedOutput && formattedOutput !== '') {
-        return;
-    }
-    
-    const currentActiveSession = useSessionStore.getState().getActiveSession();
-    if (!currentActiveSession || currentSessionIdForOutput !== currentActiveSession.id) {
-        return;
-    }
-
-    // Write to terminal
-    if (lastProcessedOutputLength.current === 0) {
-      // Clear terminal and write all content for new session
-        terminalInstance.current.clear();
-      terminalInstance.current.write(formattedOutput);
-      lastProcessedOutputLength.current = formattedOutput.length;
-    } else if (formattedOutput.length > lastProcessedOutputLength.current) {
-      // Write only new content for existing session
-      const newContent = formattedOutput.substring(lastProcessedOutputLength.current);
-        terminalInstance.current.write(newContent);
-      lastProcessedOutputLength.current = formattedOutput.length;
-    } else if (formattedOutput.length < lastProcessedOutputLength.current) {
-      // This shouldn't happen, debug logging removed
-    }
-    
-    if (formattedOutput.length > 0) {
-      // Only auto-scroll if user is already at the bottom
-      const buffer = terminalInstance.current.buffer.active;
-      const isAtBottom = buffer.viewportY >= buffer.length - terminalInstance.current.rows;
-      
-      if (isAtBottom) {
-        terminalInstance.current.scrollToBottom();
-      }
-    }
-  }, [formattedOutput, currentSessionIdForOutput, initTerminal, terminalRef]); */
-
   useEffect(() => {
     if (!scriptTerminalInstance.current || !activeSession) return;
     const fullScriptOutput = fullScriptOutputMemo;
@@ -825,11 +553,6 @@ export const useSessionView = (
       if (event.detail?.id === activeSessionId) {
         // Force reset loading states
         forceResetLoadingState();
-        // Clear terminal
-        if (terminalInstance.current) {
-          terminalInstance.current.clear();
-          terminalInstance.current.writeln('\r\n⚠️ Pane has been archived\r\n');
-        }
       }
     };
 
@@ -844,8 +567,6 @@ export const useSessionView = (
       if (outputLoadTimeoutRef.current) {
         clearTimeout(outputLoadTimeoutRef.current);
       }
-      terminalInstance.current?.dispose();
-      terminalInstance.current = null;
       scriptTerminalInstance.current?.dispose();
       scriptTerminalInstance.current = null;
     };
@@ -853,74 +574,15 @@ export const useSessionView = (
 
   useEffect(() => {
     const handleResize = () => {
-      fitAddon.current?.fit();
       scriptFitAddon.current?.fit();
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Handle switch to View Diff tab event
-  useEffect(() => {
-    const handleSwitchToViewDiff = (event: CustomEvent) => {
-      const { sessionId } = event.detail;
-      if (sessionId && activeSession?.id === sessionId) {
-        // Panels handle their own switching now
-      }
-    };
-
-    window.addEventListener('switch-to-view-diff', handleSwitchToViewDiff as EventListener);
-    return () => {
-      window.removeEventListener('switch-to-view-diff', handleSwitchToViewDiff as EventListener);
-    };
-  }, [activeSession?.id]);
-
-  // Handle select session and switch to View Diff tab event
-  useEffect(() => {
-    const handleSelectAndViewDiff = async (event: CustomEvent) => {
-      const { sessionId } = event.detail;
-      
-      // First, select the session if it's not already active
-      if (sessionId && activeSession?.id !== sessionId) {
-        await useSessionStore.getState().setActiveSession(sessionId);
-      }
-      
-      // Panels handle their own switching now
-      // setTimeout(() => {
-      //   setViewMode('changes');
-      // }, 100);
-    };
-
-    const wrappedHandler = (event: Event) => handleSelectAndViewDiff(event as CustomEvent);
-    window.addEventListener('select-session-and-view-diff', wrappedHandler);
-    return () => {
-      window.removeEventListener('select-session-and-view-diff', wrappedHandler);
-    };
-  }, [activeSession?.id]);
-
-  // Terminal fitAddon effect removed - terminals are now handled in panels
-
-  useEffect(() => {
-    if (!terminalRef?.current) return;
-    const observer = new ResizeObserver(() => {
-      // Output view removed
-    });
-    observer.observe(terminalRef.current);
-    return () => observer.disconnect();
-  }, [terminalRef]);
-
-  // Terminal output view has been removed - no resize needed
-
   useEffect(() => {
     // Add a small delay to ensure CSS has propagated
     const timer = setTimeout(() => {
-      
-      if (terminalInstance.current) {
-        const newTheme = getTerminalTheme();
-        terminalInstance.current.options.theme = newTheme;
-        // Force refresh to apply new colors
-        terminalInstance.current.refresh(0, terminalInstance.current.rows - 1);
-      }
       if (scriptTerminalInstance.current) {
         const newScriptTheme = getScriptTerminalTheme();
         scriptTerminalInstance.current.options.theme = newScriptTheme;
@@ -931,17 +593,6 @@ export const useSessionView = (
     
     return () => clearTimeout(timer);
   }, [theme]);
-
-  // Script terminal resize observer removed - terminals are now handled in panels
-
-  useEffect(() => {
-    if (!activeSession) return;
-    const currentMessageCount = activeSession.jsonMessages?.length || 0;
-    if (currentMessageCount > previousMessageCountRef.current) {
-      // Activity tracking removed - now handled by panels
-    }
-    previousMessageCountRef.current = currentMessageCount;
-  }, [activeSession?.jsonMessages?.length]);
 
   useEffect(() => {
     if (!activeSession) return;
@@ -962,11 +613,6 @@ export const useSessionView = (
       setElapsedTime(0);
     }
   }, [activeSession?.status, activeSession?.runStartedAt, activeSessionId]);
-
-  useEffect(() => {
-    // Activity tracking removed - handled by panels
-  }, [activeSessionId]);
-
 
   useEffect(() => {
     if (!activeSession) {
@@ -1004,11 +650,6 @@ export const useSessionView = (
     const prevStatus = previousStatusRef.current;
     
     if (prevStatus === 'initializing' && status === 'running') {
-      // Only clear terminal for new sessions, not when continuing conversations
-      const hasExistingOutput = activeSession.output && activeSession.output.length > 0;
-      if (!hasExistingOutput && !isContinuingConversationRef.current) {
-        terminalInstance.current?.clear();
-      }
       // Reset the flag after status changes to running
       if (isContinuingConversationRef.current) {
         isContinuingConversationRef.current = false;
@@ -1027,73 +668,6 @@ export const useSessionView = (
     previousStatusRef.current = status;
   }, [activeSession?.status, activeSessionId]);
   
-  const handleNavigateToPrompt = useCallback((marker: PromptMarker) => {
-    if (!terminalInstance.current) return;
-    // Output view removed - always navigate directly
-    navigateToPromptInTerminal(marker);
-  }, []);
-
-  const navigateToPromptInTerminal = (marker: PromptMarker) => {
-    if (!terminalInstance.current || !activeSession) return;
-    const { prompt_text, output_line } = marker;
-    if (!prompt_text) return;
-
-    const buffer = terminalInstance.current.buffer.active;
-    const searchTextStart = prompt_text.substring(0, 50).trim();
-    let foundLine = -1;
-
-    for (let i = 0; i < buffer.length; i++) {
-      const lineText = buffer.getLine(i)?.translateToString(true) || '';
-      if (lineText.includes('👤 User Input') || lineText.includes('👤 USER PROMPT')) {
-        for (let j = 1; j <= 5 && i + j < buffer.length; j++) {
-          const promptLineText = buffer.getLine(i + j)?.translateToString(true).trim();
-          if (promptLineText?.includes(searchTextStart)) {
-            foundLine = i;
-            break;
-          }
-        }
-        if (foundLine >= 0) break;
-      }
-    }
-    
-    if (foundLine < 0) {
-        for (let i = 0; i < buffer.length; i++) {
-            if(buffer.getLine(i)?.translateToString(true).includes(searchTextStart)) {
-                foundLine = i;
-                break;
-            }
-        }
-    }
-
-    if (foundLine >= 0) {
-      terminalInstance.current.scrollToLine(Math.max(0, foundLine - 2));
-    } else if (output_line !== undefined && output_line !== null) {
-      terminalInstance.current.scrollToLine(output_line);
-    }
-  };
-  
-  useEffect(() => {
-    const handlePromptNavigation = (event: CustomEvent) => {
-      const { sessionId, promptMarker } = event.detail;
-      if (activeSession?.id === sessionId && promptMarker) {
-          handleNavigateToPrompt(promptMarker);
-      }
-    };
-    window.addEventListener('navigateToPrompt', handlePromptNavigation as EventListener);
-    return () => window.removeEventListener('navigateToPrompt', handlePromptNavigation as EventListener);
-  }, [activeSession?.id, handleNavigateToPrompt]);
-  
-  useHotkey({
-    id: 'debug-state',
-    label: 'Debug State',
-    keys: 'mod+shift+d',
-    category: 'debug',
-    devOnly: true,
-    action: () => {
-      debugState();
-    },
-  });
-
   const isSessionBusy = activeSession?.status === 'running' || activeSession?.status === 'initializing';
 
   useHotkey({
@@ -1882,43 +1456,12 @@ export const useSessionView = (
         const summary = response.data.summary;
         setCompactedContext(summary);
         setContextCompacted(true);
-        
-        // Add the summary to the terminal output immediately
-        if (terminalInstance.current) {
-          terminalInstance.current.write('\r\n');
-          terminalInstance.current.write('\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[1;33m                     CONTEXT COMPACTED\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n\r\n');
-          terminalInstance.current.write('\x1b[90mThe following context summary has been generated and will be\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[90mautomatically included with your next prompt:\x1b[0m\r\n\r\n');
-          
-          // Write the summary with proper formatting
-          const lines = summary.split('\n');
-          lines.forEach((line: string) => {
-            terminalInstance.current?.write(line + '\r\n');
-          });
-          
-          terminalInstance.current.write('\r\n\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[1;32m✓ Context compacted successfully!\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[1;36mJust type your next message - the context above will be automatically included.\x1b[0m\r\n');
-          terminalInstance.current.write('\x1b[1;33m══════════════════════════════════════════════════════════════════\x1b[0m\r\n\r\n');
-          
-          // Scroll to bottom to show the summary
-          terminalInstance.current.scrollToBottom();
-        }
-        
-        console.log('[Context Compaction] Context successfully compacted and displayed');
+        console.log('[Context Compaction] Context successfully compacted');
       } else {
         console.error('[Context Compaction] Failed to compact context:', response.error);
-        if (terminalInstance.current) {
-          terminalInstance.current.write('\r\n\x1b[1;31m✗ Failed to compact context: ' + (response.error || 'Unknown error') + '\x1b[0m\r\n');
-        }
       }
     } catch (error) {
       console.error('[Context Compaction] Error during compaction:', error);
-      if (terminalInstance.current) {
-        terminalInstance.current.write('\r\n\x1b[1;31m✗ Error during context compaction\x1b[0m\r\n');
-      }
     }
   };
   
@@ -1983,8 +1526,6 @@ export const useSessionView = (
     loadOutputContent,
     formatGitOutput,
     getGitErrorTips,
-    handleNavigateToPrompt,
-    debugState,
     forceResetLoadingState,
     handleClearTerminal,
     handleCompactContext,
