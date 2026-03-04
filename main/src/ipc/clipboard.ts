@@ -48,8 +48,8 @@ export function registerClipboardHandlers(ipcMain: IpcMain, { getMainWindow, ses
       const base64Data = file.dataUrl.split(',')[1];
       await fs.writeFile(filePath, Buffer.from(base64Data, 'base64'));
 
-      // Determine thumbnail — store dataUrl for images, empty string for others
-      const thumbnail = file.mimeType.startsWith('image/') ? file.dataUrl : '';
+      // No thumbnail in DB — frontend uses absolutePath to render images from disk
+      const thumbnail = '';
 
       // Save to SQLite
       const id = `clip_${timestamp}_${Math.random().toString(36).substring(2, 9)}`;

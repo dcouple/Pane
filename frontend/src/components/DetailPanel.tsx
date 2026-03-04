@@ -206,13 +206,9 @@ export function DetailPanel({ isVisible, width, onResize, mergeError, projectGit
               >
                 {clipboardFiles.slice(0, 3).map((file: ClipboardFile) => (
                   <div key={file.id} className="flex items-center gap-2 group">
-                    {file.mimeType.startsWith('image/') ? (
-                      <img src={file.thumbnail} alt={file.filename} className="w-8 h-8 object-cover rounded border border-border-primary flex-shrink-0" />
-                    ) : (
-                      <div className="w-8 h-8 flex items-center justify-center rounded border border-border-primary bg-surface-secondary flex-shrink-0">
-                        <FileIcon className="w-4 h-4 text-text-tertiary" />
-                      </div>
-                    )}
+                    <div className="w-8 h-8 flex items-center justify-center rounded border border-border-primary bg-surface-secondary flex-shrink-0">
+                      <FileIcon className={`w-4 h-4 ${file.mimeType.startsWith('image/') ? 'text-interactive' : 'text-text-tertiary'}`} />
+                    </div>
                     <span className="text-xs text-text-secondary truncate flex-1 min-w-0">{file.filename}</span>
                     <div className="flex gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={() => copyPath(file.absolutePath)} className="p-1 rounded hover:bg-surface-hover" title="Copy path">
