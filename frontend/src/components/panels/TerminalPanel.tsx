@@ -125,7 +125,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           fontSize: 14,
           fontFamily: 'Menlo, Monaco, "Courier New", monospace',
           theme: getTerminalTheme(),
-          scrollback: 2500
+          scrollback: 2500,
+          cursorBlink: false,
+          cursorStyle: 'block',
+          cursorWidth: 1,
+          cursorInactiveStyle: 'outline',
+          allowTransparency: false,
+          fastScrollModifier: 'ctrl',
+          fastScrollSensitivity: 5,
+          scrollSensitivity: 1,
         });
         console.log('[TerminalPanel] XTerm instance created:', !!terminal);
 
@@ -473,6 +481,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     const rows = xtermRef.current.rows;
     if (rows > 0) {
       xtermRef.current.refresh(0, rows - 1);
+      // After refresh, restore scroll to bottom to prevent flicker-to-top
+      xtermRef.current.scrollToBottom();
     }
   }, [theme]);
 

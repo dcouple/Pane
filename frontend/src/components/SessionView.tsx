@@ -536,10 +536,7 @@ export const SessionView = memo(() => {
     }
   };
 
-  const terminalRef = useRef<HTMLDivElement>(null);
-  // scriptTerminalRef removed - terminals now handled by panels
-
-  const hook = useSessionView(activeSession, terminalRef);
+  const hook = useSessionView(activeSession);
 
   // Handler to open set tracking dialog
   const handleOpenSetTracking = async () => {
