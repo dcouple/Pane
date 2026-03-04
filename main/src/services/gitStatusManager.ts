@@ -468,6 +468,7 @@ export class GitStatusManager extends EventEmitter {
             if (status) {
               this.updateCache(sessionId, status);
               this.emitThrottled(sessionId, 'updated', status);
+              this.enrichWithPrData(sessionId);
             }
           } catch (error) {
             this.logger?.error(`[GitStatus] Error fetching status for session ${sessionId}:`, error as Error);
