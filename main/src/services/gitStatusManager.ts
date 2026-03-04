@@ -7,6 +7,7 @@ import type { GitStatus } from '../types/session';
 import type { SessionManager } from './sessionManager';
 import type { WorktreeManager } from './worktreeManager';
 import type { GitDiffManager } from './gitDiffManager';
+import type { CommandRunner } from '../utils/commandRunner';
 import { GitStatusLogger } from './gitStatusLogger';
 import { GitFileWatcher } from './gitFileWatcher';
 import { fastCheckWorkingDirectory, fastGetAheadBehind, fastGetDiffStats } from './gitPlumbingCommands';
@@ -27,28 +28,32 @@ export class GitStatusManager extends EventEmitter {
   private readonly DEBOUNCE_MS = 2000; // 2 seconds debounce to batch rapid changes
   private gitLogger: GitStatusLogger;
   private fileWatcher: GitFileWatcher;
-  
+
   // Throttling for UI events
   private eventThrottleTimer: NodeJS.Timeout | null = null;
   private pendingEvents: Map<string, { type: 'loading' | 'updated', data?: GitStatus }> = new Map();
   private readonly EVENT_THROTTLE_MS = 100; // Throttle UI events to prevent flooding
-  
+
   // Concurrent operation limiting
   private activeOperations = 0;
   private readonly MAX_CONCURRENT_OPERATIONS = 3; // Reduced to limit CPU usage
   private operationQueue: Array<() => Promise<void>> = [];
-  
+
   // Cancellation support
   private abortControllers: Map<string, AbortController> = new Map();
-  
+
   // Initial load management
   private isInitialLoadInProgress = false;
   private initialLoadQueue: string[] = [];
   private readonly INITIAL_LOAD_DELAY_MS = 200; // Increased to 200ms for better staggering
-  
+
   // Track active session and window visibility for optimized refreshes
   private activeSessionId: string | null = null;
   private isWindowVisible = true;
+
+  // PR data cache
+  private prCache = new Map<string, { prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string; fetchedAt: number }>();
+  private readonly PR_CACHE_TTL = 2.5 * 60 * 1000;
 
   constructor(
     private sessionManager: SessionManager,
@@ -393,6 +398,7 @@ export class GitStatusManager extends EventEmitter {
             const cached = this.cache[sessionId]?.status || null;
             if (cached) {
               this.emitThrottled(sessionId, 'updated', cached);
+              this.enrichWithPrData(sessionId);
             }
             resolve(cached);
             return;
@@ -403,6 +409,7 @@ export class GitStatusManager extends EventEmitter {
         if (status) {
           this.updateCache(sessionId, status);
           this.emitThrottled(sessionId, 'updated', status);
+          this.enrichWithPrData(sessionId);
         }
         resolve(status);
       }, this.DEBOUNCE_MS);
@@ -461,6 +468,7 @@ export class GitStatusManager extends EventEmitter {
             if (status) {
               this.updateCache(sessionId, status);
               this.emitThrottled(sessionId, 'updated', status);
+              this.enrichWithPrData(sessionId);
             }
           } catch (error) {
             this.logger?.error(`[GitStatus] Error fetching status for session ${sessionId}:`, error as Error);
@@ -477,6 +485,99 @@ export class GitStatusManager extends EventEmitter {
     }
     
     this.isInitialLoadInProgress = false;
+  }
+
+  async fetchPrForSession(
+    branchName: string,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): Promise<{ prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string }> {
+    const cacheKey = `${projectPath}:${branchName}`;
+    const cached = this.prCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < this.PR_CACHE_TTL) {
+      return { prNumber: cached.prNumber, prUrl: cached.prUrl, prTitle: cached.prTitle, prState: cached.prState, prBody: cached.prBody };
+    }
+
+    try {
+      const result = await commandRunner.execAsync(
+        `gh pr list --head "${branchName}" --state all --json number,url,title,state,body --limit 1`,
+        projectPath,
+        { timeout: 5000 }
+      );
+      const prs = JSON.parse(result.stdout.trim() || '[]') as Array<{ number?: number; url?: string; title?: string; state?: string; body?: string }>;
+      const pr = prs[0];
+      const entry = {
+        prNumber: pr?.number,
+        prUrl: pr?.url,
+        prTitle: pr?.title,
+        prState: pr?.state,
+        prBody: pr?.body,
+        fetchedAt: Date.now()
+      };
+      this.prCache.set(cacheKey, entry);
+      return { prNumber: entry.prNumber, prUrl: entry.prUrl, prTitle: entry.prTitle, prState: entry.prState, prBody: entry.prBody };
+    } catch {
+      this.prCache.set(cacheKey, { fetchedAt: Date.now() });
+      return {};
+    }
+  }
+
+  invalidatePrCache(projectPath?: string): void {
+    if (projectPath) {
+      for (const key of this.prCache.keys()) {
+        if (key.startsWith(`${projectPath}:`)) {
+          this.prCache.delete(key);
+        }
+      }
+    } else {
+      this.prCache.clear();
+    }
+  }
+
+  private enrichWithPrData(sessionId: string): void {
+    setImmediate(async () => {
+      try {
+        const session = await this.sessionManager.getSession(sessionId);
+        if (!session?.worktreePath) return;
+
+        const branchName = session.worktreePath.replace(/\\/g, '/').split('/').pop();
+        if (!branchName) return;
+
+        const project = this.sessionManager.getProjectForSession(sessionId);
+        if (!project?.path) return;
+
+        const ctx = this.sessionManager.getProjectContext(sessionId);
+        if (!ctx) return;
+
+        const prData = await this.fetchPrForSession(branchName, project.path, ctx.commandRunner);
+
+        if (prData.prNumber !== undefined) {
+          const currentStatus = this.cache[sessionId]?.status;
+          if (currentStatus && (
+            currentStatus.prNumber !== prData.prNumber ||
+            currentStatus.prState !== prData.prState ||
+            currentStatus.prTitle !== prData.prTitle ||
+            currentStatus.prBody !== prData.prBody
+          )) {
+            const enrichedStatus = {
+              ...currentStatus,
+              prNumber: prData.prNumber,
+              prUrl: prData.prUrl,
+              prTitle: prData.prTitle,
+              prState: prData.prState,
+              prBody: prData.prBody
+            };
+            this.cache[sessionId] = {
+              status: enrichedStatus,
+              lastChecked: this.cache[sessionId].lastChecked
+            };
+            this.emit('git-status-updated', sessionId, enrichedStatus);
+          }
+        }
+      } catch {
+        // Silent — PR enrichment is best-effort
+      }
+    });
   }
 
   /**

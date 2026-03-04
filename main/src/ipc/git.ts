@@ -49,58 +49,6 @@ interface RawCommitData {
 }
 
 
-// Module-level cache for PR data keyed by "projectPath:branchName"
-const prCache = new Map<string, { prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string; fetchedAt: number }>();
-const PR_CACHE_TTL = 2.5 * 60 * 1000; // 2.5 minutes
-
-export async function fetchPrForSession(
-  branchName: string,
-  projectPath: string,
-  commandRunner: CommandRunner
-): Promise<{ prNumber?: number; prUrl?: string; prTitle?: string; prState?: string; prBody?: string }> {
-  const cacheKey = `${projectPath}:${branchName}`;
-  const cached = prCache.get(cacheKey);
-  if (cached && Date.now() - cached.fetchedAt < PR_CACHE_TTL) {
-    return { prNumber: cached.prNumber, prUrl: cached.prUrl, prTitle: cached.prTitle, prState: cached.prState, prBody: cached.prBody };
-  }
-
-  try {
-    const result = await commandRunner.execAsync(
-      `gh pr list --head "${branchName}" --state all --json number,url,title,state,body --limit 1`,
-      projectPath,
-      { timeout: 5000 }
-    );
-    const prs = JSON.parse(result.stdout.trim() || '[]') as Array<{ number?: number; url?: string; title?: string; state?: string; body?: string }>;
-    const pr = prs[0];
-    const entry = {
-      prNumber: pr?.number,
-      prUrl: pr?.url,
-      prTitle: pr?.title,
-      prState: pr?.state,
-      prBody: pr?.body,
-      fetchedAt: Date.now()
-    };
-    prCache.set(cacheKey, entry);
-    return { prNumber: entry.prNumber, prUrl: entry.prUrl, prTitle: entry.prTitle, prState: entry.prState, prBody: entry.prBody };
-  } catch {
-    // gh not installed or network error — cache the miss so we don't retry immediately
-    prCache.set(cacheKey, { fetchedAt: Date.now() });
-    return {};
-  }
-}
-
-export function invalidatePrCache(projectPath?: string): void {
-  if (projectPath) {
-    for (const key of prCache.keys()) {
-      if (key.startsWith(`${projectPath}:`)) {
-        prCache.delete(key);
-      }
-    }
-  } else {
-    prCache.clear();
-  }
-}
-
 export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): void {
   const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager, databaseService } = services;
 
@@ -1364,6 +1312,12 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         timestamp: new Date()
       });
 
+      // Invalidate PR cache after push since PRs may have been created or updated
+      const pushProject = sessionManager.getProjectForSession(sessionId);
+      if (pushProject?.path) {
+        gitStatusManager.invalidatePrCache(pushProject.path);
+      }
+
       // Check if this is a main repo session pushing to main branch
       if (session.isMainRepo && session.projectId !== undefined) {
         // If pushing from main repo, all worktrees might be affected
@@ -1874,49 +1828,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  // Background PR enrichment helper — fire-and-forget, best-effort
-  const enrichWithPrData = (sid: string) => {
-    setImmediate(async () => {
-      try {
-        const session = sessionManager.getSession(sid);
-        if (!session?.worktreePath) return;
-
-        const branchName = session.worktreePath.replace(/\\/g, '/').split('/').pop();
-        if (!branchName) return;
-
-        const project = sessionManager.getProjectForSession(sid);
-        if (!project?.path) return;
-
-        const ctx = sessionManager.getProjectContext(sid);
-        if (!ctx) return;
-
-        const prData = await fetchPrForSession(branchName, project.path, ctx.commandRunner);
-
-        if (prData.prNumber !== undefined) {
-          const currentStatus = await gitStatusManager.getGitStatus(sid);
-          if (currentStatus && (
-            currentStatus.prNumber !== prData.prNumber ||
-            currentStatus.prState !== prData.prState ||
-            currentStatus.prTitle !== prData.prTitle ||
-            currentStatus.prBody !== prData.prBody
-          )) {
-            const enrichedStatus = {
-              ...currentStatus,
-              prNumber: prData.prNumber,
-              prUrl: prData.prUrl,
-              prTitle: prData.prTitle,
-              prState: prData.prState,
-              prBody: prData.prBody
-            };
-            gitStatusManager.emit('git-status-updated', sid, enrichedStatus);
-          }
-        }
-      } catch {
-        // Silent — PR enrichment is best-effort
-      }
-    });
-  };
-
   ipcMain.handle('sessions:get-git-status', async (_event, sessionId: string, nonBlocking?: boolean, isInitialLoad?: boolean) => {
     try {
       const session = await sessionManager.getSession(sessionId);
@@ -1931,7 +1842,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       // For initial loads, use the queued approach to prevent UI lock
       if (isInitialLoad) {
         const cachedStatus = await gitStatusManager.queueInitialLoad(sessionId);
-        enrichWithPrData(sessionId);
         return {
           success: true,
           gitStatus: cachedStatus,
@@ -1950,7 +1860,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
 
         // Return the cached status if available, or indicate background refresh started
         const cachedStatus = await gitStatusManager.getGitStatus(sessionId);
-        enrichWithPrData(sessionId);
         return {
           success: true,
           gitStatus: cachedStatus,
@@ -1960,7 +1869,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         // Use refreshSessionGitStatus with user-initiated flag
         // This is called when user clicks on a session, so show loading state
         const gitStatus = await gitStatusManager.refreshSessionGitStatus(sessionId, true);
-        enrichWithPrData(sessionId);
         return { success: true, gitStatus };
       }
     } catch (error) {

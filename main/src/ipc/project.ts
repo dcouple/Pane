@@ -5,7 +5,6 @@ import type { CreateProjectRequest, UpdateProjectRequest } from '../../../fronte
 import { scriptExecutionTracker } from '../services/scriptExecutionTracker';
 import { panelManager } from '../services/panelManager';
 import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
-import { invalidatePrCache, fetchPrForSession } from './git';
 import { PathResolver } from '../utils/pathResolver';
 import { CommandRunner } from '../utils/commandRunner';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
@@ -456,6 +455,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
   ipcMain.handle('projects:refresh-git-status', async (_event, projectId: string) => {
     try {
       const projectIdNum = parseInt(projectId);
+      const { gitStatusManager } = services;
 
       // Check if the project exists
       const project = databaseService.getProject(projectIdNum);
@@ -464,14 +464,11 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
       }
 
       // Invalidate PR cache for this project so fresh data is fetched
-      invalidatePrCache(project.path);
+      gitStatusManager.invalidatePrCache(project.path);
 
       // Get all sessions for this project
       const sessions = await sessionManager.getAllSessions();
       const projectSessions = sessions.filter(s => s.projectId === projectIdNum && !s.archived && s.status !== 'error');
-
-      // Use gitStatusManager from services
-      const { gitStatusManager } = services;
 
       // Count the sessions that will be refreshed
       const sessionsToRefresh = projectSessions.filter(session => session.worktreePath);
@@ -489,32 +486,9 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
               })
           );
 
-        // After all git status refreshes complete, enrich with PR data
         Promise.allSettled(refreshPromises).then(results => {
           const refreshedCount = results.filter(result => result.status === 'fulfilled').length;
           console.log(`[Main] Background refresh completed: ${refreshedCount}/${sessionCount} sessions`);
-
-          // Now refresh PR data for each session (sequenced after git status)
-          const ctx = sessionManager.getProjectContextByProjectId(projectIdNum);
-          if (!ctx) {
-            console.warn('[Main] Could not get project context for PR enrichment');
-            return;
-          }
-
-          for (const session of sessionsToRefresh) {
-            if (!session.worktreePath) continue;
-            const branchName = session.worktreePath.replace(/\\/g, '/').split('/').pop();
-            if (!branchName) continue;
-            fetchPrForSession(branchName, project.path, ctx.commandRunner).then(prData => {
-              if (prData.prNumber !== undefined) {
-                const currentStatus = gitStatusManager.getCachedStatus(session.id)?.status;
-                if (currentStatus) {
-                  const enrichedStatus = { ...currentStatus, prNumber: prData.prNumber, prUrl: prData.prUrl, prTitle: prData.prTitle, prState: prData.prState };
-                  gitStatusManager.emit('git-status-updated', session.id, enrichedStatus);
-                }
-              }
-            }).catch(() => { /* PR enrichment is best-effort */ });
-          }
         });
       });
 

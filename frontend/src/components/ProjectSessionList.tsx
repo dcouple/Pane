@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, Minus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Pencil, Play, Trash2, Settings as SettingsIcon, FolderPlus, Loader2, Clock, FileText, GitPullRequest } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Minus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Pencil, Play, Trash2, Settings as SettingsIcon, FolderPlus, Loader2, Clock, FileText, GitPullRequest, FolderOpen } from 'lucide-react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useHotkeyStore } from '../stores/hotkeyStore';
@@ -7,6 +7,7 @@ import { CreateSessionDialog } from './CreateSessionDialog';
 import { AddProjectDialog } from './AddProjectDialog';
 import { Dropdown } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
+import { CopyableField } from './ui/CopyableField';
 import type { DropdownItem } from './ui/Dropdown';
 import { API } from '../utils/api';
 import { cycleIndex } from '../utils/arrayUtils';
@@ -361,7 +362,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           return (
             <div key={project.id} className="mt-3 first:mt-2">
               {/* Project header */}
-              <Tooltip content={<ProjectTooltipContent name={project.name} path={project.path} sessionCount={projectSessions.length} />} side="right">
+              <Tooltip content={<ProjectTooltipContent name={project.name} path={project.path} sessionCount={projectSessions.length} />} side="right" interactive={true}>
                 <button
                   onClick={() => toggleProject(project.id)}
                   className="w-full flex items-center justify-between px-4 py-1.5 hover:bg-surface-hover transition-colors"
@@ -485,7 +486,10 @@ function ProjectTooltipContent({ name, path, sessionCount }: { name: string; pat
   return (
     <div className="max-w-xs space-y-1">
       <p className="text-[11px] text-text-primary font-medium">{name}</p>
-      <p className="text-[10px] text-text-tertiary font-mono break-all">{path}</p>
+      <div className="border-t border-border-primary" />
+      <div className="space-y-0.5 text-[10px]">
+        <CopyableField icon={FolderOpen} value={path} mono />
+      </div>
       <p className="text-[10px] text-text-tertiary">
         {sessionCount} {sessionCount === 1 ? 'workspace' : 'workspaces'}
       </p>
@@ -530,10 +534,7 @@ function SessionTooltipContent({ session, branch, statusText, statusColor, gs }:
 
       <div className="space-y-0.5 text-[10px]">
         {branch && (
-          <div className="flex items-center gap-1.5">
-            <GitBranch className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-            <span className="text-text-secondary font-mono break-all">{branch}</span>
-          </div>
+          <CopyableField icon={GitBranch} value={branch} mono />
         )}
         {statusText && (
           <div className="flex items-center gap-1.5">
@@ -543,13 +544,7 @@ function SessionTooltipContent({ session, branch, statusText, statusColor, gs }:
             <span className={`${statusColor} ml-[3px]`}>{statusText}</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5">
-          <Clock className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-          <span className="text-text-secondary">
-            {createdDate}
-            {lastActiveAgo && <span className="text-text-tertiary"> · active {lastActiveAgo}</span>}
-          </span>
-        </div>
+        <CopyableField icon={Clock} value={`${createdDate}${lastActiveAgo ? ` · active ${lastActiveAgo}` : ''}`} />
       </div>
 
       {hasDiff && (
@@ -578,21 +573,7 @@ function SessionTooltipContent({ session, branch, statusText, statusColor, gs }:
         <>
           <div className="border-t border-border-primary" />
           <div className="space-y-1 text-[10px]">
-            <div className="flex items-center gap-1.5">
-              <GitPullRequest className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-              <span className="text-text-secondary font-medium">
-                #{gs.prNumber}
-                {gs.prState && (
-                  <span className={`ml-1 ${
-                    gs.prState === 'MERGED' ? 'text-purple-400' :
-                    gs.prState === 'CLOSED' ? 'text-red-400' :
-                    'text-green-400'
-                  }`}>
-                    {gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase()}
-                  </span>
-                )}
-              </span>
-            </div>
+            <CopyableField icon={GitPullRequest} value={`#${gs.prNumber}${gs.prState ? ` ${gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase()}` : ''}`} />
             {gs.prTitle && (
               <p className="text-[11px] text-text-primary font-medium whitespace-pre-wrap break-words leading-snug pl-[18px]">
                 {gs.prTitle}
@@ -773,6 +754,7 @@ function SessionRow({
         content={!isEditing ? <SessionTooltipContent session={session} branch={branch} statusText={statusText} statusColor={statusColor} gs={gs} /> : ''}
         side="right"
         className="block flex-1 min-w-0"
+        interactive={true}
       >
         <button onClick={onClick} className="w-full text-left min-w-0">
           {/* Row 1: icon + name + diff stats */}

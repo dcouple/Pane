@@ -290,7 +290,13 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
     }
 
     // Refresh git status after Claude exits, as it may have made commits
+    // Also invalidate PR cache since Claude may have pushed/created PRs
     try {
+      const session = sessionManager.getSession(sessionId);
+      const project = sessionManager.getProjectForSession(sessionId);
+      if (project?.path) {
+        gitStatusManager.invalidatePrCache(project.path);
+      }
       await gitStatusManager.refreshSessionGitStatus(sessionId);
     } catch (error) {
       console.error(`Failed to refresh git status for session ${sessionId} after exit:`, error);
