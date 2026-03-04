@@ -134,6 +134,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           fastScrollModifier: 'ctrl',
           fastScrollSensitivity: 5,
           scrollSensitivity: 1,
+          altClickMovesCursor: true,
+          drawBoldTextInBrightColors: true,
+          rescaleOverlappingGlyphs: true,
+          minimumContrastRatio: 1,
+          macOptionIsMeta: false,
         });
         console.log('[TerminalPanel] XTerm instance created:', !!terminal);
 
