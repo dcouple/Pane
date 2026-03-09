@@ -18,12 +18,6 @@ interface RawProcessStats {
   memoryMB: number;
 }
 
-interface ProcessStats {
-  name: string;
-  cpuPercent: number;
-  memoryMB: number;
-}
-
 interface CpuSample {
   cpuTimeSeconds: number;
   timestamp: number;
@@ -43,6 +37,8 @@ export class ResourceMonitorService extends EventEmitter {
   private isActivePolling = false;
   private pollInProgress = false;
   private previousCpuSamples = new Map<number, CpuSample>();
+  private isHidden = false;
+  private needsCpuWarmup = false;
 
   initialize(app: App): void {
     this.app = app;
@@ -314,6 +310,10 @@ export class ResourceMonitorService extends EventEmitter {
   }
 
   async getSnapshot(): Promise<ResourceSnapshot> {
+    const cpuReady = !this.needsCpuWarmup;
+    // After this poll seeds the cache, the next poll will have real deltas
+    if (this.needsCpuWarmup) this.needsCpuWarmup = false;
+
     const electronProcesses = this.getElectronMetrics();
     const sessions = await this.getSessionMetrics();
 
@@ -328,6 +328,7 @@ export class ResourceMonitorService extends EventEmitter {
 
     return {
       timestamp: Date.now(),
+      cpuReady,
       totalCpuPercent: Math.round((electronTotal.cpu + sessionTotal.cpu) * 10) / 10,
       totalMemoryMB: Math.round((electronTotal.mem + sessionTotal.mem) * 10) / 10,
       electronProcesses,
@@ -336,6 +337,7 @@ export class ResourceMonitorService extends EventEmitter {
   }
 
   startIdlePolling(): void {
+    if (this.isHidden) return;
     this.stopAllPolling();
     const poll = async (): Promise<void> => {
       if (this.pollInProgress) return;
@@ -350,10 +352,14 @@ export class ResourceMonitorService extends EventEmitter {
       }
     };
     void poll();
-    this.idleTimer = setInterval(() => void poll(), 30_000);
+    this.idleTimer = setInterval(() => void poll(), 180_000);
   }
 
   startActivePolling(): void {
+    if (this.isHidden) {
+      this.isActivePolling = true;
+      return;
+    }
     this.stopAllPolling();
     this.isActivePolling = true;
     const poll = async (): Promise<void> => {
@@ -369,13 +375,28 @@ export class ResourceMonitorService extends EventEmitter {
       }
     };
     void poll();
-    this.activeTimer = setInterval(() => void poll(), 2_000);
+    this.activeTimer = setInterval(() => void poll(), 5_000);
   }
 
   stopActivePolling(): void {
     if (this.isActivePolling) {
       this.isActivePolling = false;
       this.startIdlePolling();
+    }
+  }
+
+  handleVisibilityChange(hidden: boolean): void {
+    this.isHidden = hidden;
+    if (hidden) {
+      this.stopAllPolling();
+      this.previousCpuSamples.clear();
+      this.needsCpuWarmup = true;
+    } else {
+      if (this.isActivePolling) {
+        this.startActivePolling();
+      } else {
+        this.startIdlePolling();
+      }
     }
   }
 

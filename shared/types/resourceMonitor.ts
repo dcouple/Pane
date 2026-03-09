@@ -23,6 +23,7 @@ export interface SessionResourceInfo {
 
 export interface ResourceSnapshot {
   timestamp: number;
+  cpuReady: boolean;
   totalCpuPercent: number;
   totalMemoryMB: number;
   electronProcesses: ElectronProcessInfo[];

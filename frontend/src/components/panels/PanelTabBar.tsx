@@ -687,8 +687,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             <Cpu className="w-3.5 h-3.5" />
             {snapshot && (
               <>
-                <span>{snapshot.totalCpuPercent.toFixed(0)}%</span>
-                <span className="text-text-quaternary">|</span>
+                {snapshot.cpuReady && (
+                  <>
+                    <span>{snapshot.totalCpuPercent.toFixed(0)}%</span>
+                    <span className="text-text-quaternary">|</span>
+                  </>
+                )}
                 <span>{formatMemory(snapshot.totalMemoryMB)}</span>
               </>
             )}
@@ -768,7 +772,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         {/* Summary */}
         <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
           <span className="text-sm text-text-secondary">
-            CPU <strong className="text-text-primary">{snapshot.totalCpuPercent.toFixed(1)}%</strong>
+            CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '—'}</strong>
           </span>
           <span className="text-sm text-text-secondary">
             Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
@@ -790,7 +794,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 <span className="text-sm font-medium text-text-primary">Pane App</span>
               </div>
               <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                <span>{electronTotalCpu.toFixed(1)}%</span>
+                <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '—'}</span>
                 <span>{formatMemory(electronTotalMem)}</span>
               </div>
             </button>
@@ -798,7 +802,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
                 <span className="text-xs text-text-secondary">{p.label}</span>
                 <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                  <span>{p.cpuPercent.toFixed(1)}%</span>
+                  <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '—'}</span>
                   <span>{formatMemory(p.memoryMB)}</span>
                 </div>
               </div>
@@ -828,7 +832,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                  <span>{sess.totalCpuPercent.toFixed(1)}%</span>
+                  <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '—'}</span>
                   <span>{formatMemory(sess.totalMemoryMB)}</span>
                 </div>
               </button>
@@ -836,7 +840,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
                   <span className="text-xs text-text-secondary truncate">{child.name}</span>
                   <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                    <span>{child.cpuPercent.toFixed(1)}%</span>
+                    <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '—'}</span>
                     <span>{formatMemory(child.memoryMB)}</span>
                   </div>
                 </div>

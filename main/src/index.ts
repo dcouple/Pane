@@ -550,24 +550,28 @@ async function createWindow() {
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(false); // false = visible/focused
     }
+    resourceMonitorService.handleVisibilityChange(false);
   });
 
   mainWindow.on('blur', () => {
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(true); // true = hidden/blurred
     }
+    resourceMonitorService.handleVisibilityChange(true);
   });
 
   mainWindow.on('minimize', () => {
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(true); // true = hidden/minimized
     }
+    resourceMonitorService.handleVisibilityChange(true);
   });
 
   mainWindow.on('restore', () => {
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(false); // false = visible/restored
     }
+    resourceMonitorService.handleVisibilityChange(false);
   });
 }
 
