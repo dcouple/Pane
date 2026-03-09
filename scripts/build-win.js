@@ -9,14 +9,15 @@
  *   node scripts/build-win.js [arch] [--publish]
  *
  * Arguments:
- *   arch      - Target architecture: 'x64', 'arm64', or 'both' (default: 'x64')
+ *   arch      - Target architecture: 'x64' or 'arm64' (default: 'x64')
  *   --publish - Use '--publish always' instead of '--publish never' (for CI releases)
  *
  * What this script does:
  * 1. Patches winpty.gyp to fix batch file path issues on Windows
  * 2. Copies node-addon-api files to the expected pnpm location
- * 3. Builds frontend and main process
- * 4. Runs electron-builder with npmRebuild disabled (uses existing native modules)
+ * 3. Downloads Electron-compatible prebuilts for the target architecture
+ * 4. Builds frontend and main process
+ * 5. Runs electron-builder with npmRebuild disabled (uses existing native modules)
  *
  * Known Issues & Workarounds:
  * - pnpm's nested node_modules structure causes node-gyp path resolution failures
@@ -38,8 +39,8 @@ const HOST_ARCH = os.arch(); // 'x64' or 'arm64'
 const shouldPublish = process.argv.includes('--publish');
 const args = process.argv.slice(2).filter(a => a !== '--publish');
 const arch = args[0] || 'x64';
-if (!['x64', 'arm64', 'both'].includes(arch)) {
-  console.error('Invalid architecture. Use: x64, arm64, or both');
+if (!['x64', 'arm64'].includes(arch)) {
+  console.error('Invalid architecture. Use: x64 or arm64');
   process.exit(1);
 }
 
@@ -258,19 +259,6 @@ function downloadBetterSqlitePrebuiltForArch(targetArch) {
 }
 
 /**
- * Download Electron-compatible prebuilts for better-sqlite3-multiple-ciphers.
- * When building 'both' architectures, downloads for the first build target (x64).
- * The other arch prebuilt is downloaded separately before its build.
- * When building a single arch that matches the host, this may be a no-op since
- * pnpm install already provides the correct binary.
- */
-function downloadBetterSqlitePrebuilt() {
-  // For 'both', we build x64 first, then arm64
-  const targetArch = arch === 'both' ? 'x64' : arch;
-  downloadBetterSqlitePrebuiltForArch(targetArch);
-}
-
-/**
  * Install a cross-arch native module prebuilt for node-pty.
  *
  * pnpm only installs optional dependencies matching the host architecture.
@@ -335,31 +323,17 @@ function installNodePtyForArch(targetArch) {
 }
 
 /**
- * Install cross-arch native module prebuilts for node-pty.
- *
- * Detects which architectures need cross-arch installation based on the host
- * architecture and the target build architecture(s).
- */
-function installCrossArchNativeModules() {
-  const targetArchs = arch === 'both' ? ['x64', 'arm64'] : [arch];
-
-  for (const targetArch of targetArchs) {
-    if (targetArch === HOST_ARCH) continue; // Already installed by pnpm
-
-    console.log(`📥 Installing ${targetArch} native module prebuilts (cross-arch from ${HOST_ARCH})...`);
-    installNodePtyForArch(targetArch);
-  }
-}
-
-/**
  * Main build process
  */
 async function build() {
   console.log('🔧 Step 1: Applying Windows compatibility patches...\n');
   patchWinptyGyp();
   copyNodeAddonApi();
-  downloadBetterSqlitePrebuilt();
-  installCrossArchNativeModules();
+  downloadBetterSqlitePrebuiltForArch(arch);
+  if (arch !== HOST_ARCH) {
+    console.log(`📥 Installing ${arch} native module prebuilts (cross-arch from ${HOST_ARCH})...`);
+    installNodePtyForArch(arch);
+  }
 
   console.log('\n🔧 Step 2: Building frontend...\n');
   run('pnpm run build:frontend');
@@ -376,23 +350,7 @@ async function build() {
   console.log('\n🔧 Step 6: Running electron-builder...\n');
 
   const publishFlag = shouldPublish ? '--publish always' : '--publish never';
-
-  if (arch === 'both') {
-    // Build each architecture separately to ensure correct native modules for each.
-    // We must rebuild native modules between builds since they're architecture-specific.
-    console.log('Building x64...');
-    run(`pnpm exec electron-builder --win --x64 ${publishFlag} --config.npmRebuild=false`);
-
-    // Download ARM64 prebuilt before building ARM64
-    console.log('\n📥 Preparing ARM64 native modules...');
-    downloadBetterSqlitePrebuiltForArch('arm64');
-
-    console.log('\nBuilding arm64...');
-    run(`pnpm exec electron-builder --win --arm64 ${publishFlag} --config.npmRebuild=false`);
-  } else {
-    const archFlag = `--${arch}`;
-    run(`pnpm exec electron-builder --win ${archFlag} ${publishFlag} --config.npmRebuild=false`);
-  }
+  run(`pnpm exec electron-builder --win --${arch} ${publishFlag} --config.npmRebuild=false`);
 
   console.log('\n✅ Build complete!\n');
   console.log('Output files are in: dist-electron/');

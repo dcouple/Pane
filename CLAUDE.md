@@ -346,7 +346,6 @@ pnpm build:mac         # Build for macOS (universal)
 pnpm build:mac:x64     # Build for macOS (Intel only)
 pnpm build:mac:arm64   # Build for macOS (Apple Silicon only)
 pnpm build:linux       # Build for Linux
-pnpm build:win         # Build for Windows (x64 + ARM64)
 pnpm build:win:x64     # Build for Windows (x64 only)
 pnpm build:win:arm64   # Build for Windows (ARM64 only)
 ```

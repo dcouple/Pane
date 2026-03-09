@@ -12,15 +12,11 @@ pnpm run build:win:x64
 
 # Build for ARM64
 pnpm run build:win:arm64
-
-# Build for both architectures
-pnpm run build:win
 ```
 
 Output files will be in `dist-electron/`:
 - `pane-{version}-Windows-x64.exe` - x64 installer
 - `pane-{version}-Windows-arm64.exe` - ARM64 installer
-- `pane-{version}-Windows.exe` - Multi-arch installer (both x64 and ARM64)
 
 ## Prerequisites
 
