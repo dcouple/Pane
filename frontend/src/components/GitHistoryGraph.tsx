@@ -201,7 +201,7 @@ export function GitHistoryGraph({ sessionId, baseBranch }: GitHistoryGraphProps)
   if (error) {
     return (
       <div className="text-xs text-text-tertiary px-1 py-2">
-        {error}
+        Unable to load commit history
       </div>
     );
   }
