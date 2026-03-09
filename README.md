@@ -276,8 +276,9 @@ pnpm run electron-dev
 ### Production Builds
 
 ```bash
-pnpm build:win    # Windows (x64 + ARM64)
-pnpm build:mac    # macOS (Universal)
+pnpm build:win:x64    # Windows (x64)
+pnpm build:win:arm64  # Windows (ARM64)
+pnpm build:mac        # macOS (Universal)
 pnpm build:linux  # Linux (x64 + ARM64)
 ```
 

@@ -95,6 +95,10 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
     runs-on: windows-2022
     permissions:
       contents: write
@@ -110,18 +114,18 @@ jobs:
         path: |
           ~/AppData/Local/electron/Cache
           ~/AppData/Local/electron-builder/Cache
-        key: windows-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: windows-electron-
+        key: windows-${{ matrix.arch }}-electron-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: windows-${{ matrix.arch }}-electron-
     - run: pnpm install
 
     - name: Build and optionally publish
       run: |
         if ("${{ github.ref_type }}" -eq "tag" -or "${{ inputs.publish }}" -eq "true") {
           Write-Host "Release build — publishing to GitHub Releases"
-          pnpm run release:win
+          pnpm run release:win:${{ matrix.arch }}
         } else {
           Write-Host "CI build — artifacts only"
-          node scripts/build-win.js both
+          node scripts/build-win.js ${{ matrix.arch }}
         }
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,9 +134,9 @@ jobs:
 
     - uses: actions/upload-artifact@v4
       with:
-        name: pane-windows-${{ github.ref_name }}
+        name: pane-windows-${{ matrix.arch }}-${{ github.ref_name }}
         path: |
-          dist-electron/*.exe
+          dist-electron/*-Windows-${{ matrix.arch }}.exe
           dist-electron/latest.yml
         if-no-files-found: error
         retention-days: 30
