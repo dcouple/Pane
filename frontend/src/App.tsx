@@ -314,8 +314,8 @@ function App() {
   useEffect(() => {
     // Show welcome screen and Discord popup intelligently based on user state
     // This should only run once when the app is loaded, not when sessions change
-    // Don't show welcome while analytics consent or onboarding dialogs are open
-    if (!isLoaded || hasCheckedWelcome || isAnalyticsConsentOpen || isOnboardingOpen) {
+    // Don't show welcome until onboarding check has completed and its dialog (if any) is closed
+    if (!isLoaded || hasCheckedWelcome || isAnalyticsConsentOpen || !hasCheckedOnboarding || isOnboardingOpen) {
       return;
     }
 
@@ -414,7 +414,7 @@ function App() {
     // Set the flag first to prevent re-runs
     setHasCheckedWelcome(true);
     checkInitialState();
-  }, [isLoaded, isAnalyticsConsentOpen, isOnboardingOpen]); // Also wait for analytics consent and onboarding dialogs to close
+  }, [isLoaded, isAnalyticsConsentOpen, hasCheckedOnboarding, isOnboardingOpen]);
 
   // Discord popup logic is now combined with welcome screen logic above
 

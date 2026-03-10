@@ -116,8 +116,10 @@ export function registerOnboardingHandlers(ipcMain: IpcMain, services: AppServic
             if (errorMsg.includes('already exists')) {
               // Fork exists on GitHub — find it and clone
               try {
+                // Use --jq (long form) with double quotes for Windows cmd.exe compatibility
+                const jqFilter = `.[] | select(.parent.nameWithOwner == \\"${PANE_REPO}\\") | .nameWithOwner`;
                 const forkName = execSync(
-                  `gh repo list --fork --limit 1000 --json nameWithOwner,parent -q '.[] | select(.parent.nameWithOwner == "${PANE_REPO}") | .nameWithOwner'`,
+                  `gh repo list --fork --limit 1000 --json nameWithOwner,parent --jq "${jqFilter}"`,
                   shellExecOpts({ encoding: 'utf-8', timeout: 30000 }) as { encoding: 'utf-8'; timeout: number }
                 ).trim();
 
