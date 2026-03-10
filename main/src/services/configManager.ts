@@ -54,7 +54,7 @@ export class ConfigManager extends EventEmitter {
       },
       analytics: {
         enabled: false, // Opt-in: disabled by default until user consents
-        posthogApiKey: '', // Analytics disabled - configure your own PostHog key
+        posthogApiKey: 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1',
         posthogHost: 'https://us.i.posthog.com'
       },
       disableAutoContext: true, // Default to disabled - users can manually run /context
@@ -303,7 +303,7 @@ export class ConfigManager extends EventEmitter {
   getAnalyticsSettings() {
     return this.config.analytics || {
       enabled: false, // Opt-in: disabled by default until user consents
-      posthogApiKey: 'phc_uwOqT2KUa4C9Qx5WbEPwQSN9mUCoSGFg1aY0b670ft5',
+      posthogApiKey: 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1',
       posthogHost: 'https://us.i.posthog.com'
     };
   }
@@ -324,7 +324,7 @@ export class ConfigManager extends EventEmitter {
     if (!this.config.analytics) {
       this.config.analytics = {
         enabled: true,
-        posthogApiKey: '', // Analytics disabled - configure your own PostHog key
+        posthogApiKey: 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1',
         posthogHost: 'https://us.i.posthog.com'
       };
     }

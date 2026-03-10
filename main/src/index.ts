@@ -1004,7 +1004,7 @@ app.on('before-quit', async (event) => {
     if (configManager && configManager.isAnalyticsEnabled() && appStartTime) {
       try {
         const settings = configManager.getAnalyticsSettings();
-        const apiKey = settings.posthogApiKey || 'phc_uwOqT2KUa4C9Qx5WbEPwQSN9mUCoSGFg1aY0b670ft5';
+        const apiKey = settings.posthogApiKey || 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1';
         const host = settings.posthogHost || 'https://us.i.posthog.com';
         const distinctId = configManager.getAnalyticsDistinctId() || `anon-${Date.now().toString(36)}`;
         const sessionDurationSeconds = Math.floor((Date.now() - appStartTime) / 1000);
