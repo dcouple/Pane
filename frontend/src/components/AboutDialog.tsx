@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { X, Download, Check, Loader2, Github } from 'lucide-react';
-import { UpdateDialog } from './UpdateDialog';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 
 interface VersionInfo {
@@ -21,14 +20,14 @@ interface VersionInfo {
 interface AboutDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onUpdate: (versionInfo: VersionInfo) => void;
 }
 
-export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
+export function AboutDialog({ isOpen, onClose, onUpdate }: AboutDialogProps) {
   const paneLogo = usePaneLogo();
   const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,7 +65,7 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
       if (result.success) {
         setVersionInfo(result.data);
         if (result.data.hasUpdate) {
-          setShowUpdateDialog(true);
+          onUpdate(result.data);
         }
       } else {
         setError(result.error || 'Failed to check for updates');
@@ -161,7 +160,7 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
                   )}
                 </div>
                 <button
-                  onClick={() => setShowUpdateDialog(true)}
+                  onClick={() => versionInfo && onUpdate(versionInfo)}
                   className="px-3 py-1.5 bg-interactive hover:bg-interactive-hover text-on-interactive text-xs font-medium rounded-md transition-colors"
                 >
                   Update
@@ -249,14 +248,6 @@ export function AboutDialog({ isOpen, onClose }: AboutDialogProps) {
         )}
       </div>
 
-      {/* Update Dialog */}
-      {showUpdateDialog && versionInfo && (
-        <UpdateDialog
-          isOpen={showUpdateDialog}
-          onClose={() => setShowUpdateDialog(false)}
-          versionInfo={versionInfo}
-        />
-      )}
     </div>
   );
 }

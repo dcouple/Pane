@@ -454,6 +454,15 @@ function App() {
     };
   }, [showNotification]);
 
+  const handleAboutUpdate = (versionInfo: { current: string; latest: string; hasUpdate: boolean; releaseUrl?: string; releaseNotes?: string }) => {
+    setUpdateVersionInfo({
+      ...versionInfo,
+      version: versionInfo.latest,
+    });
+    setIsAboutOpen(false);
+    setIsUpdateDialogOpen(true);
+  };
+
   const handlePermissionResponse = async (requestId: string, behavior: 'allow' | 'deny', _updatedInput?: PermissionInput, message?: string) => {
     try {
       await API.permissions.respond(requestId, {
@@ -498,7 +507,7 @@ function App() {
           onClose={() => setIsAnalyticsConsentOpen(false)}
         />
         <Welcome isOpen={isWelcomeOpen} onClose={() => setIsWelcomeOpen(false)} />
-        <AboutDialog isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} />
+        <AboutDialog isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} onUpdate={handleAboutUpdate} />
         <UpdateDialog 
           isOpen={isUpdateDialogOpen} 
           onClose={() => setIsUpdateDialogOpen(false)}
