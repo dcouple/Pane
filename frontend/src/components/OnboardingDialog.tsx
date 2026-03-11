@@ -93,7 +93,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
     if (window.electron?.invoke) {
       await window.electron.invoke('preferences:set', 'onboarding_repo_setup', 'true');
     }
-    window.dispatchEvent(new Event('project-changed'));
+    // Parent onClose handler dispatches 'project-changed', so no need to dispatch here
     onClose();
   };
 

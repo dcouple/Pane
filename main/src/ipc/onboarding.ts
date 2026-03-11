@@ -52,18 +52,27 @@ function detectEnvironment(): EnvironmentInfo {
   return result;
 }
 
-/** Checks that the path is a git repo whose origin points to the Pane repository (or a fork of it). */
+/** Checks that the path is a git repo related to Dcouple-Inc/Pane (canonical or a fork with upstream set). */
 function isPaneRepo(repoPath: string): boolean {
   if (!existsSync(join(repoPath, '.git'))) return false;
   try {
     execSync('git rev-parse --is-inside-work-tree', shellExecOpts({ cwd: repoPath, stdio: 'ignore' }));
-    const origin = (execSync(
-      'git remote get-url origin',
-      shellExecOpts({ cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }) as { cwd: string; encoding: 'utf-8' }
-    )).trim().toLowerCase();
-    // Match exactly "Pane" as the repo name (canonical or any fork)
-    // Handles HTTPS (github.com/owner/Pane.git), SSH (git@github.com:owner/Pane.git), and bare forms
-    return /[/:]dcouple-inc\/pane(\.git)?$/i.test(origin) || /[/:][\w.-]+\/pane(\.git)?$/i.test(origin);
+    const execOpts = shellExecOpts({ cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }) as { cwd: string; encoding: 'utf-8' };
+    const canonicalPattern = /[/:]dcouple-inc\/pane(\.git)?$/i;
+
+    // Check origin
+    const origin = execSync('git remote get-url origin', execOpts).trim();
+    if (canonicalPattern.test(origin)) return true;
+
+    // For forks, check upstream remote (gh sets this automatically)
+    try {
+      const upstream = execSync('git remote get-url upstream', execOpts).trim();
+      if (canonicalPattern.test(upstream)) return true;
+    } catch {
+      // No upstream remote — not a fork
+    }
+
+    return false;
   } catch {
     return false;
   }
