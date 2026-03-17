@@ -13,6 +13,7 @@ import { NotebookPreview } from './NotebookPreview';
 import { useResizablePanel } from '../../../hooks/useResizablePanel';
 import { ExplorerPanelState } from '../../../../../shared/types/panels';
 import { isMac, isWindows } from '../../../utils/platformUtils';
+import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
 import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
 
 interface FileItem {
@@ -391,7 +392,7 @@ function HeadlessFileTree({
           <button
             onClick={() => setShowSearch(prev => !prev)}
             className={`p-1 rounded text-text-tertiary hover:text-text-primary ${showSearch ? 'bg-surface-tertiary' : 'hover:bg-surface-hover'}`}
-            title="Search files (Cmd/Ctrl+F)"
+            title={`Search files (${formatKeyDisplay('mod+f')})`}
           >
             <Search className="w-4 h-4" />
           </button>
@@ -441,7 +442,7 @@ function HeadlessFileTree({
           </div>
           {searchQuery && (
             <div className="mt-1 text-xs text-text-tertiary">
-              Press ESC to clear • Cmd/Ctrl+F to toggle search
+              Press ESC to clear • {formatKeyDisplay('mod+f')} to toggle search
             </div>
           )}
         </div>

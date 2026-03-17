@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GitCommit } from 'lucide-react';
+import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Textarea } from './ui/Textarea';
@@ -90,7 +91,7 @@ export const CommitDialog: React.FC<CommitDialogProps> = ({
         />
         
         <p className="mt-2 text-xs text-text-tertiary">
-          Press Ctrl+Enter (Cmd+Enter on Mac) to commit
+          Press {formatKeyDisplay('mod+enter')} to commit
         </p>
       </ModalBody>
 

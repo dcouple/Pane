@@ -5,6 +5,7 @@ import { API } from '../utils/api';
 import { optIn, capture, captureAndOptOut } from '../services/posthog';
 import type { AppConfig, TerminalShortcut } from '../types/config';
 import { useConfigStore } from '../stores/configStore';
+import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { useSessionStore } from '../stores/sessionStore';
 import { panelApi } from '../services/panelApi';
 import {
@@ -1056,7 +1057,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     fullWidth
                   />
                   <p className="text-xs text-text-tertiary">
-                    {shortcut.key ? `Hotkey: Ctrl/Cmd + Alt + ${shortcut.key.toUpperCase()}` : 'Set a key (a-z) to assign a hotkey'}
+                    {shortcut.key ? `Hotkey: ${formatKeyDisplay('mod+alt+' + shortcut.key)}` : 'Set a key (a-z) to assign a hotkey'}
                   </p>
                 </div>
               ))}
