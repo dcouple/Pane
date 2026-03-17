@@ -177,11 +177,7 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
   useEffect(() => {
     if (fingerprint !== prevFingerprintRef.current) {
       prevFingerprintRef.current = fingerprint;
-      const initial = new Set<number>();
-      for (let i = 0; i < files.length; i++) {
-        initial.add(i);
-      }
-      setExpandedFiles(initial);
+      setExpandedFiles(new Set());
     }
   }, [fingerprint, files.length]);
 

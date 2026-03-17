@@ -89,14 +89,18 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const [isResizing, setIsResizing] = useState(false);
 
   const diffViewerRef = useRef<DiffViewerHandle>(null);
+  // Track diff-relevant git state to avoid spurious prefetches on no-op status events
+  const lastGitFingerprintRef = useRef<string>('');
 
   // Expose refresh() to parent (DiffPanel) via ref
+  // Keeps current diff visible while new data loads (no flash),
+  // but resets selection since execution IDs are positional and
+  // may point to different commits after history changes.
   useImperativeHandle(ref, () => ({
     refresh: () => {
       diffCacheRef.current.clear();
-      setForceRefresh(prev => prev + 1);
-      setCombinedDiff(null);
       setSelectedExecutions([]);
+      setForceRefresh(prev => prev + 1);
     }
   }));
 
@@ -171,8 +175,47 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       setSelectedFile(undefined);
       setHistorySource(isMainRepo ? 'remote' : 'branch');
       diffCacheRef.current.clear();
+      lastGitFingerprintRef.current = '';
     }
   }, [sessionId, lastSessionId, isMainRepo]);
+
+  // Shared logic to process loaded executions
+  const processExecutions = useCallback((data: ExecutionDiff[], autoSelect: boolean) => {
+    setError(null);
+    setExecutions(data);
+
+    if (data.length > 0) {
+      const metadata = data.find(exec => exec.comparison_branch || exec.history_source) || data[0];
+      if (metadata?.comparison_branch) {
+        setMainBranch(metadata.comparison_branch);
+      }
+      if (metadata?.history_source) {
+        setHistorySource(metadata.history_source);
+      } else {
+        setHistorySource(isMainRepo ? 'remote' : 'branch');
+      }
+    } else {
+      setHistorySource(prev => {
+        if (isMainRepo) {
+          return prev;
+        }
+        return 'branch';
+      });
+    }
+
+    // Auto-select executions when no selection exists or when prefetching
+    if (autoSelect && data.length > 0) {
+      const allCommitIds = data
+        .filter((exec: ExecutionDiff) => exec.id !== 0)
+        .map((exec: ExecutionDiff) => exec.id);
+
+      if (allCommitIds.length > 0) {
+        setSelectedExecutions([allCommitIds[allCommitIds.length - 1], allCommitIds[0]]);
+      } else {
+        setSelectedExecutions(data.map((exec: ExecutionDiff) => exec.id));
+      }
+    }
+  }, [isMainRepo]);
 
   // Load executions for the session (skip when panel is not visible)
   useEffect(() => {
@@ -191,40 +234,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             throw new Error(response.error || 'Failed to load executions');
           }
           const data: ExecutionDiff[] = response.data || [];
-          setError(null);
-          setExecutions(data);
-
-          if (data.length > 0) {
-            const metadata = data.find(exec => exec.comparison_branch || exec.history_source) || data[0];
-            if (metadata?.comparison_branch) {
-              setMainBranch(metadata.comparison_branch);
-            }
-            if (metadata?.history_source) {
-              setHistorySource(metadata.history_source);
-            } else {
-              setHistorySource(isMainRepo ? 'remote' : 'branch');
-            }
-          } else {
-            setHistorySource(prev => {
-              if (isMainRepo) {
-                return prev;
-              }
-              return 'branch';
-            });
-          }
-
-          // If no initial selection and session just changed, select all executions by default
-          if (selectedExecutions.length === 0 && data.length > 0) {
-            const allCommitIds = data
-              .filter((exec: ExecutionDiff) => exec.id !== 0)
-              .map((exec: ExecutionDiff) => exec.id);
-
-            if (allCommitIds.length > 0) {
-              setSelectedExecutions([allCommitIds[allCommitIds.length - 1], allCommitIds[0]]);
-            } else {
-              setSelectedExecutions(data.map((exec: ExecutionDiff) => exec.id));
-            }
-          }
+          processExecutions(data, selectedExecutions.length === 0);
         } catch (err) {
           if (!cancelled) {
             setError(err instanceof Error ? err.message : 'Failed to load executions');
@@ -243,11 +253,48 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [sessionId, isMainRepo, forceRefresh, isVisible]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedExecutions read inside closure to check if auto-select needed; must not re-trigger on selection change
+  }, [sessionId, isMainRepo, forceRefresh, isVisible, processExecutions]);
 
-  // Keep a ref to executions.length so the diff effect doesn't re-trigger when executions load
+  // Background prefetch: when git status changes, fetch executions + diff even when not visible
+  // This ensures the diff tab has data ready before the user opens it
+  useEffect(() => {
+    let cancelled = false;
+
+    const handleGitStatusUpdated = (event: Event) => {
+      const { sessionId: eventSessionId, gitStatus } = (event as CustomEvent).detail || {};
+      if (eventSessionId !== sessionId) return;
+
+      // Fingerprint diff-relevant fields — ignore no-op status refreshes
+      const fingerprint = `${gitStatus?.state}-${gitStatus?.ahead}-${gitStatus?.behind}-${gitStatus?.uncommittedChanges}`;
+      if (fingerprint === lastGitFingerprintRef.current) return;
+      lastGitFingerprintRef.current = fingerprint;
+
+      // Clear stale cache and force diff re-fetch for existing selection
+      diffCacheRef.current.clear();
+      setForceRefresh(prev => prev + 1);
+
+      // Prefetch executions and let the diff loading effect chain handle the rest
+      // Only auto-select if user hasn't made a custom selection (preserves their commit range)
+      API.sessions.getExecutions(sessionId).then(response => {
+        if (cancelled || !response.success) return;
+        const data: ExecutionDiff[] = response.data || [];
+        processExecutions(data, selectedExecutionsRef.current.length === 0);
+      }).catch(() => { /* silent — prefetch is best-effort */ });
+    };
+
+    window.addEventListener('git-status-updated', handleGitStatusUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('git-status-updated', handleGitStatusUpdated);
+    };
+  }, [sessionId, processExecutions]);
+
+  // Keep refs to avoid stale closures in event handlers
   const executionsLengthRef = useRef(executions.length);
   executionsLengthRef.current = executions.length;
+  const selectedExecutionsRef = useRef(selectedExecutions);
+  selectedExecutionsRef.current = selectedExecutions;
 
   // Load combined diff when selection changes (with caching)
   useEffect(() => {
@@ -321,7 +368,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       clearTimeout(timeoutId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- executions.length read via ref to avoid re-triggering when executions reload
-  }, [selectedExecutions, sessionId]);
+  }, [selectedExecutions, sessionId, forceRefresh]);
 
   const handleSelectionChange = (newSelection: number[]) => {
     setSelectedExecutions(newSelection);
