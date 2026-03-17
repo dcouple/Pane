@@ -32,7 +32,7 @@ function KeyboardShortcutsSection() {
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-text-secondary">Send Input / Continue Conversation</span>
-            <Kbd size="md">Cmd/Ctrl + Enter</Kbd>
+            <Kbd size="md">{formatKeyDisplay('mod+enter')}</Kbd>
           </div>
         </div>
         {/* Dynamic shortcuts from registry */}
@@ -147,7 +147,7 @@ export default function Help({ isOpen, onClose }: HelpProps) {
                   <h4 className="font-medium text-text-primary">Continuing Conversations</h4>
                   <ul className="list-disc list-inside text-text-secondary mt-1 space-y-1">
                     <li>Click on a stopped pane to resume it</li>
-                    <li>Use <Kbd size="md">Cmd/Ctrl + Enter</Kbd> to send input</li>
+                    <li>Use <Kbd size="md">{formatKeyDisplay('mod+enter')}</Kbd> to send input</li>
                     <li>Full conversation history is preserved</li>
                   </ul>
                 </div>

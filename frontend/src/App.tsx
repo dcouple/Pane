@@ -5,6 +5,7 @@ import { useResizable } from './hooks/useResizable';
 import { useHotkey } from './hooks/useHotkey';
 import { useTerminalShortcuts } from './hooks/useTerminalShortcuts';
 import { useShortcutHintsOverlay } from './hooks/useShortcutHintsOverlay';
+import { formatKeyDisplay } from './utils/hotkeyUtils';
 import { ShortcutHintsOverlay } from './components/ShortcutHintsOverlay';
 import { Sidebar } from './components/Sidebar';
 import { SessionView } from './components/SessionView';
@@ -560,7 +561,7 @@ function App() {
               <button
                 onClick={() => setIsTokenTestOpen(false)}
                 className="absolute top-4 right-4 p-2 hover:bg-surface-hover rounded-lg transition-colors text-text-secondary hover:text-text-primary"
-                title="Close Token Test (Cmd/Ctrl + Shift + T)"
+                title={`Close Token Test (${formatKeyDisplay('mod+shift+t')})`}
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

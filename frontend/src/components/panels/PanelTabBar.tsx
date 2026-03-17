@@ -412,7 +412,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           const isEditing = editingPanelId === panel.id;
           const isDiffPanel = panel.type === 'diff';
           const displayTitle = isDiffPanel ? 'Diff' : panel.title;
-          const shortcutHint = index < 9 ? formatKeyDisplay(`alt+${index + 1}`) : undefined;
+          const shortcutHint = index < 9 ? hotkeyDisplay(`panel-tab-${index + 1}`) ?? undefined : undefined;
 
           const tab = (
             <div
