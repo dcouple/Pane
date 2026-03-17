@@ -104,8 +104,8 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
       return null;
     }
 
-    // Escape backslashes for PowerShell string
-    const escapedPath = winPath.replace(/\\/g, '\\\\');
+    // Escape for PowerShell single-quoted string: double any apostrophes, escape backslashes
+    const escapedPath = winPath.replace(/'/g, "''").replace(/\\/g, '\\\\');
     const psCommand = `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -ne $null) { $img.Save('${escapedPath}'); Write-Output 'OK' } else { Write-Output 'NO_IMAGE' }`;
 
     try {
@@ -131,12 +131,18 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
     // Linux: Try xclip
     try {
       const { stdout } = await execFileAsync('xclip', ['-selection', 'clipboard', '-t', 'TARGETS', '-o']);
-      if (!stdout.toLowerCase().includes('image')) {
+      // Find the first image/* MIME type advertised by the clipboard
+      const targets = stdout.split('\n').map(t => t.trim());
+      // Prefer png, then jpeg, then any image type
+      const preferredOrder = ['image/png', 'image/jpeg', 'image/bmp', 'image/webp', 'image/gif'];
+      const imageTarget = preferredOrder.find(t => targets.includes(t))
+        ?? targets.find(t => t.startsWith('image/'));
+      if (!imageTarget) {
         return null;
       }
       // Read image data as binary via child_process.exec
       const imgData = await new Promise<Buffer>((resolve, reject) => {
-        const proc = execFile('xclip', ['-selection', 'clipboard', '-t', 'image/png', '-o']);
+        const proc = execFile('xclip', ['-selection', 'clipboard', '-t', imageTarget, '-o']);
         const chunks: Buffer[] = [];
         proc.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
         proc.on('close', (code) => {
