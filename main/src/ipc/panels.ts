@@ -1,9 +1,26 @@
 import { IpcMain, BrowserWindow } from 'electron';
+import { existsSync, readdirSync } from 'fs';
+import fs from 'fs/promises';
+import path from 'path';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
 import { CreatePanelRequest, PanelEventType, ToolPanel } from '../../../shared/types/panels';
 import type { AppServices } from './types';
+import { getAppSubdirectory } from '../utils/appDirectory';
+
+// In-memory cache: sessionId -> imageCount for terminal image paste
+// Initialized from disk on first paste per session to survive app restarts
+export const sessionImageCounters = new Map<string, number>();
+
+// MIME type to file extension mapping
+const MIME_EXTENSIONS: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+};
 
 export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Panel CRUD operations
@@ -186,6 +203,53 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Reset flow control state (for recovering from stuck terminals)
   ipcMain.handle('terminal:resetFlowControl', async (_, panelId: string) => {
     terminalPanelManager.resetFlowControl(panelId);
+  });
+
+  // Save a pasted image to ~/.pane/images/ and return the file path with image number
+  ipcMain.handle('terminal:paste-image', async (
+    _,
+    _panelId: string,
+    sessionId: string,
+    dataUrl: string,
+    mimeType: string
+  ) => {
+    const imagesDir = getAppSubdirectory('images');
+    if (!existsSync(imagesDir)) {
+      await fs.mkdir(imagesDir, { recursive: true });
+    }
+
+    // Initialize counter from existing files on disk if not cached
+    if (!sessionImageCounters.has(sessionId)) {
+      const existing = readdirSync(imagesDir)
+        .filter(f => f.startsWith(`${sessionId}_`));
+      sessionImageCounters.set(sessionId, existing.length);
+    }
+
+    // Increment counter
+    const count = (sessionImageCounters.get(sessionId) ?? 0) + 1;
+    sessionImageCounters.set(sessionId, count);
+
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 9);
+    const extension = MIME_EXTENSIONS[mimeType] ?? 'png';
+    const filename = `${sessionId}_${count}_${timestamp}_${randomStr}.${extension}`;
+    const filePath = path.join(imagesDir, filename);
+
+    // Decode and save
+    const base64Data = dataUrl.split(',')[1];
+    if (!base64Data) {
+      throw new Error('Invalid image data URL');
+    }
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Backend size validation (10MB limit)
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error('Image too large');
+    }
+
+    await fs.writeFile(filePath, buffer);
+
+    return { filePath, imageNumber: count };
   });
 
   // Check if a panel type should be auto-created (not previously closed by user)

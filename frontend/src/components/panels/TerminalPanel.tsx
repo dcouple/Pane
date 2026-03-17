@@ -314,6 +314,54 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // XTerm.js in Electron doesn't handle clipboard paste natively, so we
           // intercept the paste event and feed it to the terminal explicitly
           const handlePaste = (e: ClipboardEvent) => {
+            // Check for images first
+            const items = e.clipboardData?.items;
+            if (items) {
+              for (let i = 0; i < items.length; i++) {
+                if (items[i].type.startsWith('image/')) {
+                  e.preventDefault();
+                  const file = items[i].getAsFile();
+                  if (!file) return;
+
+                  if (file.size > 10 * 1024 * 1024) {
+                    // Show error in terminal so user knows why nothing happened
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+                    if (terminal && !disposed) {
+                      terminal.paste(`[Image paste failed] File too large (${sizeMB} MB), max 10 MB\n`);
+                    }
+                    return;
+                  }
+
+                  // Read as dataUrl
+                  const reader = new FileReader();
+                  reader.onload = async (ev) => {
+                    // Check disposed INSIDE callback — component may have unmounted during read
+                    if (disposed || !terminal) return;
+                    const dataUrl = ev.target?.result as string;
+                    if (!dataUrl) return;
+
+                    try {
+                      const result = await window.electronAPI.invoke(
+                        'terminal:paste-image',
+                        panel.id,
+                        sessionId || panel.sessionId,
+                        dataUrl,
+                        file.type
+                      ) as { filePath: string; imageNumber: number } | null;
+                      if (result?.filePath && !disposed && terminal) {
+                        terminal.paste(`[Image ${result.imageNumber}] ${result.filePath}\n`);
+                      }
+                    } catch (err) {
+                      console.error('[TerminalPanel] Failed to paste image:', err);
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  return; // Image handled, don't fall through to text
+                }
+              }
+            }
+
+            // Fall through to existing text paste
             const text = e.clipboardData?.getData('text');
             if (text && terminal && !disposed) {
               e.preventDefault();

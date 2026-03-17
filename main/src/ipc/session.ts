@@ -12,6 +12,7 @@ import type { AppServices } from './types';
 import type { CreateSessionRequest } from '../types/session';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { convertDbFolderToFolder } from './folders';
+import { sessionImageCounters } from './panels';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import {
@@ -323,6 +324,28 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             cleanupMessage += `\x1b[33m⚠ Failed to remove artifacts (manual cleanup may be needed)\x1b[0m\r\n`;
           }
         }
+
+        // Clean up terminal-pasted images from global images dir
+        const imagesDir = getAppSubdirectory('images');
+        if (existsSync(imagesDir)) {
+          try {
+            const imageFiles = await fs.readdir(imagesDir);
+            const sessionPrefix = `${sessionId}_`;
+            const sessionImageFiles = imageFiles.filter(f => f.startsWith(sessionPrefix));
+            for (const file of sessionImageFiles) {
+              await fs.unlink(path.join(imagesDir, file)).catch(() => {});
+            }
+            if (sessionImageFiles.length > 0) {
+              cleanupMessage += `\x1b[32m✓ ${sessionImageFiles.length} pasted image(s) removed\x1b[0m\r\n`;
+            }
+          } catch (imgError) {
+            console.error(`[Main] Failed to clean up pasted images for session ${sessionId}:`, imgError);
+            cleanupMessage += `\x1b[33m⚠ Failed to remove pasted images\x1b[0m\r\n`;
+          }
+        }
+
+        // Clear in-memory image counter for this session
+        sessionImageCounters.delete(sessionId);
 
         // If there were any cleanup messages, add them to the session output
         if (cleanupMessage) {
