@@ -25,6 +25,7 @@ interface FileItem {
 }
 
 const ROOT_ID = '\0root';
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
 
 interface HeadlessFileTreeProps {
   sessionId: string;
@@ -62,6 +63,8 @@ function HeadlessFileTree({
   const [newItemName, setNewItemName] = useState('');
   const [newItemParentPath, setNewItemParentPath] = useState('');
   const newItemInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -317,6 +320,98 @@ function HeadlessFileTree({
     }
   }, [tree]);
 
+  const uploadFile = useCallback((file: File): Promise<{ success: boolean; name: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        try {
+          const base64 = (reader.result as string).split(',')[1]; // Strip data URL prefix
+          const result = await window.electronAPI.invoke('file:write-binary', {
+            sessionId: sessionIdRef.current,
+            fileName: file.name,
+            contentBase64: base64,
+          });
+          if (result.success) {
+            resolve({ success: true, name: file.name });
+          } else {
+            resolve({ success: false, name: file.name, error: result.error });
+          }
+        } catch (err) {
+          resolve({ success: false, name: file.name, error: err instanceof Error ? err.message : 'Unknown error' });
+        }
+      };
+      reader.onerror = () => resolve({ success: false, name: file.name, error: 'Failed to read file' });
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes('Files')) {
+      e.dataTransfer.dropEffect = 'copy';
+      if (!isDragOver) setIsDragOver(true);
+    }
+  }, [isDragOver]);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    setError(null);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
+    const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
+
+    if (validFiles.length === 0) {
+      if (oversized.length > 0) {
+        setError(`Files too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
+      }
+      return;
+    }
+
+    setUploadStatus(`Uploading ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
+
+    try {
+      // Upload sequentially to avoid race condition when multiple files share the same name
+      const results: { success: boolean; name: string; error?: string }[] = [];
+      for (const file of validFiles) {
+        results.push(await uploadFile(file));
+      }
+      const failed = results.filter(r => !r.success);
+
+      // Combine oversized and failed errors into one message
+      const errors: string[] = [];
+      if (oversized.length > 0) {
+        errors.push(`Too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
+      }
+      if (failed.length > 0) {
+        errors.push(`Failed: ${failed.map(r => `${r.name}${r.error ? ` (${r.error})` : ''}`).join(', ')}`);
+      }
+      if (errors.length > 0) {
+        setError(errors.join('. '));
+      }
+
+      const succeeded = results.filter(r => r.success);
+      if (succeeded.length > 0) {
+        filesCacheRef.current.delete('');
+        tree.getItemInstance(ROOT_ID)?.invalidateChildrenIds();
+      }
+    } finally {
+      setUploadStatus(null);
+    }
+  }, [tree, uploadFile]);
+
   // Focus input when dialog is shown
   useEffect(() => {
     if (showNewItemDialog && newItemInputRef.current) {
@@ -385,7 +480,12 @@ function HeadlessFileTree({
   }, [searchQuery, showNewItemDialog, contextMenu]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className={`h-full flex flex-col ${isDragOver ? 'ring-2 ring-interactive ring-inset bg-interactive/10' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <div className="flex items-center justify-between p-2 border-b border-border-primary">
         <span className="text-sm font-medium text-text-primary">Files</span>
         <div className="flex gap-1">
@@ -480,6 +580,11 @@ function HeadlessFileTree({
       {error && (
         <div className="px-3 py-2 bg-status-error/20 text-status-error text-sm border-b border-status-error/30">
           {error}
+        </div>
+      )}
+      {uploadStatus && (
+        <div className="px-3 py-2 bg-interactive/20 text-interactive text-sm border-b border-interactive/30">
+          {uploadStatus}
         </div>
       )}
       {/* Search mode: flat filtered results overlay */}

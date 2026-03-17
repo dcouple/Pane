@@ -34,6 +34,12 @@ interface FileWriteRequest {
   content: string;
 }
 
+interface FileWriteBinaryRequest {
+  sessionId: string;
+  fileName: string;
+  contentBase64: string;
+}
+
 interface FilePathRequest {
   sessionId: string;
   filePath: string;
@@ -183,6 +189,78 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       return { success: true };
     } catch (error) {
       console.error('Error writing file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Helper for checking file existence
+  async function fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // Write binary file to a session's worktree root (for drag-and-drop uploads)
+  ipcMain.handle('file:write-binary', async (_, request: FileWriteBinaryRequest) => {
+    try {
+      if (!request.fileName) {
+        throw new Error('File name is required');
+      }
+
+      const session = sessionManager.getSession(request.sessionId);
+      if (!session) {
+        throw new Error(`Session not found: ${request.sessionId}`);
+      }
+
+      const ctx = sessionManager.getProjectContext(request.sessionId);
+      if (!ctx) throw new Error('Project not found for session');
+      const { pathResolver } = ctx;
+
+      if (!session.worktreePath) {
+        throw new Error(`Session worktree path is undefined for session: ${request.sessionId}`);
+      }
+
+      const basePath = pathResolver.toFileSystem(session.worktreePath);
+
+      // Validate fileName: must be a simple filename, no slashes or ..
+      const sanitized = path.basename(request.fileName);
+      if (!sanitized || sanitized === '.' || sanitized === '..') {
+        throw new Error('Invalid file name');
+      }
+
+      // Resolve full path and verify it's within worktree
+      let finalName = sanitized;
+      let fullPath = path.join(basePath, finalName);
+
+      if (!await pathResolver.isWithin(basePath, fullPath)) {
+        throw new Error('File path is outside worktree');
+      }
+
+      // Auto-rename if file already exists
+      if (await fileExists(fullPath)) {
+        const ext = path.extname(sanitized);
+        const base = path.basename(sanitized, ext);
+        let counter = 1;
+        while (await fileExists(fullPath)) {
+          finalName = `${base} (${counter})${ext}`;
+          fullPath = path.join(basePath, finalName);
+          counter++;
+        }
+      }
+
+      // Write binary content
+      const buffer = Buffer.from(request.contentBase64, 'base64');
+      await fs.writeFile(fullPath, buffer);
+
+      return { success: true, finalFileName: finalName };
+    } catch (error) {
+      console.error('Error writing binary file:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
