@@ -94,10 +94,13 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const lastPrefetchRef = useRef<number>(0);
 
   // Expose refresh() to parent (DiffPanel) via ref
-  // Non-destructive: keeps current view visible while new data loads
+  // Keeps current diff visible while new data loads (no flash),
+  // but resets selection since execution IDs are positional and
+  // may point to different commits after history changes.
   useImperativeHandle(ref, () => ({
     refresh: () => {
       diffCacheRef.current.clear();
+      setSelectedExecutions([]);
       setForceRefresh(prev => prev + 1);
     }
   }));
@@ -259,6 +262,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   // Background prefetch: when git status changes, fetch executions + diff even when not visible
   // This ensures the diff tab has data ready before the user opens it
   useEffect(() => {
+    let cancelled = false;
+
     const handleGitStatusUpdated = (event: Event) => {
       const { sessionId: eventSessionId } = (event as CustomEvent).detail || {};
       if (eventSessionId !== sessionId) return;
@@ -270,14 +275,17 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       // Prefetch executions and let the diff loading effect chain handle the rest
       // Only auto-select if user hasn't made a custom selection (preserves their commit range)
       API.sessions.getExecutions(sessionId).then(response => {
-        if (!response.success) return;
+        if (cancelled || !response.success) return;
         const data: ExecutionDiff[] = response.data || [];
         processExecutions(data, selectedExecutionsRef.current.length === 0);
       }).catch(() => { /* silent — prefetch is best-effort */ });
     };
 
     window.addEventListener('git-status-updated', handleGitStatusUpdated);
-    return () => window.removeEventListener('git-status-updated', handleGitStatusUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('git-status-updated', handleGitStatusUpdated);
+    };
   }, [sessionId, processExecutions]);
 
   // Keep refs to avoid stale closures in event handlers
