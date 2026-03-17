@@ -89,6 +89,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const [isResizing, setIsResizing] = useState(false);
 
   const diffViewerRef = useRef<DiffViewerHandle>(null);
+  // Track diff-relevant git state to avoid spurious prefetches on no-op status events
+  const lastGitFingerprintRef = useRef<string>('');
 
   // Expose refresh() to parent (DiffPanel) via ref
   // Keeps current diff visible while new data loads (no flash),
@@ -173,6 +175,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       setSelectedFile(undefined);
       setHistorySource(isMainRepo ? 'remote' : 'branch');
       diffCacheRef.current.clear();
+      lastGitFingerprintRef.current = '';
     }
   }, [sessionId, lastSessionId, isMainRepo]);
 
@@ -259,11 +262,18 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     let cancelled = false;
 
     const handleGitStatusUpdated = (event: Event) => {
-      const { sessionId: eventSessionId } = (event as CustomEvent).detail || {};
+      const { sessionId: eventSessionId, gitStatus } = (event as CustomEvent).detail || {};
       if (eventSessionId !== sessionId) return;
 
-      // Clear stale cache
+      // Fingerprint diff-relevant fields — ignore no-op status refreshes
+      const fingerprint = `${gitStatus?.state}-${gitStatus?.ahead}-${gitStatus?.behind}-${gitStatus?.uncommittedChanges}`;
+      if (fingerprint === lastGitFingerprintRef.current) return;
+      lastGitFingerprintRef.current = fingerprint;
+
+      // Clear stale cache and force diff re-fetch for existing selection
       diffCacheRef.current.clear();
+      setForceRefresh(prev => prev + 1);
+
       // Prefetch executions and let the diff loading effect chain handle the rest
       // Only auto-select if user hasn't made a custom selection (preserves their commit range)
       API.sessions.getExecutions(sessionId).then(response => {

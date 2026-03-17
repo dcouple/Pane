@@ -21,6 +21,8 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   const diffState = panel.state?.customState as DiffPanelState | undefined;
   const lastRefreshRef = useRef<number>(Date.now());
   const combinedDiffRef = useRef<CombinedDiffViewHandle>(null);
+  // Track diff-relevant git state to avoid spurious refreshes on no-op status events
+  const lastGitFingerprintRef = useRef<string>('');
 
   // Listen for file change events from other panels
   useEffect(() => {
@@ -51,12 +53,18 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   }, [panel.id, sessionId]);
 
   // Listen for git-status-updated events (detects new commits from Claude, etc.)
+  // Only mark stale when diff-relevant state actually changes, not on no-op refreshes
   useEffect(() => {
     const handleGitStatusUpdated = (event: Event) => {
-      const { sessionId: eventSessionId } = (event as CustomEvent).detail || {};
-      if (eventSessionId === sessionId) {
-        setIsStale(true);
-      }
+      const { sessionId: eventSessionId, gitStatus } = (event as CustomEvent).detail || {};
+      if (eventSessionId !== sessionId) return;
+
+      // Fingerprint the diff-relevant fields — ignore no-op status refreshes
+      const fingerprint = `${gitStatus?.state}-${gitStatus?.ahead}-${gitStatus?.behind}-${gitStatus?.uncommittedChanges}`;
+      if (fingerprint === lastGitFingerprintRef.current) return;
+      lastGitFingerprintRef.current = fingerprint;
+
+      setIsStale(true);
     };
 
     window.addEventListener('git-status-updated', handleGitStatusUpdated);
