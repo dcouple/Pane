@@ -393,11 +393,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                 return;
               }
 
-              // Regular text paste
-              if (text && terminal && !disposed) {
-                e.preventDefault();
-                terminal.paste(text);
-              }
+              // Regular text paste — let xterm's built-in paste handler
+              // process it (it already listens for paste on its textarea).
+              // Calling terminal.paste() here would double-inject the text.
             }
           };
           // Attach paste handler to xterm's internal textarea — xterm calls
