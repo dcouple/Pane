@@ -358,6 +358,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Heartbeat: periodically flush any pending acks as a safety net
           const heartbeatInterval = setInterval(flushAck, ACK_HEARTBEAT_INTERVAL);
 
+          // Periodically save serialized snapshot so it's available on app quit
+          // (main process can't call SerializeAddon — only the renderer can)
+          const SNAPSHOT_INTERVAL = 30_000; // 30 seconds
+          const snapshotInterval = setInterval(() => {
+            if (serializeAddonRef.current && terminal && !disposed) {
+              try {
+                const serialized = serializeAddonRef.current.serialize();
+                window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
+              } catch {
+                // Serialization can fail if terminal is in a bad state — ignore
+              }
+            }
+          }, SNAPSHOT_INTERVAL);
+
           // Restore scrollback if we have saved state FOR THIS PANEL
           // Prefer serialized buffer (preserves colors/formatting) over raw scrollback
           if (terminalStateForThisPanel) {
@@ -612,6 +626,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           return () => {
             disposed = true;
             clearInterval(heartbeatInterval);
+            clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
             resizeObserver.disconnect();

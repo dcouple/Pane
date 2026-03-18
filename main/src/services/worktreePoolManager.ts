@@ -10,6 +10,7 @@ interface ReserveWorktree {
   branchName: string;
   projectPath: string;
   baseRef: string;
+  baseCommit: string; // resolved commit hash at creation time — used to detect if base has advanced
   createdAt: number;
 }
 
@@ -84,12 +85,26 @@ class WorktreePoolManager {
       return;
     }
 
+    // Capture the resolved commit hash so we can detect if base advances later
+    let baseCommit = '';
+    try {
+      const { stdout } = await commandRunner.execAsync(
+        `git rev-parse ${escapeShellArg(baseRef)}`,
+        projectPath,
+        { timeout: 10000 }
+      );
+      baseCommit = stdout.trim();
+    } catch {
+      // If we can't resolve, store empty — claim will skip the freshness check
+    }
+
     const reserve: ReserveWorktree = {
       reserveName,
       reservePath,
       branchName,
       projectPath,
       baseRef,
+      baseCommit,
       createdAt: Date.now(),
     };
     this.reserves.set(key, reserve);
@@ -118,6 +133,26 @@ class WorktreePoolManager {
     // Check staleness
     if (Date.now() - reserve.createdAt > WorktreePoolManager.STALE_MS) {
       console.log(`[WorktreePool] Reserve ${reserve.reserveName} is stale — discarding`);
+      this.reserves.delete(key);
+      await this.removeReserve(reserve, projectPath, commandRunner);
+      return null;
+    }
+
+    // Check that the base ref hasn't advanced since the reserve was created
+    try {
+      const { stdout: currentHead } = await commandRunner.execAsync(
+        `git rev-parse ${escapeShellArg(baseRef)}`,
+        projectPath,
+        { timeout: 10000 }
+      );
+      if (reserve.baseCommit && currentHead.trim() !== reserve.baseCommit) {
+        console.log(`[WorktreePool] Reserve ${reserve.reserveName} base has advanced — discarding`);
+        this.reserves.delete(key);
+        await this.removeReserve(reserve, projectPath, commandRunner);
+        return null;
+      }
+    } catch {
+      // If we can't verify, discard to be safe
       this.reserves.delete(key);
       await this.removeReserve(reserve, projectPath, commandRunner);
       return null;

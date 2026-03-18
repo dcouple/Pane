@@ -1409,13 +1409,18 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get main branch from project config (same pattern as squash-and-rebase)
-      const project = sessionManager.getProjectForSession(sessionId);
-      if (!project?.path) throw new Error('Project path not found for session');
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      // Use session's base commit as the undo boundary — this ensures only commits
+      // created within this session can be undone, not pre-existing branch commits.
+      // Falls back to main branch if base_commit isn't recorded.
+      let undoBoundary = session.baseCommit;
+      if (!undoBoundary) {
+        const project = sessionManager.getProjectForSession(sessionId);
+        if (!project?.path) throw new Error('Project path not found for session');
+        undoBoundary = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      }
 
-      // Run git soft reset with live safety check
-      const result = await worktreeManager.gitSoftReset(session.worktreePath, mainBranch, ctx.commandRunner);
+      // Run git soft reset with live safety check against the undo boundary
+      const result = await worktreeManager.gitSoftReset(session.worktreePath, undoBoundary, ctx.commandRunner);
 
       // Emit git operation completed event
       const successMessage = `✓ Successfully undid last commit (changes are now staged)\n\nPrevious commit message:\n${result.previousCommitMessage}`;
