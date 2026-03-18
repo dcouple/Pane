@@ -17,8 +17,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = () => {
 
   if (!projectIdStr) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-900">
-        <div className="text-gray-400">No project selected</div>
+      <div className="flex items-center justify-center h-full bg-bg-primary">
+        <div className="text-text-secondary">No project selected</div>
       </div>
     );
   }
@@ -26,14 +26,14 @@ const DashboardPanel: React.FC<DashboardPanelProps> = () => {
   const projectId = parseInt(projectIdStr, 10);
   if (isNaN(projectId)) {
     return (
-      <div className="flex items-center justify-center h-full bg-gray-900">
-        <div className="text-gray-400">Invalid project ID</div>
+      <div className="flex items-center justify-center h-full bg-bg-primary">
+        <div className="text-text-secondary">Invalid project ID</div>
       </div>
     );
   }
 
   return (
-    <div className="h-full bg-gray-900 overflow-auto">
+    <div className="h-full bg-bg-primary overflow-auto">
       <ProjectDashboard 
         projectId={projectId} 
         projectName={projectName} 

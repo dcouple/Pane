@@ -37,10 +37,20 @@ export function CloudOverlay() {
       style={{ display: showCloudView ? 'block' : 'none' }}
     >
       {!iframeReady && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black">
-          <div className="text-center">
-            <div className="w-8 h-8 border-2 border-interactive border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <span className="text-sm text-text-secondary">Connecting to cloud desktop...</span>
+        <div className="absolute inset-0 bg-bg-primary animate-pulse">
+          <div className="h-full flex flex-col">
+            {/* Top bar skeleton */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-border-primary">
+              <div className="h-4 w-32 bg-surface-tertiary rounded" />
+              <div className="h-4 w-4 bg-surface-tertiary rounded" />
+            </div>
+            {/* Content area skeleton */}
+            <div className="flex-1 p-6 space-y-4">
+              <div className="h-6 w-64 bg-surface-tertiary rounded" />
+              <div className="h-4 w-full bg-surface-tertiary rounded" />
+              <div className="h-4 w-3/4 bg-surface-tertiary rounded" />
+              <div className="h-64 w-full bg-surface-tertiary rounded-lg" />
+            </div>
           </div>
         </div>
       )}

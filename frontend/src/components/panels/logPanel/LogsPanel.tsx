@@ -35,12 +35,12 @@ const LogsPanel: React.FC<LogsPanelProps> = ({ panel, isActive }) => {
           <div className="flex items-center gap-2">
             {isRunning ? (
               <>
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <div className="w-2 h-2 bg-status-success rounded-full animate-pulse" />
                 <span className="text-sm text-text-secondary">Running: {logsState.command}</span>
               </>
             ) : (
               <>
-                <div className="w-2 h-2 bg-gray-500 rounded-full" />
+                <div className="w-2 h-2 bg-text-tertiary rounded-full" />
                 <span className="text-sm text-text-secondary">
                   {logsState.exitCode !== undefined 
                     ? `Exited with code ${logsState.exitCode}`
@@ -53,7 +53,7 @@ const LogsPanel: React.FC<LogsPanelProps> = ({ panel, isActive }) => {
           {isRunning && (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-xs bg-status-error text-text-on-status-error rounded hover:bg-status-error-hover transition-colors"
             >
               <Square className="w-3 h-3" />
               Stop

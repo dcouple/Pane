@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, Loader2, GitPullRequest } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useHotkeyStore } from '../stores/hotkeyStore';
@@ -471,9 +473,9 @@ function SessionTooltipContent({ gs }: {
         </span>
       </div>
       {gs.prBody && (
-        <p className="text-text-tertiary whitespace-pre-wrap break-words leading-snug line-clamp-4">
-          {gs.prBody}
-        </p>
+        <div className="text-text-tertiary break-words leading-snug line-clamp-[32] prose prose-xs prose-invert max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{gs.prBody}</ReactMarkdown>
+        </div>
       )}
     </div>
   );
@@ -793,9 +795,10 @@ export function ArchivedSessions() {
       {showArchived && (
         <div className="pb-2 max-h-[40vh] overflow-y-auto">
           {isLoadingArchived ? (
-            <div className="flex items-center gap-2 px-6 py-3 text-xs text-text-tertiary">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Loading...</span>
+            <div className="px-4 py-2 space-y-2 animate-pulse">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-7 bg-surface-tertiary rounded" />
+              ))}
             </div>
           ) : archivedProjects.length === 0 ? (
             <div className="px-6 py-3 text-xs text-text-tertiary">

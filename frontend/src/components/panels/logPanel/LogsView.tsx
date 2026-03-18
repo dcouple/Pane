@@ -408,8 +408,8 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
                   key={index} 
                   className={cn(
                     "log-line",
-                    isCurrentMatch && "bg-yellow-500/30",
-                    isMatch && !isCurrentMatch && "bg-yellow-500/10"
+                    isCurrentMatch && "bg-status-warning/30",
+                    isMatch && !isCurrentMatch && "bg-status-warning/10"
                   )}
                 >
                   {isHighlighted ? (
@@ -418,7 +418,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
                     log.message.split(new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'))
                       .map((part, i) => 
                         part.toLowerCase() === searchTerm.toLowerCase() ? (
-                          <span key={i} className="bg-yellow-500/50 text-black px-0.5">
+                          <span key={i} className="bg-status-warning/50 text-text-on-status-warning px-0.5">
                             {part}
                           </span>
                         ) : (

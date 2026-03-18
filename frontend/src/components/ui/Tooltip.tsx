@@ -9,6 +9,8 @@ export interface TooltipProps {
   className?: string;
   /** When true, the tooltip stays open when hovered and allows interaction (clicks, selection) */
   interactive?: boolean;
+  /** Delay in ms before showing the tooltip (default: 400) */
+  delay?: number;
 }
 
 const GAP = 6;
@@ -19,12 +21,14 @@ export const Tooltip: React.FC<TooltipProps> = ({
   side = 'top',
   className,
   interactive = false,
+  delay = 400,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties>({ visibility: 'hidden' });
   const triggerRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Compute position after the tooltip DOM element mounts so we can measure it
   useLayoutEffect(() => {
@@ -70,20 +74,36 @@ export const Tooltip: React.FC<TooltipProps> = ({
     }
   }, []);
 
+  const cancelShow = useCallback(() => {
+    if (showTimeout.current) {
+      clearTimeout(showTimeout.current);
+      showTimeout.current = null;
+    }
+  }, []);
+
   const show = useCallback(() => {
     cancelHide();
-    setStyle({ visibility: 'hidden' });
-    setIsHovered(true);
-  }, [cancelHide]);
+    cancelShow();
+    if (delay > 0) {
+      showTimeout.current = setTimeout(() => {
+        setStyle({ visibility: 'hidden' });
+        setIsHovered(true);
+      }, delay);
+    } else {
+      setStyle({ visibility: 'hidden' });
+      setIsHovered(true);
+    }
+  }, [cancelHide, cancelShow, delay]);
 
   const hide = useCallback(() => {
+    cancelShow();
     if (interactive) {
       // Small delay so user can move mouse from trigger to tooltip
       hideTimeout.current = setTimeout(() => setIsHovered(false), 100);
     } else {
       setIsHovered(false);
     }
-  }, [interactive]);
+  }, [interactive, cancelShow]);
 
   const arrowBorder: Record<string, string> = {
     top: 'border-l-transparent border-r-transparent border-b-transparent border-t-bg-tertiary',

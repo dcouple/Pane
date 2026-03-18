@@ -4,6 +4,8 @@ import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
 import { Info, Check, Edit, CircleArrowDown, AlertTriangle, GitMerge, ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, Minus, RefreshCw, GitBranch, Clock, FileText, GitPullRequest } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
 import { IconButton } from './ui/Button';
@@ -158,9 +160,9 @@ function CollapsedSessionTooltip({ session }: { session: Session }) {
               </p>
             )}
             {gs.prBody && (
-              <p className="text-[10px] text-text-tertiary whitespace-pre-wrap break-words leading-snug pl-[18px] line-clamp-4">
-                {gs.prBody}
-              </p>
+              <div className="text-[10px] text-text-tertiary break-words leading-snug pl-[18px] line-clamp-[32] prose prose-xs prose-invert max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{gs.prBody}</ReactMarkdown>
+              </div>
             )}
           </div>
         </>

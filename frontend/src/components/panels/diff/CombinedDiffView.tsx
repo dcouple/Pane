@@ -486,8 +486,28 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
   if (loading && executions.length === 0) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="text-text-secondary">Loading executions...</div>
+      <div className="flex flex-col h-full animate-pulse">
+        {/* Header skeleton */}
+        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
+          <div className="h-3 w-24 bg-surface-tertiary rounded" />
+          <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
+        </div>
+        <div className="flex-1 flex min-h-0">
+          {/* Sidebar skeleton */}
+          <div className="w-52 border-r border-border-primary bg-surface-secondary p-2 space-y-2">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-10 bg-surface-tertiary rounded" />
+            ))}
+          </div>
+          {/* Diff area skeleton */}
+          <div className="flex-1 p-4 space-y-3">
+            <div className="h-4 w-48 bg-surface-tertiary rounded" />
+            <div className="h-3 w-full bg-surface-tertiary rounded" />
+            <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+            <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
+            <div className="h-3 w-2/3 bg-surface-tertiary rounded" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -580,8 +600,11 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
               </div>
             </div>
           ) : loading && combinedDiff === null ? (
-            <div className="flex items-center justify-center h-32">
-              <div className="text-text-secondary">Loading diff...</div>
+            <div className="animate-pulse p-4 space-y-3">
+              <div className="h-4 w-48 bg-surface-tertiary rounded" />
+              <div className="h-3 w-full bg-surface-tertiary rounded" />
+              <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+              <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
             </div>
           ) : error ? (
             <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded m-4">

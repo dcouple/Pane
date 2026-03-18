@@ -273,10 +273,20 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             {/* Center: panel content */}
             <div className="flex-1 relative min-h-0 overflow-hidden">
               {isLoadingSession ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-interactive mx-auto mb-4"></div>
-                    <p className="text-text-secondary">Loading panels...</p>
+                <div className="h-full animate-pulse">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
+                    <div className="h-3 w-28 bg-surface-tertiary rounded" />
+                    <div className="flex items-center gap-2">
+                      <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
+                      <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="h-4 w-40 bg-surface-tertiary rounded" />
+                    <div className="h-3 w-full bg-surface-tertiary rounded" />
+                    <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+                    <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
+                    <div className="h-3 w-2/3 bg-surface-tertiary rounded" />
                   </div>
                 </div>
               ) : sessionPanels.length > 0 && currentActivePanel ? (
@@ -328,10 +338,20 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
       {/* Loading state when no session yet */}
       {!mainRepoSessionId && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-interactive mx-auto mb-4"></div>
-            <p className="text-text-secondary">Loading project...</p>
+        <div className="flex-1 animate-pulse">
+          {/* Tab bar skeleton */}
+          <div className="flex items-center gap-1 px-2 py-1 border-b border-border-primary bg-surface-secondary">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-7 w-20 bg-surface-tertiary rounded" />
+            ))}
+          </div>
+          {/* Panel content skeleton */}
+          <div className="p-4 space-y-3">
+            <div className="h-4 w-48 bg-surface-tertiary rounded" />
+            <div className="h-3 w-full bg-surface-tertiary rounded" />
+            <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+            <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
+            <div className="h-3 w-1/2 bg-surface-tertiary rounded" />
           </div>
         </div>
       )}

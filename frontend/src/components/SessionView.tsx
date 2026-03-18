@@ -23,7 +23,8 @@ import { PanelContainer } from './panels/PanelContainer';
 import { SessionProvider } from '../contexts/SessionContext';
 import { ToolPanel, ToolPanelType, PANEL_CAPABILITIES } from '../../../shared/types/panels';
 import { PanelCreateOptions } from '../types/panelComponents';
-import { Download, Upload, GitMerge, GitPullRequestArrow, Code2, Terminal, GripHorizontal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, MessageSquare, TerminalSquare } from 'lucide-react';
+import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, GripHorizontal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare } from 'lucide-react';
+import { ClaudeIcon, OpenAIIcon, getCliBrandIcon } from './ui/BrandIcons';
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';
 import { useConfigStore } from '../stores/configStore';
@@ -294,25 +295,25 @@ export const SessionView = memo(() => {
 
   useHotkey({
     id: 'add-tool-terminal-claude',
-    label: 'Add Terminal (Claude)',
+    label: 'Add Claude Code',
     keys: 'mod+shift+3',
     category: 'tools',
     enabled: () => isInSessionView,
     action: () => handlePanelCreate('terminal', {
       initialCommand: 'claude --dangerously-skip-permissions',
-      title: 'Claude CLI'
+      title: 'Claude Code'
     }),
   });
 
   useHotkey({
     id: 'add-tool-terminal-codex',
-    label: 'Add Terminal (Codex)',
+    label: 'Add Codex',
     keys: 'mod+shift+4',
     category: 'tools',
     enabled: () => isInSessionView,
     action: () => handlePanelCreate('terminal', {
       initialCommand: 'codex',
-      title: 'Codex CLI'
+      title: 'Codex'
     }),
   });
 
@@ -980,10 +981,10 @@ export const SessionView = memo(() => {
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
                           onClick={() => handlePanelCreate('terminal', {
                             initialCommand: 'claude --dangerously-skip-permissions',
-                            title: 'Claude CLI'
+                            title: 'Claude Code'
                           })}
                         >
-                          <MessageSquare className="w-3 h-3" />
+                          <ClaudeIcon className="w-3 h-3" />
                           Claude
                         </button>
                       </Tooltip>
@@ -992,10 +993,10 @@ export const SessionView = memo(() => {
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
                           onClick={() => handlePanelCreate('terminal', {
                             initialCommand: 'codex',
-                            title: 'Codex CLI'
+                            title: 'Codex'
                           })}
                         >
-                          <Code2 className="w-3 h-3" />
+                          <OpenAIIcon className="w-3 h-3" />
                           Codex
                         </button>
                       </Tooltip>
@@ -1011,7 +1012,7 @@ export const SessionView = memo(() => {
                             })}
                             title={cmd.command}
                           >
-                            <TerminalSquare className="w-3 h-3" />
+                            {getCliBrandIcon(cmd.command, 'w-3 h-3') || <TerminalSquare className="w-3 h-3" />}
                             {cmd.name.length > 18 ? cmd.name.slice(0, 18) + '...' : cmd.name}
                           </button>
                         );
@@ -1132,10 +1133,10 @@ export const SessionView = memo(() => {
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
                             onClick={() => handlePanelCreate('terminal', {
                               initialCommand: 'claude --dangerously-skip-permissions',
-                              title: 'Claude CLI'
+                              title: 'Claude Code'
                             })}
                           >
-                            <MessageSquare className="w-3 h-3" />
+                            <ClaudeIcon className="w-3 h-3" />
                             Claude
                           </button>
                         </Tooltip>
@@ -1146,10 +1147,10 @@ export const SessionView = memo(() => {
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
                             onClick={() => handlePanelCreate('terminal', {
                               initialCommand: 'codex',
-                              title: 'Codex CLI'
+                              title: 'Codex'
                             })}
                           >
-                            <Code2 className="w-3 h-3" />
+                            <OpenAIIcon className="w-3 h-3" />
                             Codex
                           </button>
                         </Tooltip>
@@ -1167,7 +1168,7 @@ export const SessionView = memo(() => {
                               })}
                               title={cmd.command}
                             >
-                              <TerminalSquare className="w-3 h-3" />
+                              {getCliBrandIcon(cmd.command, 'w-3 h-3') || <TerminalSquare className="w-3 h-3" />}
                               {cmd.name.length > 18 ? cmd.name.slice(0, 18) + '...' : cmd.name}
                             </button>
                           );
