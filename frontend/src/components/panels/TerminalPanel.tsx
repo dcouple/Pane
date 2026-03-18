@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { WebglAddon } from '@xterm/addon-webgl';
 import type { WebLinksAddon } from '@xterm/addon-web-links';
+import type { SerializeAddon } from '@xterm/addon-serialize';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
@@ -14,11 +15,14 @@ import { useTerminalLinks } from '../terminal/hooks/useTerminalLinks';
 import { TerminalLinkTooltip } from '../terminal/TerminalLinkTooltip';
 import { TerminalPopover, PopoverButton } from '../terminal/TerminalPopover';
 import { SelectionPopover } from '../terminal/SelectionPopover';
+import { useTerminalSearch } from '../../hooks/useTerminalSearch';
+import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import '@xterm/xterm/css/xterm.css';
 
 // Type for terminal state restoration
 interface TerminalRestoreState {
   scrollbackBuffer: string | string[];
+  serializedBuffer?: string;
   cursorX?: number;
   cursorY?: number;
 }
@@ -32,6 +36,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const fitAddonRef = useRef<FitAddon | null>(null);
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
+  const serializeAddonRef = useRef<SerializeAddon | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [isInitialized, setIsInitialized] = useState(false);
@@ -68,6 +73,27 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     workingDirectory: workingDirectory || '',
     sessionId: sessionId || panel.sessionId,
   });
+
+  // Terminal search hook
+  const {
+    isSearchOpen,
+    searchQuery,
+    searchStatus,
+    searchInputRef,
+    openSearch,
+    closeSearch,
+    onQueryChange,
+    onStep,
+  } = useTerminalSearch(xtermRef);
+
+  // Open search on Ctrl/Cmd+F from the container div
+  const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const ctrlOrMeta = e.ctrlKey || e.metaKey;
+    if (ctrlOrMeta && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      openSearch();
+    }
+  }, [openSearch]);
 
   // Initialize terminal only once when component first mounts
   // Keep it alive even when switching sessions
@@ -130,8 +156,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           cursorWidth: 1,
           cursorInactiveStyle: 'outline',
           allowTransparency: false,
-          fastScrollModifier: 'ctrl',
-          fastScrollSensitivity: 5,
+          scrollOnUserInput: true,
           scrollSensitivity: 1,
           altClickMovesCursor: true,
           drawBoldTextInBrightColors: true,
@@ -209,6 +234,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Use e.code for physical key (e.key may report 'AltGraph' on some layouts)
           if (e.code === 'AltRight') return false;
 
+          // Ctrl/Cmd+F: terminal search
+          if (ctrlOrMeta && e.key.toLowerCase() === 'f') return false;
+
           // Ctrl/Cmd+V: stop xterm from sending raw \x16 to PTY
           // Returning false lets the browser trigger a native paste event instead,
           // which is handled by our paste event listener on the terminal container
@@ -272,6 +300,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             webLinksAddonRef.current = null;
           }
 
+          // Load SerializeAddon for terminal snapshot persistence
+          try {
+            const { SerializeAddon: SerializeAddonImpl } = await import('@xterm/addon-serialize');
+            if (!disposed) {
+              const serializeAddon = new SerializeAddonImpl();
+              terminal.loadAddon(serializeAddon);
+              serializeAddonRef.current = serializeAddon;
+              console.log('[TerminalPanel] SerializeAddon loaded for panel', panel.id);
+            }
+          } catch (e) {
+            console.warn('[TerminalPanel] SerializeAddon failed to load for panel', panel.id, ':', e);
+            serializeAddonRef.current = null;
+          }
+
           xtermRef.current = terminal;
           fitAddonRef.current = fitAddon;
 
@@ -316,22 +358,41 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Heartbeat: periodically flush any pending acks as a safety net
           const heartbeatInterval = setInterval(flushAck, ACK_HEARTBEAT_INTERVAL);
 
-          // Restore scrollback if we have saved state FOR THIS PANEL
-          if (terminalStateForThisPanel && terminalStateForThisPanel.scrollbackBuffer) {
-            // Handle both string and array formats
-            let restoredContent: string;
-            if (typeof terminalStateForThisPanel.scrollbackBuffer === 'string') {
-              restoredContent = terminalStateForThisPanel.scrollbackBuffer;
-              console.log('[TerminalPanel] Restoring', restoredContent.length, 'chars of scrollback');
-            } else if (Array.isArray(terminalStateForThisPanel.scrollbackBuffer)) {
-              restoredContent = terminalStateForThisPanel.scrollbackBuffer.join('\n');
-              console.log('[TerminalPanel] Restoring', terminalStateForThisPanel.scrollbackBuffer.length, 'lines of scrollback');
-            } else {
-              restoredContent = '';
+          // Periodically save serialized snapshot so it's available on app quit
+          // (main process can't call SerializeAddon — only the renderer can)
+          const SNAPSHOT_INTERVAL = 30_000; // 30 seconds
+          const snapshotInterval = setInterval(() => {
+            if (serializeAddonRef.current && terminal && !disposed) {
+              try {
+                const serialized = serializeAddonRef.current.serialize();
+                window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
+              } catch {
+                // Serialization can fail if terminal is in a bad state — ignore
+              }
             }
+          }, SNAPSHOT_INTERVAL);
 
-            if (restoredContent) {
-              terminal.write(restoredContent);
+          // Restore scrollback if we have saved state FOR THIS PANEL
+          // Prefer serialized buffer (preserves colors/formatting) over raw scrollback
+          if (terminalStateForThisPanel) {
+            if (terminalStateForThisPanel.serializedBuffer) {
+              console.log('[TerminalPanel] Restoring serialized snapshot for panel', panel.id);
+              terminal.write(terminalStateForThisPanel.serializedBuffer);
+            } else if (terminalStateForThisPanel.scrollbackBuffer) {
+              // Fallback: raw scrollback (loses formatting)
+              let restoredContent: string;
+              if (typeof terminalStateForThisPanel.scrollbackBuffer === 'string') {
+                restoredContent = terminalStateForThisPanel.scrollbackBuffer;
+                console.log('[TerminalPanel] Restoring', restoredContent.length, 'chars of scrollback (raw)');
+              } else if (Array.isArray(terminalStateForThisPanel.scrollbackBuffer)) {
+                restoredContent = terminalStateForThisPanel.scrollbackBuffer.join('\n');
+                console.log('[TerminalPanel] Restoring', terminalStateForThisPanel.scrollbackBuffer.length, 'lines of scrollback (raw)');
+              } else {
+                restoredContent = '';
+              }
+              if (restoredContent) {
+                terminal.write(restoredContent);
+              }
             }
           }
 
@@ -565,6 +626,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           return () => {
             disposed = true;
             clearInterval(heartbeatInterval);
+            clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
             resizeObserver.disconnect();
@@ -601,6 +663,22 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       if (webLinksAddonRef.current) {
         try { webLinksAddonRef.current.dispose(); } catch { /* ignore */ }
         webLinksAddonRef.current = null;
+      }
+
+      // Save serialized terminal snapshot before disposing
+      if (serializeAddonRef.current && xtermRef.current) {
+        try {
+          const serialized = serializeAddonRef.current.serialize();
+          window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
+        } catch (e) {
+          console.warn('[TerminalPanel] Failed to save serialized snapshot:', e);
+        }
+      }
+
+      // Dispose SerializeAddon
+      if (serializeAddonRef.current) {
+        try { serializeAddonRef.current.dispose(); } catch { /* ignore */ }
+        serializeAddonRef.current = null;
       }
 
       // Dispose XTerm instance only on final unmount
@@ -703,30 +781,39 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Always render the terminal div to keep XTerm instance alive
   return (
-    <div className="h-full w-full relative group/terminal" onMouseMove={onMouseMove}>
+    <div className="h-full w-full relative group/terminal" onMouseMove={onMouseMove} onKeyDown={handleTerminalKeyDown}>
       <div ref={terminalRef} className="h-full w-full" />
 
-      {/* Terminal action buttons — revealed on parent hover via group */}
+      {/* Terminal search overlay */}
+      <TerminalSearchOverlay
+        isOpen={isSearchOpen}
+        searchQuery={searchQuery}
+        searchStatus={searchStatus}
+        searchInputRef={searchInputRef}
+        onQueryChange={onQueryChange}
+        onStep={onStep}
+        onClose={closeSearch}
+      />
+
+      {/* Terminal scroll buttons — compact, revealed on hover */}
       {isInitialized && (
-        <div className="absolute top-2 right-2 z-50 flex items-center gap-1 opacity-0 pointer-events-none group-hover/terminal:opacity-100 group-hover/terminal:pointer-events-auto focus-within:opacity-100 focus-within:pointer-events-auto transition-opacity">
+        <div className="absolute -top-0.5 right-2 z-30 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover/terminal:opacity-100 group-hover/terminal:pointer-events-auto transition-opacity">
           <button
             onClick={() => xtermRef.current?.scrollToTop()}
-            className="p-1.5 rounded-full border border-border-primary/40 bg-surface-secondary/80 hover:bg-surface-tertiary text-text-tertiary hover:text-text-primary transition-colors"
+            className="p-0.5 rounded bg-surface-secondary/60 hover:bg-surface-tertiary/80 text-text-tertiary hover:text-text-secondary transition-colors"
             title="Scroll to top"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 5.5L7 2L11 5.5" />
-              <line x1="7" y1="2.5" x2="7" y2="12" />
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 7L6 4L9 7" />
             </svg>
           </button>
           <button
             onClick={() => xtermRef.current?.scrollToBottom()}
-            className="p-1.5 rounded-full border border-border-primary/40 bg-surface-secondary/80 hover:bg-surface-tertiary text-text-tertiary hover:text-text-primary transition-colors"
+            className="p-0.5 rounded bg-surface-secondary/60 hover:bg-surface-tertiary/80 text-text-tertiary hover:text-text-secondary transition-colors"
             title="Scroll to bottom"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 8.5L7 12L11 8.5" />
-              <line x1="7" y1="11.5" x2="7" y2="2" />
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 5L6 8L9 5" />
             </svg>
           </button>
         </div>

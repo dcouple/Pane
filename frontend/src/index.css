@@ -164,6 +164,25 @@ body.light {
   background-color: transparent !important;
 }
 
+/* xterm v6 custom scrollbar — thin, matches app scrollbars */
+.xterm .xterm-scrollable-element > .scrollbar {
+  width: 4px !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar > .scra,
+.xterm .xterm-scrollable-element > .scrollbar > .scra * {
+  width: 4px !important;
+  left: 0 !important;
+  background: var(--color-scrollbar-thumb) !important;
+  border-radius: 9999px !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar > .scra:hover,
+.xterm .xterm-scrollable-element > .scrollbar > .scra:hover * {
+  background: var(--color-scrollbar-thumb-hover) !important;
+}
+.xterm .xterm-scrollable-element > .shadow {
+  display: none !important;
+}
+
 /* Ensure terminal text uses our color tokens */
 .xterm .xterm-screen canvas {
   image-rendering: crisp-edges;

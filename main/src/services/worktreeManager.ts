@@ -6,6 +6,7 @@ import type { AnalyticsManager } from './analyticsManager';
 import { PathResolver } from '../utils/pathResolver';
 import { CommandRunner } from '../utils/commandRunner';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
+import { worktreePoolManager } from './worktreePoolManager';
 
 // Interface for raw commit data
 interface RawCommitData {
@@ -270,7 +271,37 @@ export class WorktreeManager {
     commandRunner: CommandRunner
   ): Promise<{ worktreePath: string; baseCommit: string | undefined; baseBranch: string | undefined }> {
     if (useWorktree) {
+      // Try claiming a pre-created reserve worktree for instant creation
+      try {
+        const branchName = worktreeName; // worktreeName is used as both dir name and branch name
+        const effectiveBase = baseBranch || 'HEAD';
+        const claimed = await worktreePoolManager.claimReserve(
+          projectPath,
+          effectiveBase,
+          worktreeName,
+          branchName,
+          worktreeFolder,
+          pathResolver,
+          commandRunner
+        );
+        if (claimed) {
+          // Detect base commit from the claimed worktree
+          const { baseBranch: detectedBranch, baseCommit } = await detectGitBase(claimed.worktreePath, commandRunner);
+          return { worktreePath: claimed.worktreePath, baseCommit, baseBranch: detectedBranch || baseBranch };
+        }
+      } catch (error) {
+        console.warn('[WorktreeManager] Pool claim failed, falling back to fresh worktree:', error);
+      }
+
+      // Fall back to standard worktree creation
       const result = await this.createWorktree(projectPath, worktreeName, undefined, baseBranch, worktreeFolder, pathResolver, commandRunner);
+
+      // Trigger background replenishment after successful creation
+      const effectiveBase = baseBranch || 'HEAD';
+      worktreePoolManager.createReserve(projectPath, effectiveBase, worktreeFolder, pathResolver, commandRunner).catch(err => {
+        console.warn('[WorktreeManager] Background reserve creation failed:', err);
+      });
+
       return result;
     }
 
@@ -1081,6 +1112,38 @@ Co-Authored-By: Pane <runpane@users.noreply.github.com>` : commitMessage;
     } catch {
       return false;
     }
+  }
+
+  async gitSoftReset(worktreePath: string, mainBranch: string, commandRunner: CommandRunner): Promise<{ output: string; previousCommitMessage: string }> {
+    // Live safety check — count commits ahead of main branch
+    const { stdout: aheadOutput } = await commandRunner.execAsync(
+      `git log --oneline HEAD ^${escapeShellArg(mainBranch)}`,
+      worktreePath,
+      { timeout: 30000 }
+    );
+    const aheadCount = aheadOutput.trim().split('\n').filter(Boolean).length;
+    if (aheadCount === 0) {
+      throw new Error('No commits to undo — already at base branch');
+    }
+
+    // Capture current HEAD commit message before resetting
+    const { stdout: commitMessage } = await commandRunner.execAsync(
+      'git log -1 --pretty=%B',
+      worktreePath,
+      { timeout: 10000 }
+    );
+
+    // Perform soft reset
+    const { stdout: output } = await commandRunner.execAsync(
+      'git reset --soft HEAD~1',
+      worktreePath,
+      { timeout: 30000 }
+    );
+
+    return {
+      output: output.trim(),
+      previousCommitMessage: commitMessage.trim()
+    };
   }
 
   async setUpstream(worktreePath: string, remoteBranch: string, commandRunner: CommandRunner): Promise<{ output: string }> {

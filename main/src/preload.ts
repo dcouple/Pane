@@ -293,6 +293,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     gitFetch: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-fetch', sessionId),
     gitStash: (sessionId: string, message?: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stash', sessionId, message),
     gitStashPop: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stash-pop', sessionId),
+    gitSoftReset: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-soft-reset', sessionId),
     gitStageAndCommit: (sessionId: string, message: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stage-and-commit', sessionId, message),
     hasStash: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:has-stash', sessionId),
     setUpstream: (sessionId: string, remoteBranch: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:set-upstream', sessionId, remoteBranch),

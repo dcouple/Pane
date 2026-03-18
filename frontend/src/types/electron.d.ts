@@ -116,6 +116,7 @@ interface ElectronAPI {
     gitFetch: (sessionId: string) => Promise<IPCResponse>;
     gitStash: (sessionId: string, message?: string) => Promise<IPCResponse>;
     gitStashPop: (sessionId: string) => Promise<IPCResponse>;
+    gitSoftReset: (sessionId: string) => Promise<IPCResponse>;
     gitStageAndCommit: (sessionId: string, message: string) => Promise<IPCResponse>;
     hasStash: (sessionId: string) => Promise<IPCResponse>;
     setUpstream: (sessionId: string, remoteBranch: string) => Promise<IPCResponse>;

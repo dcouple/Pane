@@ -389,6 +389,16 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     return terminalPanelManager.saveTerminalState(panelId);
   });
 
+  ipcMain.handle('terminal:saveSnapshot', async (_event, panelId: string, serializedData: string) => {
+    try {
+      terminalPanelManager.saveSerializedSnapshot(panelId, serializedData);
+      return { success: true };
+    } catch (error) {
+      console.error('[terminal:saveSnapshot] Failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  });
+
   ipcMain.handle('terminal:ack', async (_, panelId: string, bytesConsumed: number) => {
     terminalPanelManager.acknowledgeBytes(panelId, bytesConsumed);
   });

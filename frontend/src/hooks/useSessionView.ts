@@ -693,6 +693,15 @@ export const useSessionView = (
   });
 
   useHotkey({
+    id: 'git-soft-reset',
+    label: 'Git: Undo Last Commit',
+    keys: 'mod+shift+z',
+    category: 'session',
+    action: () => handleGitSoftReset(),
+    enabled: () => !!activeSession && !isMerging && !isSessionBusy && !activeSession.isMainRepo && (activeSession.gitStatus?.ahead ?? 0) > 0,
+  });
+
+  useHotkey({
     id: 'git-pull',
     label: 'Git: Pull',
     keys: 'mod+shift+l',
@@ -918,6 +927,20 @@ export const useSessionView = (
         setMergeError(error instanceof Error ? error.message : 'Failed to push to remote');
     } finally {
         setIsMerging(false);
+    }
+  };
+
+  const handleGitSoftReset = async () => {
+    if (!activeSession) return;
+    setIsMerging(true);
+    setMergeError(null);
+    try {
+      const response = await API.sessions.gitSoftReset(activeSession.id);
+      if (!response.success) setMergeError(response.error || 'Failed to undo commit');
+    } catch (error) {
+      setMergeError(error instanceof Error ? error.message : 'Failed to undo commit');
+    } finally {
+      setIsMerging(false);
     }
   };
 
@@ -1505,6 +1528,7 @@ export const useSessionView = (
     handleStopSession,
     handleGitPull,
     handleGitPush,
+    handleGitSoftReset,
     handleGitFetch,
     handleGitStash,
     handleGitStashPop,
