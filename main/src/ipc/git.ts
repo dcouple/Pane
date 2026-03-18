@@ -10,6 +10,7 @@ import type { Session } from '../types/session';
 import type { GitCommit, GitGraphCommit } from '../services/gitDiffManager';
 import { CommandRunner } from '../utils/commandRunner';
 import { getShellPath } from '../utils/shellPath';
+import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
 
 // Extended type for git system virtual panels
 type SystemPanelType = ToolPanelType | 'git';
@@ -1974,24 +1975,44 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
 
     const repoName = extractRepoName(url);
-    const clonePath = join(destDir, repoName);
 
-    if (existsSync(clonePath)) {
+    // Detect WSL path (e.g. \\wsl$\Ubuntu\home\user) and configure accordingly
+    const wslInfo = parseWSLPath(destDir);
+    let actualDestDir = destDir;
+    let wslEnabled = false;
+    let wslDistribution: string | null = null;
+
+    if (wslInfo) {
+      const wslError = validateWSLAvailable(wslInfo.distro);
+      if (wslError) {
+        return { success: false, error: wslError };
+      }
+      wslEnabled = true;
+      wslDistribution = wslInfo.distro;
+      actualDestDir = wslInfo.linuxPath;
+    }
+
+    const clonePath = wslEnabled ? `${actualDestDir}/${repoName}` : join(destDir, repoName);
+    const fsCheckPath = wslEnabled ? join(destDir, repoName) : clonePath;
+
+    if (existsSync(fsCheckPath)) {
       return { success: false, error: `Directory "${repoName}" already exists in the destination folder` };
     }
 
     try {
-      // Escape single quotes in path for safe shell interpolation
-      const escapedUrl = url.replace(/'/g, "'\\''");
-      const escapedPath = clonePath.replace(/'/g, "'\\''");
-      const commandRunner = new CommandRunner({ path: destDir, wsl_enabled: false, wsl_distribution: null });
+      // Use double quotes for cross-platform compatibility (single quotes break on Windows cmd.exe)
+      const escapedUrl = url.replace(/"/g, '\\"');
+      const escapedPath = clonePath.replace(/"/g, '\\"');
+      const commandRunner = new CommandRunner({ path: actualDestDir, wsl_enabled: wslEnabled, wsl_distribution: wslDistribution });
       await commandRunner.execAsync(
-        `git clone '${escapedUrl}' '${escapedPath}'`,
-        destDir,
+        `git clone "${escapedUrl}" "${escapedPath}"`,
+        actualDestDir,
         { timeout: 300000, env: { ...process.env, PATH: getShellPath() } as Record<string, string> }
       );
 
-      return { success: true, data: { clonedPath: clonePath, repoName } };
+      // Return the original (non-WSL-translated) path so the frontend can use it directly
+      const returnPath = wslEnabled ? join(destDir, repoName) : clonePath;
+      return { success: true, data: { clonedPath: returnPath, repoName } };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
 
