@@ -16,7 +16,6 @@ import { TerminalLinkTooltip } from '../terminal/TerminalLinkTooltip';
 import { TerminalPopover, PopoverButton } from '../terminal/TerminalPopover';
 import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
-import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import '@xterm/xterm/css/xterm.css';
 
 // Type for terminal state restoration
@@ -75,16 +74,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   });
 
   // Terminal search hook
-  const {
-    isSearchOpen,
-    searchQuery,
-    searchStatus,
-    searchInputRef,
-    openSearch,
-    closeSearch,
-    onQueryChange,
-    onStep,
-  } = useTerminalSearch(xtermRef);
+  const { openSearch } = useTerminalSearch(xtermRef);
 
   // Open search on Ctrl/Cmd+F from the container div
   const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
