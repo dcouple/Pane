@@ -631,6 +631,9 @@ export const SessionView = memo(() => {
 
   useEffect(() => {
     setImmersiveMode(isImmersivePanel);
+    return () => {
+      setImmersiveMode(false);
+    };
   }, [isImmersivePanel, setImmersiveMode]);
 
   // Auto-create terminal panel for existing sessions that don't have one
@@ -732,7 +735,13 @@ export const SessionView = memo(() => {
     keys: 'mod+shift+b',
     category: 'view',
     enabled: () => isInSessionView,
-    action: () => setDetailVisible(v => !v),
+    action: () => {
+      if (layoutSwapped) {
+        toggleDetailCollapse();
+      } else {
+        setDetailVisible(v => !v);
+      }
+    },
   });
 
   // Create branch actions for the panel bar

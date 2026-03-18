@@ -369,18 +369,14 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         let additions = 0;
         let deletions = 0;
         try {
-          const shortstat = ctx.commandRunner.exec('git diff --shortstat', session.worktreePath).trim();
-          // Also include staged changes
-          const stagedStat = ctx.commandRunner.exec('git diff --cached --shortstat', session.worktreePath).trim();
-          for (const stat of [shortstat, stagedStat]) {
-            if (stat) {
-              const fileMatch = stat.match(/(\d+) files? changed/);
-              const addMatch = stat.match(/(\d+) insertions?\(\+\)/);
-              const delMatch = stat.match(/(\d+) deletions?\(-\)/);
-              filesChanged += fileMatch ? parseInt(fileMatch[1]) : 0;
-              additions += addMatch ? parseInt(addMatch[1]) : 0;
-              deletions += delMatch ? parseInt(delMatch[1]) : 0;
-            }
+          const combinedStat = ctx.commandRunner.exec('git diff HEAD --shortstat', session.worktreePath).trim();
+          if (combinedStat) {
+            const fileMatch = combinedStat.match(/(\d+) files? changed/);
+            const addMatch = combinedStat.match(/(\d+) insertions?\(\+\)/);
+            const delMatch = combinedStat.match(/(\d+) deletions?\(-\)/);
+            filesChanged = fileMatch ? parseInt(fileMatch[1]) : 0;
+            additions = addMatch ? parseInt(addMatch[1]) : 0;
+            deletions = delMatch ? parseInt(delMatch[1]) : 0;
           }
         } catch {
           // Ignore stat errors — still show the entry without stats
