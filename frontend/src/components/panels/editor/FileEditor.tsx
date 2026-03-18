@@ -876,6 +876,13 @@ export function FileEditor({
         setLoading(false);
         onFileChange?.(file.path, false);
         onStateChange?.({ filePath: file.path });
+
+        // Check git status for binary files too
+        window.electronAPI.invoke('git:file-status', sessionId, file.path).then((statusResult: { success: boolean; data?: { status: 'clean' | 'modified' | 'untracked' } }) => {
+          if (statusResult.success && statusResult.data) {
+            setGitStatus(statusResult.data.status);
+          }
+        });
         return;
       }
 
@@ -1255,7 +1262,7 @@ export function FileEditor({
                     className="min-h-full"
                   />
                 </div>
-              ) : isBinaryPreview && !binaryBlobUrl ? (
+              ) : isBinaryPreview && !binaryBlobUrl && !error ? (
                 <div className="flex items-center justify-center h-full bg-surface-primary">
                   <div className="animate-pulse flex flex-col items-center gap-3">
                     <div className="w-48 h-48 bg-surface-tertiary rounded" />

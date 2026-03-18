@@ -223,8 +223,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           if (ctrlOrMeta && e.key.toLowerCase() === 'b') return false;
           // Ctrl/Cmd+Shift+digit: panel tab switching (use e.code for layout independence)
           if (ctrlOrMeta && e.shiftKey && /^Digit[1-9]$/.test(e.code)) return false;
-          // Ctrl/Cmd+Alt+digit: add tool shortcuts
-          if (ctrlOrMeta && e.altKey && /^Digit[1-9]$/.test(e.code)) return false;
+          // Ctrl/Cmd+Alt+digit: add tool shortcuts (skip AltGr — used for @/€ etc. on EU layouts)
+          if (ctrlOrMeta && e.altKey && !e.getModifierState('AltGraph') && /^Digit[1-9]$/.test(e.code)) return false;
           // Ctrl/Cmd+`: toggle bottom terminal
           if (ctrlOrMeta && e.key === '`') return false;
           // Ctrl/Cmd+,: open settings

@@ -159,7 +159,7 @@ function CollapsedSessionTooltip({ session }: { session: Session }) {
               </p>
             )}
             {gs.prBody && (
-              <div className="text-[10px] text-text-tertiary break-words leading-snug pl-[18px] line-clamp-[32] prose prose-xs prose-invert max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5">
+              <div className="text-[10px] text-text-tertiary break-words leading-snug pl-[18px] line-clamp-[32] prose prose-xs prose-invert max-w-none overflow-hidden [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_code]:break-all [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5 [&_pre]:whitespace-pre-wrap [&_pre]:overflow-hidden">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{gs.prBody}</ReactMarkdown>
               </div>
             )}
