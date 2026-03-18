@@ -69,9 +69,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
         setPanels(mainRepoSessionId, loadedPanels);
 
-        // Pick default active: prefer explorer, then diff, then first panel
-        const fallback = loadedPanels.find(p => p.type === 'explorer')
-          || loadedPanels.find(p => p.type === 'diff')
+        // Pick default active: prefer diff, then explorer, then first panel
+        const fallback = loadedPanels.find(p => p.type === 'diff')
+          || loadedPanels.find(p => p.type === 'explorer')
           || loadedPanels[0];
 
         const activePanel = await panelApi.getActivePanel(mainRepoSessionId);

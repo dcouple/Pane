@@ -414,11 +414,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     }
   };
 
-  // Sort panels: explorer first, diff second, then by position
+  // Sort panels: diff first, explorer second, then by position
   const sortedPanels = useMemo(() => {
     const typeOrder = (type: string) => {
-      if (type === 'explorer') return 0;
-      if (type === 'diff') return 1;
+      if (type === 'diff') return 0;
+      if (type === 'explorer') return 1;
       return 2;
     };
     return [...panels].sort((a, b) => {

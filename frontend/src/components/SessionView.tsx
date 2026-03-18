@@ -90,9 +90,9 @@ export const SessionView = memo(() => {
         devLog.debug('[SessionView] Loaded panels:', loadedPanels);
         setPanels(activeSession.id, loadedPanels);
 
-        // Pick default active: prefer explorer, then diff, then first panel
-        const fallback = loadedPanels.find(p => p.type === 'explorer')
-          || loadedPanels.find(p => p.type === 'diff')
+        // Pick default active: prefer diff, then explorer, then first panel
+        const fallback = loadedPanels.find(p => p.type === 'diff')
+          || loadedPanels.find(p => p.type === 'explorer')
           || loadedPanels[0];
 
         return panelApi.getActivePanel(activeSession.id).then(activePanel => {
@@ -172,11 +172,11 @@ export const SessionView = memo(() => {
     [sessionPanels, defaultTerminalPanel]
   );
 
-  // Sort tab bar panels same as PanelTabBar: explorer first, diff second, then by position
+  // Sort tab bar panels same as PanelTabBar: diff first, explorer second, then by position
   const sortedSessionPanels = useMemo(() => {
     const typeOrder = (type: string) => {
-      if (type === 'explorer') return 0;
-      if (type === 'diff') return 1;
+      if (type === 'diff') return 0;
+      if (type === 'explorer') return 1;
       return 2;
     };
     return [...tabBarPanels].sort((a, b) => {
@@ -254,22 +254,22 @@ export const SessionView = memo(() => {
     showInPalette: true,
   });
 
-  // Ctrl+Alt+1 through Ctrl+Alt+9 to switch between panel tabs
+  // Mod+Shift+1 through Mod+Shift+9 to switch between panel tabs
   const panelLabel = (i: number) => {
     const p = sortedSessionPanels[i];
     if (!p) return `Switch to tab ${i + 1}`;
     const name = p.type === 'diff' ? 'Diff' : p.title;
     return `Switch to ${name}`;
   };
-  useHotkey({ id: 'panel-tab-1', label: panelLabel(0), keys: 'mod+alt+1', category: 'tabs', enabled: () => !!sortedSessionPanels[0], action: () => { const p = sortedSessionPanels[0]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-2', label: panelLabel(1), keys: 'mod+alt+2', category: 'tabs', enabled: () => !!sortedSessionPanels[1], action: () => { const p = sortedSessionPanels[1]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-3', label: panelLabel(2), keys: 'mod+alt+3', category: 'tabs', enabled: () => !!sortedSessionPanels[2], action: () => { const p = sortedSessionPanels[2]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-4', label: panelLabel(3), keys: 'mod+alt+4', category: 'tabs', enabled: () => !!sortedSessionPanels[3], action: () => { const p = sortedSessionPanels[3]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-5', label: panelLabel(4), keys: 'mod+alt+5', category: 'tabs', enabled: () => !!sortedSessionPanels[4], action: () => { const p = sortedSessionPanels[4]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-6', label: panelLabel(5), keys: 'mod+alt+6', category: 'tabs', enabled: () => !!sortedSessionPanels[5], action: () => { const p = sortedSessionPanels[5]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-7', label: panelLabel(6), keys: 'mod+alt+7', category: 'tabs', enabled: () => !!sortedSessionPanels[6], action: () => { const p = sortedSessionPanels[6]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-8', label: panelLabel(7), keys: 'mod+alt+8', category: 'tabs', enabled: () => !!sortedSessionPanels[7], action: () => { const p = sortedSessionPanels[7]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-9', label: panelLabel(8), keys: 'mod+alt+9', category: 'tabs', enabled: () => !!sortedSessionPanels[8], action: () => { const p = sortedSessionPanels[8]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-1', label: panelLabel(0), keys: 'mod+shift+1', category: 'tabs', enabled: () => !!sortedSessionPanels[0], action: () => { const p = sortedSessionPanels[0]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-2', label: panelLabel(1), keys: 'mod+shift+2', category: 'tabs', enabled: () => !!sortedSessionPanels[1], action: () => { const p = sortedSessionPanels[1]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-3', label: panelLabel(2), keys: 'mod+shift+3', category: 'tabs', enabled: () => !!sortedSessionPanels[2], action: () => { const p = sortedSessionPanels[2]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-4', label: panelLabel(3), keys: 'mod+shift+4', category: 'tabs', enabled: () => !!sortedSessionPanels[3], action: () => { const p = sortedSessionPanels[3]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-5', label: panelLabel(4), keys: 'mod+shift+5', category: 'tabs', enabled: () => !!sortedSessionPanels[4], action: () => { const p = sortedSessionPanels[4]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-6', label: panelLabel(5), keys: 'mod+shift+6', category: 'tabs', enabled: () => !!sortedSessionPanels[5], action: () => { const p = sortedSessionPanels[5]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-7', label: panelLabel(6), keys: 'mod+shift+7', category: 'tabs', enabled: () => !!sortedSessionPanels[6], action: () => { const p = sortedSessionPanels[6]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-8', label: panelLabel(7), keys: 'mod+shift+8', category: 'tabs', enabled: () => !!sortedSessionPanels[7], action: () => { const p = sortedSessionPanels[7]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-9', label: panelLabel(8), keys: 'mod+shift+9', category: 'tabs', enabled: () => !!sortedSessionPanels[8], action: () => { const p = sortedSessionPanels[8]; if (p) handlePanelSelect(p); } });
 
   // --- Add Tool commands (palette-only, no keybindings) ---
   // Only enabled in session view (not project view) to prevent hidden panel mutations
@@ -278,7 +278,7 @@ export const SessionView = memo(() => {
   useHotkey({
     id: 'add-tool-terminal',
     label: 'Add Terminal',
-    keys: 'mod+shift+1',
+    keys: 'mod+alt+1',
     category: 'tools',
     enabled: () => isInSessionView,
     action: () => handlePanelCreate('terminal'),
@@ -287,7 +287,7 @@ export const SessionView = memo(() => {
   useHotkey({
     id: 'add-tool-explorer',
     label: 'Add Explorer',
-    keys: 'mod+shift+2',
+    keys: 'mod+alt+2',
     category: 'tools',
     enabled: () => isInSessionView && !sessionPanels.some(p => p.type === 'explorer'),
     action: () => handlePanelCreate('explorer'),
@@ -296,7 +296,7 @@ export const SessionView = memo(() => {
   useHotkey({
     id: 'add-tool-terminal-claude',
     label: 'Add Claude Code',
-    keys: 'mod+shift+3',
+    keys: 'mod+alt+3',
     category: 'tools',
     enabled: () => isInSessionView,
     action: () => handlePanelCreate('terminal', {
@@ -308,7 +308,7 @@ export const SessionView = memo(() => {
   useHotkey({
     id: 'add-tool-terminal-codex',
     label: 'Add Codex',
-    keys: 'mod+shift+4',
+    keys: 'mod+alt+4',
     category: 'tools',
     enabled: () => isInSessionView,
     action: () => handlePanelCreate('terminal', {
@@ -411,8 +411,8 @@ export const SessionView = memo(() => {
   isInSessionViewRef.current = isInSessionView;
 
   useEffect(() => {
-    const CUSTOM_CMD_START = 5; // mod+shift+1-4 are taken by built-in tools
-    const maxSlots = Math.min(customCommands.length, 5); // mod+shift+5 through 9
+    const CUSTOM_CMD_START = 5; // mod+alt+1-4 are taken by built-in tools
+    const maxSlots = Math.min(customCommands.length, 5); // mod+alt+5 through 9
     const ids: string[] = [];
 
     for (let i = 0; i < maxSlots; i++) {
@@ -422,7 +422,7 @@ export const SessionView = memo(() => {
       registerHotkey({
         id,
         label: `Add ${cmd.name}`,
-        keys: `mod+shift+${CUSTOM_CMD_START + i}`,
+        keys: `mod+alt+${CUSTOM_CMD_START + i}`,
         category: 'tools',
         enabled: () => isInSessionViewRef.current,
         action: () => handlePanelCreateRef.current('terminal', {
@@ -1053,6 +1053,7 @@ export const SessionView = memo(() => {
                     className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
                     onMouseDown={startRightTerminalResize}
                   >
+                    <div className="absolute inset-0 bg-border-secondary group-hover:bg-interactive transition-colors" />
                     <div className="absolute -left-2 right-0 top-0 bottom-0" />
                   </div>
 

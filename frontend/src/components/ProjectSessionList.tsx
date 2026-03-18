@@ -240,6 +240,23 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectIds]);
 
+  // Auto-expand the project that contains the active session
+  // (e.g., when a new session is created and auto-activated)
+  useEffect(() => {
+    if (!activeSessionId) return;
+    const currentSessions = useSessionStore.getState().sessions;
+    const session = currentSessions.find(s => s.id === activeSessionId);
+    if (!session?.projectId) return;
+    if (!expandedProjects.has(session.projectId)) {
+      setExpandedProjects(prev => {
+        const next = new Set(prev);
+        next.add(session.projectId!);
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
+
   const toggleProject = (id: number) => {
     setExpandedProjects(prev => {
       const next = new Set(prev);

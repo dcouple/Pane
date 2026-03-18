@@ -111,6 +111,41 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
     }
   });
 
+  // Read a file as binary (base64-encoded) — used for image/PDF preview
+  ipcMain.handle('file:read-binary', async (_, request: FileReadRequest) => {
+    try {
+      const session = sessionManager.getSession(request.sessionId);
+      if (!session) {
+        throw new Error(`Session not found: ${request.sessionId}`);
+      }
+
+      const ctx = sessionManager.getProjectContext(request.sessionId);
+      if (!ctx) throw new Error('Project not found for session');
+      const { pathResolver } = ctx;
+
+      const normalizedPath = path.normalize(request.filePath);
+      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
+        throw new Error('Invalid file path');
+      }
+
+      const basePath = pathResolver.toFileSystem(session.worktreePath);
+      const fullPath = path.join(basePath, normalizedPath);
+
+      if (!await pathResolver.isWithin(basePath, fullPath)) {
+        throw new Error('File path is outside worktree');
+      }
+
+      const buffer = await fs.readFile(fullPath);
+      return { success: true, contentBase64: buffer.toString('base64') };
+    } catch (error) {
+      console.error('Error reading binary file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
   // Check if a file exists in a session's worktree
   ipcMain.handle('file:exists', async (_, request: FilePathRequest) => {
     try {

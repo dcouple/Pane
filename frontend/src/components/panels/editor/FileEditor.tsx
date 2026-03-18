@@ -26,6 +26,8 @@ interface FileItem {
 
 const ROOT_ID = '\0root';
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp']);
+const PDF_EXTENSIONS = new Set(['pdf']);
 
 interface HeadlessFileTreeProps {
   sessionId: string;
@@ -769,8 +771,18 @@ export function FileEditor({
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit');
   const [gitStatus, setGitStatus] = useState<'clean' | 'modified' | 'untracked'>('clean');
+  const [binaryBlobUrl, setBinaryBlobUrl] = useState<string | null>(null);
+  const binaryBlobUrlRef = useRef<string | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
+
+  // Keep ref in sync and clean up blob URLs to prevent memory leaks
+  useEffect(() => {
+    binaryBlobUrlRef.current = binaryBlobUrl;
+    return () => {
+      if (binaryBlobUrl) URL.revokeObjectURL(binaryBlobUrl);
+    };
+  }, [binaryBlobUrl]);
 
   const { theme } = useTheme();
   const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
@@ -807,6 +819,20 @@ export function FileEditor({
     return ext === 'ipynb';
   }, [selectedFile]);
 
+  const isImageFile = useMemo(() => {
+    if (!selectedFile) return false;
+    const ext = selectedFile.path.split('.').pop()?.toLowerCase() || '';
+    return IMAGE_EXTENSIONS.has(ext);
+  }, [selectedFile]);
+
+  const isPdfFile = useMemo(() => {
+    if (!selectedFile) return false;
+    const ext = selectedFile.path.split('.').pop()?.toLowerCase() || '';
+    return PDF_EXTENSIONS.has(ext);
+  }, [selectedFile]);
+
+  const isBinaryPreview = isImageFile || isPdfFile;
+
   const loadFile = useCallback(async (file: FileItem | null) => {
     if (!file || file.isDirectory) return;
 
@@ -814,12 +840,59 @@ export function FileEditor({
     setError(null);
     setGitStatus('clean');
     try {
+      // Binary file detection — render as image/PDF preview instead of Monaco
+      const ext = file.path.split('.').pop()?.toLowerCase() || '';
+      const isImage = IMAGE_EXTENSIONS.has(ext);
+      const isPdf = PDF_EXTENSIONS.has(ext);
+
+      if (isImage || isPdf) {
+        const result = await window.electronAPI.invoke('file:read-binary', {
+          sessionId,
+          filePath: file.path,
+        });
+        if (result.success && result.contentBase64) {
+          // Revoke previous blob URL via ref (avoids stale closure from useCallback)
+          if (binaryBlobUrlRef.current) URL.revokeObjectURL(binaryBlobUrlRef.current);
+
+          const mimeType = isImage
+            ? `image/${ext === 'jpg' ? 'jpeg' : ext === 'ico' ? 'x-icon' : ext}`
+            : 'application/pdf';
+          const byteChars = atob(result.contentBase64);
+          const byteArray = new Uint8Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) {
+            byteArray[i] = byteChars.charCodeAt(i);
+          }
+          const blob = new Blob([byteArray], { type: mimeType });
+          setBinaryBlobUrl(URL.createObjectURL(blob));
+          setFileContent('');
+          setOriginalContent('');
+        } else {
+          // Binary read failed — show error instead of blank/stale preview
+          setBinaryBlobUrl(null);
+          setError(result.error || 'Failed to load binary file');
+        }
+        setSelectedFile(file);
+        setViewMode('edit');
+        setLoading(false);
+        onFileChange?.(file.path, false);
+        onStateChange?.({ filePath: file.path });
+
+        // Check git status for binary files too
+        window.electronAPI.invoke('git:file-status', sessionId, file.path).then((statusResult: { success: boolean; data?: { status: 'clean' | 'modified' | 'untracked' } }) => {
+          if (statusResult.success && statusResult.data) {
+            setGitStatus(statusResult.data.status);
+          }
+        });
+        return;
+      }
+
       const result = await window.electronAPI.invoke('file:read', {
         sessionId,
         filePath: file.path
       });
-      
+
       if (result.success) {
+        setBinaryBlobUrl(null);
         setFileContent(result.content);
         setOriginalContent(result.content);
         setSelectedFile(file);
@@ -884,7 +957,7 @@ export function FileEditor({
     } finally {
       setLoading(false);
     }
-  }, [sessionId, onFileChange, onStateChange, initialState]);
+  }, [sessionId, onFileChange, onStateChange, initialState, binaryBlobUrlRef]);
 
 
   const handleEditorMount = (editor: monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof monaco) => {
@@ -1123,7 +1196,7 @@ export function FileEditor({
               </div>
               <div className="flex items-center gap-2">
                 {/* Preview Toggle for Markdown/Notebook Files */}
-                {(isMarkdownFile || isNotebookFile) && (
+                {!isBinaryPreview && (isMarkdownFile || isNotebookFile) && (
                   <div className="flex items-center rounded-lg border border-border-primary bg-surface-tertiary">
                     <button
                       onClick={() => setViewMode('edit')}
@@ -1151,19 +1224,21 @@ export function FileEditor({
                     </button>
                   </div>
                 )}
-                <div className="flex items-center gap-2 text-sm">
-                  {hasUnsavedChanges ? (
-                    <>
-                      <div className="w-2 h-2 bg-status-warning rounded-full animate-pulse" />
-                      <span className="text-status-warning">Auto-saving...</span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-2 h-2 bg-status-success rounded-full" />
-                      <span className="text-status-success">All changes saved</span>
-                    </>
-                  )}
-                </div>
+                {!isBinaryPreview && (
+                  <div className="flex items-center gap-2 text-sm">
+                    {hasUnsavedChanges ? (
+                      <>
+                        <div className="w-2 h-2 bg-status-warning rounded-full animate-pulse" />
+                        <span className="text-status-warning">Auto-saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-2 h-2 bg-status-success rounded-full" />
+                        <span className="text-status-success">All changes saved</span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             {error && (
@@ -1187,6 +1262,31 @@ export function FileEditor({
                     className="min-h-full"
                   />
                 </div>
+              ) : isBinaryPreview && !binaryBlobUrl && !error ? (
+                <div className="flex items-center justify-center h-full bg-surface-primary">
+                  <div className="animate-pulse flex flex-col items-center gap-3">
+                    <div className="w-48 h-48 bg-surface-tertiary rounded" />
+                    <div className="w-32 h-3 bg-surface-tertiary rounded" />
+                  </div>
+                </div>
+              ) : isImageFile && binaryBlobUrl ? (
+                <div className="flex items-center justify-center h-full bg-surface-primary p-4 overflow-auto">
+                  <img
+                    src={binaryBlobUrl}
+                    alt={selectedFile?.path.split('/').pop() || 'Image'}
+                    className="max-w-full max-h-full object-contain rounded"
+                  />
+                </div>
+              ) : isPdfFile && binaryBlobUrl ? (
+                <object
+                  data={binaryBlobUrl}
+                  type="application/pdf"
+                  className="w-full h-full"
+                >
+                  <div className="flex items-center justify-center h-full text-text-secondary">
+                    PDF preview not available.
+                  </div>
+                </object>
               ) : (
                 <MonacoErrorBoundary>
                   <Editor

@@ -159,7 +159,7 @@ function CollapsedSessionTooltip({ session }: { session: Session }) {
               </p>
             )}
             {gs.prBody && (
-              <div className="text-[10px] text-text-tertiary break-words leading-snug pl-[18px] line-clamp-[32] prose prose-xs prose-invert max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5">
+              <div className="text-[10px] text-text-tertiary break-words leading-snug pl-[18px] line-clamp-[32] prose prose-xs prose-invert max-w-none overflow-hidden [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_code]:break-all [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5 [&_pre]:whitespace-pre-wrap [&_pre]:overflow-hidden">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{gs.prBody}</ReactMarkdown>
               </div>
             )}
@@ -180,9 +180,16 @@ interface SidebarProps {
   onResize: (e: React.MouseEvent) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onHelpClick: () => void;
 }
 
-export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse }: SidebarProps) {
+const HelpCircleIcon = ({ className }: { className?: string }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse, onHelpClick }: SidebarProps) {
   const paneLogo = usePaneLogo();
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
@@ -420,8 +427,18 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
           className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
           onMouseDown={onResize}
         >
+          {/* Visual indicator */}
+          <div className="absolute inset-0 bg-border-secondary group-hover:bg-interactive transition-colors" />
           {/* Larger grab area */}
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
+          {/* Drag indicator dots */}
+          <div className="absolute top-1/2 -translate-y-1/2 right-0 transform translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex flex-col gap-1">
+              <div className="w-1 h-1 bg-interactive rounded-full" />
+              <div className="w-1 h-1 bg-interactive rounded-full" />
+              <div className="w-1 h-1 bg-interactive rounded-full" />
+            </div>
+          </div>
         </div>
         <div className="px-3 py-2 border-b border-border-primary flex items-center justify-between overflow-hidden">
           <div className="flex items-center space-x-2 min-w-0">
@@ -449,6 +466,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                 </button>
               }
               items={[
+                {
+                  id: 'help',
+                  label: 'Help',
+                  icon: HelpCircleIcon,
+                  onClick: onHelpClick
+                },
                 {
                   id: 'settings',
                   label: 'Settings',

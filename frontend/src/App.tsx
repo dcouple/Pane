@@ -10,6 +10,7 @@ import { ShortcutHintsOverlay } from './components/ShortcutHintsOverlay';
 import { Sidebar } from './components/Sidebar';
 import { SessionView } from './components/SessionView';
 import Welcome from './components/Welcome';
+import Help from './components/Help';
 import AnalyticsConsentDialog from './components/AnalyticsConsentDialog';
 import OnboardingDialog from './components/OnboardingDialog';
 import { AboutDialog } from './components/AboutDialog';
@@ -77,6 +78,7 @@ function App() {
   const [resumableSessions, setResumableSessions] = useState<ResumableSession[]>([]);
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -528,6 +530,7 @@ function App() {
             onResize={startResize}
             collapsed={sidebarCollapsed}
             onToggleCollapse={toggleSidebarCollapsed}
+            onHelpClick={() => setIsHelpOpen(true)}
           />
         </div>
         <SessionView />
@@ -589,6 +592,7 @@ function App() {
           isOpen={showAddProjectDialog}
           onClose={() => setShowAddProjectDialog(false)}
         />
+        <Help isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
         <ShortcutHintsOverlay isVisible={shortcutHintsVisible} shortcuts={terminalShortcuts} />
 
         {/* Token Test Modal - Toggle with Cmd/Ctrl + Shift + T (Development Only) */}
