@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, Settings as SettingsIcon, Loader2, GitPullRequest, FolderOpen } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, Loader2, GitPullRequest, FolderOpen } from 'lucide-react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useHotkeyStore } from '../stores/hotkeyStore';
@@ -316,9 +316,9 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
           const projectMenuItems: DropdownItem[] = [
             {
-              id: 'settings',
-              label: 'Project Settings',
-              icon: SettingsIcon,
+              id: 'main-workspace',
+              label: 'Open session on main',
+              icon: GitBranch,
               onClick: () => navigateToProject(project.id),
             },
             {
