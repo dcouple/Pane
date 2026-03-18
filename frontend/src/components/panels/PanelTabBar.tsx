@@ -13,7 +13,7 @@ import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { useResourceMonitor } from '../../hooks/useResourceMonitor';
-import { ClaudeIcon, OpenAIIcon } from '../ui/BrandIcons';
+import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS } from '../ui/BrandIcons';
 
 function formatMemory(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -359,11 +359,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     // Check for brand-specific terminal panels by title
     if (type === 'terminal' && panel) {
       const title = panel.title.toLowerCase();
-      if (title.includes('claude')) {
-        return <ClaudeIcon className="w-4 h-4" />;
-      }
-      if (title.includes('codex')) {
-        return <OpenAIIcon className="w-4 h-4" />;
+      for (const [keyword, IconComponent] of Object.entries(CLI_BRAND_ICONS)) {
+        if (title.includes(keyword)) {
+          return <IconComponent className="w-4 h-4" />;
+        }
       }
     }
     switch (type) {
@@ -488,7 +487,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           return shortcutHint ? (
             <Tooltip
               key={panel.id}
-              content={<Kbd>{shortcutHint}</Kbd>}
+              content={
+                <span className="flex items-center gap-2">
+                  <span className="text-text-secondary">{displayTitle}</span>
+                  <Kbd size="xs">{shortcutHint}</Kbd>
+                </span>
+              }
               side="bottom"
             >
               {tab}
