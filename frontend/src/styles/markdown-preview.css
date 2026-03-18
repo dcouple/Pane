@@ -64,7 +64,7 @@
   margin: 0;
   font-size: 85%;
   border-radius: 3px;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
 }
 
 .markdown-preview pre code {

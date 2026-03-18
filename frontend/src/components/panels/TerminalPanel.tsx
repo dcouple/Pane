@@ -123,7 +123,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         console.log('[TerminalPanel] Creating XTerm instance...');
         terminal = new Terminal({
           fontSize: 14,
-          fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+          fontFamily: '"Geist Mono", "SF Mono", Menlo, Monaco, "Courier New", monospace',
           theme: getTerminalTheme(),
           scrollback: 2500,
           cursorBlink: false,
@@ -223,6 +223,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           console.log('[TerminalPanel] Opening terminal in DOM element:', terminalRef.current);
           terminal.open(terminalRef.current);
           console.log('[TerminalPanel] Terminal opened in DOM');
+
+          // Wait for Geist Mono to load before fitting so xterm measures correct cell dimensions
+          try {
+            await document.fonts.load('14px "Geist Mono"');
+          } catch {
+            // Font load failed (offline/blocked) — fallback fonts will be used
+          }
           fitAddon.fit();
           console.log('[TerminalPanel] FitAddon fitted');
           terminal.options.theme = getTerminalTheme();

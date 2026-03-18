@@ -53,7 +53,7 @@
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
-  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-family: var(--font-family-mono);
 }
 
 .dark .markdown-preview code,

@@ -73,7 +73,7 @@
 }
 
 .nb-cell-badge {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
   font-size: 11px;
   font-weight: 600;
   color: var(--color-text-tertiary);
@@ -90,7 +90,7 @@
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.45;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
   color: var(--color-text-primary);
   background-color: transparent;
   border: none;
@@ -111,7 +111,7 @@
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.45;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
   color: var(--color-text-primary);
   background-color: transparent;
   border: none;
@@ -133,7 +133,7 @@
   overflow-x: auto;
   font-size: 13px;
   line-height: 1.45;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
   color: var(--color-text-primary);
   background-color: var(--color-bg-primary);
   border-radius: 4px;
@@ -164,7 +164,7 @@
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.4;
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-family: var(--font-family-mono);
   color: var(--color-status-error);
   overflow-x: auto;
   white-space: pre-wrap;

@@ -1,11 +1,12 @@
 /* Typography Design Tokens for Pane */
 
 @import url('https://fonts.googleapis.com/css2?family=Sora:wght@100;200;300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500;600;700;800;900&display=swap');
 
 :root {
   /* Font Families */
   --font-family-sans: 'Sora', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-family-mono: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  --font-family-mono: 'Geist Mono', 'SF Mono', Monaco, 'Cascadia Code', Consolas, 'Courier New', monospace;
   
   /* Font Sizes - Following Tailwind's scale */
   --text-xs: 0.75rem;     /* 12px */
