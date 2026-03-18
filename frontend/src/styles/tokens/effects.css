@@ -194,3 +194,16 @@
   --panel-shell-radius: var(--radius-xl);
   --panel-shell-shadow: var(--shadow-sm);
 }
+
+/* Light Rounded — Forge-like rounded light shells */
+:root.light-rounded {
+  --button-radius: var(--radius-lg);
+  --card-radius: var(--radius-xl);
+  --input-radius: var(--radius-lg);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-sm);
+  --app-shell-radius: var(--radius-2xl);
+  --panel-shell-radius: var(--radius-xl);
+  --panel-shell-shadow: var(--shadow-sm);
+}

@@ -32,7 +32,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
   // Create ANSI to HTML converter with theme-aware colors
   const ansiConverter = useMemo(() => {
-    const isLight = theme === 'light';
+    const isLight = theme === 'light' || theme === 'light-rounded';
     return new AnsiToHtml({
       fg: isLight ? '#1f2328' : '#e5e7eb',
       bg: isLight ? '#ffffff' : '#0a0a0a',

@@ -120,3 +120,14 @@
   --app-frame-gap: var(--space-3);
   --panel-shell-gap: var(--space-3);
 }
+
+/* Light Rounded — light palette with islanded shell layout */
+:root.light-rounded {
+  --panel-tab-height: 2.5rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}

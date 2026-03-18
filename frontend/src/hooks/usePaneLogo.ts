@@ -4,5 +4,5 @@ import { useTheme } from '../contexts/ThemeContext';
 
 export function usePaneLogo(): string {
   const { theme } = useTheme();
-  return theme === 'light' ? paneLogoLight : paneLogoDark;
+  return theme === 'light' || theme === 'light-rounded' ? paneLogoLight : paneLogoDark;
 }

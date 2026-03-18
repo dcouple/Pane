@@ -773,7 +773,7 @@ export function FileEditor({
   const monacoRef = useRef<typeof monaco | null>(null);
 
   const { theme } = useTheme();
-  const isDarkMode = theme !== 'light';
+  const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
   const hasUnsavedChanges = fileContent !== originalContent;
   
   // Wrap onResize callback to avoid recreating

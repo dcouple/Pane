@@ -41,15 +41,22 @@ body.light {
 
 body.ember {
   background:
-    radial-gradient(circle at top center, rgba(217, 119, 87, 0.16), transparent 32%),
-    linear-gradient(180deg, #120e0c 0%, #1a1411 100%);
+    radial-gradient(circle at top center, rgba(255, 106, 193, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(124, 77, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, #17111f 0%, #1d1630 100%);
 }
 
 body.aurora {
   background:
-    radial-gradient(circle at top right, rgba(103, 232, 249, 0.16), transparent 30%),
-    radial-gradient(circle at top left, rgba(45, 212, 191, 0.1), transparent 24%),
-    linear-gradient(180deg, #061218 0%, #0a1a22 100%);
+    radial-gradient(circle at top center, rgba(234, 154, 151, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(196, 167, 231, 0.1), transparent 24%),
+    linear-gradient(180deg, #232136 0%, #2a273f 100%);
+}
+
+body.light-rounded {
+  background:
+    radial-gradient(circle at top center, rgba(88, 166, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f7fafc 0%, #eef3f7 100%);
 }
 
 /* Scrollbar styling */
@@ -86,7 +93,7 @@ body.aurora {
 
 /* Tab indicator — Forge underline mode */
 :root.forge .panel-tab-bar [aria-selected="true"],
-:root.aurora .panel-tab-bar [aria-selected="true"] {
+:root.ember .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -113,7 +120,8 @@ body.aurora {
 :root.dusk .pane-sidebar-shell,
 :root.forge .pane-sidebar-shell,
 :root.ember .pane-sidebar-shell,
-:root.aurora .pane-sidebar-shell {
+:root.aurora .pane-sidebar-shell,
+:root.light-rounded .pane-sidebar-shell {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
   overflow: hidden;
@@ -123,14 +131,16 @@ body.aurora {
 :root.dusk .pane-session-shell,
 :root.forge .pane-session-shell,
 :root.ember .pane-session-shell,
-:root.aurora .pane-session-shell {
+:root.aurora .pane-session-shell,
+:root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
 
 :root.dusk .panel-tab-bar,
 :root.forge .panel-tab-bar,
 :root.ember .panel-tab-bar,
-:root.aurora .panel-tab-bar {
+:root.aurora .panel-tab-bar,
+:root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
   overflow: hidden;
@@ -140,7 +150,8 @@ body.aurora {
 :root.dusk .pane-editor-stage,
 :root.forge .pane-editor-stage,
 :root.ember .pane-editor-stage,
-:root.aurora .pane-editor-stage {
+:root.aurora .pane-editor-stage,
+:root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
   overflow: hidden;
@@ -150,7 +161,8 @@ body.aurora {
 :root.dusk .pane-terminal-dock,
 :root.forge .pane-terminal-dock,
 :root.ember .pane-terminal-dock,
-:root.aurora .pane-terminal-dock {
+:root.aurora .pane-terminal-dock,
+:root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -162,10 +174,12 @@ body.aurora {
 :root.forge .pane-terminal-rail,
 :root.ember .pane-terminal-rail,
 :root.aurora .pane-terminal-rail,
+:root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
 :root.ember .pane-detail-panel,
-:root.aurora .pane-detail-panel {
+:root.aurora .pane-detail-panel,
+:root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
 }
@@ -174,10 +188,12 @@ body.aurora {
 :root.forge .pane-terminal-rail-shell,
 :root.ember .pane-terminal-rail-shell,
 :root.aurora .pane-terminal-rail-shell,
+:root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
 :root.ember .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-inner {
+:root.aurora .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
   overflow: hidden;
@@ -188,17 +204,20 @@ body.aurora {
 :root.forge .pane-terminal-rail-shell,
 :root.ember .pane-terminal-rail-shell,
 :root.aurora .pane-terminal-rail-shell,
+:root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.ember .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-vertical .pane-detail-panel-inner {
+:root.aurora .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
 
 :root.dusk .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.ember .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-horizontal .pane-detail-panel-inner {
+:root.aurora .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
 
@@ -234,11 +253,11 @@ body.aurora {
 :root.ember .pane-terminal-rail-shell,
 :root.ember .pane-detail-panel-inner {
   border-width: 2px;
-  border-color: rgba(242, 171, 134, 0.18);
+  border-color: rgba(255, 106, 193, 0.22);
   box-shadow:
-    0 18px 40px rgba(0, 0, 0, 0.3),
-    0 0 0 1px rgba(242, 171, 134, 0.06),
-    inset 0 1px 0 rgba(255, 240, 232, 0.05);
+    0 18px 44px rgba(7, 2, 17, 0.36),
+    0 0 0 1px rgba(255, 106, 193, 0.08),
+    inset 0 1px 0 rgba(255, 214, 244, 0.08);
 }
 
 :root.aurora .panel-tab-bar,
@@ -247,11 +266,24 @@ body.aurora {
 :root.aurora .pane-terminal-rail-shell,
 :root.aurora .pane-detail-panel-inner {
   border-width: 2px;
-  border-color: rgba(103, 232, 249, 0.24);
+  border-color: rgba(196, 167, 231, 0.2);
   box-shadow:
-    0 18px 42px rgba(0, 10, 16, 0.3),
-    0 0 0 1px rgba(103, 232, 249, 0.08),
-    inset 0 1px 0 rgba(232, 253, 255, 0.05);
+    0 18px 40px rgba(15, 12, 28, 0.28),
+    0 0 0 1px rgba(196, 167, 231, 0.06),
+    inset 0 1px 0 rgba(246, 193, 119, 0.04);
+}
+
+:root.light-rounded .panel-tab-bar,
+:root.light-rounded .pane-editor-stage,
+:root.light-rounded .pane-terminal-dock,
+:root.light-rounded .pane-terminal-rail-shell,
+:root.light-rounded .pane-detail-panel-inner {
+  border-width: 2px;
+  border-color: rgba(31, 35, 40, 0.1);
+  box-shadow:
+    0 18px 36px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(255, 255, 255, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
 /* Theme-specific terminal rounding should come from shell containers first */
@@ -264,7 +296,8 @@ body.aurora {
 }
 
 :root.ember .xterm,
-:root.aurora .xterm {
+:root.aurora .xterm,
+:root.light-rounded .xterm {
   border-radius: var(--panel-shell-radius);
 }
 

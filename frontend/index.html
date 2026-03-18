@@ -10,23 +10,40 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'dark', 'oled', 'dusk', 'forge', 'ember', 'aurora'];
-      const darkThemes = ['dark', 'oled', 'dusk', 'forge', 'ember', 'aurora'];
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const themeClasses = {
+        'light': ['light'],
+        'light-rounded': ['light', 'light-rounded'],
+        'dark': ['dark'],
+        'oled': ['dark', 'oled'],
+        'dusk': ['dark', 'dusk'],
+        'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
+        'forge': ['dark', 'forge'],
+        'ember': ['dark', 'ember'],
+        'aurora': ['dark', 'aurora'],
+      };
       const theme = validThemes.includes(savedTheme) ? savedTheme : 'dark';
-      // Dark-based themes need 'dark' class for Tailwind dark: utilities
-      if (darkThemes.includes(theme)) document.documentElement.classList.add('dark');
-      if (theme !== 'dark') document.documentElement.classList.add(theme);
+      document.documentElement.classList.add(...themeClasses[theme]);
     </script>
   </head>
   <body>
     <script>
       // Also apply to body (mirrors the head script logic)
       const t = localStorage.getItem('theme');
-      const dt = ['dark', 'oled', 'dusk', 'forge', 'ember', 'aurora'];
-      const vt = ['light', 'dark', 'oled', 'dusk', 'forge', 'ember', 'aurora'];
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const tc = {
+        'light': ['light'],
+        'light-rounded': ['light', 'light-rounded'],
+        'dark': ['dark'],
+        'oled': ['dark', 'oled'],
+        'dusk': ['dark', 'dusk'],
+        'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
+        'forge': ['dark', 'forge'],
+        'ember': ['dark', 'ember'],
+        'aurora': ['dark', 'aurora'],
+      };
       const bt = vt.includes(t) ? t : 'dark';
-      if (dt.includes(bt)) document.body.classList.add('dark');
-      if (bt !== 'dark') document.body.classList.add(bt);
+      document.body.classList.add(...tc[bt]);
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
