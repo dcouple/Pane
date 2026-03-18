@@ -1017,32 +1017,37 @@ export const SessionView = memo(() => {
                 />
               </div>
 
-              {/* Right column: terminal at full height */}
+              {/* Right column: terminal at full height — outer wrapper clips, inner stays fixed width so xterm doesn't reflow */}
               <div
-                className={`flex-shrink-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-l border-border-primary'}`}
+                className={`flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-l border-border-primary'}`}
                 style={{ width: immersiveMode ? '0px' : `${rightTerminalWidth}px` }}
               >
-                {/* Resize handle on left edge */}
                 <div
-                  className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
-                  onMouseDown={startRightTerminalResize}
+                  className="bg-surface-primary flex flex-col h-full relative"
+                  style={{ width: `${rightTerminalWidth}px` }}
                 >
-                  <div className="absolute inset-0 bg-border-primary hover:bg-interactive transition-colors" />
-                </div>
+                  {/* Resize handle on left edge */}
+                  <div
+                    className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
+                    onMouseDown={startRightTerminalResize}
+                  >
+                    <div className="absolute inset-0 bg-border-primary hover:bg-interactive transition-colors" />
+                  </div>
 
-                {/* Terminal header */}
-                <div className="flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
-                  <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
-                  <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
-                </div>
+                  {/* Terminal header */}
+                  <div className="flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
+                    <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
+                    <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
+                  </div>
 
-                {/* Terminal content - full height */}
-                <div className="flex-1 relative min-h-0 pb-1">
-                  <PanelContainer
-                    panel={defaultTerminalPanel}
-                    isActive={true}
-                    isMainRepo={!!activeSession.isMainRepo}
-                  />
+                  {/* Terminal content - full height */}
+                  <div className="flex-1 relative min-h-0 pb-1">
+                    <PanelContainer
+                      panel={defaultTerminalPanel}
+                      isActive={true}
+                      isMainRepo={!!activeSession.isMainRepo}
+                    />
+                  </div>
                 </div>
               </div>
             </>
@@ -1090,7 +1095,7 @@ export const SessionView = memo(() => {
                 {/* Bottom: persistent terminal (collapsible) */}
                 {defaultTerminalPanel && (
                   <div
-                    className="flex-shrink-0 border-t border-border-primary transition-all duration-200"
+                    className="flex-shrink-0 border-t border-border-primary transition-[height] duration-200"
                     style={{ height: isTerminalCollapsed ? '32px' : `${terminalHeight}px` }}
                   >
                     {/* Terminal tab header with collapse toggle and pill shortcuts */}

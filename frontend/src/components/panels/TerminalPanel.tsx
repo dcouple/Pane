@@ -9,7 +9,6 @@ import { TerminalPanelProps } from '../../types/panelComponents';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { renderLog, devLog } from '../../utils/console';
 import { getTerminalTheme } from '../../utils/terminalTheme';
-import { throttle } from '../../utils/performanceUtils';
 import { RefreshCw, FileEdit, FolderOpen } from 'lucide-react';
 import { useTerminalLinks } from '../terminal/hooks/useTerminalLinks';
 import { TerminalLinkTooltip } from '../terminal/TerminalLinkTooltip';
@@ -502,26 +501,30 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           });
 
           // Handle resize
-          // Throttle resize to avoid excessive fit() calls during window resize
-          const throttledResize = throttle(() => {
-            if (fitAddon && !disposed && terminalRef.current) {
-              // Skip resize if container is too small (likely hidden via display:none)
-              const rect = terminalRef.current.getBoundingClientRect();
-              if (rect.width < 100 || rect.height < 100) {
-                return;
-              }
+          // Debounce resize so fit() only fires after transitions settle (300ms sidebar animations)
+          let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+          const debouncedResize = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+              if (fitAddon && !disposed && terminalRef.current) {
+                // Skip resize if container is too small (likely hidden via display:none or mid-collapse)
+                const rect = terminalRef.current.getBoundingClientRect();
+                if (rect.width < 100 || rect.height < 100) {
+                  return;
+                }
 
-              fitAddon.fit();
-              const dimensions = fitAddon.proposeDimensions();
-              if (dimensions) {
-                window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
+                fitAddon.fit();
+                const dimensions = fitAddon.proposeDimensions();
+                if (dimensions) {
+                  window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
+                }
               }
-            }
-          }, 100);
+            }, 150);
+          };
 
           const resizeObserver = new ResizeObserver(() => {
             if (isActiveRef.current) {  // Only resize when panel is active
-              throttledResize();
+              debouncedResize();
             }
           });
 
@@ -535,6 +538,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
             resizeObserver.disconnect();
+            if (resizeTimer) clearTimeout(resizeTimer);
             unsubscribeOutput(); // Use the unsubscribe function
             inputDisposable.dispose();
             terminalElement?.removeEventListener('paste', handlePaste);
