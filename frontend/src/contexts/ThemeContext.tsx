@@ -32,7 +32,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saved && isValidTheme(saved)) {
       return saved;
     }
-    return 'dark';
+    return 'light-rounded';
   });
   const [configLoaded, setConfigLoaded] = useState(false);
 

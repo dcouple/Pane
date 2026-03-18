@@ -22,7 +22,7 @@
         'ember': ['dark', 'ember'],
         'aurora': ['dark', 'aurora'],
       };
-      const theme = validThemes.includes(savedTheme) ? savedTheme : 'dark';
+      const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
       document.documentElement.classList.add(...themeClasses[theme]);
     </script>
   </head>
@@ -42,7 +42,7 @@
         'ember': ['dark', 'ember'],
         'aurora': ['dark', 'aurora'],
       };
-      const bt = vt.includes(t) ? t : 'dark';
+      const bt = vt.includes(t) ? t : 'light-rounded';
       document.body.classList.add(...tc[bt]);
     </script>
     <div id="root"></div>

@@ -24,6 +24,7 @@ export class ConfigManager extends EventEmitter {
       anthropicApiKey: undefined,
       systemPromptAppend: undefined,
       runScript: undefined,
+      theme: 'light-rounded',
       defaultPermissionMode: 'ignore',
       defaultModel: 'sonnet',
       stravuApiKey: undefined,
