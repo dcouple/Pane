@@ -301,7 +301,7 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
       <>
         <div
           data-testid="sidebar"
-          className="bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0 border-r border-border-primary"
+          className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0 border-r border-border-primary"
           style={{ width: '48px' }}
         >
           {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
@@ -411,7 +411,7 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
     <>
       <div
         data-testid="sidebar"
-        className="bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0 border-r border-border-primary"
+        className="pane-sidebar-shell bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0 border-r border-border-primary"
         style={{ width: `${width}px` }}
       >
         {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}

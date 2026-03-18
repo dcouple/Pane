@@ -77,14 +77,100 @@ body.light {
   box-shadow: inset 0 -4px 0 0 var(--tab-indicator-color, #3574F0);
 }
 
-/* Dusk theme — rounded panel sections (Emdash-inspired soft rounding) */
-:root.dusk .xterm {
-  border-radius: var(--radius-lg);
+/* Theme-aware structural shells */
+.pane-main-layout {
+  padding: var(--app-frame-padding);
+  gap: var(--app-frame-gap);
 }
 
-/* Forge theme — rounded "islands" for content areas (IntelliJ Islands-inspired) */
+.pane-sidebar-slot,
+.pane-session-shell,
+.pane-session-content,
+.pane-editor-stage,
+.pane-terminal-shell-body,
+.pane-detail-panel-inner {
+  min-height: 0;
+}
+
+.pane-session-shell {
+  min-width: 0;
+}
+
+:root.dusk .pane-sidebar-shell,
+:root.forge .pane-sidebar-shell {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--app-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-session-shell,
+:root.forge .pane-session-shell {
+  gap: var(--panel-shell-gap);
+}
+
+:root.dusk .panel-tab-bar,
+:root.forge .panel-tab-bar {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-editor-stage,
+:root.forge .pane-editor-stage {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-dock,
+:root.forge .pane-terminal-dock {
+  margin-top: var(--panel-shell-gap);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-rail,
+:root.forge .pane-terminal-rail,
+:root.dusk .pane-detail-panel,
+:root.forge .pane-detail-panel {
+  border-color: transparent !important;
+  background: transparent;
+}
+
+:root.dusk .pane-terminal-rail-shell,
+:root.forge .pane-terminal-rail-shell,
+:root.dusk .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-inner {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-rail-shell,
+:root.forge .pane-terminal-rail-shell,
+:root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-vertical .pane-detail-panel-inner {
+  margin-left: var(--panel-shell-gap);
+}
+
+:root.dusk .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-horizontal .pane-detail-panel-inner {
+  margin-top: var(--panel-shell-gap);
+}
+
+/* Theme-specific terminal rounding should come from shell containers first */
+:root.dusk .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
 :root.forge .xterm {
-  border-radius: var(--radius-default);
+  border-radius: var(--panel-shell-radius);
 }
 
 /* Hide scrollbar completely */

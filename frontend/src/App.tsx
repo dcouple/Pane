@@ -507,17 +507,17 @@ function App() {
 
   return (
     <ContextMenuProvider>
-      <div className="h-screen flex flex-col overflow-hidden bg-bg-primary">
+      <div className="pane-app-shell h-screen flex flex-col overflow-hidden bg-bg-primary">
         {isMac() && (
           <div
             className="flex-shrink-0 bg-bg-primary"
             style={{ height: 38, WebkitAppRegion: 'drag' } as React.CSSProperties}
           />
         )}
-        <div className="flex flex-1 min-h-0">
+        <div className="pane-main-layout flex flex-1 min-h-0">
         <MainProcessLogger />
         <div
-          className="flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          className="pane-sidebar-slot flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
           style={{ width: (immersiveMode || sidebarCollapsed) ? '48px' : `${sidebarWidth}px` }}
         >
           <Sidebar

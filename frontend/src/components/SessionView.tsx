@@ -910,7 +910,7 @@ export const SessionView = memo(() => {
   }
   
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
+    <div className="pane-session-shell flex-1 flex flex-col overflow-hidden bg-bg-primary">
       {/* SINGLE SessionProvider wraps everything */}
       <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command}>
 
@@ -932,13 +932,13 @@ export const SessionView = memo(() => {
         />
 
         {/* Content area: center panels + right detail */}
-        <div className="flex-1 flex flex-row min-h-0">
+        <div className="pane-session-content flex-1 flex flex-row min-h-0">
           {layoutSwapped && defaultTerminalPanel ? (
             <>
               {/* SWAPPED LAYOUT: Center column with panels on top, horizontal detail panel on bottom */}
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {/* Top: active panel content */}
-                <div className="flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
+                <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
                   {sessionPanels.length > 0 && currentActivePanel ? (
                     sessionPanels
                       .filter(p => !defaultTerminalPanel || p.id !== defaultTerminalPanel.id)
@@ -1041,11 +1041,11 @@ export const SessionView = memo(() => {
 
               {/* Right column: terminal at full height — outer wrapper clips, inner stays fixed width so xterm doesn't reflow */}
               <div
-                className={`flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-l border-border-primary'}`}
+                className={`pane-terminal-rail flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-l border-border-primary'}`}
                 style={{ width: immersiveMode ? '0px' : `${rightTerminalWidth}px` }}
               >
                 <div
-                  className="bg-surface-primary flex flex-col h-full relative"
+                  className="pane-terminal-rail-shell bg-surface-primary flex flex-col h-full relative"
                   style={{ width: `${rightTerminalWidth}px` }}
                 >
                   {/* Resize handle on left edge */}
@@ -1057,13 +1057,13 @@ export const SessionView = memo(() => {
                   </div>
 
                   {/* Terminal header */}
-                  <div className="flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
+                  <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
                     <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
                     <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
                   </div>
 
                   {/* Terminal content - full height */}
-                  <div className="flex-1 relative min-h-0 pb-1">
+                  <div className="pane-terminal-shell-body flex-1 relative min-h-0 pb-1">
                     <PanelContainer
                       panel={defaultTerminalPanel}
                       isActive={true}
@@ -1078,7 +1078,7 @@ export const SessionView = memo(() => {
               {/* DEFAULT LAYOUT: Center column with panels on top, terminal on bottom */}
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {/* Top: active panel content */}
-                <div className="flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
+                <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
                   {sessionPanels.length > 0 && currentActivePanel ? (
                     sessionPanels
                       .filter(p => !defaultTerminalPanel || p.id !== defaultTerminalPanel.id)
@@ -1117,11 +1117,11 @@ export const SessionView = memo(() => {
                 {/* Bottom: persistent terminal (collapsible) */}
                 {defaultTerminalPanel && (
                   <div
-                    className="flex-shrink-0 border-t border-border-primary transition-[height] duration-200"
+                    className="pane-terminal-dock flex-shrink-0 border-t border-border-primary transition-[height] duration-200"
                     style={{ height: isTerminalCollapsed ? '32px' : `${terminalHeight}px` }}
                   >
                     {/* Terminal tab header with collapse toggle and pill shortcuts */}
-                    <div className="flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
+                    <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
                       {/* Left: chevron + icon + label */}
                       <button
                         onClick={toggleTerminalCollapse}
@@ -1204,7 +1204,7 @@ export const SessionView = memo(() => {
                     </div>
                     {/* Terminal content (hidden when collapsed) */}
                     {!isTerminalCollapsed && (
-                      <div className="relative pb-1" style={{ height: `calc(100% - 36px)` }}>
+                      <div className="pane-terminal-shell-body relative pb-1" style={{ height: `calc(100% - 36px)` }}>
                         <PanelContainer
                           panel={defaultTerminalPanel}
                           isActive={true}

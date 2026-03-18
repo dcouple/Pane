@@ -49,6 +49,9 @@
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
   --modal-shadow: var(--shadow-xl);
   --dropdown-shadow: var(--shadow-lg);
+  --app-shell-radius: 0;
+  --panel-shell-radius: 0;
+  --panel-shell-shadow: var(--shadow-none);
   
   /* Interactive shadows for depth and tactile feel */
   --shadow-tactile: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -145,6 +148,9 @@
   --button-shadow: var(--shadow-none);    /* no button shadow */
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);        /* subtle shadow on cards only */
+  --app-shell-radius: var(--radius-xl);
+  --panel-shell-radius: var(--radius-lg);
+  --panel-shell-shadow: var(--shadow-xs);
 }
 
 /* Forge Theme — specific radii, NO shadows (IntelliJ-inspired) */
@@ -158,4 +164,7 @@
   --card-shadow: var(--shadow-none);      /* NO shadows — depth via bg color only */
   --modal-shadow: var(--shadow-none);
   --dropdown-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);  /* exception: dropdowns need depth */
+  --app-shell-radius: 0.625rem;
+  --panel-shell-radius: 0.5rem;
+  --panel-shell-shadow: var(--shadow-none);
 }

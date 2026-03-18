@@ -62,6 +62,9 @@
   --detail-panel-min-width: 12.5rem; /* 200px */
   --detail-panel-max-width: 31.25rem; /* 500px */
   --panel-tab-height: 2.25rem;       /* 36px */
+  --app-frame-padding: 0;
+  --app-frame-gap: 0;
+  --panel-shell-gap: 0;
   
   /* Gap Utilities */
   --gap-xs: var(--space-1);
@@ -80,6 +83,9 @@
   --button-padding-y: var(--space-1-5);   /* 6px (was 8px) */
   --card-padding: var(--space-2);         /* 8px (was 12px) */
   --card-padding-lg: var(--space-4);      /* 16px (was 24px) */
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Forge Theme — Medium density (IntelliJ-inspired) */
@@ -88,4 +94,7 @@
   --button-padding-x: var(--space-4);     /* 16px (same) */
   --button-padding-y: var(--space-2);     /* 8px (same) */
   --card-padding: var(--space-3);         /* 12px (same) */
+  --app-frame-padding: var(--space-2);
+  --app-frame-gap: var(--space-2);
+  --panel-shell-gap: var(--space-2);
 }

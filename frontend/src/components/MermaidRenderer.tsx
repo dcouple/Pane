@@ -24,9 +24,11 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ chart, id }) =
         setHasError(false);
 
         // Configure mermaid
+        const isDarkTheme = document.documentElement.classList.contains('dark');
+
         mermaid.initialize({
           startOnLoad: false,
-          theme: (document.documentElement.classList.contains('dark') || document.documentElement.classList.contains('oled')) ? 'dark' : 'default',
+          theme: isDarkTheme ? 'dark' : 'default',
           securityLevel: 'loose',
           fontFamily: 'monospace',
         });
