@@ -372,12 +372,12 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     </button>
                   }
                   items={[
-                    { id: 'dusk', label: 'Dusk', onClick: () => setTheme('dusk') },
+                    { id: 'light-rounded', label: 'Light (rounded)', onClick: () => setTheme('light-rounded') },
                     { id: 'dusk-oled', label: 'Dusk (OLED)', onClick: () => setTheme('dusk-oled') },
-                    { id: 'forge', label: 'Forge', onClick: () => setTheme('forge') },
+                    { id: 'dusk', label: 'Dusk', onClick: () => setTheme('dusk') },
                     { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
                     { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
-                    { id: 'light-rounded', label: 'Light (rounded)', onClick: () => setTheme('light-rounded') },
+                    { id: 'forge', label: 'Forge', onClick: () => setTheme('forge') },
                     { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
                     { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
                     { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },
