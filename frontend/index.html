@@ -10,14 +10,23 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const theme = (savedTheme === 'light' || savedTheme === 'oled') ? savedTheme : 'dark';
-      document.documentElement.classList.add(theme);
+      const validThemes = ['light', 'dark', 'oled', 'dusk', 'forge'];
+      const darkThemes = ['dark', 'oled', 'dusk', 'forge'];
+      const theme = validThemes.includes(savedTheme) ? savedTheme : 'dark';
+      // Dark-based themes need 'dark' class for Tailwind dark: utilities
+      if (darkThemes.includes(theme)) document.documentElement.classList.add('dark');
+      if (theme !== 'dark') document.documentElement.classList.add(theme);
     </script>
   </head>
   <body>
     <script>
-      // Also apply to body
-      const t = localStorage.getItem('theme'); document.body.classList.add(t === 'light' ? 'light' : t === 'oled' ? 'oled' : 'dark');
+      // Also apply to body (mirrors the head script logic)
+      const t = localStorage.getItem('theme');
+      const dt = ['dark', 'oled', 'dusk', 'forge'];
+      const vt = ['light', 'dark', 'oled', 'dusk', 'forge'];
+      const bt = vt.includes(t) ? t : 'dark';
+      if (dt.includes(bt)) document.body.classList.add('dark');
+      if (bt !== 'dark') document.body.classList.add(bt);
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
