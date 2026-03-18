@@ -36,7 +36,7 @@ export interface DropdownProps {
   onOpenChange?: (open: boolean) => void;
   
   // Optional footer content (e.g., settings button)
-  footer?: ReactNode;
+  footer?: ReactNode | ((controls: { close: () => void }) => ReactNode);
   
   // Custom styles
   className?: string;
@@ -300,7 +300,7 @@ export function Dropdown({
               {footer && (
                 <>
                   <div className="border-t border-border-secondary my-1.5" />
-                  {footer}
+                  {typeof footer === 'function' ? footer({ close: handleClose }) : footer}
                 </>
               )}
             </div>

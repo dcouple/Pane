@@ -1,14 +1,5 @@
-/**
- * HomePage Component
- *
- * Landing page displayed when no session is selected. Provides quick access to:
- * - Open an existing project
- * - Create a new project
- * - Clone a repository from GitHub
- * - Quick preferences (theme, UI scale, terminal shell)
- * - Recently active sessions across all projects
- */
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { ChevronDown, ChevronUp, Terminal } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useConfigStore } from '../stores/configStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -22,7 +13,18 @@ import { formatDistanceToNow } from '../utils/timestampUtils';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 
-// ─── Inline SVG Icons ────────────────────────────────────────────────────────
+const actionCardClassName =
+  'flex min-h-[9.2rem] min-w-0 w-full flex-col items-center justify-center gap-3 rounded-xl bg-surface-secondary p-6 text-center transition-colors hover:bg-surface-hover cursor-pointer';
+
+const paneAscii = String.raw`
+░█████████                                    
+░██     ░██                                   
+░██     ░██  ░██████   ░████████   ░███████   
+░█████████        ░██  ░██    ░██ ░██    ░██  
+░██          ░███████  ░██    ░██ ░█████████  
+░██         ░██   ░██  ░██    ░██ ░██         
+░██          ░█████░██ ░██    ░██  ░███████   
+`;
 
 function FolderOpenIcon({ className }: { className?: string }) {
   return (
@@ -67,33 +69,6 @@ function GitHubIcon({ className }: { className?: string }) {
   );
 }
 
-function ChevronDownIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-function ChevronUpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="18 15 12 9 6 15" />
-    </svg>
-  );
-}
-
-function TerminalIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  );
-}
-
-// ─── Status helpers ───────────────────────────────────────────────────────────
-
 function getStatusVariant(
   status: Session['status'],
 ): 'success' | 'warning' | 'error' | 'info' | 'default' {
@@ -105,13 +80,10 @@ function getStatusVariant(
     case 'error':
       return 'error';
     case 'initializing':
-      return 'info';
     case 'completed_unviewed':
       return 'info';
     case 'stopped':
-      return 'default';
     case 'ready':
-      return 'default';
     default:
       return 'default';
   }
@@ -138,7 +110,16 @@ function getStatusLabel(status: Session['status']): string {
   }
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function getRepositoryName(project: Project): string {
+  const normalizedPath = project.path.replace(/[\\/]+$/, '');
+  const segments = normalizedPath.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] || project.name;
+}
+
+function getProjectSecondaryLabel(project: Project): string {
+  const repoName = getRepositoryName(project);
+  return project.name !== repoName ? `${project.name} · ${project.path}` : project.path;
+}
 
 function OpenProjectCard({
   projects,
@@ -149,53 +130,58 @@ function OpenProjectCard({
 }) {
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
 
-  // Build items: real projects + separator "Add Repository" item at the end
-  const items = [
-    ...projects.map(p => ({
-      id: String(p.id),
-      label: p.name,
-      onClick: () => {
-        API.projects.activate(String(p.id)).catch(() => {});
-        navigateToProject(p.id);
-      },
-    })),
-    // "Add Repository" as the last item so it auto-closes the dropdown on click
-    {
-      id: '__add_repository__',
-      label: '+ Add Repository',
-      onClick: onAddProject,
-      variant: 'default' as const,
-    },
-  ];
-
   return (
     <Dropdown
       trigger={
-        <div className="flex flex-col items-center justify-center gap-3 p-6 bg-surface-secondary rounded-lg hover:bg-surface-hover cursor-pointer transition-colors">
+        <div className={actionCardClassName}>
           <FolderOpenIcon className="w-8 h-8 text-text-secondary" />
           <span className="text-sm font-medium text-text-primary">Open Project</span>
         </div>
       }
-      items={items}
+      items={projects.map(project => ({
+        id: String(project.id),
+        label: (
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{getRepositoryName(project)}</div>
+            <div className="truncate text-xs text-text-tertiary">
+              {getProjectSecondaryLabel(project)}
+            </div>
+          </div>
+        ),
+        onClick: () => {
+          API.projects.activate(String(project.id)).catch(() => {});
+          navigateToProject(project.id);
+        },
+      }))}
+      footer={({ close }) => (
+        <button
+          type="button"
+          onClick={() => {
+            close();
+            onAddProject();
+          }}
+          className="w-full rounded-sm px-3 py-2.5 text-left text-sm text-interactive transition-colors hover:bg-surface-hover"
+        >
+          + Add Repository
+        </button>
+      )}
       position="bottom-left"
-      width="md"
+      width="lg"
     />
   );
 }
 
-// ─── Main HomePage component ──────────────────────────────────────────────────
-
 export function HomePage() {
-  const { sessions, setActiveSession } = useSessionStore();
   const { theme, setTheme } = useTheme();
   const { config, updateConfig } = useConfigStore();
+  const { sessions, setActiveSession } = useSessionStore();
+  const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
+
   const [projects, setProjects] = useState<Project[]>([]);
   const [showAddProject, setShowAddProject] = useState(false);
   const [showCloneDialog, setShowCloneDialog] = useState(false);
-
-  // Platform and shell state for preferences
   const [platform, setPlatform] = useState<string>('');
-  const [availableShells, setAvailableShells] = useState<Array<{id: string; name: string; path: string}>>([]);
+  const [availableShells, setAvailableShells] = useState<Array<{ id: string; name: string; path: string }>>([]);
   const [preferredShell, setPreferredShell] = useState<string>('auto');
 
   const uiScale = config?.uiScale ?? 1.0;
@@ -207,45 +193,61 @@ export function HomePage() {
         setProjects(result.data as Project[]);
       }
     } catch {
-      // silently ignore
+      // Ignore transient IPC failures on home page
     }
   }, []);
 
   useEffect(() => {
-    void loadProjects();
-    const handler = () => void loadProjects();
-    window.addEventListener('project-changed', handler);
-    return () => window.removeEventListener('project-changed', handler);
-  }, [loadProjects]);
-
-  // Fetch platform and available shells on mount
-  useEffect(() => {
-    window.electronAPI
+    void window.electronAPI
       .getPlatform()
-      .then(async (p) => {
-        setPlatform(p);
-        if (p === 'win32') {
-          try {
-            const shellsResponse = await API.config.getAvailableShells();
-            if (shellsResponse.success) {
-              setAvailableShells(shellsResponse.data);
-            }
-          } catch (error) {
-            console.error('Failed to fetch available shells:', error);
+      .then(async currentPlatform => {
+        setPlatform(currentPlatform);
+        if (currentPlatform === 'win32') {
+          const shellsResponse = await API.config.getAvailableShells();
+          if (shellsResponse.success) {
+            setAvailableShells(shellsResponse.data);
           }
         }
       })
-      .catch((error) => {
-        console.error('Failed to get platform:', error);
-      });
+      .catch(() => {});
   }, []);
 
-  // Sync preferredShell with config
   useEffect(() => {
     if (config?.preferredShell) {
       setPreferredShell(config.preferredShell);
     }
   }, [config?.preferredShell]);
+
+  useEffect(() => {
+    void loadProjects();
+    const handler = () => void loadProjects();
+    window.addEventListener('project-changed', handler);
+    window.addEventListener('project-sessions-refresh', handler);
+    return () => {
+      window.removeEventListener('project-changed', handler);
+      window.removeEventListener('project-sessions-refresh', handler);
+    };
+  }, [loadProjects]);
+
+  const recentSessions = useMemo(() => {
+    return sessions
+      .filter((s): s is Session & { lastActivity: string } => !s.archived && typeof s.lastActivity === 'string')
+      .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime())
+      .slice(0, 8);
+  }, [sessions]);
+
+  const projectNameMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const project of projects) {
+      map.set(project.id, getRepositoryName(project));
+    }
+    return map;
+  }, [projects]);
+
+  const handleOpenSession = (session: Session) => {
+    navigateToSessions();
+    setActiveSession(session.id).catch(() => {});
+  };
 
   const handleScaleChange = async (delta: number) => {
     const newScale = Math.round((uiScale + delta) * 10) / 10;
@@ -256,192 +258,184 @@ export function HomePage() {
 
   const handleShellChange = async (shell: string) => {
     setPreferredShell(shell);
-    await updateConfig({ preferredShell: shell as 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd' }).catch(() => {});
-  };
-
-  // Recent sessions: those with a lastActivity timestamp, sorted desc, limited to 8
-  const recentSessions = useMemo(() => {
-    return sessions
-      .filter((s): s is Session & { lastActivity: string } => !s.archived && typeof s.lastActivity === 'string')
-      .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime())
-      .slice(0, 8);
-  }, [sessions]);
-
-  const projectNameMap = useMemo(() => {
-    const map = new Map<number, string>();
-    for (const p of projects) {
-      map.set(p.id, p.name);
-    }
-    return map;
-  }, [projects]);
-
-  const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
-
-  const handleOpenSession = (session: Session) => {
-    navigateToSessions();
-    setActiveSession(session.id).catch(() => {});
+    await updateConfig({
+      preferredShell: shell as 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd',
+    }).catch(() => {});
   };
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 bg-bg-primary overflow-y-auto">
-      <div className="w-full max-w-3xl space-y-10">
-
-        {/* Action cards */}
-        <div>
-          <h2 className="text-lg font-semibold text-text-primary mb-4">Get Started</h2>
-          <div className="grid grid-cols-3 gap-4">
-            <OpenProjectCard
-              projects={projects}
-              onAddProject={() => setShowAddProject(true)}
-            />
-
-            <button
-              type="button"
-              onClick={() => setShowAddProject(true)}
-              className="flex flex-col items-center justify-center gap-3 p-6 bg-surface-secondary rounded-lg hover:bg-surface-hover cursor-pointer transition-colors text-left"
-            >
-              <PlusIcon className="w-8 h-8 text-text-secondary" />
-              <span className="text-sm font-medium text-text-primary">New Project</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowCloneDialog(true)}
-              className="flex flex-col items-center justify-center gap-3 p-6 bg-surface-secondary rounded-lg hover:bg-surface-hover cursor-pointer transition-colors text-left"
-            >
-              <GitHubIcon className="w-8 h-8 text-text-secondary" />
-              <span className="text-sm font-medium text-text-primary">Clone from GitHub</span>
-            </button>
+    <div className="flex-1 overflow-y-auto bg-bg-primary px-8 py-10">
+      <div className="flex min-h-full items-center">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
+          <div className="flex justify-center">
+            <pre className="max-w-full overflow-hidden whitespace-pre text-center font-mono text-[10px] leading-[0.95] tracking-tight text-text-tertiary sm:text-[11px]">
+              {paneAscii}
+            </pre>
           </div>
-        </div>
-
-        {/* Quick Preferences */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-text-primary">Preferences</h2>
-
-          {/* Theme */}
-          <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-lg">
-            <span className="text-text-primary">Theme</span>
-            <Dropdown
-              trigger={
-                <button
-                  type="button"
-                  className="px-3 py-1.5 rounded-md bg-surface-tertiary hover:bg-surface-hover text-sm text-text-primary border border-border-secondary focus:outline-none focus:ring-2 focus:ring-interactive cursor-pointer flex items-center gap-2"
-                >
-                  <span>{theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'OLED Black'}</span>
-                  <ChevronDownIcon className="w-3 h-3 text-text-tertiary" />
-                </button>
-              }
-              items={[
-                { id: 'light', label: 'Light', onClick: () => setTheme('light') },
-                { id: 'dark', label: 'Dark', onClick: () => setTheme('dark') },
-                { id: 'oled', label: 'OLED Black', onClick: () => setTheme('oled') },
-              ]}
-              selectedId={theme}
-              position="bottom-right"
-              width="sm"
-            />
-          </div>
-
-          {/* UI Scale */}
-          <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-lg">
-            <span className="text-text-primary">UI Scale</span>
-            <div className="flex items-center gap-2">
+          <section className="grid gap-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,1fr)] lg:items-stretch">
+            <div className="space-y-5 rounded-2xl border border-border-secondary bg-surface-primary/70 p-6 shadow-sm">
+            <div>
+              <h2 className="mb-2 text-lg font-semibold text-text-primary">Get Started</h2>
+              <p className="text-sm text-text-tertiary">
+                Open a project, create a new one, or clone from GitHub.
+              </p>
+            </div>
+            <div className="grid justify-center gap-4 sm:grid-cols-3">
+              <OpenProjectCard
+                projects={projects}
+                onAddProject={() => setShowAddProject(true)}
+              />
               <button
-                onClick={() => handleScaleChange(-0.1)}
-                disabled={uiScale <= 0.8}
-                className="p-1 rounded-md bg-surface-tertiary hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed"
+                type="button"
+                onClick={() => setShowAddProject(true)}
+                className={actionCardClassName}
               >
-                <ChevronDownIcon className="w-4 h-4" />
+                <PlusIcon className="w-8 h-8 text-text-secondary" />
+                <span className="text-sm font-medium text-text-primary">New Project</span>
               </button>
-              <span className="text-sm text-text-secondary w-10 text-center">{uiScale.toFixed(1)}x</span>
               <button
-                onClick={() => handleScaleChange(0.1)}
-                disabled={uiScale >= 1.5}
-                className="p-1 rounded-md bg-surface-tertiary hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed"
+                type="button"
+                onClick={() => setShowCloneDialog(true)}
+                className={actionCardClassName}
               >
-                <ChevronUpIcon className="w-4 h-4" />
+                <GitHubIcon className="w-8 h-8 text-text-secondary" />
+                <span className="text-sm font-medium text-text-primary">GitHub</span>
               </button>
             </div>
-          </div>
+            </div>
 
-          {/* Terminal Shell (Windows only) */}
-          {platform === 'win32' && (
-            <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-lg">
-              <div className="flex items-center gap-2">
-                <TerminalIcon className="w-4 h-4 text-text-secondary" />
-                <span className="text-text-primary">Terminal Shell</span>
+            <section className="space-y-4 rounded-2xl border border-border-secondary bg-surface-primary/70 p-6 shadow-sm">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">Preferences</h2>
+                <p className="mt-2 text-sm text-text-tertiary">Make Pane your own</p>
               </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-surface-secondary p-4">
+              <span className="text-text-primary">Theme</span>
               <Dropdown
                 trigger={
                   <button
                     type="button"
-                    className="px-3 py-1.5 rounded-md bg-surface-tertiary hover:bg-surface-hover text-sm text-text-primary border border-border-secondary focus:outline-none focus:ring-2 focus:ring-interactive cursor-pointer flex items-center gap-2"
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{preferredShell === 'auto' ? 'Auto (Git Bash)' : availableShells.find(s => s.id === preferredShell)?.name ?? preferredShell}</span>
-                    <ChevronDownIcon className="w-3 h-3 text-text-tertiary" />
+                    <span>{theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'OLED Black'}</span>
+                    <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
                 items={[
-                  { id: 'auto', label: 'Auto (Git Bash)', onClick: () => handleShellChange('auto') },
-                  ...availableShells.map(shell => ({
-                    id: shell.id,
-                    label: shell.name,
-                    onClick: () => handleShellChange(shell.id),
-                  })),
+                  { id: 'light', label: 'Light', onClick: () => setTheme('light') },
+                  { id: 'dark', label: 'Dark', onClick: () => setTheme('dark') },
+                  { id: 'oled', label: 'OLED Black', onClick: () => setTheme('oled') },
                 ]}
-                selectedId={preferredShell}
+                selectedId={theme}
                 position="bottom-right"
                 width="sm"
               />
             </div>
+
+            <div className="flex items-center justify-between rounded-lg bg-surface-secondary p-4">
+              <span className="text-text-primary">UI Scale</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleScaleChange(-0.1)}
+                  disabled={uiScale <= 0.8}
+                  className="rounded-md bg-surface-tertiary p-1 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                <span className="w-10 text-center text-sm text-text-secondary">{uiScale.toFixed(1)}x</span>
+                <button
+                  type="button"
+                  onClick={() => void handleScaleChange(0.1)}
+                  disabled={uiScale >= 1.5}
+                  className="rounded-md bg-surface-tertiary p-1 hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {platform === 'win32' && (
+              <div className="flex items-center justify-between rounded-lg bg-surface-secondary p-4">
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-text-secondary" />
+                  <span className="text-text-primary">Terminal Shell</span>
+                </div>
+                <Dropdown
+                  trigger={
+                    <button
+                      type="button"
+                      className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
+                    >
+                      <span>
+                        {preferredShell === 'auto'
+                          ? 'Auto (Git Bash)'
+                          : availableShells.find(shell => shell.id === preferredShell)?.name ?? preferredShell}
+                      </span>
+                      <ChevronDown className="w-3 h-3 text-text-tertiary" />
+                    </button>
+                  }
+                  items={[
+                    { id: 'auto', label: 'Auto (Git Bash)', onClick: () => void handleShellChange('auto') },
+                    ...availableShells.map(shell => ({
+                      id: shell.id,
+                      label: shell.name,
+                      onClick: () => void handleShellChange(shell.id),
+                    })),
+                  ]}
+                  selectedId={preferredShell}
+                  position="bottom-right"
+                  width="sm"
+                />
+              </div>
+            )}
+            </section>
+          </section>
+
+          {recentSessions.length > 0 && (
+            <section className="rounded-2xl border border-border-secondary bg-surface-primary/70 p-6 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-text-primary">Recent Panes</h2>
+              <div className="space-y-1">
+                {recentSessions.map(session => (
+                  <button
+                    key={session.id}
+                    type="button"
+                    onClick={() => handleOpenSession(session)}
+                    className="flex w-full items-center justify-between gap-4 rounded-lg bg-surface-secondary px-4 py-3 text-left transition-colors hover:bg-surface-hover"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-text-primary">
+                        {session.name}
+                      </span>
+                      {session.projectId != null && projectNameMap.has(session.projectId) && (
+                        <span className="block truncate text-xs text-text-tertiary">
+                          {projectNameMap.get(session.projectId)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <Badge variant={getStatusVariant(session.status)} size="sm">
+                        {getStatusLabel(session.status)}
+                      </Badge>
+                      <span className="whitespace-nowrap text-xs text-text-tertiary">
+                        {formatDistanceToNow(session.lastActivity)}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {recentSessions.length === 0 && projects.length === 0 && (
+            <p className="text-center text-sm text-text-tertiary">
+              Select a project from the sidebar or create a new one to get started.
+            </p>
           )}
         </div>
-
-        {/* Recent sessions */}
-        {recentSessions.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">Recent Panes</h2>
-            <div className="space-y-1">
-              {recentSessions.map(session => (
-                <button
-                  key={session.id}
-                  type="button"
-                  onClick={() => handleOpenSession(session)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-surface-secondary rounded-lg hover:bg-surface-hover text-left transition-colors gap-4"
-                >
-                  <div className="flex-1 min-w-0">
-                    <span className="block text-sm font-medium text-text-primary truncate">
-                      {session.name}
-                    </span>
-                    {session.projectId != null && projectNameMap.has(session.projectId) && (
-                      <span className="block text-xs text-text-tertiary truncate">
-                        {projectNameMap.get(session.projectId)}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <Badge variant={getStatusVariant(session.status)} size="sm">
-                      {getStatusLabel(session.status)}
-                    </Badge>
-                    <span className="text-xs text-text-tertiary whitespace-nowrap">
-                      {formatDistanceToNow(session.lastActivity)}
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {recentSessions.length === 0 && projects.length === 0 && (
-          <p className="text-center text-sm text-text-tertiary">
-            Select a project from the sidebar or create a new one to get started.
-          </p>
-        )}
       </div>
 
-      {/* Dialogs */}
       <AddProjectDialog
         isOpen={showAddProject}
         onClose={() => setShowAddProject(false)}
