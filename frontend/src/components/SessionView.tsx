@@ -23,7 +23,7 @@ import { PanelContainer } from './panels/PanelContainer';
 import { SessionProvider } from '../contexts/SessionContext';
 import { ToolPanel, ToolPanelType, PANEL_CAPABILITIES } from '../../../shared/types/panels';
 import { PanelCreateOptions } from '../types/panelComponents';
-import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, GripHorizontal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare } from 'lucide-react';
+import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, GripHorizontal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2 } from 'lucide-react';
 import { ClaudeIcon, OpenAIIcon, getCliBrandIcon } from './ui/BrandIcons';
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';
@@ -838,6 +838,18 @@ export const SessionView = memo(() => {
           ? `Push ${activeSession.gitStatus.ahead} commit(s)${hook.gitCommands?.currentBranch ? ` from ${hook.gitCommands.currentBranch}` : ''} to remote`
           : 'No commits to push'
       },
+      {
+        id: 'undo-commit',
+        label: 'Undo Commit',
+        icon: Undo2,
+        shortcut: 'mod+shift+z',
+        onClick: hook.handleGitSoftReset,
+        disabled: hook.isMerging || activeSession.status === 'running' || activeSession.status === 'initializing' || !activeSession.gitStatus?.ahead,
+        variant: 'default' as const,
+        description: activeSession.gitStatus?.ahead
+          ? 'Undo last commit, keeping changes staged (git reset --soft HEAD~1)'
+          : 'No commits to undo'
+      },
       // --- Main branch operations (last) ---
       {
         id: 'rebase-from-main',
@@ -863,7 +875,7 @@ export const SessionView = memo(() => {
                      (hook.gitCommands?.getSquashAndRebaseToMainCommand ? hook.gitCommands.getSquashAndRebaseToMainCommand() : `Merges all commits to ${hook.gitCommands?.mainBranch || 'main'} (with safety checks)`)
       }
     ];
-  }, [activeSession, hook.isMerging, hook.gitCommands, hook.hasChangesToRebase, hook.hasStash, hook.handleGitPull, hook.handleGitPush, hook.handleGitFetch, hook.handleGitStash, hook.handleGitStashPop, hook.setShowCommitMessageDialog, hook.setDialogType, hook.handleRebaseMainIntoWorktree, hook.handleSquashAndRebaseToMain, activeSession?.gitStatus]);
+  }, [activeSession, hook.isMerging, hook.gitCommands, hook.hasChangesToRebase, hook.hasStash, hook.handleGitPull, hook.handleGitPush, hook.handleGitSoftReset, hook.handleGitFetch, hook.handleGitStash, hook.handleGitStashPop, hook.setShowCommitMessageDialog, hook.setDialogType, hook.handleRebaseMainIntoWorktree, hook.handleSquashAndRebaseToMain, activeSession?.gitStatus]);
   
   // Removed unused variables - now handled by panels
 

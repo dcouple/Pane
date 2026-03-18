@@ -33,6 +33,7 @@ export interface TerminalPanelState {
   
   // Enhanced persistence (can be added incrementally)
   scrollbackBuffer?: string | string[];   // Full terminal output history (string for new format, array for legacy)
+  serializedBuffer?: string;             // xterm.js serialized terminal state (includes full visual buffer)
   commandHistory?: string[];     // Commands entered by user
   environmentVars?: Record<string, string>; // Modified env vars
   dimensions?: { cols: number; rows: number }; // Terminal size

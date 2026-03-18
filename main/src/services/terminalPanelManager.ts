@@ -38,6 +38,7 @@ interface TerminalProcess {
 
 export class TerminalPanelManager {
   private terminals = new Map<string, TerminalProcess>();
+  private serializedBuffers = new Map<string, string>();
   private readonly MAX_SCROLLBACK_LINES = 10000;
   private analyticsManager: AnalyticsManager | null = null;
 
@@ -515,7 +516,8 @@ export class TerminalPanelManager {
       scrollbackBuffer: terminal.scrollbackBuffer,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
-      lastActiveCommand: terminal.currentCommand
+      lastActiveCommand: terminal.currentCommand,
+      serializedBuffer: this.serializedBuffers.get(panelId)
     } as TerminalPanelState;
     
     await panelManager.updatePanel(panelId, { state });
@@ -584,7 +586,8 @@ export class TerminalPanelManager {
       scrollbackBuffer: terminal.scrollbackBuffer,
       commandHistory: terminal.commandHistory,
       lastActivityTime: terminal.lastActivity.toISOString(),
-      lastActiveCommand: terminal.currentCommand
+      lastActiveCommand: terminal.currentCommand,
+      serializedBuffer: this.serializedBuffers.get(panelId)
     };
   }
   
@@ -623,10 +626,11 @@ export class TerminalPanelManager {
       console.error(`[TerminalPanelManager] Error killing terminal ${panelId}:`, error);
     }
 
-    // Remove from map
+    // Remove from maps
     this.terminals.delete(panelId);
+    this.serializedBuffers.delete(panelId);
   }
-  
+
   /**
    * Get all active terminal panel IDs.
    */
@@ -671,6 +675,49 @@ export class TerminalPanelManager {
     return this.terminals.get(panelId)?.scrollbackBuffer ?? null;
   }
 
+  saveSerializedSnapshot(panelId: string, serializedData: string): void {
+    // Enforce 8MB per-snapshot limit
+    const MAX_SNAPSHOT_SIZE = 8_000_000;
+    if (serializedData.length > MAX_SNAPSHOT_SIZE) {
+      console.warn(`[TerminalPanelManager] Serialized snapshot for ${panelId} exceeds 8MB limit (${(serializedData.length / 1_000_000).toFixed(1)}MB), skipping`);
+      return;
+    }
+
+    this.serializedBuffers.set(panelId, serializedData);
+
+    // Enforce 64MB total limit across all panels
+    const MAX_TOTAL_SIZE = 64_000_000;
+    let totalSize = 0;
+    for (const [, data] of this.serializedBuffers) {
+      totalSize += data.length;
+    }
+
+    if (totalSize > MAX_TOTAL_SIZE) {
+      // Prune oldest entries until under limit
+      // Use terminal lastActivity to determine age
+      const entries = Array.from(this.serializedBuffers.entries());
+      // Sort by terminal activity time (oldest first) using the terminals map
+      entries.sort((a, b) => {
+        const termA = this.terminals.get(a[0]);
+        const termB = this.terminals.get(b[0]);
+        const timeA = termA?.lastActivity?.getTime() ?? 0;
+        const timeB = termB?.lastActivity?.getTime() ?? 0;
+        return timeA - timeB;
+      });
+
+      for (const [id] of entries) {
+        if (totalSize <= MAX_TOTAL_SIZE) break;
+        if (id === panelId) continue; // Don't prune the one we just added
+        const removed = this.serializedBuffers.get(id);
+        if (removed) {
+          totalSize -= removed.length;
+          this.serializedBuffers.delete(id);
+          console.log(`[TerminalPanelManager] Pruned serialized snapshot for ${id} to stay under 64MB total`);
+        }
+      }
+    }
+  }
+
   destroyAllTerminals(): void {
     for (const [panelId, terminal] of this.terminals) {
       try {
@@ -695,6 +742,7 @@ export class TerminalPanelManager {
     }
 
     this.terminals.clear();
+    this.serializedBuffers.clear();
   }
 
   getActiveTerminals(): string[] {

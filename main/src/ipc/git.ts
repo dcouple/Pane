@@ -1389,6 +1389,73 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
+  ipcMain.handle('sessions:git-soft-reset', async (_event, sessionId: string) => {
+    try {
+      const session = await sessionManager.getSession(sessionId);
+      if (!session) {
+        return { success: false, error: 'Session not found' };
+      }
+
+      if (!session.worktreePath) {
+        return { success: false, error: 'Session has no worktree path' };
+      }
+
+      // Emit git operation started event
+      const startMessage = `🔄 GIT OPERATION\nUndoing last commit (keeping changes staged)...`;
+      emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
+        operation: 'soft-reset'
+      });
+
+      const ctx = sessionManager.getProjectContext(sessionId);
+      if (!ctx) throw new Error('Project context not found for session');
+
+      // Get main branch from project config (same pattern as squash-and-rebase)
+      const project = sessionManager.getProjectForSession(sessionId);
+      if (!project?.path) throw new Error('Project path not found for session');
+      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+
+      // Run git soft reset with live safety check
+      const result = await worktreeManager.gitSoftReset(session.worktreePath, mainBranch, ctx.commandRunner);
+
+      // Emit git operation completed event
+      const successMessage = `✓ Successfully undid last commit (changes are now staged)\n\nPrevious commit message:\n${result.previousCommitMessage}`;
+      emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
+        operation: 'soft-reset',
+        previousCommitMessage: result.previousCommitMessage
+      });
+
+      // Refresh git status
+      if (session.isMainRepo && session.projectId !== undefined) {
+        await refreshGitStatusForProject(session.projectId);
+      } else {
+        await refreshGitStatusForSession(sessionId);
+      }
+
+      return { success: true, data: result };
+    } catch (error: unknown) {
+      console.error('Failed to soft reset:', error);
+
+      const gitError = error as GitError;
+
+      const errorMessage = `✗ Undo commit failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
+                          (gitError.gitOutput ? `\n\nGit output:\n${gitError.gitOutput}` : '');
+      emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
+        operation: 'soft-reset',
+        error: error instanceof Error ? error.message : String(error),
+        gitOutput: gitError.gitOutput
+      });
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to undo commit',
+        gitError: {
+          output: gitError.gitOutput || (error instanceof Error ? error.message : String(error)),
+          workingDirectory: gitError.workingDirectory || ''
+        }
+      };
+    }
+  });
+
   ipcMain.handle('sessions:git-fetch', async (_event, sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);

@@ -47,6 +47,7 @@ import * as fs from 'fs';
 import { terminalPanelManager } from './services/terminalPanelManager';
 import { panelManager } from './services/panelManager';
 import { TerminalPanelState } from '../../shared/types/panels';
+import { worktreePoolManager } from './services/worktreePoolManager';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -778,6 +779,37 @@ app.whenReady().then(async () => {
     console.log('[Main] Performing startup version check...');
     await versionChecker.checkOnStartup();
   }, 1000); // Small delay to ensure window is fully ready
+
+  // Initialize worktree pool — cleanup orphans and seed reserves
+  setTimeout(async () => {
+    try {
+      const projects = databaseService.getAllProjects();
+      for (const project of projects) {
+        if (!project.path) continue;
+        const ctx = sessionManager.getProjectContextByProjectId(project.id);
+        if (!ctx) continue;
+        // Cleanup leftover reserves from previous runs (fire-and-forget)
+        worktreePoolManager.cleanupOrphanedReserves(project.path, ctx.commandRunner).catch(() => {});
+      }
+      // Seed a reserve for the active project
+      const activeProject = sessionManager.getActiveProject();
+      if (activeProject?.path) {
+        const ctx = sessionManager.getProjectContextByProjectId(activeProject.id);
+        if (ctx) {
+          const mainBranch = await worktreeManager.getProjectMainBranch(activeProject.path, ctx.commandRunner).catch(() => 'HEAD');
+          worktreePoolManager.createReserve(
+            activeProject.path,
+            mainBranch,
+            activeProject.worktree_folder ?? undefined,
+            ctx.pathResolver,
+            ctx.commandRunner
+          ).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.warn('[WorktreePool] Initialization failed:', error);
+    }
+  }, 5000); // Delay to not slow down app startup
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
