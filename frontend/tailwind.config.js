@@ -64,11 +64,14 @@ export default {
           'tertiary': 'var(--color-bg-tertiary)',
           'hover': 'var(--color-bg-hover)',
           'active': 'var(--color-bg-active)',
+          'chrome': 'var(--color-bg-chrome)',
+          'editor': 'var(--color-bg-editor)',
         },
         // Surface colors
         'surface': {
           'primary': 'var(--color-surface-primary)',
           'secondary': 'var(--color-surface-secondary)',
+          'tertiary': 'var(--color-surface-tertiary)',
           'hover': 'var(--color-surface-hover)',
           'interactive': 'var(--color-surface-interactive)',
           'interactive-hover': 'var(--color-surface-interactive-hover)',

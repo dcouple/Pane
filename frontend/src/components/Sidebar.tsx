@@ -3,7 +3,7 @@ import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Info, Check, Edit, CircleArrowDown, AlertTriangle, GitMerge, ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, Minus, RefreshCw, GitBranch, Clock, FileText, GitPullRequest } from 'lucide-react';
+import { ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, Minus, RefreshCw, GitBranch, Clock, FileText, GitPullRequest } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { usePaneLogo } from '../hooks/usePaneLogo';
@@ -13,7 +13,6 @@ import { Tooltip } from './ui/Tooltip';
 import { Kbd } from './ui/Kbd';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { useHotkeyStore } from '../stores/hotkeyStore';
-import { Modal, ModalHeader, ModalBody } from './ui/Modal';
 import { Dropdown } from './ui/Dropdown';
 import type { DropdownItem } from './ui/Dropdown';
 import { useSessionStore } from '../stores/sessionStore';
@@ -172,7 +171,6 @@ function CollapsedSessionTooltip({ session }: { session: Session }) {
 }
 
 interface SidebarProps {
-  onHelpClick: () => void;
   onAboutClick: () => void;
   onSettingsClick: () => void;
   isSettingsOpen: boolean;
@@ -184,14 +182,13 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse }: SidebarProps) {
+export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse }: SidebarProps) {
   const paneLogo = usePaneLogo();
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
     const keys = hotkeys.get(id)?.keys;
     return keys ? formatKeyDisplay(keys) : null;
   }, [hotkeys]);
-  const [showStatusGuide, setShowStatusGuide] = useState(false);
   const [version, setVersion] = useState<string>('');
   const [gitCommit, setGitCommit] = useState<string>('');
   const [worktreeName, setWorktreeName] = useState<string>('');
@@ -301,7 +298,7 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
       <>
         <div
           data-testid="sidebar"
-          className="bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0 border-r border-border-primary"
+          className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0 border-r border-border-primary"
           style={{ width: '48px' }}
         >
           {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
@@ -411,7 +408,7 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
     <>
       <div
         data-testid="sidebar"
-        className="bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0 border-r border-border-primary"
+        className="pane-sidebar-shell bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0 border-r border-border-primary"
         style={{ width: `${width}px` }}
       >
         {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
@@ -423,18 +420,8 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
           className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
           onMouseDown={onResize}
         >
-          {/* Visual indicator */}
-          <div className="absolute inset-0 bg-border-secondary group-hover:bg-interactive transition-colors" />
           {/* Larger grab area */}
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
-          {/* Drag indicator dots */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-0 transform translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex flex-col gap-1">
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-            </div>
-          </div>
         </div>
         <div className="px-3 py-2 border-b border-border-primary flex items-center justify-between overflow-hidden">
           <div className="flex items-center space-x-2 min-w-0">
@@ -452,69 +439,42 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
                 />
               </Tooltip>
             )}
-            <IconButton
-              onClick={onHelpClick}
-              aria-label="Help"
-              size="md"
-              icon={
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+            <Dropdown
+              trigger={
+                <button
+                  className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
+                  aria-label="Sidebar menu"
+                >
+                  <MoreHorizontal size={14} />
+                </button>
               }
-            />
-            <Tooltip content={hotkeyDisplay('open-settings') ? <Kbd>{hotkeyDisplay('open-settings')}</Kbd> : undefined} side="bottom">
-              <IconButton
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                data-testid="settings-button"
-                size="md"
-                icon={
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
+              items={[
+                {
+                  id: 'settings',
+                  label: 'Settings',
+                  icon: SettingsIcon,
+                  onClick: onSettingsClick
+                },
+                {
+                  id: 'sort',
+                  label: sessionSortAscending ? 'Sort: Oldest first' : 'Sort: Newest first',
+                  icon: ArrowUpDown,
+                  onClick: toggleSessionSortOrder
+                },
+                {
+                  id: 'refresh',
+                  label: 'Refresh git status',
+                  icon: RefreshCw,
+                  onClick: handleRefreshGitStatus
                 }
-              />
-            </Tooltip>
+              ] satisfies DropdownItem[]}
+              position="bottom-right"
+              width="sm"
+            />
           </div>
         </div>
 
-
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-          <div className="px-3 py-2 text-sm uppercase flex items-center justify-between overflow-hidden">
-            <span className="truncate text-text-tertiary">Repos & Worktrees</span>
-            <div className="flex items-center space-x-1">
-              <Dropdown
-                trigger={
-                  <button className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary">
-                    <MoreHorizontal size={14} />
-                  </button>
-                }
-                items={[
-                  {
-                    id: 'sort',
-                    label: sessionSortAscending ? 'Sort: Oldest first' : 'Sort: Newest first',
-                    icon: ArrowUpDown,
-                    onClick: toggleSessionSortOrder
-                  },
-                  {
-                    id: 'legend',
-                    label: 'Status legend',
-                    icon: Info,
-                    onClick: () => setShowStatusGuide(true)
-                  },
-                  {
-                    id: 'refresh',
-                    label: 'Refresh git status',
-                    icon: RefreshCw,
-                    onClick: handleRefreshGitStatus
-                  }
-                ] satisfies DropdownItem[]}
-                position="auto"
-                width="sm"
-              />
-            </div>
-          </div>
           <ProjectSessionList sessionSortAscending={sessionSortAscending} />
         </div>
 
@@ -544,171 +504,6 @@ export function Sidebar({ onHelpClick, onAboutClick, onSettingsClick, isSettings
     </div>
 
       <Settings isOpen={isSettingsOpen} onClose={onSettingsClose} initialSection={settingsInitialSection} />
-      
-      {/* Status Guide Modal */}
-      <Modal 
-        isOpen={showStatusGuide} 
-        onClose={() => setShowStatusGuide(false)}
-        size="lg"
-      >
-        <ModalHeader>Status Indicators Guide</ModalHeader>
-        <ModalBody>
-            
-            <div className="space-y-4">
-              {/* Project Indicators */}
-              <div className="pb-3 border-b border-border-primary">
-                <h4 className="text-sm font-medium text-text-primary mb-2">Project Indicators</h4>
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <svg className="w-4 h-4 text-interactive" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                      <path d="M6 3v12M6 3a9 9 0 0 0 9 9m-9-9a9 9 0 0 1 9 9m0-9h12" />
-                    </svg>
-                    <div className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-status-success rounded-full"></div>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary font-medium">Git Project</span>
-                    <p className="text-text-tertiary text-sm">Project connected to a git repository</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Pane Status Indicators */}
-              <div className="pb-3 border-b border-border-primary">
-                <h4 className="text-sm font-medium text-text-primary mb-2">Pane Status</h4>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-success rounded-full animate-pulse flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">Initializing</span>
-                      <p className="text-text-tertiary text-sm">Setting up git worktree and environment</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-success rounded-full animate-pulse flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">Running</span>
-                      <p className="text-text-tertiary text-sm">Claude is actively processing your request</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-warning rounded-full animate-pulse flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">Waiting</span>
-                      <p className="text-text-tertiary text-sm">Claude needs your input to continue</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-neutral rounded-full flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">Completed</span>
-                      <p className="text-text-tertiary text-sm">Task finished successfully</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-info rounded-full animate-pulse flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">New Activity</span>
-                      <p className="text-text-tertiary text-sm">Pane has new unviewed results</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 bg-status-error rounded-full flex-shrink-0"></div>
-                    <div>
-                      <span className="text-text-secondary font-medium">Error</span>
-                      <p className="text-text-tertiary text-sm">Something went wrong with the pane</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Git Status Indicators */}
-              <div>
-                <h4 className="text-sm font-medium text-text-primary mb-2">Git Status Indicators</h4>
-                <p className="text-text-tertiary text-sm mb-3">Click any indicator to view detailed changes in the Diff panel</p>
-                
-                {/* HIGH PRIORITY */}
-                <div className="mb-3">
-                  <p className="text-xs font-medium text-text-tertiary mb-2">HIGH PRIORITY</p>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center gap-0.5 w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-status-success/10 text-status-success border-border-primary">
-                        <GitMerge className="w-3.5 h-3.5" strokeWidth={2} />
-                        <span className="font-bold">3</span>
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Ready to Merge</strong> - Changes ready to merge cleanly</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center gap-0.5 w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-status-warning/10 text-status-warning border-border-primary">
-                        <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
-                        <span className="font-bold">2</span>
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Conflict Risk</strong> - Behind main, potential conflicts</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* SPECIAL CASES */}
-                <div className="mb-3">
-                  <p className="text-xs font-medium text-text-tertiary mb-2">SPECIAL CASES</p>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-status-error/10 text-status-error border-border-primary">
-                        <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Conflicts</strong> - Active merge conflicts need resolution</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center gap-0.5 w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-status-info/10 text-status-info border-border-primary">
-                        <Edit className="w-3.5 h-3.5" strokeWidth={2} />
-                        <span className="font-bold">2</span>
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Uncommitted</strong> - Work in progress</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* LOW PRIORITY */}
-                <div>
-                  <p className="text-xs font-medium text-text-tertiary mb-2">LOW PRIORITY</p>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center gap-0.5 w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-bg-tertiary text-text-tertiary border-border-primary">
-                        <CircleArrowDown className="w-3.5 h-3.5" strokeWidth={2} />
-                        <span className="font-bold">2</span>
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Behind Only</strong> - No unique changes</span>
-                    </div>
-                    
-                    <div className="flex items-center gap-3 p-2 rounded">
-                      <span className="inline-flex items-center justify-center w-[5.5ch] px-1.5 py-0.5 text-xs rounded-md border bg-bg-tertiary text-text-tertiary border-border-primary">
-                        <Check className="w-3.5 h-3.5" strokeWidth={2} />
-                      </span>
-                      <span className="text-xs text-text-secondary"><strong>Up to Date</strong> - Safe to remove</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="mt-4 p-3 bg-status-info/10 border border-status-info/20 rounded-lg">
-                  <p className="font-medium text-status-info text-xs mb-2">Tips</p>
-                  <ul className="list-disc list-inside space-y-1 text-xs text-text-secondary">
-                    <li>Focus on <strong>High Priority</strong> branches first</li>
-                    <li>Numbers show commit count or file changes</li>
-                    <li>Star (★) indicates counts above 9</li>
-                    <li>Gray indicators are low priority - often safe to remove</li>
-                    <li>Click any indicator to view detailed diff</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-        </ModalBody>
-      </Modal>
     </>
   );
 }

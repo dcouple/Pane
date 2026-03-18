@@ -39,31 +39,265 @@ body.light {
   @apply bg-bg-primary text-text-primary;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+body.ember {
+  background:
+    radial-gradient(circle at top center, rgba(255, 106, 193, 0.18), transparent 32%),
+    radial-gradient(circle at top right, rgba(124, 77, 255, 0.14), transparent 28%),
+    linear-gradient(180deg, #17111f 0%, #1d1630 100%);
 }
 
-/* Scrollbar styling with design tokens */
+body.aurora {
+  background:
+    radial-gradient(circle at top center, rgba(234, 154, 151, 0.12), transparent 30%),
+    radial-gradient(circle at top right, rgba(196, 167, 231, 0.1), transparent 24%),
+    linear-gradient(180deg, #232136 0%, #2a273f 100%);
+}
+
+body.light-rounded {
+  background:
+    radial-gradient(circle at top center, rgba(88, 166, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f7fafc 0%, #eef3f7 100%);
+}
+
+/* Scrollbars stay functional but visually hidden */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 ::-webkit-scrollbar-track {
-  @apply bg-transparent;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border-secondary;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  background: transparent;
+  border-radius: 0;
+  transition: none;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-border-primary;
+  background: transparent;
 }
 
 /* Firefox scrollbar support */
 * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border-secondary) transparent;
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
+/* Tab indicator — default fill mode */
+.panel-tab-bar [aria-selected="true"] {
+  background-color: var(--color-surface-primary);
+}
+
+/* Tab indicator — Forge underline mode */
+:root.forge .panel-tab-bar [aria-selected="true"],
+:root.ember .panel-tab-bar [aria-selected="true"] {
+  background-color: transparent;
+  box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
+}
+
+/* Theme-aware structural shells */
+.pane-main-layout {
+  padding: var(--app-frame-padding);
+  gap: var(--app-frame-gap);
+}
+
+.pane-sidebar-slot,
+.pane-session-shell,
+.pane-session-content,
+.pane-editor-stage,
+.pane-terminal-shell-body,
+.pane-detail-panel-inner {
+  min-height: 0;
+}
+
+.pane-session-shell {
+  min-width: 0;
+}
+
+:root.dusk .pane-sidebar-shell,
+:root.forge .pane-sidebar-shell,
+:root.ember .pane-sidebar-shell,
+:root.aurora .pane-sidebar-shell,
+:root.light-rounded .pane-sidebar-shell {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--app-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-session-shell,
+:root.forge .pane-session-shell,
+:root.ember .pane-session-shell,
+:root.aurora .pane-session-shell,
+:root.light-rounded .pane-session-shell {
+  gap: var(--panel-shell-gap);
+}
+
+:root.dusk .panel-tab-bar,
+:root.forge .panel-tab-bar,
+:root.ember .panel-tab-bar,
+:root.aurora .panel-tab-bar,
+:root.light-rounded .panel-tab-bar {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-editor-stage,
+:root.forge .pane-editor-stage,
+:root.ember .pane-editor-stage,
+:root.aurora .pane-editor-stage,
+:root.light-rounded .pane-editor-stage {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-dock,
+:root.forge .pane-terminal-dock,
+:root.ember .pane-terminal-dock,
+:root.aurora .pane-terminal-dock,
+:root.light-rounded .pane-terminal-dock {
+  margin-top: var(--panel-shell-gap);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-rail,
+:root.forge .pane-terminal-rail,
+:root.ember .pane-terminal-rail,
+:root.aurora .pane-terminal-rail,
+:root.light-rounded .pane-terminal-rail,
+:root.dusk .pane-detail-panel,
+:root.forge .pane-detail-panel,
+:root.ember .pane-detail-panel,
+:root.aurora .pane-detail-panel,
+:root.light-rounded .pane-detail-panel {
+  border-color: transparent !important;
+  background: transparent;
+}
+
+:root.dusk .pane-terminal-rail-shell,
+:root.forge .pane-terminal-rail-shell,
+:root.ember .pane-terminal-rail-shell,
+:root.aurora .pane-terminal-rail-shell,
+:root.light-rounded .pane-terminal-rail-shell,
+:root.dusk .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-inner,
+:root.ember .pane-detail-panel-inner,
+:root.aurora .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-inner {
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--panel-shell-radius);
+  overflow: hidden;
+  box-shadow: var(--panel-shell-shadow);
+}
+
+:root.dusk .pane-terminal-rail-shell,
+:root.forge .pane-terminal-rail-shell,
+:root.ember .pane-terminal-rail-shell,
+:root.aurora .pane-terminal-rail-shell,
+:root.light-rounded .pane-terminal-rail-shell,
+:root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.ember .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.aurora .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
+  margin-left: var(--panel-shell-gap);
+}
+
+:root.dusk .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.forge .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.ember .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.aurora .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
+  margin-top: var(--panel-shell-gap);
+}
+
+:root.dusk .panel-tab-bar,
+:root.dusk .pane-editor-stage,
+:root.dusk .pane-terminal-dock,
+:root.dusk .pane-terminal-rail-shell,
+:root.dusk .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+:root.forge .panel-tab-bar,
+:root.forge .pane-editor-stage,
+:root.forge .pane-terminal-dock,
+:root.forge .pane-terminal-rail-shell,
+:root.forge .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: var(--forge-gray5);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.025),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+:root.ember .panel-tab-bar,
+:root.ember .pane-editor-stage,
+:root.ember .pane-terminal-dock,
+:root.ember .pane-terminal-rail-shell,
+:root.ember .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(255, 106, 193, 0.22);
+  box-shadow:
+    0 12px 26px rgba(7, 2, 17, 0.32),
+    0 0 0 1px rgba(255, 106, 193, 0.08),
+    inset 0 1px 0 rgba(255, 214, 244, 0.08);
+}
+
+:root.aurora .panel-tab-bar,
+:root.aurora .pane-editor-stage,
+:root.aurora .pane-terminal-dock,
+:root.aurora .pane-terminal-rail-shell,
+:root.aurora .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(196, 167, 231, 0.2);
+  box-shadow:
+    0 12px 24px rgba(15, 12, 28, 0.24),
+    0 0 0 1px rgba(196, 167, 231, 0.06),
+    inset 0 1px 0 rgba(246, 193, 119, 0.04);
+}
+
+:root.light-rounded .panel-tab-bar,
+:root.light-rounded .pane-editor-stage,
+:root.light-rounded .pane-terminal-dock,
+:root.light-rounded .pane-terminal-rail-shell,
+:root.light-rounded .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(31, 35, 40, 0.1);
+  box-shadow:
+    0 8px 20px rgba(15, 23, 42, 0.06),
+    0 0 0 1px rgba(255, 255, 255, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* Theme-specific terminal rounding should come from shell containers first */
+:root.dusk .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.forge .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.ember .xterm,
+:root.aurora .xterm,
+:root.light-rounded .xterm {
+  border-radius: var(--panel-shell-radius);
 }
 
 /* Hide scrollbar completely */
@@ -75,23 +309,23 @@ body.light {
   display: none;
 }
 
-/* Custom scrollbar classes for Rich Output */
+/* Keep custom scroll regions visually silent too */
 .scrollbar-thin {
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 
 .scrollbar-thumb-border-secondary {
-  scrollbar-color: var(--color-border-secondary) transparent;
+  scrollbar-color: transparent transparent;
 }
 
 .scrollbar-thumb-border-primary {
-  scrollbar-color: var(--color-border-primary) transparent;
+  scrollbar-color: transparent transparent;
 }
 
 /* Webkit browsers (Chrome, Safari, Edge) - Rich Output specific */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 0;
+  height: 0;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
@@ -99,17 +333,17 @@ body.light {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-secondary);
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  background-color: transparent;
+  border-radius: 0;
+  transition: none;
 }
 
 .scrollbar-thin:hover::-webkit-scrollbar-thumb {
-  background-color: var(--color-border-primary);
+  background-color: transparent;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background-color: var(--color-text-tertiary);
+  background-color: transparent;
 }
 
 /* Custom animations for the working indicator */
@@ -409,11 +643,19 @@ body.light {
 /* Monaco Editor CSS Variable Overrides */
 
 /* Dark theme overrides */
-:root.dark, :root.oled {
+:root.dark, :root.oled, :root.dusk {
   --vscode-editor-background: #0d1117 !important;
   --vscode-editor-foreground: #e6edf3 !important;
   --vscode-editorWidget-background: #0d1117 !important;
   --vscode-editorWidget-foreground: #e6edf3 !important;
+}
+
+/* Forge theme overrides — IntelliJ editor colors */
+:root.forge {
+  --vscode-editor-background: #1E1F22 !important;
+  --vscode-editor-foreground: #DFE1E5 !important;
+  --vscode-editorWidget-background: #1E1F22 !important;
+  --vscode-editorWidget-foreground: #DFE1E5 !important;
 }
 
 /* Light theme overrides */

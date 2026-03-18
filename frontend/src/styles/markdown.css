@@ -180,36 +180,36 @@
   margin-left: -1.5rem;
 }
 
-/* Scrollbar styling */
+/* Keep markdown scrollbars invisible too */
 .markdown-preview::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 0;
+  height: 0;
 }
 
 .markdown-preview::-webkit-scrollbar-track {
-  background: #f3f4f6;
+  background: transparent;
 }
 
 .dark .markdown-preview::-webkit-scrollbar-track,
 .oled .markdown-preview::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: transparent;
 }
 
 .markdown-preview::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
+  background: transparent;
+  border-radius: 0;
 }
 
 .dark .markdown-preview::-webkit-scrollbar-thumb,
 .oled .markdown-preview::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: transparent;
 }
 
 .markdown-preview::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: transparent;
 }
 
 .dark .markdown-preview::-webkit-scrollbar-thumb:hover,
 .oled .markdown-preview::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: transparent;
 }

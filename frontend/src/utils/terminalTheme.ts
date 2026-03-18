@@ -2,7 +2,7 @@
 const rgbToHex = (rgb: string): string => {
   // Check if already in hex format
   if (rgb.startsWith('#')) return rgb;
-  
+
   // Match rgb(r g b) or rgb(r, g, b) format
   const match = rgb.match(/rgb\((\d+)[\s,]+(\d+)[\s,]+(\d+)\)/);
   if (match) {
@@ -11,7 +11,7 @@ const rgbToHex = (rgb: string): string => {
     const b = parseInt(match[3], 10);
     return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
-  
+
   // If we can't parse it, return as-is
   return rgb;
 };
@@ -20,18 +20,20 @@ const rgbToHex = (rgb: string): string => {
 const getCSSVariable = (name: string): string => {
   // Force a reflow to ensure CSS variables are up to date
   void document.documentElement.offsetHeight;
-  
+
   const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   if (value) {
     // Convert to hex format if needed
     return rgbToHex(value);
   }
-  
+
   // Provide smart fallbacks based on current theme
   const isLight = document.documentElement.classList.contains('light');
   const isDark = document.documentElement.classList.contains('dark');
   const isOled = document.documentElement.classList.contains('oled');
-  
+  const isDusk = document.documentElement.classList.contains('dusk');
+  const isForge = document.documentElement.classList.contains('forge');
+
   // Define theme-aware fallbacks (already in hex format)
   const fallbacks: Record<string, { light: string; dark: string }> = {
     '--color-terminal-bg': { light: '#ffffff', dark: '#111827' },
@@ -42,15 +44,15 @@ const getCSSVariable = (name: string): string => {
     '--color-terminal-bright-black': { light: '#6b7280', dark: '#6b7280' },
     '--color-terminal-bright-white': { light: '#f3f4f6', dark: '#ffffff' },
   };
-  
+
   const fallback = fallbacks[name];
   if (fallback) {
-    // Prioritize explicit dark class, then light class, then default to dark
-    if (isDark || isOled) return fallback.dark;
+    // Prioritize explicit theme classes, then default to dark
+    if (isForge || isDusk || isDark || isOled) return fallback.dark;
     if (isLight) return fallback.light;
     return fallback.dark;
   }
-  
+
   // Default color fallbacks
   return isLight ? '#000000' : '#ffffff';
 };
@@ -84,15 +86,16 @@ export const getTerminalTheme = () => {
 export const getScriptTerminalTheme = () => {
   const baseTheme = getTerminalTheme();
   const isLight = document.documentElement.classList.contains('light');
-  const isDark = document.documentElement.classList.contains('dark');
   const isOled = document.documentElement.classList.contains('oled');
-  
+  const isForge = document.documentElement.classList.contains('forge');
+  const isDusk = document.documentElement.classList.contains('dusk');
+
   // Use surface colors for better integration with the UI
   const surfaceBackground = getCSSVariable('--color-surface-secondary');
-  
+
   return {
     ...baseTheme,
-    background: surfaceBackground || (isLight ? '#f9fafb' : isOled ? '#080808' : isDark ? '#1f2937' : '#1f2937'),
+    background: surfaceBackground || (isLight ? '#f9fafb' : isForge ? '#1E1F22' : isDusk ? '#111827' : isOled ? '#080808' : '#1f2937'),
   };
 };
 
@@ -101,17 +104,21 @@ export const debugTerminalTheme = () => {
   const isLight = document.documentElement.classList.contains('light');
   const isDark = document.documentElement.classList.contains('dark');
   const isOled = document.documentElement.classList.contains('oled');
-  
+  const isDusk = document.documentElement.classList.contains('dusk');
+  const isForge = document.documentElement.classList.contains('forge');
+
   // Check actual CSS variable values
   const bgVar = getComputedStyle(document.documentElement).getPropertyValue('--color-terminal-bg').trim();
   const fgVar = getComputedStyle(document.documentElement).getPropertyValue('--color-terminal-fg').trim();
-  
+
   // Return debug info instead of logging to console
   return {
     classes: document.documentElement.className,
     isLight,
     isDark,
     isOled,
+    isDusk,
+    isForge,
     cssVariables: {
       '--color-terminal-bg': bgVar || 'NOT SET',
       '--color-terminal-fg': fgVar || 'NOT SET',

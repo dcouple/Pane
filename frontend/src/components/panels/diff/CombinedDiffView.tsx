@@ -580,9 +580,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
             {/* Resize handle */}
             <div
-              className={`w-1 hover:bg-interactive cursor-col-resize flex-shrink-0 transition-colors ${
-                isResizing ? 'bg-interactive' : 'bg-transparent'
-              }`}
+              className="w-1 cursor-col-resize flex-shrink-0 bg-transparent"
               onMouseDown={handleResizeStart}
               title="Drag to resize sidebar"
             />

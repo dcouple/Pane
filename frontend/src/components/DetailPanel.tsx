@@ -91,7 +91,7 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
   if (orientation === 'horizontal') {
     return (
       <div
-        className={`flex-shrink-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-t border-border-primary'}`}
+        className={`pane-detail-panel pane-detail-panel-horizontal flex-shrink-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-t border-border-primary'}`}
         style={{ height: immersiveMode ? '0px' : isCollapsed ? (terminalShortcuts ? '60px' : '32px') : `${height ?? 200}px` }}
       >
         {/* Resize handle at top edge */}
@@ -100,12 +100,13 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
             className="absolute top-0 left-0 right-0 h-1 cursor-row-resize group z-10"
             onMouseDown={onResize}
           >
-            <div className="absolute inset-0 bg-border-primary hover:bg-interactive transition-colors" />
+            <div className="absolute -top-2 bottom-0 left-0 right-0" />
           </div>
         )}
 
-        {/* Header row */}
-        <div className="flex items-center h-8 px-3 gap-2 flex-shrink-0">
+        <div className="pane-detail-panel-inner flex flex-col h-full min-h-0">
+          {/* Header row */}
+          <div className="flex items-center h-8 px-3 gap-2 flex-shrink-0">
           {/* Collapse toggle */}
           <button
             onClick={onToggleCollapse}
@@ -199,32 +200,33 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
               </button>
             </Tooltip>
           )}
+          </div>
+
+          {/* Terminal shortcut pills row */}
+          {terminalShortcuts && (
+            <div className="flex items-center h-7 px-3 gap-2 flex-shrink-0 overflow-x-auto scrollbar-none">
+              {terminalShortcuts}
+            </div>
+          )}
+
+          {/* Expandable content: history */}
+          {!isCollapsed && !gitUnavailable && session.worktreePath && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
+              <GitHistoryGraph
+                sessionId={session.id}
+                baseBranch={session.baseBranch || 'main'}
+                layout="wide"
+              />
+            </div>
+          )}
         </div>
-
-        {/* Terminal shortcut pills row */}
-        {terminalShortcuts && (
-          <div className="flex items-center h-7 px-3 gap-2 flex-shrink-0 overflow-x-auto scrollbar-none">
-            {terminalShortcuts}
-          </div>
-        )}
-
-        {/* Expandable content: history */}
-        {!isCollapsed && !gitUnavailable && session.worktreePath && (
-          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
-            <GitHistoryGraph
-              sessionId={session.id}
-              baseBranch={session.baseBranch || 'main'}
-              layout="wide"
-            />
-          </div>
-        )}
       </div>
     );
   }
 
   return (
     <div
-      className={`flex-shrink-0 min-w-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isVisible && !immersiveMode ? 'border-l border-border-primary' : ''}`}
+      className={`pane-detail-panel pane-detail-panel-vertical flex-shrink-0 min-w-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isVisible && !immersiveMode ? 'border-l border-border-primary' : ''}`}
       style={{ width: isVisible && !immersiveMode ? `${width}px` : '0px' }}
     >
       {/* Resize handle */}
@@ -232,11 +234,12 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
         className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
         onMouseDown={onResize}
       >
-        <div className="absolute inset-0 bg-border-primary hover:bg-interactive transition-colors" />
+        <div className="absolute -left-2 right-0 top-0 bottom-0" />
       </div>
 
-      {/* Fixed top sections — never scroll */}
-      <div className="flex-shrink-0 overflow-hidden">
+      <div className="pane-detail-panel-inner flex flex-col h-full min-h-0">
+        {/* Fixed top sections — never scroll */}
+        <div className="flex-shrink-0 overflow-hidden">
         {/* Branch name — standalone header */}
         <div className="flex items-center gap-2 px-3 py-2 border-b border-border-primary min-w-0">
           <GitBranch className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
@@ -516,22 +519,23 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
           </div>
         </DetailSection>
         )}
-      </div>
-
-      {/* History — fills remaining space, only this section scrolls */}
-      {!gitUnavailable && session.worktreePath && (
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <div className="px-2 pt-2 flex-shrink-0">
-            <SectionHeader>History</SectionHeader>
-          </div>
-          <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
-            <GitHistoryGraph
-              sessionId={session.id}
-              baseBranch={session.baseBranch || 'main'}
-            />
-          </div>
         </div>
-      )}
+
+        {/* History — fills remaining space, only this section scrolls */}
+        {!gitUnavailable && session.worktreePath && (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="px-2 pt-2 flex-shrink-0">
+              <SectionHeader>History</SectionHeader>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+              <GitHistoryGraph
+                sessionId={session.id}
+                baseBranch={session.baseBranch || 'main'}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

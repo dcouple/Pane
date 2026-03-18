@@ -773,7 +773,7 @@ export function FileEditor({
   const monacoRef = useRef<typeof monaco | null>(null);
 
   const { theme } = useTheme();
-  const isDarkMode = theme !== 'light';
+  const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
   const hasUnsavedChanges = fileContent !== originalContent;
   
   // Wrap onResize callback to avoid recreating
@@ -1097,18 +1097,8 @@ export function FileEditor({
           className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
           onMouseDown={startResize}
         >
-          {/* Visual indicator */}
-          <div className="absolute inset-0 bg-border-primary group-hover:bg-interactive transition-colors" />
           {/* Larger grab area */}
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
-          {/* Drag indicator dots */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-0 transform translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex flex-col gap-1">
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-            </div>
-          </div>
         </div>
       </div>
       <div className="flex-1 flex flex-col">

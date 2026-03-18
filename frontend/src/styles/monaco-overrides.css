@@ -1,11 +1,19 @@
 /* Monaco Editor CSS Variable Overrides */
 
 /* Dark theme overrides */
-:root.dark, :root.oled {
+:root.dark, :root.oled, :root.dusk {
   --vscode-editor-background: #111827 !important; /* gray-900 */
   --vscode-editor-foreground: #f3f4f6 !important; /* gray-100 */
   --vscode-editorWidget-background: #111827 !important;
   --vscode-editorWidget-foreground: #f3f4f6 !important;
+}
+
+/* Forge theme overrides — IntelliJ editor colors */
+:root.forge {
+  --vscode-editor-background: #1E1F22 !important;
+  --vscode-editor-foreground: #DFE1E5 !important;
+  --vscode-editorWidget-background: #1E1F22 !important;
+  --vscode-editorWidget-foreground: #DFE1E5 !important;
 }
 
 /* Light theme overrides */

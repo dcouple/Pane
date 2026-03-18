@@ -10,14 +10,40 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const theme = (savedTheme === 'light' || savedTheme === 'oled') ? savedTheme : 'dark';
-      document.documentElement.classList.add(theme);
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const themeClasses = {
+        'light': ['light'],
+        'light-rounded': ['light', 'light-rounded'],
+        'dark': ['dark'],
+        'oled': ['dark', 'oled'],
+        'dusk': ['dark', 'dusk'],
+        'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
+        'forge': ['dark', 'forge'],
+        'ember': ['dark', 'ember'],
+        'aurora': ['dark', 'aurora'],
+      };
+      const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
+      document.documentElement.classList.add(...themeClasses[theme]);
     </script>
   </head>
   <body>
     <script>
-      // Also apply to body
-      const t = localStorage.getItem('theme'); document.body.classList.add(t === 'light' ? 'light' : t === 'oled' ? 'oled' : 'dark');
+      // Also apply to body (mirrors the head script logic)
+      const t = localStorage.getItem('theme');
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const tc = {
+        'light': ['light'],
+        'light-rounded': ['light', 'light-rounded'],
+        'dark': ['dark'],
+        'oled': ['dark', 'oled'],
+        'dusk': ['dark', 'dusk'],
+        'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
+        'forge': ['dark', 'forge'],
+        'ember': ['dark', 'ember'],
+        'aurora': ['dark', 'aurora'],
+      };
+      const bt = vt.includes(t) ? t : 'light-rounded';
+      document.body.classList.add(...tc[bt]);
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

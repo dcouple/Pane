@@ -267,8 +267,8 @@ export function HomePage() {
     <div className="flex-1 overflow-y-auto bg-bg-primary px-8 py-10">
       <div className="flex min-h-full items-center">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
-          <div className="flex justify-center">
-            <pre className="max-w-full overflow-hidden whitespace-pre text-center font-mono text-[10px] leading-[0.95] tracking-tight text-text-tertiary sm:text-[11px]">
+          <div className="flex justify-start pl-6">
+            <pre className="max-w-full overflow-hidden whitespace-pre text-left font-mono text-[10px] leading-[0.95] tracking-tight text-text-tertiary sm:text-[11px]">
               {paneAscii}
             </pre>
           </div>
@@ -318,14 +318,20 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'OLED Black'}</span>
+                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora' }[theme]}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
                 items={[
-                  { id: 'light', label: 'Light', onClick: () => setTheme('light') },
-                  { id: 'dark', label: 'Dark', onClick: () => setTheme('dark') },
-                  { id: 'oled', label: 'OLED Black', onClick: () => setTheme('oled') },
+                  { id: 'light-rounded', label: 'Light (rounded)', onClick: () => setTheme('light-rounded') },
+                  { id: 'forge', label: 'Forge', onClick: () => setTheme('forge') },
+                  { id: 'dusk-oled', label: 'Dusk (OLED)', onClick: () => setTheme('dusk-oled') },
+                  { id: 'dusk', label: 'Dusk', onClick: () => setTheme('dusk') },
+                  { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
+                  { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
+                  { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
+                  { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
+                  { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },
                 ]}
                 selectedId={theme}
                 position="bottom-right"

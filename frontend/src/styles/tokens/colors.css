@@ -41,6 +41,74 @@
   --gh-light-100: rgb(234 238 242);  /* Subtle hover */
   --gh-light-200: rgb(208 215 222);  /* GitHub border #d0d7de */
   --gh-light-300: rgb(178 186 194);  /* Muted border */
+
+  /* Dusk primitives — cool navy-gray ramp */
+  --dusk-950: #0b1120;
+  --dusk-900: #111827;
+  --dusk-850: #1e293b;
+  --dusk-800: #1f2937;
+  --dusk-700: #374151;
+  --dusk-600: #4b5563;
+  --dusk-500: #6b7280;
+  --dusk-400: #9ca3af;
+  --dusk-300: #d1d5db;
+  --dusk-200: #e5e7eb;
+  --dusk-100: #f3f4f6;
+
+  /* Forge primitives — IntelliJ New UI gray ramp */
+  --forge-gray1: #1E1F22;
+  --forge-gray2: #2B2D30;
+  --forge-gray3: #393B40;
+  --forge-gray4: #43454A;
+  --forge-gray5: #4E5157;
+  --forge-gray6: #5A5D63;
+  --forge-gray7: #6F737A;
+  --forge-gray8: #868A91;
+  --forge-gray9: #9DA0A8;
+  --forge-gray10: #B4B8BF;
+  --forge-gray11: #CED0D6;
+  --forge-gray12: #DFE1E5;
+
+  /* Forge blue accent ramp */
+  --forge-blue1: #25324D;
+  --forge-blue2: #2E436E;
+  --forge-blue6: #3574F0;
+  --forge-blue7: #467FF2;
+  --forge-blue8: #548AF7;
+  --forge-blue9: #6B9BFA;
+  --forge-blue10: #83ACFC;
+
+  /* Ember primitives — warm graphite and copper */
+  --ember-950: #120e0c;
+  --ember-900: #1a1411;
+  --ember-850: #221a17;
+  --ember-800: #2b211d;
+  --ember-700: #382b26;
+  --ember-600: #4a3932;
+  --ember-500: #6b5448;
+  --ember-400: #9d8273;
+  --ember-300: #ccb8ac;
+  --ember-200: #e7dad2;
+  --ember-100: #f7efea;
+  --ember-accent-500: #d97757;
+  --ember-accent-400: #e7926f;
+  --ember-accent-300: #f2ab86;
+
+  /* Aurora primitives — midnight teal and ice */
+  --aurora-950: #061218;
+  --aurora-900: #0a1a22;
+  --aurora-850: #0d2530;
+  --aurora-800: #123240;
+  --aurora-700: #194759;
+  --aurora-600: #215f74;
+  --aurora-500: #2c8398;
+  --aurora-400: #53b6c9;
+  --aurora-300: #8bd8e4;
+  --aurora-200: #bfeef4;
+  --aurora-100: #e9fbfd;
+  --aurora-accent-500: #38bdf8;
+  --aurora-accent-400: #67e8f9;
+  --aurora-accent-300: #a5f3fc;
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -55,7 +123,16 @@
   /* Semantic Tokens - Surface Colors */
   --color-surface-primary: var(--gh-900);
   --color-surface-secondary: var(--gh-800);
+  --color-surface-tertiary: var(--gh-700);
   --color-surface-hover: rgba(255, 255, 255, 0.04);
+
+  /* Structural tokens for theme-aware layout */
+  --color-bg-chrome: var(--color-bg-primary);
+  --color-bg-editor: var(--color-bg-primary);
+
+  /* Tab indicator (fill mode by default — CSS handles this) */
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
 
   /* Semantic Tokens - Text */
   --color-text-primary: rgb(230 237 243);        /* GitHub #e6edf3 */
@@ -325,6 +402,12 @@
   --color-scrollbar-thumb: var(--gh-light-200);
   --color-scrollbar-thumb-hover: var(--gh-light-300);
 
+  /* Structural tokens — chrome uses secondary for contrast with white active tabs */
+  --color-bg-chrome: var(--color-surface-secondary);
+  --color-bg-editor: var(--color-bg-primary);
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
+
   /* Terminal Colors - Light Theme
      No overrides needed: dark terminal colors are used as-is,
      and CSS filter: invert(1) hue-rotate(180deg) on .xterm
@@ -383,7 +466,724 @@
   --color-scrollbar-thumb: rgb(40 40 40);
   --color-scrollbar-thumb-hover: rgb(55 55 55);
 
+  --color-surface-tertiary: rgb(20 20 20);
+
+  /* Structural tokens */
+  --color-bg-chrome: var(--color-bg-primary);
+  --color-bg-editor: var(--color-bg-primary);
+  --tab-indicator-color: var(--aurora-accent-400);
+  --tab-indicator-height: 3px;
+
   /* Terminal - only bg and black need to change */
   --color-terminal-bg: rgb(0 0 0);
   --color-terminal-black: rgb(0 0 0);
+}
+
+/* Dusk Theme — Emdash-inspired achromatic navy-gray */
+:root.dusk {
+  /* Backgrounds */
+  --color-bg-primary: var(--dusk-900);
+  --color-bg-secondary: var(--dusk-800);
+  --color-bg-tertiary: var(--dusk-700);
+  --color-bg-hover: var(--dusk-700);
+  --color-bg-active: var(--dusk-600);
+  --color-bg-chrome: var(--dusk-900);
+  --color-bg-editor: var(--dusk-900);
+
+  /* Surfaces */
+  --color-surface-primary: var(--dusk-800);
+  --color-surface-secondary: var(--dusk-850);
+  --color-surface-tertiary: var(--dusk-700);
+  --color-surface-hover: rgba(255, 255, 255, 0.05);
+
+  /* Text */
+  --color-text-primary: var(--dusk-100);
+  --color-text-secondary: var(--dusk-300);
+  --color-text-tertiary: var(--dusk-400);
+  --color-text-muted: var(--dusk-500);
+  --color-text-disabled: var(--dusk-600);
+
+  /* Borders */
+  --color-border-primary: rgba(255, 255, 255, 0.08);
+  --color-border-secondary: rgba(255, 255, 255, 0.05);
+  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-border-focus: #3b82f6;
+
+  /* Interactive */
+  --color-interactive-primary: #3b82f6;
+  --color-interactive-hover: #60a5fa;
+  --color-interactive-active: #93c5fd;
+  --color-interactive-text: #60a5fa;
+  --color-focus-ring: #3b82f6;
+  --color-interactive-rgb: 59 130 246;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: #60a5fa;
+  --color-text-interactive-on-dark-hover: #3b82f6;
+  --color-text-interactive-on-dark-active: #60a5fa;
+  --color-text-interactive-on-dark-focus: #60a5fa;
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--dusk-800);
+  --color-surface-interactive-hover: var(--dusk-700);
+  --color-interactive-surface: rgba(59, 130, 246, 0.15);
+  --color-interactive-surface-hover: rgba(59, 130, 246, 0.25);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-interactive-border: rgba(59, 130, 246, 0.5);
+  --color-interactive-border-hover: rgba(59, 130, 246, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--dusk-500);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(59, 130, 246, 0.4);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--dusk-100);
+  --color-text-on-secondary: var(--dusk-300);
+  --color-text-on-tertiary: var(--dusk-300);
+  --color-text-on-surface: var(--dusk-300);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--dusk-300);
+
+  /* Buttons */
+  --color-button-primary-bg: #3b82f6;
+  --color-button-primary-hover: #60a5fa;
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--dusk-700);
+  --color-button-secondary-hover: var(--dusk-600);
+  --color-button-secondary-text: var(--dusk-300);
+  --color-button-ghost-hover: var(--dusk-800);
+  --color-button-ghost-text: var(--dusk-400);
+
+  /* Cards */
+  --color-card-bg: var(--dusk-800);
+  --color-card-border: rgba(255, 255, 255, 0.08);
+  --color-card-nested-bg: var(--dusk-700);
+
+  /* Forms */
+  --color-input-bg: var(--dusk-900);
+  --color-input-border: rgba(255, 255, 255, 0.08);
+  --color-input-focus: #3b82f6;
+  --color-input-text: var(--dusk-100);
+  --color-input-placeholder: var(--dusk-500);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.6);
+  --color-modal-bg: var(--dusk-800);
+
+  /* Navigation */
+  --color-surface-navigation: var(--dusk-900);
+  --color-surface-navigation-hover: var(--dusk-800);
+  --color-surface-navigation-active: var(--dusk-700);
+  --color-surface-navigation-selected: rgba(59, 130, 246, 0.15);
+  --color-surface-navigation-selected-hover: rgba(59, 130, 246, 0.2);
+  --color-text-navigation-primary: var(--dusk-300);
+  --color-text-navigation-secondary: var(--dusk-400);
+  --color-text-navigation-muted: var(--dusk-500);
+  --color-text-navigation-selected: var(--dusk-100);
+  --color-text-navigation-hover: var(--dusk-100);
+  --color-text-navigation-section: var(--dusk-500);
+  --color-text-navigation-brand: var(--dusk-400);
+  --color-border-navigation: rgba(255, 255, 255, 0.06);
+  --color-divider-navigation: rgba(255, 255, 255, 0.05);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--dusk-900);
+  --color-scrollbar-thumb: var(--dusk-600);
+  --color-scrollbar-thumb-hover: var(--dusk-500);
+
+  /* Tab indicator (fill mode — same as default) */
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
+
+  /* Terminal */
+  --color-terminal-bg: var(--dusk-900);
+  --color-terminal-fg: var(--dusk-100);
+  --color-terminal-cursor: #60a5fa;
+  --color-terminal-black: var(--dusk-900);
+  /* remaining terminal colors inherited from :root dark defaults */
+}
+
+/* Dusk OLED — Dusk styling with pure-black foundations */
+:root.dusk-oled {
+  /* Backgrounds */
+  --color-bg-primary: rgb(0 0 0);
+  --color-bg-secondary: rgb(3 5 9);
+  --color-bg-tertiary: rgb(10 15 24);
+  --color-bg-hover: rgb(15 23 36);
+  --color-bg-active: rgb(24 34 50);
+  --color-bg-chrome: rgb(0 0 0);
+  --color-bg-editor: rgb(0 0 0);
+
+  /* Surfaces */
+  --color-surface-primary: rgb(6 10 17);
+  --color-surface-secondary: rgb(10 15 24);
+  --color-surface-tertiary: rgb(17 24 39);
+  --color-surface-hover: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --color-text-primary: var(--dusk-100);
+  --color-text-secondary: var(--dusk-300);
+  --color-text-tertiary: var(--dusk-400);
+  --color-text-muted: var(--dusk-500);
+  --color-text-disabled: var(--dusk-600);
+
+  /* Borders */
+  --color-border-primary: rgba(255, 255, 255, 0.12);
+  --color-border-secondary: rgba(255, 255, 255, 0.07);
+  --color-border-hover: rgba(255, 255, 255, 0.16);
+  --color-border-focus: #3b82f6;
+
+  /* Interactive */
+  --color-interactive-primary: #3b82f6;
+  --color-interactive-hover: #60a5fa;
+  --color-interactive-active: #93c5fd;
+  --color-interactive-text: #60a5fa;
+  --color-focus-ring: #3b82f6;
+  --color-interactive-rgb: 59 130 246;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: #60a5fa;
+  --color-text-interactive-on-dark-hover: #3b82f6;
+  --color-text-interactive-on-dark-active: #60a5fa;
+  --color-text-interactive-on-dark-focus: #60a5fa;
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: rgb(10 15 24);
+  --color-surface-interactive-hover: rgb(17 24 39);
+  --color-interactive-surface: rgba(59, 130, 246, 0.16);
+  --color-interactive-surface-hover: rgba(59, 130, 246, 0.26);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-interactive-border: rgba(59, 130, 246, 0.55);
+  --color-interactive-border-hover: rgba(59, 130, 246, 0.75);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--dusk-500);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(59, 130, 246, 0.45);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--dusk-100);
+  --color-text-on-secondary: var(--dusk-300);
+  --color-text-on-tertiary: var(--dusk-300);
+  --color-text-on-surface: var(--dusk-300);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--dusk-300);
+
+  /* Buttons */
+  --color-button-primary-bg: #3b82f6;
+  --color-button-primary-hover: #60a5fa;
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: rgb(17 24 39);
+  --color-button-secondary-hover: rgb(24 34 50);
+  --color-button-secondary-text: var(--dusk-300);
+  --color-button-ghost-hover: rgb(10 15 24);
+  --color-button-ghost-text: var(--dusk-400);
+
+  /* Cards */
+  --color-card-bg: rgb(6 10 17);
+  --color-card-border: rgba(255, 255, 255, 0.1);
+  --color-card-nested-bg: rgb(10 15 24);
+
+  /* Forms */
+  --color-input-bg: rgb(0 0 0);
+  --color-input-border: rgba(255, 255, 255, 0.1);
+  --color-input-focus: #3b82f6;
+  --color-input-text: var(--dusk-100);
+  --color-input-placeholder: var(--dusk-500);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.72);
+  --color-modal-bg: rgb(6 10 17);
+
+  /* Navigation */
+  --color-surface-navigation: rgb(0 0 0);
+  --color-surface-navigation-hover: rgb(6 10 17);
+  --color-surface-navigation-active: rgb(10 15 24);
+  --color-surface-navigation-selected: rgba(59, 130, 246, 0.16);
+  --color-surface-navigation-selected-hover: rgba(59, 130, 246, 0.24);
+  --color-text-navigation-primary: var(--dusk-300);
+  --color-text-navigation-secondary: var(--dusk-400);
+  --color-text-navigation-muted: var(--dusk-500);
+  --color-text-navigation-selected: var(--dusk-100);
+  --color-text-navigation-hover: var(--dusk-100);
+  --color-text-navigation-section: var(--dusk-500);
+  --color-text-navigation-brand: var(--dusk-400);
+  --color-border-navigation: rgba(255, 255, 255, 0.08);
+  --color-divider-navigation: rgba(255, 255, 255, 0.06);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: rgb(0 0 0);
+  --color-scrollbar-thumb: rgb(36 45 61);
+  --color-scrollbar-thumb-hover: rgb(56 69 92);
+
+  /* Tab indicator (fill mode — same as Dusk) */
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
+
+  /* Terminal */
+  --color-terminal-bg: rgb(0 0 0);
+  --color-terminal-fg: var(--dusk-100);
+  --color-terminal-cursor: #60a5fa;
+  --color-terminal-black: rgb(0 0 0);
+}
+
+/* Forge Theme — IntelliJ-inspired two-tone with blue accent */
+:root.forge {
+  /* Backgrounds — TWO-TONE foundation */
+  --color-bg-primary: var(--forge-gray2);
+  --color-bg-secondary: var(--forge-gray2);
+  --color-bg-tertiary: var(--forge-gray3);
+  --color-bg-hover: var(--forge-gray3);
+  --color-bg-active: var(--forge-gray4);
+  --color-bg-chrome: var(--forge-gray2);
+  --color-bg-editor: var(--forge-gray1);   /* SUNKEN — darker than chrome */
+
+  /* Surfaces */
+  --color-surface-primary: var(--forge-gray2);
+  --color-surface-secondary: var(--forge-gray1);
+  --color-surface-tertiary: var(--forge-gray3);
+  --color-surface-hover: rgba(255, 255, 255, 0.04);
+
+  /* Text */
+  --color-text-primary: var(--forge-gray12);
+  --color-text-secondary: var(--forge-gray11);
+  --color-text-tertiary: var(--forge-gray9);
+  --color-text-muted: var(--forge-gray7);
+  --color-text-disabled: var(--forge-gray6);
+
+  /* Borders — near-invisible, depth via color */
+  --color-border-primary: var(--forge-gray3);
+  --color-border-secondary: var(--forge-gray2);
+  --color-border-hover: var(--forge-gray4);
+  --color-border-focus: var(--forge-blue6);
+
+  /* Interactive — single blue accent */
+  --color-interactive-primary: var(--forge-blue6);
+  --color-interactive-hover: var(--forge-blue7);
+  --color-interactive-active: var(--forge-blue8);
+  --color-interactive-text: var(--forge-blue9);
+  --color-focus-ring: var(--forge-blue6);
+  --color-interactive-rgb: 53 116 240;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--forge-blue9);
+  --color-text-interactive-on-dark-hover: var(--forge-blue6);
+  --color-text-interactive-on-dark-active: var(--forge-blue9);
+  --color-text-interactive-on-dark-focus: var(--forge-blue9);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--forge-gray2);
+  --color-surface-interactive-hover: var(--forge-gray3);
+  --color-interactive-surface: rgba(53, 116, 240, 0.15);
+  --color-interactive-surface-hover: rgba(53, 116, 240, 0.25);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-interactive-border: rgba(53, 116, 240, 0.5);
+  --color-interactive-border-hover: rgba(53, 116, 240, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--forge-gray7);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(53, 116, 240, 0.4);
+
+  /* Status — IntelliJ semantic colors */
+  --color-status-success: #73BD79;
+  --color-status-success-hover: #5BA863;
+  --color-status-warning: #F2C55C;
+  --color-status-warning-hover: #D9AD44;
+  --color-status-error: #DB5C5C;
+  --color-status-error-hover: #C44444;
+  --color-status-info: var(--forge-blue8);
+  --color-status-neutral: var(--forge-gray7);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--forge-gray12);
+  --color-text-on-secondary: var(--forge-gray11);
+  --color-text-on-tertiary: var(--forge-gray11);
+  --color-text-on-surface: var(--forge-gray11);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--forge-gray11);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--forge-blue6);
+  --color-button-primary-hover: var(--forge-blue7);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--forge-gray3);
+  --color-button-secondary-hover: var(--forge-gray4);
+  --color-button-secondary-text: var(--forge-gray12);
+  --color-button-ghost-hover: var(--forge-gray3);
+  --color-button-ghost-text: var(--forge-gray9);
+
+  /* Cards */
+  --color-card-bg: var(--forge-gray2);
+  --color-card-border: var(--forge-gray3);
+  --color-card-nested-bg: var(--forge-gray3);
+
+  /* Forms */
+  --color-input-bg: var(--forge-gray1);
+  --color-input-border: var(--forge-gray5);
+  --color-input-focus: var(--forge-blue6);
+  --color-input-text: var(--forge-gray12);
+  --color-input-placeholder: var(--forge-gray7);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.6);
+  --color-modal-bg: var(--forge-gray2);
+
+  /* Navigation */
+  --color-surface-navigation: var(--forge-gray2);
+  --color-surface-navigation-hover: var(--forge-gray3);
+  --color-surface-navigation-active: var(--forge-gray4);
+  --color-surface-navigation-selected: rgba(53, 116, 240, 0.15);
+  --color-surface-navigation-selected-hover: rgba(53, 116, 240, 0.2);
+  --color-text-navigation-primary: var(--forge-gray11);
+  --color-text-navigation-secondary: var(--forge-gray9);
+  --color-text-navigation-muted: var(--forge-gray7);
+  --color-text-navigation-selected: var(--forge-gray12);
+  --color-text-navigation-hover: var(--forge-gray12);
+  --color-text-navigation-section: var(--forge-gray7);
+  --color-text-navigation-brand: var(--forge-gray9);
+  --color-border-navigation: var(--forge-gray3);
+  --color-divider-navigation: var(--forge-gray3);
+  --color-divider-navigation-subtle: var(--forge-gray2);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--forge-gray2);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.30);
+
+  /* Tab indicator — UNDERLINE mode for Forge */
+  --tab-indicator-color: var(--forge-blue6);
+  --tab-indicator-height: 4px;
+
+  /* Terminal — IntelliJ dark scheme */
+  --color-terminal-bg: var(--forge-gray1);
+  --color-terminal-fg: var(--forge-gray12);
+  --color-terminal-cursor: var(--forge-blue6);
+  --color-terminal-black: var(--forge-gray1);
+  --color-terminal-red: #DB5C5C;
+  --color-terminal-green: #6AAB73;
+  --color-terminal-yellow: #F2C55C;
+  --color-terminal-blue: var(--forge-blue8);
+  --color-terminal-magenta: #C77DBB;
+  --color-terminal-cyan: #2AACB8;
+  --color-terminal-white: var(--forge-gray12);
+  --color-terminal-bright-black: var(--forge-gray7);
+  --color-terminal-bright-red: #E87A7A;
+  --color-terminal-bright-green: #8FCC97;
+  --color-terminal-bright-yellow: #F5D580;
+  --color-terminal-bright-blue: var(--forge-blue10);
+  --color-terminal-bright-magenta: #D4A0CC;
+  --color-terminal-bright-cyan: #57D1DE;
+  --color-terminal-bright-white: #FFFFFF;
+}
+
+/* Ember Theme — Synthwave-inspired cyberpunk pink */
+:root.ember {
+  --color-bg-primary: #17111f;
+  --color-bg-secondary: #21172d;
+  --color-bg-tertiary: #2c1d3f;
+  --color-bg-hover: #312149;
+  --color-bg-active: #40255d;
+  --color-bg-chrome: #21172d;
+  --color-bg-editor: #17111f;
+
+  --color-surface-primary: #241933;
+  --color-surface-secondary: #1b1428;
+  --color-surface-tertiary: #322148;
+  --color-surface-hover: rgba(255, 255, 255, 0.06);
+
+  --color-text-primary: #f7eaff;
+  --color-text-secondary: #e3c9ff;
+  --color-text-tertiary: #cba6ff;
+  --color-text-muted: #9e7ac8;
+  --color-text-disabled: #70548e;
+
+  --color-border-primary: rgba(255, 106, 193, 0.18);
+  --color-border-secondary: rgba(255, 106, 193, 0.1);
+  --color-border-hover: rgba(255, 106, 193, 0.24);
+  --color-border-focus: #ff6ac1;
+
+  --color-interactive-primary: #ff6ac1;
+  --color-interactive-hover: #ff8bd1;
+  --color-interactive-active: #ffb0df;
+  --color-interactive-text: #ff9ada;
+  --color-focus-ring: #ff6ac1;
+  --color-interactive-rgb: 255 106 193;
+
+  --color-text-interactive-on-dark: #ff9ada;
+  --color-text-interactive-on-dark-hover: #ff6ac1;
+  --color-text-interactive-on-dark-active: #ffb0df;
+  --color-text-interactive-on-dark-focus: #ff9ada;
+
+  --color-surface-interactive: #2b1e3e;
+  --color-surface-interactive-hover: #35234d;
+  --color-interactive-surface: rgba(255, 106, 193, 0.18);
+  --color-interactive-surface-hover: rgba(255, 106, 193, 0.28);
+
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-interactive-border: rgba(255, 106, 193, 0.52);
+  --color-interactive-border-hover: rgba(255, 106, 193, 0.72);
+  --color-text-interactive-muted: #9e7ac8;
+  --color-focus-ring-subtle: rgba(255, 106, 193, 0.42);
+
+  --color-status-success: #72f1b8;
+  --color-status-success-hover: #46e7a2;
+  --color-status-warning: #fede5d;
+  --color-status-warning-hover: #ffd43b;
+  --color-status-error: #ff5c8a;
+  --color-status-error-hover: #ff3f74;
+  --color-status-info: #36f9f6;
+  --color-status-neutral: #9e7ac8;
+
+  --color-text-on-primary: #f7eaff;
+  --color-text-on-secondary: #e3c9ff;
+  --color-text-on-tertiary: #e3c9ff;
+  --color-text-on-surface: #e3c9ff;
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: #e3c9ff;
+
+  --color-button-primary-bg: #ff6ac1;
+  --color-button-primary-hover: #ff8bd1;
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: #35234d;
+  --color-button-secondary-hover: #452a61;
+  --color-button-secondary-text: #e3c9ff;
+  --color-button-ghost-hover: #241933;
+  --color-button-ghost-text: #cba6ff;
+
+  --color-card-bg: #241933;
+  --color-card-border: rgba(255, 106, 193, 0.16);
+  --color-card-nested-bg: #312149;
+
+  --color-input-bg: #17111f;
+  --color-input-border: rgba(255, 106, 193, 0.14);
+  --color-input-focus: #ff6ac1;
+  --color-input-text: #f7eaff;
+  --color-input-placeholder: #9e7ac8;
+
+  --color-modal-overlay: rgba(5, 2, 12, 0.68);
+  --color-modal-bg: #241933;
+
+  --color-surface-navigation: #1b1428;
+  --color-surface-navigation-hover: #241933;
+  --color-surface-navigation-active: #322148;
+  --color-surface-navigation-selected: rgba(255, 106, 193, 0.14);
+  --color-surface-navigation-selected-hover: rgba(255, 106, 193, 0.22);
+  --color-text-navigation-primary: #e3c9ff;
+  --color-text-navigation-secondary: #cba6ff;
+  --color-text-navigation-muted: #9e7ac8;
+  --color-text-navigation-selected: #f7eaff;
+  --color-text-navigation-hover: #f7eaff;
+  --color-text-navigation-section: #9e7ac8;
+  --color-text-navigation-brand: #cba6ff;
+  --color-border-navigation: rgba(255, 106, 193, 0.08);
+  --color-divider-navigation: rgba(255, 106, 193, 0.06);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
+
+  --color-scrollbar-track: #17111f;
+  --color-scrollbar-thumb: #70548e;
+  --color-scrollbar-thumb-hover: #9e7ac8;
+
+  --tab-indicator-color: #ff6ac1;
+  --tab-indicator-height: 3px;
+
+  --color-terminal-bg: #17111f;
+  --color-terminal-fg: #f7eaff;
+  --color-terminal-cursor: #ff8bd1;
+  --color-terminal-black: #17111f;
+  --color-terminal-red: #ff5c8a;
+  --color-terminal-green: #72f1b8;
+  --color-terminal-yellow: #fede5d;
+  --color-terminal-blue: #7c4dff;
+  --color-terminal-magenta: #ff6ac1;
+  --color-terminal-cyan: #36f9f6;
+  --color-terminal-white: #f7eaff;
+  --color-terminal-bright-black: #70548e;
+  --color-terminal-bright-red: #ff84a7;
+  --color-terminal-bright-green: #98ffd1;
+  --color-terminal-bright-yellow: #fff08c;
+  --color-terminal-bright-blue: #a98cff;
+  --color-terminal-bright-magenta: #ffb0df;
+  --color-terminal-bright-cyan: #8cfff9;
+  --color-terminal-bright-white: #ffffff;
+}
+
+/* Aurora Theme — Rosé Pine-inspired romantic dark */
+:root.aurora {
+  --color-bg-primary: #232136;
+  --color-bg-secondary: #2a273f;
+  --color-bg-tertiary: #393552;
+  --color-bg-hover: #403c5f;
+  --color-bg-active: #524f67;
+  --color-bg-chrome: #2a273f;
+  --color-bg-editor: #232136;
+
+  --color-surface-primary: #2a273f;
+  --color-surface-secondary: #232136;
+  --color-surface-tertiary: #393552;
+  --color-surface-hover: rgba(255, 255, 255, 0.05);
+
+  --color-text-primary: #e0def4;
+  --color-text-secondary: #d9d7f0;
+  --color-text-tertiary: #b6b0d2;
+  --color-text-muted: #908caa;
+  --color-text-disabled: #6e6a86;
+
+  --color-border-primary: rgba(196, 167, 231, 0.16);
+  --color-border-secondary: rgba(196, 167, 231, 0.08);
+  --color-border-hover: rgba(246, 193, 119, 0.18);
+  --color-border-focus: #c4a7e7;
+
+  --color-interactive-primary: #c4a7e7;
+  --color-interactive-hover: #d2b7ef;
+  --color-interactive-active: #ebbcba;
+  --color-interactive-text: #ebbcba;
+  --color-focus-ring: #c4a7e7;
+  --color-interactive-rgb: 196 167 231;
+
+  --color-text-interactive-on-dark: #ebbcba;
+  --color-text-interactive-on-dark-hover: #c4a7e7;
+  --color-text-interactive-on-dark-active: #f6c177;
+  --color-text-interactive-on-dark-focus: #ebbcba;
+
+  --color-surface-interactive: #2a273f;
+  --color-surface-interactive-hover: #393552;
+  --color-interactive-surface: rgba(196, 167, 231, 0.16);
+  --color-interactive-surface-hover: rgba(196, 167, 231, 0.24);
+
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-interactive-border: rgba(196, 167, 231, 0.5);
+  --color-interactive-border-hover: rgba(196, 167, 231, 0.7);
+  --color-text-interactive-muted: #908caa;
+  --color-focus-ring-subtle: rgba(196, 167, 231, 0.38);
+
+  --color-status-success: #9ccfd8;
+  --color-status-success-hover: #6eb8c0;
+  --color-status-warning: #f6c177;
+  --color-status-warning-hover: #ebb76b;
+  --color-status-error: #eb6f92;
+  --color-status-error-hover: #df5d86;
+  --color-status-info: #c4a7e7;
+  --color-status-neutral: #908caa;
+
+  --color-text-on-primary: #e0def4;
+  --color-text-on-secondary: #d9d7f0;
+  --color-text-on-tertiary: #d9d7f0;
+  --color-text-on-surface: #d9d7f0;
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: #d9d7f0;
+
+  --color-button-primary-bg: #c4a7e7;
+  --color-button-primary-hover: #d2b7ef;
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: #393552;
+  --color-button-secondary-hover: #524f67;
+  --color-button-secondary-text: #d9d7f0;
+  --color-button-ghost-hover: #2a273f;
+  --color-button-ghost-text: #b6b0d2;
+
+  --color-card-bg: #2a273f;
+  --color-card-border: rgba(196, 167, 231, 0.16);
+  --color-card-nested-bg: #393552;
+
+  --color-input-bg: #232136;
+  --color-input-border: rgba(196, 167, 231, 0.12);
+  --color-input-focus: #c4a7e7;
+  --color-input-text: #e0def4;
+  --color-input-placeholder: #908caa;
+
+  --color-modal-overlay: rgba(14, 12, 24, 0.62);
+  --color-modal-bg: #2a273f;
+
+  --color-surface-navigation: #232136;
+  --color-surface-navigation-hover: #2a273f;
+  --color-surface-navigation-active: #393552;
+  --color-surface-navigation-selected: rgba(196, 167, 231, 0.14);
+  --color-surface-navigation-selected-hover: rgba(196, 167, 231, 0.2);
+  --color-text-navigation-primary: #d9d7f0;
+  --color-text-navigation-secondary: #b6b0d2;
+  --color-text-navigation-muted: #908caa;
+  --color-text-navigation-selected: #e0def4;
+  --color-text-navigation-hover: #e0def4;
+  --color-text-navigation-section: #908caa;
+  --color-text-navigation-brand: #b6b0d2;
+  --color-border-navigation: rgba(196, 167, 231, 0.08);
+  --color-divider-navigation: rgba(196, 167, 231, 0.06);
+  --color-divider-navigation-subtle: rgba(196, 167, 231, 0.03);
+
+  --color-scrollbar-track: #232136;
+  --color-scrollbar-thumb: #6e6a86;
+  --color-scrollbar-thumb-hover: #908caa;
+
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
+
+  --color-terminal-bg: #232136;
+  --color-terminal-fg: #e0def4;
+  --color-terminal-cursor: #c4a7e7;
+  --color-terminal-black: #232136;
+  --color-terminal-red: #eb6f92;
+  --color-terminal-green: #9ccfd8;
+  --color-terminal-yellow: #f6c177;
+  --color-terminal-blue: #3e8fb0;
+  --color-terminal-magenta: #c4a7e7;
+  --color-terminal-cyan: #ea9a97;
+  --color-terminal-white: #e0def4;
+  --color-terminal-bright-black: #6e6a86;
+  --color-terminal-bright-red: #f08ba8;
+  --color-terminal-bright-green: #b0dde3;
+  --color-terminal-bright-yellow: #f9cc8f;
+  --color-terminal-bright-blue: #66a6c1;
+  --color-terminal-bright-magenta: #d7c2ef;
+  --color-terminal-bright-cyan: #efb0ad;
+  --color-terminal-bright-white: #ffffff;
+}
+
+/* Light Rounded — inherits light tokens, overrides shell/chrome behavior */
+:root.light-rounded {
+  --color-bg-chrome: var(--gh-light-50);
+  --color-bg-editor: var(--gh-white);
+  --color-card-border: rgba(31, 35, 40, 0.1);
+  --color-border-primary: rgba(31, 35, 40, 0.12);
+  --color-border-secondary: rgba(31, 35, 40, 0.08);
+  --color-surface-navigation: var(--gh-light-50);
+  --color-surface-navigation-hover: var(--gh-light-100);
+  --color-surface-navigation-active: rgb(220 230 236);
 }

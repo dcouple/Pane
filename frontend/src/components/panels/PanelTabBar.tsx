@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, ChevronDown, ChevronRight, GitBranch, FileCode, BarChart3, Edit2, PanelRight, FolderTree, TerminalSquare, Play, Cpu, RefreshCw } from 'lucide-react';
+import { Plus, X, Terminal, ChevronDown, ChevronRight, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Cpu, RefreshCw } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -59,6 +59,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const { config, fetchConfig, updateConfig } = useConfigStore();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const dropdownMenuRef = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
   const [editingPanelId, setEditingPanelId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +144,30 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
     return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
   }, [showResourcePopover, stopActive]);
+
+  // Add Tool dropdown positioning
+  useEffect(() => {
+    if (!showDropdown || !dropdownRef.current) return;
+    const updatePosition = () => {
+      if (!dropdownRef.current) return;
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 4,
+        left: rect.left,
+        zIndex: 10000,
+        minWidth: 280,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showDropdown]);
 
   // Escape handler for resource popover
   useEffect(() => {
@@ -245,7 +271,14 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && event.target && event.target instanceof Node && !dropdownRef.current.contains(event.target)) {
+      if (
+        event.target &&
+        event.target instanceof Node &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target) &&
+        dropdownMenuRef.current &&
+        !dropdownMenuRef.current.contains(event.target)
+      ) {
         setShowDropdown(false);
         setShowCustomInput(false);
         setCustomCommand('');
@@ -397,7 +430,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
   return (
     <>
-    <div className="panel-tab-bar bg-surface-secondary flex-shrink-0">
+    <div className="panel-tab-bar bg-bg-chrome flex-shrink-0">
       {/* Flex container */}
       <div
         className="flex items-center min-h-[var(--panel-tab-height)] px-2 gap-x-1"
@@ -427,12 +460,17 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           const tab = (
             <div
               className={cn(
-                "group relative inline-flex items-center h-9 px-3 text-sm whitespace-nowrap cursor-pointer select-none",
+                "group relative inline-flex items-center h-[var(--panel-tab-height)] min-w-[8rem] justify-center px-3 pr-7 text-sm whitespace-nowrap cursor-pointer select-none",
                 activePanel?.id === panel.id
-                  ? "bg-surface-primary text-text-primary"
+                  ? "text-text-primary"
                   : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
               )}
               onClick={() => !isEditing && handlePanelClick(panel)}
+              onDoubleClick={(e) => {
+                if (!isEditing && !isPermanent && !isDiffPanel) {
+                  handleStartRename(e, panel);
+                }
+              }}
               role="tab"
               aria-selected={activePanel?.id === panel.id}
               tabIndex={activePanel?.id === panel.id ? 0 : -1}
@@ -444,8 +482,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 }
               }}
             >
-              {getPanelIcon(panel.type, panel)}
-
               {isEditing ? (
                 <input
                   ref={editInputRef}
@@ -454,31 +490,23 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   onChange={(e) => setEditingTitle(e.target.value)}
                   onKeyDown={handleRenameKeyDown}
                   onBlur={handleRenameSubmit}
-                  className="ml-2 px-1 text-sm bg-bg-primary border border-border-primary  rounded outline-none focus:border-border-focus focus:ring-1 focus:ring-border-focus text-text-primary"
+                  className="px-1 text-sm bg-bg-primary border border-border-primary rounded outline-none focus:border-border-focus focus:ring-1 focus:ring-border-focus text-text-primary"
                   onClick={(e) => e.stopPropagation()}
                   style={{ width: `${Math.max(50, editingTitle.length * 8)}px` }}
                 />
               ) : (
-                <>
-                  <span className="ml-2 text-sm">{displayTitle}</span>
-                  {!isPermanent && !isDiffPanel && (
-                    <button
-                      className="ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity transition-colors text-text-muted hover:bg-surface-hover hover:text-text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
-                      onClick={(e) => handleStartRename(e, panel)}
-                      title="Rename panel"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </>
+                <span className="inline-flex items-center justify-center gap-2 text-sm min-w-0">
+                  {getPanelIcon(panel.type, panel)}
+                  <span>{displayTitle}</span>
+                </span>
               )}
 
               {!isPermanent && !isEditing && (
                 <button
-                  className="ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity transition-colors text-text-muted hover:bg-surface-hover hover:text-status-error focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity transition-colors text-text-muted hover:bg-surface-hover hover:text-status-error focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
                   onClick={(e) => handlePanelClose(e, panel)}
                 >
-                  <X className="w-3 h-3" />
+                  <X className="w-2.5 h-2.5" />
                 </button>
               )}
             </div>
@@ -488,9 +516,9 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             <Tooltip
               key={panel.id}
               content={
-                <span className="flex items-center gap-2">
+                <span className="flex flex-col items-start gap-1">
                   <span className="text-text-secondary">{displayTitle}</span>
-                  <Kbd size="xs">{shortcutHint}</Kbd>
+                  <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{shortcutHint}</Kbd>
                 </span>
               }
               side="bottom"
@@ -503,10 +531,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         </div>
 
         {/* Add Panel dropdown button - outside overflow container so dropdown isn't clipped */}
-        <div className="relative h-9 flex items-center ml-1 flex-shrink-0" ref={dropdownRef}>
+        <div className="relative h-[var(--panel-tab-height)] flex items-center flex-shrink-0" ref={dropdownRef}>
           <Tooltip content={hotkeyDisplay('open-add-tool') ? <Kbd>{hotkeyDisplay('open-add-tool')}</Kbd> : undefined} side="bottom">
             <button
-              className="inline-flex items-center h-9 px-3 text-sm text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+              className="inline-flex items-center h-[var(--panel-tab-height)] px-3 text-sm text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
               onClick={() => setShowDropdown(!showDropdown)}
               onKeyDown={(e) => {
                 if (e.key === 'ArrowDown' && !showDropdown) {
@@ -526,11 +554,13 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           {showDropdown && (() => {
             // Track ref index for keyboard navigation
             let refIndex = 0;
-            const menuItemClass = "flex items-center w-full px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:bg-surface-hover focus:text-text-primary focus:outline-none text-left";
+            const menuItemClass = "flex items-start w-full px-4 py-2 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:bg-surface-hover focus:text-text-primary focus:outline-none text-left";
 
-            return (
+            return createPortal(
             <div
-              className="absolute top-full left-0 mt-1 min-w-[280px] bg-surface-primary border border-border-primary rounded shadow-dropdown z-50 animate-dropdown-enter"
+              ref={dropdownMenuRef}
+              className="bg-surface-primary border border-border-primary rounded shadow-dropdown z-50 animate-dropdown-enter"
+              style={dropdownStyle}
               role="menu"
               onKeyDown={handleDropdownKeyDown}
             >
@@ -542,9 +572,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   className={menuItemClass}
                   onClick={() => handleAddPanel('terminal')}
                 >
-                  <Terminal className="w-4 h-4 flex-shrink-0" />
-                  <span className="ml-2">Terminal</span>
-                  {hotkeyDisplay('add-tool-terminal') && <Kbd size="xs" variant="muted" className="ml-auto">{hotkeyDisplay('add-tool-terminal')}</Kbd>}
+                  <Terminal className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span className="ml-2 flex-1 min-w-0">
+                    <span className="block">Terminal</span>
+                    {hotkeyDisplay('add-tool-terminal') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-terminal')}</Kbd>}
+                  </span>
                 </button>
               )}
               {/* Explorer */}
@@ -555,9 +587,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   className={menuItemClass}
                   onClick={() => handleAddPanel('explorer')}
                 >
-                  <FolderTree className="w-4 h-4 flex-shrink-0" />
-                  <span className="ml-2">Explorer</span>
-                  {hotkeyDisplay('add-tool-explorer') && <Kbd size="xs" variant="muted" className="ml-auto">{hotkeyDisplay('add-tool-explorer')}</Kbd>}
+                  <FolderTree className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span className="ml-2 flex-1 min-w-0">
+                    <span className="block">Explorer</span>
+                    {hotkeyDisplay('add-tool-explorer') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-explorer')}</Kbd>}
+                  </span>
                 </button>
               )}
               {/* Claude Code */}
@@ -571,9 +605,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                     title: 'Claude Code'
                   })}
                 >
-                  <ClaudeIcon className="w-4 h-4 flex-shrink-0" />
-                  <span className="ml-2">Claude Code</span>
-                  {hotkeyDisplay('add-tool-terminal-claude') && <Kbd size="xs" variant="muted" className="ml-auto">{hotkeyDisplay('add-tool-terminal-claude')}</Kbd>}
+                  <ClaudeIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span className="ml-2 flex-1 min-w-0">
+                    <span className="block">Claude Code</span>
+                    {hotkeyDisplay('add-tool-terminal-claude') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-terminal-claude')}</Kbd>}
+                  </span>
                 </button>
               )}
               {/* Codex */}
@@ -587,9 +623,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                     title: 'Codex'
                   })}
                 >
-                  <OpenAIIcon className="w-4 h-4 flex-shrink-0" />
-                  <span className="ml-2">Codex</span>
-                  {hotkeyDisplay('add-tool-terminal-codex') && <Kbd size="xs" variant="muted" className="ml-auto">{hotkeyDisplay('add-tool-terminal-codex')}</Kbd>}
+                  <OpenAIIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <span className="ml-2 flex-1 min-w-0">
+                    <span className="block">Codex</span>
+                    {hotkeyDisplay('add-tool-terminal-codex') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-terminal-codex')}</Kbd>}
+                  </span>
                 </button>
               )}
               {/* Saved custom commands */}
@@ -616,9 +654,11 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   }}
                   title={`${cmd.name} (Delete/Backspace to remove)`}
                 >
-                  {getCliBrandIcon(cmd.command, 'w-4 h-4 flex-shrink-0') || <TerminalSquare className="w-4 h-4 flex-shrink-0" />}
-                  <span className="ml-2 truncate">{cmd.name}</span>
-                  {shortcutDisplay && <Kbd size="xs" variant="muted" className="ml-auto">{shortcutDisplay}</Kbd>}
+                  {getCliBrandIcon(cmd.command, 'w-4 h-4 flex-shrink-0 mt-0.5') || <TerminalSquare className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+                  <span className="ml-2 flex-1 min-w-0">
+                    <span className="block truncate">{cmd.name}</span>
+                    {shortcutDisplay && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{shortcutDisplay}</Kbd>}
+                  </span>
                 </button>
               );})}
               {/* Add Custom Command input */}
@@ -680,7 +720,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   <span className="ml-2 capitalize">{type}</span>
                 </button>
               );})}
-            </div>
+            </div>,
+            document.body
             );
           })()}
         </div>
@@ -692,7 +733,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             ref={resourceChipRef}
             onClick={toggleResourcePopover}
             className={cn(
-              "inline-flex items-center gap-1.5 h-7 px-2 rounded text-xs font-mono transition-colors flex-shrink-0",
+              "inline-flex items-center gap-1.5 h-[var(--panel-tab-height)] px-2.5 rounded text-xs font-mono transition-colors flex-shrink-0",
               showResourcePopover
                 ? "text-text-primary bg-surface-hover"
                 : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
@@ -717,7 +758,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           {session && (
             <Tooltip content="Run Dev Server" side="bottom">
               <button
-                className="inline-flex items-center h-9 px-2 text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
+                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
                 onClick={async () => {
                   const scriptExists = await window.electronAPI?.invoke('file:exists', {
                     sessionId: session.id,
@@ -749,7 +790,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               <button
                 onClick={onToggleDetailPanel}
                 className={cn(
-                  "p-1.5 rounded transition-colors",
+                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded transition-colors flex-shrink-0",
                   detailPanelVisible
                     ? "text-text-primary bg-surface-hover"
                     : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"

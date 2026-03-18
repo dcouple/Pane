@@ -133,7 +133,7 @@ export interface DiffViewerHandle {
 
 const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, className = '', onOpenInEditor }, ref) => {
   const { theme } = useTheme();
-  const isDarkMode = theme !== 'light';
+  const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set());
   const [highlighter, setHighlighter] = useState<DiffHighlighter | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);

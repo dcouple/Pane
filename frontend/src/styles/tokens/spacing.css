@@ -62,6 +62,9 @@
   --detail-panel-min-width: 12.5rem; /* 200px */
   --detail-panel-max-width: 31.25rem; /* 500px */
   --panel-tab-height: 2.25rem;       /* 36px */
+  --app-frame-padding: 0;
+  --app-frame-gap: 0;
+  --panel-shell-gap: 0;
   
   /* Gap Utilities */
   --gap-xs: var(--space-1);
@@ -70,4 +73,61 @@
   --gap-base: var(--space-4);
   --gap-lg: var(--space-6);
   --gap-xl: var(--space-8);
+}
+
+/* Dusk Theme — Compact density (Emdash-inspired) */
+:root.dusk {
+  --panel-tab-height: 1.75rem;       /* 28px (was 36px) */
+  --header-height: 2.5rem;           /* 40px (was 56px) */
+  --button-padding-x: var(--space-3);     /* 12px (was 16px) */
+  --button-padding-y: var(--space-1-5);   /* 6px (was 8px) */
+  --card-padding: var(--space-2);         /* 8px (was 12px) */
+  --card-padding-lg: var(--space-4);      /* 16px (was 24px) */
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Forge Theme — Medium density (IntelliJ-inspired) */
+:root.forge {
+  --panel-tab-height: 2.5rem;        /* 40px (was 36px) */
+  --button-padding-x: var(--space-4);     /* 16px (same) */
+  --button-padding-y: var(--space-2);     /* 8px (same) */
+  --card-padding: var(--space-3);         /* 12px (same) */
+  --app-frame-padding: var(--space-2);
+  --app-frame-gap: var(--space-2);
+  --panel-shell-gap: var(--space-2);
+}
+
+/* Ember Theme — warm editorial density */
+:root.ember {
+  --panel-tab-height: 2rem;
+  --button-padding-x: var(--space-3-5);
+  --button-padding-y: var(--space-1-5);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Aurora Theme — spacious luminous density */
+:root.aurora {
+  --panel-tab-height: 2.25rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-3);
+  --app-frame-gap: var(--space-3);
+  --panel-shell-gap: var(--space-3);
+}
+
+/* Light Rounded — light palette with islanded shell layout */
+:root.light-rounded {
+  --panel-tab-height: 2.5rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
 }

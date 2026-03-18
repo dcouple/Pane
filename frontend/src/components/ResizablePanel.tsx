@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { GripHorizontal } from 'lucide-react';
 
 interface ResizablePanelProps {
   children: React.ReactNode;
@@ -85,25 +84,12 @@ export const ResizablePanel: React.FC<ResizablePanelProps> = ({
         className={`
           flex items-center justify-center
           h-2 cursor-ns-resize
-          border-t border-border-primary
-          bg-surface-secondary
-          hover:bg-surface-hover
-          transition-colors
-          group
-          ${isResizing ? 'bg-interactive/10' : ''}
+          bg-transparent
+          ${isResizing ? 'bg-transparent' : ''}
         `}
         onMouseDown={handleMouseDown}
         title="Drag to resize"
-      >
-        <GripHorizontal
-          className={`
-            w-5 h-5 text-text-tertiary
-            group-hover:text-text-secondary
-            transition-colors
-            ${isResizing ? 'text-interactive' : ''}
-          `}
-        />
-      </div>
+      />
 
       {/* Content */}
       <div className="flex-1 overflow-visible">

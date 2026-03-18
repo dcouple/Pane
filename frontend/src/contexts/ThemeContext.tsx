@@ -2,9 +2,20 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
 import { API } from '../utils/api';
 
-type Theme = 'light' | 'dark' | 'oled';
+type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora';
 
-const VALID_THEMES: Theme[] = ['light', 'dark', 'oled'];
+const VALID_THEMES: Theme[] = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+const THEME_CLASSES: Record<Theme, string[]> = {
+  'light': ['light'],
+  'light-rounded': ['light', 'light-rounded'],
+  'dark': ['dark'],
+  'oled': ['dark', 'oled'],
+  'dusk': ['dark', 'dusk'],
+  'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
+  'forge': ['dark', 'forge'],
+  'ember': ['dark', 'ember'],
+  'aurora': ['dark', 'aurora'],
+};
 const isValidTheme = (t: string): t is Theme => VALID_THEMES.includes(t as Theme);
 
 interface ThemeContextType {
@@ -21,7 +32,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (saved && isValidTheme(saved)) {
       return saved;
     }
-    return 'dark';
+    return 'light-rounded';
   });
   const [configLoaded, setConfigLoaded] = useState(false);
 
@@ -38,17 +49,13 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const root = document.documentElement;
     const body = document.body;
 
-    // Remove all theme classes, then add current
-    // OLED theme extends dark, so keep 'dark' class for Tailwind dark: utilities
-    root.classList.remove('light', 'dark', 'oled');
-    body.classList.remove('light', 'dark', 'oled');
-    if (theme === 'oled') {
-      root.classList.add('dark', 'oled');
-      body.classList.add('dark', 'oled');
-    } else {
-      root.classList.add(theme);
-      body.classList.add(theme);
-    }
+    // Remove ALL theme classes from both root and body
+    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora');
+    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora');
+
+    const themeClasses = THEME_CLASSES[theme];
+    root.classList.add(...themeClasses);
+    body.classList.add(...themeClasses);
 
     localStorage.setItem('theme', theme);
 

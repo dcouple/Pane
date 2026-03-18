@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useSessionStore } from '../stores/sessionStore';
@@ -310,6 +310,17 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           <span>Home</span>
         </button>
 
+        <div className="mt-2 px-3 pt-1 pb-1 flex items-center justify-between gap-2">
+          <span className="text-sm text-text-tertiary truncate">Repositories</span>
+          <button
+            onClick={() => setShowAddProjectDialog(true)}
+            className="inline-flex items-center justify-center rounded-md p-1.5 text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
+            title="New repository"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
         {/* Projects */}
         {projects.map(project => {
           const isExpanded = expandedProjects.has(project.id);
@@ -342,21 +353,32 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           return (
             <div key={project.id} className="mt-3 first:mt-2">
               {/* Project header */}
-              <div className="group/project flex items-center px-4 py-1.5 hover:bg-surface-hover transition-colors">
-                <button
-                  onClick={() => toggleProject(project.id)}
-                  className="flex-1 min-w-0 flex items-center gap-1.5"
-                >
+              <div
+                className="group/project flex items-center px-4 py-1.5 hover:bg-surface-hover transition-colors cursor-pointer"
+                onClick={() => toggleProject(project.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleProject(project.id);
+                  }
+                }}
+              >
+                <div className="flex-1 min-w-0 flex items-center gap-1.5">
                   <GitFork className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
                   {parentFolder && (
                     <span className="text-[10px] text-text-tertiary truncate">{parentFolder} /</span>
                   )}
                   <span className="text-xs font-semibold text-text-primary truncate">{repoName}</span>
-                </button>
+                </div>
                 <div className="flex-shrink-0 opacity-0 group-hover/project:opacity-100 transition-opacity ml-auto">
                   <Dropdown
                     trigger={
-                      <button className="p-1 rounded text-text-muted hover:text-text-tertiary hover:bg-surface-hover transition-colors">
+                      <button
+                        className="p-1 rounded text-text-muted hover:text-text-tertiary hover:bg-surface-hover transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </button>
                     }
@@ -366,71 +388,34 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                   />
                 </div>
                 <button
-                  onClick={() => toggleProject(project.id)}
-                  className="flex-shrink-0 p-1 text-text-tertiary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNewSession(project);
+                  }}
+                  className="flex-shrink-0 p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                  title="New workspace"
                 >
-                  {isExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  )}
+                  <Plus className="w-3.5 h-3.5" />
                 </button>
               </div>
 
               {isExpanded && (
                 <div className="mt-0.5">
-                  {projectSessions.length === 0 ? (
-                    <div className="px-4 py-1">
-                      <button
-                        onClick={() => handleNewSession(project)}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-xs text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded transition-colors border border-dashed border-border-primary hover:border-interactive/50"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>New workspace</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Sessions */}
-                      {projectSessions.map((session) => (
-                        <SessionRow
-                          key={session.id}
-                          session={session}
-                          isActive={session.id === activeSessionId}
-                          globalIndex={globalSessionIndex.get(session.id) ?? -1}
-                          onClick={() => handleSessionClick(session.id)}
-                          onArchive={() => handleArchiveSession(session.id)}
-                        />
-                      ))}
-
-                      {/* + New workspace */}
-                      <div className="pl-6 pr-3">
-                        <button
-                          onClick={() => handleNewSession(project)}
-                          className="flex items-center gap-1.5 py-1 px-2 rounded text-xs text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>New workspace</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
+                  {projectSessions.map((session) => (
+                    <SessionRow
+                      key={session.id}
+                      session={session}
+                      isActive={session.id === activeSessionId}
+                      globalIndex={globalSessionIndex.get(session.id) ?? -1}
+                      onClick={() => handleSessionClick(session.id)}
+                      onArchive={() => handleArchiveSession(session.id)}
+                    />
+                  ))}
                 </div>
               )}
             </div>
           );
         })}
-
-        {/* + New repository */}
-        <div className="mt-4 px-4">
-          <button
-            onClick={() => setShowAddProjectDialog(true)}
-            className="flex items-center gap-1.5 py-1 px-2 rounded text-xs text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>New repository</span>
-          </button>
-        </div>
       </div>
 
       {/* Create Session Dialog */}
@@ -483,7 +468,7 @@ function SessionTooltipContent({ gs }: {
 
 // --- Session row button content (shared between tooltip and non-tooltip paths) ---
 
-function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, branch, statusText, statusColor, globalIndex, onClick }: {
+function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, branch, statusText, statusColor, globalIndex }: {
   session: Session;
   gs: GitStatus | undefined;
   iconColor: string;
@@ -494,10 +479,9 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, branch
   statusText: string;
   statusColor: string;
   globalIndex: number;
-  onClick: () => void;
 }) {
   return (
-    <button onClick={onClick} className="w-full text-left min-w-0">
+    <div className="w-full min-w-0">
       {/* Row 1: icon + name + diff stats */}
       <div className="flex items-center gap-2 min-w-0">
         {gs?.prNumber ? (
@@ -536,7 +520,7 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, branch
           <span className="ml-auto flex-shrink-0 text-text-muted text-[10px] opacity-0 group-hover/session:opacity-100 transition-opacity">⌘{globalIndex + 1}</span>
         )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -655,11 +639,20 @@ function SessionRow({
 
   return (
     <div
-      className={`group/session w-full text-left pl-6 pr-1 py-1.5 transition-colors flex items-center gap-1 ${
+      className={`group/session w-full text-left pl-6 pr-1 py-1.5 transition-colors flex items-center gap-1 cursor-pointer ${
         isActive
           ? 'bg-interactive/30 border-l-4 border-interactive'
           : 'hover:bg-surface-hover border-l-4 border-transparent'
       }`}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
     >
       {/* Clickable session content */}
       {gs?.prNumber ? (
@@ -679,7 +672,6 @@ function SessionRow({
             statusText={statusText}
             statusColor={statusColor}
             globalIndex={globalIndex}
-            onClick={onClick}
           />
         </Tooltip>
       ) : (
@@ -695,7 +687,6 @@ function SessionRow({
             statusText={statusText}
             statusColor={statusColor}
             globalIndex={globalIndex}
-            onClick={onClick}
           />
         </div>
       )}
@@ -824,16 +815,25 @@ export function ArchivedSessions() {
                   {isExpanded && project.sessions.map(session => (
                     <div
                       key={session.id}
-                      className="group/archived flex items-center gap-1 pl-10 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
+                      className="group/archived flex items-center gap-1 pl-10 pr-1 py-1.5 hover:bg-surface-hover transition-colors cursor-pointer"
+                      onClick={() => handleSessionClick(session.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSessionClick(session.id);
+                        }
+                      }}
                     >
-                      <button onClick={() => handleSessionClick(session.id)} className="flex-1 text-left min-w-0">
+                      <div className="flex-1 text-left min-w-0">
                         <div className="flex items-center gap-2 min-w-0">
                           <Archive className="w-3 h-3 flex-shrink-0 text-text-muted" />
                           <span className="text-xs text-text-tertiary truncate">
                             {session.name || 'Untitled'}
                           </span>
                         </div>
-                      </button>
+                      </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRestoreSession(session.id); }}
                         className="flex-shrink-0 p-1 rounded text-text-muted hover:text-status-success hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100"
