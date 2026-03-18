@@ -1,4 +1,4 @@
-<h1 align="center"><img src="frontend/src/assets/pane-logo.png" alt="" width="34" height="34"> Pane</h1>
+<h1 align="center"><img src="frontend/src/assets/pane-logo.png" alt="" width="38" height="38" style="vertical-align: middle;"> Pane</h1>
 
 <p align="center">
   <strong>Run any agent. Any OS. Ship faster.</strong><br>
