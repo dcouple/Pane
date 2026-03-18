@@ -276,12 +276,21 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           xtermRef.current = terminal;
           fitAddonRef.current = fitAddon;
 
-          // Track scroll position — consider "near bottom" if within 10% of total rows
+          // Track scroll position — consider "near bottom" if within 10% of total rows.
+          // Also snap to true bottom when the user scrolls close enough — xterm's mouse
+          // wheel sometimes stops 1-2 lines short of baseY, leaving the prompt just
+          // out of view. Snapping within a small threshold fixes the "can't reach input" feel.
           const terminalInstance = terminal;
+          const SNAP_THRESHOLD = 3; // lines
           const scrollDisposable = terminalInstance.onScroll(() => {
             const buf = terminalInstance.buffer.active;
-            const threshold = Math.max(3, Math.ceil(terminalInstance.rows * 0.1));
-            isNearBottomRef.current = buf.viewportY >= buf.baseY - threshold;
+            const distFromBottom = buf.baseY - buf.viewportY;
+            const nearThreshold = Math.max(SNAP_THRESHOLD, Math.ceil(terminalInstance.rows * 0.1));
+            isNearBottomRef.current = distFromBottom <= nearThreshold;
+            // Snap: if user scrolled to within a few lines of bottom, go all the way
+            if (distFromBottom > 0 && distFromBottom <= SNAP_THRESHOLD) {
+              terminalInstance.scrollToBottom();
+            }
           });
 
           // Ack batching for flow control
