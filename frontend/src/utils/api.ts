@@ -380,6 +380,14 @@ export class API {
     },
   };
 
+  // Git operations
+  static git = {
+    async cloneRepo(url: string, destDir: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.git.cloneRepo(url, destDir);
+    },
+  };
+
   // Folders
   static folders = {
     async getByProject(projectId: number) {
