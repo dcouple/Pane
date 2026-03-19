@@ -677,6 +677,7 @@ function SessionRow({
           content={<SessionTooltipContent gs={gs} />}
           side="right"
           className="block flex-1 min-w-0"
+          interactive
         >
           <SessionRowContent
             session={session}
