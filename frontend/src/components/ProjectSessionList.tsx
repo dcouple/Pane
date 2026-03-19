@@ -189,8 +189,8 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
   // Register session cycling hotkeys
   useEffect(() => {
-    const nextKeys = ['mod+shift+Tab', 'mod+ArrowDown'];
-    const prevKeys = ['mod+Tab', 'mod+ArrowUp'];
+    const nextKeys = ['mod+Tab', 'mod+ArrowDown'];
+    const prevKeys = ['mod+shift+Tab', 'mod+ArrowUp'];
     const ids: string[] = [];
 
     nextKeys.forEach((keys, i) => {
