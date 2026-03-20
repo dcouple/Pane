@@ -517,6 +517,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               console.log('[TerminalPanel] Restoring serialized snapshot for panel', panel.id);
               terminal.write(terminalStateForThisPanel.serializedBuffer);
             }
+            // Force WebGL renderer to redraw after buffer content changes.
+            // Without this, macOS WebGL canvas shows stale/stuttered content until
+            // a resize event (minimize/fullscreen) forces invalidation.
+            fitAddon.fit();
           }
 
           // Handle paste events (Ctrl+V, voice transcription, external text injection)
@@ -675,6 +679,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           terminalRef.current.addEventListener('dragover', handleDragOver);
           terminalRef.current.addEventListener('drop', handleDrop);
 
+          // Let the WebGL renderer finish painting before removing the loader overlay.
+          // Without this, the loader disappears and the user briefly sees stale/blank
+          // content before the fit() render completes (visible as a stutter on macOS).
+          await new Promise(resolve => setTimeout(resolve, 30));
+          if (disposed) return;
           setIsInitialized(true);
           console.log('[TerminalPanel] Terminal initialization complete, isInitialized set to true');
 
