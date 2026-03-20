@@ -275,8 +275,17 @@ export class TaskQueue {
                 const sm = this.options.sessionManager;
                 const liveSession = sm.getSession(capturedSessionId);
                 if (liveSession && liveSession.name === capturedFallbackName) {
-                  sm.db.updateSession(capturedSessionId, { name: aiName });
-                  liveSession.name = aiName;
+                  // Ensure uniqueness — another session may already have this AI-generated name
+                  let finalName = aiName;
+                  if (sm.db.checkSessionNameExists(finalName)) {
+                    let counter = 1;
+                    while (sm.db.checkSessionNameExists(`${aiName} ${counter}`)) {
+                      counter++;
+                    }
+                    finalName = `${aiName} ${counter}`;
+                  }
+                  sm.db.updateSession(capturedSessionId, { name: finalName });
+                  liveSession.name = finalName;
                   sm.emit('session-updated', liveSession);
                 }
               }

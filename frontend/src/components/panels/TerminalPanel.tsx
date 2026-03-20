@@ -63,6 +63,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const isCliPanel = !!terminalState?.isCliPanel;
   const [isCliReady, setIsCliReady] = useState(!!terminalState?.isCliReady);
 
+  // Sync isCliReady from panel prop when it changes (e.g. backend persisted isCliReady
+  // before this component subscribed to the IPC event, or panel state was updated externally)
+  useEffect(() => {
+    if (terminalState?.isCliReady && !isCliReady) {
+      setIsCliReady(true);
+    }
+  }, [terminalState?.isCliReady, isCliReady]);
+
   // Listen for cliReady event (only for CLI panels that aren't already ready)
   useEffect(() => {
     if (!isCliPanel || isCliReady) return;
