@@ -368,10 +368,14 @@ export class TerminalPanelManager {
 
     // Update panel state
     const state = panel.state;
+    const currentCustomState = state.customState as TerminalPanelState | undefined;
+    const isCliPanel = currentCustomState?.isCliPanel;
     state.customState = {
       ...state.customState,
       isInitialized: true,
-      initialCommand: undefined, // Clear after first use so it doesn't re-run on app restart
+      // Clear initialCommand for non-CLI panels so install commands don't re-run on restart.
+      // CLI panels (claude/codex) need initialCommand preserved for session resume.
+      ...(isCliPanel ? {} : { initialCommand: undefined }),
       cwd: cwd,
       shellType: path.basename(shellPath),
       dimensions: { cols: 80, rows: 30 }

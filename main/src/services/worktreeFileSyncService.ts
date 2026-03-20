@@ -206,13 +206,23 @@ async function findRecursiveMatchesWindows(
   commandRunner: CommandRunner,
 ): Promise<Array<{ path: string; isFile: boolean }>> {
   if (pattern === 'node_modules') {
-    const cmd = `dir /s /b /ad "${repoPath}\\node_modules"`;
+    // Find all directories named "node_modules" recursively.
+    // dir /s /b /ad lists all subdirectories; we filter for those ending in \node_modules
+    // and exclude nested ones (where \node_modules\ appears before the trailing \node_modules)
+    const cmd = `cmd /c "dir /s /b /ad "${repoPath}" 2>nul"`;
     const { stdout } = await commandRunner.execAsync(cmd, repoPath);
     return stdout
       .trim()
       .split('\r\n')
       .filter(Boolean)
+      .filter((p) => p.endsWith('\\node_modules'))
       .filter((p) => !p.includes('\\worktrees\\') && !p.includes('\\.git\\'))
+      .filter((p) => {
+        // Exclude nested node_modules (e.g. repo\node_modules\pkg\node_modules)
+        // Check if "node_modules" appears in the path before the final segment
+        const withoutTrailing = p.slice(0, p.lastIndexOf('\\'));
+        return !withoutTrailing.includes('\\node_modules');
+      })
       .map((p) => ({ path: p, isFile: false }));
   } else if (pattern.startsWith('.env')) {
     const cmd = `dir /s /b "${repoPath}\\.env*"`;

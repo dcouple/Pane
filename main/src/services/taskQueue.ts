@@ -274,12 +274,23 @@ export class TaskQueue {
           ctx.commandRunner,
           ctx.pathResolver.environment,
           configManager.getWorktreeFileSyncEntries()
-        ).then((installCommand) => {
+        ).then(async (installCommand) => {
           if (!installCommand) return;
-          // Find the default terminal panel and write the install command
-          const panels = panelManager.getPanelsForSession(capturedSessionId);
-          const terminalPanel = panels.find(p => p.type === 'terminal');
-          if (!terminalPanel) return;
+          // Find the default terminal panel — may not exist yet if sync finished before
+          // the session-created event handler in events.ts created it. Retry briefly.
+          let terminalPanel = panelManager.getPanelsForSession(capturedSessionId).find(p => p.type === 'terminal');
+          if (!terminalPanel) {
+            // Wait up to 3 seconds for the panel to be created
+            for (let i = 0; i < 6; i++) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              terminalPanel = panelManager.getPanelsForSession(capturedSessionId).find(p => p.type === 'terminal');
+              if (terminalPanel) break;
+            }
+            if (!terminalPanel) {
+              console.warn(`[TaskQueue] No terminal panel found for session ${capturedSessionId}, skipping install command`);
+              return;
+            }
+          }
 
           if (terminalPanelManager.isTerminalInitialized(terminalPanel.id)) {
             // Terminal already running — write directly
