@@ -11,6 +11,17 @@ import { usePanelStore } from '../../../stores/panelStore';
 
 const HISTORY_LIMIT = 50;
 
+// Module-level pending commit hash — survives mount/unmount cycles.
+// When the diff panel is not active its CombinedDiffView is unmounted,
+// so a synchronous CustomEvent would be lost. SessionView writes here
+// before dispatching the event; CombinedDiffView reads it on mount.
+let pendingViewCommit: { sessionId: string; commitHash: string } | null = null;
+
+/** Called by SessionView before dispatching 'diff:view-commit'. */
+export function setPendingViewCommit(sessionId: string, commitHash: string) {
+  pendingViewCommit = { sessionId, commitHash };
+}
+
 const SIDEBAR_STORAGE_KEY = 'diff-panel-sidebar-width';
 const DEFAULT_SIDEBAR_WIDTH = 300;
 const MIN_SIDEBAR_WIDTH = 150;
@@ -217,13 +228,23 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     }
   }, [isMainRepo]);
 
-  // Listen for commit-click events dispatched from GitHistoryGraph via SessionView
+  // Listen for commit-click events dispatched from GitHistoryGraph via SessionView.
+  // Also check the module-level pendingViewCommit on mount — the event may have
+  // fired while this component was unmounted (non-active panels are not rendered).
   useEffect(() => {
+    // Consume any pending hash written before this component mounted
+    if (pendingViewCommit && pendingViewCommit.sessionId === sessionId) {
+      setViewingCommitHash(pendingViewCommit.commitHash);
+      setSelectedExecutions([]);
+      pendingViewCommit = null;
+    }
+
     const handler = (event: Event) => {
       const { sessionId: eventSessionId, commitHash } = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
       if (eventSessionId !== sessionId) return;
       setViewingCommitHash(commitHash);
       setSelectedExecutions([]);
+      pendingViewCommit = null; // consumed
     };
     window.addEventListener('diff:view-commit', handler);
     return () => window.removeEventListener('diff:view-commit', handler);

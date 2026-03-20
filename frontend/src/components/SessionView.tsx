@@ -18,6 +18,7 @@ import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
 import { usePanelStore } from '../stores/panelStore';
 import { panelApi } from '../services/panelApi';
+import { setPendingViewCommit } from './panels/diff/CombinedDiffView';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';
 import { SessionProvider } from '../contexts/SessionContext';
@@ -223,6 +224,10 @@ export const SessionView = memo(() => {
       const diffPanel = sessionPanels.find(p => p.type === 'diff');
       if (!diffPanel) return;
       handlePanelSelect(diffPanel);
+      // Store pending hash before dispatching — if the diff panel is not
+      // currently active, CombinedDiffView is unmounted and will read this
+      // module-level variable when it mounts after the panel switch.
+      setPendingViewCommit(activeSession.id, commitHash);
       window.dispatchEvent(new CustomEvent('diff:view-commit', {
         detail: { sessionId: activeSession.id, commitHash },
       }));
