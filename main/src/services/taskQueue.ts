@@ -13,6 +13,8 @@ import { panelManager } from './panelManager';
 import { PathResolver } from '../utils/pathResolver';
 import type { DatabaseService } from '../database/database';
 import type { Project } from '../database/models';
+import { worktreeFileSyncService } from './worktreeFileSyncService';
+import { configManager } from '../index';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -257,6 +259,29 @@ export class TaskQueue {
           panelManager.ensureExplorerPanel(session.id),
           panelManager.ensureDiffPanel(session.id),
         ]);
+
+        // Worktree file sync — copy gitignored files from main repo and detect install command
+        let installCommand: string | null = null;
+        try {
+          const fileSyncEntries = configManager.getWorktreeFileSyncEntries();
+          installCommand = await worktreeFileSyncService.syncWorktree(
+            targetProject.path,
+            worktreePath,
+            ctx.commandRunner,
+            ctx.pathResolver.environment,
+            fileSyncEntries
+          );
+          if (installCommand) {
+            console.log(`[TaskQueue] Detected install command: ${installCommand}`);
+          }
+        } catch (err) {
+          console.error('[TaskQueue] Worktree file sync failed (non-fatal):', err);
+        }
+
+        // Attach install command for events.ts to pick up (transient, not persisted)
+        if (installCommand) {
+          (session as unknown as Record<string, unknown>).installCommand = installCommand;
+        }
 
         // Emit the session-created event BEFORE running build script so UI shows immediately
         sessionManager.emitSessionCreated(session);

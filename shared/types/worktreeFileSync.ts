@@ -1,0 +1,22 @@
+export interface WorktreeFileSyncEntry {
+  id: string;
+  path: string;
+  enabled: boolean;
+  recursive: boolean;
+}
+
+export const DEFAULT_WORKTREE_FILE_SYNC_ENTRIES: WorktreeFileSyncEntry[] = [
+  { id: 'node_modules', path: 'node_modules', enabled: true, recursive: true },
+  { id: 'env', path: '.env*', enabled: true, recursive: true },
+  { id: 'claude', path: '.claude', enabled: true, recursive: false },
+  { id: 'codex', path: '.codex', enabled: true, recursive: false },
+  { id: 'cursor', path: '.cursor', enabled: true, recursive: false },
+  { id: 'continue', path: '.continue', enabled: true, recursive: false },
+  { id: 'windsurf', path: '.windsurf', enabled: true, recursive: false },
+  { id: 'amazonq', path: '.amazonq', enabled: true, recursive: false },
+  { id: 'roo', path: '.roo', enabled: true, recursive: false },
+  { id: 'cline', path: '.cline', enabled: true, recursive: false },
+  { id: 'gemini', path: '.gemini', enabled: true, recursive: false },
+  { id: 'junie', path: '.junie', enabled: true, recursive: false },
+  { id: 'aider-conf', path: '.aider.conf.yml', enabled: true, recursive: false },
+];

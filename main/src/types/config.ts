@@ -12,6 +12,7 @@ export interface CustomCommand {
 }
 
 import type { CloudVmConfig } from '../../../shared/types/cloud';
+import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 
 export interface AppConfig {
   verbose?: boolean;
@@ -84,6 +85,8 @@ export interface AppConfig {
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
   terminalShortcuts?: TerminalShortcut[];
+  // Worktree file sync — files/dirs to copy from main repo into new worktrees
+  worktreeFileSync?: WorktreeFileSyncEntry[];
   // Preferred shell for Windows terminals
   preferredShell?: 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd';
   // Cloud VM settings
@@ -148,6 +151,8 @@ export interface UpdateConfigRequest {
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
   terminalShortcuts?: TerminalShortcut[];
+  // Worktree file sync — files/dirs to copy from main repo into new worktrees
+  worktreeFileSync?: WorktreeFileSyncEntry[];
   // Preferred shell for Windows terminals
   preferredShell?: 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd';
   // Cloud VM settings

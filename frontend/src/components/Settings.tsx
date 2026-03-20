@@ -4,6 +4,8 @@ import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
 import { optIn, capture, captureAndOptOut } from '../services/posthog';
 import type { AppConfig, TerminalShortcut } from '../types/config';
+import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
+import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import { useConfigStore } from '../stores/configStore';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { useSessionStore } from '../stores/sessionStore';
@@ -31,7 +33,8 @@ import {
   Power,
   PowerOff,
   Loader2,
-  Play
+  Play,
+  FolderSync
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -97,6 +100,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [cloudGcpZone, setCloudGcpZone] = useState('');
   const [cloudTunnelPort, setCloudTunnelPort] = useState('8080');
   const [terminalShortcuts, setTerminalShortcuts] = useState<TerminalShortcut[]>([]);
+  const [worktreeFileSync, setWorktreeFileSync] = useState<WorktreeFileSyncEntry[]>([]);
   const [cloudSetupLoading, setCloudSetupLoading] = useState(false);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const { updateSettings } = useNotifications();
@@ -210,6 +214,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       // Load terminal shortcuts
       setTerminalShortcuts(data.terminalShortcuts ?? []);
 
+      // Load worktree file sync entries
+      setWorktreeFileSync(data.worktreeFileSync ?? DEFAULT_WORKTREE_FILE_SYNC_ENTRIES);
+
       // Load cloud settings
       if (data.cloud) {
         // Provider is always GCP (IAP-secured)
@@ -247,6 +254,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         .map(p => p.trim())
         .filter(p => p.length > 0);
       
+      const filteredWorktreeFileSync = worktreeFileSync.filter(entry => entry.path.trim().length > 0);
+
       const response = await API.config.update({
         verbose,
         anthropicApiKey,
@@ -265,6 +274,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         },
         preferredShell,
         terminalShortcuts,
+        worktreeFileSync: filteredWorktreeFileSync,
         cloud: (cloudServerId || cloudGcpProjectId || cloudApiToken) ? {
           provider: cloudProvider,
           apiToken: cloudApiToken,
@@ -743,6 +753,109 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   When checked, Pane will not automatically run /context after each
                   Claude response. This reduces wait time and Claude quota usage.
                   You can still manually run /context when needed.
+                </p>
+              </SettingsSection>
+            </CollapsibleCard>
+
+            {/* Worktree File Sync */}
+            <CollapsibleCard
+              title="Worktree File Sync"
+              subtitle="Auto-copy files into new worktrees"
+              icon={<FolderSync className="w-5 h-5" />}
+              defaultExpanded={false}
+            >
+              <SettingsSection
+                title="Files & Directories"
+                description="Copy these from your main repo into new worktrees. Only items that exist but are missing from the worktree (e.g. gitignored) are copied."
+              >
+                <div className="space-y-2">
+                  {worktreeFileSync.map((entry, index) => (
+                    <div key={entry.id} className="flex items-center gap-3 p-2 rounded-lg bg-surface-secondary border border-border-secondary">
+                      <div className="flex-1 min-w-0">
+                        {entry.path ? (
+                          <span className="text-sm font-mono">{entry.path}</span>
+                        ) : (
+                          <Input
+                            value={entry.path}
+                            onChange={(e) => {
+                              const updated = [...worktreeFileSync];
+                              updated[index] = { ...entry, path: e.target.value };
+                              setWorktreeFileSync(updated);
+                            }}
+                            placeholder="e.g. .myconfig"
+                            className="text-sm"
+                            error="Path is required"
+                          />
+                        )}
+                        {entry.recursive && (
+                          <span className="ml-2 text-xs text-text-tertiary">includes subdirectories</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = [...worktreeFileSync];
+                          updated[index] = { ...entry, enabled: !entry.enabled };
+                          setWorktreeFileSync(updated);
+                        }}
+                        className={`p-1.5 rounded transition-colors ${
+                          entry.enabled
+                            ? 'text-status-success hover:text-status-success/80'
+                            : 'text-text-tertiary hover:text-text-secondary'
+                        }`}
+                        title={entry.enabled ? 'Disable' : 'Enable'}
+                      >
+                        {entry.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setWorktreeFileSync(worktreeFileSync.filter((_, i) => i !== index));
+                        }}
+                        className="p-1.5 rounded text-text-tertiary hover:text-status-error hover:bg-status-error/10 transition-colors"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {worktreeFileSync.length === 0 && (
+                  <p className="text-sm text-text-tertiary italic">No file sync entries configured.</p>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setWorktreeFileSync([
+                        ...worktreeFileSync,
+                        {
+                          id: crypto.randomUUID(),
+                          path: '',
+                          enabled: true,
+                          recursive: false,
+                        },
+                      ]);
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Entry
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setWorktreeFileSync(DEFAULT_WORKTREE_FILE_SYNC_ENTRIES)}
+                  >
+                    Reset to Defaults
+                  </Button>
+                </div>
+
+                <p className="text-xs text-text-tertiary">
+                  Uses fast copy (hard links on Linux, APFS clones on macOS) when possible.
+                  Package manager install runs automatically in the background terminal.
                 </p>
               </SettingsSection>
             </CollapsibleCard>

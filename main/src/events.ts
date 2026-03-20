@@ -62,14 +62,51 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
     }
 
     // Auto-create a default terminal panel for every session
+    let panel = null;
     try {
-      await panelManager.createPanel({
+      panel = await panelManager.createPanel({
         sessionId: session.id,
         type: 'terminal',
         title: 'Terminal',
       });
     } catch (error) {
       console.error(`[Events] Failed to auto-create terminal panel for session ${session.id}:`, error);
+    }
+
+    // If install command was detected during worktree file sync, set it on the terminal and eagerly initialize
+    const installCommand = (session as unknown as Record<string, unknown>).installCommand as string | undefined;
+    if (installCommand && panel) {
+      try {
+        // Update panel with install command in customState
+        const existingCustomState = panel.state?.customState as Record<string, unknown> | undefined;
+        await panelManager.updatePanel(panel.id, {
+          state: {
+            ...panel.state,
+            customState: {
+              ...existingCustomState,
+              initialCommand: installCommand,
+            },
+          },
+        });
+
+        // Re-fetch the panel with updated state
+        const updatedPanel = panelManager.getPanel(panel.id);
+        if (updatedPanel) {
+          // Get wslContext from project context
+          const projectCtx = sessionManager.getProjectContext(session.id);
+          const wslContext = projectCtx?.commandRunner?.wslContext ?? null;
+
+          // Eagerly initialize terminal (bypasses lazy init — guard inside initializeTerminal prevents double-init)
+          await terminalPanelManager.initializeTerminal(
+            updatedPanel,
+            session.worktreePath,
+            wslContext
+          );
+          console.log(`[Events] Eagerly initialized terminal panel ${panel.id} with install command: ${installCommand}`);
+        }
+      } catch (err) {
+        console.error(`[Events] Failed to eagerly initialize terminal with install command:`, err);
+      }
     }
 
     // Refresh git status for newly created session (non-blocking for UI responsiveness)

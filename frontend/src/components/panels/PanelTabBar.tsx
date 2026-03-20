@@ -14,6 +14,7 @@ import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { useResourceMonitor } from '../../hooks/useResourceMonitor';
 import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
+import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 
 function formatMemory(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -21,14 +22,26 @@ function formatMemory(mb: number): string {
   return `${Math.round(mb * 1024)} KB`;
 }
 
-// Prompt for setting up intelligent dev command
-export const SETUP_RUN_SCRIPT_PROMPT = `I use Pane to manage multiple AI coding sessions with git worktrees.
+// Build prompt for setting up intelligent dev command — adapts based on Worktree File Sync config
+export function buildSetupRunScriptPrompt(fileSyncEntries?: WorktreeFileSyncEntry[]): string {
+  const nodeModulesEnabled = fileSyncEntries?.some(e => e.path === 'node_modules' && e.enabled) ?? true;
+  const envEnabled = fileSyncEntries?.some(e => e.path.startsWith('.env') && e.enabled) ?? true;
+
+  const depsStep = nodeModulesEnabled
+    ? '3. Dependencies are pre-installed by Pane (node_modules is copied and install runs automatically in new worktrees). Just verify freshness — if the lock file has changed since node_modules was last updated, re-run the appropriate install command'
+    : '3. Auto-detects if deps need installing (package.json mtime > node_modules mtime)';
+
+  const envNote = envEnabled
+    ? '\n- Environment files (.env, .env.local, etc.) are automatically copied from the main repo by Pane — do not prompt the user to create them or warn about missing env files'
+    : '';
+
+  return `I use Pane to manage multiple AI coding sessions with git worktrees.
 Each worktree needs its own dev server on a unique port.
 
 Create scripts/pane-run-script.js (Node.js, cross-platform) that:
 1. Auto-detects git worktrees vs main repo
 2. Assigns unique ports using hash(cwd) % 1000 + base_port, with separate ranges for main vs worktrees
-3. Auto-detects if deps need installing (package.json mtime > node_modules mtime)
+${depsStep}
 4. Auto-detects if build is stale (src mtime > dist mtime)
 5. Clean Ctrl+C termination (taskkill on Windows, SIGTERM on Unix)
 6. Auto-detects project type (package.json, requirements.txt, Cargo.toml, go.mod, etc.)
@@ -38,11 +51,12 @@ CRITICAL EDGE CASES — these cause the most bugs:
 - Port availability checks MUST test BOTH 0.0.0.0 AND :: (IPv6) — dev servers often bind to :: (all interfaces), so a check on 127.0.0.1 alone passes but the server fails with EADDRINUSE
 - Before auto-incrementing to a new port, try to RECLAIM the preferred port by finding the PID holding it (lsof/netstat), verifying it belongs to this project's dev server (match the command line against the project directory or dev server binary), and only then killing it — never kill unrelated processes
 - Clean up stale framework lock files before starting (.next/dev/lock, .cache/lock, .vite/ temp files, etc.) — these are left by crashed/killed sessions and prevent restart
-- Cross-platform process management (taskkill /F /T on Windows, kill process group on Unix)
+- Cross-platform process management (taskkill /F /T on Windows, kill process group on Unix)${envNote}
 
 Analyze this project's actual framework and structure first, then create the complete pane-run-script.js tailored to it.
 
 IMPORTANT: After creating the script, TEST THE RESTART PATH — run 'node scripts/pane-run-script.js', then kill it ungracefully (Ctrl+C or kill the terminal), then run it again. It must reclaim the same port without EADDRINUSE or lock file errors. A single happy-path run proves nothing. Then commit and merge to main so all future worktrees have it.`;
+}
 
 export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   panels,
@@ -782,7 +796,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                     });
                   } else {
                     handleAddPanel('terminal', {
-                      initialCommand: `claude --dangerously-skip-permissions "${SETUP_RUN_SCRIPT_PROMPT.replace(/\n/g, ' ')}"`,
+                      initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
                       title: 'Setup Run Script'
                     });
                   }

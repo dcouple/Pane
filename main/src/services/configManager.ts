@@ -1,5 +1,7 @@
 import { EventEmitter } from 'events';
 import type { AppConfig } from '../types/config';
+import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
+import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
 import path from 'path';
@@ -90,7 +92,8 @@ export class ConfigManager extends EventEmitter {
           text: "Prepare a PR once done with changes, then run in a subagent 'codex review --base main' and wait for it to respond. Read its response and make the fixes it suggests. Continue in a loop until it says there are no longer any issues. Once there are no issues, rebase main and merge the PR to main, then bump a release patch.",
           enabled: true
         }
-      ]
+      ],
+      worktreeFileSync: DEFAULT_WORKTREE_FILE_SYNC_ENTRIES
     };
   }
 
@@ -129,7 +132,12 @@ export class ConfigManager extends EventEmitter {
         analytics: {
           ...this.config.analytics,
           ...loadedConfig.analytics
-        }
+        },
+        // Use !== undefined to distinguish "user cleared all entries" (empty array → preserve)
+        // from "field absent in config file" (→ use defaults)
+        worktreeFileSync: loadedConfig.worktreeFileSync !== undefined
+          ? loadedConfig.worktreeFileSync
+          : DEFAULT_WORKTREE_FILE_SYNC_ENTRIES
       };
     } catch (error: unknown) {
       const isNotFound = error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
@@ -344,5 +352,13 @@ export class ConfigManager extends EventEmitter {
     const pref = this.config.preferredShell || 'auto';
     const validPrefs = ['auto', 'gitbash', 'powershell', 'pwsh', 'cmd'];
     return validPrefs.includes(pref) ? pref : 'auto';
+  }
+
+  /**
+   * Get the configured worktree file sync entries.
+   * Returns defaults if no entries are configured.
+   */
+  getWorktreeFileSyncEntries(): WorktreeFileSyncEntry[] {
+    return this.config.worktreeFileSync ?? DEFAULT_WORKTREE_FILE_SYNC_ENTRIES;
   }
 }
