@@ -129,12 +129,17 @@ export function Dropdown({
       }
 
       // Calculate fixed position for portal
+      const gap = 8;
+      const edgePadding = 16; // breathing room from viewport edge
       const pos: CSSProperties = { position: 'fixed' };
       if (shouldShowAbove || position === 'top-left' || position === 'top-right') {
-        pos.bottom = viewportHeight - rect.top + 8;
+        pos.bottom = viewportHeight - rect.top + gap;
+        pos.maxHeight = rect.top - gap - edgePadding;
       } else {
-        pos.top = rect.bottom + 8;
+        pos.top = rect.bottom + gap;
+        pos.maxHeight = viewportHeight - rect.bottom - gap - edgePadding;
       }
+      pos.overflowY = 'auto';
       // Align right edge to trigger right edge, but keep on screen
       const rightEdge = viewportWidth - rect.right;
       if (rightEdge < 0) {
@@ -223,7 +228,7 @@ export function Dropdown({
             boxShadow: 'var(--shadow-dropdown-elevated), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
           }}
         >
-            <div className="p-1.5">
+            <div className="p-1.5 max-h-[70vh] overflow-y-auto">
               {items.map((item, index) => {
                 const Icon = item.icon;
                 const isSelected = item.id === selectedId;

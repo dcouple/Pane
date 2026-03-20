@@ -33,7 +33,7 @@ export interface AppConfig {
   stravuApiKey?: string;
   stravuServerUrl?: string;
   // Theme preference
-  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora';
+  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
   // UI scale factor (0.75 to 1.5, default 1.0)
   uiScale?: number;
   // Notification settings
@@ -101,7 +101,7 @@ export interface UpdateConfigRequest {
   autoCheckUpdates?: boolean;
   stravuApiKey?: string;
   stravuServerUrl?: string;
-  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora';
+  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
   uiScale?: number;
   notifications?: {
     enabled: boolean;

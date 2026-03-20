@@ -2,9 +2,9 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
 import { API } from '../utils/api';
 
-type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora';
+type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
 
-const VALID_THEMES: Theme[] = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+const VALID_THEMES: Theme[] = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
 const THEME_CLASSES: Record<Theme, string[]> = {
   'light': ['light'],
   'light-rounded': ['light', 'light-rounded'],
@@ -15,6 +15,9 @@ const THEME_CLASSES: Record<Theme, string[]> = {
   'forge': ['dark', 'forge'],
   'ember': ['dark', 'ember'],
   'aurora': ['dark', 'aurora'],
+  'night-owl': ['dark', 'night-owl'],
+  'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
+  'terracotta': ['dark', 'terracotta'],
 };
 const isValidTheme = (t: string): t is Theme => VALID_THEMES.includes(t as Theme);
 
@@ -50,8 +53,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const body = document.body;
 
     // Remove ALL theme classes from both root and body
-    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora');
-    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora');
+    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
+    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
 
     const themeClasses = THEME_CLASSES[theme];
     root.classList.add(...themeClasses);
