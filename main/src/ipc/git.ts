@@ -524,6 +524,10 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         return { success: false, error: 'Session or worktree path not found' };
       }
 
+      if (session.archived) {
+        return { success: false, error: 'Cannot access git diff for archived session' };
+      }
+
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 

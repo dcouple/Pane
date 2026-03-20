@@ -292,7 +292,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             throw new Error(response.error || 'Failed to load executions');
           }
           const data: ExecutionDiff[] = response.data || [];
-          processExecutions(data, selectedExecutions.length === 0);
+          processExecutions(data, selectedExecutions.length === 0 && !viewingCommitHashRef.current);
         } catch (err) {
           if (!cancelled) {
             setError(err instanceof Error ? err.message : 'Failed to load executions');
@@ -353,6 +353,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   executionsLengthRef.current = executions.length;
   const selectedExecutionsRef = useRef(selectedExecutions);
   selectedExecutionsRef.current = selectedExecutions;
+  const viewingCommitHashRef = useRef(viewingCommitHash);
+  viewingCommitHashRef.current = viewingCommitHash;
 
   // Load combined diff when selection changes (with caching)
   useEffect(() => {
