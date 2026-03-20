@@ -33,11 +33,11 @@ export function ShortcutHintsOverlay({ isVisible, shortcuts }: ShortcutHintsOver
         ) : (
           <div className="grid gap-2">
             {enabledShortcuts.map((s) => (
-              <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-secondary">
+              <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-surface-secondary overflow-hidden">
                 <Kbd size="md" className="text-text-primary min-w-fit">
                   {modPrefix} + {s.key.toUpperCase()}
                 </Kbd>
-                <span className="text-sm text-text-secondary truncate">{s.label}</span>
+                <span className="text-sm text-text-secondary truncate min-w-0">{s.label}</span>
               </div>
             ))}
           </div>
