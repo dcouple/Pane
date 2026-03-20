@@ -109,6 +109,48 @@
   --aurora-accent-500: #38bdf8;
   --aurora-accent-400: #67e8f9;
   --aurora-accent-300: #a5f3fc;
+
+  /* Night Owl primitives — warm rose-tinted ramp (3/4/5 intentionally skipped, matching Forge blue ramp) */
+  --owl-950: #0a0607;
+  --owl-900: #110d0e;
+  --owl-850: #1a1214;
+  --owl-800: #221618;
+  --owl-700: #2e1c1f;
+  --owl-600: #3d2528;
+  --owl-500: #5c3a3e;
+  --owl-400: #7d5558;
+  --owl-300: #a07578;
+  --owl-200: #c49a9e;
+  --owl-100: #e8cdd0;
+
+  /* Night Owl rose accent ramp (3/4/5 intentionally skipped) */
+  --owl-rose1: #2a0f14;
+  --owl-rose2: #3d1520;
+  --owl-rose6: #c45c5c;
+  --owl-rose7: #cf6d6d;
+  --owl-rose8: #d88080;
+  --owl-rose9: #e09494;
+  --owl-rose10: #e8abab;
+
+  /* Terracotta primitives — warm dusty earth-tone ramp */
+  --terra-950: #0c0806;
+  --terra-900: #14100c;
+  --terra-850: #1e1712;
+  --terra-800: #271e18;
+  --terra-700: #352820;
+  --terra-600: #46362a;
+  --terra-500: #6b5040;
+  --terra-400: #8d6b58;
+  --terra-300: #b08a72;
+  --terra-200: #ccab96;
+  --terra-100: #e6d0be;
+
+  /* Terracotta accent ramp — burnt sienna/terracotta */
+  --terra-accent6: #c07050;
+  --terra-accent7: #cc7d5e;
+  --terra-accent8: #d68e6e;
+  --terra-accent9: #dea080;
+  --terra-accent10: #e6b498;
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -1174,6 +1216,480 @@
   --color-terminal-bright-magenta: #d7c2ef;
   --color-terminal-bright-cyan: #efb0ad;
   --color-terminal-bright-white: #ffffff;
+}
+
+/* Night Owl Theme — warm rose/crimson, zero blue light */
+:root.night-owl {
+  /* Backgrounds — TWO-TONE foundation */
+  --color-bg-primary: var(--owl-900);
+  --color-bg-secondary: var(--owl-900);
+  --color-bg-tertiary: var(--owl-700);
+  --color-bg-hover: var(--owl-700);
+  --color-bg-active: var(--owl-600);
+  --color-bg-chrome: var(--owl-900);
+  --color-bg-editor: var(--owl-950);   /* SUNKEN — darker than chrome */
+
+  /* Surfaces */
+  --color-surface-primary: var(--owl-850);
+  --color-surface-secondary: var(--owl-800);
+  --color-surface-tertiary: var(--owl-700);
+  --color-surface-hover: rgba(255, 255, 255, 0.04);
+
+  /* Text */
+  --color-text-primary: var(--owl-100);
+  --color-text-secondary: var(--owl-200);
+  --color-text-tertiary: var(--owl-300);
+  --color-text-muted: var(--owl-400);
+  --color-text-disabled: var(--owl-500);
+
+  /* Borders */
+  --color-border-primary: var(--owl-700);
+  --color-border-secondary: var(--owl-800);
+  --color-border-hover: var(--owl-600);
+  --color-border-focus: var(--owl-rose6);
+
+  /* Interactive — single rose accent, zero blue */
+  --color-interactive-primary: var(--owl-rose6);
+  --color-interactive-hover: var(--owl-rose7);
+  --color-interactive-active: var(--owl-rose8);
+  --color-interactive-text: var(--owl-rose9);
+  --color-focus-ring: var(--owl-rose6);
+  --color-interactive-rgb: 196 92 92;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--owl-rose9);
+  --color-text-interactive-on-dark-hover: var(--owl-rose6);
+  --color-text-interactive-on-dark-active: var(--owl-rose9);
+  --color-text-interactive-on-dark-focus: var(--owl-rose9);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--owl-850);
+  --color-surface-interactive-hover: var(--owl-700);
+  --color-interactive-surface: rgba(196, 92, 92, 0.15);
+  --color-interactive-surface-hover: rgba(196, 92, 92, 0.25);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-interactive-border: rgba(196, 92, 92, 0.5);
+  --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--owl-400);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(196, 92, 92, 0.4);
+
+  /* Status — IntelliJ semantic colors (same as Forge) */
+  --color-status-success: #73BD79;
+  --color-status-success-hover: #5BA863;
+  --color-status-warning: #F2C55C;
+  --color-status-warning-hover: #D9AD44;
+  --color-status-error: #DB5C5C;
+  --color-status-error-hover: #C44444;
+  --color-status-info: var(--owl-rose8);
+  --color-status-neutral: var(--owl-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--owl-100);
+  --color-text-on-secondary: var(--owl-200);
+  --color-text-on-tertiary: var(--owl-200);
+  --color-text-on-surface: var(--owl-200);
+  --color-text-on-interactive: rgb(0 0 0);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(0 0 0);
+  --color-text-on-navigation: var(--owl-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--owl-rose6);
+  --color-button-primary-hover: var(--owl-rose7);
+  --color-button-primary-text: rgb(0 0 0);
+  --color-button-secondary-bg: var(--owl-700);
+  --color-button-secondary-hover: var(--owl-600);
+  --color-button-secondary-text: var(--owl-200);
+  --color-button-ghost-hover: var(--owl-800);
+  --color-button-ghost-text: var(--owl-300);
+
+  /* Cards */
+  --color-card-bg: var(--owl-850);
+  --color-card-border: var(--owl-700);
+  --color-card-nested-bg: var(--owl-700);
+
+  /* Forms */
+  --color-input-bg: var(--owl-950);
+  --color-input-border: var(--owl-600);
+  --color-input-focus: var(--owl-rose6);
+  --color-input-text: var(--owl-100);
+  --color-input-placeholder: var(--owl-400);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.6);
+  --color-modal-bg: var(--owl-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--owl-900);
+  --color-surface-navigation-hover: var(--owl-850);
+  --color-surface-navigation-active: var(--owl-700);
+  --color-surface-navigation-selected: rgba(196, 92, 92, 0.15);
+  --color-surface-navigation-selected-hover: rgba(196, 92, 92, 0.2);
+  --color-text-navigation-primary: var(--owl-200);
+  --color-text-navigation-secondary: var(--owl-300);
+  --color-text-navigation-muted: var(--owl-400);
+  --color-text-navigation-selected: var(--owl-100);
+  --color-text-navigation-hover: var(--owl-100);
+  --color-text-navigation-section: var(--owl-400);
+  --color-text-navigation-brand: var(--owl-300);
+  --color-border-navigation: var(--owl-700);
+  --color-divider-navigation: var(--owl-800);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--owl-900);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.30);
+
+  /* Tab indicator — UNDERLINE mode for Night Owl */
+  --tab-indicator-color: var(--owl-rose6);
+  --tab-indicator-height: 4px;
+
+  /* Terminal — warm palette, zero blue */
+  --color-terminal-bg: var(--owl-950);
+  --color-terminal-fg: var(--owl-100);
+  --color-terminal-cursor: var(--owl-rose6);
+  --color-terminal-black: var(--owl-950);
+  --color-terminal-red: #DB5C5C;
+  --color-terminal-green: #73BD79;
+  --color-terminal-yellow: #F2C55C;
+  --color-terminal-blue: #B07070;
+  --color-terminal-magenta: #C47878;
+  --color-terminal-cyan: #9A8878;
+  --color-terminal-white: var(--owl-100);
+  --color-terminal-bright-black: var(--owl-400);
+  --color-terminal-bright-red: #E87A7A;
+  --color-terminal-bright-green: #8FCC97;
+  --color-terminal-bright-yellow: #F5D580;
+  --color-terminal-bright-blue: #C48888;
+  --color-terminal-bright-magenta: #D49494;
+  --color-terminal-bright-cyan: #B09888;
+  --color-terminal-bright-white: #F5E0E2;
+}
+
+/* Night Owl OLED — pure-black foundations with warm rose/crimson accent */
+:root.night-owl-oled {
+  /* Backgrounds — pure black OLED */
+  --color-bg-primary: rgb(0 0 0);
+  --color-bg-secondary: rgb(5 4 3);
+  --color-bg-tertiary: rgb(14 11 9);
+  --color-bg-hover: rgb(20 16 12);
+  --color-bg-active: rgb(28 22 16);
+  --color-bg-chrome: rgb(0 0 0);
+  --color-bg-editor: rgb(0 0 0);
+
+  /* Surfaces */
+  --color-surface-primary: rgb(8 6 4);
+  --color-surface-secondary: rgb(12 10 7);
+  --color-surface-tertiary: rgb(18 15 11);
+  --color-surface-hover: rgba(255, 255, 255, 0.06);
+
+  /* Text */
+  --color-text-primary: var(--owl-100);
+  --color-text-secondary: var(--owl-200);
+  --color-text-tertiary: var(--owl-300);
+  --color-text-muted: var(--owl-400);
+  --color-text-disabled: var(--owl-500);
+
+  /* Borders — slightly brighter on pure black */
+  --color-border-primary: rgba(196, 92, 92, 0.14);
+  --color-border-secondary: rgba(196, 92, 92, 0.08);
+  --color-border-hover: rgba(196, 92, 92, 0.18);
+  --color-border-focus: var(--owl-rose6);
+
+  /* Interactive — single rose accent, zero blue */
+  --color-interactive-primary: var(--owl-rose6);
+  --color-interactive-hover: var(--owl-rose7);
+  --color-interactive-active: var(--owl-rose8);
+  --color-interactive-text: var(--owl-rose9);
+  --color-focus-ring: var(--owl-rose6);
+  --color-interactive-rgb: 196 92 92;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--owl-rose9);
+  --color-text-interactive-on-dark-hover: var(--owl-rose6);
+  --color-text-interactive-on-dark-active: var(--owl-rose9);
+  --color-text-interactive-on-dark-focus: var(--owl-rose9);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: rgb(12 10 7);
+  --color-surface-interactive-hover: rgb(18 15 11);
+  --color-interactive-surface: rgba(196, 92, 92, 0.15);
+  --color-interactive-surface-hover: rgba(196, 92, 92, 0.25);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-interactive-border: rgba(196, 92, 92, 0.5);
+  --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--owl-400);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(196, 92, 92, 0.4);
+
+  /* Status */
+  --color-status-success: #73BD79;
+  --color-status-success-hover: #5BA863;
+  --color-status-warning: #F2C55C;
+  --color-status-warning-hover: #D9AD44;
+  --color-status-error: #DB5C5C;
+  --color-status-error-hover: #C44444;
+  --color-status-info: var(--owl-rose8);
+  --color-status-neutral: var(--owl-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--owl-100);
+  --color-text-on-secondary: var(--owl-200);
+  --color-text-on-tertiary: var(--owl-200);
+  --color-text-on-surface: var(--owl-200);
+  --color-text-on-interactive: rgb(0 0 0);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(0 0 0);
+  --color-text-on-navigation: var(--owl-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--owl-rose6);
+  --color-button-primary-hover: var(--owl-rose7);
+  --color-button-primary-text: rgb(0 0 0);
+  --color-button-secondary-bg: rgb(18 15 11);
+  --color-button-secondary-hover: rgb(28 22 16);
+  --color-button-secondary-text: var(--owl-200);
+  --color-button-ghost-hover: rgb(12 10 7);
+  --color-button-ghost-text: var(--owl-300);
+
+  /* Cards */
+  --color-card-bg: rgb(8 6 4);
+  --color-card-border: rgba(196, 92, 92, 0.14);
+  --color-card-nested-bg: rgb(12 10 7);
+
+  /* Forms */
+  --color-input-bg: rgb(0 0 0);
+  --color-input-border: var(--owl-600);
+  --color-input-focus: var(--owl-rose6);
+  --color-input-text: var(--owl-100);
+  --color-input-placeholder: var(--owl-400);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.75);
+  --color-modal-bg: rgb(8 6 4);
+
+  /* Navigation */
+  --color-surface-navigation: rgb(0 0 0);
+  --color-surface-navigation-hover: rgb(8 6 4);
+  --color-surface-navigation-active: rgb(12 10 7);
+  --color-surface-navigation-selected: rgba(196, 92, 92, 0.15);
+  --color-surface-navigation-selected-hover: rgba(196, 92, 92, 0.2);
+  --color-text-navigation-primary: var(--owl-200);
+  --color-text-navigation-secondary: var(--owl-300);
+  --color-text-navigation-muted: var(--owl-400);
+  --color-text-navigation-selected: var(--owl-100);
+  --color-text-navigation-hover: var(--owl-100);
+  --color-text-navigation-section: var(--owl-400);
+  --color-text-navigation-brand: var(--owl-300);
+  --color-border-navigation: rgba(196, 92, 92, 0.10);
+  --color-divider-navigation: rgba(196, 92, 92, 0.06);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: rgb(0 0 0);
+  --color-scrollbar-thumb: rgb(40 32 22);
+  --color-scrollbar-thumb-hover: rgb(60 48 34);
+
+  /* Tab indicator — UNDERLINE mode */
+  --tab-indicator-color: var(--owl-rose6);
+  --tab-indicator-height: 4px;
+
+  /* Terminal — warm palette, zero blue */
+  --color-terminal-bg: rgb(0 0 0);
+  --color-terminal-fg: var(--owl-100);
+  --color-terminal-cursor: var(--owl-rose6);
+  --color-terminal-black: rgb(0 0 0);
+  --color-terminal-red: #DB5C5C;
+  --color-terminal-green: #73BD79;
+  --color-terminal-yellow: #F2C55C;
+  --color-terminal-blue: #B07070;
+  --color-terminal-magenta: #C47878;
+  --color-terminal-cyan: #9A8878;
+  --color-terminal-white: var(--owl-100);
+  --color-terminal-bright-black: var(--owl-400);
+  --color-terminal-bright-red: #E87A7A;
+  --color-terminal-bright-green: #8FCC97;
+  --color-terminal-bright-yellow: #F5D580;
+  --color-terminal-bright-blue: #C48888;
+  --color-terminal-bright-magenta: #D49494;
+  --color-terminal-bright-cyan: #B09888;
+  --color-terminal-bright-white: #F5E0E2;
+}
+
+/* Terracotta Theme — warm dusty earth-tone, zero blue light */
+:root.terracotta {
+  /* Backgrounds — TWO-TONE foundation */
+  --color-bg-primary: var(--terra-900);
+  --color-bg-secondary: var(--terra-850);
+  --color-bg-tertiary: var(--terra-700);
+  --color-bg-hover: var(--terra-700);
+  --color-bg-active: var(--terra-600);
+  --color-bg-chrome: var(--terra-900);
+  --color-bg-editor: var(--terra-950);   /* SUNKEN — darker than chrome */
+
+  /* Surfaces */
+  --color-surface-primary: var(--terra-850);
+  --color-surface-secondary: var(--terra-800);
+  --color-surface-tertiary: var(--terra-700);
+  --color-surface-hover: rgba(255, 255, 255, 0.04);
+
+  /* Text */
+  --color-text-primary: var(--terra-100);
+  --color-text-secondary: var(--terra-200);
+  --color-text-tertiary: var(--terra-300);
+  --color-text-muted: var(--terra-400);
+  --color-text-disabled: var(--terra-500);
+
+  /* Borders */
+  --color-border-primary: var(--terra-700);
+  --color-border-secondary: var(--terra-800);
+  --color-border-hover: var(--terra-600);
+  --color-border-focus: var(--terra-accent6);
+
+  /* Interactive — single terracotta accent, zero blue */
+  --color-interactive-primary: var(--terra-accent6);
+  --color-interactive-hover: var(--terra-accent7);
+  --color-interactive-active: var(--terra-accent8);
+  --color-interactive-text: var(--terra-accent9);
+  --color-focus-ring: var(--terra-accent6);
+  --color-interactive-rgb: 192 112 80;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--terra-accent9);
+  --color-text-interactive-on-dark-hover: var(--terra-accent6);
+  --color-text-interactive-on-dark-active: var(--terra-accent9);
+  --color-text-interactive-on-dark-focus: var(--terra-accent9);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--terra-850);
+  --color-surface-interactive-hover: var(--terra-700);
+  --color-interactive-surface: rgba(192, 112, 80, 0.15);
+  --color-interactive-surface-hover: rgba(192, 112, 80, 0.25);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
+  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-interactive-border: rgba(192, 112, 80, 0.5);
+  --color-interactive-border-hover: rgba(192, 112, 80, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--terra-400);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(192, 112, 80, 0.4);
+
+  /* Status — IntelliJ semantic colors (same as Forge/Night Owl, no blue) */
+  --color-status-success: #73BD79;
+  --color-status-success-hover: #5BA863;
+  --color-status-warning: #F2C55C;
+  --color-status-warning-hover: #D9AD44;
+  --color-status-error: #DB5C5C;
+  --color-status-error-hover: #C44444;
+  --color-status-info: var(--terra-accent8);
+  --color-status-neutral: var(--terra-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--terra-100);
+  --color-text-on-secondary: var(--terra-200);
+  --color-text-on-tertiary: var(--terra-200);
+  --color-text-on-surface: var(--terra-200);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(0 0 0);
+  --color-text-on-navigation: var(--terra-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--terra-accent6);
+  --color-button-primary-hover: var(--terra-accent7);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--terra-700);
+  --color-button-secondary-hover: var(--terra-600);
+  --color-button-secondary-text: var(--terra-200);
+  --color-button-ghost-hover: var(--terra-800);
+  --color-button-ghost-text: var(--terra-300);
+
+  /* Cards */
+  --color-card-bg: var(--terra-850);
+  --color-card-border: var(--terra-700);
+  --color-card-nested-bg: var(--terra-700);
+
+  /* Forms */
+  --color-input-bg: var(--terra-950);
+  --color-input-border: var(--terra-600);
+  --color-input-focus: var(--terra-accent6);
+  --color-input-text: var(--terra-100);
+  --color-input-placeholder: var(--terra-400);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.6);
+  --color-modal-bg: var(--terra-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--terra-900);
+  --color-surface-navigation-hover: var(--terra-850);
+  --color-surface-navigation-active: var(--terra-700);
+  --color-surface-navigation-selected: rgba(192, 112, 80, 0.15);
+  --color-surface-navigation-selected-hover: rgba(192, 112, 80, 0.2);
+  --color-text-navigation-primary: var(--terra-200);
+  --color-text-navigation-secondary: var(--terra-300);
+  --color-text-navigation-muted: var(--terra-400);
+  --color-text-navigation-selected: var(--terra-100);
+  --color-text-navigation-hover: var(--terra-100);
+  --color-text-navigation-section: var(--terra-400);
+  --color-text-navigation-brand: var(--terra-300);
+  --color-border-navigation: var(--terra-700);
+  --color-divider-navigation: var(--terra-800);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--terra-900);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.30);
+
+  /* Tab indicator — UNDERLINE mode for Terracotta */
+  --tab-indicator-color: var(--terra-accent6);
+  --tab-indicator-height: 4px;
+
+  /* Terminal — warm earth palette, zero blue */
+  --color-terminal-bg: var(--terra-950);
+  --color-terminal-fg: var(--terra-100);
+  --color-terminal-cursor: var(--terra-accent6);
+  --color-terminal-black: var(--terra-950);
+  --color-terminal-red: #DB5C5C;
+  --color-terminal-green: #73BD79;
+  --color-terminal-yellow: #F2C55C;
+  --color-terminal-blue: #B08060;
+  --color-terminal-magenta: #C07868;
+  --color-terminal-cyan: #8A9A70;
+  --color-terminal-white: var(--terra-100);
+  --color-terminal-bright-black: var(--terra-400);
+  --color-terminal-bright-red: #E87A7A;
+  --color-terminal-bright-green: #8FCC97;
+  --color-terminal-bright-yellow: #F5D580;
+  --color-terminal-bright-blue: #C49878;
+  --color-terminal-bright-magenta: #D49080;
+  --color-terminal-bright-cyan: #A4B088;
+  --color-terminal-bright-white: #F2E4D6;
 }
 
 /* Light Rounded — inherits light tokens, overrides shell/chrome behavior */
