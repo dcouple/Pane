@@ -389,8 +389,6 @@ export function CreateSessionDialog({
           if (folderResponse.success && folderResponse.data) {
             folderId = folderResponse.data.id;
             console.log(`[CreateSessionDialog] Created folder: ${sessionName} (${folderId})`);
-            // Wait a bit to ensure the folder is created in the UI
-            await new Promise(resolve => setTimeout(resolve, 200));
           }
         } catch (error) {
           console.error('[CreateSessionDialog] Failed to create folder:', error);

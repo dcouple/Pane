@@ -49,6 +49,10 @@ export interface TerminalPanelState {
   // Auto-resume state (for graceful shutdown/restart)
   wasInterrupted?: boolean;          // Whether this terminal was active when app shutdown occurred
   hasClaudeSessionId?: boolean;      // Whether --session-id was already passed to Claude (use --resume next time)
+
+  // CLI tool init state
+  isCliPanel?: boolean;              // True if this terminal runs a CLI tool (claude/codex)
+  isCliReady?: boolean;              // True after the CLI tool has started responding
 }
 
 export interface DiffPanelState {

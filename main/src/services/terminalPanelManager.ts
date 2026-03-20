@@ -249,6 +249,18 @@ export class TerminalPanelManager {
     if (initialCommand) {
       commandToRun = initialCommand;
 
+      // Mark CLI tool panels so the frontend can show an init overlay
+      const isCliCommand = initialCommand.toLowerCase().includes('claude') ||
+        initialCommand.toLowerCase().includes('codex');
+      if (isCliCommand) {
+        const cliState = panel.state;
+        const cliCs = (cliState.customState || {}) as TerminalPanelState;
+        cliCs.isCliPanel = true;
+        cliCs.isCliReady = false; // Reset on (re-)launch so the overlay shows for fresh CLI processes
+        cliState.customState = cliCs;
+        // Will be persisted below — either by the claude-specific block or the explicit call after it
+      }
+
       // If this is a Claude CLI command, inject --session-id or --resume
       if (
         initialCommand.toLowerCase().includes('claude') &&
@@ -263,11 +275,15 @@ export class TerminalPanelManager {
         }
 
         // Mark that we've assigned a session ID to this panel
+        // (isCliPanel is already set above and will be included here)
         const updatedState = panel.state;
         const cs = (updatedState.customState || {}) as TerminalPanelState;
         cs.hasClaudeSessionId = true;
         updatedState.customState = cs;
         panelManager.updatePanel(panel.id, { state: updatedState });
+      } else if (isCliCommand) {
+        // Non-claude CLI (e.g. codex) — persist the isCliPanel flag explicitly
+        panelManager.updatePanel(panel.id, { state: panel.state });
       }
 
       // Detect the interactive prompt before injecting the command.
@@ -286,6 +302,46 @@ export class TerminalPanelManager {
         commandInjected = true;
         onPromptReady.dispose();
         this.writeToTerminal(panelId, commandToRun! + '\r');
+
+        // For CLI tool terminals, signal the frontend when the CLI responds
+        if (isCliCommand) {
+          let cliReadySignaled = false;
+          // Declare before signalCliReady so the closure can reference it
+          let onCliOutput: ReturnType<typeof ptyProcess.onData> | null = null;
+
+          const signalCliReady = () => {
+            if (cliReadySignaled) return;
+            cliReadySignaled = true;
+            if (onCliOutput) onCliOutput.dispose();
+
+            // Persist isCliReady on panel state (best-effort, fire-and-forget)
+            const currentPanel = panelManager.getPanel(panelId);
+            if (currentPanel) {
+              const ps = currentPanel.state;
+              const cs2 = (ps.customState || {}) as TerminalPanelState;
+              cs2.isCliReady = true;
+              ps.customState = cs2;
+              panelManager.updatePanel(panelId, { state: ps }); // async, not awaited
+            }
+
+            // Emit to renderer
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('terminal:cliReady', { panelId });
+            }
+          };
+
+          // Listen for first CLI output after command injection.
+          // Dispose immediately on first data, then fire a single delayed signal.
+          onCliOutput = ptyProcess.onData(() => {
+            if (onCliOutput) onCliOutput.dispose();
+            onCliOutput = null;
+            // Small delay to let the CLI render its first frame
+            setTimeout(signalCliReady, 300);
+          });
+
+          // Safety timeout: dismiss after 10s regardless
+          setTimeout(signalCliReady, 10000);
+        }
       };
 
       const onPromptReady = ptyProcess.onData((data: string) => {

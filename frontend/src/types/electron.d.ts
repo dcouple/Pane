@@ -267,6 +267,7 @@ interface ElectronAPI {
     onPanelResponseAdded: (callback: (data: { panelId: string; content: string }) => void) => () => void;
     
     onTerminalOutput: (callback: (output: { sessionId: string; data: string; type: 'stdout' | 'stderr' }) => void) => () => void;
+    onTerminalCliReady: (callback: (data: { panelId: string }) => void) => () => void;
     onMainLog: (callback: (level: string, message: string) => void) => () => void;
     onVersionUpdateAvailable: (callback: (versionInfo: VersionUpdateInfo) => void) => () => void;
     

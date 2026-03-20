@@ -172,8 +172,9 @@ export class TaskQueue {
             sessionName = 'Session';
           } else {
             // No worktree template provided - verbose debug logging removed
-            // Use the AI-powered name generator to generate a session name with spaces
-            sessionName = await this.options.worktreeNameGenerator.generateSessionName(prompt);
+            // Use the synchronous fallback immediately so session creation is not blocked.
+            // The AI-powered name will be applied asynchronously after the session is created.
+            sessionName = this.options.worktreeNameGenerator.generateFallbackSessionName(prompt);
             // Convert the session name to a worktree name (spaces to hyphens)
             worktreeName = sessionName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
             // Generated names - verbose debug logging removed
@@ -251,12 +252,48 @@ export class TaskQueue {
         } else {
         }
         
-        // Ensure default panels exist for this session
-        await panelManager.ensureExplorerPanel(session.id);
-        await panelManager.ensureDiffPanel(session.id);
+        // Ensure default panels exist for this session (run in parallel)
+        await Promise.all([
+          panelManager.ensureExplorerPanel(session.id),
+          panelManager.ensureDiffPanel(session.id),
+        ]);
 
         // Emit the session-created event BEFORE running build script so UI shows immediately
         sessionManager.emitSessionCreated(session);
+
+        // Fire-and-forget AI name generation (only when user didn't provide a name and this is
+        // a single session — multi-session paths have index set)
+        const originalTemplate = job.data.worktreeTemplate;
+        if (!originalTemplate || originalTemplate.trim() === '') {
+          if (job.data.index === undefined || job.data.index < 0) {
+            const capturedSessionId = session.id;
+            const capturedFallbackName = sessionName;
+            this.options.worktreeNameGenerator.generateSessionName(prompt).then(aiName => {
+              if (aiName && aiName !== capturedFallbackName) {
+                // Same pattern as sessions:rename IPC handler.
+                // Guard: only apply if the name is still the fallback (user may have renamed manually)
+                const sm = this.options.sessionManager;
+                const liveSession = sm.getSession(capturedSessionId);
+                if (liveSession && liveSession.name === capturedFallbackName) {
+                  // Ensure uniqueness — another session may already have this AI-generated name
+                  let finalName = aiName;
+                  if (sm.db.checkSessionNameExists(finalName)) {
+                    let counter = 1;
+                    while (sm.db.checkSessionNameExists(`${aiName} ${counter}`)) {
+                      counter++;
+                    }
+                    finalName = `${aiName} ${counter}`;
+                  }
+                  sm.db.updateSession(capturedSessionId, { name: finalName });
+                  liveSession.name = finalName;
+                  sm.emit('session-updated', liveSession);
+                }
+              }
+            }).catch(err => {
+              console.error('[TaskQueue] Background AI name generation failed:', err);
+            });
+          }
+        }
 
         // Run build script after session is visible in UI
         if (targetProject.build_script) {
@@ -398,14 +435,11 @@ export class TaskQueue {
         const folder = db.createFolder(folderName, numericProjectId);
         folderId = folder.id;
         
-        // Emit folder created event immediately and wait for it to be processed
+        // Emit folder created event immediately
         const getMainWindow = this.options.getMainWindow;
         const mainWindow = getMainWindow();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('folder:created', folder);
-          
-          // Wait a bit to ensure the frontend has processed the folder event
-          await new Promise(resolve => setTimeout(resolve, 200));
         } else {
           console.warn(`[TaskQueue] Could not emit folder:created event - main window not available`);
         }

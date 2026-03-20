@@ -17,7 +17,23 @@ import { TerminalPopover, PopoverButton } from '../terminal/TerminalPopover';
 import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
+import type { TerminalPanelState } from '../../../../shared/types/panels';
 import '@xterm/xterm/css/xterm.css';
+
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+const TerminalSpinner: React.FC = () => {
+  const [frame, setFrame] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setFrame(f => (f + 1) % SPINNER_FRAMES.length), 80);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <span className="text-accent-primary text-2xl font-mono">{SPINNER_FRAMES[frame]}</span>
+  );
+};
 
 // Type for terminal state restoration
 interface TerminalRestoreState {
@@ -41,6 +57,30 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Read CLI state from persisted panel state (handles remount case)
+  const terminalState = panel.state?.customState as TerminalPanelState | undefined;
+  const isCliPanel = !!terminalState?.isCliPanel;
+  const [isCliReady, setIsCliReady] = useState(!!terminalState?.isCliReady);
+
+  // Sync isCliReady from panel prop when it changes (e.g. backend persisted isCliReady
+  // before this component subscribed to the IPC event, or panel state was updated externally)
+  useEffect(() => {
+    if (terminalState?.isCliReady && !isCliReady) {
+      setIsCliReady(true);
+    }
+  }, [terminalState?.isCliReady, isCliReady]);
+
+  // Listen for cliReady event (only for CLI panels that aren't already ready)
+  useEffect(() => {
+    if (!isCliPanel || isCliReady) return;
+    const cleanup = window.electronAPI.events.onTerminalCliReady((data) => {
+      if (data.panelId === panel.id) {
+        setIsCliReady(true);
+      }
+    });
+    return cleanup;
+  }, [panel.id, isCliPanel, isCliReady]);
 
   // Get session data from context using the safe hook
   const sessionContext = useSession();
@@ -839,9 +879,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         </div>
       )}
 
-      {!isInitialized && (
-        <div className="absolute inset-0 flex items-center justify-center bg-surface-primary bg-opacity-80">
-          <div className="text-text-secondary">Initializing terminal...</div>
+      {(!isInitialized || (isCliPanel && !isCliReady)) && (
+        <div className="absolute inset-0 flex items-center justify-center bg-surface-primary z-10">
+          <div className="flex flex-col items-center gap-3">
+            <TerminalSpinner />
+            <div className="text-text-secondary text-sm">
+              {!isInitialized ? 'Initializing terminal...' : 'Starting CLI...'}
+            </div>
+          </div>
         </div>
       )}
 

@@ -85,7 +85,7 @@ Respond with ONLY the session name, nothing else.`
     return this.convertSessionNameToWorktreeName(sessionName);
   }
 
-  private generateFallbackSessionName(prompt: string): string {
+  public generateFallbackSessionName(prompt: string): string {
     // Simple fallback: take first few words and capitalize properly
     const words = prompt
       .toLowerCase()
