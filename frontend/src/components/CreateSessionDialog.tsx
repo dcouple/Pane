@@ -53,7 +53,7 @@ export function CreateSessionDialog({
     baseBranch: initialBaseBranch
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [worktreeError, setWorktreeError] = useState<string | null>(null);
+
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [commitModeSettings, setCommitModeSettings] = useState<CommitModeSettingsType>({
@@ -244,7 +244,6 @@ export function CreateSessionDialog({
       const autoName = generateSessionName(branchName);
       setSessionName(autoName);
       setFormData(prev => ({ ...prev, baseBranch: branchName, worktreeTemplate: autoName }));
-      setWorktreeError(null);
     }
   }, [savePreferences, userEditedName, generateSessionName]);
 
@@ -318,34 +317,14 @@ export function CreateSessionDialog({
 
   if (!isOpen) return null;
 
-  const validateWorktreeName = (name: string): string | null => {
-    if (!name) return null; // Empty is allowed
-
-    // Spaces are now allowed in session names
-    // They will be converted to hyphens for the actual worktree name
-
-    // Check for invalid git characters (excluding spaces which are now allowed)
-    const invalidChars = /[~^:?*\[\]\\]/;
-    if (invalidChars.test(name)) {
-      return 'Pane name contains invalid characters (~^:?*[]\\)';
-    }
-
-    // Check if it starts or ends with dot
-    if (name.startsWith('.') || name.endsWith('.')) {
-      return 'Pane name cannot start or end with a dot';
-    }
-
-    // Check if it starts or ends with slash
-    if (name.startsWith('/') || name.endsWith('/')) {
-      return 'Pane name cannot start or end with a slash';
-    }
-
-    // Check for consecutive dots
-    if (name.includes('..')) {
-      return 'Pane name cannot contain consecutive dots';
-    }
-
-    return null;
+  const sanitizePaneName = (name: string): string => {
+    return name
+      // Strip git-invalid characters
+      .replace(/[~^:?*\[\]\\]/g, '')
+      // Collapse consecutive dots into a single dot
+      .replace(/\.{2,}/g, '.')
+      // Strip leading/trailing dots and slashes
+      .replace(/^[./]+|[./]+$/g, '');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -363,12 +342,12 @@ export function CreateSessionDialog({
       return;
     }
 
-    // Validate worktree name
-    const validationError = validateWorktreeName(sessionName);
-    if (validationError) {
+    // Sanitize the session name before submission
+    const cleanedName = sanitizePaneName(sessionName);
+    if (!cleanedName.trim()) {
       showError({
         title: 'Invalid Pane Name',
-        error: validationError
+        error: 'Pane name is empty after removing invalid characters.'
       });
       return;
     }
@@ -451,8 +430,7 @@ export function CreateSessionDialog({
     <Modal
       isOpen={isOpen}
       onClose={() => {
-        setWorktreeError(null);
-        onClose();
+          onClose();
       }}
       size="lg"
       closeOnOverlayClick={false}
@@ -638,24 +616,18 @@ export function CreateSessionDialog({
                 type="text"
                 value={sessionName}
                 onChange={(e) => {
-                  const value = e.target.value;
+                  const value = sanitizePaneName(e.target.value);
                   setSessionName(value);
                   setFormData({ ...formData, worktreeTemplate: value });
                   setUserEditedName(true);
                   userEditedNameRef.current = true;
-                  // Real-time validation
-                  const error = validateWorktreeName(value);
-                  setWorktreeError(error);
                 }}
-                error={worktreeError || undefined}
                 placeholder="Enter a name for your pane"
                 className="w-full"
               />
-              {!worktreeError && (
-                <p className="text-xs text-text-tertiary mt-1">
-                  Auto-filled from branch. Edit to customize.
-                </p>
-              )}
+              <p className="text-xs text-text-tertiary mt-1">
+                Auto-filled from branch. Edit to customize.
+              </p>
             </div>
 
             {/* 3. Advanced Options Toggle */}
@@ -778,8 +750,7 @@ export function CreateSessionDialog({
           <Button
             type="button"
             onClick={() => {
-              setWorktreeError(null);
-              onClose();
+                      onClose();
             }}
             variant="ghost"
             disabled={isSubmitting}
@@ -789,11 +760,10 @@ export function CreateSessionDialog({
           <Button
             type="submit"
             form="create-session-form"
-            disabled={isSubmitting || isLoadingBranches || !!worktreeError || !sessionName.trim()}
+            disabled={isSubmitting || isLoadingBranches || !sessionName.trim()}
             loading={isSubmitting}
             title={
               isSubmitting ? 'Creating pane...' :
-              worktreeError ? 'Please fix the pane name error' :
               !sessionName.trim() ? 'Please enter a pane name' :
               undefined
             }
