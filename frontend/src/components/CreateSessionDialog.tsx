@@ -319,12 +319,12 @@ export function CreateSessionDialog({
 
   const sanitizePaneName = (name: string): string => {
     return name
-      // Strip git-invalid characters
-      .replace(/[~^:?*\[\]\\]/g, '')
+      // Strip git-invalid characters and slashes
+      .replace(/[~^:?*\[\]\\/]/g, '')
       // Collapse consecutive dots into a single dot
       .replace(/\.{2,}/g, '.')
-      // Strip leading/trailing dots and slashes
-      .replace(/^[./]+|[./]+$/g, '');
+      // Strip leading/trailing dots
+      .replace(/^\.+|\.+$/g, '');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
