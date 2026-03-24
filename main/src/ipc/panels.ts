@@ -1,9 +1,10 @@
-import { IpcMain, BrowserWindow, clipboard } from 'electron';
+import { IpcMain, BrowserWindow, clipboard, webContents } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { mainWindow } from '../index';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
@@ -632,5 +633,28 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Check if a panel type should be auto-created (not previously closed by user)
   ipcMain.handle('panels:shouldAutoCreate', async (_, sessionId: string, panelType: string) => {
     return panelManager.shouldAutoCreatePanel(sessionId, panelType);
+  });
+
+  ipcMain.handle('browser-panel:register-webview', async (_, wcId: number, panelId: string, sessionId: string) => {
+    try {
+      const wc = webContents.fromId(wcId);
+      if (!wc) return { success: false, error: 'WebContents not found' };
+
+      wc.setWindowOpenHandler(({ url }) => {
+        mainWindow?.webContents.send('browser-panel:popup-requested', {
+          url,
+          sourceSessionId: sessionId,
+          sourcePanelId: panelId,
+        });
+        return { action: 'deny' };
+      });
+
+      wc.setBackgroundThrottling(true);
+
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to register webview:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 }

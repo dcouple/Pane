@@ -202,7 +202,8 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webviewTag: true
     },
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset',
@@ -218,6 +219,14 @@ async function createWindow() {
   // Increase max listeners to prevent warning when many panels are active
   // Each panel can register multiple event listeners
   mainWindow.webContents.setMaxListeners(100);
+
+  // Security hook: strip preload and enforce sandbox on any webview tags
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+  });
 
   // Prevent Ctrl+W / Cmd+W from closing the Electron window so the renderer
   // can use it to close tabs. We intercept at before-input-event and re-emit

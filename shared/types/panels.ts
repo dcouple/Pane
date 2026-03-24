@@ -137,8 +137,7 @@ export interface SetupTasksPanelState {
 
 export interface BrowserPanelState {
   currentUrl?: string;
-  history?: string[];
-  historyIndex?: number;
+  isPopup?: boolean;
 }
 
 export interface ToolPanelMetadata {

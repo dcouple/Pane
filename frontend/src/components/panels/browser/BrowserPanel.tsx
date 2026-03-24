@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Globe, ArrowLeft, ArrowRight, RotateCw, Loader2 } from 'lucide-react';
 import type { ToolPanel, BrowserPanelState } from '../../../../../shared/types/panels';
 import { cn } from '../../../utils/cn';
+import { panelApi } from '../../../services/panelApi';
+import { usePanelStore } from '../../../stores/panelStore';
 
 interface BrowserPanelProps {
   panel: ToolPanel;
@@ -28,14 +30,16 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const [inputUrl, setInputUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [urlError, setUrlError] = useState('');
-  const [history, setHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const [devToolsOpen, setDevToolsOpen] = useState(false);
 
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const webviewRef = useRef<Electron.WebviewTag>(null);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const panelIdRef = useRef(panel.id);
-  const historyRef = useRef<string[]>([]);
-  const historyIndexRef = useRef(-1);
+
+  const addPanel = usePanelStore((state) => state.addPanel);
+  const setActivePanelInStore = usePanelStore((state) => state.setActivePanel);
 
   // Initialize from persisted state only on mount
   useEffect(() => {
@@ -45,15 +49,9 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       if (savedState?.currentUrl) {
         setUrl(savedState.currentUrl);
         setInputUrl(savedState.currentUrl);
-        const restoredHistory = savedState.history ?? [savedState.currentUrl];
-        const restoredIndex = savedState.historyIndex ?? 0;
-        setHistory(restoredHistory);
-        setHistoryIndex(restoredIndex);
-        historyRef.current = restoredHistory;
-        historyIndexRef.current = restoredIndex;
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init; reading panel.state here would cause re-init on every persist round-trip
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
 
   // Cleanup persist timeout on unmount
@@ -61,11 +59,11 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     return () => clearTimeout(persistTimeoutRef.current);
   }, []);
 
-  const persistState = useCallback((newUrl: string, newHistory: string[], newIndex: number) => {
+  const persistState = useCallback((newUrl: string) => {
     clearTimeout(persistTimeoutRef.current);
     persistTimeoutRef.current = setTimeout(() => {
       window.electron?.invoke('panels:update', panelIdRef.current, {
-        state: { customState: { currentUrl: newUrl, history: newHistory, historyIndex: newIndex } }
+        state: { customState: { currentUrl: newUrl } }
       });
     }, 2000);
   }, []);
@@ -78,53 +76,32 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     }
     setUrlError('');
     setIsLoading(true);
-    const currentHistory = historyRef.current;
-    const currentIndex = historyIndexRef.current;
-    const newHistory = [...currentHistory.slice(0, currentIndex + 1), normalized];
-    const newIndex = newHistory.length - 1;
-    historyRef.current = newHistory;
-    historyIndexRef.current = newIndex;
-    setHistory(newHistory);
-    setHistoryIndex(newIndex);
     setUrl(normalized);
     setInputUrl(normalized);
-    persistState(normalized, newHistory, newIndex);
+    persistState(normalized);
   };
 
   const handleBack = () => {
-    if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      const newUrl = history[newIndex];
-      historyIndexRef.current = newIndex;
-      setHistoryIndex(newIndex);
-      setUrl(newUrl);
-      setInputUrl(newUrl);
-      setIsLoading(true);
-      persistState(newUrl, history, newIndex);
-    }
+    webviewRef.current?.goBack();
   };
 
   const handleForward = () => {
-    if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      const newUrl = history[newIndex];
-      historyIndexRef.current = newIndex;
-      setHistoryIndex(newIndex);
-      setUrl(newUrl);
-      setInputUrl(newUrl);
-      setIsLoading(true);
-      persistState(newUrl, history, newIndex);
-    }
+    webviewRef.current?.goForward();
   };
 
   const handleRefresh = () => {
-    setIsLoading(true);
-    try {
-      iframeRef.current?.contentWindow?.location.reload();
-    } catch {
-      if (iframeRef.current && url) {
-        iframeRef.current.src = url;
-      }
+    webviewRef.current?.reload();
+  };
+
+  const handleToggleDevTools = () => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+    if (webview.isDevToolsOpened()) {
+      webview.closeDevTools();
+      setDevToolsOpen(false);
+    } else {
+      webview.openDevTools();
+      setDevToolsOpen(true);
     }
   };
 
@@ -132,6 +109,74 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     e.preventDefault();
     navigateTo(inputUrl);
   };
+
+  // Wire webview events once per panel instance
+  useEffect(() => {
+    const webview = webviewRef.current;
+    if (!webview) return;
+
+    const onDomReady = () => {
+      const wcId = webview.getWebContentsId();
+      window.electronAPI?.invoke('browser-panel:register-webview', wcId, panel.id, panel.sessionId);
+    };
+
+    const onDidNavigate = () => {
+      const currentUrl = webview.getURL();
+      if (currentUrl && currentUrl !== 'about:blank') {
+        setInputUrl(currentUrl);
+        persistState(currentUrl);
+      }
+      setCanGoBack(webview.canGoBack());
+      setCanGoForward(webview.canGoForward());
+      setIsLoading(false);
+    };
+
+    const onDidStartLoading = () => setIsLoading(true);
+    const onDidStopLoading = () => {
+      setIsLoading(false);
+      setCanGoBack(webview.canGoBack());
+      setCanGoForward(webview.canGoForward());
+    };
+
+    webview.addEventListener('dom-ready', onDomReady);
+    webview.addEventListener('did-navigate', onDidNavigate);
+    webview.addEventListener('did-navigate-in-page', onDidNavigate);
+    webview.addEventListener('did-start-loading', onDidStartLoading);
+    webview.addEventListener('did-stop-loading', onDidStopLoading);
+
+    return () => {
+      webview.removeEventListener('dom-ready', onDomReady);
+      webview.removeEventListener('did-navigate', onDidNavigate);
+      webview.removeEventListener('did-navigate-in-page', onDidNavigate);
+      webview.removeEventListener('did-start-loading', onDidStartLoading);
+      webview.removeEventListener('did-stop-loading', onDidStopLoading);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- wire once per panel; persistState reads from refs
+  }, [panel.id]);
+
+  // Listen for popup-requested events from the main process
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { url: popupUrl, sourceSessionId } = (e as CustomEvent<{ url: string; sourceSessionId: string; sourcePanelId: string }>).detail;
+      if (sourceSessionId !== panel.sessionId) return;
+      let title = 'Popup';
+      try { title = new URL(popupUrl).hostname || 'Popup'; } catch { /* malformed URL */ }
+      panelApi.createPanel({
+        sessionId: panel.sessionId,
+        type: 'browser',
+        title,
+        initialState: { customState: { currentUrl: popupUrl, isPopup: true } }
+      }).then(async (newPanel) => {
+        addPanel(newPanel);
+        setActivePanelInStore(panel.sessionId, newPanel.id);
+        await panelApi.setActivePanel(panel.sessionId, newPanel.id);
+      }).catch((err: unknown) => {
+        console.error('[BrowserPanel] Failed to create popup panel:', err);
+      });
+    };
+    window.addEventListener('browser-panel:popup-requested', handler);
+    return () => window.removeEventListener('browser-panel:popup-requested', handler);
+  }, [panel.sessionId, addPanel, setActivePanelInStore]);
 
   // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover)
   // Uses stopImmediatePropagation so only the first browser panel for a session handles the event,
@@ -146,7 +191,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
     window.addEventListener('browser-panel:navigate', handler);
     return () => window.removeEventListener('browser-panel:navigate', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads history/historyIndex from refs; re-registering on sessionId change is sufficient
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads from refs; re-registering on sessionId change is sufficient
   }, [panel.sessionId]);
 
   // Suppress unused warning for isActive — kept for API symmetry with other panels
@@ -158,10 +203,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border-primary bg-bg-chrome flex-shrink-0">
         <button
           onClick={handleBack}
-          disabled={historyIndex <= 0}
+          disabled={!canGoBack}
           className={cn(
             'p-1 rounded hover:bg-surface-hover transition-colors',
-            historyIndex <= 0 && 'opacity-30 cursor-not-allowed'
+            !canGoBack && 'opacity-30 cursor-not-allowed'
           )}
           title="Back"
         >
@@ -169,10 +214,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
         </button>
         <button
           onClick={handleForward}
-          disabled={historyIndex >= history.length - 1}
+          disabled={!canGoForward}
           className={cn(
             'p-1 rounded hover:bg-surface-hover transition-colors',
-            historyIndex >= history.length - 1 && 'opacity-30 cursor-not-allowed'
+            !canGoForward && 'opacity-30 cursor-not-allowed'
           )}
           title="Forward"
         >
@@ -192,6 +237,21 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
           ) : (
             <RotateCw className="w-3.5 h-3.5" />
           )}
+        </button>
+        <button
+          onClick={handleToggleDevTools}
+          disabled={!url}
+          className={cn(
+            'p-1 rounded hover:bg-surface-hover transition-colors',
+            !url && 'opacity-30 cursor-not-allowed',
+            devToolsOpen && 'bg-surface-hover text-text-primary'
+          )}
+          title="Toggle DevTools"
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
         </button>
         <form onSubmit={handleSubmit} className="flex-1 min-w-0">
           <input
@@ -226,23 +286,13 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
           </p>
         </div>
       ) : (
-        <iframe
-          ref={iframeRef}
+        <webview
+          ref={webviewRef}
           src={url}
+          partition={`persist:session-${panel.sessionId}`}
+          allowpopups={'true' as unknown as boolean}
           className="w-full flex-1 border-0"
-          onLoad={() => {
-            setIsLoading(false);
-            // Try to sync address bar with iframe's actual URL after in-iframe navigation
-            try {
-              const currentHref = iframeRef.current?.contentWindow?.location.href;
-              if (currentHref && currentHref !== 'about:blank' && isLocalhostUrl(currentHref)) {
-                setInputUrl(currentHref);
-              }
-            } catch {
-              // Cross-origin — can't read location, keep existing inputUrl
-            }
-          }}
-          title="Browser Preview"
+          style={{ display: 'inline-flex' }}
         />
       )}
     </div>
