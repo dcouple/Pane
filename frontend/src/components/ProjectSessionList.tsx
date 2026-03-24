@@ -12,6 +12,7 @@ import { Tooltip } from './ui/Tooltip';
 import type { DropdownItem } from './ui/Dropdown';
 import { API } from '../utils/api';
 import { cycleIndex } from '../utils/arrayUtils';
+import { cn } from '../utils/cn';
 import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
 
@@ -29,6 +30,10 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
   // Add project dialog state
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
+
+  // Drag-to-reorder state
+  const [dragProjectId, setDragProjectId] = useState<number | null>(null);
+  const [dragOverProjectId, setDragOverProjectId] = useState<number | null>(null);
 
   const sessions = useSessionStore(s => s.sessions);
   const activeSessionId = useSessionStore(s => s.activeSessionId);
@@ -296,6 +301,60 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
     }
   };
 
+  // Drag-to-reorder handlers
+  const handleProjectDragStart = (e: React.DragEvent, projectId: number) => {
+    setDragProjectId(projectId);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(projectId));
+  };
+
+  const handleProjectDragOver = (e: React.DragEvent, projectId: number) => {
+    e.preventDefault();
+    if (dragProjectId !== null && dragProjectId !== projectId) {
+      setDragOverProjectId(projectId);
+    }
+  };
+
+  const handleProjectDrop = async (e: React.DragEvent, targetProjectId: number) => {
+    e.preventDefault();
+    if (dragProjectId === null || dragProjectId === targetProjectId) {
+      setDragProjectId(null);
+      setDragOverProjectId(null);
+      return;
+    }
+
+    let payload: Array<{ id: number; displayOrder: number }> = [];
+    setProjects(current => {
+      const newProjects = [...current];
+      const fromIndex = newProjects.findIndex(p => p.id === dragProjectId);
+      const toIndex = newProjects.findIndex(p => p.id === targetProjectId);
+      if (fromIndex === -1 || toIndex === -1) return current;
+
+      const [moved] = newProjects.splice(fromIndex, 1);
+      newProjects.splice(toIndex, 0, moved);
+
+      payload = newProjects.map((p, i) => ({ id: p.id, displayOrder: i }));
+      return newProjects;
+    });
+
+    setDragProjectId(null);
+    setDragOverProjectId(null);
+
+    if (payload.length > 0) {
+      try {
+        await API.projects.reorder(payload);
+      } catch (err) {
+        console.error('Failed to reorder projects:', err);
+        loadProjects();
+      }
+    }
+  };
+
+  const handleProjectDragEnd = () => {
+    setDragProjectId(null);
+    setDragOverProjectId(null);
+  };
+
   // Compute global index for each session (for hotkey labels)
   const globalSessionIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -371,7 +430,11 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
             <div key={project.id} className="mt-3 first:mt-2">
               {/* Project header */}
               <div
-                className="group/project flex items-center px-4 py-1.5 hover:bg-surface-hover transition-colors cursor-pointer"
+                className={cn(
+                  "group/project flex items-center px-4 py-1.5 hover:bg-surface-hover transition-colors cursor-pointer",
+                  dragOverProjectId === project.id && dragProjectId !== project.id && "bg-interactive/20",
+                  dragProjectId === project.id && "opacity-50"
+                )}
                 onClick={() => toggleProject(project.id)}
                 role="button"
                 tabIndex={0}
@@ -381,6 +444,12 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                     toggleProject(project.id);
                   }
                 }}
+                draggable
+                onDragStart={(e) => handleProjectDragStart(e, project.id)}
+                onDragOver={(e) => handleProjectDragOver(e, project.id)}
+                onDrop={(e) => handleProjectDrop(e, project.id)}
+                onDragEnd={handleProjectDragEnd}
+                onDragLeave={() => setDragOverProjectId(null)}
               >
                 <div className="flex-1 min-w-0 flex items-center gap-1.5">
                   <GitFork className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
@@ -389,12 +458,14 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                   )}
                   <span className="text-xs font-semibold text-text-primary truncate">{repoName}</span>
                 </div>
-                <div className="flex-shrink-0 opacity-0 group-hover/project:opacity-100 transition-opacity ml-auto">
+                <div
+                  className="flex-shrink-0 opacity-0 group-hover/project:opacity-100 transition-opacity ml-auto"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <Dropdown
                     trigger={
                       <button
                         className="p-1 rounded text-text-muted hover:text-text-tertiary hover:bg-surface-hover transition-colors"
-                        onClick={(e) => e.stopPropagation()}
                       >
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </button>
