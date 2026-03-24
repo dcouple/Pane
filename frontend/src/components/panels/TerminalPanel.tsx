@@ -271,8 +271,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
         // Intercept app-level shortcuts before xterm consumes them
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-          // When a TUI app is running, pass ALL keys through to the PTY
-          if (tuiActiveRef.current) return true;
+          // When a TUI app is running, pass most keys through to the PTY
+          // but still let Ctrl/Cmd+V use the browser's native paste path
+          if (tuiActiveRef.current) {
+            const cm = e.ctrlKey || e.metaKey;
+            if (cm && e.key.toLowerCase() === 'v') return false;
+            return true;
+          }
 
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
@@ -735,6 +740,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               tuiActiveRef.current = TUI_APPS.has(processName);
             }
           });
+
+          // Initialize TUI mode for already-running programs (e.g. vim was
+          // left open and the panel remounted). Without this, tuiActiveRef
+          // stays false until the next onData from the PTY triggers a title
+          // change event, which may never happen if the TUI is idle.
+          window.electronAPI.invoke('terminal:getProcessTitle', panel.id)
+            .then((title: unknown) => {
+              if (disposed || typeof title !== 'string') return;
+              const processName = title.split('/').pop()?.toLowerCase() || '';
+              tuiActiveRef.current = TUI_APPS.has(processName);
+            })
+            .catch(() => { /* terminal may not exist yet — ignore */ });
 
           // Handle terminal process exit
           const unsubscribeExited = window.electronAPI.events.onTerminalExited((data: { sessionId: string; panelId: string; exitCode: number }) => {

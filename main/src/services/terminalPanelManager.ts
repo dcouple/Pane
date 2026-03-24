@@ -746,6 +746,17 @@ export class TerminalPanelManager {
     return this.terminals.get(panelId)?.scrollbackBuffer ?? null;
   }
 
+  /**
+   * Returns the current foreground process title for a terminal panel.
+   * Used by the renderer to initialize TUI detection when a panel remounts
+   * while a full-screen program (e.g. vim) is already running.
+   */
+  getProcessTitle(panelId: string): string | null {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return null;
+    return terminal.pty.process;
+  }
+
   saveSerializedSnapshot(panelId: string, serializedData: string): void {
     // Enforce 8MB per-snapshot limit
     const MAX_SNAPSHOT_SIZE = 8_000_000;
