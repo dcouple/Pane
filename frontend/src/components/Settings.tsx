@@ -76,6 +76,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [systemMonoFonts, setSystemMonoFonts] = useState<string[]>([]);
   const [fontSearch, setFontSearch] = useState('');
   const [isFontDropdownOpen, setIsFontDropdownOpen] = useState(false);
+  const [atPasteMode, setAtPasteMode] = useState<'raw' | 'embed'>('raw');
+  const [atLineCount, setAtLineCount] = useState(500);
   const [notificationSettings, setNotificationSettings] = useState({
     enabled: true,
     playSound: true,
@@ -156,6 +158,24 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         }
       };
       loadAutoRename();
+
+      // Load @terminal preferences
+      const loadAtTerminalPrefs = async () => {
+        try {
+          const [modeResult, lineResult] = await Promise.all([
+            window.electron?.invoke('preferences:get', 'at_terminal_paste_mode') as Promise<IPCResponse<string>>,
+            window.electron?.invoke('preferences:get', 'at_terminal_line_count') as Promise<IPCResponse<string>>,
+          ]);
+          if (modeResult?.data === 'raw' || modeResult?.data === 'embed') {
+            setAtPasteMode(modeResult.data);
+          }
+          if (lineResult?.data) {
+            const val = parseInt(lineResult.data, 10);
+            if ([100, 300, 500, -1].includes(val)) setAtLineCount(val);
+          }
+        } catch { /* ignore */ }
+      };
+      loadAtTerminalPrefs();
 
       // Navigate to shortcuts tab when opened via Ctrl+Alt+/
       if (initialSection === 'terminal-shortcuts') {
@@ -615,6 +635,118 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                             {preset}px
                           </button>
                         ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="@ Terminal Reference"
+                description="Type @ in any terminal to reference scrollback from other terminals in the same session"
+                icon={<Terminal className="w-4 h-4" />}
+              >
+                <div className="space-y-4">
+                  {/* Paste mode */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      Default Paste Mode
+                    </label>
+                    <p className="text-[11px] text-text-tertiary mb-2">
+                      How scrollback content is inserted when you select a terminal with <kbd className="px-1 py-0.5 rounded border border-border-primary/70 bg-surface-primary font-mono text-[10px]">Enter</kbd>. Toggle with <kbd className="px-1 py-0.5 rounded border border-border-primary/70 bg-surface-primary font-mono text-[10px]">Tab</kbd> in the popover.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAtPasteMode('raw');
+                          window.electron?.invoke('preferences:set', 'at_terminal_paste_mode', 'raw');
+                        }}
+                        className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                          atPasteMode === 'raw'
+                            ? 'bg-interactive text-white border-interactive'
+                            : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
+                        }`}
+                      >
+                        Raw Paste
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAtPasteMode('embed');
+                          window.electron?.invoke('preferences:set', 'at_terminal_paste_mode', 'embed');
+                        }}
+                        className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
+                          atPasteMode === 'embed'
+                            ? 'bg-interactive text-white border-interactive'
+                            : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
+                        }`}
+                      >
+                        Embed File
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Default line count */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      Default Line Count
+                    </label>
+                    <p className="text-[11px] text-text-tertiary mb-2">
+                      Number of scrollback lines to include. Change with <kbd className="px-1 py-0.5 rounded border border-border-primary/70 bg-surface-primary font-mono text-[10px]">←→</kbd> in the popover.
+                    </p>
+                    <div className="flex gap-2">
+                      {([100, 300, 500, -1] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setAtLineCount(preset);
+                            window.electron?.invoke('preferences:set', 'at_terminal_line_count', String(preset));
+                          }}
+                          className={`flex-1 px-3 py-2 rounded-lg border text-sm font-mono transition-colors ${
+                            atLineCount === preset
+                              ? 'bg-interactive text-white border-interactive'
+                              : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
+                          }`}
+                        >
+                          {preset === -1 ? 'All' : preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Live preview */}
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1.5">
+                      Preview
+                    </label>
+                    <div className="rounded-lg border border-border-primary/60 bg-surface-primary/95 overflow-hidden text-[12px]">
+                      {/* Mock popover header */}
+                      <div className="px-3 py-2 border-b border-border-subtle/50">
+                        <div className="text-[13px] font-medium text-text-primary">Terminal 1</div>
+                        <div className="text-[11px] text-text-tertiary font-mono mt-0.5 opacity-70">
+                          <div>$ npm run build</div>
+                          <div>Build completed in 2.3s</div>
+                          <div>✓ 42 tests passed</div>
+                        </div>
+                      </div>
+                      {/* Mock output */}
+                      <div className="px-3 py-2 bg-black/20 font-mono text-[11px]">
+                        {atPasteMode === 'raw' ? (
+                          <div className="text-text-tertiary">
+                            <div className="text-text-quaternary mb-1">→ Pastes {atLineCount === -1 ? 'all' : atLineCount} lines of clean text directly:</div>
+                            <div className="text-green-400/70">$ npm run build</div>
+                            <div className="text-text-tertiary">Build completed in 2.3s</div>
+                            <div className="text-text-tertiary">✓ 42 tests passed</div>
+                            <div className="text-text-quaternary">...</div>
+                          </div>
+                        ) : (
+                          <div className="text-text-tertiary">
+                            <div className="text-text-quaternary mb-1">→ Saves {atLineCount === -1 ? 'all' : atLineCount} lines to file, inserts reference:</div>
+                            <div className="text-blue-400/70">[Pasted from Terminal 1] /mnt/c/Users/.../.pane/files/scrollback.txt</div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
