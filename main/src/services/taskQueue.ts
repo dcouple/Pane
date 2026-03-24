@@ -259,6 +259,7 @@ export class TaskQueue {
         await Promise.all([
           panelManager.ensureExplorerPanel(session.id),
           panelManager.ensureDiffPanel(session.id),
+          panelManager.ensureBrowserPanel(session.id),
         ]);
 
         // Emit the session-created event BEFORE running build script so UI shows immediately

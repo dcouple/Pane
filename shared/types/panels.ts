@@ -15,13 +15,13 @@ export interface ToolPanel {
   metadata: ToolPanelMetadata;   // Creation time, position, etc.
 }
 
-export type ToolPanelType = 'terminal' | 'diff' | 'explorer' | 'logs' | 'dashboard' | 'setup-tasks'; // Will expand later
+export type ToolPanelType = 'terminal' | 'diff' | 'explorer' | 'logs' | 'dashboard' | 'setup-tasks' | 'browser'; // Will expand later
 
 export interface ToolPanelState {
   isActive: boolean;
   isPinned?: boolean;
   hasBeenViewed?: boolean;       // Track if panel has ever been viewed
-  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | Record<string, unknown>;
+  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | Record<string, unknown>;
 }
 
 export interface TerminalPanelState {
@@ -135,6 +135,12 @@ export interface SetupTasksPanelState {
   dismissedTasks?: string[];       // Tasks the user has dismissed
 }
 
+export interface BrowserPanelState {
+  currentUrl?: string;
+  history?: string[];
+  historyIndex?: number;
+}
+
 export interface ToolPanelMetadata {
   createdAt: string;
   lastActiveAt: string;
@@ -146,7 +152,7 @@ export interface CreatePanelRequest {
   sessionId: string;
   type: ToolPanelType;
   title?: string;                // Optional custom title
-  initialState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | { customState?: unknown };
+  initialState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | { customState?: unknown };
   metadata?: Partial<ToolPanelMetadata>; // Optional metadata overrides
 }
 
@@ -280,5 +286,14 @@ export const PANEL_CAPABILITIES: Record<ToolPanelType, PanelCapabilities> = {
     permanent: true,                 // Cannot be closed (like dashboard)
     canAppearInProjects: true,       // Setup tasks ONLY in projects
     canAppearInWorktrees: false      // Setup tasks NOT in worktrees
+  },
+  browser: {
+    canEmit: [],
+    canConsume: [],
+    requiresProcess: false,
+    singleton: false,
+    permanent: false,                // NOT permanent in capabilities — auto-created default gets permanent via metadata
+    canAppearInProjects: false,      // Browser panels only make sense in worktree sessions
+    canAppearInWorktrees: true,
   }
 };

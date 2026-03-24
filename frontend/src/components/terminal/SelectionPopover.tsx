@@ -1,5 +1,5 @@
 import React from 'react';
-import { Copy, ExternalLink, FolderOpen } from 'lucide-react';
+import { Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react';
 import { TerminalPopover, PopoverButton } from './TerminalPopover';
 import { isWindows } from '../../utils/platformUtils';
 
@@ -9,10 +9,12 @@ export interface SelectionPopoverProps {
   y: number;
   text: string;
   workingDirectory?: string;
+  sessionId?: string;
   onClose: () => void;
 }
 
 const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`[\]]+/;
+const LOCALHOST_URL_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
 
 // File path patterns - detect Unix paths, Windows paths, and relative paths with extensions
 const FILE_PATH_PATTERNS = [
@@ -54,6 +56,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   y,
   text,
   workingDirectory,
+  sessionId,
   onClose,
 }) => {
   // Early return when not visible to avoid unnecessary computation
@@ -62,6 +65,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   const trimmedText = text.trim();
   const urlMatch = trimmedText.match(URL_PATTERN);
   const isUrl = urlMatch !== null;
+  const isLocalhostUrl = urlMatch ? LOCALHOST_URL_PATTERN.test(urlMatch[0]) : false;
   const isFile = !isUrl && isFilePath(trimmedText);
 
   const handleCopy = async () => {
@@ -77,6 +81,15 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
     if (urlMatch) {
       // Extract just the URL, not surrounding text like "error: https://..."
       window.electronAPI.openExternal(urlMatch[0]);
+      onClose();
+    }
+  };
+
+  const handleOpenInBrowser = () => {
+    if (urlMatch && sessionId) {
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url: urlMatch[0], sessionId }
+      }));
       onClose();
     }
   };
@@ -101,6 +114,14 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
           Copy
         </span>
       </PopoverButton>
+      {isLocalhostUrl && sessionId && (
+        <PopoverButton onClick={handleOpenInBrowser}>
+          <span className="flex items-center gap-2">
+            <Globe className="w-4 h-4" />
+            Open in Browser
+          </span>
+        </PopoverButton>
+      )}
       {isUrl && (
         <PopoverButton onClick={handleOpenUrl}>
           <span className="flex items-center gap-2">

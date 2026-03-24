@@ -11,6 +11,7 @@ const ExplorerPanel = lazy(() => import('./editor/EditorPanel'));
 const LogsPanel = lazy(() => import('./logPanel/LogsPanel'));
 const DashboardPanel = lazy(() => import('./DashboardPanel'));
 const SetupTasksPanel = lazy(() => import('./SetupTasksPanel'));
+const BrowserPanel = lazy(() => import('./browser/BrowserPanel'));
 
 const PanelErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => void }> = ({ 
   error, 
@@ -56,6 +57,8 @@ export const PanelContainer: React.FC<PanelContainerProps> = React.memo(({
         return <DashboardPanel panelId={panel.id} sessionId={panel.sessionId} isActive={isActive} />;
       case 'setup-tasks':
         return <SetupTasksPanel panelId={panel.id} sessionId={panel.sessionId} isActive={isActive} />;
+      case 'browser':
+        return <BrowserPanel panel={panel} isActive={isActive} />;
       default:
         return (
           <div className="h-full w-full flex items-center justify-center p-8">

@@ -1079,6 +1079,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         y={selectionPopover.y}
         text={selectionPopover.text}
         workingDirectory={workingDirectory}
+        sessionId={panel.sessionId}
         onClose={closeSelectionPopover}
       />
     </div>

@@ -169,7 +169,22 @@ export class PanelManager {
       });
     }
   }
-  
+
+  async ensureBrowserPanel(sessionId: string): Promise<void> {
+    const panels = this.getPanelsForSession(sessionId);
+    const hasBrowser = panels.some(p => p.type === 'browser');
+
+    if (!hasBrowser) {
+      console.log(`[PanelManager] Creating browser panel for session ${sessionId}`);
+      await this.createPanel({
+        sessionId,
+        type: 'browser',
+        title: 'Browser',
+        metadata: { permanent: true }
+      });
+    }
+  }
+
   async deletePanel(panelId: string): Promise<void> {
     return await withLock(`panel-delete-${panelId}`, async () => {
       const panel = this.getPanel(panelId);
