@@ -177,11 +177,27 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   const getDropdownPosition = useCallback((): { x: number; y: number } => {
     const container = terminalRef.current;
+    const terminal = xtermRef.current;
     if (!container) return { x: 0, y: 0 };
     const rect = container.getBoundingClientRect();
+
+    // Position near the cursor row. The dropdown's viewport clamping will
+    // flip it above the cursor line if there isn't enough room below.
+    if (terminal) {
+      const cursorY = terminal.buffer.active.cursorY;
+      const totalRows = terminal.rows;
+      // Approximate row height from container height
+      const rowHeight = rect.height / totalRows;
+      return {
+        x: rect.left + 16,
+        y: rect.top + cursorY * rowHeight,
+      };
+    }
+
+    // Fallback: bottom of terminal
     return {
       x: rect.left + 16,
-      y: rect.top + 16,
+      y: rect.bottom - 40,
     };
   }, []);
 
