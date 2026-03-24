@@ -14,7 +14,7 @@ export interface SelectionPopoverProps {
 }
 
 const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`[\]]+/;
-const LOCALHOST_URL_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
+const LOCALHOST_URL_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/.*)?$/;
 
 // File path patterns - detect Unix paths, Windows paths, and relative paths with extensions
 const FILE_PATH_PATTERNS = [

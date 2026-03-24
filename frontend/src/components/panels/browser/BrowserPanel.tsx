@@ -8,7 +8,7 @@ interface BrowserPanelProps {
   isActive: boolean;
 }
 
-const LOCALHOST_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/;
+const LOCALHOST_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/.*)?$/;
 
 function isLocalhostUrl(url: string): boolean {
   return LOCALHOST_PATTERN.test(url);
@@ -16,7 +16,7 @@ function isLocalhostUrl(url: string): boolean {
 
 function normalizeUrl(input: string): string {
   let url = input.trim();
-  if (url.startsWith('localhost') || url.startsWith('127.0.0.1')) {
+  if (url.startsWith('localhost') || url.startsWith('127.0.0.1') || url.startsWith('[::1]')) {
     url = 'http://' + url;
   }
   return url;
@@ -34,6 +34,8 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const panelIdRef = useRef(panel.id);
+  const historyRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
 
   // Initialize from persisted state only on mount
   useEffect(() => {
@@ -43,8 +45,12 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       if (savedState?.currentUrl) {
         setUrl(savedState.currentUrl);
         setInputUrl(savedState.currentUrl);
-        setHistory(savedState.history ?? [savedState.currentUrl]);
-        setHistoryIndex(savedState.historyIndex ?? 0);
+        const restoredHistory = savedState.history ?? [savedState.currentUrl];
+        const restoredIndex = savedState.historyIndex ?? 0;
+        setHistory(restoredHistory);
+        setHistoryIndex(restoredIndex);
+        historyRef.current = restoredHistory;
+        historyIndexRef.current = restoredIndex;
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only init; reading panel.state here would cause re-init on every persist round-trip
@@ -72,8 +78,12 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     }
     setUrlError('');
     setIsLoading(true);
-    const newHistory = [...history.slice(0, historyIndex + 1), normalized];
+    const currentHistory = historyRef.current;
+    const currentIndex = historyIndexRef.current;
+    const newHistory = [...currentHistory.slice(0, currentIndex + 1), normalized];
     const newIndex = newHistory.length - 1;
+    historyRef.current = newHistory;
+    historyIndexRef.current = newIndex;
     setHistory(newHistory);
     setHistoryIndex(newIndex);
     setUrl(normalized);
@@ -85,6 +95,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
       const newUrl = history[newIndex];
+      historyIndexRef.current = newIndex;
       setHistoryIndex(newIndex);
       setUrl(newUrl);
       setInputUrl(newUrl);
@@ -97,6 +108,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
       const newUrl = history[newIndex];
+      historyIndexRef.current = newIndex;
       setHistoryIndex(newIndex);
       setUrl(newUrl);
       setInputUrl(newUrl);

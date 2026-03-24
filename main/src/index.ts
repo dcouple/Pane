@@ -168,7 +168,8 @@ async function createWindow() {
   session.defaultSession.webRequest.onHeadersReceived(
     { urls: [
       'http://localhost:*/*', 'http://127.0.0.1:*/*',
-      'https://localhost:*/*', 'https://127.0.0.1:*/*'
+      'https://localhost:*/*', 'https://127.0.0.1:*/*',
+      'http://[::1]:*/*', 'https://[::1]:*/*'
     ] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };

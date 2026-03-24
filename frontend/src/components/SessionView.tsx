@@ -966,7 +966,7 @@ export const SessionView = memo(() => {
                       .filter(p => !defaultTerminalPanel || p.id !== defaultTerminalPanel.id)
                       .map(panel => {
                         const isActive = panel.id === currentActivePanel.id;
-                        const shouldKeepAlive = ['terminal'].includes(panel.type);
+                        const shouldKeepAlive = ['terminal', 'browser'].includes(panel.type);
                         if (!isActive && !shouldKeepAlive) return null;
                         return (
                           <div
@@ -1108,7 +1108,7 @@ export const SessionView = memo(() => {
                       .filter(p => !defaultTerminalPanel || p.id !== defaultTerminalPanel.id)
                       .map(panel => {
                         const isActive = panel.id === currentActivePanel.id;
-                        const shouldKeepAlive = ['terminal'].includes(panel.type);
+                        const shouldKeepAlive = ['terminal', 'browser'].includes(panel.type);
                         if (!isActive && !shouldKeepAlive) return null;
                         return (
                           <div
