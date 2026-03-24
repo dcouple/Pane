@@ -1,4 +1,5 @@
 import { IpcMain, shell } from 'electron';
+import { exec } from 'child_process';
 import type { AppServices } from './types';
 
 export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): void {
@@ -20,7 +21,18 @@ export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): vo
   // System utilities
   ipcMain.handle('openExternal', async (_event, url: string) => {
     try {
-      await shell.openExternal(url);
+      if (process.platform === 'darwin') {
+        // On macOS, shell.openExternal can fail silently due to permission/entitlement issues.
+        // Use the native `open` command which works reliably.
+        await new Promise<void>((resolve, reject) => {
+          exec(`open ${JSON.stringify(url)}`, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+      } else {
+        await shell.openExternal(url);
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to open external URL:', error);
@@ -38,7 +50,18 @@ export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): vo
         return { success: false, error: 'File does not exist' };
       }
 
-      shell.showItemInFolder(filePath);
+      if (process.platform === 'darwin') {
+        // On macOS, shell.showItemInFolder can fail silently.
+        // Use `open -R` which reveals the file in Finder reliably.
+        await new Promise<void>((resolve, reject) => {
+          exec(`open -R ${JSON.stringify(filePath)}`, (error) => {
+            if (error) reject(error);
+            else resolve();
+          });
+        });
+      } else {
+        shell.showItemInFolder(filePath);
+      }
       return { success: true };
     } catch (error) {
       console.error('Failed to show item in folder:', error);
