@@ -112,14 +112,23 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     webviewRef.current?.reload();
   };
 
-  const handleToggleDevTools = () => {
+  // Store the page webContentsId so we can pass it to the main process for devtools wiring
+  const pageWcIdRef = useRef<number | null>(null);
+
+  const handleToggleDevTools = async () => {
     if (!webviewRef.current) return;
     if (devToolsOpen) {
-      // Close DevTools and hide the column
-      webviewRef.current.closeDevTools();
+      // Close DevTools via main process and hide the column
+      if (pageWcIdRef.current) {
+        await window.electronAPI?.invoke('browser-panel:close-devtools', pageWcIdRef.current);
+      }
       setDevToolsOpen(false);
     } else {
-      // Show the DevTools column — wiring happens in the devtools useEffect below
+      // Tell main process to wire the NEXT webview that attaches as devtools,
+      // then mount the devtools webview (which triggers did-attach-webview).
+      const wcId = webviewRef.current.getWebContentsId();
+      pageWcIdRef.current = wcId;
+      await window.electronAPI?.invoke('browser-panel:prepare-devtools', wcId);
       setDevToolsOpen(true);
     }
   };
@@ -174,26 +183,6 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run when url becomes non-empty (webview mounts); persistState reads from refs
   }, [panel.id, url]);
-
-  // Wire the devtools webview to display the page webview's DevTools inline.
-  // When devToolsOpen becomes true, the second webview mounts. On its dom-ready,
-  // we send both webContentsIds to the main process which calls setDevToolsWebContents.
-  useEffect(() => {
-    if (!devToolsOpen) return;
-    const devToolsWv = devToolsWebviewRef.current;
-    if (!devToolsWv) return;
-
-    const onDevToolsDomReady = () => {
-      const pageWcId = webviewRef.current?.getWebContentsId();
-      const devToolsWcId = devToolsWv.getWebContentsId();
-      if (pageWcId && devToolsWcId) {
-        window.electronAPI?.invoke('browser-panel:open-devtools-inline', pageWcId, devToolsWcId);
-      }
-    };
-
-    devToolsWv.addEventListener('dom-ready', onDevToolsDomReady);
-    return () => { devToolsWv.removeEventListener('dom-ready', onDevToolsDomReady); };
-  }, [devToolsOpen]);
 
   // Listen for popup-requested events from the main process.
   // Uses stopImmediatePropagation so only the originating browser panel handles the event,
@@ -354,7 +343,6 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
               />
               <webview
                 ref={devToolsWebviewRef}
-                src="about:blank"
                 className="border-0 flex-shrink-0"
                 style={{ display: 'inline-flex', width: devToolsWidth }}
               />

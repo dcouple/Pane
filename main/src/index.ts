@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -54,6 +54,13 @@ export let mainWindow: BrowserWindow | null = null;
 // Map webContentsId → {panelId, sessionId} for webview popup interception.
 // Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
 export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
+
+// When set, the next webview that attaches will be wired as a DevTools target
+// for the page webContents with this ID. Cleared after use.
+let pendingDevToolsPageWcId: number | null = null;
+export function setPendingDevToolsPageWcId(wcId: number | null): void {
+  pendingDevToolsPageWcId = wcId;
+}
 
 // Track partitions that already have the localhost header-stripping hook registered,
 // so we don't add duplicate listeners when multiple webviews share the same partition.
@@ -240,6 +247,18 @@ async function createWindow() {
   // This prevents the race condition where a page calls window.open() before dom-ready fires.
   // The context map (panelId/sessionId) is populated later by the browser-panel:register-webview IPC.
   mainWindow.webContents.on('did-attach-webview', (_event, wvContents: WebContents) => {
+    // If a devtools request is pending, wire this webview as the DevTools target
+    // BEFORE it navigates (setDevToolsWebContents requires un-navigated WebContents).
+    if (pendingDevToolsPageWcId !== null) {
+      const pageWC = webContents.fromId(pendingDevToolsPageWcId);
+      pendingDevToolsPageWcId = null;
+      if (pageWC) {
+        pageWC.setDevToolsWebContents(wvContents);
+        pageWC.openDevTools();
+        return; // Don't set popup handler etc. on devtools webview
+      }
+    }
+
     wvContents.setWindowOpenHandler(({ url }) => {
       const ctx = webviewContextMap.get(wvContents.id);
       if (ctx) {

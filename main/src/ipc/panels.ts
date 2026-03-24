@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { webviewContextMap } from '../index';
+import { webviewContextMap, setPendingDevToolsPageWcId } from '../index';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
@@ -642,17 +642,21 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     return { success: true };
   });
 
-  // Wire a devtools webview to display the page webview's DevTools inline
-  ipcMain.handle('browser-panel:open-devtools-inline', async (_, pageWcId: number, devToolsWcId: number) => {
+  // Prepare inline DevTools: store the page wcId so the next webview that attaches
+  // (the devtools webview) gets wired via setDevToolsWebContents in did-attach-webview
+  // BEFORE it navigates.
+  ipcMain.handle('browser-panel:prepare-devtools', async (_, pageWcId: number) => {
+    setPendingDevToolsPageWcId(pageWcId);
+    return { success: true };
+  });
+
+  ipcMain.handle('browser-panel:close-devtools', async (_, pageWcId: number) => {
     try {
       const pageWC = webContents.fromId(pageWcId);
-      const devToolsWC = webContents.fromId(devToolsWcId);
-      if (!pageWC || !devToolsWC) return { success: false, error: 'WebContents not found' };
-      pageWC.setDevToolsWebContents(devToolsWC);
-      pageWC.openDevTools();
+      if (pageWC) pageWC.closeDevTools();
       return { success: true };
     } catch (error) {
-      console.error('[IPC] Failed to open inline devtools:', error);
+      console.error('[IPC] Failed to close devtools:', error);
       return { success: false, error: (error as Error).message };
     }
   });
