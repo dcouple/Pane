@@ -27,6 +27,17 @@ const TUI_APPS = new Set([
   'tmux', 'screen', 'emacs', 'micro', 'helix', 'mc', 'ranger', 'lazygit',
 ]);
 
+/**
+ * Extract the bare process name from a process title that may be a full path.
+ * Handles both Unix (/usr/bin/vim) and Windows (C:\...\nvim.exe) formats.
+ */
+function extractProcessName(title: string): string {
+  // Split on both forward and back slashes, take the last segment
+  const basename = title.split(/[/\\]/).pop() || '';
+  // Strip a trailing .exe (case-insensitive) for Windows
+  return basename.replace(/\.exe$/i, '').toLowerCase();
+}
+
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 const TerminalSpinner: React.FC = () => {
@@ -736,8 +747,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Track foreground process for TUI key passthrough
           const unsubscribeTitleChange = window.electronAPI.events.onTerminalTitleChanged((data: { panelId: string; processTitle: string }) => {
             if (data.panelId === panel.id) {
-              const processName = data.processTitle.split('/').pop()?.toLowerCase() || '';
-              tuiActiveRef.current = TUI_APPS.has(processName);
+              tuiActiveRef.current = TUI_APPS.has(extractProcessName(data.processTitle));
             }
           });
 
@@ -748,8 +758,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           window.electronAPI.invoke('terminal:getProcessTitle', panel.id)
             .then((title: unknown) => {
               if (disposed || typeof title !== 'string') return;
-              const processName = title.split('/').pop()?.toLowerCase() || '';
-              tuiActiveRef.current = TUI_APPS.has(processName);
+              tuiActiveRef.current = TUI_APPS.has(extractProcessName(title));
             })
             .catch(() => { /* terminal may not exist yet — ignore */ });
 
