@@ -27,7 +27,8 @@ export interface InterceptHandler {
 /** Actions a handler can return from onInput */
 export type InterceptAction =
   | { type: 'consume' } // eat the keystroke, stay active
-  | { type: 'cancel' } // cancel interception, flush buffer
+  | { type: 'cancel' } // cancel interception, flush buffer to PTY
+  | { type: 'dismiss' } // dismiss silently — deactivate WITHOUT flushing (e.g. backspace on empty)
   | { type: 'execute'; payload: InterceptPayload } // execute action, deactivate
   | { type: 'update'; buffer: string }; // update filter buffer, stay active
 

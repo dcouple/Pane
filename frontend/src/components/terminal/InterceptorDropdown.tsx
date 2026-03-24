@@ -78,7 +78,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       className={cn(
         'fixed z-[10001] min-w-[300px] max-w-[420px]',
         'bg-surface-primary/95 backdrop-blur-md overflow-hidden',
-        'border border-border-primary/60 rounded-lg shadow-dropdown-elevated',
+        'border border-border-primary/60 rounded-none shadow-dropdown-elevated',
         'will-change-[transform,opacity]',
         mounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.98]',
       )}

@@ -80,6 +80,11 @@ export class TerminalInterceptor {
         return { consumed: true };
       }
 
+      case 'dismiss':
+        // Silently deactivate without flushing anything to PTY
+        this.deactivate();
+        return { consumed: true };
+
       case 'execute':
         this.deactivate();
         return { consumed: true };
@@ -101,6 +106,14 @@ export class TerminalInterceptor {
       buffer: this.filterBuffer,
       handlerState: this.activeHandler?.getState() ?? null,
     });
+  }
+
+  /** Force-cancel from async code — flushes buffered printable text to PTY */
+  forceCancel(): void {
+    if (!this.active) return;
+    const toFlush = this.buffer;
+    this.deactivate();
+    this._onFlush(toFlush);
   }
 
   deactivate(): void {

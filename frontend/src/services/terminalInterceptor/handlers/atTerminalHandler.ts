@@ -13,6 +13,8 @@ interface AtTerminalHandlerOptions {
   hasOtherTerminals: () => boolean; // fast sync check
   onCopy: (panelId: string, lines: number, mode: 'raw' | 'embed') => Promise<void>;
   onStateChange: () => void; // notify interceptor to re-render
+  /** Force-cancel the interceptor from async code (flushes buffer to PTY) */
+  onForceCancel: () => void;
   /** Load a persisted preference (returns null if not set) */
   getPreference: (key: string) => Promise<string | null>;
   /** Persist a preference */
@@ -45,7 +47,7 @@ function filterTerminals(
 export function createAtTerminalHandler(
   options: AtTerminalHandlerOptions,
 ): InterceptHandler {
-  const { getTerminals, hasOtherTerminals, onCopy, onStateChange, getPreference, setPreference } = options;
+  const { getTerminals, hasOtherTerminals, onCopy, onStateChange, onForceCancel, getPreference, setPreference } = options;
 
   let state: AtTerminalHandlerState = createDefaultState();
   let filteredTerminals: TerminalSuggestion[] = [];
@@ -107,6 +109,12 @@ export function createAtTerminalHandler(
           state = { ...state, terminals };
           // Reapply the current filter — the user may have typed while we were loading
           updateFiltered(currentFilter);
+          // Auto-cancel if user already typed a filter that matches nothing.
+          // This handles "git@github.com" where chars were consumed during loading.
+          if (currentFilter.length > 0 && filteredTerminals.length === 0) {
+            onForceCancel();
+            return;
+          }
           onStateChange();
         })
         .catch(() => {
@@ -201,8 +209,8 @@ export function createAtTerminalHandler(
             updateFiltered(newBuffer);
             return { type: 'update', buffer: newBuffer };
           }
-          // Backspace on empty filter — cancel
-          return { type: 'cancel' };
+          // Backspace on empty filter — dismiss silently (don't flush @ to PTY)
+          return { type: 'dismiss' };
         }
 
         default: {

@@ -907,6 +907,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             },
             onCopy: handleCopy,
             onStateChange: () => interceptor.notifyStateChange(),
+            onForceCancel: () => interceptor.forceCancel(),
             getPreference: async (key: string) => {
               const resp = await window.electronAPI.invoke('preferences:get', key);
               return resp?.success ? (resp.data as string | null) : null;
