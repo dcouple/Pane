@@ -110,7 +110,9 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     navigateTo(inputUrl);
   };
 
-  // Wire webview events once per panel instance
+  // Wire webview events when the webview element is mounted.
+  // Depends on `url` because the <webview> is only rendered when url is non-empty,
+  // so the ref is null until the first URL is set.
   useEffect(() => {
     const webview = webviewRef.current;
     if (!webview) return;
@@ -151,14 +153,17 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       webview.removeEventListener('did-start-loading', onDidStartLoading);
       webview.removeEventListener('did-stop-loading', onDidStopLoading);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- wire once per panel; persistState reads from refs
-  }, [panel.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run when url becomes non-empty (webview mounts); persistState reads from refs
+  }, [panel.id, url]);
 
-  // Listen for popup-requested events from the main process
+  // Listen for popup-requested events from the main process.
+  // Uses stopImmediatePropagation so only the originating browser panel handles the event,
+  // preventing duplicate popup panels when multiple browser panels exist in a session.
   useEffect(() => {
     const handler = (e: Event) => {
-      const { url: popupUrl, sourceSessionId } = (e as CustomEvent<{ url: string; sourceSessionId: string; sourcePanelId: string }>).detail;
-      if (sourceSessionId !== panel.sessionId) return;
+      const { url: popupUrl, sourceSessionId, sourcePanelId } = (e as CustomEvent<{ url: string; sourceSessionId: string; sourcePanelId: string }>).detail;
+      if (sourceSessionId !== panel.sessionId || sourcePanelId !== panel.id) return;
+      e.stopImmediatePropagation();
       let title = 'Popup';
       try { title = new URL(popupUrl).hostname || 'Popup'; } catch { /* malformed URL */ }
       panelApi.createPanel({
