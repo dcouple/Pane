@@ -1,6 +1,7 @@
 import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
+import { Kbd } from '../ui/Kbd';
 import type { TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import { LINE_COUNT_PRESETS } from '../../services/terminalInterceptor/types';
 
@@ -28,6 +29,15 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLDivElement>(null);
   const [resolvedPosition, setResolvedPosition] = useState({ top: 0, left: 0 });
+  const [mounted, setMounted] = useState(false);
+
+  // Trigger mount animation on next frame
+  useEffect(() => {
+    if (visible) {
+      requestAnimationFrame(() => setMounted(true));
+    }
+    return () => setMounted(false);
+  }, [visible]);
 
   // Smart positioning to keep dropdown on screen
   useLayoutEffect(() => {
@@ -40,25 +50,14 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
     let top = position.y;
     let left = position.x;
 
-    // Flip up if near bottom
     if (top + rect.height > viewportHeight - 10) {
       top = position.y - rect.height;
     }
-
-    // Keep on screen horizontally
     if (left + rect.width > viewportWidth - 10) {
       left = viewportWidth - rect.width - 10;
     }
-
-    // Don't go off left edge
-    if (left < 10) {
-      left = 10;
-    }
-
-    // Don't go off top edge
-    if (top < 10) {
-      top = 10;
-    }
+    if (left < 10) left = 10;
+    if (top < 10) top = 10;
 
     setResolvedPosition({ top, left });
   }, [visible, position.x, position.y]);
@@ -74,18 +73,28 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed z-[10001] bg-surface-primary border border-border-primary rounded-lg shadow-dropdown-elevated py-1 min-w-[280px] max-w-[400px]"
-      style={{ left: resolvedPosition.left, top: resolvedPosition.top }}
+      className={cn(
+        'fixed z-[10001] min-w-[300px] max-w-[420px]',
+        'bg-surface-primary/95 backdrop-blur-md',
+        'border border-border-primary/60 rounded-lg shadow-dropdown-elevated',
+        'will-change-[transform,opacity]',
+        mounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.98]',
+      )}
+      style={{
+        left: resolvedPosition.left,
+        top: resolvedPosition.top,
+        transition: 'opacity 120ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1)',
+      }}
     >
-      {/* Header — filter text */}
+      {/* Filter header — only when filtering */}
       {filterText && (
-        <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle">
-          <span className="font-mono">@{filterText}</span>
+        <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle/50">
+          <span className="font-mono text-text-secondary">@{filterText}</span>
         </div>
       )}
 
       {/* Terminal entries */}
-      <div className="max-h-[240px] overflow-y-auto">
+      <div className="max-h-[220px] overflow-y-auto py-1">
         {terminals.map((terminal, index) => {
           const isSelected = index === selectedIndex;
           const isNoOutput =
@@ -95,10 +104,15 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
             <div
               key={terminal.panelId}
               ref={isSelected ? selectedItemRef : null}
-              className={cn('px-3 py-2 cursor-default', isSelected && 'bg-bg-hover')}
+              className={cn(
+                'px-3 py-1.5 cursor-default transition-colors duration-75',
+                isSelected && 'bg-bg-hover',
+              )}
             >
-              <div className="text-sm font-medium text-text-primary">{terminal.title}</div>
-              <div className="text-xs text-text-tertiary font-mono mt-1 leading-relaxed overflow-hidden">
+              <div className="text-[13px] font-medium text-text-primary leading-tight">
+                {terminal.title}
+              </div>
+              <div className="text-[11px] text-text-tertiary font-mono mt-0.5 leading-snug overflow-hidden opacity-70">
                 {isNoOutput ? (
                   <span className="italic">{terminal.preview[0]}</span>
                 ) : (
@@ -111,21 +125,21 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
           );
         })}
         {terminals.length === 0 && (
-          <div className="px-3 py-2 text-xs text-text-tertiary italic">Loading terminals...</div>
+          <div className="px-3 py-2 text-[11px] text-text-tertiary italic">Loading...</div>
         )}
       </div>
 
       {/* Line count selector */}
-      <div className="px-3 py-1.5 border-t border-border-subtle flex items-center justify-center gap-1">
-        <span className="text-xs text-text-quaternary mr-1">Lines:</span>
+      <div className="px-3 py-1.5 border-t border-border-subtle/50 flex items-center justify-center gap-1.5">
+        <span className="text-[11px] text-text-quaternary">Lines</span>
         {LINE_COUNT_PRESETS.map((preset, i) => (
           <span
             key={preset}
             className={cn(
-              'text-xs px-1.5 py-0.5 rounded font-mono',
+              'text-[11px] px-2 py-0.5 rounded-md font-mono transition-colors duration-75',
               i === lineCountPresetIndex
-                ? 'bg-accent-primary/20 text-accent-primary font-medium'
-                : 'text-text-tertiary',
+                ? 'bg-accent-primary/15 text-accent-primary font-medium'
+                : 'text-text-quaternary',
             )}
           >
             {formatPresetLabel(preset)}
@@ -133,9 +147,24 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
         ))}
       </div>
 
-      {/* Footer hint */}
-      <div className="px-3 py-1 text-xs text-text-quaternary border-t border-border-subtle">
-        ↑↓ select · ←→ lines · Enter copy · Esc cancel
+      {/* Footer hints with kbd */}
+      <div className="px-3 py-1.5 border-t border-border-subtle/50 flex items-center justify-center gap-2.5 text-[11px] text-text-quaternary">
+        <span className="inline-flex items-center gap-1">
+          <Kbd size="xs" variant="muted">↑↓</Kbd>
+          <span>select</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Kbd size="xs" variant="muted">←→</Kbd>
+          <span>lines</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Kbd size="xs" variant="muted">Enter</Kbd>
+          <span>copy</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Kbd size="xs" variant="muted">Esc</Kbd>
+          <span>cancel</span>
+        </span>
       </div>
     </div>,
     document.body
