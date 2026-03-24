@@ -273,6 +273,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             return true;
           }
 
+          // Shift+Enter: emit the same sequence as Alt+Enter (\x1b\r = ESC+CR)
+          // xterm.js ignores shiftKey on Enter, so Shift+Enter = Enter by default.
+          // Alt+Enter natively sends \x1b\r which CLI tools recognize as "insert newline".
+          // Block both keydown and keyup to fully suppress xterm's default \r.
+          if (e.shiftKey && e.key === 'Enter') {
+            if (e.type === 'keydown') {
+              window.electronAPI.invoke('terminal:input', panel.id, '\x1b\r');
+            }
+            return false;
+          }
+
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
           // Ctrl/Cmd+1-9: switch sessions
