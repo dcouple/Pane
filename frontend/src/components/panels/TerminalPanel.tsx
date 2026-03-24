@@ -855,15 +855,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
           const handleCopy = async (targetPanelId: string, lines: number) => {
             try {
-              const response = await window.electronAPI.invoke('terminal:getScrollbackClean', targetPanelId, lines);
-              if (response?.success && response.data) {
-                await navigator.clipboard.writeText(response.data.content);
-                setToastMessage(`Copied ${response.data.lineCount} lines from ${response.data.panelTitle}`);
+              const response = await window.electronAPI.invoke(
+                'terminal:save-scrollback',
+                targetPanelId,
+                effectiveSessionId,
+                lines,
+              );
+              if (response?.success && response.data && terminal && !disposed) {
+                terminal.paste(`[Pasted from ${response.data.panelTitle}] ${response.data.filePath}\n`);
+                setToastMessage(`${response.data.lineCount} lines from ${response.data.panelTitle}`);
               } else {
-                setToastMessage('Copy failed — no scrollback available');
+                setToastMessage('Failed — no scrollback available');
               }
             } catch {
-              setToastMessage('Copy failed — clipboard access denied');
+              setToastMessage('Failed to save scrollback');
             }
             setTimeout(() => setToastMessage(null), 2000);
           };

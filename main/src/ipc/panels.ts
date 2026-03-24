@@ -537,6 +537,63 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
 
+  // Save terminal scrollback to ~/.pane/files/ as a .txt and return the resolved path
+  ipcMain.handle('terminal:save-scrollback', async (
+    _,
+    panelId: string,
+    sessionId: string,
+    lines: number,
+  ) => {
+    try {
+      // Get scrollback — try live buffer first, fall back to persisted state
+      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+
+      if (rawScrollback === null) {
+        const panel = panelManager.getPanel(panelId);
+        const customState = panel?.state?.customState;
+        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
+          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
+          if (typeof persisted === 'string') {
+            rawScrollback = persisted;
+          } else if (Array.isArray(persisted)) {
+            rawScrollback = persisted.join('\n');
+          }
+        }
+      }
+
+      if (rawScrollback === null || rawScrollback === '') {
+        return { success: false, error: `No scrollback available for panel ${panelId}` };
+      }
+
+      const stripped = stripAnsiCodes(rawScrollback);
+      const allLines = stripped.split('\n');
+      const lastLines = allLines.slice(-lines);
+      const content = lastLines.join('\n');
+
+      const panel = panelManager.getPanel(panelId);
+      const panelTitle = panel?.title ?? panelId;
+
+      // Save to ~/.pane/files/
+      const filesDir = getAppSubdirectory('files');
+      if (!existsSync(filesDir)) {
+        await fs.mkdir(filesDir, { recursive: true });
+      }
+
+      const timestamp = Date.now();
+      const randomStr = Math.random().toString(36).substring(2, 9);
+      const filename = `${sessionId}_scrollback_${timestamp}_${randomStr}.txt`;
+      const filePath = path.join(filesDir, filename);
+
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const resolvedPath = resolveImagePathForSession(filePath, sessionId);
+      return { success: true, data: { filePath: resolvedPath, lineCount: lastLines.length, panelTitle } };
+    } catch (error) {
+      console.error('[IPC] Failed to save scrollback:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
   // Save a dropped file (any type) to ~/.pane/files/ and return the resolved path
   ipcMain.handle('terminal:paste-file', async (
     _,
