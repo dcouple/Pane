@@ -4,6 +4,7 @@ import type { ToolPanel, BrowserPanelState } from '../../../../../shared/types/p
 import { cn } from '../../../utils/cn';
 import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
+import { useSessionStore } from '../../../stores/sessionStore';
 
 interface BrowserPanelProps {
   panel: ToolPanel;
@@ -40,6 +41,13 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
 
   const addPanel = usePanelStore((state) => state.addPanel);
   const setActivePanelInStore = usePanelStore((state) => state.setActivePanel);
+
+  // Look up the project ID for this session so all browser panels in the same project
+  // share a single partition (cookies, localStorage, auth state persist across sessions).
+  const projectId = useSessionStore((state) => {
+    const session = state.sessions.find(s => s.id === panel.sessionId);
+    return session?.projectId;
+  });
 
   // Initialize from persisted state only on mount
   useEffect(() => {
@@ -298,7 +306,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
         <webview
           ref={webviewRef}
           src={url}
-          partition={`persist:session-${panel.sessionId}`}
+          partition={`persist:project-${projectId ?? panel.sessionId}`}
           allowpopups={'true' as unknown as boolean}
           className="w-full flex-1 border-0"
           style={{ display: 'inline-flex' }}
