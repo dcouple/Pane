@@ -220,8 +220,9 @@ export function createAtTerminalHandler(
             return { type: 'update', buffer: newBuffer };
           }
 
-          // Non-printable, non-handled escape sequence — consume silently
-          return { type: 'consume' };
+          // Non-printable, non-handled input (Ctrl+C, Ctrl+D, etc.) — cancel so
+          // the keystroke reaches the PTY and the user isn't trapped in the dropdown
+          return { type: 'cancel' };
         }
       }
     },

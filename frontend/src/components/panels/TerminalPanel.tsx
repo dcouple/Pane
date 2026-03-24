@@ -76,6 +76,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const [interceptorState, setInterceptorState] = useState<InterceptorState | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const interceptorRef = useRef<TerminalInterceptor | null>(null);
+  const skipNextInterceptRef = useRef(false); // set by AltGr @ detection
 
   // Read CLI state from persisted panel state (handles remount case)
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
@@ -378,6 +379,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           if (ctrlOrMeta && e.key === ',') return false;
           // Ctrl/Cmd+Shift+E: focus sidebar
           if (ctrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'e') return false;
+
+          // Detect AltGr+key producing '@' (e.g. German AltGr+Q) — set flag so the
+          // interceptor skips activation for this keystroke. AltGr sets both ctrlKey+altKey
+          // on Windows/Linux, or e.getModifierState('AltGraph') on some platforms.
+          if (e.key === '@' && (e.getModifierState('AltGraph') || (e.ctrlKey && e.altKey))) {
+            skipNextInterceptRef.current = true;
+          }
 
           // Right Alt: let OS/browser handle (e.g. voice transcription, IME)
           // Use e.code for physical key (e.key may report 'AltGraph' on some layouts)
@@ -864,8 +872,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   lines,
                 );
                 if (response?.success && response.data && terminal && !disposed) {
-                  terminal.paste(`[Pasted from ${response.data.panelTitle}] ${response.data.filePath}\n`);
-                  setToastMessage(`${response.data.lineCount} lines from ${response.data.panelTitle}`);
+                  terminal.paste(`${response.data.filePath}\n`);
+                  setToastMessage(`Embedded ${response.data.lineCount} lines from ${response.data.panelTitle}`);
                 } else {
                   setToastMessage('Failed — no scrollback available');
                 }
@@ -910,6 +918,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
           // Handle terminal input — route through interceptor first
           const inputDisposable = terminal.onData((data) => {
+            // Skip interception for AltGr-produced @ (e.g. German keyboard)
+            if (skipNextInterceptRef.current) {
+              skipNextInterceptRef.current = false;
+              window.electronAPI.invoke('terminal:input', panel.id, data);
+              return;
+            }
             const result = interceptor.handleInput(data);
             if (!result.consumed) {
               window.electronAPI.invoke('terminal:input', panel.id, data);
