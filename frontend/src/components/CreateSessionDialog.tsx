@@ -5,8 +5,6 @@ import type { Project } from '../types/project';
 import { useErrorStore } from '../stores/errorStore';
 import { GitBranch, ChevronRight, ChevronDown, X, Search, Check, GitFork } from 'lucide-react';
 import { ToggleField } from './ui/Toggle';
-import { CommitModeSettings } from './CommitModeSettings';
-import type { CommitModeSettings as CommitModeSettingsType } from '../../../shared/types';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -56,10 +54,6 @@ export function CreateSessionDialog({
 
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
-  const [commitModeSettings, setCommitModeSettings] = useState<CommitModeSettingsType>({
-    mode: 'disabled',
-    checkpointPrefix: 'checkpoint: '
-  });
   const [useWorktree, setUseWorktree] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSessionOptions, setShowSessionOptions] = useState(false);
@@ -97,7 +91,6 @@ export function CreateSessionDialog({
     if (preferences) {
       setShowAdvanced(preferences.showAdvanced);
       setShowSessionOptions(preferences.showSessionOptions ?? false);
-      setCommitModeSettings(preferences.commitModeSettings);
     }
   }, [preferences]);
 
@@ -391,8 +384,6 @@ export function CreateSessionDialog({
         projectId,
         folderId,
         isMainRepo: !useWorktree,
-        commitMode: commitModeSettings.mode,
-        commitModeSettings: JSON.stringify(commitModeSettings),
         baseBranch: formData.baseBranch
       });
 
@@ -726,16 +717,6 @@ export function CreateSessionDialog({
                   )}
                 </div>}
 
-                {/* Commit Mode Settings */}
-                <CommitModeSettings
-                  projectId={projectId}
-                  mode={commitModeSettings.mode}
-                  settings={commitModeSettings}
-                  onChange={(_mode, settings) => {
-                    setCommitModeSettings(settings);
-                    savePreferences({ commitModeSettings: settings });
-                  }}
-                />
               </div>
             )}
           </form>

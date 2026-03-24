@@ -13,7 +13,6 @@ import { registerFileHandlers } from './file';
 import { registerFolderHandlers } from './folders';
 import { registerUIStateHandlers } from './uiState';
 import { registerDashboardHandlers } from './dashboard';
-import { registerCommitModeHandlers } from './commitMode';
 import { setupLogHandlers } from './logs';
 import { registerPanelHandlers } from './panels';
 import { registerEditorPanelHandlers } from './editorPanel';
@@ -39,7 +38,6 @@ export function registerIpcHandlers(services: AppServices): void {
   registerFolderHandlers(ipcMain, services);
   registerUIStateHandlers(services);
   registerDashboardHandlers(ipcMain, services);
-  registerCommitModeHandlers(services.databaseService, services.logger, services.sessionManager);
   setupLogHandlers(services.sessionManager);
   registerPanelHandlers(ipcMain, services);
   registerEditorPanelHandlers(ipcMain, services);

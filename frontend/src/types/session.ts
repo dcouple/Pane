@@ -102,8 +102,6 @@ export interface Session {
   gitStatus?: GitStatus;
   baseCommit?: string;
   baseBranch?: string;
-  commitMode?: 'structured' | 'checkpoint' | 'disabled';
-  commitModeSettings?: string; // JSON string of CommitModeSettings
 }
 
 export interface GitStatus {
@@ -145,8 +143,6 @@ export interface CreateSessionRequest {
   baseBranch?: string;
   autoCommit?: boolean;
   toolType?: 'claude' | 'none';
-  commitMode?: 'structured' | 'checkpoint' | 'disabled';
-  commitModeSettings?: string; // JSON string of CommitModeSettings
   claudeConfig?: {
     model?: string;
     permissionMode?: 'approve' | 'ignore';

@@ -160,9 +160,6 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
         projectData.buildScript,
         undefined, // default_permission_mode
         projectData.openIdeCommand,
-        projectData.commitMode,
-        projectData.commitStructuredPromptTemplate,
-        projectData.commitCheckpointPrefix,
         wslEnabled || undefined,     // wsl_enabled
         wslDistribution              // wsl_distribution
       );
@@ -302,8 +299,6 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
           settingCategory = 'system_prompt';
         } else if (updates.run_script !== undefined || updates.build_script !== undefined) {
           settingCategory = 'scripts';
-        } else if (updates.commit_mode !== undefined || updates.commit_structured_prompt_template !== undefined || updates.commit_checkpoint_prefix !== undefined) {
-          settingCategory = 'commit';
         } else if (updates.open_ide_command !== undefined) {
           settingCategory = 'ide';
         } else if (updates.name !== undefined) {

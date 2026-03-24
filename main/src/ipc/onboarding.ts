@@ -216,9 +216,6 @@ export function registerOnboardingHandlers(ipcMain: IpcMain, services: AppServic
         undefined, // buildScript
         undefined, // default_permission_mode
         undefined, // openIdeCommand
-        undefined, // commitMode
-        undefined, // commitStructuredPromptTemplate
-        undefined, // commitCheckpointPrefix
       );
 
       if (!project) {

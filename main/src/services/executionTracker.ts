@@ -3,11 +3,6 @@ import type { Logger } from '../utils/logger';
 import type { SessionManager } from './sessionManager';
 import { GitDiffManager, type GitDiffResult } from './gitDiffManager';
 import type { CreateExecutionDiffData, ExecutionDiff } from '../database/models';
-import { execSync } from '../utils/commandExecutor';
-import { buildGitCommitCommand } from '../utils/shellEscape';
-import { formatForDisplay } from '../utils/timestampUtils';
-import { commitManager } from './commitManager';
-import type { CommitModeSettings } from '../../../shared/types';
 
 interface ExecutionContext {
   sessionId: string;
@@ -81,91 +76,8 @@ export class ExecutionTracker extends EventEmitter {
       }
 
       this.logger?.verbose(`Ending execution tracking for session ${sessionId}`);
-      
-      // Get session details for commit mode
-      const session = this.sessionManager.getSession(sessionId);
-      console.log(`[ExecutionTracker] Session details:`, {
-        found: !!session,
-        commitMode: session?.commitMode,
-        autoCommit: session?.autoCommit
-      });
-      this.logger?.verbose(`Retrieved session for ${sessionId}: ${session ? 'found' : 'not found'}`);
-      
-      // Determine commit mode - default to checkpoint for backwards compatibility
-      let commitMode: 'structured' | 'checkpoint' | 'disabled' = 'checkpoint';
-      let commitModeSettings: CommitModeSettings = {
-        mode: 'checkpoint',
-        checkpointPrefix: 'checkpoint: '
-      };
-      
-      if (session?.commitMode) {
-        commitMode = session.commitMode;
-        console.log(`[ExecutionTracker] Using session.commitMode: ${commitMode}`);
-        this.logger?.verbose(`Using session.commitMode: ${commitMode}`);
-        
-        // Update the commitModeSettings.mode to match the actual mode
-        commitModeSettings.mode = commitMode;
-        
-        if (session.commitModeSettings) {
-          try {
-            const parsedSettings = JSON.parse(session.commitModeSettings);
-            commitModeSettings = { ...commitModeSettings, ...parsedSettings, mode: commitMode };
-            this.logger?.verbose(`Parsed commit mode settings: ${JSON.stringify(commitModeSettings)}`);
-          } catch (e) {
-            this.logger?.error(`Failed to parse commit mode settings: ${e}`);
-          }
-        }
-      } else if (session?.autoCommit !== undefined) {
-        // Backwards compatibility: convert autoCommit boolean to commit mode
-        commitMode = session.autoCommit ? 'checkpoint' : 'disabled';
-        commitModeSettings.mode = commitMode;
-        this.logger?.verbose(`Using legacy autoCommit (${session.autoCommit}) -> commit mode: ${commitMode}`);
-      }
-      
-      console.log(`[ExecutionTracker] Final commit mode for session ${sessionId}: ${commitMode}`);
-      this.logger?.verbose(`Final commit mode for session ${sessionId}: ${commitMode}`);
-      
-      // Handle post-prompt commit based on mode
-      const commitResult = await commitManager.handlePostPromptCommit(
-        sessionId,
-        context.worktreePath,
-        commitModeSettings,
-        context.prompt,
-        context.executionSequence
-      );
-      
-      console.log(`[ExecutionTracker] Commit result:`, commitResult);
-      
-      if (!commitResult.success && commitResult.error) {
-        // Add error to session output so users can see what went wrong
-        const timestamp = formatForDisplay(new Date());
-        const errorMessage = `\r\n\x1b[36m[${timestamp}]\x1b[0m \x1b[1m\x1b[41m\x1b[37m ❌ GIT COMMIT FAILED \x1b[0m\r\n` +
-                           `\x1b[91mFailed to create commit during Claude Code execution.\x1b[0m\r\n` +
-                           `\x1b[91mError: ${commitResult.error}\x1b[0m\r\n\r\n` +
-                           `\x1b[93m⚠️  Changes remain uncommitted. You may need to fix the issues and commit manually.\x1b[0m\r\n\r\n`;
-        
-        this.sessionManager.addSessionOutput(sessionId, {
-          type: 'stderr',
-          data: errorMessage,
-          timestamp: new Date()
-        });
-      }
-      
-      // For structured mode, we may need to wait for Claude to create the commit
-      if (commitMode === 'structured') {
-        this.logger?.verbose(`Waiting for structured commit from Claude...`);
-        const structuredCommitResult = await commitManager.waitForStructuredCommit(
-          sessionId,
-          context.worktreePath,
-          5000 // 5 second timeout for now, can be adjusted
-        );
-        
-        if (!structuredCommitResult.success) {
-          this.logger?.warn(`Structured commit not detected: ${structuredCommitResult.error}`);
-        }
-      }
-      
-      // Get the current commit hash after auto-commit
+
+      // Get the current commit hash
       const ctx = this.sessionManager.getProjectContext(sessionId);
       if (!ctx) {
         throw new Error(`No project context found for session ${sessionId}`);
@@ -176,11 +88,9 @@ export class ExecutionTracker extends EventEmitter {
 
       // Always get the diff between the before and after commits
       if (afterCommitHash === context.beforeCommitHash) {
-        // No changes at all
         executionDiff = await this.gitDiffManager.captureWorkingDirectoryDiff(context.worktreePath, ctx.commandRunner);
         this.logger?.verbose(`No changes made during execution`);
       } else {
-        // Get the diff between commits
         executionDiff = await this.gitDiffManager.captureCommitDiff(
           context.worktreePath,
           context.beforeCommitHash,
@@ -189,12 +99,11 @@ export class ExecutionTracker extends EventEmitter {
         );
         this.logger?.verbose(`Captured diff between commits ${context.beforeCommitHash} and ${afterCommitHash}`);
       }
-      
+
       // Get the commit message if a commit was made
       let commitMessage = '';
       if (afterCommitHash !== context.beforeCommitHash && afterCommitHash !== 'UNCOMMITTED') {
         try {
-          // Get the commit message from git log
           commitMessage = ctx.commandRunner.exec(`git log -1 --format=%s ${afterCommitHash}`, context.worktreePath).trim();
           this.logger?.verbose(`Retrieved commit message: ${commitMessage}`);
         } catch (error) {
@@ -202,7 +111,7 @@ export class ExecutionTracker extends EventEmitter {
         }
       }
 
-      // Always create execution diff record, even if there are no changes
+      // Always create execution diff record
       const diffData: CreateExecutionDiffData = {
         session_id: sessionId,
         prompt_marker_id: context.promptMarkerId,
@@ -218,8 +127,7 @@ export class ExecutionTracker extends EventEmitter {
       };
 
       const createdDiff = await this.sessionManager.createExecutionDiff(diffData);
-      
-      // Always log execution diff creation
+
       console.log(`[ExecutionTracker] Created execution diff for session ${sessionId}:`, {
         id: createdDiff.id,
         execution_sequence: createdDiff.execution_sequence,
@@ -227,22 +135,22 @@ export class ExecutionTracker extends EventEmitter {
         commit_message: createdDiff.commit_message,
         after_commit_hash: createdDiff.after_commit_hash
       });
-      
+
       if (executionDiff.stats.filesChanged > 0) {
         this.logger?.verbose(`Created execution diff ${createdDiff.id}: ${createdDiff.stats_files_changed} files, +${createdDiff.stats_additions} -${createdDiff.stats_deletions}`);
       } else {
         this.logger?.verbose(`Created execution diff ${createdDiff.id} with no changes for execution ${context.executionSequence} in session ${sessionId}`);
       }
-      
-      this.emit('execution-completed', { 
-        sessionId, 
+
+      this.emit('execution-completed', {
+        sessionId,
         executionSequence: context.executionSequence,
         diffId: createdDiff.id,
         stats: executionDiff.stats
       });
-      
+
       this.activeExecutions.delete(sessionId);
-      
+
     } catch (error) {
       this.logger?.error(`Failed to end execution tracking for session ${sessionId}:`, error instanceof Error ? error : undefined);
       this.activeExecutions.delete(sessionId);

@@ -27,7 +27,7 @@ interface ClaudePanelSetting {
   id: number;
   panel_id: string;
   model?: string;
-  commit_mode?: boolean;
+  commit_mode?: boolean; // Legacy field — kept for migration reads only
   system_prompt?: string;
   max_tokens?: number;
   temperature?: number;
@@ -2155,9 +2155,6 @@ export class DatabaseService {
     buildScript?: string,
     defaultPermissionMode?: "approve" | "ignore",
     openIdeCommand?: string,
-    commitMode?: "structured" | "checkpoint" | "disabled",
-    commitStructuredPromptTemplate?: string,
-    commitCheckpointPrefix?: string,
     wslEnabled?: boolean,
     wslDistribution?: string | null,
   ): Project {
@@ -2176,8 +2173,8 @@ export class DatabaseService {
     const result = this.db
       .prepare(
         `
-      INSERT INTO projects (name, path, system_prompt, run_script, build_script, default_permission_mode, open_ide_command, display_order, commit_mode, commit_structured_prompt_template, commit_checkpoint_prefix, wsl_enabled, wsl_distribution)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO projects (name, path, system_prompt, run_script, build_script, default_permission_mode, open_ide_command, display_order, wsl_enabled, wsl_distribution)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       )
       .run(
@@ -2189,9 +2186,6 @@ export class DatabaseService {
         defaultPermissionMode || "ignore",
         openIdeCommand || null,
         displayOrder,
-        commitMode || "checkpoint",
-        commitStructuredPromptTemplate || null,
-        commitCheckpointPrefix || "checkpoint: ",
         wslEnabled ? 1 : 0,
         wslDistribution || null,
       );
@@ -2284,18 +2278,6 @@ export class DatabaseService {
     if (updates.active !== undefined) {
       fields.push("active = ?");
       values.push(updates.active ? 1 : 0);
-    }
-    if (updates.commit_mode !== undefined) {
-      fields.push("commit_mode = ?");
-      values.push(updates.commit_mode);
-    }
-    if (updates.commit_structured_prompt_template !== undefined) {
-      fields.push("commit_structured_prompt_template = ?");
-      values.push(updates.commit_structured_prompt_template);
-    }
-    if (updates.commit_checkpoint_prefix !== undefined) {
-      fields.push("commit_checkpoint_prefix = ?");
-      values.push(updates.commit_checkpoint_prefix);
     }
     if (updates.wsl_enabled !== undefined) {
       fields.push("wsl_enabled = ?");
@@ -2728,8 +2710,8 @@ export class DatabaseService {
       this.db
         .prepare(
           `
-        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, auto_commit, tool_type, base_commit, base_branch, commit_mode, commit_mode_settings)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, auto_commit, tool_type, base_commit, base_branch)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -2747,8 +2729,6 @@ export class DatabaseService {
           data.tool_type || "claude",
           data.base_commit || null,
           data.base_branch || null,
-          data.commit_mode || null,
-          data.commit_mode_settings || null,
         );
 
       const session = this.getSession(data.id);
@@ -2884,14 +2864,6 @@ export class DatabaseService {
         `[Database] Setting skip_continue_next to ${boolValue} (from ${data.skip_continue_next}) for session ${id}`,
       );
     }
-    if (data.commit_mode !== undefined) {
-      updates.push("commit_mode = ?");
-      values.push(data.commit_mode);
-    }
-    if (data.commit_mode_settings !== undefined) {
-      updates.push("commit_mode_settings = ?");
-      values.push(data.commit_mode_settings);
-    }
     if (data.pr_renamed !== undefined) {
       updates.push("pr_renamed = ?");
       values.push(data.pr_renamed ? 1 : 0);
@@ -2901,15 +2873,13 @@ export class DatabaseService {
       return this.getSession(id);
     }
 
-    // Only update the updated_at timestamp if we're changing something other than is_favorite, auto_commit, skip_continue_next, commit_mode, or commit_mode_settings
+    // Only update the updated_at timestamp if we're changing something other than is_favorite, auto_commit, skip_continue_next, or pr_renamed
     // This prevents the session from showing as "unviewed" when just toggling these settings
     const isOnlyToggleUpdate =
       updates.length === 1 &&
       (updates[0] === "is_favorite = ?" ||
         updates[0] === "auto_commit = ?" ||
         updates[0] === "skip_continue_next = ?" ||
-        updates[0] === "commit_mode = ?" ||
-        updates[0] === "commit_mode_settings = ?" ||
         updates[0] === "pr_renamed = ?");
     if (!isOnlyToggleUpdate) {
       updates.push("updated_at = CURRENT_TIMESTAMP");
@@ -4412,7 +4382,6 @@ export class DatabaseService {
     panelId: string,
     settings: {
       model?: string;
-      commit_mode?: boolean;
       system_prompt?: string;
       max_tokens?: number;
       temperature?: number;
@@ -4421,7 +4390,6 @@ export class DatabaseService {
     // Use the new unified settings storage
     this.updatePanelSettings(panelId, {
       model: settings.model || "auto",
-      commitMode: settings.commit_mode || false,
       systemPrompt: settings.system_prompt || null,
       maxTokens: settings.max_tokens || 4096,
       temperature: settings.temperature || 0.7,
@@ -4431,7 +4399,6 @@ export class DatabaseService {
   getClaudePanelSettings(panelId: string): {
     panel_id: string;
     model: string;
-    commit_mode: boolean;
     system_prompt: string | null;
     max_tokens: number;
     temperature: number;
@@ -4449,8 +4416,6 @@ export class DatabaseService {
     return {
       panel_id: panelId,
       model: (typeof s.model === "string" ? s.model : null) || "auto",
-      commit_mode:
-        (typeof s.commitMode === "boolean" ? s.commitMode : null) || false,
       system_prompt:
         (typeof s.systemPrompt === "string" ? s.systemPrompt : null) || null,
       max_tokens:
@@ -4470,7 +4435,6 @@ export class DatabaseService {
     panelId: string,
     settings: {
       model?: string;
-      commit_mode?: boolean;
       system_prompt?: string;
       max_tokens?: number;
       temperature?: number;
@@ -4479,8 +4443,6 @@ export class DatabaseService {
     const updateObj: Record<string, unknown> = {};
 
     if (settings.model !== undefined) updateObj.model = settings.model;
-    if (settings.commit_mode !== undefined)
-      updateObj.commitMode = settings.commit_mode;
     if (settings.system_prompt !== undefined)
       updateObj.systemPrompt = settings.system_prompt;
     if (settings.max_tokens !== undefined)

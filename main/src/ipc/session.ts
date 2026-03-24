@@ -159,8 +159,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           request.baseBranch,
           request.autoCommit,
           sessionToolType,
-          request.commitMode,
-          request.commitModeSettings,
           request.folderId,
           request.isMainRepo
         );
@@ -176,9 +174,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           isMainRepo: request.isMainRepo,
           baseBranch: request.baseBranch,
           autoCommit: request.autoCommit,
-          toolType: sessionToolType,
-          commitMode: request.commitMode,
-          commitModeSettings: request.commitModeSettings
+          toolType: sessionToolType
         });
 
         return { success: true, data: { jobId: job.id } };
@@ -408,32 +404,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         timestamp: new Date()
       });
 
-      // Check if session uses structured commit mode and enhance the input
-      let finalInput = input;
-      const dbSession = databaseService.getSession(sessionId);
-      if (dbSession?.commit_mode === 'structured') {
-        console.log(`[IPC] Session ${sessionId} uses structured commit mode, enhancing input`);
-
-        // Parse commit mode settings
-        let commitModeSettings;
-        try {
-          commitModeSettings = dbSession.commit_mode_settings ?
-            JSON.parse(dbSession.commit_mode_settings) :
-            { mode: 'structured' };
-        } catch (e) {
-          console.error(`[IPC] Failed to parse commit mode settings:`, e);
-          commitModeSettings = { mode: 'structured' };
-        }
-
-        // Get structured prompt template from settings or use default
-        const { DEFAULT_STRUCTURED_PROMPT_TEMPLATE } = require('../../../shared/types');
-        const structuredPromptTemplate = commitModeSettings?.structuredPromptTemplate || DEFAULT_STRUCTURED_PROMPT_TEMPLATE;
-
-        // Add structured commit instructions to the input
-        finalInput = `${input}\n\n${structuredPromptTemplate}`;
-        console.log(`[IPC] Added structured commit instructions to input`);
-      }
-
       // Get session to determine tool type
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -461,7 +431,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         await claudeCodeManager.startSession(
           sessionId,
           session.worktreePath,
-          finalInput,
+          input,
           session.permissionMode
         );
 
@@ -469,7 +439,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         await sessionManager.updateSession(sessionId, { status: 'running' });
       } else {
         // Claude Code is already running, just send the input using virtual panel ID
-        claudeCodeManager.sendInput(`session-${sessionId}`, finalInput);
+        claudeCodeManager.sendInput(`session-${sessionId}`, input);
       }
 
       return { success: true };

@@ -51,11 +51,7 @@ export class ConfigManager extends EventEmitter {
           permissionMode: 'ignore',
           ultrathink: false
         },
-        showAdvanced: false,
-        commitModeSettings: {
-          mode: 'checkpoint',
-          checkpointPrefix: 'checkpoint: '
-        }
+        showAdvanced: false
       },
       analytics: {
         enabled: false, // Opt-in: disabled by default until user consents
@@ -123,10 +119,6 @@ export class ConfigManager extends EventEmitter {
           claudeConfig: {
             ...this.config.sessionCreationPreferences?.claudeConfig,
             ...loadedConfig.sessionCreationPreferences?.claudeConfig
-          },
-          commitModeSettings: {
-            ...this.config.sessionCreationPreferences?.commitModeSettings,
-            ...loadedConfig.sessionCreationPreferences?.commitModeSettings
           }
         },
         analytics: {
@@ -303,11 +295,7 @@ export class ConfigManager extends EventEmitter {
         permissionMode: 'ignore',
         ultrathink: false
       },
-      showAdvanced: false,
-      commitModeSettings: {
-        mode: 'checkpoint',
-        checkpointPrefix: 'checkpoint: '
-      }
+      showAdvanced: false
     };
   }
 
