@@ -331,9 +331,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
       if (fromIndex === -1 || toIndex === -1) return current;
 
       const [moved] = newProjects.splice(fromIndex, 1);
-      // After removing the dragged item, adjust toIndex for downward moves
-      const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex;
-      newProjects.splice(adjustedToIndex, 0, moved);
+      newProjects.splice(toIndex, 0, moved);
 
       payload = newProjects.map((p, i) => ({ id: p.id, displayOrder: i }));
       return newProjects;
