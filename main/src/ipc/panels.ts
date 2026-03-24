@@ -340,6 +340,10 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
       return true;
     }
 
+    if (panel.type === 'browser') {
+      return true;
+    }
+
     return false;
   });
   

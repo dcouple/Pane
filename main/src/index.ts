@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -164,6 +164,32 @@ if (isDevelopment) {
 }
 
 async function createWindow() {
+  // Strip iframe-blocking headers for localhost URLs (enables embedded browser panel)
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: [
+      'http://localhost:*/*', 'http://127.0.0.1:*/*',
+      'https://localhost:*/*', 'https://127.0.0.1:*/*',
+      'http://[::1]:*/*', 'https://[::1]:*/*'
+    ] },
+    (details, callback) => {
+      const responseHeaders = { ...details.responseHeaders };
+
+      // Remove X-Frame-Options and strip frame-ancestors from CSP (case-insensitive)
+      for (const key of Object.keys(responseHeaders)) {
+        if (key.toLowerCase() === 'x-frame-options') {
+          delete responseHeaders[key];
+        }
+        if (key.toLowerCase() === 'content-security-policy') {
+          responseHeaders[key] = responseHeaders[key].map((value: string) =>
+            value.replace(/frame-ancestors\s+[^;]+;?\s*/gi, '')
+          );
+        }
+      }
+
+      callback({ responseHeaders });
+    }
+  );
+
   // Remove the default menu bar on Windows/Linux for a cleaner look
   if (process.platform !== 'darwin') {
     Menu.setApplicationMenu(null);

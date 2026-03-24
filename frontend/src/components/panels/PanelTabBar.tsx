@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, ChevronDown, ChevronRight, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Cpu, RefreshCw } from 'lucide-react';
+import { Plus, X, Terminal, ChevronDown, ChevronRight, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Cpu, RefreshCw, Globe } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -423,6 +423,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         return <FileCode className="w-4 h-4" />;
       case 'dashboard':
         return <BarChart3 className="w-4 h-4" />;
+      case 'browser':
+        return <Globe className="w-4 h-4" />;
       default:
         return null;
     }
@@ -433,7 +435,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     const typeOrder = (type: string) => {
       if (type === 'diff') return 0;
       if (type === 'explorer') return 1;
-      return 2;
+      if (type === 'browser') return 2;
+      return 3;
     };
     return [...panels].sort((a, b) => {
       const orderDiff = typeOrder(a.type) - typeOrder(b.type);
