@@ -19,6 +19,12 @@ import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
+import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
+import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
+import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
+import { InterceptorToast } from '../terminal/InterceptorToast';
+import { usePanelStore } from '../../stores/panelStore';
+import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -67,6 +73,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const tuiActiveRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [interceptorState, setInterceptorState] = useState<InterceptorState | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const interceptorRef = useRef<TerminalInterceptor | null>(null);
+  const skipNextInterceptRef = useRef(false); // set by AltGr @ detection
 
   // Read CLI state from persisted panel state (handles remount case)
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
@@ -165,6 +175,32 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       openSearch();
     }
   }, [openSearch]);
+
+  const getDropdownPosition = useCallback((): { x: number; y: number } => {
+    const container = terminalRef.current;
+    const terminal = xtermRef.current;
+    if (!container) return { x: 0, y: 0 };
+    const rect = container.getBoundingClientRect();
+
+    // Position near the cursor row. The dropdown's viewport clamping will
+    // flip it above the cursor line if there isn't enough room below.
+    if (terminal) {
+      const cursorY = terminal.buffer.active.cursorY;
+      const totalRows = terminal.rows;
+      // Approximate row height from container height
+      const rowHeight = rect.height / totalRows;
+      return {
+        x: rect.left + 16,
+        y: rect.top + cursorY * rowHeight,
+      };
+    }
+
+    // Fallback: bottom of terminal
+    return {
+      x: rect.left + 16,
+      y: rect.bottom - 40,
+    };
+  }, []);
 
   // Initialize terminal only once when component first mounts
   // Keep it alive even when switching sessions
@@ -343,6 +379,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           if (ctrlOrMeta && e.key === ',') return false;
           // Ctrl/Cmd+Shift+E: focus sidebar
           if (ctrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'e') return false;
+
+          // Detect AltGr+key producing '@' (e.g. German AltGr+Q) — set flag so the
+          // interceptor skips activation for this keystroke. AltGr sets both ctrlKey+altKey
+          // on Windows/Linux, or e.getModifierState('AltGraph') on some platforms.
+          if (e.key === '@' && (e.getModifierState('AltGraph') || (e.ctrlKey && e.altKey))) {
+            skipNextInterceptRef.current = true;
+          }
 
           // Right Alt: let OS/browser handle (e.g. voice transcription, IME)
           // Use e.code for physical key (e.key may report 'AltGraph' on some layouts)
@@ -788,9 +831,104 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             }
           });
 
-          // Handle terminal input
+          // Create interceptor for @ mentions and future trigger handlers
+          const interceptor = new TerminalInterceptor({
+            onStateChange: (state) => setInterceptorState(state.active ? state : null),
+            onFlush: (data) => window.electronAPI.invoke('terminal:input', panel.id, data),
+          });
+          interceptorRef.current = interceptor;
+
+          // Register @ handler for terminal scrollback copy
+          const effectiveSessionId = sessionId || panel.sessionId;
+
+          const getTerminals = async (): Promise<TerminalSuggestion[]> => {
+            const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
+            const terminalPanels = allPanels.filter(p => p.type === 'terminal' && p.id !== panel.id);
+            const suggestions = await Promise.all(terminalPanels.map(async (p) => {
+              const resp = await window.electronAPI.invoke('terminal:getScrollbackClean', p.id, 20);
+              let preview: string[] = ['(no output)'];
+              if (resp?.success && resp.data?.content) {
+                // Clean preview: filter blank lines, trim whitespace, take last 3
+                preview = resp.data.content
+                  .split('\n')
+                  .map((l: string) => l.trim())
+                  .filter((l: string) => l.length > 0)
+                  .slice(-3);
+                if (preview.length === 0) preview = ['(no output)'];
+              }
+              return { panelId: p.id, title: p.title, preview };
+            }));
+            return suggestions;
+          };
+
+          const handleCopy = async (targetPanelId: string, lines: number, mode: 'raw' | 'embed') => {
+            try {
+              if (mode === 'embed') {
+                // Embed mode: save to file, insert path reference
+                const response = await window.electronAPI.invoke(
+                  'terminal:save-scrollback',
+                  targetPanelId,
+                  effectiveSessionId,
+                  lines,
+                );
+                if (response?.success && response.data && terminal && !disposed) {
+                  terminal.paste(`${response.data.filePath}\n`);
+                  setToastMessage(`Embedded ${response.data.lineCount} lines from ${response.data.panelTitle}`);
+                } else {
+                  setToastMessage('Failed — no scrollback available');
+                }
+              } else {
+                // Raw mode: paste clean text directly into terminal
+                const response = await window.electronAPI.invoke(
+                  'terminal:getScrollbackClean',
+                  targetPanelId,
+                  lines,
+                );
+                if (response?.success && response.data && terminal && !disposed) {
+                  terminal.paste(response.data.content);
+                  setToastMessage(`Pasted ${response.data.lineCount} lines from ${response.data.panelTitle}`);
+                } else {
+                  setToastMessage('Failed — no scrollback available');
+                }
+              }
+            } catch {
+              setToastMessage('Failed to paste scrollback');
+            }
+            setTimeout(() => setToastMessage(null), 2000);
+          };
+
+          interceptor.registerHandler('@', createAtTerminalHandler({
+            sessionId: effectiveSessionId,
+            currentPanelId: panel.id,
+            getTerminals,
+            hasOtherTerminals: () => {
+              const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
+              return allPanels.filter(p => p.type === 'terminal' && p.id !== panel.id).length > 0;
+            },
+            onCopy: handleCopy,
+            onStateChange: () => interceptor.notifyStateChange(),
+            onForceCancel: () => interceptor.forceCancel(),
+            getPreference: async (key: string) => {
+              const resp = await window.electronAPI.invoke('preferences:get', key);
+              return resp?.success ? (resp.data as string | null) : null;
+            },
+            setPreference: (key: string, value: string) => {
+              window.electronAPI.invoke('preferences:set', key, value);
+            },
+          }));
+
+          // Handle terminal input — route through interceptor first
           const inputDisposable = terminal.onData((data) => {
-            window.electronAPI.invoke('terminal:input', panel.id, data);
+            // Skip interception for AltGr-produced @ (e.g. German keyboard)
+            if (skipNextInterceptRef.current) {
+              skipNextInterceptRef.current = false;
+              window.electronAPI.invoke('terminal:input', panel.id, data);
+              return;
+            }
+            const result = interceptor.handleInput(data);
+            if (!result.consumed) {
+              window.electronAPI.invoke('terminal:input', panel.id, data);
+            }
           });
 
           // Handle resize
@@ -827,6 +965,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const terminalElement = terminalRef.current;
           return () => {
             disposed = true;
+            interceptor.dispose();
+            interceptorRef.current = null;
             clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
@@ -1093,6 +1233,26 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         sessionId={panel.sessionId}
         onClose={closeSelectionPopover}
       />
+
+      {/* Terminal interceptor overlays */}
+      {interceptorState && (
+        <InterceptorDropdown
+          visible={interceptorState.active}
+          terminals={(interceptorState.handlerState as AtTerminalHandlerState).terminals}
+          selectedIndex={(interceptorState.handlerState as AtTerminalHandlerState).selectedIndex}
+          lineCountPresetIndex={(interceptorState.handlerState as AtTerminalHandlerState).lineCountPresetIndex}
+          pasteMode={(interceptorState.handlerState as AtTerminalHandlerState).pasteMode}
+          filterText={interceptorState.buffer}
+          position={getDropdownPosition()}
+        />
+      )}
+      {toastMessage && (
+        <InterceptorToast
+          visible={!!toastMessage}
+          message={toastMessage}
+          onHide={() => setToastMessage(null)}
+        />
+      )}
     </div>
   );
 });
