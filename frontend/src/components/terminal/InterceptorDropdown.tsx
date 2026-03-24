@@ -130,16 +130,16 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       </div>
 
       {/* Line count selector */}
-      <div className="px-3 py-1.5 border-t border-border-subtle/50 flex items-center justify-center gap-1.5">
-        <span className="text-[11px] text-text-quaternary">Lines</span>
+      <div className="px-3 py-2 border-t border-border-subtle/50 flex items-center justify-center gap-1">
+        <span className="text-[11px] text-text-quaternary mr-0.5">Lines</span>
         {LINE_COUNT_PRESETS.map((preset, i) => (
           <span
             key={preset}
             className={cn(
-              'text-[11px] px-2 py-0.5 rounded-md font-mono transition-colors duration-75',
+              'text-[11px] px-2.5 py-1 rounded-md font-mono transition-all duration-75',
               i === lineCountPresetIndex
-                ? 'bg-accent-primary/15 text-accent-primary font-medium'
-                : 'text-text-quaternary',
+                ? 'bg-accent-primary text-white font-semibold shadow-sm'
+                : 'text-text-tertiary',
             )}
           >
             {formatPresetLabel(preset)}
