@@ -55,6 +55,10 @@ export let mainWindow: BrowserWindow | null = null;
 // Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
 export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
 
+// Track partitions that already have the localhost header-stripping hook registered,
+// so we don't add duplicate listeners when multiple webviews share the same partition.
+const registeredPartitions = new Set<string>();
+
 // Module-level shutdown guard to prevent multiple shutdown attempts
 let shutdownInProgress = false;
 
@@ -256,8 +260,11 @@ async function createWindow() {
     // Apply the same localhost header-stripping to the webview's session/partition.
     // Without this, webview partitions don't inherit the defaultSession's onHeadersReceived
     // hook, so localhost apps that send X-Frame-Options headers would be blocked.
+    // Only register once per partition to avoid duplicate listeners accumulating.
     const wvSession = wvContents.session;
-    if (wvSession !== session.defaultSession) {
+    const partitionKey = wvSession.storagePath ?? 'default';
+    if (wvSession !== session.defaultSession && !registeredPartitions.has(partitionKey)) {
+      registeredPartitions.add(partitionKey);
       wvSession.webRequest.onHeadersReceived(
         { urls: [
           'http://localhost:*/*', 'http://127.0.0.1:*/*',
