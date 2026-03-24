@@ -814,7 +814,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
           {/* Run Dev Server button */}
           {session && (
-            <Tooltip content={<>Run Dev Server {hotkeyDisplay('run-dev-server') && <Kbd className="ml-1">{hotkeyDisplay('run-dev-server')}</Kbd>}</>} side="bottom">
+            <Tooltip content={
+                <span className="flex flex-col items-start gap-1">
+                  <span className="text-text-secondary">Run Dev Server</span>
+                  {hotkeyDisplay('run-dev-server') && <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{hotkeyDisplay('run-dev-server')}</Kbd>}
+                </span>
+              } side="bottom">
               <button
                 className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
                 onClick={handleRunDevServer}
