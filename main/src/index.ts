@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, ipcMain, shell, dialog, IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -164,6 +164,11 @@ if (isDevelopment) {
 }
 
 async function createWindow() {
+  // Remove the default menu bar on Windows/Linux for a cleaner look
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+  }
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
