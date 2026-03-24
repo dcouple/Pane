@@ -134,7 +134,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   };
 
   // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover)
+  // Only the permanent (default) browser panel responds to broadcast events.
+  // User-created additional panels are independent and not overwritten.
   useEffect(() => {
+    if (!panel.metadata?.permanent) return;
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ url: string; sessionId: string }>;
       if (customEvent.detail.sessionId === panel.sessionId) {
@@ -143,8 +146,8 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
     window.addEventListener('browser-panel:navigate', handler);
     return () => window.removeEventListener('browser-panel:navigate', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads history/historyIndex from closure; re-registering on sessionId change is sufficient
-  }, [panel.sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads history/historyIndex from refs; re-registering on sessionId change is sufficient
+  }, [panel.sessionId, panel.metadata?.permanent]);
 
   // Suppress unused warning for isActive — kept for API symmetry with other panels
   void isActive;
@@ -227,7 +230,18 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
           ref={iframeRef}
           src={url}
           className="w-full flex-1 border-0"
-          onLoad={() => setIsLoading(false)}
+          onLoad={() => {
+            setIsLoading(false);
+            // Try to sync address bar with iframe's actual URL after in-iframe navigation
+            try {
+              const currentHref = iframeRef.current?.contentWindow?.location.href;
+              if (currentHref && currentHref !== 'about:blank' && isLocalhostUrl(currentHref)) {
+                setInputUrl(currentHref);
+              }
+            } catch {
+              // Cross-origin — can't read location, keep existing inputUrl
+            }
+          }}
           title="Browser Preview"
         />
       )}
