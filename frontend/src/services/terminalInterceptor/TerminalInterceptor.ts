@@ -14,7 +14,7 @@ export class TerminalInterceptor {
   private active: boolean = false;
   private activeHandler: InterceptHandler | null = null;
   private activeTrigger: string | null = null;
-  private buffer: string = ''; // full buffer including trigger char
+  private buffer: string = ''; // printable chars only (trigger + filter text) — flushed on cancel
   private filterBuffer: string = ''; // just the filter text (after trigger)
 
   private readonly _onStateChange: (state: InterceptorState) => void;
@@ -60,13 +60,21 @@ export class TerminalInterceptor {
 
     switch (action.type) {
       case 'consume':
-        this.buffer += data;
+        // Only buffer printable characters — navigation keys (arrow escape sequences,
+        // backspace, etc.) are consumed but NOT added to the buffer, so they won't be
+        // flushed to the PTY on cancel.
+        if (this.isPrintable(data)) {
+          this.buffer += data;
+        }
         return { consumed: true };
 
       case 'cancel': {
-        // Flush the buffer + the cancel character to PTY so nothing is lost.
-        // e.g., typing "@foo " flushes "@foo " (including the space that canceled).
-        const toFlush = this.buffer + data;
+        // Flush only the printable text the user typed (trigger + filter chars).
+        // Include the cancel character only if it's printable (Space yes, Escape no).
+        const cancelCharPrintable = this.isPrintable(data);
+        const toFlush = cancelCharPrintable
+          ? this.buffer + data
+          : this.buffer;
         this.deactivate();
         this._onFlush(toFlush);
         return { consumed: true };
@@ -77,7 +85,9 @@ export class TerminalInterceptor {
         return { consumed: true };
 
       case 'update':
-        this.buffer += data;
+        if (this.isPrintable(data)) {
+          this.buffer += data;
+        }
         this.filterBuffer = action.buffer;
         this.notifyStateChange();
         return { consumed: true };
@@ -112,6 +122,11 @@ export class TerminalInterceptor {
       buffer: this.filterBuffer,
       handlerState: this.activeHandler?.getState() ?? null,
     };
+  }
+
+  /** A single printable character (no control chars or escape sequences) */
+  private isPrintable(data: string): boolean {
+    return data.length === 1 && data >= ' ' && data <= '~';
   }
 
   dispose(): void {
