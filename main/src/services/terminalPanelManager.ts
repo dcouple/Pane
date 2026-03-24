@@ -34,6 +34,8 @@ interface TerminalProcess {
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
   lastProcessTitle: string;
+  // Alternate screen buffer tracking (for TUI detection in WSL where pty.process is unreliable)
+  isAlternateScreen: boolean;
 }
 
 export class TerminalPanelManager {
@@ -234,7 +236,8 @@ export class TerminalPanelManager {
       pauseSafetyTimer: null,
       outputBuffer: '',
       outputFlushTimer: null,
-      lastProcessTitle: ''
+      lastProcessTitle: '',
+      isAlternateScreen: false
     };
     
     // Store in map
@@ -399,6 +402,27 @@ export class TerminalPanelManager {
             panelId: terminal.panelId,
             processTitle: currentTitle
           });
+        }
+      }
+
+      // Detect alternate screen buffer enter/exit for reliable TUI detection
+      // (works on WSL where pty.process reports wsl.exe instead of the Linux foreground app)
+      // \x1b[?1049h = enter alternate screen, \x1b[?1049l = leave alternate screen
+      const enterAlt = data.includes('\x1b[?1049h');
+      const leaveAlt = data.includes('\x1b[?1049l');
+      if (enterAlt || leaveAlt) {
+        // If both appear in the same chunk, last one wins
+        const lastEnter = data.lastIndexOf('\x1b[?1049h');
+        const lastLeave = data.lastIndexOf('\x1b[?1049l');
+        const newState = lastEnter > lastLeave;
+        if (newState !== terminal.isAlternateScreen) {
+          terminal.isAlternateScreen = newState;
+          if (mainWindow) {
+            mainWindow.webContents.send('terminal:alternateScreen', {
+              panelId: terminal.panelId,
+              active: newState
+            });
+          }
         }
       }
 
@@ -747,14 +771,17 @@ export class TerminalPanelManager {
   }
 
   /**
-   * Returns the current foreground process title for a terminal panel.
-   * Used by the renderer to initialize TUI detection when a panel remounts
-   * while a full-screen program (e.g. vim) is already running.
+   * Returns the current foreground process title and alternate screen state
+   * for a terminal panel.  Used by the renderer to initialize TUI detection
+   * when a panel remounts while a full-screen program is already running.
    */
-  getProcessTitle(panelId: string): string | null {
+  getProcessInfo(panelId: string): { processTitle: string; isAlternateScreen: boolean } | null {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return null;
-    return terminal.pty.process;
+    return {
+      processTitle: terminal.pty.process,
+      isAlternateScreen: terminal.isAlternateScreen
+    };
   }
 
   saveSerializedSnapshot(panelId: string, serializedData: string): void {

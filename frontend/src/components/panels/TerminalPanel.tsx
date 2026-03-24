@@ -744,10 +744,19 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const unsubscribeOutput = window.electronAPI.events.onTerminalOutput(outputHandler);
           console.log('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
 
-          // Track foreground process for TUI key passthrough
+          // Track foreground process for TUI key passthrough.
+          // Two complementary signals are used:
+          //   1. Process title (works on native shells; unreliable on WSL where it reports wsl.exe)
+          //   2. Alternate screen buffer (works universally — emitted when vim/less/etc. enter/exit)
           const unsubscribeTitleChange = window.electronAPI.events.onTerminalTitleChanged((data: { panelId: string; processTitle: string }) => {
             if (data.panelId === panel.id) {
               tuiActiveRef.current = TUI_APPS.has(extractProcessName(data.processTitle));
+            }
+          });
+
+          const unsubscribeAltScreen = window.electronAPI.events.onTerminalAlternateScreen((data: { panelId: string; active: boolean }) => {
+            if (data.panelId === panel.id) {
+              tuiActiveRef.current = data.active;
             }
           });
 
@@ -755,17 +764,22 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // left open and the panel remounted). Without this, tuiActiveRef
           // stays false until the next onData from the PTY triggers a title
           // change event, which may never happen if the TUI is idle.
-          window.electronAPI.invoke('terminal:getProcessTitle', panel.id)
-            .then((title: unknown) => {
-              if (disposed || typeof title !== 'string') return;
-              tuiActiveRef.current = TUI_APPS.has(extractProcessName(title));
+          window.electronAPI.invoke('terminal:getProcessInfo', panel.id)
+            .then((info: unknown) => {
+              if (disposed || !info || typeof info !== 'object') return;
+              const { processTitle, isAlternateScreen } = info as { processTitle: string; isAlternateScreen: boolean };
+              tuiActiveRef.current = isAlternateScreen || TUI_APPS.has(extractProcessName(processTitle));
             })
             .catch(() => { /* terminal may not exist yet — ignore */ });
 
           // Handle terminal process exit
           const unsubscribeExited = window.electronAPI.events.onTerminalExited((data: { sessionId: string; panelId: string; exitCode: number }) => {
-            if (data.panelId === panel.id && terminal && !disposed) {
-              terminal.write(`\r\n\x1b[90m[Process exited with code ${data.exitCode}]\x1b[0m\r\n`);
+            if (data.panelId === panel.id) {
+              // Reset TUI passthrough so Pane shortcuts work again on the dead terminal
+              tuiActiveRef.current = false;
+              if (terminal && !disposed) {
+                terminal.write(`\r\n\x1b[90m[Process exited with code ${data.exitCode}]\x1b[0m\r\n`);
+              }
             }
           });
 
@@ -835,6 +849,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             if (resizeTimer) clearTimeout(resizeTimer);
             unsubscribeOutput();
             unsubscribeTitleChange();
+            unsubscribeAltScreen();
             unsubscribeExited();
             unsubscribeFontUpdate();
             inputDisposable.dispose();
