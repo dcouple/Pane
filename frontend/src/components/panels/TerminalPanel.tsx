@@ -837,10 +837,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
             const terminalPanels = allPanels.filter(p => p.type === 'terminal' && p.id !== panel.id);
             const suggestions = await Promise.all(terminalPanels.map(async (p) => {
-              const resp = await window.electronAPI.invoke('terminal:getScrollbackClean', p.id, 5);
-              const preview = resp?.success && resp.data?.content
-                ? resp.data.content.split('\n').filter((l: string) => l.trim()).slice(-5)
-                : ['(no output)'];
+              const resp = await window.electronAPI.invoke('terminal:getScrollbackClean', p.id, 20);
+              let preview: string[] = ['(no output)'];
+              if (resp?.success && resp.data?.content) {
+                // Clean preview: filter blank lines, trim whitespace, take last 3
+                preview = resp.data.content
+                  .split('\n')
+                  .map((l: string) => l.trim())
+                  .filter((l: string) => l.length > 0)
+                  .slice(-3);
+                if (preview.length === 0) preview = ['(no output)'];
+              }
               return { panelId: p.id, title: p.title, preview };
             }));
             return suggestions;
@@ -1190,9 +1197,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           visible={interceptorState.active}
           terminals={(interceptorState.handlerState as AtTerminalHandlerState).terminals}
           selectedIndex={(interceptorState.handlerState as AtTerminalHandlerState).selectedIndex}
-          lineCount={(interceptorState.handlerState as AtTerminalHandlerState).lineCount}
-          isEditingLineCount={(interceptorState.handlerState as AtTerminalHandlerState).isEditingLineCount}
-          lineCountInput={(interceptorState.handlerState as AtTerminalHandlerState).lineCountInput}
+          lineCountPresetIndex={(interceptorState.handlerState as AtTerminalHandlerState).lineCountPresetIndex}
           filterText={interceptorState.buffer}
           position={getDropdownPosition()}
         />

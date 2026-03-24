@@ -37,18 +37,21 @@ export interface InterceptPayload {
   data: Record<string, unknown>;
 }
 
+/** Preset line count options for the line count selector */
+export const LINE_COUNT_PRESETS = [100, 300, 500, -1] as const; // -1 = All
+export type LineCountPreset = (typeof LINE_COUNT_PRESETS)[number];
+
 /** State specific to the @ terminal handler */
 export interface AtTerminalHandlerState {
   terminals: TerminalSuggestion[];
   selectedIndex: number;
-  lineCount: number; // default 500
-  lineCountInput: string; // raw input after ':'
-  isEditingLineCount: boolean;
+  lineCountPresetIndex: number; // index into LINE_COUNT_PRESETS (default 2 = 500)
+  lineCount: number; // resolved value (500, or -1 for all)
 }
 
 /** A terminal suggestion in the dropdown */
 export interface TerminalSuggestion {
   panelId: string;
   title: string;
-  preview: string[]; // last 5 lines, ANSI-stripped
+  preview: string[]; // last 3 clean lines, ANSI-stripped
 }

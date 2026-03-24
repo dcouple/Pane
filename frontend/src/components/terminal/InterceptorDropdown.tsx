@@ -1,26 +1,27 @@
 import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
-import { TerminalSuggestion } from '../../services/terminalInterceptor/types';
+import type { TerminalSuggestion } from '../../services/terminalInterceptor/types';
+import { LINE_COUNT_PRESETS } from '../../services/terminalInterceptor/types';
 
 interface InterceptorDropdownProps {
   visible: boolean;
   terminals: TerminalSuggestion[];
   selectedIndex: number;
-  lineCount: number;
-  isEditingLineCount: boolean;
-  lineCountInput: string;
+  lineCountPresetIndex: number;
   filterText: string;
   position: { x: number; y: number };
+}
+
+function formatPresetLabel(value: number): string {
+  return value === -1 ? 'All' : String(value);
 }
 
 export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
   visible,
   terminals,
   selectedIndex,
-  lineCount,
-  isEditingLineCount,
-  lineCountInput,
+  lineCountPresetIndex,
   filterText,
   position,
 }) => {
@@ -76,43 +77,65 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       className="fixed z-[10001] bg-surface-primary border border-border-primary rounded-lg shadow-dropdown-elevated py-1 min-w-[280px] max-w-[400px]"
       style={{ left: resolvedPosition.left, top: resolvedPosition.top }}
     >
-      {/* Header */}
-      <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle flex justify-between items-center">
-        <span className="font-mono">@{filterText}</span>
-        {isEditingLineCount ? (
-          <span className="font-mono text-text-primary">:{lineCountInput}</span>
-        ) : (
-          <span className="font-mono text-text-tertiary">:{lineCount}</span>
+      {/* Header — filter text */}
+      {filterText && (
+        <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle">
+          <span className="font-mono">@{filterText}</span>
+        </div>
+      )}
+
+      {/* Terminal entries */}
+      <div className="max-h-[240px] overflow-y-auto">
+        {terminals.map((terminal, index) => {
+          const isSelected = index === selectedIndex;
+          const isNoOutput =
+            terminal.preview.length === 1 && terminal.preview[0] === '(no output)';
+
+          return (
+            <div
+              key={terminal.panelId}
+              ref={isSelected ? selectedItemRef : null}
+              className={cn('px-3 py-2 cursor-default', isSelected && 'bg-bg-hover')}
+            >
+              <div className="text-sm font-medium text-text-primary">{terminal.title}</div>
+              <div className="text-xs text-text-tertiary font-mono mt-1 leading-relaxed overflow-hidden">
+                {isNoOutput ? (
+                  <span className="italic">{terminal.preview[0]}</span>
+                ) : (
+                  terminal.preview.map((line, i) => (
+                    <div key={i} className="truncate">{line}</div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {terminals.length === 0 && (
+          <div className="px-3 py-2 text-xs text-text-tertiary italic">Loading terminals...</div>
         )}
       </div>
 
-      {/* Terminal entries */}
-      {terminals.map((terminal, index) => {
-        const isSelected = index === selectedIndex;
-        const isNoOutput =
-          terminal.preview.length === 1 && terminal.preview[0] === '(no output)';
-
-        return (
-          <div
-            key={terminal.panelId}
-            ref={isSelected ? selectedItemRef : null}
-            className={cn('px-3 py-2 cursor-default', isSelected && 'bg-bg-hover')}
+      {/* Line count selector */}
+      <div className="px-3 py-1.5 border-t border-border-subtle flex items-center justify-center gap-1">
+        <span className="text-xs text-text-quaternary mr-1">Lines:</span>
+        {LINE_COUNT_PRESETS.map((preset, i) => (
+          <span
+            key={preset}
+            className={cn(
+              'text-xs px-1.5 py-0.5 rounded font-mono',
+              i === lineCountPresetIndex
+                ? 'bg-accent-primary/20 text-accent-primary font-medium'
+                : 'text-text-tertiary',
+            )}
           >
-            <div className="text-sm font-medium text-text-primary">{terminal.title}</div>
-            <div className="text-xs text-text-tertiary font-mono mt-1 leading-relaxed whitespace-pre overflow-hidden max-h-[5lh]">
-              {isNoOutput ? (
-                <span className="italic">{terminal.preview[0]}</span>
-              ) : (
-                terminal.preview.join('\n')
-              )}
-            </div>
-          </div>
-        );
-      })}
+            {formatPresetLabel(preset)}
+          </span>
+        ))}
+      </div>
 
       {/* Footer hint */}
-      <div className="px-3 py-1.5 text-xs text-text-quaternary border-t border-border-subtle">
-        ↑↓ navigate · Enter copy · :N lines · Esc cancel
+      <div className="px-3 py-1 text-xs text-text-quaternary border-t border-border-subtle">
+        ↑↓ select · ←→ lines · Enter copy · Esc cancel
       </div>
     </div>,
     document.body

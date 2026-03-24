@@ -4,6 +4,7 @@ import type {
   InterceptHandler,
   TerminalSuggestion,
 } from '../types';
+import { LINE_COUNT_PRESETS } from '../types';
 
 interface AtTerminalHandlerOptions {
   sessionId: string;
@@ -14,13 +15,14 @@ interface AtTerminalHandlerOptions {
   onStateChange: () => void; // notify interceptor to re-render
 }
 
+const DEFAULT_PRESET_INDEX = 2; // 500 lines
+
 function createDefaultState(): AtTerminalHandlerState {
   return {
     terminals: [],
     selectedIndex: 0,
-    lineCount: 500,
-    lineCountInput: '',
-    isEditingLineCount: false,
+    lineCountPresetIndex: DEFAULT_PRESET_INDEX,
+    lineCount: LINE_COUNT_PRESETS[DEFAULT_PRESET_INDEX],
   };
 }
 
@@ -91,7 +93,7 @@ export function createAtTerminalHandler(
     onInput(data: string, buffer: string): InterceptAction {
       switch (data) {
         case '\x1b[A': {
-          // Arrow up
+          // Arrow up — navigate terminal list
           const newIndex = Math.max(0, state.selectedIndex - 1);
           state = { ...state, selectedIndex: newIndex };
           onStateChange();
@@ -99,10 +101,37 @@ export function createAtTerminalHandler(
         }
 
         case '\x1b[B': {
-          // Arrow down
+          // Arrow down — navigate terminal list
           const maxIndex = Math.max(0, filteredTerminals.length - 1);
           const newIndexDown = Math.min(maxIndex, state.selectedIndex + 1);
           state = { ...state, selectedIndex: newIndexDown };
+          onStateChange();
+          return { type: 'consume' };
+        }
+
+        case '\x1b[D': {
+          // Arrow left — decrease line count preset
+          const newPresetIndex = Math.max(0, state.lineCountPresetIndex - 1);
+          state = {
+            ...state,
+            lineCountPresetIndex: newPresetIndex,
+            lineCount: LINE_COUNT_PRESETS[newPresetIndex],
+          };
+          onStateChange();
+          return { type: 'consume' };
+        }
+
+        case '\x1b[C': {
+          // Arrow right — increase line count preset
+          const newPresetIndex = Math.min(
+            LINE_COUNT_PRESETS.length - 1,
+            state.lineCountPresetIndex + 1,
+          );
+          state = {
+            ...state,
+            lineCountPresetIndex: newPresetIndex,
+            lineCount: LINE_COUNT_PRESETS[newPresetIndex],
+          };
           onStateChange();
           return { type: 'consume' };
         }
@@ -111,7 +140,9 @@ export function createAtTerminalHandler(
           // Enter — execute copy on selected terminal
           const selected = filteredTerminals[state.selectedIndex];
           if (selected !== undefined) {
-            onCopy(selected.panelId, state.lineCount).catch(() => {
+            // -1 means "All" — pass a very large number
+            const lines = state.lineCount === -1 ? 999999 : state.lineCount;
+            onCopy(selected.panelId, lines).catch(() => {
               // Silently ignore copy errors
             });
           }
@@ -133,25 +164,6 @@ export function createAtTerminalHandler(
 
         case '\x7f': {
           // Backspace
-          if (state.isEditingLineCount && state.lineCountInput.length > 0) {
-            // Remove last digit from line count input
-            const newInput = state.lineCountInput.slice(0, -1);
-            const parsed = parseInt(newInput, 10);
-            const newLineCount = isNaN(parsed) ? 500 : parsed;
-            state = {
-              ...state,
-              lineCountInput: newInput,
-              lineCount: newLineCount,
-            };
-            onStateChange();
-            return { type: 'consume' };
-          }
-          if (state.isEditingLineCount) {
-            // Backspace with empty line count input — exit line count mode
-            state = { ...state, isEditingLineCount: false };
-            onStateChange();
-            return { type: 'consume' };
-          }
           if (buffer.length > 0) {
             // Remove last char from filter
             const newBuffer = buffer.slice(0, -1);
@@ -162,32 +174,7 @@ export function createAtTerminalHandler(
           return { type: 'cancel' };
         }
 
-        case ':': {
-          // Begin editing line count (only if not already doing so)
-          if (!state.isEditingLineCount) {
-            state = { ...state, isEditingLineCount: true, lineCountInput: '' };
-            onStateChange();
-            return { type: 'consume' };
-          }
-          // Already editing — treat ':' as a printable filter char fallthrough
-          return { type: 'update', buffer: buffer + data };
-        }
-
         default: {
-          // Digit while editing line count
-          if (state.isEditingLineCount && data >= '0' && data <= '9') {
-            const newInput = state.lineCountInput + data;
-            const parsed = parseInt(newInput, 10);
-            const newLineCount = isNaN(parsed) ? 500 : parsed;
-            state = {
-              ...state,
-              lineCountInput: newInput,
-              lineCount: newLineCount,
-            };
-            onStateChange();
-            return { type: 'consume' };
-          }
-
           // Printable character — update filter buffer
           const isPrintable = data.length === 1 && data >= ' ';
           if (isPrintable) {
