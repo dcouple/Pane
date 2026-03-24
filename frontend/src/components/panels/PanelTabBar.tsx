@@ -378,6 +378,37 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     action: () => setShowDropdown(true),
   });
 
+  // Run Dev Server handler (shared between button and hotkey)
+  const handleRunDevServer = useCallback(async () => {
+    if (!session) return;
+    const scriptExists = await window.electronAPI?.invoke('file:exists', {
+      sessionId: session.id,
+      filePath: 'scripts/pane-run-script.js'
+    });
+
+    if (scriptExists) {
+      handleAddPanel('terminal', {
+        initialCommand: 'node scripts/pane-run-script.js',
+        title: 'Dev Server'
+      });
+    } else {
+      handleAddPanel('terminal', {
+        initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
+        title: 'Setup Run Script'
+      });
+    }
+  }, [session, handleAddPanel, config?.worktreeFileSync]);
+
+  // Ctrl+Shift+D: Run Dev Server
+  useHotkey({
+    id: 'run-dev-server',
+    label: 'Run Dev Server',
+    keys: 'mod+shift+d',
+    category: 'tools',
+    action: handleRunDevServer,
+    enabled: () => !!session,
+  });
+
   // Get available panel types (excluding permanent panels, logs, and enforcing singleton)
   const availablePanelTypes = (Object.keys(PANEL_CAPABILITIES) as ToolPanelType[])
     .filter(type => {
@@ -783,28 +814,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
           {/* Run Dev Server button */}
           {session && (
-            <Tooltip content="Run Dev Server" side="bottom">
+            <Tooltip content={<>Run Dev Server {hotkeyDisplay('run-dev-server') && <Kbd className="ml-1">{hotkeyDisplay('run-dev-server')}</Kbd>}</>} side="bottom">
               <button
                 className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
-                onClick={async () => {
-                  const scriptExists = await window.electronAPI?.invoke('file:exists', {
-                    sessionId: session.id,
-                    filePath: 'scripts/pane-run-script.js'
-                  });
-
-                  if (scriptExists) {
-                    handleAddPanel('terminal', {
-                      initialCommand: 'node scripts/pane-run-script.js',
-                      title: 'Dev Server'
-                    });
-                  } else {
-                    handleAddPanel('terminal', {
-                      initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
-                      title: 'Setup Run Script'
-                    });
-                  }
-                }}
-                title="Run Dev Server"
+                onClick={handleRunDevServer}
               >
                 <Play className="w-4 h-4" />
               </button>
