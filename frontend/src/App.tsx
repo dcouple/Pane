@@ -5,7 +5,7 @@ import { useResizable } from './hooks/useResizable';
 import { useHotkey } from './hooks/useHotkey';
 import { useTerminalShortcuts } from './hooks/useTerminalShortcuts';
 import { useShortcutHintsOverlay } from './hooks/useShortcutHintsOverlay';
-import { formatKeyDisplay } from './utils/hotkeyUtils';
+
 import { ShortcutHintsOverlay } from './components/ShortcutHintsOverlay';
 import { Sidebar } from './components/Sidebar';
 import { SessionView } from './components/SessionView';
@@ -26,7 +26,7 @@ import { useConfigStore } from './stores/configStore';
 import { API } from './utils/api';
 import { createVisibilityAwareInterval } from './utils/performanceUtils';
 import { ContextMenuProvider } from './contexts/ContextMenuContext';
-import { TokenTest } from './components/TokenTest';
+
 import { CommandPalette } from './components/CommandPalette';
 import { CloudOverlay } from './components/CloudOverlay';
 import { CloudWidget } from './components/CloudWidget';
@@ -72,7 +72,7 @@ function App() {
   const [hasCheckedOnboarding, setHasCheckedOnboarding] = useState(false);
   const analyticsCheckStarted = useRef(false);
   const onboardingCheckStarted = useRef(false);
-  const [isTokenTestOpen, setIsTokenTestOpen] = useState(false);
+
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [resumableSessions, setResumableSessions] = useState<ResumableSession[]>([]);
@@ -104,14 +104,6 @@ function App() {
   const { showNotification } = useNotifications();
 
   // Keyboard shortcuts
-  useHotkey({
-    id: 'toggle-token-test',
-    label: 'Toggle Token Test Page',
-    keys: 'mod+shift+t',
-    category: 'debug',
-    devOnly: true,
-    action: () => setIsTokenTestOpen(prev => !prev),
-  });
 
   useHotkey({
     id: 'open-command-palette',
@@ -595,26 +587,6 @@ function App() {
         <Help isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
         <ShortcutHintsOverlay isVisible={shortcutHintsVisible} shortcuts={terminalShortcuts} />
 
-        {/* Token Test Modal - Toggle with Cmd/Ctrl + Shift + T (Development Only) */}
-        {isTokenTestOpen && process.env.NODE_ENV === 'development' && (
-          <div className="fixed inset-0 bg-modal-overlay flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-bg-primary w-full max-w-6xl max-h-[90vh] overflow-y-auto rounded-lg relative border border-border-primary shadow-2xl">
-              <button
-                onClick={() => setIsTokenTestOpen(false)}
-                className="absolute top-4 right-4 p-2 hover:bg-surface-hover rounded-lg transition-colors text-text-secondary hover:text-text-primary"
-                title={`Close Token Test (${formatKeyDisplay('mod+shift+t')})`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <div className="absolute top-4 left-4 text-xs text-text-muted bg-surface-secondary px-2 py-1 rounded">
-                DEV ONLY
-              </div>
-              <TokenTest />
-            </div>
-          </div>
-        )}
         </div>
       </div>
     </ContextMenuProvider>
