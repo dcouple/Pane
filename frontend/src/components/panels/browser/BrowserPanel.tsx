@@ -134,20 +134,20 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   };
 
   // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover)
-  // Only the permanent (default) browser panel responds to broadcast events.
-  // User-created additional panels are independent and not overwritten.
+  // Uses stopImmediatePropagation so only the first browser panel for a session handles the event,
+  // preventing duplicate navigation when multiple browser panels exist.
   useEffect(() => {
-    if (!panel.metadata?.permanent) return;
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ url: string; sessionId: string }>;
       if (customEvent.detail.sessionId === panel.sessionId) {
+        e.stopImmediatePropagation();
         navigateTo(customEvent.detail.url);
       }
     };
     window.addEventListener('browser-panel:navigate', handler);
     return () => window.removeEventListener('browser-panel:navigate', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads history/historyIndex from refs; re-registering on sessionId change is sufficient
-  }, [panel.sessionId, panel.metadata?.permanent]);
+  }, [panel.sessionId]);
 
   // Suppress unused warning for isActive — kept for API symmetry with other panels
   void isActive;
@@ -200,7 +200,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
             onChange={(e) => { setInputUrl(e.target.value); setUrlError(''); }}
             placeholder="localhost:3000"
             className={cn(
-              'w-full px-2.5 py-1 text-sm rounded bg-bg-input border border-border-primary',
+              'w-full px-2.5 py-1 text-sm rounded bg-bg-primary border border-border-primary',
               'text-text-primary placeholder-text-tertiary',
               'focus:outline-none focus:border-border-focus',
               urlError && 'border-red-500'
