@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -50,6 +50,10 @@ import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 
 export let mainWindow: BrowserWindow | null = null;
+
+// Map webContentsId → {panelId, sessionId} for webview popup interception.
+// Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
+export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
 
 // Module-level shutdown guard to prevent multiple shutdown attempts
 let shutdownInProgress = false;
@@ -226,6 +230,24 @@ async function createWindow() {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+  });
+
+  // Set up popup interception on webviews IMMEDIATELY when they attach (before any page loads).
+  // This prevents the race condition where a page calls window.open() before dom-ready fires.
+  // The context map (panelId/sessionId) is populated later by the browser-panel:register-webview IPC.
+  mainWindow.webContents.on('did-attach-webview', (_event, wvContents: WebContents) => {
+    wvContents.setWindowOpenHandler(({ url }) => {
+      const ctx = webviewContextMap.get(wvContents.id);
+      if (ctx) {
+        mainWindow?.webContents.send('browser-panel:popup-requested', {
+          url,
+          sourceSessionId: ctx.sessionId,
+          sourcePanelId: ctx.panelId,
+        });
+      }
+      return { action: 'deny' };
+    });
+    wvContents.setBackgroundThrottling(true);
   });
 
   // Prevent Ctrl+W / Cmd+W from closing the Electron window so the renderer

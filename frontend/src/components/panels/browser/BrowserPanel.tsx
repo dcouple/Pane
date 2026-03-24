@@ -183,21 +183,25 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     return () => window.removeEventListener('browser-panel:popup-requested', handler);
   }, [panel.sessionId, addPanel, setActivePanelInStore]);
 
-  // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover)
+  // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover "Open in Browser")
   // Uses stopImmediatePropagation so only the first browser panel for a session handles the event,
   // preventing duplicate navigation when multiple browser panels exist.
+  // Also auto-focuses this browser panel so the user sees the navigated page immediately.
   useEffect(() => {
     const handler = (e: Event) => {
       const customEvent = e as CustomEvent<{ url: string; sessionId: string }>;
       if (customEvent.detail.sessionId === panel.sessionId) {
         e.stopImmediatePropagation();
         navigateTo(customEvent.detail.url);
+        // Auto-focus this browser panel
+        setActivePanelInStore(panel.sessionId, panel.id);
+        panelApi.setActivePanel(panel.sessionId, panel.id).catch(() => {});
       }
     };
     window.addEventListener('browser-panel:navigate', handler);
     return () => window.removeEventListener('browser-panel:navigate', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads from refs; re-registering on sessionId change is sufficient
-  }, [panel.sessionId]);
+  }, [panel.sessionId, panel.id, setActivePanelInStore]);
 
   // Suppress unused warning for isActive — kept for API symmetry with other panels
   void isActive;
