@@ -746,24 +746,24 @@ export function TokenTest() {
                       </Pill>
                     }
                     items={[
-                      { 
-                        id: 'structured', 
-                        label: 'Structured Mode',
-                        description: 'AI handles commits',
+                      {
+                        id: 'approve',
+                        label: 'Approve Mode',
+                        description: 'Review each action before running',
                         icon: Shield,
                         iconColor: 'text-interactive'
                       },
-                      { 
-                        id: 'checkpoint', 
-                        label: 'Checkpoint Mode',
-                        description: 'Manual commits at key points',
+                      {
+                        id: 'auto',
+                        label: 'Auto Mode',
+                        description: 'Run actions automatically',
                         icon: Save,
                         iconColor: 'text-status-warning'
                       },
-                      { 
-                        id: 'disabled', 
+                      {
+                        id: 'disabled',
                         label: 'Disabled',
-                        description: 'No automatic commits',
+                        description: 'No automatic actions',
                         icon: FileText,
                         iconColor: 'text-text-tertiary'
                       },
