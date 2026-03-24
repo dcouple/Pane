@@ -43,6 +43,7 @@ export function createAtTerminalHandler(
   let state: AtTerminalHandlerState = createDefaultState();
   let filteredTerminals: TerminalSuggestion[] = [];
   let currentFilter: string = ''; // tracks the latest filter for async reapply
+  let terminalsLoaded: boolean = false; // true once async getTerminals resolves
 
   const updateFiltered = (filter: string): void => {
     currentFilter = filter;
@@ -69,10 +70,12 @@ export function createAtTerminalHandler(
 
       state = createDefaultState();
       filteredTerminals = [];
+      terminalsLoaded = false;
 
       // Fire-and-forget: load terminals async, update state when done
       getTerminals()
         .then((terminals) => {
+          terminalsLoaded = true;
           state = { ...state, terminals };
           // Reapply the current filter — the user may have typed while we were loading
           updateFiltered(currentFilter);
@@ -131,6 +134,7 @@ export function createAtTerminalHandler(
         case '\x7f': {
           // Backspace
           if (state.isEditingLineCount && state.lineCountInput.length > 0) {
+            // Remove last digit from line count input
             const newInput = state.lineCountInput.slice(0, -1);
             const parsed = parseInt(newInput, 10);
             const newLineCount = isNaN(parsed) ? 500 : parsed;
@@ -142,6 +146,19 @@ export function createAtTerminalHandler(
             onStateChange();
             return { type: 'consume' };
           }
+          if (state.isEditingLineCount) {
+            // Backspace with empty line count input — exit line count mode
+            state = { ...state, isEditingLineCount: false };
+            onStateChange();
+            return { type: 'consume' };
+          }
+          if (buffer.length > 0) {
+            // Remove last char from filter
+            const newBuffer = buffer.slice(0, -1);
+            updateFiltered(newBuffer);
+            return { type: 'update', buffer: newBuffer };
+          }
+          // Backspace on empty filter — cancel
           return { type: 'cancel' };
         }
 
@@ -176,6 +193,12 @@ export function createAtTerminalHandler(
           if (isPrintable) {
             const newBuffer = buffer + data;
             updateFiltered(newBuffer);
+            // Auto-cancel when filter matches zero terminals (only after terminals loaded).
+            // This makes normal @ usage transparent: typing "git@github.com" auto-cancels
+            // on "g" since no terminal title matches, flushing "@g" back to PTY.
+            if (terminalsLoaded && filteredTerminals.length === 0) {
+              return { type: 'cancel' };
+            }
             return { type: 'update', buffer: newBuffer };
           }
 
@@ -189,6 +212,7 @@ export function createAtTerminalHandler(
       state = createDefaultState();
       filteredTerminals = [];
       currentFilter = '';
+      terminalsLoaded = false;
     },
 
     getState(): AtTerminalHandlerState {
