@@ -244,10 +244,42 @@ async function createWindow() {
           sourceSessionId: ctx.sessionId,
           sourcePanelId: ctx.panelId,
         });
+      } else {
+        // Context not yet registered (popup fired before dom-ready).
+        // Fall back to opening in the system browser so the popup isn't silently lost.
+        shell.openExternal(url);
       }
       return { action: 'deny' };
     });
     wvContents.setBackgroundThrottling(true);
+
+    // Apply the same localhost header-stripping to the webview's session/partition.
+    // Without this, webview partitions don't inherit the defaultSession's onHeadersReceived
+    // hook, so localhost apps that send X-Frame-Options headers would be blocked.
+    const wvSession = wvContents.session;
+    if (wvSession !== session.defaultSession) {
+      wvSession.webRequest.onHeadersReceived(
+        { urls: [
+          'http://localhost:*/*', 'http://127.0.0.1:*/*',
+          'https://localhost:*/*', 'https://127.0.0.1:*/*',
+          'http://[::1]:*/*', 'https://[::1]:*/*'
+        ] },
+        (details, callback) => {
+          const responseHeaders = { ...details.responseHeaders };
+          for (const key of Object.keys(responseHeaders)) {
+            if (key.toLowerCase() === 'x-frame-options') {
+              delete responseHeaders[key];
+            }
+            if (key.toLowerCase() === 'content-security-policy') {
+              responseHeaders[key] = responseHeaders[key].map((value: string) =>
+                value.replace(/frame-ancestors\s+[^;]+;?\s*/gi, '')
+              );
+            }
+          }
+          callback({ responseHeaders });
+        }
+      );
+    }
   });
 
   // Prevent Ctrl+W / Cmd+W from closing the Electron window so the renderer
