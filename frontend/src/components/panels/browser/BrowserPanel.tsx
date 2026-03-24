@@ -5,6 +5,7 @@ import { cn } from '../../../utils/cn';
 import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { useSessionStore } from '../../../stores/sessionStore';
+import { useResizable } from '../../../hooks/useResizable';
 
 interface BrowserPanelProps {
   panel: ToolPanel;
@@ -36,6 +37,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const [devToolsOpen, setDevToolsOpen] = useState(false);
 
   const webviewRef = useRef<Electron.WebviewTag>(null);
+  const devToolsWebviewRef = useRef<Electron.WebviewTag>(null);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const panelIdRef = useRef(panel.id);
 
@@ -47,6 +49,15 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const projectId = useSessionStore((state) => {
     const session = state.sessions.find(s => s.id === panel.sessionId);
     return session?.projectId;
+  });
+
+  // Resizable DevTools column
+  const { width: devToolsWidth, startResize: startDevToolsResize } = useResizable({
+    defaultWidth: 400,
+    minWidth: 200,
+    maxWidth: 800,
+    storageKey: 'pane-browser-devtools-width',
+    side: 'right',
   });
 
   // Initialize from persisted state only on mount
@@ -102,13 +113,13 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   };
 
   const handleToggleDevTools = () => {
-    const webview = webviewRef.current;
-    if (!webview) return;
-    if (webview.isDevToolsOpened()) {
-      webview.closeDevTools();
+    if (!webviewRef.current) return;
+    if (devToolsOpen) {
+      // Close DevTools and hide the column
+      webviewRef.current.closeDevTools();
       setDevToolsOpen(false);
     } else {
-      webview.openDevTools();
+      // Show the DevTools column — wiring happens in the devtools useEffect below
       setDevToolsOpen(true);
     }
   };
@@ -163,6 +174,26 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- re-run when url becomes non-empty (webview mounts); persistState reads from refs
   }, [panel.id, url]);
+
+  // Wire the devtools webview to display the page webview's DevTools inline.
+  // When devToolsOpen becomes true, the second webview mounts. On its dom-ready,
+  // we send both webContentsIds to the main process which calls setDevToolsWebContents.
+  useEffect(() => {
+    if (!devToolsOpen) return;
+    const devToolsWv = devToolsWebviewRef.current;
+    if (!devToolsWv) return;
+
+    const onDevToolsDomReady = () => {
+      const pageWcId = webviewRef.current?.getWebContentsId();
+      const devToolsWcId = devToolsWv.getWebContentsId();
+      if (pageWcId && devToolsWcId) {
+        window.electronAPI?.invoke('browser-panel:open-devtools-inline', pageWcId, devToolsWcId);
+      }
+    };
+
+    devToolsWv.addEventListener('dom-ready', onDevToolsDomReady);
+    return () => { devToolsWv.removeEventListener('dom-ready', onDevToolsDomReady); };
+  }, [devToolsOpen]);
 
   // Listen for popup-requested events from the main process.
   // Uses stopImmediatePropagation so only the originating browser panel handles the event,
@@ -303,14 +334,33 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
           </p>
         </div>
       ) : (
-        <webview
-          ref={webviewRef}
-          src={url}
-          partition={`persist:project-${projectId ?? panel.sessionId}`}
-          allowpopups={'true' as unknown as boolean}
-          className="w-full flex-1 border-0"
-          style={{ display: 'inline-flex' }}
-        />
+        <div className="flex-1 flex flex-row min-h-0">
+          {/* Page webview */}
+          <webview
+            ref={webviewRef}
+            src={url}
+            partition={`persist:project-${projectId ?? panel.sessionId}`}
+            allowpopups={'true' as unknown as boolean}
+            className="flex-1 border-0"
+            style={{ display: 'inline-flex' }}
+          />
+
+          {/* DevTools resize handle + inline column */}
+          {devToolsOpen && (
+            <>
+              <div
+                className="w-1 cursor-col-resize flex-shrink-0 bg-border-primary hover:bg-border-focus transition-colors"
+                onMouseDown={startDevToolsResize}
+              />
+              <webview
+                ref={devToolsWebviewRef}
+                src="about:blank"
+                className="border-0 flex-shrink-0"
+                style={{ display: 'inline-flex', width: devToolsWidth }}
+              />
+            </>
+          )}
+        </div>
       )}
     </div>
   );

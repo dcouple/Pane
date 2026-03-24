@@ -1,4 +1,4 @@
-import { IpcMain, BrowserWindow, clipboard } from 'electron';
+import { IpcMain, BrowserWindow, clipboard, webContents } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
@@ -640,5 +640,20 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   ipcMain.handle('browser-panel:register-webview', async (_, wcId: number, panelId: string, sessionId: string) => {
     webviewContextMap.set(wcId, { panelId, sessionId });
     return { success: true };
+  });
+
+  // Wire a devtools webview to display the page webview's DevTools inline
+  ipcMain.handle('browser-panel:open-devtools-inline', async (_, pageWcId: number, devToolsWcId: number) => {
+    try {
+      const pageWC = webContents.fromId(pageWcId);
+      const devToolsWC = webContents.fromId(devToolsWcId);
+      if (!pageWC || !devToolsWC) return { success: false, error: 'WebContents not found' };
+      pageWC.setDevToolsWebContents(devToolsWC);
+      pageWC.openDevTools();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to open inline devtools:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 }
