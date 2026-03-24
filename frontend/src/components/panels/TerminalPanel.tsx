@@ -19,6 +19,12 @@ import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
+import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
+import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
+import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
+import { InterceptorToast } from '../terminal/InterceptorToast';
+import { usePanelStore } from '../../stores/panelStore';
+import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -67,6 +73,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const tuiActiveRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [interceptorState, setInterceptorState] = useState<InterceptorState | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const interceptorRef = useRef<TerminalInterceptor | null>(null);
 
   // Read CLI state from persisted panel state (handles remount case)
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
@@ -165,6 +174,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       openSearch();
     }
   }, [openSearch]);
+
+  const getDropdownPosition = useCallback((): { x: number; y: number } => {
+    const container = terminalRef.current;
+    if (!container) return { x: 0, y: 0 };
+    const rect = container.getBoundingClientRect();
+    return {
+      x: rect.left + 16,
+      y: rect.top + 16,
+    };
+  }, []);
 
   // Initialize terminal only once when component first mounts
   // Keep it alive even when switching sessions
@@ -788,9 +807,62 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             }
           });
 
-          // Handle terminal input
+          // Create interceptor for @ mentions and future trigger handlers
+          const interceptor = new TerminalInterceptor({
+            onStateChange: (state) => setInterceptorState(state.active ? state : null),
+            onFlush: (data) => window.electronAPI.invoke('terminal:input', panel.id, data),
+          });
+          interceptorRef.current = interceptor;
+
+          // Register @ handler for terminal scrollback copy
+          const effectiveSessionId = sessionId || panel.sessionId;
+
+          const getTerminals = async (): Promise<TerminalSuggestion[]> => {
+            const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
+            const terminalPanels = allPanels.filter(p => p.type === 'terminal' && p.id !== panel.id);
+            const suggestions = await Promise.all(terminalPanels.map(async (p) => {
+              const resp = await window.electronAPI.invoke('terminal:getScrollbackClean', p.id, 5);
+              const preview = resp?.success && resp.data?.content
+                ? resp.data.content.split('\n').filter((l: string) => l.trim()).slice(-5)
+                : ['(no output)'];
+              return { panelId: p.id, title: p.title, preview };
+            }));
+            return suggestions;
+          };
+
+          const handleCopy = async (targetPanelId: string, lines: number) => {
+            try {
+              const response = await window.electronAPI.invoke('terminal:getScrollbackClean', targetPanelId, lines);
+              if (response?.success && response.data) {
+                await navigator.clipboard.writeText(response.data.content);
+                setToastMessage(`Copied ${response.data.lineCount} lines from ${response.data.panelTitle}`);
+              } else {
+                setToastMessage('Copy failed — no scrollback available');
+              }
+            } catch {
+              setToastMessage('Copy failed — clipboard access denied');
+            }
+            setTimeout(() => setToastMessage(null), 2000);
+          };
+
+          interceptor.registerHandler('@', createAtTerminalHandler({
+            sessionId: effectiveSessionId,
+            currentPanelId: panel.id,
+            getTerminals,
+            hasOtherTerminals: () => {
+              const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
+              return allPanels.filter(p => p.type === 'terminal' && p.id !== panel.id).length > 0;
+            },
+            onCopy: handleCopy,
+            onStateChange: () => interceptor.notifyStateChange(),
+          }));
+
+          // Handle terminal input — route through interceptor first
           const inputDisposable = terminal.onData((data) => {
-            window.electronAPI.invoke('terminal:input', panel.id, data);
+            const result = interceptor.handleInput(data);
+            if (!result.consumed) {
+              window.electronAPI.invoke('terminal:input', panel.id, data);
+            }
           });
 
           // Handle resize
@@ -827,6 +899,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const terminalElement = terminalRef.current;
           return () => {
             disposed = true;
+            interceptor.dispose();
+            interceptorRef.current = null;
             clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
@@ -1093,6 +1167,27 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         sessionId={panel.sessionId}
         onClose={closeSelectionPopover}
       />
+
+      {/* Terminal interceptor overlays */}
+      {interceptorState && (
+        <InterceptorDropdown
+          visible={interceptorState.active}
+          terminals={(interceptorState.handlerState as AtTerminalHandlerState).terminals}
+          selectedIndex={(interceptorState.handlerState as AtTerminalHandlerState).selectedIndex}
+          lineCount={(interceptorState.handlerState as AtTerminalHandlerState).lineCount}
+          isEditingLineCount={(interceptorState.handlerState as AtTerminalHandlerState).isEditingLineCount}
+          lineCountInput={(interceptorState.handlerState as AtTerminalHandlerState).lineCountInput}
+          filterText={interceptorState.buffer}
+          position={getDropdownPosition()}
+        />
+      )}
+      {toastMessage && (
+        <InterceptorToast
+          visible={!!toastMessage}
+          message={toastMessage}
+          onHide={() => setToastMessage(null)}
+        />
+      )}
     </div>
   );
 });

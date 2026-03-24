@@ -215,6 +215,25 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   return { filePath: resolveImagePathForSession(filePath, sessionId), imageNumber: count };
 }
 
+/* eslint-disable no-control-regex -- ANSI escape stripping requires control characters */
+const ANSI_PATTERNS: RegExp[] = [
+  /\x1b\[[0-9;]*[a-zA-Z]/g,        // SGR (colors, bold, etc.) and other CSI sequences
+  /\x1b\].*?(?:\x07|\x1b\\)/g,     // OSC sequences (title setting, hyperlinks, etc.)
+  /\x1b\[?[0-9;]*[hl]/g,           // Mode set/reset
+  /\x1b[()][AB012]/g,               // Other single-char escape sequences
+  /[^\n]*\r(?!\n)/g,                // Carriage return without newline (overwrite lines)
+  /\x1b/g,                          // Remaining bare escape chars
+];
+/* eslint-enable no-control-regex */
+
+function stripAnsiCodes(text: string): string {
+  let result = text;
+  for (const pattern of ANSI_PATTERNS) {
+    result = result.replace(pattern, '');
+  }
+  return result;
+}
+
 export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Panel CRUD operations
   ipcMain.handle('panels:create', async (_, request: CreatePanelRequest) => {
@@ -416,6 +435,28 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Get alternate screen state for TUI detection on panel mount
   ipcMain.handle('terminal:getAltScreenState', async (_, panelId: string) => {
     return terminalPanelManager.getAltScreenState(panelId);
+  });
+
+  ipcMain.handle('terminal:getScrollbackClean', async (_, panelId: string, lines: number) => {
+    try {
+      const rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+      if (rawScrollback === null) {
+        return { success: false, error: `No scrollback available for panel ${panelId}` };
+      }
+
+      const stripped = stripAnsiCodes(rawScrollback);
+      const allLines = stripped.split('\n');
+      const lastLines = allLines.slice(-lines);
+      const content = lastLines.join('\n');
+
+      const panel = panelManager.getPanel(panelId);
+      const panelTitle = panel?.title ?? panelId;
+
+      return { success: true, data: { content, lineCount: lastLines.length, panelTitle } };
+    } catch (error) {
+      console.error('[IPC] Failed to get clean scrollback:', error);
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   // Save a pasted image to ~/.pane/images/ and return the file path with image number
