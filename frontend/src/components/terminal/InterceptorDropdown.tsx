@@ -2,7 +2,7 @@ import React, { useRef, useState, useLayoutEffect, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { Kbd } from '../ui/Kbd';
-import type { TerminalSuggestion } from '../../services/terminalInterceptor/types';
+import type { TerminalSuggestion, PasteMode } from '../../services/terminalInterceptor/types';
 import { LINE_COUNT_PRESETS } from '../../services/terminalInterceptor/types';
 
 interface InterceptorDropdownProps {
@@ -10,6 +10,7 @@ interface InterceptorDropdownProps {
   terminals: TerminalSuggestion[];
   selectedIndex: number;
   lineCountPresetIndex: number;
+  pasteMode: PasteMode;
   filterText: string;
   position: { x: number; y: number };
 }
@@ -23,6 +24,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
   terminals,
   selectedIndex,
   lineCountPresetIndex,
+  pasteMode,
   filterText,
   position,
 }) => {
@@ -129,22 +131,48 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
         )}
       </div>
 
-      {/* Line count selector */}
-      <div className="px-3 py-2 border-t border-border-subtle/50 flex items-center justify-center gap-1">
-        <span className="text-[11px] text-text-quaternary mr-0.5">Lines</span>
-        {LINE_COUNT_PRESETS.map((preset, i) => (
+      {/* Line count + mode controls */}
+      <div className="px-3 py-2 border-t border-border-subtle/50 flex items-center justify-between">
+        {/* Line count */}
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-text-quaternary mr-0.5">Lines</span>
+          {LINE_COUNT_PRESETS.map((preset, i) => (
+            <span
+              key={preset}
+              className={cn(
+                'text-[11px] px-2 py-0.5 rounded-md font-mono transition-all duration-75',
+                i === lineCountPresetIndex
+                  ? 'bg-accent-primary text-white font-semibold shadow-sm'
+                  : 'text-text-tertiary',
+              )}
+            >
+              {formatPresetLabel(preset)}
+            </span>
+          ))}
+        </div>
+        {/* Paste mode */}
+        <div className="flex items-center gap-1.5">
           <span
-            key={preset}
             className={cn(
-              'text-[11px] px-2.5 py-1 rounded-md font-mono transition-all duration-75',
-              i === lineCountPresetIndex
-                ? 'bg-accent-primary text-white font-semibold shadow-sm'
-                : 'text-text-tertiary',
+              'text-[11px] px-2 py-0.5 rounded-md transition-all duration-75',
+              pasteMode === 'raw'
+                ? 'bg-surface-tertiary text-text-primary font-medium'
+                : 'text-text-quaternary',
             )}
           >
-            {formatPresetLabel(preset)}
+            Raw
           </span>
-        ))}
+          <span
+            className={cn(
+              'text-[11px] px-2 py-0.5 rounded-md transition-all duration-75',
+              pasteMode === 'embed'
+                ? 'bg-surface-tertiary text-text-primary font-medium'
+                : 'text-text-quaternary',
+            )}
+          >
+            Embed
+          </span>
+        </div>
       </div>
 
       {/* Footer hints with kbd */}
@@ -158,8 +186,12 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
           <span>lines</span>
         </span>
         <span className="inline-flex items-center gap-1">
+          <Kbd size="xs" variant="muted">Tab</Kbd>
+          <span>mode</span>
+        </span>
+        <span className="inline-flex items-center gap-1">
           <Kbd size="xs" variant="muted">Enter</Kbd>
-          <span>copy</span>
+          <span>paste</span>
         </span>
         <span className="inline-flex items-center gap-1">
           <Kbd size="xs" variant="muted">Esc</Kbd>

@@ -853,22 +853,38 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             return suggestions;
           };
 
-          const handleCopy = async (targetPanelId: string, lines: number) => {
+          const handleCopy = async (targetPanelId: string, lines: number, mode: 'raw' | 'embed') => {
             try {
-              const response = await window.electronAPI.invoke(
-                'terminal:save-scrollback',
-                targetPanelId,
-                effectiveSessionId,
-                lines,
-              );
-              if (response?.success && response.data && terminal && !disposed) {
-                terminal.paste(`[Pasted from ${response.data.panelTitle}] ${response.data.filePath}\n`);
-                setToastMessage(`${response.data.lineCount} lines from ${response.data.panelTitle}`);
+              if (mode === 'embed') {
+                // Embed mode: save to file, insert path reference
+                const response = await window.electronAPI.invoke(
+                  'terminal:save-scrollback',
+                  targetPanelId,
+                  effectiveSessionId,
+                  lines,
+                );
+                if (response?.success && response.data && terminal && !disposed) {
+                  terminal.paste(`[Pasted from ${response.data.panelTitle}] ${response.data.filePath}\n`);
+                  setToastMessage(`${response.data.lineCount} lines from ${response.data.panelTitle}`);
+                } else {
+                  setToastMessage('Failed — no scrollback available');
+                }
               } else {
-                setToastMessage('Failed — no scrollback available');
+                // Raw mode: paste clean text directly into terminal
+                const response = await window.electronAPI.invoke(
+                  'terminal:getScrollbackClean',
+                  targetPanelId,
+                  lines,
+                );
+                if (response?.success && response.data && terminal && !disposed) {
+                  terminal.paste(response.data.content);
+                  setToastMessage(`Pasted ${response.data.lineCount} lines from ${response.data.panelTitle}`);
+                } else {
+                  setToastMessage('Failed — no scrollback available');
+                }
               }
             } catch {
-              setToastMessage('Failed to save scrollback');
+              setToastMessage('Failed to paste scrollback');
             }
             setTimeout(() => setToastMessage(null), 2000);
           };
@@ -883,6 +899,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             },
             onCopy: handleCopy,
             onStateChange: () => interceptor.notifyStateChange(),
+            getPreference: async (key: string) => {
+              const resp = await window.electronAPI.invoke('preferences:get', key);
+              return resp?.success ? (resp.data as string | null) : null;
+            },
+            setPreference: (key: string, value: string) => {
+              window.electronAPI.invoke('preferences:set', key, value);
+            },
           }));
 
           // Handle terminal input — route through interceptor first
@@ -1203,6 +1226,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           terminals={(interceptorState.handlerState as AtTerminalHandlerState).terminals}
           selectedIndex={(interceptorState.handlerState as AtTerminalHandlerState).selectedIndex}
           lineCountPresetIndex={(interceptorState.handlerState as AtTerminalHandlerState).lineCountPresetIndex}
+          pasteMode={(interceptorState.handlerState as AtTerminalHandlerState).pasteMode}
           filterText={interceptorState.buffer}
           position={getDropdownPosition()}
         />

@@ -11,8 +11,12 @@ interface AtTerminalHandlerOptions {
   currentPanelId: string;
   getTerminals: () => Promise<TerminalSuggestion[]>;
   hasOtherTerminals: () => boolean; // fast sync check
-  onCopy: (panelId: string, lines: number) => Promise<void>;
+  onCopy: (panelId: string, lines: number, mode: 'raw' | 'embed') => Promise<void>;
   onStateChange: () => void; // notify interceptor to re-render
+  /** Load a persisted preference (returns null if not set) */
+  getPreference: (key: string) => Promise<string | null>;
+  /** Persist a preference */
+  setPreference: (key: string, value: string) => void;
 }
 
 const DEFAULT_PRESET_INDEX = 2; // 500 lines
@@ -23,6 +27,7 @@ function createDefaultState(): AtTerminalHandlerState {
     selectedIndex: 0,
     lineCountPresetIndex: DEFAULT_PRESET_INDEX,
     lineCount: LINE_COUNT_PRESETS[DEFAULT_PRESET_INDEX],
+    pasteMode: 'raw',
   };
 }
 
@@ -40,7 +45,7 @@ function filterTerminals(
 export function createAtTerminalHandler(
   options: AtTerminalHandlerOptions,
 ): InterceptHandler {
-  const { getTerminals, hasOtherTerminals, onCopy, onStateChange } = options;
+  const { getTerminals, hasOtherTerminals, onCopy, onStateChange, getPreference, setPreference } = options;
 
   let state: AtTerminalHandlerState = createDefaultState();
   let filteredTerminals: TerminalSuggestion[] = [];
@@ -73,6 +78,27 @@ export function createAtTerminalHandler(
       state = createDefaultState();
       filteredTerminals = [];
       terminalsLoaded = false;
+
+      // Load persisted preferences (fire-and-forget)
+      Promise.all([
+        getPreference('at_terminal_paste_mode'),
+        getPreference('at_terminal_line_count'),
+      ]).then(([savedMode, savedLineCount]) => {
+        let changed = false;
+        if (savedMode === 'raw' || savedMode === 'embed') {
+          state = { ...state, pasteMode: savedMode };
+          changed = true;
+        }
+        if (savedLineCount) {
+          const val = parseInt(savedLineCount, 10);
+          const idx = LINE_COUNT_PRESETS.indexOf(val as typeof LINE_COUNT_PRESETS[number]);
+          if (idx !== -1) {
+            state = { ...state, lineCountPresetIndex: idx, lineCount: LINE_COUNT_PRESETS[idx] };
+            changed = true;
+          }
+        }
+        if (changed) onStateChange();
+      }).catch(() => { /* ignore */ });
 
       // Fire-and-forget: load terminals async, update state when done
       getTerminals()
@@ -112,11 +138,9 @@ export function createAtTerminalHandler(
         case '\x1b[D': {
           // Arrow left — decrease line count preset
           const newPresetIndex = Math.max(0, state.lineCountPresetIndex - 1);
-          state = {
-            ...state,
-            lineCountPresetIndex: newPresetIndex,
-            lineCount: LINE_COUNT_PRESETS[newPresetIndex],
-          };
+          const newLineCount = LINE_COUNT_PRESETS[newPresetIndex];
+          state = { ...state, lineCountPresetIndex: newPresetIndex, lineCount: newLineCount };
+          setPreference('at_terminal_line_count', String(newLineCount));
           onStateChange();
           return { type: 'consume' };
         }
@@ -127,11 +151,18 @@ export function createAtTerminalHandler(
             LINE_COUNT_PRESETS.length - 1,
             state.lineCountPresetIndex + 1,
           );
-          state = {
-            ...state,
-            lineCountPresetIndex: newPresetIndex,
-            lineCount: LINE_COUNT_PRESETS[newPresetIndex],
-          };
+          const newLC = LINE_COUNT_PRESETS[newPresetIndex];
+          state = { ...state, lineCountPresetIndex: newPresetIndex, lineCount: newLC };
+          setPreference('at_terminal_line_count', String(newLC));
+          onStateChange();
+          return { type: 'consume' };
+        }
+
+        case '\t': {
+          // Tab — toggle paste mode between raw and embed
+          const newMode = state.pasteMode === 'raw' ? 'embed' : 'raw';
+          state = { ...state, pasteMode: newMode };
+          setPreference('at_terminal_paste_mode', newMode);
           onStateChange();
           return { type: 'consume' };
         }
@@ -142,7 +173,7 @@ export function createAtTerminalHandler(
           if (selected !== undefined) {
             // -1 means "All" — pass a very large number
             const lines = state.lineCount === -1 ? 999999 : state.lineCount;
-            onCopy(selected.panelId, lines).catch(() => {
+            onCopy(selected.panelId, lines, state.pasteMode).catch(() => {
               // Silently ignore copy errors
             });
           }

@@ -41,12 +41,16 @@ export interface InterceptPayload {
 export const LINE_COUNT_PRESETS = [100, 300, 500, -1] as const; // -1 = All
 export type LineCountPreset = (typeof LINE_COUNT_PRESETS)[number];
 
+/** Paste mode: raw pastes text into PTY, embed saves to file and inserts path */
+export type PasteMode = 'raw' | 'embed';
+
 /** State specific to the @ terminal handler */
 export interface AtTerminalHandlerState {
   terminals: TerminalSuggestion[];
   selectedIndex: number;
   lineCountPresetIndex: number; // index into LINE_COUNT_PRESETS (default 2 = 500)
   lineCount: number; // resolved value (500, or -1 for all)
+  pasteMode: PasteMode; // default 'raw'
 }
 
 /** A terminal suggestion in the dropdown */
