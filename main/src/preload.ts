@@ -570,12 +570,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('terminal:exited', wrappedCallback);
     },
 
-    onTerminalTitleChanged: (callback: (data: { panelId: string; processTitle: string }) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { panelId: string; processTitle: string }) => callback(data);
-      ipcRenderer.on('terminal:titleChanged', wrappedCallback);
-      return () => ipcRenderer.removeListener('terminal:titleChanged', wrappedCallback);
-    },
-
     onTerminalAlternateScreen: (callback: (data: { panelId: string; active: boolean }) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { panelId: string; active: boolean }) => callback(data);
       ipcRenderer.on('terminal:alternateScreen', wrappedCallback);

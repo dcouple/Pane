@@ -21,23 +21,6 @@ import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
 import '@xterm/xterm/css/xterm.css';
 
-/** Full-screen TUI apps that need all keys passed through to the PTY */
-const TUI_APPS = new Set([
-  'vim', 'vi', 'nvim', 'nano', 'htop', 'top', 'btop', 'less', 'man',
-  'tmux', 'screen', 'emacs', 'micro', 'helix', 'mc', 'ranger', 'lazygit',
-]);
-
-/**
- * Extract the bare process name from a process title that may be a full path.
- * Handles both Unix (/usr/bin/vim) and Windows (C:\...\nvim.exe) formats.
- */
-function extractProcessName(title: string): string {
-  // Split on both forward and back slashes, take the last segment
-  const basename = title.split(/[/\\]/).pop() || '';
-  // Strip a trailing .exe (case-insensitive) for Windows
-  return basename.replace(/\.exe$/i, '').toLowerCase();
-}
-
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 const TerminalSpinner: React.FC = () => {
@@ -744,16 +727,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const unsubscribeOutput = window.electronAPI.events.onTerminalOutput(outputHandler);
           console.log('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
 
-          // Track foreground process for TUI key passthrough.
-          // Two complementary signals are used:
-          //   1. Process title (works on native shells; unreliable on WSL where it reports wsl.exe)
-          //   2. Alternate screen buffer (works universally — emitted when vim/less/etc. enter/exit)
-          const unsubscribeTitleChange = window.electronAPI.events.onTerminalTitleChanged((data: { panelId: string; processTitle: string }) => {
-            if (data.panelId === panel.id) {
-              tuiActiveRef.current = TUI_APPS.has(extractProcessName(data.processTitle));
-            }
-          });
-
+          // Detect full-screen TUI apps (vim, htop, etc.) via alternate screen buffer.
+          // This is universal — all well-behaved TUI apps enter alternate screen via
+          // \x1b[?1049h and leave via \x1b[?1049l. No hardcoded app list needed.
           const unsubscribeAltScreen = window.electronAPI.events.onTerminalAlternateScreen((data: { panelId: string; active: boolean }) => {
             if (data.panelId === panel.id) {
               tuiActiveRef.current = data.active;
@@ -761,14 +737,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           });
 
           // Initialize TUI mode for already-running programs (e.g. vim was
-          // left open and the panel remounted). Without this, tuiActiveRef
-          // stays false until the next onData from the PTY triggers a title
-          // change event, which may never happen if the TUI is idle.
-          window.electronAPI.invoke('terminal:getProcessInfo', panel.id)
+          // left open and the panel remounted).
+          window.electronAPI.invoke('terminal:getAltScreenState', panel.id)
             .then((info: unknown) => {
-              if (disposed || !info || typeof info !== 'object') return;
-              const { processTitle, isAlternateScreen } = info as { processTitle: string; isAlternateScreen: boolean };
-              tuiActiveRef.current = isAlternateScreen || TUI_APPS.has(extractProcessName(processTitle));
+              if (disposed || info == null || typeof info !== 'object') return;
+              const { isAlternateScreen } = info as { isAlternateScreen: boolean };
+              tuiActiveRef.current = isAlternateScreen;
             })
             .catch(() => { /* terminal may not exist yet — ignore */ });
 
@@ -848,7 +822,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             resizeObserver.disconnect();
             if (resizeTimer) clearTimeout(resizeTimer);
             unsubscribeOutput();
-            unsubscribeTitleChange();
             unsubscribeAltScreen();
             unsubscribeExited();
             unsubscribeFontUpdate();

@@ -33,8 +33,7 @@ interface TerminalProcess {
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
-  lastProcessTitle: string;
-  // Alternate screen buffer tracking (for TUI detection in WSL where pty.process is unreliable)
+  // Alternate screen buffer tracking — universal TUI detection signal
   isAlternateScreen: boolean;
 }
 
@@ -236,7 +235,6 @@ export class TerminalPanelManager {
       pauseSafetyTimer: null,
       outputBuffer: '',
       outputFlushTimer: null,
-      lastProcessTitle: '',
       isAlternateScreen: false
     };
     
@@ -393,19 +391,7 @@ export class TerminalPanelManager {
       // Update last activity
       terminal.lastActivity = new Date();
 
-      // Detect foreground process title changes (e.g. shell -> vim -> shell)
-      const currentTitle = terminal.pty.process;
-      if (currentTitle !== terminal.lastProcessTitle) {
-        terminal.lastProcessTitle = currentTitle;
-        if (mainWindow) {
-          mainWindow.webContents.send('terminal:titleChanged', {
-            panelId: terminal.panelId,
-            processTitle: currentTitle
-          });
-        }
-      }
-
-      // Detect alternate screen buffer enter/exit for reliable TUI detection
+      // Detect alternate screen buffer enter/exit for universal TUI detection
       // (works on WSL where pty.process reports wsl.exe instead of the Linux foreground app)
       // \x1b[?1049h = enter alternate screen, \x1b[?1049l = leave alternate screen
       const enterAlt = data.includes('\x1b[?1049h');
@@ -771,17 +757,14 @@ export class TerminalPanelManager {
   }
 
   /**
-   * Returns the current foreground process title and alternate screen state
-   * for a terminal panel.  Used by the renderer to initialize TUI detection
-   * when a panel remounts while a full-screen program is already running.
+   * Returns the alternate screen buffer state for a terminal panel.
+   * Used by the renderer to initialize TUI detection when a panel
+   * remounts while a full-screen program is already running.
    */
-  getProcessInfo(panelId: string): { processTitle: string; isAlternateScreen: boolean } | null {
+  getAltScreenState(panelId: string): { isAlternateScreen: boolean } | null {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return null;
-    return {
-      processTitle: terminal.pty.process,
-      isAlternateScreen: terminal.isAlternateScreen
-    };
+    return { isAlternateScreen: terminal.isAlternateScreen };
   }
 
   saveSerializedSnapshot(panelId: string, serializedData: string): void {

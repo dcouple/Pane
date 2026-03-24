@@ -409,9 +409,9 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     terminalPanelManager.resetFlowControl(panelId);
   });
 
-  // Get current foreground process info for TUI detection on panel mount
-  ipcMain.handle('terminal:getProcessInfo', async (_, panelId: string) => {
-    return terminalPanelManager.getProcessInfo(panelId);
+  // Get alternate screen state for TUI detection on panel mount
+  ipcMain.handle('terminal:getAltScreenState', async (_, panelId: string) => {
+    return terminalPanelManager.getAltScreenState(panelId);
   });
 
   // Save a pasted image to ~/.pane/images/ and return the file path with image number
