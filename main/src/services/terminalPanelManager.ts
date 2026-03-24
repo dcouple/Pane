@@ -14,7 +14,6 @@ const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
 const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
-const OUTPUT_HARD_LIMIT = 1_048_576; // 1MB — drop oldest data if buffer grows unbounded (renderer frozen)
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
 
@@ -34,6 +33,7 @@ interface TerminalProcess {
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
+  lastProcessTitle: string;
 }
 
 export class TerminalPanelManager {
@@ -165,7 +165,7 @@ export class TerminalPanelManager {
     }
   }
 
-  async initializeTerminal(panel: ToolPanel, cwd: string, wslContext?: WSLContext | null, priority: number = 1): Promise<void> {
+  async initializeTerminal(panel: ToolPanel, cwd: string, wslContext?: WSLContext | null, priority: number = 1, initialDimensions?: { cols: number; rows: number }): Promise<void> {
     if (this.terminals.has(panel.id)) {
       return;
     }
@@ -202,9 +202,9 @@ export class TerminalPanelManager {
 
     // Create PTY process with enhanced environment
     const ptyProcess = pty.spawn(shellPath, shellArgs, {
-      name: 'xterm-color',
-      cols: 80,
-      rows: 30,
+      name: 'xterm-256color',
+      cols: initialDimensions?.cols || 80,
+      rows: initialDimensions?.rows || 30,
       cwd: spawnCwd,
       env: {
         ...process.env,
@@ -233,7 +233,8 @@ export class TerminalPanelManager {
       isPaused: false,
       pauseSafetyTimer: null,
       outputBuffer: '',
-      outputFlushTimer: null
+      outputFlushTimer: null,
+      lastProcessTitle: ''
     };
     
     // Store in map
@@ -373,7 +374,7 @@ export class TerminalPanelManager {
       isInitialized: true,
       cwd: cwd,
       shellType: path.basename(shellPath),
-      dimensions: { cols: 80, rows: 30 }
+      dimensions: { cols: initialDimensions?.cols || 80, rows: initialDimensions?.rows || 30 }
     } as TerminalPanelState;
 
     await panelManager.updatePanel(panel.id, { state });
@@ -388,7 +389,19 @@ export class TerminalPanelManager {
     terminal.pty.onData((data: string) => {
       // Update last activity
       terminal.lastActivity = new Date();
-      
+
+      // Detect foreground process title changes (e.g. shell -> vim -> shell)
+      const currentTitle = terminal.pty.process;
+      if (currentTitle !== terminal.lastProcessTitle) {
+        terminal.lastProcessTitle = currentTitle;
+        if (mainWindow) {
+          mainWindow.webContents.send('terminal:titleChanged', {
+            panelId: terminal.panelId,
+            processTitle: currentTitle
+          });
+        }
+      }
+
       // Add to scrollback buffer
       this.addToScrollback(terminal, data);
       
@@ -428,11 +441,6 @@ export class TerminalPanelManager {
       
       // Buffer output for batching instead of sending immediately
       terminal.outputBuffer += data;
-
-      // Hard limit: if renderer is frozen and buffer grows unbounded, drop oldest data
-      if (terminal.outputBuffer.length > OUTPUT_HARD_LIMIT) {
-        terminal.outputBuffer = terminal.outputBuffer.slice(-OUTPUT_BATCH_SIZE);
-      }
 
       if (terminal.outputBuffer.length >= OUTPUT_BATCH_SIZE) {
         // Buffer is large enough — flush immediately

@@ -288,7 +288,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   });
   
   // Panel initialization (lazy loading)
-  ipcMain.handle('panels:initialize', async (_, panelId: string, options?: { cwd?: string; sessionId?: string }) => {
+  ipcMain.handle('panels:initialize', async (_, panelId: string, options?: { cwd?: string; sessionId?: string; cols?: number; rows?: number }) => {
 
     const panel = panelManager.getPanel(panelId);
     if (!panel) {
@@ -315,7 +315,8 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
         }
       }
 
-      await terminalPanelManager.initializeTerminal(panel, cwd, wslContext);
+      const initialDimensions = (options?.cols && options?.rows) ? { cols: options.cols, rows: options.rows } : undefined;
+      await terminalPanelManager.initializeTerminal(panel, cwd, wslContext, undefined, initialDimensions);
     }
 
     return true;

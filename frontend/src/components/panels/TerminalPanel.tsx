@@ -21,6 +21,12 @@ import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
 import '@xterm/xterm/css/xterm.css';
 
+/** Full-screen TUI apps that need all keys passed through to the PTY */
+const TUI_APPS = new Set([
+  'vim', 'vi', 'nvim', 'nano', 'htop', 'top', 'btop', 'less', 'man',
+  'tmux', 'screen', 'emacs', 'micro', 'helix', 'mc', 'ranger', 'lazygit',
+]);
+
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 const TerminalSpinner: React.FC = () => {
@@ -64,6 +70,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
+  const tuiActiveRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -194,9 +201,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Initialize backend PTY process
           console.log('[TerminalPanel] Initializing backend PTY process...');
           // Use workingDirectory and sessionId if available, but don't require them
+          // Use actual container dimensions for PTY spawn (falls back to 80x30 on backend)
+          const containerRect = terminalRef.current?.getBoundingClientRect();
+          const estimatedCols = containerRect ? Math.floor(containerRect.width / 8) : undefined; // rough char width estimate
+          const estimatedRows = containerRect ? Math.floor(containerRect.height / 17) : undefined; // rough char height estimate
           await window.electronAPI.invoke('panels:initialize', panel.id, {
             cwd: workingDirectory || process.cwd(),
-            sessionId: sessionId || panel.sessionId
+            sessionId: sessionId || panel.sessionId,
+            cols: estimatedCols && estimatedCols >= 20 ? estimatedCols : undefined,
+            rows: estimatedRows && estimatedRows >= 5 ? estimatedRows : undefined,
           });
           console.log('[TerminalPanel] Backend PTY process initialized');
         } else {
@@ -258,6 +271,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
         // Intercept app-level shortcuts before xterm consumes them
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+          // When a TUI app is running, pass ALL keys through to the PTY
+          if (tuiActiveRef.current) return true;
+
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
           // Ctrl/Cmd+1-9: switch sessions
@@ -456,7 +472,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Ack batching for flow control
           const ACK_BATCH_SIZE = 10_000; // 10KB
           const ACK_BATCH_INTERVAL = 100; // ms
-          const ACK_HEARTBEAT_INTERVAL = 500; // ms - safety heartbeat to flush any pending acks
           let pendingAckBytes = 0;
           let ackFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -471,9 +486,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               window.electronAPI.invoke('terminal:ack', panel.id, bytes);
             }
           };
-
-          // Heartbeat: periodically flush any pending acks as a safety net
-          const heartbeatInterval = setInterval(flushAck, ACK_HEARTBEAT_INTERVAL);
 
           // Periodically save serialized snapshot so it's available on app quit
           // (main process can't call SerializeAddon — only the renderer can)
@@ -693,20 +705,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             if (data && typeof data === 'object' && 'panelId' in data && data.panelId && 'output' in data) {
               const typedData = data as { panelId: string; output: string };
               if (typedData.panelId === panel.id && terminal && !disposed) {
-                // FIX: Send ack IMMEDIATELY when data is received, not when write completes
-                // This prevents PTY from pausing when XTerm is overwhelmed by high-frequency TUI updates
-                pendingAckBytes += typedData.output.length;
-                if (pendingAckBytes >= ACK_BATCH_SIZE) {
-                  flushAck();
-                } else if (!ackFlushTimer) {
-                  ackFlushTimer = setTimeout(flushAck, ACK_BATCH_INTERVAL);
-                }
-
-                // Write to terminal — if user is near bottom, snap back after write
-                // completes to prevent the viewport jumping to top on large output chunks
                 const shouldSnap = isNearBottomRef.current;
+                const outputLength = typedData.output.length;
                 terminal.write(typedData.output, () => {
-                  if (shouldSnap && terminal && !disposed) {
+                  if (disposed) return;
+                  // Ack AFTER xterm has rendered the data — proper backpressure
+                  pendingAckBytes += outputLength;
+                  if (pendingAckBytes >= ACK_BATCH_SIZE) {
+                    flushAck();
+                  } else if (!ackFlushTimer) {
+                    ackFlushTimer = setTimeout(flushAck, ACK_BATCH_INTERVAL);
+                  }
+                  if (shouldSnap && terminal) {
                     terminal.scrollToBottom();
                   }
                 });
@@ -717,6 +727,21 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
           const unsubscribeOutput = window.electronAPI.events.onTerminalOutput(outputHandler);
           console.log('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
+
+          // Track foreground process for TUI key passthrough
+          const unsubscribeTitleChange = window.electronAPI.events.onTerminalTitleChanged((data: { panelId: string; processTitle: string }) => {
+            if (data.panelId === panel.id) {
+              const processName = data.processTitle.split('/').pop()?.toLowerCase() || '';
+              tuiActiveRef.current = TUI_APPS.has(processName);
+            }
+          });
+
+          // Handle terminal process exit
+          const unsubscribeExited = window.electronAPI.events.onTerminalExited((data: { sessionId: string; panelId: string; exitCode: number }) => {
+            if (data.panelId === panel.id && terminal && !disposed) {
+              terminal.write(`\r\n\x1b[90m[Process exited with code ${data.exitCode}]\x1b[0m\r\n`);
+            }
+          });
 
           // Subscribe to live terminal font updates from Settings
           const unsubscribeFontUpdate = window.electronAPI.events.onTerminalFontUpdated((data: { terminalFontFamily: string; terminalFontSize: number }) => {
@@ -777,13 +802,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const terminalElement = terminalRef.current;
           return () => {
             disposed = true;
-            clearInterval(heartbeatInterval);
             clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
             resizeObserver.disconnect();
             if (resizeTimer) clearTimeout(resizeTimer);
             unsubscribeOutput();
+            unsubscribeTitleChange();
+            unsubscribeExited();
             unsubscribeFontUpdate();
             inputDisposable.dispose();
             scrollDisposable.dispose();

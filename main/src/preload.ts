@@ -564,6 +564,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('terminal:cliReady', wrappedCallback);
     },
 
+    onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; panelId: string; exitCode: number }) => callback(data);
+      ipcRenderer.on('terminal:exited', wrappedCallback);
+      return () => ipcRenderer.removeListener('terminal:exited', wrappedCallback);
+    },
+
+    onTerminalTitleChanged: (callback: (data: { panelId: string; processTitle: string }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { panelId: string; processTitle: string }) => callback(data);
+      ipcRenderer.on('terminal:titleChanged', wrappedCallback);
+      return () => ipcRenderer.removeListener('terminal:titleChanged', wrappedCallback);
+    },
+
     // Spotlight events
     onSpotlightStatusChanged: (callback: (data: { sessionId: string; projectId: number; active: boolean }) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; projectId: number; active: boolean }) => callback(data);
