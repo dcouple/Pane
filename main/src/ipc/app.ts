@@ -1,5 +1,5 @@
 import { IpcMain, shell } from 'electron';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import type { AppServices } from './types';
 
 export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): void {
@@ -25,7 +25,7 @@ export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): vo
         // On macOS, shell.openExternal can fail silently due to permission/entitlement issues.
         // Use the native `open` command which works reliably.
         await new Promise<void>((resolve, reject) => {
-          exec(`open ${JSON.stringify(url)}`, (error) => {
+          execFile('open', [url], (error) => {
             if (error) reject(error);
             else resolve();
           });
@@ -54,7 +54,7 @@ export function registerAppHandlers(ipcMain: IpcMain, services: AppServices): vo
         // On macOS, shell.showItemInFolder can fail silently.
         // Use `open -R` which reveals the file in Finder reliably.
         await new Promise<void>((resolve, reject) => {
-          exec(`open -R ${JSON.stringify(filePath)}`, (error) => {
+          execFile('open', ['-R', filePath], (error) => {
             if (error) reject(error);
             else resolve();
           });
