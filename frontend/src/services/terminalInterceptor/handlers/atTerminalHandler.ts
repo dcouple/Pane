@@ -42,8 +42,10 @@ export function createAtTerminalHandler(
 
   let state: AtTerminalHandlerState = createDefaultState();
   let filteredTerminals: TerminalSuggestion[] = [];
+  let currentFilter: string = ''; // tracks the latest filter for async reapply
 
   const updateFiltered = (filter: string): void => {
+    currentFilter = filter;
     filteredTerminals = filterTerminals(state.terminals, filter);
     // Clamp selectedIndex
     if (filteredTerminals.length > 0) {
@@ -72,13 +74,8 @@ export function createAtTerminalHandler(
       getTerminals()
         .then((terminals) => {
           state = { ...state, terminals };
-          updateFiltered(
-            // filterBuffer is managed externally; re-filter with current terminals
-            // We cannot access filterBuffer here, but filteredTerminals will be
-            // recalculated the next time a filter update happens.
-            // For initial load, apply no filter since buffer is empty at activation.
-            '',
-          );
+          // Reapply the current filter — the user may have typed while we were loading
+          updateFiltered(currentFilter);
           onStateChange();
         })
         .catch(() => {
@@ -191,6 +188,7 @@ export function createAtTerminalHandler(
     onDeactivate(): void {
       state = createDefaultState();
       filteredTerminals = [];
+      currentFilter = '';
     },
 
     getState(): AtTerminalHandlerState {

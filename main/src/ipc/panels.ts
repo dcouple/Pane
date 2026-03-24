@@ -439,8 +439,24 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
 
   ipcMain.handle('terminal:getScrollbackClean', async (_, panelId: string, lines: number) => {
     try {
-      const rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+      // Try live in-memory scrollback first (active terminals)
+      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+
+      // Fall back to persisted scrollback for lazy/inactive terminals
       if (rawScrollback === null) {
+        const panel = panelManager.getPanel(panelId);
+        const customState = panel?.state?.customState;
+        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
+          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
+          if (typeof persisted === 'string') {
+            rawScrollback = persisted;
+          } else if (Array.isArray(persisted)) {
+            rawScrollback = persisted.join('\n');
+          }
+        }
+      }
+
+      if (rawScrollback === null || rawScrollback === '') {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 

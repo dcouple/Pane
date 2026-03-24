@@ -63,11 +63,14 @@ export class TerminalInterceptor {
         this.buffer += data;
         return { consumed: true };
 
-      case 'cancel':
-        // Flush the buffer as-is (without the cancel character)
-        this._onFlush(this.buffer);
+      case 'cancel': {
+        // Flush the buffer + the cancel character to PTY so nothing is lost.
+        // e.g., typing "@foo " flushes "@foo " (including the space that canceled).
+        const toFlush = this.buffer + data;
         this.deactivate();
+        this._onFlush(toFlush);
         return { consumed: true };
+      }
 
       case 'execute':
         this.deactivate();
