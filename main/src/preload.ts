@@ -163,6 +163,13 @@ try {
       console.error('Failed to dispatch synthetic-keydown to window:', e);
     }
   });
+  ipcRenderer.on('browser-panel:popup-requested', (_event: unknown, data: { url: string; sourceSessionId: string; sourcePanelId: string }) => {
+    try {
+      window.dispatchEvent(new CustomEvent('browser-panel:popup-requested', { detail: data }));
+    } catch (e) {
+      console.error('Failed to dispatch browser-panel:popup-requested to window:', e);
+    }
+  });
 } catch (e) {
   // Ignore if IPC is not available for some reason
 }

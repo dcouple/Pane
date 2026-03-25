@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { webviewContextMap } from '../index';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
@@ -633,4 +634,12 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   ipcMain.handle('panels:shouldAutoCreate', async (_, sessionId: string, panelType: string) => {
     return panelManager.shouldAutoCreatePanel(sessionId, panelType);
   });
+
+  // Register a webview's panel/session context so the did-attach-webview popup handler
+  // (in index.ts) can route popups to the correct browser panel.
+  ipcMain.handle('browser-panel:register-webview', async (_, wcId: number, panelId: string, sessionId: string) => {
+    webviewContextMap.set(wcId, { panelId, sessionId });
+    return { success: true };
+  });
+
 }

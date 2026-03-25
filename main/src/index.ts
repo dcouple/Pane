@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -50,6 +50,18 @@ import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 
 export let mainWindow: BrowserWindow | null = null;
+
+// Map webContentsId → {panelId, sessionId} for webview popup interception.
+// Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
+export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
+
+// Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
+const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
+let devToolsHandlersRegistered = false;
+
+// Track partitions that already have the localhost header-stripping hook registered,
+// so we don't add duplicate listeners when multiple webviews share the same partition.
+const registeredPartitions = new Set<string>();
 
 // Module-level shutdown guard to prevent multiple shutdown attempts
 let shutdownInProgress = false;
@@ -202,7 +214,8 @@ async function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webviewTag: true
     },
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset',
@@ -218,6 +231,124 @@ async function createWindow() {
   // Increase max listeners to prevent warning when many panels are active
   // Each panel can register multiple event listeners
   mainWindow.webContents.setMaxListeners(100);
+
+  // Security hook: strip preload and enforce sandbox on any webview tags
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, _params) => {
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+  });
+
+  // Set up popup interception on webviews IMMEDIATELY when they attach (before any page loads).
+  // This prevents the race condition where a page calls window.open() before dom-ready fires.
+  // The context map (panelId/sessionId) is populated later by the browser-panel:register-webview IPC.
+  mainWindow.webContents.on('did-attach-webview', (_event, wvContents: WebContents) => {
+    wvContents.setWindowOpenHandler(({ url }) => {
+      const ctx = webviewContextMap.get(wvContents.id);
+      if (ctx) {
+        mainWindow?.webContents.send('browser-panel:popup-requested', {
+          url,
+          sourceSessionId: ctx.sessionId,
+          sourcePanelId: ctx.panelId,
+        });
+      } else {
+        // Context not yet registered (popup fired before dom-ready).
+        // Fall back to opening in the system browser so the popup isn't silently lost.
+        shell.openExternal(url);
+      }
+      return { action: 'deny' };
+    });
+    wvContents.setBackgroundThrottling(true);
+
+    // Apply the same localhost header-stripping to the webview's session/partition.
+    // Without this, webview partitions don't inherit the defaultSession's onHeadersReceived
+    // hook, so localhost apps that send X-Frame-Options headers would be blocked.
+    // Only register once per partition to avoid duplicate listeners accumulating.
+    const wvSession = wvContents.session;
+    const partitionKey = wvSession.storagePath ?? 'default';
+    if (wvSession !== session.defaultSession && !registeredPartitions.has(partitionKey)) {
+      registeredPartitions.add(partitionKey);
+      wvSession.webRequest.onHeadersReceived(
+        { urls: [
+          'http://localhost:*/*', 'http://127.0.0.1:*/*',
+          'https://localhost:*/*', 'https://127.0.0.1:*/*',
+          'http://[::1]:*/*', 'https://[::1]:*/*'
+        ] },
+        (details, callback) => {
+          const responseHeaders = { ...details.responseHeaders };
+          for (const key of Object.keys(responseHeaders)) {
+            if (key.toLowerCase() === 'x-frame-options') {
+              delete responseHeaders[key];
+            }
+            if (key.toLowerCase() === 'content-security-policy') {
+              responseHeaders[key] = responseHeaders[key].map((value: string) =>
+                value.replace(/frame-ancestors\s+[^;]+;?\s*/gi, '')
+              );
+            }
+          }
+          callback({ responseHeaders });
+        }
+      );
+    }
+  });
+
+  // Inline DevTools: create a WebContentsView overlay at the specified bounds.
+  // WebContentsView from the main process satisfies setDevToolsWebContents' requirement
+  // that the target has never navigated (webview-to-webview is broken since Electron 3).
+  // Guard: only register once (createWindow can be called again on macOS activate).
+  if (!devToolsHandlersRegistered) {
+  devToolsHandlersRegistered = true;
+  ipcMain.handle('browser-panel:open-devtools-inline', async (_, pageWcId: number, bounds: { x: number; y: number; width: number; height: number }) => {
+    try {
+      const pageWC = webContents.fromId(pageWcId);
+      if (!pageWC || !mainWindow) return { success: false, error: 'WebContents or window not found' };
+
+      // Clean up any existing devtools view for this page
+      const existing = activeDevToolsViews.get(pageWcId);
+      if (existing) {
+        mainWindow.contentView.removeChildView(existing);
+        existing.webContents.close();
+      }
+
+      const devtoolsView = new WebContentsView();
+      mainWindow.contentView.addChildView(devtoolsView);
+      devtoolsView.setBounds(bounds);
+
+      pageWC.setDevToolsWebContents(devtoolsView.webContents);
+      pageWC.openDevTools({ mode: 'detach' });
+
+      activeDevToolsViews.set(pageWcId, devtoolsView);
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to open inline devtools:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('browser-panel:resize-devtools', async (_, pageWcId: number, bounds: { x: number; y: number; width: number; height: number }) => {
+    const view = activeDevToolsViews.get(pageWcId);
+    if (view) view.setBounds(bounds);
+    return { success: true };
+  });
+
+  ipcMain.handle('browser-panel:close-devtools', async (_, pageWcId: number) => {
+    try {
+      const view = activeDevToolsViews.get(pageWcId);
+      if (view && mainWindow) {
+        mainWindow.contentView.removeChildView(view);
+        view.webContents.close();
+        activeDevToolsViews.delete(pageWcId);
+      }
+      const pageWC = webContents.fromId(pageWcId);
+      if (pageWC) pageWC.closeDevTools();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to close devtools:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+  } // end devToolsHandlersRegistered guard
 
   // Prevent Ctrl+W / Cmd+W from closing the Electron window so the renderer
   // can use it to close tabs. We intercept at before-input-event and re-emit
