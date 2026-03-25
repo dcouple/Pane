@@ -167,13 +167,16 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     }
   }, [devToolsOpen, devToolsWidth]);
 
-  // Also update bounds when the window resizes
+  // Update DevTools overlay bounds whenever the placeholder div changes size.
+  // ResizeObserver catches ALL layout changes — window resize, bottom pane expanding,
+  // sidebar toggling, etc. — not just window resize events.
   useEffect(() => {
-    if (!devToolsOpen) return;
+    if (!devToolsOpen || !devToolsInitializedRef.current) return;
+    const el = devToolsPlaceholderRef.current;
+    if (!el) return;
 
-    const handleResize = () => {
-      const el = devToolsPlaceholderRef.current;
-      if (!el || !pageWcIdRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (!pageWcIdRef.current) return;
       const rect = el.getBoundingClientRect();
       const scaleFactor = window.devicePixelRatio || 1;
       const bounds = {
@@ -183,10 +186,9 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
         height: Math.round(rect.height * scaleFactor),
       };
       window.electronAPI?.invoke('browser-panel:resize-devtools', pageWcIdRef.current, bounds);
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
   }, [devToolsOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
