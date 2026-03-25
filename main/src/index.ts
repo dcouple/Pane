@@ -769,6 +769,15 @@ async function initializeServices() {
   sessionManager = new SessionManager(databaseService, analyticsManager);
   sessionManager.initializeFromDatabase();
 
+  // Bump WSL inotify limits if any WSL projects exist (limits don't persist across WSL reboots)
+  if (process.platform === 'win32') {
+    const hasWSLProjects = databaseService.getAllProjects().some(p => p.wsl_enabled);
+    if (hasWSLProjects) {
+      const { bumpWSLInotifyLimits } = await import('./utils/wslUtils');
+      bumpWSLInotifyLimits();
+    }
+  }
+
   archiveProgressManager = new ArchiveProgressManager();
 
   spotlightManager = new SpotlightManager(sessionManager, logger, () => mainWindow);
