@@ -63,10 +63,6 @@ export interface AppConfig {
     };
     showAdvanced?: boolean;
     baseBranch?: string;
-    commitModeSettings?: {
-      mode?: 'checkpoint' | 'incremental' | 'single';
-      checkpointPrefix?: string;
-    };
   };
   // Pane commit footer setting (enabled by default)
   enableCommitFooter?: boolean;
@@ -130,10 +126,6 @@ export interface UpdateConfigRequest {
     };
     showAdvanced?: boolean;
     baseBranch?: string;
-    commitModeSettings?: {
-      mode?: 'checkpoint' | 'incremental' | 'single';
-      checkpointPrefix?: string;
-    };
   };
   disableCommitFooter?: boolean;
   // Disable automatic context tracking after Claude responses

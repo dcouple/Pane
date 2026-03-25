@@ -52,12 +52,6 @@ export function CreateSessionButton() {
         permissionMode: 'ignore', // Use default permission mode
         toolType,
         projectId: activeProject.id,
-        autoCommit: true,
-        commitMode: 'checkpoint',
-        commitModeSettings: JSON.stringify({ 
-          mode: 'checkpoint',
-          checkpointPrefix: 'checkpoint: '
-        })
       });
 
       if (!response.success) {

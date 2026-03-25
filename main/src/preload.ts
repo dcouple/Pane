@@ -317,7 +317,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generateName: (prompt: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:generate-name', prompt),
     rename: (sessionId: string, newName: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:rename', sessionId, newName),
     toggleFavorite: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:toggle-favorite', sessionId),
-    toggleAutoCommit: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:toggle-auto-commit', sessionId),
 
     // Resume session operations
     getResumable: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-resumable'),

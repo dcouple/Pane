@@ -13,7 +13,6 @@ import { PermissionManager } from '../../permissionManager';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { AbstractCliManager } from '../cli/AbstractCliManager';
 import { withLock } from '../../../utils/mutex';
-import { enhancePromptForStructuredCommit } from '../../../utils/promptEnhancer';
 import { getAppDirectory } from '../../../utils/appDirectory';
 
 // Extend global object for MCP configuration storage  
@@ -161,11 +160,6 @@ export class ClaudeCodeManager extends AbstractCliManager {
       this.logger?.verbose(`Using auto model selection (Claude Code's default)`);
     }
 
-    // Log commit mode for debugging (but don't pass to Claude Code)
-    if (dbSession?.commit_mode) {
-      this.logger?.verbose(`Session uses commit mode: ${dbSession.commit_mode}`);
-    }
-
     // Handle permission mode
     const defaultMode = this.configManager?.getConfig()?.defaultPermissionMode || 'ignore';
     const effectiveMode = permissionMode || defaultMode;
@@ -201,12 +195,11 @@ export class ClaudeCodeManager extends AbstractCliManager {
       }
       // If a new prompt is provided, add it (unless interactive mode - then sent via stdin)
       if (prompt && prompt.trim() && !isInteractive) {
-        const finalPrompt = enhancePromptForStructuredCommit(prompt, dbSession || { id: sessionId }, this.logger);
-        args.push('-p', finalPrompt);
+        args.push('-p', prompt);
       }
     } else if (!isInteractive) {
       // Initial prompt for new session (non-interactive mode only)
-      let finalPrompt = enhancePromptForStructuredCommit(prompt, dbSession || { id: sessionId }, this.logger);
+      let finalPrompt = prompt;
 
       // Add system prompts for new sessions
       const systemPromptAppend = this.buildSystemPromptAppend(dbSession ? { ...dbSession, project_id: dbSession.project_id } : { id: sessionId });
@@ -572,9 +565,8 @@ export class ClaudeCodeManager extends AbstractCliManager {
         await this.waitForReady(panelId);
         console.log(`[ClaudeCodeManager] Claude ready, sending initial prompt via stdin for panel ${panelId}`);
 
-        // Enhance the prompt for structured commits before sending
         const dbSession = this.sessionManager.getDbSession(sessionId);
-        let finalPrompt = enhancePromptForStructuredCommit(prompt, dbSession || { id: sessionId }, this.logger);
+        let finalPrompt = prompt;
 
         // Add system prompts for new sessions
         const systemPromptAppend = this.buildSystemPromptAppend(dbSession ? { ...dbSession, project_id: dbSession.project_id } : { id: sessionId });
@@ -644,9 +636,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
       if (useInteractive && this.isProcessRunning(panelId) && !shouldSkipContinue) {
         console.log(`[ClaudeCodeManager] INTERACTIVE MODE: Process running, sending via stdin for panel ${panelId}`);
         try {
-          // Enhance the prompt before sending
-          const finalPrompt = enhancePromptForStructuredCommit(prompt, dbSession || { id: sessionId }, this.logger);
-          this.sendInput(panelId, finalPrompt);
+          this.sendInput(panelId, prompt);
           console.log(`[ClaudeCodeManager] Sent prompt via stdin for panel ${panelId} (no respawn needed)`);
           return;
         } catch (error) {
@@ -685,8 +675,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
         try {
           await this.waitForReady(panelId);
           console.log(`[ClaudeCodeManager] Claude ready after resume, sending prompt via stdin for panel ${panelId}`);
-          const finalPrompt = enhancePromptForStructuredCommit(prompt, dbSession || { id: sessionId }, this.logger);
-          this.sendInput(panelId, finalPrompt);
+          this.sendInput(panelId, prompt);
         } catch (error) {
           console.error(`[ClaudeCodeManager] Interactive resume failed for panel ${panelId}: ${error}`);
           // Don't retry in headless mode here - the process already has --resume

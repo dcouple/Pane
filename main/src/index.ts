@@ -31,7 +31,6 @@ import { Logger } from './utils/logger';
 import { ArchiveProgressManager } from './services/archiveProgressManager';
 import { AnalyticsManager } from './services/analyticsManager';
 import { SpotlightManager } from './services/spotlightManager';
-import { initializeCommitManager } from './services/commitManager';
 import { resourceMonitorService } from './services/resourceMonitorService';
 import { setAppDirectory, migrateDataDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
@@ -746,9 +745,6 @@ async function initializeServices() {
   logger = new Logger(configManager);
   console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
   
-  // Initialize commitManager with configManager
-  initializeCommitManager(configManager, logger);
-
   // Use the same database path as the original backend
   const dbPath = configManager.getDatabasePath();
   databaseService = new DatabaseService(dbPath);

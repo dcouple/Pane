@@ -14,9 +14,6 @@ export interface Project {
   displayOrder?: number;
   worktree_folder?: string | null;
   lastUsedModel?: string;
-  commit_mode?: "structured" | "checkpoint" | "disabled";
-  commit_structured_prompt_template?: string;
-  commit_checkpoint_prefix?: string;
   wsl_enabled?: boolean;
   wsl_distribution?: string | null;
   environment?: ProjectEnvironment;
@@ -38,9 +35,6 @@ export interface CreateProjectRequest {
   runScript?: string;
   buildScript?: string;
   openIdeCommand?: string;
-  commitMode?: "structured" | "checkpoint" | "disabled";
-  commitStructuredPromptTemplate?: string;
-  commitCheckpointPrefix?: string;
   wsl_enabled?: boolean;
   wsl_distribution?: string | null;
 }
@@ -55,9 +49,6 @@ export interface UpdateProjectRequest {
   open_ide_command?: string | null;
   worktree_folder?: string | null;
   lastUsedModel?: string;
-  commit_mode?: "structured" | "checkpoint" | "disabled";
-  commit_structured_prompt_template?: string;
-  commit_checkpoint_prefix?: string;
   wsl_enabled?: boolean;
   wsl_distribution?: string | null;
 }

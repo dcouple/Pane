@@ -244,14 +244,11 @@ export class SessionManager extends EventEmitter {
       folderId: dbSession.folder_id,
       displayOrder: dbSession.display_order, // Include displayOrder for proper sorting
       isFavorite: dbSession.is_favorite,
-      autoCommit: dbSession.auto_commit,
       // Model is now managed at panel level
       toolType: normalizedToolType,
       archived: dbSession.archived || false,
       baseCommit: dbSession.base_commit,
       baseBranch: dbSession.base_branch,
-      commitMode: dbSession.commit_mode,
-      commitModeSettings: dbSession.commit_mode_settings,
       pr_renamed: !!dbSession.pr_renamed
     };
   }
@@ -316,13 +313,10 @@ export class SessionManager extends EventEmitter {
     permissionMode?: 'approve' | 'ignore',
     projectId?: number,
     isMainRepo?: boolean,
-    autoCommit?: boolean,
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
-    baseBranch?: string,
-    commitMode?: 'structured' | 'checkpoint' | 'disabled',
-    commitModeSettings?: string
+    baseBranch?: string
   ): Promise<Session> {
     return await withLock(`session-creation`, async () => {
       return this.createSessionWithId(
@@ -334,13 +328,10 @@ export class SessionManager extends EventEmitter {
         permissionMode,
         projectId,
         isMainRepo,
-        autoCommit,
         folderId,
         toolType,
         baseCommit,
-        baseBranch,
-        commitMode,
-        commitModeSettings
+        baseBranch
       );
     });
   }
@@ -354,13 +345,10 @@ export class SessionManager extends EventEmitter {
     permissionMode?: 'approve' | 'ignore',
     projectId?: number,
     isMainRepo?: boolean,
-    autoCommit?: boolean,
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
-    baseBranch?: string,
-    commitMode?: 'structured' | 'checkpoint' | 'disabled',
-    commitModeSettings?: string
+    baseBranch?: string
   ): Session {
     // Ensure this session ID isn't already being created
     if (this.activeSessions.has(id) || this.db.getSession(id)) {
@@ -395,13 +383,10 @@ export class SessionManager extends EventEmitter {
       folder_id: folderId,
       permission_mode: permissionMode,
       is_main_repo: isMainRepo,
-      auto_commit: autoCommit,
       // Model is now managed at panel level
       base_commit: baseCommit,
       base_branch: baseBranch,
-      tool_type: toolType,
-      commit_mode: commitMode,
-      commit_mode_settings: commitModeSettings
+      tool_type: toolType
     };
 
     const dbSession = this.db.createSession(sessionData);
@@ -439,7 +424,7 @@ export class SessionManager extends EventEmitter {
         used_claude_code: toolType === 'claude',
         used_auto_name: false, // Will be updated by caller if auto-name was used
         auto_name_available: true, // Auto-naming is always available
-        git_mode: isMainRepo ? 'main_repo' : commitMode || 'disabled',
+        git_mode: isMainRepo ? 'main_repo' : 'disabled',
         existing_active_sessions_count: activeSessions.length,
         existing_total_sessions_count: allSessions.length,
         existing_archived_sessions_count: archivedSessions.length,
@@ -495,13 +480,10 @@ export class SessionManager extends EventEmitter {
         project.default_permission_mode || 'ignore', // Default to 'ignore' if not set
         projectId,
         true, // isMainRepo = true
-        true, // autoCommit = true (default for main repo sessions)
         undefined, // folderId
         'claude', // tool_type
         baseCommit,
-        baseBranch,
-        project.commit_mode, // Use project's commit mode
-        undefined // commit_mode_settings - let it use project defaults
+        baseBranch
       );
       
       await panelManager.ensureExplorerPanel(session.id);

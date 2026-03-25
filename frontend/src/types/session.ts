@@ -96,14 +96,11 @@ export interface Session {
   isMainRepo?: boolean;
   displayOrder?: number;
   isFavorite?: boolean;
-  autoCommit?: boolean;
   toolType?: 'claude' | 'none';
   archived?: boolean;
   gitStatus?: GitStatus;
   baseCommit?: string;
   baseBranch?: string;
-  commitMode?: 'structured' | 'checkpoint' | 'disabled';
-  commitModeSettings?: string; // JSON string of CommitModeSettings
 }
 
 export interface GitStatus {
@@ -143,10 +140,7 @@ export interface CreateSessionRequest {
   folderId?: string;
   isMainRepo?: boolean;
   baseBranch?: string;
-  autoCommit?: boolean;
   toolType?: 'claude' | 'none';
-  commitMode?: 'structured' | 'checkpoint' | 'disabled';
-  commitModeSettings?: string; // JSON string of CommitModeSettings
   claudeConfig?: {
     model?: string;
     permissionMode?: 'approve' | 'ignore';

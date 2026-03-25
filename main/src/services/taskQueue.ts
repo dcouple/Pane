@@ -36,10 +36,7 @@ interface CreateSessionJob {
   folderId?: string;
   isMainRepo?: boolean;
   baseBranch?: string;
-  autoCommit?: boolean;
   toolType?: 'claude' | 'none';
-  commitMode?: 'structured' | 'checkpoint' | 'disabled';
-  commitModeSettings?: string; // JSON string of CommitModeSettings
 }
 
 interface ContinueSessionJob {
@@ -141,7 +138,7 @@ export class TaskQueue {
     const sessionConcurrency = isLinux ? 1 : 5;
     
     this.sessionQueue.process(sessionConcurrency, async (job) => {
-      const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, autoCommit, toolType } = job.data;
+      const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType } = job.data;
       const { sessionManager, worktreeManager, claudeCodeManager } = this.options;
 
       // Processing session creation job - verbose debug logging removed
@@ -226,13 +223,10 @@ export class TaskQueue {
           permissionMode,
           targetProject.id,
           false, // is_main_repo stays false — reserved for internal singleton.
-          autoCommit,
           job.data.folderId,
           toolType,
           baseCommit,
-          actualBaseBranch,
-          job.data.commitMode,
-          job.data.commitModeSettings
+          actualBaseBranch
         );
 
         // Only add prompt-related data if there's actually a prompt
@@ -449,10 +443,7 @@ export class TaskQueue {
     permissionMode?: 'approve' | 'ignore',
     projectId?: number,
     baseBranch?: string,
-    autoCommit?: boolean,
     toolType?: 'claude' | 'none',
-    commitMode?: 'structured' | 'checkpoint' | 'disabled',
-    commitModeSettings?: string,
     providedFolderId?: string,
     isMainRepo?: boolean
   ): Promise<(Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string })[]> {
@@ -503,7 +494,7 @@ export class TaskQueue {
     for (let i = 0; i < count; i++) {
       // Use the generated base name if no template was provided
       const templateToUse = worktreeTemplate || generatedBaseName || '';
-      jobs.push(this.sessionQueue.add({ prompt, worktreeTemplate: templateToUse, index: i, permissionMode, projectId, folderId, isMainRepo, baseBranch, autoCommit, toolType, commitMode, commitModeSettings }));
+      jobs.push(this.sessionQueue.add({ prompt, worktreeTemplate: templateToUse, index: i, permissionMode, projectId, folderId, isMainRepo, baseBranch, toolType }));
     }
     return Promise.all(jobs);
   }

@@ -1018,18 +1018,6 @@ export const useSessionView = (
     }
   };
 
-  const handleToggleAutoCommit = async () => {
-    if (!activeSession) return;
-    try {
-      const response = await API.sessions.toggleAutoCommit(activeSession.id);
-      if (!response.success) {
-        console.error('Failed to toggle auto-commit:', response.error);
-      }
-    } catch (error) {
-      console.error('Error toggling auto-commit:', error);
-    }
-  };
-
   const handleSetUpstream = async (remoteBranch: string): Promise<boolean> => {
     if (!activeSession) return false;
     setIsMerging(true);
@@ -1533,7 +1521,6 @@ export const useSessionView = (
     handleGitStash,
     handleGitStashPop,
     handleGitStageAndCommit,
-    handleToggleAutoCommit,
     handleSetUpstream,
     handleRebaseMainIntoWorktree,
     handleAbortRebaseAndUseClaude,
