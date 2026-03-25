@@ -37,9 +37,14 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const [devToolsOpen, setDevToolsOpen] = useState(false);
 
   const webviewRef = useRef<Electron.WebviewTag>(null);
-  const devToolsWebviewRef = useRef<Electron.WebviewTag>(null);
+  const devToolsPlaceholderRef = useRef<HTMLDivElement>(null);
   const persistTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const panelIdRef = useRef(panel.id);
+
+  // Track the page webContentsId for DevTools IPC calls
+  const pageWcIdRef = useRef<number | null>(null);
+  // Track whether we've already created the WebContentsView for the current open session
+  const devToolsInitializedRef = useRef(false);
 
   const addPanel = usePanelStore((state) => state.addPanel);
   const setActivePanelInStore = usePanelStore((state) => state.setActivePanel);
@@ -78,6 +83,15 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     return () => clearTimeout(persistTimeoutRef.current);
   }, []);
 
+  // Close DevTools WebContentsView when component unmounts
+  useEffect(() => {
+    return () => {
+      if (pageWcIdRef.current) {
+        window.electronAPI?.invoke('browser-panel:close-devtools', pageWcIdRef.current);
+      }
+    };
+  }, []);
+
   const persistState = useCallback((newUrl: string) => {
     clearTimeout(persistTimeoutRef.current);
     persistTimeoutRef.current = setTimeout(() => {
@@ -112,26 +126,68 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     webviewRef.current?.reload();
   };
 
-  // Store the page webContentsId so we can pass it to the main process for devtools wiring
-  const pageWcIdRef = useRef<number | null>(null);
-
-  const handleToggleDevTools = async () => {
-    if (!webviewRef.current) return;
+  const handleToggleDevTools = useCallback(async () => {
+    if (!pageWcIdRef.current) return;
     if (devToolsOpen) {
-      // Close DevTools via main process and hide the column
-      if (pageWcIdRef.current) {
-        await window.electronAPI?.invoke('browser-panel:close-devtools', pageWcIdRef.current);
-      }
+      await window.electronAPI?.invoke('browser-panel:close-devtools', pageWcIdRef.current);
+      devToolsInitializedRef.current = false;
       setDevToolsOpen(false);
     } else {
-      // Tell main process to wire the NEXT webview that attaches as devtools,
-      // then mount the devtools webview (which triggers did-attach-webview).
-      const wcId = webviewRef.current.getWebContentsId();
-      pageWcIdRef.current = wcId;
-      await window.electronAPI?.invoke('browser-panel:prepare-devtools', wcId);
       setDevToolsOpen(true);
+      // Bounds will be sent in the useEffect below after the placeholder renders
     }
-  };
+  }, [devToolsOpen]);
+
+  // Send devtools placeholder bounds to main process when DevTools opens or the column resizes
+  useEffect(() => {
+    if (!devToolsOpen) {
+      devToolsInitializedRef.current = false;
+      return;
+    }
+
+    const el = devToolsPlaceholderRef.current;
+    if (!el || !pageWcIdRef.current) return;
+
+    const rect = el.getBoundingClientRect();
+    const scaleFactor = window.devicePixelRatio || 1;
+    const bounds = {
+      x: Math.round(rect.x * scaleFactor),
+      y: Math.round(rect.y * scaleFactor),
+      width: Math.round(rect.width * scaleFactor),
+      height: Math.round(rect.height * scaleFactor),
+    };
+
+    if (!devToolsInitializedRef.current) {
+      // First open — create the WebContentsView
+      devToolsInitializedRef.current = true;
+      window.electronAPI?.invoke('browser-panel:open-devtools-inline', pageWcIdRef.current, bounds);
+    } else {
+      // Resize — just reposition the existing view
+      window.electronAPI?.invoke('browser-panel:resize-devtools', pageWcIdRef.current, bounds);
+    }
+  }, [devToolsOpen, devToolsWidth]);
+
+  // Also update bounds when the window resizes
+  useEffect(() => {
+    if (!devToolsOpen) return;
+
+    const handleResize = () => {
+      const el = devToolsPlaceholderRef.current;
+      if (!el || !pageWcIdRef.current) return;
+      const rect = el.getBoundingClientRect();
+      const scaleFactor = window.devicePixelRatio || 1;
+      const bounds = {
+        x: Math.round(rect.x * scaleFactor),
+        y: Math.round(rect.y * scaleFactor),
+        width: Math.round(rect.width * scaleFactor),
+        height: Math.round(rect.height * scaleFactor),
+      };
+      window.electronAPI?.invoke('browser-panel:resize-devtools', pageWcIdRef.current, bounds);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [devToolsOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +203,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
 
     const onDomReady = () => {
       const wcId = webview.getWebContentsId();
+      pageWcIdRef.current = wcId;
       window.electronAPI?.invoke('browser-panel:register-webview', wcId, panel.id, panel.sessionId);
     };
 
@@ -334,17 +391,17 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
             style={{ display: 'inline-flex' }}
           />
 
-          {/* DevTools resize handle + inline column */}
+          {/* DevTools resize handle + placeholder div (overlaid by WebContentsView from main process) */}
           {devToolsOpen && (
             <>
               <div
                 className="w-1 cursor-col-resize flex-shrink-0 bg-border-primary hover:bg-border-focus transition-colors"
                 onMouseDown={startDevToolsResize}
               />
-              <webview
-                ref={devToolsWebviewRef}
-                className="border-0 flex-shrink-0"
-                style={{ display: 'inline-flex', width: devToolsWidth }}
+              <div
+                ref={devToolsPlaceholderRef}
+                className="flex-shrink-0 bg-bg-primary"
+                style={{ width: devToolsWidth }}
               />
             </>
           )}

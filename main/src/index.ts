@@ -12,7 +12,7 @@ if (process.platform === 'linux') {
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import { TaskQueue } from './services/taskQueue';
@@ -55,12 +55,8 @@ export let mainWindow: BrowserWindow | null = null;
 // Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
 export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
 
-// When set, the next webview that attaches will be wired as a DevTools target
-// for the page webContents with this ID. Cleared after use.
-let pendingDevToolsPageWcId: number | null = null;
-export function setPendingDevToolsPageWcId(wcId: number | null): void {
-  pendingDevToolsPageWcId = wcId;
-}
+// Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
+const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
 
 // Track partitions that already have the localhost header-stripping hook registered,
 // so we don't add duplicate listeners when multiple webviews share the same partition.
@@ -247,18 +243,6 @@ async function createWindow() {
   // This prevents the race condition where a page calls window.open() before dom-ready fires.
   // The context map (panelId/sessionId) is populated later by the browser-panel:register-webview IPC.
   mainWindow.webContents.on('did-attach-webview', (_event, wvContents: WebContents) => {
-    // If a devtools request is pending, wire this webview as the DevTools target
-    // BEFORE it navigates (setDevToolsWebContents requires un-navigated WebContents).
-    if (pendingDevToolsPageWcId !== null) {
-      const pageWC = webContents.fromId(pendingDevToolsPageWcId);
-      pendingDevToolsPageWcId = null;
-      if (pageWC) {
-        pageWC.setDevToolsWebContents(wvContents);
-        pageWC.openDevTools();
-        return; // Don't set popup handler etc. on devtools webview
-      }
-    }
-
     wvContents.setWindowOpenHandler(({ url }) => {
       const ctx = webviewContextMap.get(wvContents.id);
       if (ctx) {
@@ -305,6 +289,59 @@ async function createWindow() {
           callback({ responseHeaders });
         }
       );
+    }
+  });
+
+  // Inline DevTools: create a WebContentsView overlay at the specified bounds.
+  // WebContentsView from the main process satisfies setDevToolsWebContents' requirement
+  // that the target has never navigated (webview-to-webview is broken since Electron 3).
+  ipcMain.handle('browser-panel:open-devtools-inline', async (_, pageWcId: number, bounds: { x: number; y: number; width: number; height: number }) => {
+    try {
+      const pageWC = webContents.fromId(pageWcId);
+      if (!pageWC || !mainWindow) return { success: false, error: 'WebContents or window not found' };
+
+      // Clean up any existing devtools view for this page
+      const existing = activeDevToolsViews.get(pageWcId);
+      if (existing) {
+        mainWindow.contentView.removeChildView(existing);
+        existing.webContents.close();
+      }
+
+      const devtoolsView = new WebContentsView();
+      mainWindow.contentView.addChildView(devtoolsView);
+      devtoolsView.setBounds(bounds);
+
+      pageWC.setDevToolsWebContents(devtoolsView.webContents);
+      pageWC.openDevTools({ mode: 'detach' });
+
+      activeDevToolsViews.set(pageWcId, devtoolsView);
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to open inline devtools:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  });
+
+  ipcMain.handle('browser-panel:resize-devtools', async (_, pageWcId: number, bounds: { x: number; y: number; width: number; height: number }) => {
+    const view = activeDevToolsViews.get(pageWcId);
+    if (view) view.setBounds(bounds);
+    return { success: true };
+  });
+
+  ipcMain.handle('browser-panel:close-devtools', async (_, pageWcId: number) => {
+    try {
+      const view = activeDevToolsViews.get(pageWcId);
+      if (view && mainWindow) {
+        mainWindow.contentView.removeChildView(view);
+        view.webContents.close();
+        activeDevToolsViews.delete(pageWcId);
+      }
+      const pageWC = webContents.fromId(pageWcId);
+      if (pageWC) pageWC.closeDevTools();
+      return { success: true };
+    } catch (error) {
+      console.error('[IPC] Failed to close devtools:', error);
+      return { success: false, error: (error as Error).message };
     }
   });
 
