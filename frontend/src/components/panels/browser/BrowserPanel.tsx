@@ -188,6 +188,10 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       window.electronAPI?.invoke('browser-panel:resize-devtools', pageWcIdRef.current, bounds);
     });
     observer.observe(el);
+    // Also observe the parent container — when the detail panel collapses/expands,
+    // the parent's width changes (shifting the placeholder's X position) but the
+    // placeholder's own size stays the same, so we need both.
+    if (el.parentElement) observer.observe(el.parentElement);
     return () => observer.disconnect();
   }, [devToolsOpen]);
 
