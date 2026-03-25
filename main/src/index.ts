@@ -57,6 +57,7 @@ export const webviewContextMap = new Map<number, { panelId: string; sessionId: s
 
 // Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
 const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
+let devToolsHandlersRegistered = false;
 
 // Track partitions that already have the localhost header-stripping hook registered,
 // so we don't add duplicate listeners when multiple webviews share the same partition.
@@ -295,6 +296,9 @@ async function createWindow() {
   // Inline DevTools: create a WebContentsView overlay at the specified bounds.
   // WebContentsView from the main process satisfies setDevToolsWebContents' requirement
   // that the target has never navigated (webview-to-webview is broken since Electron 3).
+  // Guard: only register once (createWindow can be called again on macOS activate).
+  if (!devToolsHandlersRegistered) {
+  devToolsHandlersRegistered = true;
   ipcMain.handle('browser-panel:open-devtools-inline', async (_, pageWcId: number, bounds: { x: number; y: number; width: number; height: number }) => {
     try {
       const pageWC = webContents.fromId(pageWcId);
@@ -344,6 +348,7 @@ async function createWindow() {
       return { success: false, error: (error as Error).message };
     }
   });
+  } // end devToolsHandlersRegistered guard
 
   // Prevent Ctrl+W / Cmd+W from closing the Electron window so the renderer
   // can use it to close tabs. We intercept at before-input-event and re-emit
