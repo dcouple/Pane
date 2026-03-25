@@ -288,8 +288,32 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads from refs; re-registering on sessionId change is sufficient
   }, [panel.sessionId, panel.id, setActivePanelInStore]);
 
-  // Suppress unused warning for isActive — kept for API symmetry with other panels
-  void isActive;
+  // Hide/show DevTools overlay when switching between panel tabs.
+  // Close the WebContentsView when inactive so it doesn't cover other panels,
+  // and re-open it when this panel becomes active again.
+  useEffect(() => {
+    if (!devToolsOpen || !pageWcIdRef.current) return;
+    if (!isActive) {
+      // Panel became inactive — hide the overlay
+      window.electronAPI?.invoke('browser-panel:close-devtools', pageWcIdRef.current);
+      devToolsInitializedRef.current = false;
+    } else if (!devToolsInitializedRef.current) {
+      // Panel became active again — re-open devtools
+      const el = devToolsPlaceholderRef.current;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        const scaleFactor = window.devicePixelRatio || 1;
+        const bounds = {
+          x: Math.round(rect.x * scaleFactor),
+          y: Math.round(rect.y * scaleFactor),
+          width: Math.round(rect.width * scaleFactor),
+          height: Math.round(rect.height * scaleFactor),
+        };
+        devToolsInitializedRef.current = true;
+        window.electronAPI?.invoke('browser-panel:open-devtools-inline', pageWcIdRef.current, bounds);
+      }
+    }
+  }, [isActive, devToolsOpen]);
 
   return (
     <div className="flex flex-col h-full bg-bg-primary">
