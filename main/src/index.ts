@@ -771,10 +771,13 @@ async function initializeServices() {
 
   // Bump WSL inotify limits if any WSL projects exist (limits don't persist across WSL reboots)
   if (process.platform === 'win32') {
-    const hasWSLProjects = databaseService.getAllProjects().some(p => p.wsl_enabled);
-    if (hasWSLProjects) {
-      const { bumpWSLInotifyLimits } = await import('./utils/wslUtils');
-      bumpWSLInotifyLimits();
+    const wslDistros = databaseService.getAllProjects()
+      .filter(p => p.wsl_enabled && p.wsl_distribution)
+      .map(p => p.wsl_distribution!);
+    if (wslDistros.length > 0) {
+      import('./utils/wslUtils').then(({ bumpWSLInotifyLimits }) =>
+        bumpWSLInotifyLimits(wslDistros).catch(() => {})
+      );
     }
   }
 
