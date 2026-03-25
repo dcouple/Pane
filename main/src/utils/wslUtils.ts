@@ -119,6 +119,31 @@ export function getWSLContextFromProject(project: {
 }
 
 /**
+ * Bump inotify limits inside WSL so file watchers (Claude Code, VS Code, etc.) don't exhaust them.
+ * WSL2 doesn't persist sysctl changes across reboots, so this runs on every app launch.
+ * Uses -u root to avoid sudo password prompts. Async and fire-and-forget — failures are silently ignored.
+ */
+export async function bumpWSLInotifyLimits(distros: string[]): Promise<void> {
+  if (process.platform !== 'win32' || distros.length === 0) return;
+
+  const { execFile } = await import('child_process');
+  const { promisify } = await import('util');
+  const execFileAsync = promisify(execFile);
+
+  const unique = [...new Set(distros)];
+  await Promise.allSettled(
+    unique.map(distro =>
+      execFileAsync('wsl.exe', [
+        '-d', distro, '-u', 'root', '--',
+        'sysctl', '-w',
+        'fs.inotify.max_user_watches=2147483647',
+        'fs.inotify.max_user_instances=8192',
+      ], { timeout: 10000 })
+    )
+  );
+}
+
+/**
  * Validate that WSL is available and the specified distro is installed.
  * Returns error message if invalid, null if OK.
  */
