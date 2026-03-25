@@ -43,7 +43,11 @@ export class PathResolver {
 
   /** Compute relative path. Both arguments must be filesystem-format paths (UNC for WSL, native for other platforms). */
   relative(from: string, to: string): string {
-    return path.relative(from, to);
+    const rel = path.relative(from, to);
+    if (this.environment === 'wsl') {
+      return rel.replace(/\\/g, '/');
+    }
+    return rel;
   }
 
   /** Check if targetPath is within basePath — resolves symlinks. Both must be filesystem-format paths (UNC for WSL, native for other platforms). */
