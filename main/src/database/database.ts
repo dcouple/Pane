@@ -2710,8 +2710,8 @@ export class DatabaseService {
       this.db
         .prepare(
           `
-        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, auto_commit, tool_type, base_commit, base_branch)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, tool_type, base_commit, base_branch)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         )
         .run(
@@ -2725,7 +2725,6 @@ export class DatabaseService {
           data.permission_mode || "ignore",
           data.is_main_repo ? 1 : 0,
           displayOrder,
-          data.auto_commit !== undefined ? (data.auto_commit ? 1 : 0) : 1,
           data.tool_type || "claude",
           data.base_commit || null,
           data.base_branch || null,
@@ -2852,10 +2851,6 @@ export class DatabaseService {
       updates.push("is_favorite = ?");
       values.push(data.is_favorite ? 1 : 0);
     }
-    if (data.auto_commit !== undefined) {
-      updates.push("auto_commit = ?");
-      values.push(data.auto_commit ? 1 : 0);
-    }
     if (data.skip_continue_next !== undefined) {
       updates.push("skip_continue_next = ?");
       const boolValue = data.skip_continue_next ? 1 : 0;
@@ -2873,12 +2868,11 @@ export class DatabaseService {
       return this.getSession(id);
     }
 
-    // Only update the updated_at timestamp if we're changing something other than is_favorite, auto_commit, skip_continue_next, or pr_renamed
+    // Only update the updated_at timestamp if we're changing something other than is_favorite, skip_continue_next, or pr_renamed
     // This prevents the session from showing as "unviewed" when just toggling these settings
     const isOnlyToggleUpdate =
       updates.length === 1 &&
       (updates[0] === "is_favorite = ?" ||
-        updates[0] === "auto_commit = ?" ||
         updates[0] === "skip_continue_next = ?" ||
         updates[0] === "pr_renamed = ?");
     if (!isOnlyToggleUpdate) {

@@ -52,7 +52,6 @@ export function CreateSessionButton() {
         permissionMode: 'ignore', // Use default permission mode
         toolType,
         projectId: activeProject.id,
-        autoCommit: true
       });
 
       if (!response.success) {

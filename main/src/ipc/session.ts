@@ -157,7 +157,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           request.permissionMode,
           targetProject.id,
           request.baseBranch,
-          request.autoCommit,
           sessionToolType,
           request.folderId,
           request.isMainRepo
@@ -173,7 +172,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           folderId: request.folderId,
           isMainRepo: request.isMainRepo,
           baseBranch: request.baseBranch,
-          autoCommit: request.autoCommit,
           toolType: sessionToolType
         });
 
@@ -1154,51 +1152,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         console.error('Error stack:', error.stack);
       }
       return { success: false, error: 'Failed to toggle favorite status' };
-    }
-  });
-
-  ipcMain.handle('sessions:toggle-auto-commit', async (_event, sessionId: string) => {
-    try {
-      console.log('[IPC] sessions:toggle-auto-commit called for sessionId:', sessionId);
-      
-      // Get current session to check current auto_commit status
-      const currentSession = databaseService.getSession(sessionId);
-      if (!currentSession) {
-        console.error('[IPC] Session not found in database:', sessionId);
-        return { success: false, error: 'Session not found' };
-      }
-      
-      console.log('[IPC] Current session auto_commit status:', currentSession.auto_commit);
-
-      // Toggle the auto_commit status
-      const newAutoCommitStatus = !(currentSession.auto_commit ?? true); // Default to true if not set
-      console.log('[IPC] Toggling auto_commit status to:', newAutoCommitStatus);
-      
-      const updatedSession = databaseService.updateSession(sessionId, { auto_commit: newAutoCommitStatus });
-      if (!updatedSession) {
-        console.error('[IPC] Failed to update session in database');
-        return { success: false, error: 'Failed to update session' };
-      }
-      
-      console.log('[IPC] Database updated successfully. Updated session auto_commit:', updatedSession.auto_commit);
-
-      // Emit update event so frontend gets notified
-      const session = sessionManager.getSession(sessionId);
-      if (session) {
-        session.autoCommit = newAutoCommitStatus;
-        console.log('[IPC] Emitting session-updated event with auto_commit status:', session.autoCommit);
-        sessionManager.emit('session-updated', session);
-      } else {
-        console.warn('[IPC] Session not found in session manager:', sessionId);
-      }
-
-      return { success: true, data: { autoCommit: newAutoCommitStatus } };
-    } catch (error) {
-      console.error('Failed to toggle auto-commit status:', error);
-      if (error instanceof Error) {
-        console.error('Error stack:', error.stack);
-      }
-      return { success: false, error: 'Failed to toggle auto-commit status' };
     }
   });
 

@@ -17,7 +17,6 @@ interface SessionInputProps {
   ) => Promise<void> | void;
   ultrathink: boolean;
   setUltrathink: (ultra: boolean) => void;
-  handleToggleAutoCommit: () => void;
 }
 
 export const SessionInput: React.FC<SessionInputProps> = ({
@@ -29,7 +28,6 @@ export const SessionInput: React.FC<SessionInputProps> = ({
   handleContinueConversation,
   ultrathink,
   setUltrathink,
-  handleToggleAutoCommit,
 }) => {
   const [selectedModel, setSelectedModel] = useState<string>('auto');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -123,10 +121,6 @@ export const SessionInput: React.FC<SessionInputProps> = ({
         <label className="flex items-center gap-2 cursor-pointer group" title="Triggers Claude Code to use its maximum thinking token limit. Slower but better for difficult tasks.">
           <input type="checkbox" checked={ultrathink} onChange={(e) => setUltrathink(e.target.checked)} className="h-4 w-4 text-interactive rounded border-border-primary focus:ring-interactive" />
           <span className="text-sm text-text-secondary">ultrathink</span>
-        </label>
-        <label className="flex items-center gap-2 cursor-pointer group" title="Automatically commit changes after each prompt">
-          <input type="checkbox" checked={activeSession.autoCommit ?? true} onChange={handleToggleAutoCommit} className="h-4 w-4 text-status-success rounded border-border-primary focus:ring-status-success" />
-          <span className="text-sm text-text-secondary">auto-commit</span>
         </label>
         {/* Model selector for continue conversation */}
         {activeSession.status !== 'waiting' && (

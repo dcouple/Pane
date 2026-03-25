@@ -96,7 +96,6 @@ export interface Session {
   isMainRepo?: boolean;
   displayOrder?: number;
   isFavorite?: boolean;
-  autoCommit?: boolean;
   toolType?: 'claude' | 'none';
   archived?: boolean;
   gitStatus?: GitStatus;
@@ -141,7 +140,6 @@ export interface CreateSessionRequest {
   folderId?: string;
   isMainRepo?: boolean;
   baseBranch?: string;
-  autoCommit?: boolean;
   toolType?: 'claude' | 'none';
   claudeConfig?: {
     model?: string;

@@ -244,7 +244,6 @@ export class SessionManager extends EventEmitter {
       folderId: dbSession.folder_id,
       displayOrder: dbSession.display_order, // Include displayOrder for proper sorting
       isFavorite: dbSession.is_favorite,
-      autoCommit: dbSession.auto_commit,
       // Model is now managed at panel level
       toolType: normalizedToolType,
       archived: dbSession.archived || false,
@@ -314,7 +313,6 @@ export class SessionManager extends EventEmitter {
     permissionMode?: 'approve' | 'ignore',
     projectId?: number,
     isMainRepo?: boolean,
-    autoCommit?: boolean,
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
@@ -330,7 +328,6 @@ export class SessionManager extends EventEmitter {
         permissionMode,
         projectId,
         isMainRepo,
-        autoCommit,
         folderId,
         toolType,
         baseCommit,
@@ -348,7 +345,6 @@ export class SessionManager extends EventEmitter {
     permissionMode?: 'approve' | 'ignore',
     projectId?: number,
     isMainRepo?: boolean,
-    autoCommit?: boolean,
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
@@ -387,7 +383,6 @@ export class SessionManager extends EventEmitter {
       folder_id: folderId,
       permission_mode: permissionMode,
       is_main_repo: isMainRepo,
-      auto_commit: autoCommit,
       // Model is now managed at panel level
       base_commit: baseCommit,
       base_branch: baseBranch,
@@ -485,7 +480,6 @@ export class SessionManager extends EventEmitter {
         project.default_permission_mode || 'ignore', // Default to 'ignore' if not set
         projectId,
         true, // isMainRepo = true
-        true, // autoCommit = true (default for main repo sessions)
         undefined, // folderId
         'claude', // tool_type
         baseCommit,

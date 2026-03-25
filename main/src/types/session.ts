@@ -20,7 +20,6 @@ export interface Session {
   projectId?: number;
   folderId?: string;
   isFavorite?: boolean;
-  autoCommit?: boolean;
   model?: string;
   toolType?: 'claude' | 'none';
   archived?: boolean;
@@ -67,7 +66,6 @@ export interface CreateSessionRequest {
   folderId?: string;
   isMainRepo?: boolean;
   baseBranch?: string;
-  autoCommit?: boolean;
   model?: string;
   toolType?: 'claude' | 'none';
   claudeConfig?: {
