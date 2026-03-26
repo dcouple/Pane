@@ -1091,6 +1091,7 @@ export const SessionView = memo(() => {
                     <PanelContainer
                       panel={defaultTerminalPanel}
                       isActive={true}
+                      autoFocus={false}
                       isMainRepo={!!activeSession.isMainRepo}
                     />
                   </div>
@@ -1237,6 +1238,7 @@ export const SessionView = memo(() => {
                         <PanelContainer
                           panel={defaultTerminalPanel}
                           isActive={true}
+                          autoFocus={false}
                           isMainRepo={!!activeSession.isMainRepo}
                         />
                       </div>

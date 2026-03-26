@@ -260,6 +260,67 @@ async function createWindow() {
     });
     wvContents.setBackgroundThrottling(true);
 
+    // Forward app hotkeys from webview to renderer.
+    // Webviews are separate processes — keyboard events inside them never reach
+    // the renderer's window listener where the hotkey system lives. Only intercept
+    // the specific Ctrl/Cmd+key combos that Pane actually handles, so that normal
+    // browser shortcuts (Ctrl+F, Ctrl+R, Ctrl+A in inputs, etc.) still work
+    // inside embedded browser panels.
+    // Whitelist of Pane hotkeys that should be forwarded from webviews.
+    // mod+key (no extra modifiers):
+    const paneHotkeys: ReadonlySet<string> = new Set([
+      'k', 'b', ',', 'n', 'a', 'd', 'w', 't', '`',
+      // mod+1..9 switch session, mod+Tab/ArrowDown cycle next
+      '1', '2', '3', '4', '5', '6', '7', '8', '9',
+      'tab', 'arrowdown', 'arrowup',
+    ]);
+    // mod+shift+key — matched by physical key code (Digit/Key) because
+    // input.key reports the shifted symbol (e.g. '!' for Shift+1) which
+    // varies by keyboard layout.
+    const paneShiftCodes: ReadonlySet<string> = new Set([
+      'KeyE', 'KeyN', 'KeyK', 'KeyP', 'KeyZ', 'KeyL', 'KeyR', 'KeyM',
+      'KeyB', 'KeyW', 'KeyD',
+      'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5',
+      'Digit6', 'Digit7', 'Digit8', 'Digit9',
+      'Tab', // mod+shift+Tab cycles prev session
+    ]);
+    wvContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const mod = input.control || input.meta;
+      if (!mod) return;
+
+      const key = input.key.toLowerCase();
+      const code = input.code;
+
+      // Skip AltGr: on Windows/Linux international layouts, AltGr reports
+      // control+alt simultaneously. We detect this as control+alt without
+      // meta, and only forward when the physical key is a letter, digit,
+      // or slash (the patterns used by Pane's mod+alt shortcuts). This
+      // prevents blocking character input like @, €, or \ on those layouts.
+      const isAltGr = input.control && input.alt && !input.meta
+        && !/^(Key[A-Z]|Digit[0-9]|Slash)$/.test(code);
+
+      // Determine if this combo matches a registered Pane hotkey.
+      // mod+alt combos are forwarded (user-configurable terminal shortcuts
+      // use mod+alt+<key>), but AltGr character input is excluded above.
+      const isPaneHotkey =
+        (input.alt && !isAltGr) ||
+        (input.shift && !input.alt && paneShiftCodes.has(code)) ||
+        (!input.shift && !input.alt && paneHotkeys.has(key));
+
+      if (!isPaneHotkey) return;
+
+      event.preventDefault();
+      mainWindow?.webContents.send('synthetic-keydown', {
+        key: input.key,
+        code: input.code,
+        ctrlKey: input.control,
+        metaKey: input.meta,
+        shiftKey: input.shift,
+        altKey: input.alt,
+      });
+    });
+
     // Apply the same localhost header-stripping to the webview's session/partition.
     // Without this, webview partitions don't inherit the defaultSession's onHeadersReceived
     // hook, so localhost apps that send X-Frame-Options headers would be blocked.
@@ -356,7 +417,8 @@ async function createWindow() {
     if ((input.control || input.meta) && input.key.toLowerCase() === 'w' && input.type === 'keyDown') {
       event.preventDefault();
       mainWindow?.webContents.send('synthetic-keydown', {
-        key: 'w',
+        key: input.key,
+        code: input.code,
         ctrlKey: input.control,
         metaKey: input.meta,
         shiftKey: input.shift,

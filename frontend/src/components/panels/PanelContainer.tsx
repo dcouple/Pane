@@ -32,7 +32,8 @@ const PanelErrorFallback: React.FC<{ error: Error; resetErrorBoundary: () => voi
 export const PanelContainer: React.FC<PanelContainerProps> = React.memo(({
   panel,
   isActive,
-  isMainRepo = false
+  isMainRepo = false,
+  autoFocus
 }) => {
   renderLog('[PanelContainer] Rendering panel:', panel.id, 'Type:', panel.type, 'Active:', isActive);
   
@@ -46,7 +47,7 @@ export const PanelContainer: React.FC<PanelContainerProps> = React.memo(({
     // Panel type rendering
     switch (panel.type) {
       case 'terminal':
-        return <TerminalPanel panel={panel} isActive={isActive} />;
+        return <TerminalPanel panel={panel} isActive={isActive} autoFocus={autoFocus} />;
       case 'diff':
         return <DiffPanel panel={panel} isActive={isActive} sessionId={panel.sessionId} isMainRepo={isMainRepo} />;
       case 'explorer':
@@ -76,7 +77,7 @@ export const PanelContainer: React.FC<PanelContainerProps> = React.memo(({
           </div>
         );
     }
-  }, [panel, isActive, isMainRepo]); // Include panel to catch state changes
+  }, [panel, isActive, isMainRepo, autoFocus]); // Include panel to catch state changes
 
   return (
     <ErrorBoundary

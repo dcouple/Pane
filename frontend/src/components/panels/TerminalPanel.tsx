@@ -57,7 +57,7 @@ function buildTerminalFontFamily(userFont: string): string {
   return `"${userFont}", "Symbols Nerd Font Mono", monospace`;
 }
 
-export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive }) => {
+export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
   renderLog('[TerminalPanel] Component rendering, panel:', panel.id, 'isActive:', isActive);
   
   // All hooks must be called at the top level, before any conditional returns
@@ -1090,12 +1090,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         if (rows > 0) {
           xtermRef.current!.refresh(0, rows - 1);
         }
-        xtermRef.current?.focus();
+        if (autoFocus) {
+          xtermRef.current?.focus();
+        }
       };
 
       requestAnimationFrame(fitTerminal);
     }
-  }, [isActive, panel.id, isInitialized]);
+  }, [isActive, panel.id, isInitialized, autoFocus]);
 
   useEffect(() => {
     if (!xtermRef.current) {
