@@ -32,7 +32,7 @@ import { ArchiveProgressManager } from './services/archiveProgressManager';
 import { AnalyticsManager } from './services/analyticsManager';
 import { SpotlightManager } from './services/spotlightManager';
 import { resourceMonitorService } from './services/resourceMonitorService';
-import { setAppDirectory, migrateDataDirectory } from './utils/appDirectory';
+import { setAppDirectory, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
 import { registerIpcHandlers } from './ipc';
 import { setupAutoUpdater } from './autoUpdater';
@@ -764,9 +764,18 @@ async function createWindow() {
     }
   };
 
-  // Log any renderer errors
-  mainWindow.webContents.on('render-process-gone', (event, details) => {
-    console.error('Renderer process crashed:', details);
+  // Handle renderer process crashes with recovery
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[Main] Renderer process crashed:', details.reason, details);
+    if (details.reason === 'crashed' || details.reason === 'oom' || details.reason === 'killed') {
+      // Attempt to reload the renderer
+      console.log('[Main] Attempting to recover renderer...');
+      try {
+        mainWindow?.webContents.reload();
+      } catch (err) {
+        console.error('[Main] Failed to reload renderer after crash:', err);
+      }
+    }
   });
 
   // Handle window focus/blur/minimize for smart git status polling
@@ -980,6 +989,24 @@ app.whenReady().then(async () => {
   console.log('[Main] Services initialized, creating window...');
   await createWindow();
   console.log('[Main] Window created successfully');
+
+  // Crash sentinel: detect if the previous session ended uncleanly.
+  // We write a file on startup and delete it on clean shutdown.
+  // If it exists at startup, the app crashed or the OS killed it.
+  const crashSentinelPath = path.join(getAppDirectory(), '.running');
+  try {
+    if (fs.existsSync(crashSentinelPath)) {
+      console.warn('[Main] Unclean shutdown detected — crash sentinel was still present');
+      // Notify the renderer once it's ready
+      mainWindow?.webContents.once('did-finish-load', () => {
+        mainWindow?.webContents.send('app:unclean-shutdown-detected');
+      });
+    }
+    // Write the sentinel for this session
+    fs.writeFileSync(crashSentinelPath, `${process.pid}\n${new Date().toISOString()}`);
+  } catch (err) {
+    console.warn('[Main] Failed to manage crash sentinel:', err);
+  }
 
   // Track app lifecycle events
   try {
@@ -1313,6 +1340,15 @@ app.on('before-quit', async (event) => {
     console.error('[Main] Error during graceful shutdown:', error);
   } finally {
     clearTimeout(shutdownSafetyTimeout);
+
+    // Remove crash sentinel — this was a clean shutdown
+    try {
+      const sentinelPath = path.join(getAppDirectory(), '.running');
+      if (fs.existsSync(sentinelPath)) {
+        fs.unlinkSync(sentinelPath);
+      }
+    } catch { /* best-effort */ }
+
     logToFile('Calling app.exit(0)');
     // Exit the app
     app.exit(0);

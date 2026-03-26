@@ -268,8 +268,9 @@ interface ElectronAPI {
     
     onTerminalOutput: (callback: (output: { sessionId: string; data: string; type: 'stdout' | 'stderr' }) => void) => () => void;
     onTerminalCliReady: (callback: (data: { panelId: string }) => void) => () => void;
-    onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number }) => void) => () => void;
+    onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => void) => () => void;
     onTerminalAlternateScreen: (callback: (data: { panelId: string; active: boolean }) => void) => () => void;
+    onUncleanShutdownDetected: (callback: () => void) => () => void;
     onMainLog: (callback: (level: string, message: string) => void) => () => void;
     onVersionUpdateAvailable: (callback: (versionInfo: VersionUpdateInfo) => void) => () => void;
     

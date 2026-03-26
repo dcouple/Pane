@@ -801,12 +801,21 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             .catch(() => { /* terminal may not exist yet — ignore */ });
 
           // Handle terminal process exit
-          const unsubscribeExited = window.electronAPI.events.onTerminalExited((data: { sessionId: string; panelId: string; exitCode: number }) => {
+          const unsubscribeExited = window.electronAPI.events.onTerminalExited((data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => {
             if (data.panelId === panel.id) {
               // Reset TUI passthrough so Pane shortcuts work again on the dead terminal
               tuiActiveRef.current = false;
               if (terminal && !disposed) {
-                terminal.write(`\r\n\x1b[90m[Process exited with code ${data.exitCode}]\x1b[0m\r\n`);
+                // Detect crash signals: SIGABRT(6), SIGBUS(7), SIGSEGV(11)
+                const crashSignals: Record<number, string> = { 6: 'SIGABRT', 7: 'SIGBUS', 11: 'SIGSEGV' };
+                const crashSignalName = data.signal ? crashSignals[data.signal] : null;
+
+                if (crashSignalName) {
+                  terminal.write(`\r\n\x1b[91m[Process crashed: ${crashSignalName}]\x1b[0m\r\n`);
+                  terminal.write(`\x1b[33m  Your system may be under memory pressure — check RAM usage.\x1b[0m\r\n`);
+                } else {
+                  terminal.write(`\r\n\x1b[90m[Process exited with code ${data.exitCode}]\x1b[0m\r\n`);
+                }
               }
             }
           });

@@ -773,6 +773,22 @@ export abstract class AbstractCliManager extends EventEmitter {
         }
       }
 
+      // Detect crash signals (SIGSEGV=11, SIGABRT=6, SIGBUS=7)
+      if (signal && [6, 7, 11].includes(signal)) {
+        const signalNames: Record<number, string> = { 6: 'SIGABRT', 7: 'SIGBUS', 11: 'SIGSEGV' };
+        const signalName = signalNames[signal] || `signal ${signal}`;
+        this.logger?.error(`${this.getCliToolName()} process crashed with ${signalName} for session ${sessionId} (panel ${panelId})`);
+
+        const crashMessage = `\n[Process Crash] ${this.getCliToolName()} was terminated by ${signalName}. Your system may be under memory pressure — check RAM usage.\n`;
+        this.emit('output', {
+          panelId,
+          sessionId,
+          type: 'stderr',
+          data: crashMessage,
+          timestamp: new Date()
+        } as CliOutputEvent);
+      }
+
       if (exitCode !== 0) {
         this.logger?.error(`${this.getCliToolName()} process failed for session ${sessionId}. Exit code: ${exitCode}, Signal: ${signal}`);
 

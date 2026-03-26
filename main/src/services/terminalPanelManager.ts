@@ -475,16 +475,17 @@ export class TerminalPanelManager {
           timestamp: new Date().toISOString()
         }
       );
-      
+
       // Clean up
       this.terminals.delete(terminal.panelId);
-      
-      // Notify frontend
+
+      // Notify frontend (include signal for crash detection)
       if (mainWindow) {
         mainWindow.webContents.send('terminal:exited', {
           sessionId: terminal.sessionId,
           panelId: terminal.panelId,
-          exitCode: exitCode.exitCode
+          exitCode: exitCode.exitCode,
+          signal: exitCode.signal ?? null
         });
       }
     });
@@ -524,7 +525,14 @@ export class TerminalPanelManager {
       return;
     }
     
-    terminal.pty.write(data);
+    try {
+      terminal.pty.write(data);
+    } catch (err) {
+      // PTY may have exited between the map lookup and the write call
+      console.warn(`[TerminalPanelManager] Failed to write to terminal ${panelId}:`, err);
+      this.terminals.delete(panelId);
+      return;
+    }
     terminal.lastActivity = new Date();
   }
   

@@ -176,6 +176,16 @@ function App() {
     fetchConfig();
   }, [fetchConfig]);
 
+  // Detect unclean shutdown from previous session and notify user
+  useEffect(() => {
+    return window.electronAPI.events.onUncleanShutdownDetected(() => {
+      showNotification(
+        'Pane didn\'t shut down cleanly',
+        'Your OS may have been overloaded. Check RAM usage if this keeps happening.'
+      );
+    });
+  }, []);
+
   // Fetch projects for global shortcuts
   useEffect(() => {
     const fetchProjects = async () => {

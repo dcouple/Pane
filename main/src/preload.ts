@@ -571,8 +571,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('terminal:cliReady', wrappedCallback);
     },
 
-    onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number }) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; panelId: string; exitCode: number }) => callback(data);
+    onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => callback(data);
       ipcRenderer.on('terminal:exited', wrappedCallback);
       return () => ipcRenderer.removeListener('terminal:exited', wrappedCallback);
     },
@@ -605,6 +605,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.removeAllListeners(channel);
     },
     
+    // Unclean shutdown detection (crash sentinel)
+    onUncleanShutdownDetected: (callback: () => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent) => callback();
+      ipcRenderer.on('app:unclean-shutdown-detected', wrappedCallback);
+      return () => ipcRenderer.removeListener('app:unclean-shutdown-detected', wrappedCallback);
+    },
+
     // Main process logging
     onMainLog: (callback: (level: string, message: string) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, level: string, message: string) => callback(level, message);
