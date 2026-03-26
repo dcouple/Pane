@@ -22,9 +22,11 @@ export interface PanelContainerProps {
   panel: ToolPanel;
   isActive: boolean;
   isMainRepo?: boolean;
+  autoFocus?: boolean;
 }
 
 export interface TerminalPanelProps {
   panel: ToolPanel;
   isActive: boolean;
+  autoFocus?: boolean;
 }
