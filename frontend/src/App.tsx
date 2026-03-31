@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useIPCEvents } from './hooks/useIPCEvents';
 import { useNotifications } from './hooks/useNotifications';
 import { useResizable } from './hooks/useResizable';
@@ -84,8 +84,23 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const activeProjectId = useNavigationStore(s => s.activeProjectId);
   const sidebarCollapsed = useNavigationStore(s => s.sidebarCollapsed);
-  const toggleSidebarCollapsed = useNavigationStore(s => s.toggleSidebarCollapsed);
+  const setSidebarCollapsed = useNavigationStore(s => s.setSidebarCollapsed);
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
+  const setImmersiveMode = useNavigationStore(s => s.setImmersiveMode);
+
+  // When in immersive mode, the sidebar is forced collapsed.
+  // The toggle button needs to clear immersive mode to expand, not just toggle sidebarCollapsed.
+  const handleToggleSidebar = useCallback(() => {
+    const isVisuallyCollapsed = immersiveMode || sidebarCollapsed;
+    if (isVisuallyCollapsed) {
+      // User wants to expand
+      if (immersiveMode) setImmersiveMode(false);
+      if (sidebarCollapsed) setSidebarCollapsed(false);
+    } else {
+      // User wants to collapse
+      setSidebarCollapsed(true);
+    }
+  }, [immersiveMode, sidebarCollapsed, setImmersiveMode, setSidebarCollapsed]);
   const { currentError, clearError } = useErrorStore();
   const { sessions, isLoaded } = useSessionStore();
   const { fetchConfig, config: appConfig } = useConfigStore();
@@ -118,7 +133,7 @@ function App() {
     label: 'Toggle Sidebar',
     keys: 'mod+b',
     category: 'view',
-    action: toggleSidebarCollapsed,
+    action: handleToggleSidebar,
   });
 
   useHotkey({
@@ -135,7 +150,7 @@ function App() {
     keys: 'mod+shift+e',
     category: 'navigation',
     action: () => {
-      if (sidebarCollapsed) toggleSidebarCollapsed();
+      if (sidebarCollapsed || immersiveMode) handleToggleSidebar();
     },
   });
 
@@ -531,7 +546,7 @@ function App() {
             width={sidebarWidth}
             onResize={startResize}
             collapsed={sidebarCollapsed}
-            onToggleCollapse={toggleSidebarCollapsed}
+            onToggleCollapse={handleToggleSidebar}
             onHelpClick={() => setIsHelpOpen(true)}
           />
         </div>
