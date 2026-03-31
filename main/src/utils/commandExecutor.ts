@@ -7,6 +7,23 @@ const nodeExecAsync = promisify(exec);
 const nodeExecFileAsync = promisify(execFile);
 
 /**
+ * Compute env vars that differ from the current process.env.
+ * These need to be forwarded explicitly into WSL bash sessions
+ * since wsl.exe does not automatically pass Windows env vars through.
+ */
+function getExtraEnvVars(mergedEnv?: Record<string, string | undefined>): Record<string, string> | undefined {
+  if (!mergedEnv) return undefined;
+  const extra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(mergedEnv)) {
+    if (key === 'PATH' || value === undefined) continue;
+    if (process.env[key] !== value) {
+      extra[key] = value;
+    }
+  }
+  return Object.keys(extra).length > 0 ? extra : undefined;
+}
+
+/**
  * Extended ExecSyncOptions that includes a custom 'silent' flag
  * to suppress command execution logging
  */
@@ -30,15 +47,16 @@ class CommandExecutor {
     if (wslContext) {
       // Invoke wsl.exe directly via execFileSync — bypasses cmd.exe entirely,
       // avoiding all cmd.exe escaping issues (%, ^, &, etc.)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { cwd: _cwd, silent: _silent, ...cleanOptions } = extendedOptions || {};
       const wslCwd = typeof cwd === 'string' ? cwd : undefined;
-      const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd);
+      const extraEnv = getExtraEnvVars(cleanOptions?.env as Record<string, string | undefined>);
+      const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
 
       if (!silentMode) {
         console.log(`[CommandExecutor] Executing (WSL): ${file} ${args.join(' ')} in ${cwd}`);
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { cwd: _cwd, silent: _silent, ...cleanOptions } = extendedOptions || {};
       const wslOptions = {
         ...cleanOptions,
         maxBuffer: cleanOptions?.maxBuffer || 10 * 1024 * 1024,
@@ -114,13 +132,13 @@ class CommandExecutor {
 
     if (wslContext) {
       // Invoke wsl.exe directly via execFile — bypasses cmd.exe entirely
-      const wslCwd = typeof cwd === 'string' ? cwd : undefined;
-      const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd);
-
-      console.log(`[CommandExecutor] Executing async (WSL): ${file} ${args.join(' ')} in ${cwd}`);
-
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { cwd: _cwd, ...cleanOptions } = options || {};
+      const wslCwd = typeof cwd === 'string' ? cwd : undefined;
+      const extraEnv = getExtraEnvVars(cleanOptions?.env as Record<string, string | undefined>);
+      const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
+
+      console.log(`[CommandExecutor] Executing async (WSL): ${file} ${args.join(' ')} in ${cwd}`);
       const timeout = cleanOptions?.timeout || 60_000;
       const maxBuffer = cleanOptions?.maxBuffer || 10 * 1024 * 1024;
       const wslOptions: ExecFileOptions = {

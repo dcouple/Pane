@@ -1,5 +1,20 @@
 import { execSync as nodeExecSync } from 'child_process';
 
+/**
+ * Escape a value for bash single quotes — always uses Unix-style escaping.
+ *
+ * This is intentionally NOT using escapeShellArg() from shellEscape.ts because
+ * that function is platform-aware (uses double quotes on win32). When building
+ * commands for WSL, the target shell is always Linux bash regardless of the host
+ * OS, so we must always use single-quote escaping to prevent $VAR / backtick
+ * expansion. Safe on Windows because the escaped string goes inside a bash -c
+ * argument passed to wsl.exe — it never touches cmd.exe or PowerShell.
+ */
+function escapeForBash(value: string): string {
+  if (!value) return "''";
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
 export interface WSLPathInfo {
   distro: string;
   linuxPath: string;
@@ -68,11 +83,17 @@ export function escapeForBashDoubleQuote(str: string): string {
  * Bypasses cmd.exe entirely, avoiding all cmd.exe escaping issues (%, ^, &, etc.).
  * If cwd provided, cd to it first inside the bash -c command.
  */
-export function getWSLExecArgs(command: string, distro: string, cwd?: string): { file: string; args: string[] } {
+export function getWSLExecArgs(command: string, distro: string, cwd?: string, extraEnv?: Record<string, string>): { file: string; args: string[] } {
   let bashCommand = command;
   if (cwd) {
     const escapedCwd = escapeForBashDoubleQuote(cwd);
     bashCommand = `cd '${escapedCwd}' && ${command}`;
+  }
+  if (extraEnv && Object.keys(extraEnv).length > 0) {
+    const exports = Object.entries(extraEnv)
+      .map(([key, value]) => `export ${key}=${escapeForBash(value)}`)
+      .join('; ');
+    bashCommand = `${exports}; ${bashCommand}`;
   }
   return {
     file: 'wsl.exe',
