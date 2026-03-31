@@ -727,6 +727,25 @@ export const SessionView = memo(() => {
     });
   }, []);
 
+  // Layout-aware detail panel toggle that also handles immersive mode override
+  const handleToggleDetailPanel = useCallback(() => {
+    if (immersiveMode) {
+      setImmersiveMode(false);
+      if (layoutSwapped) {
+        setIsDetailCollapsed(false);
+        localStorage.setItem('pane-detail-collapsed', 'false');
+      } else {
+        setDetailVisible(true);
+      }
+      return;
+    }
+    if (layoutSwapped) {
+      toggleDetailCollapse();
+    } else {
+      setDetailVisible(v => !v);
+    }
+  }, [immersiveMode, layoutSwapped, setImmersiveMode, toggleDetailCollapse]);
+
   // Terminal collapse state with localStorage persistence (collapsed by default)
   const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(() => {
     const stored = localStorage.getItem('pane-terminal-collapsed');
@@ -758,13 +777,7 @@ export const SessionView = memo(() => {
     keys: 'mod+shift+b',
     category: 'view',
     enabled: () => isInSessionView,
-    action: () => {
-      if (layoutSwapped) {
-        toggleDetailCollapse();
-      } else {
-        setDetailVisible(v => !v);
-      }
-    },
+    action: handleToggleDetailPanel,
   });
 
   // Create branch actions for the panel bar
@@ -943,13 +956,7 @@ export const SessionView = memo(() => {
           onPanelSelect={handlePanelSelect}
           onPanelClose={handlePanelClose}
           onPanelCreate={handlePanelCreate}
-          onToggleDetailPanel={() => {
-            if (layoutSwapped) {
-              toggleDetailCollapse();
-            } else {
-              setDetailVisible(v => !v);
-            }
-          }}
+          onToggleDetailPanel={handleToggleDetailPanel}
           detailPanelVisible={detailVisible}
         />
 
