@@ -881,7 +881,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   lines,
                 );
                 if (response?.success && response.data && terminal && !disposed) {
-                  terminal.paste(`${response.data.filePath}\n`);
+                  terminal.paste(response.data.filePath);
                   setToastMessage(`Embedded ${response.data.lineCount} lines from ${response.data.panelTitle}`);
                 } else {
                   setToastMessage('Failed — no scrollback available');
