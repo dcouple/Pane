@@ -49,6 +49,7 @@ interface SettingsProps {
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [_config, setConfig] = useState<AppConfig | null>(null);
   const [verbose, setVerbose] = useState(false);
+  const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [devMode, setDevMode] = useState(false);
   const [additionalPathsText, setAdditionalPathsText] = useState('');
@@ -144,6 +145,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setVerbose(data.verbose || false);
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
+      setClaudeExecutablePath(data.claudeExecutablePath || '');
       setEnableCommitFooter(data.enableCommitFooter !== false); // Default to true
       setUiScale(data.uiScale || 1.0);
       setTerminalFontFamily(data.terminalFontFamily || '');
@@ -214,6 +216,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         verbose,
         autoCheckUpdates,
         devMode,
+        claudeExecutablePath,
         enableCommitFooter,
         uiScale,
         additionalPaths: parsedPaths,
@@ -1144,6 +1147,46 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   />
                 </SettingsSection>
               )}
+
+              <SettingsSection
+                title="Custom Claude Installation"
+                description="Override the default Claude executable path"
+                icon={<FileText className="w-4 h-4" />}
+              >
+                <div className="flex gap-2">
+                  <input
+                    id="claudeExecutablePath"
+                    type="text"
+                    value={claudeExecutablePath}
+                    onChange={(e) => setClaudeExecutablePath(e.target.value)}
+                    className="flex-1 px-3 py-2 border border-border-primary rounded-md focus:outline-none focus:ring-2 focus:ring-interactive text-text-primary bg-surface-secondary"
+                    placeholder="/usr/local/bin/claude"
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      const result = await API.dialog.openFile({
+                        title: 'Select Claude Executable',
+                        buttonLabel: 'Select',
+                        properties: ['openFile'],
+                        filters: [
+                          { name: 'Executables', extensions: ['*'] }
+                        ]
+                      });
+                      if (result.success && result.data) {
+                        setClaudeExecutablePath(result.data);
+                      }
+                    }}
+                  >
+                    Browse
+                  </Button>
+                </div>
+                <p className="text-xs text-text-tertiary mt-1">
+                  Leave empty to use the 'claude' command from your system PATH.
+                </p>
+              </SettingsSection>
 
               <SettingsSection
                 title="Analytics"
