@@ -58,7 +58,6 @@ export class ConfigManager extends EventEmitter {
         posthogApiKey: 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1',
         posthogHost: 'https://us.i.posthog.com'
       },
-      disableAutoContext: true, // Default to disabled - users can manually run /context
       terminalShortcuts: [
         {
           id: 'default-root-cause',
@@ -309,10 +308,6 @@ export class ConfigManager extends EventEmitter {
 
   isAnalyticsEnabled(): boolean {
     return this.config.analytics?.enabled ?? false; // Opt-in: default to false
-  }
-
-  isAutoContextDisabled(): boolean {
-    return this.config.disableAutoContext === true;
   }
 
   getAnalyticsDistinctId(): string | undefined {
