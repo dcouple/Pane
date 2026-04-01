@@ -81,6 +81,9 @@ export const Modal: React.FC<ModalProps> = ({
   };
   
   const handleOverlayClick = (e: React.MouseEvent) => {
+    // If click target was removed from DOM (e.g. portal dropdown closed), don't close
+    if (e.target instanceof Node && !document.body.contains(e.target)) return;
+
     // Check if the click target is the modal content or its children
     const modalContent = modalRef.current;
     const isClickInsideModal = modalContent && e.target && e.target instanceof Node && modalContent.contains(e.target);

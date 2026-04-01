@@ -66,8 +66,6 @@ export interface AppConfig {
   };
   // Pane commit footer setting (enabled by default)
   enableCommitFooter?: boolean;
-  // Disable automatic context tracking after Claude responses
-  disableAutoContext?: boolean;
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
   // PostHog analytics settings
@@ -128,8 +126,6 @@ export interface UpdateConfigRequest {
     baseBranch?: string;
   };
   disableCommitFooter?: boolean;
-  // Disable automatic context tracking after Claude responses
-  disableAutoContext?: boolean;
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
   // PostHog analytics settings

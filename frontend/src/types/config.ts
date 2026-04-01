@@ -49,8 +49,6 @@ export interface AppConfig {
   };
   // Pane commit footer setting (enabled by default)
   enableCommitFooter?: boolean;
-  // Disable automatic context tracking after Claude responses
-  disableAutoContext?: boolean;
   // PostHog analytics settings
   analytics?: {
     enabled: boolean;

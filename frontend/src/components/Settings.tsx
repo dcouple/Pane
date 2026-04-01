@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { NotificationSettings } from './NotificationSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
@@ -8,11 +8,7 @@ import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSy
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import { useConfigStore } from '../stores/configStore';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
-import { useSessionStore } from '../stores/sessionStore';
-import { panelApi } from '../services/panelApi';
 import {
-  Shield,
-  ShieldOff,
   Settings as SettingsIcon,
   Palette,
   Zap,
@@ -20,20 +16,14 @@ import {
   FileText,
   Eye,
   BarChart3,
-  Activity,
   ChevronUp,
   ChevronDown,
   Terminal,
-  Cloud,
   Trash2,
-  Copy,
-  Check,
   Keyboard,
   Plus,
   Power,
   PowerOff,
-  Loader2,
-  Play,
   FolderSync
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
@@ -59,16 +49,12 @@ interface SettingsProps {
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [_config, setConfig] = useState<AppConfig | null>(null);
   const [verbose, setVerbose] = useState(false);
-  const [anthropicApiKey, setAnthropicApiKey] = useState('');
-  const [globalSystemPrompt, setGlobalSystemPrompt] = useState('');
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
-  const [defaultPermissionMode, setDefaultPermissionMode] = useState<'approve' | 'ignore'>('ignore');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [devMode, setDevMode] = useState(false);
   const [additionalPathsText, setAdditionalPathsText] = useState('');
   const [platform, setPlatform] = useState<string>('darwin');
   const [enableCommitFooter, setEnableCommitFooter] = useState(true);
-  const [disableAutoContext, setDisableAutoContext] = useState(false);
   const [autoRenameToPR, setAutoRenameToPR] = useState<boolean>(true);
   const [uiScale, setUiScale] = useState(1.0);
   const [terminalFontFamily, setTerminalFontFamily] = useState('');
@@ -87,50 +73,16 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'shortcuts' | 'analytics'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'shortcuts'>('general');
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [previousAnalyticsEnabled, setPreviousAnalyticsEnabled] = useState(true);
   const [preferredShell, setPreferredShell] = useState<string>('auto');
   const [availableShells, setAvailableShells] = useState<Array<{id: string; name: string; path: string}>>([]);
-  const [cloudProvider] = useState<'gcp'>('gcp');
-  const [cloudApiToken, setCloudApiToken] = useState('');
-  const [cloudServerId, setCloudServerId] = useState('');
-  const [cloudVncPassword, setCloudVncPassword] = useState('');
-  const [vncPasswordCopied, setVncPasswordCopied] = useState(false);
-  const [cloudRegion, setCloudRegion] = useState('');
-  const [cloudGcpProjectId, setCloudGcpProjectId] = useState('');
-  const [cloudGcpZone, setCloudGcpZone] = useState('');
-  const [cloudTunnelPort, setCloudTunnelPort] = useState('8080');
   const [terminalShortcuts, setTerminalShortcuts] = useState<TerminalShortcut[]>([]);
   const [worktreeFileSync, setWorktreeFileSync] = useState<WorktreeFileSyncEntry[]>([]);
-  const [cloudSetupLoading, setCloudSetupLoading] = useState(false);
-  const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
   const { fetchConfig: refreshConfigStore } = useConfigStore();
-
-  const handleRunCloudSetup = useCallback(async () => {
-    if (!activeSessionId) return;
-    setCloudSetupLoading(true);
-    try {
-      const panel = await panelApi.createPanel({
-        sessionId: activeSessionId,
-        type: 'terminal',
-        title: 'Cloud Setup',
-        initialState: {
-          customState: {
-            initialCommand: 'bash cloud/scripts/setup-cloud.sh'
-          }
-        }
-      });
-      await panelApi.setActivePanel(activeSessionId, panel.id);
-      onClose();
-    } catch (err) {
-      console.error('[Settings] Failed to create cloud setup terminal:', err);
-    } finally {
-      setCloudSetupLoading(false);
-    }
-  }, [activeSessionId, onClose]);
 
   useEffect(() => {
     if (isOpen) {
@@ -191,14 +143,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       const data = response.data;
       setConfig(data);
       setVerbose(data.verbose || false);
-      setAnthropicApiKey(data.anthropicApiKey || '');
-      setGlobalSystemPrompt(data.systemPromptAppend || '');
-      setClaudeExecutablePath(data.claudeExecutablePath || '');
-      setDefaultPermissionMode(data.defaultPermissionMode || 'ignore');
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
+      setClaudeExecutablePath(data.claudeExecutablePath || '');
       setEnableCommitFooter(data.enableCommitFooter !== false); // Default to true
-      setDisableAutoContext(data.disableAutoContext || false);
       setUiScale(data.uiScale || 1.0);
       setTerminalFontFamily(data.terminalFontFamily || '');
       setTerminalFontSize(data.terminalFontSize || 14);
@@ -236,18 +184,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       // Load worktree file sync entries
       setWorktreeFileSync(data.worktreeFileSync ?? DEFAULT_WORKTREE_FILE_SYNC_ENTRIES);
-
-      // Load cloud settings
-      if (data.cloud) {
-        // Provider is always GCP (IAP-secured)
-        setCloudApiToken(data.cloud.apiToken || '');
-        setCloudServerId(data.cloud.serverId || '');
-        setCloudVncPassword(data.cloud.vncPassword || '');
-        setCloudRegion(data.cloud.region || '');
-        setCloudGcpProjectId(data.cloud.projectId || '');
-        setCloudGcpZone(data.cloud.zone || '');
-        setCloudTunnelPort(String(data.cloud.tunnelPort || 8080));
-      }
     } catch (err) {
       setError('Failed to load configuration');
     }
@@ -278,14 +214,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       const response = await API.config.update({
         verbose,
-        anthropicApiKey,
-        systemPromptAppend: globalSystemPrompt,
-        claudeExecutablePath,
-        defaultPermissionMode,
         autoCheckUpdates,
         devMode,
+        claudeExecutablePath,
         enableCommitFooter,
-        disableAutoContext,
         uiScale,
         additionalPaths: parsedPaths,
         notifications: notificationSettings,
@@ -295,16 +227,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         preferredShell,
         terminalShortcuts,
         worktreeFileSync: filteredWorktreeFileSync,
-        cloud: (cloudServerId || cloudGcpProjectId || cloudApiToken) ? {
-          provider: cloudProvider,
-          apiToken: cloudApiToken,
-          serverId: cloudServerId || undefined,
-          vncPassword: cloudVncPassword || undefined,
-          region: cloudRegion || undefined,
-          projectId: cloudGcpProjectId || undefined,
-          zone: cloudGcpZone || undefined,
-          tunnelPort: parseInt(cloudTunnelPort, 10) || 8080,
-        } : undefined,
       });
 
       if (!response.success) {
@@ -378,16 +300,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
             }`}
           >
             Shortcuts
-          </button>
-          <button
-            onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-3 text-sm font-medium transition-colors ${
-              activeTab === 'analytics'
-                ? 'text-interactive border-b-2 border-interactive bg-interactive/5'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-surface-hover'
-            }`}
-          >
-            Analytics
           </button>
         </div>
 
@@ -762,86 +674,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
               defaultExpanded={true}
             >
               <SettingsSection
-                title="Smart Pane Names"
-                description="Let Claude automatically generate meaningful names for your panes"
-                icon={<FileText className="w-4 h-4" />}
-              >
-                <Input
-                  label="Anthropic API Key"
-                  type="password"
-                  value={anthropicApiKey}
-                  onChange={(e) => setAnthropicApiKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                  fullWidth
-                  helperText="Optional: Used only for generating pane names. Your main Claude Code API key is separate."
-                />
-              </SettingsSection>
-
-              <SettingsSection
-                title="Default Security Mode"
-                description="How Claude should handle potentially risky operations"
-                icon={defaultPermissionMode === 'approve' ? <Shield className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
-              >
-                <div className="space-y-3">
-                  <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-surface-hover transition-colors border border-border-secondary">
-                    <input
-                      type="radio"
-                      name="defaultPermissionMode"
-                      value="ignore"
-                      checked={defaultPermissionMode === 'ignore'}
-                      onChange={(e) => setDefaultPermissionMode(e.target.value as 'ignore' | 'approve')}
-                      className="text-interactive mt-1"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <ShieldOff className="w-4 h-4 text-text-tertiary" />
-                        <span className="text-sm font-medium text-text-primary">Fast & Flexible</span>
-                        <span className="ml-auto px-2 py-0.5 text-xs bg-status-warning/20 text-status-warning rounded-full">Default</span>
-                      </div>
-                      <p className="text-xs text-text-tertiary leading-relaxed">
-                        Claude executes commands quickly without asking permission. Great for development workflows.
-                      </p>
-                    </div>
-                  </label>
-                  <label className="flex items-start gap-3 cursor-pointer p-3 rounded-lg hover:bg-surface-hover transition-colors border border-border-secondary">
-                    <input
-                      type="radio"
-                      name="defaultPermissionMode"
-                      value="approve"
-                      checked={defaultPermissionMode === 'approve'}
-                      onChange={(e) => setDefaultPermissionMode(e.target.value as 'ignore' | 'approve')}
-                      className="text-interactive mt-1"
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Shield className="w-4 h-4 text-status-success" />
-                        <span className="text-sm font-medium text-text-primary">Secure & Controlled</span>
-                      </div>
-                      <p className="text-xs text-text-tertiary leading-relaxed">
-                        Claude asks for your approval before running potentially risky commands. Safer for production code.
-                      </p>
-                    </div>
-                  </label>
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Global Instructions"
-                description="Add custom instructions that apply to all your projects"
-                icon={<FileText className="w-4 h-4" />}
-              >
-                <Textarea
-                  label="Global System Prompt"
-                  value={globalSystemPrompt}
-                  onChange={(e) => setGlobalSystemPrompt(e.target.value)}
-                  placeholder="Always use TypeScript... Follow our team's coding standards..."
-                  rows={3}
-                  fullWidth
-                  helperText="These instructions will be added to every Claude session across all projects."
-                />
-              </SettingsSection>
-
-              <SettingsSection
                 title="Pane Attribution"
                 description="Add Pane branding to commit messages"
                 icon={<FileText className="w-4 h-4" />}
@@ -871,22 +703,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 </p>
               </SettingsSection>
 
-              <SettingsSection
-                title="Automatic Context Tracking"
-                description="Control whether Claude automatically runs /context after responses"
-                icon={<Activity className="w-4 h-4" />}
-              >
-                <Checkbox
-                  label="Disable automatic context tracking"
-                  checked={disableAutoContext}
-                  onChange={(e) => setDisableAutoContext(e.target.checked)}
-                />
-                <p className="text-xs text-text-tertiary mt-1">
-                  When checked, Pane will not automatically run /context after each
-                  Claude response. This reduces wait time and Claude quota usage.
-                  You can still manually run /context when needed.
-                </p>
-              </SettingsSection>
             </CollapsibleCard>
 
             {/* Worktree File Sync */}
@@ -992,7 +808,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
               </SettingsSection>
             </CollapsibleCard>
 
-            {/* Cloud VM */}
+            {/* TODO: Cloud VM - revisit when implementation is complete
             <CollapsibleCard
               title="Cloud VM"
               subtitle="Run Pane on a persistent cloud VM"
@@ -1188,6 +1004,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 </div>
               </SettingsSection>
             </CollapsibleCard>
+            */}
 
             {/* System Updates */}
             <CollapsibleCard
@@ -1370,6 +1187,21 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   Leave empty to use the 'claude' command from your system PATH.
                 </p>
               </SettingsSection>
+
+              <SettingsSection
+                title="Analytics"
+                description="Help improve Pane by sharing anonymous usage data"
+                icon={<BarChart3 className="w-4 h-4" />}
+              >
+                <Checkbox
+                  label="Enable anonymous analytics tracking"
+                  checked={analyticsEnabled}
+                  onChange={(e) => setAnalyticsEnabled(e.target.checked)}
+                />
+                <p className="text-xs text-text-tertiary mt-1">
+                  Pane collects anonymous usage analytics (feature usage, performance metrics) to improve the product. No prompts, code, file paths, or personal data is ever collected. You can opt-out at any time.
+                </p>
+              </SettingsSection>
             </CollapsibleCard>
 
             {error && (
@@ -1509,93 +1341,11 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
           </form>
         )}
 
-        {activeTab === 'analytics' && (
-          <form id="analytics-form" onSubmit={handleSubmit} className="space-y-6">
-            {/* Analytics Overview */}
-            <CollapsibleCard
-              title="About Analytics"
-              subtitle="Help improve Pane by sharing anonymous usage data"
-              icon={<BarChart3 className="w-5 h-5" />}
-              defaultExpanded={true}
-              variant="subtle"
-            >
-              <div className="space-y-4">
-                <p className="text-sm text-text-secondary leading-relaxed">
-                  Pane collects anonymous usage analytics to understand how the application is used and to help prioritize improvements. All data is completely anonymous and privacy-focused.
-                </p>
-
-                <div className="bg-surface-tertiary rounded-lg p-4 border border-border-secondary">
-                  <h4 className="font-medium text-text-primary mb-3 text-sm">✅ What we track:</h4>
-                  <ul className="space-y-1 text-xs text-text-secondary">
-                    <li>• Feature usage patterns (which features are used)</li>
-                    <li>• Pane counts and statuses</li>
-                    <li>• Git operation types (rebase, squash, etc.)</li>
-                    <li>• UI interactions (view switches, button clicks)</li>
-                    <li>• Error types (generic categories only)</li>
-                    <li>• Performance metrics (categorized durations)</li>
-                  </ul>
-                </div>
-
-                <div className="bg-status-error/10 rounded-lg p-4 border border-status-error/30">
-                  <h4 className="font-medium text-text-primary mb-3 text-sm">❌ What we NEVER track:</h4>
-                  <ul className="space-y-1 text-xs text-text-secondary">
-                    <li>• Your prompts or AI responses</li>
-                    <li>• File paths, names, or directory structures</li>
-                    <li>• Project names or descriptions</li>
-                    <li>• Git commit messages or code diffs</li>
-                    <li>• Terminal output or commands</li>
-                    <li>• Personal identifiers (emails, usernames, API keys)</li>
-                  </ul>
-                </div>
-
-                <p className="text-xs text-text-tertiary italic">
-                  You can opt-out at any time. When disabled, no analytics data will be collected or sent.
-                </p>
-              </div>
-            </CollapsibleCard>
-
-            {/* Analytics Settings */}
-            <CollapsibleCard
-              title="Analytics Settings"
-              subtitle="Configure anonymous usage tracking"
-              icon={<BarChart3 className="w-5 h-5" />}
-              defaultExpanded={true}
-            >
-              <SettingsSection
-                title="Enable Analytics"
-                description="Allow Pane to collect anonymous usage data to improve the product"
-                icon={<BarChart3 className="w-4 h-4" />}
-              >
-                <Checkbox
-                  label="Enable anonymous analytics tracking"
-                  checked={analyticsEnabled}
-                  onChange={(e) => setAnalyticsEnabled(e.target.checked)}
-                />
-                {!analyticsEnabled && (
-                  <p className="text-xs text-status-warning mt-2">
-                    Analytics is disabled. No data will be collected or sent.
-                  </p>
-                )}
-                {analyticsEnabled && (
-                  <p className="text-xs text-status-success mt-2">
-                    Analytics is enabled. Thank you for helping improve Pane!
-                  </p>
-                )}
-              </SettingsSection>
-            </CollapsibleCard>
-
-            {error && (
-              <div className="text-status-error text-sm bg-status-error/10 border border-status-error/30 rounded-lg p-4">
-                {error}
-              </div>
-            )}
-          </form>
-        )}
 
       </ModalBody>
 
       {/* Footer */}
-      {(activeTab === 'general' || activeTab === 'notifications' || activeTab === 'shortcuts' || activeTab === 'analytics') && (
+      {(activeTab === 'general' || activeTab === 'notifications' || activeTab === 'shortcuts') && (
         <ModalFooter>
           <Button
             type="button"
