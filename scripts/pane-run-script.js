@@ -156,9 +156,20 @@ function needsInstall(root) {
   const nodeModulesPath = path.join(root, 'node_modules');
   const packageJsonPath = path.join(root, 'package.json');
 
-  // If node_modules doesn't exist, we need to install
+  // If root node_modules doesn't exist, we need to install
   if (!fs.existsSync(nodeModulesPath)) {
     return true;
+  }
+
+  // pnpm workspaces: check that workspace node_modules also exist.
+  // Git worktrees share source but not node_modules (gitignored), so the root
+  // node_modules may exist from a prior partial install while workspace
+  // subdirectories are missing.
+  const workspaceDirs = ['frontend', 'main'];
+  for (const dir of workspaceDirs) {
+    if (!fs.existsSync(path.join(root, dir, 'node_modules'))) {
+      return true;
+    }
   }
 
   // Check if package.json is newer than node_modules

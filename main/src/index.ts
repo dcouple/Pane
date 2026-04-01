@@ -243,7 +243,28 @@ async function createWindow() {
   // This prevents the race condition where a page calls window.open() before dom-ready fires.
   // The context map (panelId/sessionId) is populated later by the browser-panel:register-webview IPC.
   mainWindow.webContents.on('did-attach-webview', (_event, wvContents: WebContents) => {
-    wvContents.setWindowOpenHandler(({ url }) => {
+    wvContents.setWindowOpenHandler(({ url, disposition }) => {
+      // Auth popups (Firebase signInWithPopup, OAuth providers, etc.) use window.open()
+      // with explicit features (width, height, toolbar=no), which Chromium reports as
+      // disposition 'new-window'. Let these open as real BrowserWindows so the
+      // postMessage channel between popup and opener remains intact.
+      if (disposition === 'new-window') {
+        if (!webviewContextMap.has(wvContents.id)) {
+          console.warn('[BrowserPanel] Auth popup allowed for unregistered webview (pre-dom-ready), wcId:', wvContents.id);
+        }
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            autoHideMenuBar: true,
+            webPreferences: {
+              contextIsolation: true,
+              sandbox: true,
+            },
+          },
+        };
+      }
+
+      // Regular navigations (target="_blank" links, etc.) → open as new browser panel tab
       const ctx = webviewContextMap.get(wvContents.id);
       if (ctx) {
         mainWindow?.webContents.send('browser-panel:popup-requested', {
@@ -258,6 +279,20 @@ async function createWindow() {
       }
       return { action: 'deny' };
     });
+
+    // Track and manage auth popup windows created by { action: 'allow' }.
+    // Clean up when the parent webview is destroyed so popups don't orphan.
+    wvContents.on('did-create-window', (popupWindow) => {
+      // If the parent webview is destroyed (e.g., panel closed), close the popup too.
+      // This is a one-shot listener; safe even if the popup closes first because
+      // popupWindow.isDestroyed() is checked before calling close().
+      wvContents.once('destroyed', () => {
+        if (!popupWindow.isDestroyed()) {
+          popupWindow.close();
+        }
+      });
+    });
+
     wvContents.setBackgroundThrottling(true);
 
     // Forward app hotkeys from webview to renderer.
