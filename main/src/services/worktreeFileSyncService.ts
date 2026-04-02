@@ -17,6 +17,19 @@ function envJoin(environment: ProjectEnvironment, ...segments: string[]): string
   return path.join(...segments);
 }
 
+/**
+ * Computes the relative path between two paths correctly for the target environment.
+ * On WSL, both paths are POSIX (from WSL find output), but Node's path.relative
+ * uses win32 semantics (backslashes) since Electron runs on Windows — so we must
+ * use path.posix.relative instead.
+ */
+function envRelative(environment: ProjectEnvironment, from: string, to: string): string {
+  if (environment === 'wsl') {
+    return path.posix.relative(from, to);
+  }
+  return path.relative(from, to);
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -309,7 +322,7 @@ async function copyRecursiveMatches(
 
   for (const match of matches) {
     try {
-      const relativePath = path.relative(mainRepoPath, match.path);
+      const relativePath = envRelative(environment, mainRepoPath, match.path);
       const destPath = envJoin(environment, worktreePath, relativePath);
 
       const destExists = await existsAt(destPath, commandRunner, environment, worktreePath);
