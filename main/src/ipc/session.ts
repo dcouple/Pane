@@ -24,6 +24,7 @@ import {
   createValidationError
 } from '../utils/sessionValidation';
 import type { SerializedArchiveTask } from '../services/archiveProgressManager';
+import { detectProjectConfig } from '../services/projectConfigDetector';
 
 export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices): void {
   const {
@@ -277,6 +278,36 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             const ctx = sessionManager.getProjectContextByProjectId(dbSession.project_id);
             if (ctx) {
               try {
+                // Run archive script before worktree removal
+                let archiveScript = project.archive_script;
+                if (!archiveScript) {
+                  const detected = await detectProjectConfig(
+                    project.path,
+                    ctx.pathResolver.environment,
+                    ctx.commandRunner
+                  );
+                  archiveScript = detected?.archive ?? null;
+                }
+                if (archiveScript) {
+                  try {
+                    if (archiveProgressManager) {
+                      archiveProgressManager.updateTaskStatus(sessionId, 'running-archive-script');
+                    }
+                    const commands = archiveScript.split('\n').filter((cmd: string) => cmd.trim());
+                    const archiveResult = await sessionManager.runArchiveScript(
+                      sessionId, commands, dbSession.worktree_path, ctx.commandRunner
+                    );
+                    if (archiveResult.success) {
+                      cleanupMessage += `\x1b[32m✓ Archive script completed\x1b[0m\r\n`;
+                    } else {
+                      cleanupMessage += `\x1b[33m⚠ Archive script completed with errors\x1b[0m\r\n`;
+                    }
+                  } catch (archiveError) {
+                    console.error(`[Main] Archive script failed for session ${sessionId}:`, archiveError);
+                    cleanupMessage += `\x1b[33m⚠ Archive script failed (continuing cleanup)\x1b[0m\r\n`;
+                  }
+                }
+
                 // Update progress: removing worktree
                 if (archiveProgressManager) {
                   archiveProgressManager.updateTaskStatus(sessionId, 'removing-worktree');
@@ -538,9 +569,21 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           timestamp: new Date()
         });
 
-        // Run build script if configured
+        // Run build script if configured (DB value wins, fallback to detected config)
         const project = dbSession?.project_id ? databaseService.getProject(dbSession.project_id) : null;
-        if (project?.build_script) {
+        let mainRepoBuildScript = project?.build_script;
+        if (!mainRepoBuildScript && project) {
+          const ctx = sessionManager.getProjectContextByProjectId(project.id);
+          if (ctx) {
+            const detected = await detectProjectConfig(
+              project.path,
+              ctx.pathResolver.environment,
+              ctx.commandRunner
+            );
+            mainRepoBuildScript = detected?.setup;
+          }
+        }
+        if (mainRepoBuildScript) {
           console.log(`[IPC] Running build script for main repo session ${sessionId}`);
 
           const buildWaitingMessage = `\x1b[36m[${new Date().toLocaleTimeString()}]\x1b[0m \x1b[1m\x1b[33m⏳ Waiting for build script to complete...\x1b[0m\r\n\r\n`;
@@ -550,7 +593,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             timestamp: new Date()
           });
 
-          const buildCommands = project.build_script.split('\n').filter(cmd => cmd.trim());
+          const buildCommands = mainRepoBuildScript.split('\n').filter(cmd => cmd.trim());
           const buildResult = await sessionManager.runBuildScript(sessionId, buildCommands, session.worktreePath);
           console.log(`[IPC] Build script completed. Success: ${buildResult.success}`);
         }

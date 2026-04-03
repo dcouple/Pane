@@ -1,5 +1,6 @@
 import { IpcMain } from 'electron';
-import { mkdir } from 'fs/promises';
+import { mkdir, access } from 'fs/promises';
+import path from 'path';
 import type { AppServices } from './types';
 import type { CreateProjectRequest, UpdateProjectRequest } from '../../../frontend/src/types/project';
 import { scriptExecutionTracker } from '../services/scriptExecutionTracker';
@@ -8,6 +9,7 @@ import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
 import { PathResolver } from '../utils/pathResolver';
 import { CommandRunner } from '../utils/commandRunner';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
+import { detectProjectConfig } from '../services/projectConfigDetector';
 
 // Helper function to stop a running project script
 async function stopProjectScriptInternal(projectId?: number): Promise<{ success: boolean; error?: string }> {
@@ -511,6 +513,88 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     return stopProjectScriptInternal(projectId);
   });
 
+  ipcMain.handle('projects:detect-config', async (_event, projectId: string) => {
+    try {
+      const project = databaseService.getProject(parseInt(projectId));
+      if (!project) return { success: false, error: 'Project not found' };
+      const ctx = sessionManager.getProjectContextByProjectId(project.id);
+      const detected = await detectProjectConfig(
+        project.path,
+        ctx?.pathResolver.environment || 'linux',
+        ctx?.commandRunner
+      );
+      return { success: true, data: detected };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  /**
+   * Resolves which run script should execute for a session.
+   *
+   * Resolution hierarchy (first match wins):
+   * 1. DB `run_script` from Project Settings
+   * 2. `pane.json` → `scripts.run`
+   * 3. `conductor.json` → `scripts.run`
+   * 4. `.gitpod.yml` → first task's `command`
+   * 5. `.devcontainer/devcontainer.json` → `postStartCommand`
+   * 6. `scripts/pane-run-script.js` in the session's worktree
+   * 7. `null` — no run script found
+   *
+   * Steps 2-5 are handled by `detectProjectConfig()`.
+   * DB values always override config files (Conductor model).
+   */
+  ipcMain.handle('projects:resolve-run-script', async (_event, sessionId: string) => {
+    try {
+      const dbSession = databaseService.getSession(sessionId);
+      if (!dbSession?.project_id) return { success: true, data: null };
+
+      const project = databaseService.getProject(dbSession.project_id);
+      if (!project) return { success: true, data: null };
+
+      // 1. DB run_script wins
+      if (project.run_script) {
+        return { success: true, data: { command: project.run_script, source: 'Project Settings' } };
+      }
+
+      // 2-5. Config file detection (pane.json > conductor.json > .gitpod.yml > devcontainer.json)
+      const ctx = sessionManager.getProjectContextByProjectId(project.id);
+      if (ctx) {
+        const detected = await detectProjectConfig(
+          project.path,
+          ctx.pathResolver.environment,
+          ctx.commandRunner
+        );
+        if (detected?.run) {
+          return { success: true, data: { command: detected.run, source: detected.source } };
+        }
+      }
+
+      // 6. scripts/pane-run-script.js fallback (check in session's worktree)
+      const session = sessionManager.getSession(sessionId);
+      if (session?.worktreePath) {
+        const scriptRelPath = 'scripts/pane-run-script.js';
+        // Use the session's worktree path to check for the script
+        const ctx2 = sessionManager.getProjectContext(sessionId);
+        if (ctx2) {
+          const scriptFullPath = path.join(ctx2.pathResolver.toFileSystem(session.worktreePath), scriptRelPath);
+          try {
+            await access(scriptFullPath);
+            return { success: true, data: { command: `node ${scriptRelPath}`, source: scriptRelPath } };
+          } catch {
+            // Script doesn't exist — fall through
+          }
+        }
+      }
+
+      // 7. Nothing found
+      return { success: true, data: null };
+    } catch (error) {
+      console.error('[Main] Failed to resolve run script:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
   ipcMain.handle('projects:run-script', async (_event, projectId: number) => {
     try {
       // Get the project
@@ -519,8 +603,20 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
         return { success: false, error: 'Project not found' };
       }
 
-      // Get the run script
-      if (!project.run_script || !project.run_script.trim()) {
+      // Get the run script, with fallback to detected config
+      let runScript = project.run_script;
+      if (!runScript) {
+        const ctx = sessionManager.getProjectContextByProjectId(project.id);
+        if (ctx) {
+          const detected = await detectProjectConfig(
+            project.path,
+            ctx.pathResolver.environment,
+            ctx.commandRunner
+          );
+          runScript = detected?.run ?? null;
+        }
+      }
+      if (!runScript) {
         return { success: false, error: 'No run script configured for this project' };
       }
 
@@ -567,7 +663,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
       const { logsManager } = require('../services/panels/logPanel/logsManager');
       const ctx = sessionManager.getProjectContextByProjectId(projectId);
       const wslContext = ctx ? ctx.commandRunner.wslContext : null;
-      await logsManager.runScript(sessionId, project.run_script, project.path, wslContext);
+      await logsManager.runScript(sessionId, runScript, project.path, wslContext);
 
       // Track the running project
       scriptExecutionTracker.start('project', projectId, sessionId);

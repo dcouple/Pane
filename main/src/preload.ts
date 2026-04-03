@@ -357,6 +357,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     runScript: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:run-script', projectId),
     getRunningScript: (): Promise<IPCResponse> => ipcRenderer.invoke('projects:get-running-script'),
     stopScript: (projectId?: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:stop-script', projectId),
+    detectConfig: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:detect-config', projectId),
+    resolveRunScript: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:resolve-run-script', sessionId),
   },
 
   // Git operations

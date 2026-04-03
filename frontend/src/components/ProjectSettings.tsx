@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Trash2, FolderIcon, GitBranch, Settings, Code2, BrainCircuit } from 'lucide-react';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
+import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Input, Textarea } from './ui/Input';
 import { Button } from './ui/Button';
@@ -23,6 +24,8 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
   const [systemPrompt, setSystemPrompt] = useState('');
   const [runScript, setRunScript] = useState('');
   const [buildScript, setBuildScript] = useState('');
+  const [archiveScript, setArchiveScript] = useState('');
+  const [detectedConfig, setDetectedConfig] = useState<DetectedProjectConfig | null>(null);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [openIdeCommand, setOpenIdeCommand] = useState('');
   const [worktreeFolder, setWorktreeFolder] = useState('');
@@ -37,6 +40,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       setSystemPrompt(project.system_prompt || '');
       setRunScript(project.run_script || '');
       setBuildScript(project.build_script || '');
+      setArchiveScript(project.archive_script || '');
       // Fetch the current branch when dialog opens
       if (project.path) {
         window.electronAPI.git.detectBranch(project.path).then((result) => {
@@ -48,6 +52,15 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       setOpenIdeCommand(project.open_ide_command || '');
       setWorktreeFolder(project.worktree_folder || '');
       setError(null);
+      // Detect config file for this project
+      setDetectedConfig(null);
+      window.electronAPI.projects.detectConfig(project.id.toString()).then((result) => {
+        if (result.success && result.data) {
+          setDetectedConfig(result.data);
+        }
+      }).catch(() => {
+        // Config detection is optional — don't block the UI
+      });
     }
   }, [isOpen, project]);
 
@@ -62,6 +75,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
         system_prompt: systemPrompt || null,
         run_script: runScript || null,
         build_script: buildScript || null,
+        archive_script: archiveScript || null,
         open_ide_command: openIdeCommand || null,
         worktree_folder: worktreeFolder || null
       };
@@ -322,6 +336,14 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
                   fullWidth
                 />
               </Card>
+              {!buildScript && detectedConfig?.setup && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.setup}</span>
+                </div>
+              )}
             </FieldWithTooltip>
 
             <FieldWithTooltip
@@ -338,6 +360,38 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
                   fullWidth
                 />
               </Card>
+              {!runScript && detectedConfig?.run && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.run}</span>
+                </div>
+              )}
+            </FieldWithTooltip>
+
+            <FieldWithTooltip
+              label="Archive Script"
+              tooltip="Commands that run before a worktree is removed when archiving a session."
+            >
+              <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
+                <Textarea
+                  value={archiveScript}
+                  onChange={(e) => setArchiveScript(e.target.value)}
+                  rows={4}
+                  placeholder="npm run cleanup"
+                  className="font-mono text-sm bg-transparent border-0 p-3 focus:ring-0 resize-none"
+                  fullWidth
+                />
+              </Card>
+              {!archiveScript && detectedConfig?.archive && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.archive}</span>
+                </div>
+              )}
             </FieldWithTooltip>
 
           </div>

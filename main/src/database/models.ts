@@ -5,6 +5,7 @@ export interface Project {
   system_prompt?: string | null;
   run_script?: string | null;
   build_script?: string | null;
+  archive_script?: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;

@@ -70,6 +70,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 }) => {
   const sessionContext = useSession();
   const session = sessionContext?.session;
+  const [resolvedRunScript, setResolvedRunScript] = useState<{ command: string; source: string } | null>(null);
   const { config, fetchConfig, updateConfig } = useConfigStore();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -105,6 +106,19 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       fetchConfig();
     }
   }, [config, fetchConfig]);
+
+  // Resolve run script for current session
+  useEffect(() => {
+    if (!session) {
+      setResolvedRunScript(null);
+      return;
+    }
+    window.electronAPI?.projects.resolveRunScript(session.id).then((result: { success: boolean; data?: { command: string; source: string } | null }) => {
+      if (result?.success) {
+        setResolvedRunScript(result.data ?? null);
+      }
+    }).catch(() => setResolvedRunScript(null));
+  }, [session?.id]);
 
   const saveCustomCommand = useCallback(async (name: string, command: string) => {
     const existing = config?.customCommands ?? [];
@@ -380,24 +394,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
   // Run Dev Server handler (shared between button and hotkey)
   const handleRunDevServer = useCallback(async () => {
-    if (!session) return;
-    const scriptExists = await window.electronAPI?.invoke('file:exists', {
-      sessionId: session.id,
-      filePath: 'scripts/pane-run-script.js'
+    if (!session || !resolvedRunScript) return;
+    handleAddPanel('terminal', {
+      initialCommand: resolvedRunScript.command,
+      title: 'Dev Server'
     });
-
-    if (scriptExists) {
-      handleAddPanel('terminal', {
-        initialCommand: 'node scripts/pane-run-script.js',
-        title: 'Dev Server'
-      });
-    } else {
-      handleAddPanel('terminal', {
-        initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
-        title: 'Setup Run Script'
-      });
-    }
-  }, [session, handleAddPanel, config?.worktreeFileSync]);
+  }, [session, handleAddPanel, resolvedRunScript]);
 
   // Ctrl+Shift+D: Run Dev Server
   useHotkey({
@@ -816,13 +818,21 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           {session && (
             <Tooltip content={
                 <span className="flex flex-col items-start gap-1">
-                  <span className="text-text-secondary">Run Dev Server</span>
+                  <span className="text-text-secondary">
+                    {resolvedRunScript
+                      ? `Run: ${resolvedRunScript.command}`
+                      : 'No run script configured'}
+                  </span>
+                  {resolvedRunScript && (
+                    <span className="text-text-tertiary text-[10px]">from {resolvedRunScript.source}</span>
+                  )}
                   {hotkeyDisplay('run-dev-server') && <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{hotkeyDisplay('run-dev-server')}</Kbd>}
                 </span>
               } side="bottom">
               <button
-                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
+                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-tertiary disabled:hover:bg-transparent"
                 onClick={handleRunDevServer}
+                disabled={!resolvedRunScript}
               >
                 <Play className="w-4 h-4" />
               </button>

@@ -16,6 +16,7 @@ import type { Project } from '../database/models';
 import { worktreeFileSyncService } from './worktreeFileSyncService';
 import { terminalPanelManager } from './terminalPanelManager';
 import { configManager } from '../index';
+import { detectProjectConfig } from './projectConfigDetector';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -340,7 +341,19 @@ export class TaskQueue {
         }
 
         // Run build script after session is visible in UI
-        if (targetProject.build_script) {
+        let buildScript = targetProject.build_script;
+        if (!buildScript && ctx) {
+          const detected = await detectProjectConfig(
+            targetProject.path,
+            ctx.pathResolver.environment,
+            ctx.commandRunner
+          );
+          if (detected?.setup) {
+            buildScript = detected.setup;
+          }
+        }
+
+        if (buildScript) {
           console.log(`[TaskQueue] Running build script for session ${session.id}`);
 
           // Update status message
@@ -354,7 +367,7 @@ export class TaskQueue {
             timestamp: new Date()
           });
 
-          const buildCommands = targetProject.build_script.split('\n').filter(cmd => cmd.trim());
+          const buildCommands = buildScript.split('\n').filter(cmd => cmd.trim());
           const buildResult = await sessionManager.runBuildScript(session.id, buildCommands, worktreePath);
           console.log(`[TaskQueue] Build script completed. Success: ${buildResult.success}`);
         }

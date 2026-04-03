@@ -558,6 +558,11 @@ export class DatabaseService {
         .run();
     }
 
+    // Add archive_script column to projects table if it doesn't exist
+    if (!projectsTableInfo.some((col: { name: string }) => col.name === 'archive_script')) {
+      this.db.exec('ALTER TABLE projects ADD COLUMN archive_script TEXT');
+    }
+
     // Create project_run_commands table if it doesn't exist
     const runCommandsTable = this.db
       .prepare(
@@ -2258,6 +2263,10 @@ export class DatabaseService {
     if (updates.build_script !== undefined) {
       fields.push("build_script = ?");
       values.push(updates.build_script);
+    }
+    if (updates.archive_script !== undefined) {
+      fields.push("archive_script = ?");
+      values.push(updates.archive_script);
     }
     if (updates.default_permission_mode !== undefined) {
       fields.push("default_permission_mode = ?");

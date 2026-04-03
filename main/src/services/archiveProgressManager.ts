@@ -5,7 +5,7 @@ export interface ArchiveTask {
   sessionName: string;
   worktreeName: string;
   projectName: string;
-  status: 'pending' | 'queued' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'running-archive-script' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
   startTime: Date;
   endTime?: Date;
   error?: string;
@@ -17,7 +17,7 @@ export interface SerializedArchiveTask {
   sessionName: string;
   worktreeName: string;
   projectName: string;
-  status: 'pending' | 'queued' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
+  status: 'pending' | 'queued' | 'running-archive-script' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
   startTime: string;
   endTime?: string;
   error?: string;
