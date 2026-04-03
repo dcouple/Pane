@@ -87,6 +87,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       }
 
       onUpdate();
+      window.dispatchEvent(new Event('project-settings-updated'));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update project');

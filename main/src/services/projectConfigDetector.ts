@@ -88,7 +88,12 @@ export async function detectProjectConfig(
     if (exists) {
       try {
         const content = await readFile(filePath, environment, commandRunner, projectPath);
-        return parser(content, file);
+        const result = parser(content, file);
+        // Only return if the config has at least one script defined — otherwise
+        // fall through to check lower-priority config files
+        if (result && (result.setup || result.run || result.archive)) {
+          return result;
+        }
       } catch (err) {
         console.error(`[ProjectConfigDetector] Failed to parse ${file}:`, err);
         continue;

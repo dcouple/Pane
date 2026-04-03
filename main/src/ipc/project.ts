@@ -558,10 +558,13 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
       }
 
       // 2-5. Config file detection (pane.json > conductor.json > .gitpod.yml > devcontainer.json)
+      // Resolve from session's worktree path so branch-local config changes are picked up
+      const session = sessionManager.getSession(sessionId);
+      const configPath = session?.worktreePath || project.path;
       const ctx = sessionManager.getProjectContextByProjectId(project.id);
       if (ctx) {
         const detected = await detectProjectConfig(
-          project.path,
+          configPath,
           ctx.pathResolver.environment,
           ctx.commandRunner
         );
@@ -569,9 +572,6 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
           return { success: true, data: { command: detected.run, source: detected.source } };
         }
       }
-
-      // 6. scripts/pane-run-script.js fallback (check in session's worktree)
-      const session = sessionManager.getSession(sessionId);
       if (session?.worktreePath) {
         const scriptRelPath = 'scripts/pane-run-script.js';
         // Use the session's worktree path to check for the script

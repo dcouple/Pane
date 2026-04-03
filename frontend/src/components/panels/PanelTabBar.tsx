@@ -107,7 +107,13 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     }
   }, [config, fetchConfig]);
 
-  // Resolve run script for current session
+  // Resolve run script for current session — re-resolves on session change or project settings update
+  const [resolveKey, setResolveKey] = useState(0);
+  useEffect(() => {
+    const handler = () => setResolveKey(k => k + 1);
+    window.addEventListener('project-settings-updated', handler);
+    return () => window.removeEventListener('project-settings-updated', handler);
+  }, []);
   useEffect(() => {
     if (!session) {
       setResolvedRunScript(null);
@@ -118,7 +124,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         setResolvedRunScript(result.data ?? null);
       }
     }).catch(() => setResolvedRunScript(null));
-  }, [session?.id]);
+  }, [session?.id, resolveKey]);
 
   const saveCustomCommand = useCallback(async (name: string, command: string) => {
     const existing = config?.customCommands ?? [];
