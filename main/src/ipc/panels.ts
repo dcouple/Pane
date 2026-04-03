@@ -118,37 +118,44 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   const wsl = await isWSL();
 
   if (wsl) {
-    // WSL: Use PowerShell to read the Windows clipboard (saves as BMP/PNG)
-    const ps = await findPowerShell();
-    if (!ps) {
-      console.warn('[ClipboardFallback] PowerShell not found on WSL');
-      return null;
-    }
-
-    const filePath = buildFilePath();
-
-    // Convert WSL path to Windows path for PowerShell
-    let winPath: string;
-    try {
-      const { stdout } = await execFileAsync('wslpath', ['-w', filePath]);
-      winPath = stdout.trim();
-    } catch {
-      console.warn('[ClipboardFallback] wslpath failed');
-      return null;
-    }
-
-    // Escape for PowerShell single-quoted string: double any apostrophes, escape backslashes
-    const escapedPath = winPath.replace(/'/g, "''").replace(/\\/g, '\\\\');
-    const psCommand = `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -ne $null) { $img.Save('${escapedPath}'); Write-Output 'OK' } else { Write-Output 'NO_IMAGE' }`;
-
-    try {
-      const { stdout } = await execFileAsync(ps, ['-NoProfile', '-NonInteractive', '-Command', psCommand], { timeout: 5000 });
-      if (stdout.trim() !== 'OK') {
+    // WSL: Try Electron's clipboard.readImage() first (instant, works when
+    // WSLg clipboard sync succeeds), then fall back to PowerShell.
+    const electronImg = clipboard.readImage();
+    if (!electronImg.isEmpty()) {
+      await fs.writeFile(buildFilePath(), electronImg.toPNG());
+    } else {
+      // Electron clipboard empty — fall back to PowerShell to read Windows clipboard
+      const ps = await findPowerShell();
+      if (!ps) {
+        console.warn('[ClipboardFallback] PowerShell not found on WSL');
         return null;
       }
-    } catch (err) {
-      console.warn('[ClipboardFallback] PowerShell clipboard read failed:', err);
-      return null;
+
+      const filePath = buildFilePath();
+
+      // Convert WSL path to Windows path for PowerShell
+      let winPath: string;
+      try {
+        const { stdout } = await execFileAsync('wslpath', ['-w', filePath]);
+        winPath = stdout.trim();
+      } catch {
+        console.warn('[ClipboardFallback] wslpath failed');
+        return null;
+      }
+
+      // Escape for PowerShell single-quoted string: double any apostrophes
+      const escapedPath = winPath.replace(/'/g, "''");
+      const psCommand = `Add-Type -AssemblyName System.Windows.Forms; $img = [System.Windows.Forms.Clipboard]::GetImage(); if ($img -ne $null) { $img.Save('${escapedPath}'); Write-Output 'OK' } else { Write-Output 'NO_IMAGE' }`;
+
+      try {
+        const { stdout } = await execFileAsync(ps, ['-NoProfile', '-NonInteractive', '-Command', psCommand], { timeout: 15000 });
+        if (stdout.trim() !== 'OK') {
+          return null;
+        }
+      } catch (err) {
+        console.warn('[ClipboardFallback] PowerShell clipboard read failed:', err);
+        return null;
+      }
     }
   } else if (process.platform === 'darwin') {
     // macOS: Use Electron's clipboard.readImage()

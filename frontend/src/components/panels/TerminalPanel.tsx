@@ -592,8 +592,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           }
 
           // Handle paste events (Ctrl+V, voice transcription, external text injection)
-          // XTerm.js in Electron doesn't handle clipboard paste natively, so we
-          // intercept the paste event and feed it to the terminal explicitly
+          // Attached on the container in CAPTURE phase so we fire BEFORE xterm's own
+          // paste handler on the textarea.  When an image is detected we call
+          // stopPropagation() so xterm never sees the event — this prevents xterm from
+          // also pasting whatever text/plain happens to be in the clipboard alongside
+          // the image, which caused bare "[Image]" (no path) to appear on Windows/WSL.
           const handlePaste = (e: ClipboardEvent) => {
             // Check for images in browser clipboard first (works on native Windows/macOS)
             const items = e.clipboardData?.items;
@@ -602,6 +605,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.startsWith('image/')) {
                   foundBrowserImage = true;
+                  e.stopPropagation();
                   e.preventDefault();
                   const file = items[i].getAsFile();
                   if (!file) return;
@@ -649,6 +653,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               // Only attempt fallback if there's no text being pasted,
               // or if text is empty (user likely intended to paste an image)
               if (!text) {
+                e.stopPropagation();
                 e.preventDefault();
                 (async () => {
                   if (disposed || !terminal) return;
@@ -667,20 +672,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                 return;
               }
 
-              // Regular text paste — let xterm's built-in paste handler
-              // process it (it already listens for paste on its textarea).
-              // Calling terminal.paste() here would double-inject the text.
+              // Regular text paste — let event propagate to xterm's handler.
             }
           };
-          // Attach paste handler to xterm's internal textarea — xterm calls
-          // stopPropagation() on paste events so they never bubble to the container.
-          // On Windows this means a container-level listener never fires.
-          const xtermTextarea = terminalRef.current.querySelector('textarea.xterm-helper-textarea');
-          if (xtermTextarea) {
-            xtermTextarea.addEventListener('paste', handlePaste as EventListener);
-          } else {
-            terminalRef.current.addEventListener('paste', handlePaste);
-          }
+          // Attach on the container in CAPTURE phase — this fires before xterm's
+          // listener on the textarea, letting us block image pastes from reaching xterm.
+          terminalRef.current.addEventListener('paste', handlePaste, { capture: true });
 
           // Handle drag-and-drop of files onto the terminal
           const handleDragOver = (e: DragEvent) => {
@@ -991,7 +988,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             unsubscribeFontUpdate();
             inputDisposable.dispose();
             scrollDisposable.dispose();
-            terminalElement?.removeEventListener('paste', handlePaste);
+            terminalElement?.removeEventListener('paste', handlePaste, { capture: true });
           };
         }
       } catch (error) {
