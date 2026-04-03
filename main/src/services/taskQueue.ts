@@ -344,7 +344,7 @@ export class TaskQueue {
         let buildScript = targetProject.build_script;
         if (!buildScript && ctx) {
           const detected = await detectProjectConfig(
-            targetProject.path,
+            worktreePath || targetProject.path,
             ctx.pathResolver.environment,
             ctx.commandRunner
           );

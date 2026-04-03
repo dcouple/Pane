@@ -282,7 +282,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
                 let archiveScript = project.archive_script;
                 if (!archiveScript) {
                   const detected = await detectProjectConfig(
-                    project.path,
+                    dbSession.worktree_path || project.path,
                     ctx.pathResolver.environment,
                     ctx.commandRunner
                   );
