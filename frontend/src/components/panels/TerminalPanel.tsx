@@ -70,6 +70,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
+  const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
   const tuiActiveRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -502,9 +503,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             if (dist === 0) {
               // User is at the very bottom — enable sticky
               isNearBottomRef.current = true;
+              setShowScrollDown(false);
             } else if (dist > prevDistFromBottom) {
               // User scrolled UP — they want to read history, disable sticky
               isNearBottomRef.current = false;
+              setShowScrollDown(true);
             }
             // If scrolling down but not at bottom yet, leave sticky as-is
             // Note: programmatic writes may shift baseY and fire onScroll with changed dist.
@@ -758,7 +761,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             if (data && typeof data === 'object' && 'panelId' in data && data.panelId && 'output' in data) {
               const typedData = data as { panelId: string; output: string };
               if (typedData.panelId === panel.id && terminal && !disposed) {
-                const shouldSnap = isNearBottomRef.current;
                 const outputLength = typedData.output.length;
                 terminal.write(typedData.output, () => {
                   if (disposed) return;
@@ -769,7 +771,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   } else if (!ackFlushTimer) {
                     ackFlushTimer = setTimeout(flushAck, ACK_BATCH_INTERVAL);
                   }
-                  if (shouldSnap && terminal) {
+                  // Read scroll position LIVE after render, not before write —
+                  // avoids stale shouldSnap=true yanking user back to bottom
+                  if (isNearBottomRef.current && terminal) {
                     terminal.scrollToBottom();
                   }
                 });
@@ -1193,6 +1197,23 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             </svg>
           </button>
         </div>
+      )}
+
+      {/* Jump-to-bottom pill — appears when scrolled up */}
+      {showScrollDown && isInitialized && (
+        <button
+          onClick={() => {
+            xtermRef.current?.scrollToBottom();
+            isNearBottomRef.current = true;
+            setShowScrollDown(false);
+          }}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center w-7 h-7 rounded-full text-text-tertiary hover:text-text-secondary transition-colors duration-150"
+          title="Jump to bottom"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 6L7 9L10 6" />
+          </svg>
+        </button>
       )}
 
       {(!isInitialized || (isCliPanel && !isCliReady)) && (
