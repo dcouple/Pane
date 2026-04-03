@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, GitFork, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
+import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useHotkeyStore } from '../stores/hotkeyStore';
@@ -355,7 +354,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
     setDragOverProjectId(null);
   };
 
-  // Compute global index for each session (for hotkey labels)
+  // Compute global index for each session (for hotkey labels in tooltips)
   const globalSessionIndex = useMemo(() => {
     const map = new Map<string, number>();
     let idx = 0;
@@ -422,10 +421,6 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
             },
           ];
 
-          const pathParts = project.path.replace(/\\/g, '/').split('/').filter(Boolean);
-          const repoName = pathParts[pathParts.length - 1] || project.name;
-          const parentFolder = pathParts[pathParts.length - 2] || '';
-
           return (
             <div key={project.id} className="mt-3 first:mt-2">
               {/* Project header */}
@@ -451,13 +446,11 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                 onDragEnd={handleProjectDragEnd}
                 onDragLeave={() => setDragOverProjectId(null)}
               >
-                <div className="flex-1 min-w-0 flex items-center gap-1.5">
-                  <GitFork className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
-                  {parentFolder && (
-                    <span className="text-[10px] text-text-tertiary truncate">{parentFolder} /</span>
-                  )}
-                  <span className="text-xs font-semibold text-text-primary truncate">{repoName}</span>
-                </div>
+                <Tooltip content={<span className="text-[10px] text-text-tertiary font-mono break-all">{project.path}</span>} side="right">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-semibold text-text-primary truncate block">{project.name}</span>
+                  </div>
+                </Tooltip>
                 <div
                   className="flex-shrink-0 opacity-0 group-hover/project:opacity-100 transition-opacity ml-auto"
                   onClick={(e) => e.stopPropagation()}
@@ -530,84 +523,34 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
 
 
-function SessionTooltipContent({ gs }: {
-  gs: GitStatus;
-}) {
-  return (
-    <div className="max-w-xs space-y-1 text-[10px]">
-      <div className="flex items-center gap-1.5">
-        <GitPullRequest className={`w-3 h-3 flex-shrink-0 ${
-          gs.prState === 'MERGED' ? 'text-purple-400' :
-          gs.prState === 'CLOSED' ? 'text-red-400' :
-          'text-green-400'
-        }`} />
-        <span className="font-medium text-text-primary">
-          #{gs.prNumber} {gs.prState ? gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase() : ''}
-        </span>
-      </div>
-      {gs.prBody && (
-        <div className="text-text-tertiary break-words leading-snug line-clamp-[32] prose prose-xs prose-invert max-w-none [&_h1]:text-[11px] [&_h2]:text-[11px] [&_h3]:text-[10px] [&_p]:text-[10px] [&_li]:text-[10px] [&_code]:text-[9px] [&_ul]:my-0.5 [&_ol]:my-0.5 [&_p]:my-0.5">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{gs.prBody}</ReactMarkdown>
-        </div>
-      )}
-    </div>
-  );
-}
+// --- Session row button content ---
 
-// --- Session row button content (shared between tooltip and non-tooltip paths) ---
-
-function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, branch, statusText, statusColor, globalIndex }: {
+function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels }: {
   session: Session;
   gs: GitStatus | undefined;
   iconColor: string;
   hasDiff: boolean;
   adds: number;
   dels: number;
-  branch: string;
-  statusText: string;
-  statusColor: string;
-  globalIndex: number;
 }) {
   return (
-    <div className="w-full min-w-0">
-      {/* Row 1: icon + name + diff stats */}
-      <div className="flex items-center gap-2 min-w-0">
-        {gs?.prNumber ? (
-          <GitPullRequest className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
-        ) : (
-          <GitBranch className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
-        )}
-        <span className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">
-          {gs?.prTitle || session.name || 'Untitled'}
+    <div className="flex items-center gap-2 min-w-0 w-full">
+      {gs?.prNumber ? (
+        <GitPullRequest className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
+      ) : (
+        <GitBranch className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
+      )}
+      <span className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">
+        {gs?.prTitle || session.name || 'Untitled'}
+      </span>
+      {gs?.prNumber ? (
+        <span className="text-xs text-text-tertiary flex-shrink-0">#{gs.prNumber}</span>
+      ) : hasDiff ? (
+        <span className="flex items-center gap-1 text-xs flex-shrink-0">
+          <span className="text-status-success font-semibold">+{adds}</span>
+          <span className="text-status-error font-semibold">-{dels}</span>
         </span>
-        {hasDiff && (
-          <span className="flex items-center gap-1 text-xs flex-shrink-0">
-            <span className="text-status-success font-semibold">+{adds}</span>
-            <span className="text-status-error font-semibold">-{dels}</span>
-          </span>
-        )}
-      </div>
-      {/* Row 2: branch · PR# · status + shortcut */}
-      <div className="flex items-center gap-1 mt-0.5 pl-[22px] text-[11px] text-text-tertiary min-w-0">
-        {branch && <span className="truncate flex-shrink min-w-0">{branch}</span>}
-        {branch && (gs?.prNumber || statusText) && <span className="flex-shrink-0">·</span>}
-        {gs?.prNumber && (
-          <span className={`flex-shrink-0 ${
-            gs.prState === 'MERGED' ? 'text-purple-400' :
-            gs.prState === 'CLOSED' ? 'text-red-400' :
-            'text-green-400'
-          }`}>
-            #{gs.prNumber} {gs.prState ? gs.prState.charAt(0) + gs.prState.slice(1).toLowerCase() : ''}
-          </span>
-        )}
-        {gs?.prNumber && statusText && <span className="flex-shrink-0">·</span>}
-        {statusText && (
-          <span className={`truncate flex-shrink min-w-0 ${statusColor}`}>{statusText}</span>
-        )}
-        {globalIndex >= 0 && globalIndex < 9 && (
-          <span className="ml-auto flex-shrink-0 text-text-muted text-[10px] opacity-0 group-hover/session:opacity-100 transition-opacity">⌘{globalIndex + 1}</span>
-        )}
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -673,41 +616,6 @@ function SessionRow({
   }, [session.id]);
 
   const gs = localGitStatus;
-  const fullBranch = session.worktreePath?.replace(/\\/g, '/').split('/').pop() || '';
-  const branch = fullBranch.length > 20 ? fullBranch.slice(0, 20) + '...' : fullBranch;
-
-  // Status text + color
-  let statusText = '';
-  let statusColor = 'text-text-tertiary';
-
-  if (session.status === 'running' || session.status === 'initializing') {
-    statusText = session.status === 'initializing' ? 'Initializing' : 'Running';
-    statusColor = 'text-status-success';
-  } else if (session.status === 'waiting') {
-    statusText = 'Waiting for input';
-    statusColor = 'text-status-warning';
-  } else if (session.status === 'error') {
-    statusText = 'Error';
-    statusColor = 'text-status-error';
-  } else if (gs) {
-    if (gs.state === 'conflict') {
-      statusText = 'Merge conflicts';
-      statusColor = 'text-status-error';
-    } else if (gs.isReadyToMerge) {
-      statusText = 'Ready to merge';
-      statusColor = 'text-status-success';
-    } else if (gs.state === 'diverged') {
-      statusText = 'Diverged';
-      statusColor = 'text-status-warning';
-    } else if (gs.state === 'ahead' && gs.ahead) {
-      statusText = `${gs.ahead} ahead`;
-      statusColor = 'text-status-warning';
-    } else if (gs.state === 'behind' && gs.behind) {
-      statusText = `${gs.behind} behind`;
-    } else if (gs.state === 'clean') {
-      statusText = 'Up to date';
-    }
-  }
 
   const iconColor = gs?.prState
     ? gs.prState === 'MERGED' ? 'text-purple-400'
@@ -727,7 +635,7 @@ function SessionRow({
 
   return (
     <div
-      className={`group/session w-full text-left pl-6 pr-1 py-1.5 transition-colors flex items-center gap-1 cursor-pointer ${
+      className={`group/session w-full text-left pl-4 pr-1 py-1.5 transition-colors flex items-center gap-1 cursor-pointer ${
         isActive
           ? 'bg-interactive/30 border-l-4 border-interactive'
           : 'hover:bg-surface-hover border-l-4 border-transparent'
@@ -742,43 +650,21 @@ function SessionRow({
         }
       }}
     >
-      {/* Clickable session content */}
-      {gs?.prNumber ? (
-        <Tooltip
-          content={<SessionTooltipContent gs={gs} />}
-          side="right"
-          className="block flex-1 min-w-0"
-          interactive
-        >
-          <SessionRowContent
-            session={session}
-            gs={gs}
-            iconColor={iconColor}
-            hasDiff={hasDiff}
-            adds={adds}
-            dels={dels}
-            branch={branch}
-            statusText={statusText}
-            statusColor={statusColor}
-            globalIndex={globalIndex}
-          />
-        </Tooltip>
-      ) : (
-        <div className="flex-1 min-w-0">
-          <SessionRowContent
-            session={session}
-            gs={gs}
-            iconColor={iconColor}
-            hasDiff={hasDiff}
-            adds={adds}
-            dels={dels}
-            branch={branch}
-            statusText={statusText}
-            statusColor={statusColor}
-            globalIndex={globalIndex}
-          />
-        </div>
-      )}
+      <Tooltip
+        content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName={false} showDiffStats={false} globalIndex={globalIndex} />}
+        side="right"
+        className="block flex-1 min-w-0"
+        interactive
+      >
+        <SessionRowContent
+          session={session}
+          gs={gs}
+          iconColor={iconColor}
+          hasDiff={hasDiff}
+          adds={adds}
+          dels={dels}
+        />
+      </Tooltip>
 
       {/* Archive button - on hover */}
       <button
