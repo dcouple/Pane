@@ -52,7 +52,12 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       setOpenIdeCommand(project.open_ide_command || '');
       setWorktreeFolder(project.worktree_folder || '');
       setError(null);
-      // Detect config file for this project
+      // Detect the project's config file (pane.json / conductor.json / .gitpod.yml /
+      // devcontainer.json) asynchronously when the modal opens.  The result populates
+      // `detectedConfig` which drives the "From <source>" badge shown beneath each
+      // script field when the user has not set an explicit override in Project Settings.
+      // Detection is best-effort: if the IPC call fails the badges simply don't appear,
+      // which is fine because the fallback still happens at runtime in the main process.
       setDetectedConfig(null);
       window.electronAPI.projects.detectConfig(project.id.toString()).then((result) => {
         if (result.success && result.data) {
@@ -87,6 +92,9 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       }
 
       onUpdate();
+      // Notify other components (e.g. PanelTabBar) that project settings changed so they
+      // can re-resolve run scripts and refresh any config-derived state without a full
+      // page reload.  Listeners subscribe via `window.addEventListener('project-settings-updated')`.
       window.dispatchEvent(new Event('project-settings-updated'));
       onClose();
     } catch (err) {
@@ -337,6 +345,10 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
                   fullWidth
                 />
               </Card>
+              {/* "From <source>" badge — shown only when the user has not set an explicit
+                  override AND `detectProjectConfig` found a value in a config file.
+                  The badge previews what Pane will automatically use at runtime.
+                  The same pattern is repeated for the Run Commands and Archive Script fields. */}
               {!buildScript && detectedConfig?.setup && (
                 <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
                   <span className="px-2 py-0.5 bg-surface-tertiary rounded">

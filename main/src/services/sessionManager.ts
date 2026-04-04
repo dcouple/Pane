@@ -1235,6 +1235,40 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  /**
+   * Runs an archive script before a worktree is removed during session deletion.
+   *
+   * This method is called by the `cleanupCallback` in `ipc/session.ts` after an
+   * archive script has been resolved (from DB `archive_script` or from a detected
+   * config file via `detectProjectConfig`). It gives the project a chance to run
+   * cleanup commands — e.g. stopping background processes, uploading artifacts,
+   * sending a notification — inside the worktree before the directory is deleted.
+   *
+   * HOW IT DIFFERS FROM `runBuildScript`:
+   * - `runBuildScript` uses the legacy node `child_process.exec` path which does not
+   *   route through WSL. It is suitable for simple shell commands on the host OS.
+   * - `runArchiveScript` accepts an optional `commandRunner` (the project's
+   *   `CommandRunner` instance, which is WSL-aware). When a `commandRunner` is
+   *   provided the commands are executed through it — correctly translating paths and
+   *   shell invocations for WSL environments. When no `commandRunner` is provided it
+   *   falls back to `runBuildScript` for backward compatibility.
+   *
+   * CALL SITE:
+   *   `ipc/session.ts` → `cleanupCallback` → after archive script is resolved,
+   *   before `worktreeManager.removeWorktree`.
+   *
+   * FALLBACK CHAIN (caller is responsible for resolving the script):
+   *   1. DB `project.archive_script`  (set by user in Project Settings)
+   *   2. Detected config `archive` field from `detectProjectConfig` (pane.json etc.)
+   *   3. Skip — no archive script runs
+   *
+   * @param sessionId    - Session being archived; used for log attribution.
+   * @param commands     - Individual commands to execute, split from the script string.
+   * @param worktreePath - Absolute path to the session's worktree directory.
+   * @param commandRunner - WSL-aware executor from the project context. When omitted
+   *                        the method delegates to `runBuildScript`.
+   * @returns Object with `success` (all commands exited 0) and `output` (combined stdout/stderr).
+   */
   async runArchiveScript(
     sessionId: string,
     commands: string[],

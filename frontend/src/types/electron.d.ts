@@ -165,7 +165,9 @@ interface ElectronAPI {
     runScript: (projectId: number) => Promise<IPCResponse>;
     getRunningScript: () => Promise<IPCResponse>;
     stopScript: (projectId?: number) => Promise<IPCResponse>;
+    /** Detect pane.json / conductor.json / .gitpod.yml / devcontainer.json at project root. Used by ProjectSettings for "From X" badges. */
     detectConfig: (projectId: string) => Promise<IPCResponse<DetectedProjectConfig | null>>;
+    /** Resolve which run script to execute for a session (DB > config files > scripts/pane-run-script.js). Used by PanelTabBar Play button. */
     resolveRunScript: (sessionId: string) => Promise<IPCResponse<{ command: string; source: string } | null>>;
   };
 

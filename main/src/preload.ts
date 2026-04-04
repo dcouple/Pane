@@ -357,7 +357,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     runScript: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:run-script', projectId),
     getRunningScript: (): Promise<IPCResponse> => ipcRenderer.invoke('projects:get-running-script'),
     stopScript: (projectId?: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:stop-script', projectId),
+    /**
+     * Detects the project's config file (pane.json, conductor.json, .gitpod.yml, or
+     * devcontainer.json) and returns a `DetectedProjectConfig` with `setup`, `run`,
+     * and `archive` script strings plus a `source` label (e.g. "pane.json").
+     * Used by ProjectSettings to show "From <source>" badges on script fields.
+     * Reads from the project's main working directory, not a session worktree.
+     */
     detectConfig: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:detect-config', projectId),
+    /**
+     * Resolves which run script should execute for a specific session.
+     * Checks (in order): DB `project.run_script`, then config-file detection from the
+     * session's worktree path (so branch-local pane.json changes are honoured), then
+     * a `scripts/pane-run-script.js` file in the worktree.
+     * Returns `{ command, source }` or null if nothing is configured.
+     * Used by `PanelTabBar` to start/stop the dev server for a session.
+     */
     resolveRunScript: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:resolve-run-script', sessionId),
   },
 

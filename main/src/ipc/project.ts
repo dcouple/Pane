@@ -513,6 +513,29 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     return stopProjectScriptInternal(projectId);
   });
 
+  /**
+   * IPC handler: `projects:detect-config`
+   *
+   * Runs `detectProjectConfig` against the project's root directory and returns the
+   * resulting `DetectedProjectConfig` (or null if no config file is found).
+   *
+   * PURPOSE — Frontend badge display:
+   *   The ProjectSettings component calls this handler when the settings modal opens
+   *   in order to populate the "From <source>" badges shown beneath the Build Script,
+   *   Run Commands, and Archive Script fields.  These badges communicate to the user
+   *   that a value will be automatically sourced from a config file (e.g. pane.json)
+   *   if they leave the corresponding Project Settings field empty.
+   *
+   * This handler always reads from `project.path` (the repo root on the main branch).
+   * It does NOT read from a session's worktree path — that distinction only matters at
+   * runtime when scripts are actually executed.  For display purposes the project root
+   * is the canonical location.
+   *
+   * Related:
+   *   - `shared/types/projectConfig.ts` — `DetectedProjectConfig` shape
+   *   - `main/src/services/projectConfigDetector.ts` — `detectProjectConfig` implementation
+   *   - `frontend/src/components/ProjectSettings.tsx` — consumer (badge rendering)
+   */
   ipcMain.handle('projects:detect-config', async (_event, projectId: string) => {
     try {
       const project = databaseService.getProject(parseInt(projectId));
@@ -603,7 +626,18 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
         return { success: false, error: 'Project not found' };
       }
 
-      // Get the run script, with fallback to detected config
+      // Get the run script, with fallback to detected config.
+      //
+      // NOTE: `projects:run-script` is the *project-level* run handler used from the
+      // Dashboard / project toolbar.  It is distinct from `projects:resolve-run-script`
+      // which resolves a run script for a specific session's worktree.  Both follow the
+      // same DB-wins-then-config-detection fallback pattern, but this handler always
+      // reads from `project.path` (the main worktree) rather than a session worktree.
+      //
+      // Resolution chain (first match wins):
+      //   1. DB `project.run_script`
+      //   2. `detectProjectConfig(project.path)` → `run` field
+      //   3. Error — nothing to run
       let runScript = project.run_script;
       if (!runScript) {
         const ctx = sessionManager.getProjectContextByProjectId(project.id);

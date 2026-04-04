@@ -278,7 +278,24 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             const ctx = sessionManager.getProjectContextByProjectId(dbSession.project_id);
             if (ctx) {
               try {
-                // Run archive script before worktree removal
+                // ── Archive script resolution ──────────────────────────────────────────
+                // Before removing the worktree we give the project a chance to run
+                // cleanup commands (e.g. stopping background servers, pushing branches,
+                // uploading artefacts).
+                //
+                // Resolution chain (first match wins):
+                //   1. DB `project.archive_script` — set explicitly in Project Settings.
+                //   2. `detectProjectConfig(worktree_path)` → `archive` field — read from
+                //      the *worktree path* (not the project root) so that branch-local
+                //      config (pane.json / conductor.json) on the session's branch is used.
+                //   3. Skip — no archive script runs, proceed directly to worktree removal.
+                //
+                // Failure of the archive script does NOT block worktree removal; the outer
+                // try/catch swallows errors and appends a warning to `cleanupMessage` so
+                // the user sees what happened without the session getting stuck.
+                //
+                // The progress status 'running-archive-script' is emitted to `ArchiveProgressManager`
+                // so the frontend can display granular progress in the archive UI.
                 let archiveScript = project.archive_script;
                 if (!archiveScript) {
                   const detected = await detectProjectConfig(
@@ -569,7 +586,18 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           timestamp: new Date()
         });
 
-        // Run build script if configured (DB value wins, fallback to detected config)
+        // ── Build script for main-repo sessions ───────────────────────────────
+        // Main-repo sessions (is_main_repo = true) share the project root rather
+        // than a dedicated worktree, so we read the config from project.path.
+        //
+        // Resolution chain (first match wins):
+        //   1. DB `project.build_script` — set explicitly in Project Settings.
+        //   2. `detectProjectConfig(project.path)` → `setup` field from pane.json,
+        //      conductor.json, .gitpod.yml, or devcontainer.json.
+        //   3. Skip — no build script runs.
+        //
+        // This mirrors the same fallback used in `taskQueue.ts` for worktree sessions
+        // and in `cleanupCallback` above for archive scripts.
         const project = dbSession?.project_id ? databaseService.getProject(dbSession.project_id) : null;
         let mainRepoBuildScript = project?.build_script;
         if (!mainRepoBuildScript && project) {

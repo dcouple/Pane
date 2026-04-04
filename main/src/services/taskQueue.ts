@@ -340,7 +340,20 @@ export class TaskQueue {
           }
         }
 
-        // Run build script after session is visible in UI
+        // Run build script after session is visible in UI.
+        //
+        // Resolution chain (first match wins):
+        //   1. DB `project.build_script` — set explicitly by the user in Project Settings.
+        //   2. `detectProjectConfig(worktreePath)` → `setup` field — read from the
+        //      session's worktree path (not the project root) so that branch-local
+        //      config changes in pane.json / conductor.json are picked up immediately,
+        //      even before they are merged to main.
+        //   3. Skip — no build script runs.
+        //
+        // The `ctx` null-guard is required because `getProjectContextByProjectId` returns
+        // null when the project has no active runtime context (e.g. not yet initialised
+        // or running on a WSL path before the first session). Skipping config detection
+        // when ctx is absent is safe — the user can always set build_script explicitly.
         let buildScript = targetProject.build_script;
         if (!buildScript && ctx) {
           const detected = await detectProjectConfig(
