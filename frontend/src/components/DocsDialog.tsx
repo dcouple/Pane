@@ -167,6 +167,7 @@ export function DocsDialog({ isOpen, onClose }: DocsDialogProps) {
           ref={webviewRef}
           src={DOCS_URL}
           partition="persist:pane-docs"
+          allowpopups={'true' as unknown as boolean}
           className="w-full h-full border-0"
           style={{ display: 'inline-flex' }}
         />
