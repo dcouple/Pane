@@ -14,6 +14,7 @@ import Help from './components/Help';
 import AnalyticsConsentDialog from './components/AnalyticsConsentDialog';
 import OnboardingDialog from './components/OnboardingDialog';
 import { AboutDialog } from './components/AboutDialog';
+import { DocsDialog } from './components/DocsDialog';
 import { UpdateDialog } from './components/UpdateDialog';
 import { MainProcessLogger } from './components/MainProcessLogger';
 import { ErrorDialog } from './components/ErrorDialog';
@@ -79,6 +80,7 @@ function App() {
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -548,6 +550,7 @@ function App() {
             collapsed={sidebarCollapsed}
             onToggleCollapse={handleToggleSidebar}
             onHelpClick={() => setIsHelpOpen(true)}
+            onDocsClick={() => setIsDocsOpen(true)}
           />
         </div>
         <SessionView />
@@ -610,6 +613,7 @@ function App() {
           onClose={() => setShowAddProjectDialog(false)}
         />
         <Help isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+        <DocsDialog isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
         <ShortcutHintsOverlay isVisible={shortcutHintsVisible} shortcuts={terminalShortcuts} />
 
         </div>
