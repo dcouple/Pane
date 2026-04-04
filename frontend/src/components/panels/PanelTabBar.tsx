@@ -119,11 +119,17 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       setResolvedRunScript(null);
       return;
     }
-    window.electronAPI?.projects.resolveRunScript(session.id).then((result: { success: boolean; data?: { command: string; source: string } | null }) => {
+    let cancelled = false;
+    const currentSessionId = session.id;
+    window.electronAPI?.projects.resolveRunScript(currentSessionId).then((result: { success: boolean; data?: { command: string; source: string } | null }) => {
+      if (cancelled) return;
       if (result?.success) {
         setResolvedRunScript(result.data ?? null);
       }
-    }).catch(() => setResolvedRunScript(null));
+    }).catch(() => {
+      if (!cancelled) setResolvedRunScript(null);
+    });
+    return () => { cancelled = true; };
   }, [session?.id, resolveKey]);
 
   const saveCustomCommand = useCallback(async (name: string, command: string) => {
