@@ -144,12 +144,20 @@ export class LogsManager {
     // Get enhanced shell PATH for packaged apps
     const shellPath = getShellPath();
 
+    // Compute PANE_PORT — deterministic 10-port block per session for parallel dev servers
+    let portHash = 0;
+    for (let i = 0; i < sessionId.length; i++) {
+      portHash = ((portHash << 5) - portHash) + sessionId.charCodeAt(i);
+      portHash |= 0;
+    }
+    const panePort = String(3000 + (Math.abs(portHash) % 600) * 10);
+
     // Start process with shell
     let childProcess: ChildProcess;
 
     if (wslContext) {
       childProcess = spawn('wsl.exe', ['-d', wslContext.distribution, '--', 'bash', '-c', `cd '${cwd}' && ${command}`], {
-        env: { ...process.env, PATH: shellPath }
+        env: { ...process.env, PATH: shellPath, PANE_PORT: panePort, PANE_WORKSPACE_PATH: cwd }
       });
     } else {
       childProcess = spawn(command, [], {
@@ -157,7 +165,9 @@ export class LogsManager {
         shell: true,
         env: {
           ...process.env,
-          PATH: shellPath
+          PATH: shellPath,
+          PANE_PORT: panePort,
+          PANE_WORKSPACE_PATH: cwd
         }
       });
     }
