@@ -7,6 +7,13 @@ export interface Project {
   system_prompt?: string | null;
   run_script?: string | null;
   build_script?: string | null;
+  /**
+   * Optional multi-line shell script that runs inside a session's worktree before
+   * the worktree is deleted during session archiving.  When null Pane falls back to
+   * the `archive` field from `detectProjectConfig` (pane.json / conductor.json).
+   * Populated from the DB `projects.archive_script` column.
+   */
+  archive_script?: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -45,6 +52,12 @@ export interface UpdateProjectRequest {
   system_prompt?: string | null;
   run_script?: string | null;
   build_script?: string | null;
+  /**
+   * User-supplied archive script override sent to `projects:update` IPC.
+   * Pass `null` to clear the override and revert to config-file detection.
+   * See `Project.archive_script` for the full resolution chain.
+   */
+  archive_script?: string | null;
   active?: boolean;
   open_ide_command?: string | null;
   worktree_folder?: string | null;

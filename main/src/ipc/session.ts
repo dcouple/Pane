@@ -24,6 +24,7 @@ import {
   createValidationError
 } from '../utils/sessionValidation';
 import type { SerializedArchiveTask } from '../services/archiveProgressManager';
+import { detectProjectConfig } from '../services/projectConfigDetector';
 
 export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices): void {
   const {
@@ -277,6 +278,53 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             const ctx = sessionManager.getProjectContextByProjectId(dbSession.project_id);
             if (ctx) {
               try {
+                // ── Archive script resolution ──────────────────────────────────────────
+                // Before removing the worktree we give the project a chance to run
+                // cleanup commands (e.g. stopping background servers, pushing branches,
+                // uploading artefacts).
+                //
+                // Resolution chain (first match wins):
+                //   1. DB `project.archive_script` — set explicitly in Project Settings.
+                //   2. `detectProjectConfig(worktree_path)` → `archive` field — read from
+                //      the *worktree path* (not the project root) so that branch-local
+                //      config (pane.json / conductor.json) on the session's branch is used.
+                //   3. Skip — no archive script runs, proceed directly to worktree removal.
+                //
+                // Failure of the archive script does NOT block worktree removal; the outer
+                // try/catch swallows errors and appends a warning to `cleanupMessage` so
+                // the user sees what happened without the session getting stuck.
+                //
+                // The progress status 'running-archive-script' is emitted to `ArchiveProgressManager`
+                // so the frontend can display granular progress in the archive UI.
+                let archiveScript = project.archive_script;
+                if (!archiveScript) {
+                  const detected = await detectProjectConfig(
+                    dbSession.worktree_path || project.path,
+                    ctx.pathResolver.environment,
+                    ctx.commandRunner
+                  );
+                  archiveScript = detected?.archive ?? null;
+                }
+                if (archiveScript) {
+                  try {
+                    if (archiveProgressManager) {
+                      archiveProgressManager.updateTaskStatus(sessionId, 'running-archive-script');
+                    }
+                    const commands = archiveScript.split('\n').filter((cmd: string) => cmd.trim());
+                    const archiveResult = await sessionManager.runArchiveScript(
+                      sessionId, commands, dbSession.worktree_path, ctx.commandRunner
+                    );
+                    if (archiveResult.success) {
+                      cleanupMessage += `\x1b[32m✓ Archive script completed\x1b[0m\r\n`;
+                    } else {
+                      cleanupMessage += `\x1b[33m⚠ Archive script completed with errors\x1b[0m\r\n`;
+                    }
+                  } catch (archiveError) {
+                    console.error(`[Main] Archive script failed for session ${sessionId}:`, archiveError);
+                    cleanupMessage += `\x1b[33m⚠ Archive script failed (continuing cleanup)\x1b[0m\r\n`;
+                  }
+                }
+
                 // Update progress: removing worktree
                 if (archiveProgressManager) {
                   archiveProgressManager.updateTaskStatus(sessionId, 'removing-worktree');
@@ -538,9 +586,32 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
           timestamp: new Date()
         });
 
-        // Run build script if configured
+        // ── Build script for main-repo sessions ───────────────────────────────
+        // Main-repo sessions (is_main_repo = true) share the project root rather
+        // than a dedicated worktree, so we read the config from project.path.
+        //
+        // Resolution chain (first match wins):
+        //   1. DB `project.build_script` — set explicitly in Project Settings.
+        //   2. `detectProjectConfig(project.path)` → `setup` field from pane.json,
+        //      conductor.json, .gitpod.yml, or devcontainer.json.
+        //   3. Skip — no build script runs.
+        //
+        // This mirrors the same fallback used in `taskQueue.ts` for worktree sessions
+        // and in `cleanupCallback` above for archive scripts.
         const project = dbSession?.project_id ? databaseService.getProject(dbSession.project_id) : null;
-        if (project?.build_script) {
+        let mainRepoBuildScript = project?.build_script;
+        if (!mainRepoBuildScript && project) {
+          const ctx = sessionManager.getProjectContextByProjectId(project.id);
+          if (ctx) {
+            const detected = await detectProjectConfig(
+              project.path,
+              ctx.pathResolver.environment,
+              ctx.commandRunner
+            );
+            mainRepoBuildScript = detected?.setup;
+          }
+        }
+        if (mainRepoBuildScript) {
           console.log(`[IPC] Running build script for main repo session ${sessionId}`);
 
           const buildWaitingMessage = `\x1b[36m[${new Date().toLocaleTimeString()}]\x1b[0m \x1b[1m\x1b[33m⏳ Waiting for build script to complete...\x1b[0m\r\n\r\n`;
@@ -550,7 +621,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
             timestamp: new Date()
           });
 
-          const buildCommands = project.build_script.split('\n').filter(cmd => cmd.trim());
+          const buildCommands = mainRepoBuildScript.split('\n').filter(cmd => cmd.trim());
           const buildResult = await sessionManager.runBuildScript(sessionId, buildCommands, session.worktreePath);
           console.log(`[IPC] Build script completed. Success: ${buildResult.success}`);
         }

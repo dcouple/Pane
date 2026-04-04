@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Save, Trash2, FolderIcon, GitBranch, Settings, Code2, BrainCircuit } from 'lucide-react';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
+import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Input, Textarea } from './ui/Input';
 import { Button } from './ui/Button';
@@ -23,6 +24,8 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
   const [systemPrompt, setSystemPrompt] = useState('');
   const [runScript, setRunScript] = useState('');
   const [buildScript, setBuildScript] = useState('');
+  const [archiveScript, setArchiveScript] = useState('');
+  const [detectedConfig, setDetectedConfig] = useState<DetectedProjectConfig | null>(null);
   const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [openIdeCommand, setOpenIdeCommand] = useState('');
   const [worktreeFolder, setWorktreeFolder] = useState('');
@@ -37,6 +40,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       setSystemPrompt(project.system_prompt || '');
       setRunScript(project.run_script || '');
       setBuildScript(project.build_script || '');
+      setArchiveScript(project.archive_script || '');
       // Fetch the current branch when dialog opens
       if (project.path) {
         window.electronAPI.git.detectBranch(project.path).then((result) => {
@@ -48,6 +52,20 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       setOpenIdeCommand(project.open_ide_command || '');
       setWorktreeFolder(project.worktree_folder || '');
       setError(null);
+      // Detect the project's config file (pane.json / conductor.json / .gitpod.yml /
+      // devcontainer.json) asynchronously when the modal opens.  The result populates
+      // `detectedConfig` which drives the "From <source>" badge shown beneath each
+      // script field when the user has not set an explicit override in Project Settings.
+      // Detection is best-effort: if the IPC call fails the badges simply don't appear,
+      // which is fine because the fallback still happens at runtime in the main process.
+      setDetectedConfig(null);
+      window.electronAPI.projects.detectConfig(project.id.toString()).then((result) => {
+        if (result.success && result.data) {
+          setDetectedConfig(result.data);
+        }
+      }).catch(() => {
+        // Config detection is optional — don't block the UI
+      });
     }
   }, [isOpen, project]);
 
@@ -62,6 +80,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
         system_prompt: systemPrompt || null,
         run_script: runScript || null,
         build_script: buildScript || null,
+        archive_script: archiveScript || null,
         open_ide_command: openIdeCommand || null,
         worktree_folder: worktreeFolder || null
       };
@@ -73,6 +92,10 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
       }
 
       onUpdate();
+      // Notify other components (e.g. PanelTabBar) that project settings changed so they
+      // can re-resolve run scripts and refresh any config-derived state without a full
+      // page reload.  Listeners subscribe via `window.addEventListener('project-settings-updated')`.
+      window.dispatchEvent(new Event('project-settings-updated'));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update project');
@@ -308,9 +331,27 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
               </p>
             </FieldWithTooltip>
 
+            {detectedConfig && (
+              <div className="rounded-lg border border-border-secondary bg-surface-secondary/30 px-3 py-2.5 text-xs text-text-tertiary">
+                <p className="font-medium text-text-secondary mb-1">
+                  Auto-detected: <span className="font-mono text-text-accent">{detectedConfig.source}</span>
+                </p>
+                <p className="leading-relaxed">
+                  Pane found a config file in your repo root and will use its scripts as defaults.
+                  Values you set below override the config file.
+                  {detectedConfig.source === 'pane.json' || detectedConfig.source === 'conductor.json'
+                    ? ' This file uses the pane.json format: { "scripts": { "setup": "...", "run": "...", "archive": "..." } }'
+                    : ''}
+                </p>
+                <p className="mt-1 text-[10px] text-text-quaternary">
+                  Detection priority: pane.json → conductor.json → .gitpod.yml → devcontainer.json
+                </p>
+              </div>
+            )}
+
             <FieldWithTooltip
               label="Build Script"
-              tooltip="Commands that run once when creating a new worktree. Use for setup tasks like installing dependencies."
+              tooltip="Commands that run once when creating a new worktree. Use for setup tasks like installing dependencies. If left empty, Pane checks for pane.json, conductor.json, .gitpod.yml, or devcontainer.json in your repo."
             >
               <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
                 <Textarea
@@ -322,11 +363,23 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
                   fullWidth
                 />
               </Card>
+              {/* "From <source>" badge — shown only when the user has not set an explicit
+                  override AND `detectProjectConfig` found a value in a config file.
+                  The badge previews what Pane will automatically use at runtime.
+                  The same pattern is repeated for the Run Commands and Archive Script fields. */}
+              {!buildScript && detectedConfig?.setup && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.setup}</span>
+                </div>
+              )}
             </FieldWithTooltip>
 
             <FieldWithTooltip
               label="Run Commands"
-              tooltip="Commands that run continuously during panes. Perfect for development servers and test watchers."
+              tooltip="Commands for the Play button (dev servers, test watchers). If left empty, Pane uses your repo's pane.json, conductor.json, .gitpod.yml, or devcontainer.json — or falls back to Claude-generated setup."
             >
               <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
                 <Textarea
@@ -338,6 +391,38 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
                   fullWidth
                 />
               </Card>
+              {!runScript && detectedConfig?.run && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.run}</span>
+                </div>
+              )}
+            </FieldWithTooltip>
+
+            <FieldWithTooltip
+              label="Archive Script"
+              tooltip="Cleanup commands that run before a worktree is removed when archiving a session. If left empty, Pane checks your repo's config files for a scripts.archive entry."
+            >
+              <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
+                <Textarea
+                  value={archiveScript}
+                  onChange={(e) => setArchiveScript(e.target.value)}
+                  rows={4}
+                  placeholder="npm run cleanup"
+                  className="font-mono text-sm bg-transparent border-0 p-3 focus:ring-0 resize-none"
+                  fullWidth
+                />
+              </Card>
+              {!archiveScript && detectedConfig?.archive && (
+                <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                  <span className="px-2 py-0.5 bg-surface-tertiary rounded">
+                    From {detectedConfig.source}
+                  </span>
+                  <span className="truncate">{detectedConfig.archive}</span>
+                </div>
+              )}
             </FieldWithTooltip>
 
           </div>

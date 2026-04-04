@@ -70,6 +70,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 }) => {
   const sessionContext = useSession();
   const session = sessionContext?.session;
+  const [resolvedRunScript, setResolvedRunScript] = useState<{ command: string; source: string } | null>(null);
   const { config, fetchConfig, updateConfig } = useConfigStore();
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -105,6 +106,31 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       fetchConfig();
     }
   }, [config, fetchConfig]);
+
+  // Resolve run script for current session — re-resolves on session change or project settings update
+  const [resolveKey, setResolveKey] = useState(0);
+  useEffect(() => {
+    const handler = () => setResolveKey(k => k + 1);
+    window.addEventListener('project-settings-updated', handler);
+    return () => window.removeEventListener('project-settings-updated', handler);
+  }, []);
+  useEffect(() => {
+    if (!session) {
+      setResolvedRunScript(null);
+      return;
+    }
+    let cancelled = false;
+    const currentSessionId = session.id;
+    window.electronAPI?.projects.resolveRunScript(currentSessionId).then((result: { success: boolean; data?: { command: string; source: string } | null }) => {
+      if (cancelled) return;
+      if (result?.success) {
+        setResolvedRunScript(result.data ?? null);
+      }
+    }).catch(() => {
+      if (!cancelled) setResolvedRunScript(null);
+    });
+    return () => { cancelled = true; };
+  }, [session?.id, resolveKey]);
 
   const saveCustomCommand = useCallback(async (name: string, command: string) => {
     const existing = config?.customCommands ?? [];
@@ -378,26 +404,41 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     action: () => setShowDropdown(true),
   });
 
-  // Run Dev Server handler (shared between button and hotkey)
+  /**
+   * Run Dev Server — Play button handler (also triggered by Ctrl+Shift+D hotkey).
+   *
+   * Behavior depends on whether a run script was resolved:
+   *
+   * 1. If resolved: runs the resolved command in a terminal panel.
+   *    Resolution is done by `projects:resolve-run-script` IPC (see project.ts)
+   *    which checks, in order:
+   *      - DB run_script (Project Settings)
+   *      - pane.json scripts.run
+   *      - conductor.json scripts.run
+   *      - .gitpod.yml first task command
+   *      - devcontainer.json postStartCommand
+   *      - scripts/pane-run-script.js in the worktree
+   *
+   * 2. If nothing resolved: launches Claude to auto-generate a run script
+   *    tailored to the project's framework (the "Setup Run Script" flow).
+   *
+   * The tooltip shows which command will run and its source (e.g. "from pane.json").
+   */
   const handleRunDevServer = useCallback(async () => {
     if (!session) return;
-    const scriptExists = await window.electronAPI?.invoke('file:exists', {
-      sessionId: session.id,
-      filePath: 'scripts/pane-run-script.js'
-    });
-
-    if (scriptExists) {
+    if (resolvedRunScript) {
       handleAddPanel('terminal', {
-        initialCommand: 'node scripts/pane-run-script.js',
+        initialCommand: resolvedRunScript.command,
         title: 'Dev Server'
       });
     } else {
+      // No run script resolved — let Claude set one up
       handleAddPanel('terminal', {
         initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
         title: 'Setup Run Script'
       });
     }
-  }, [session, handleAddPanel, config?.worktreeFileSync]);
+  }, [session, handleAddPanel, resolvedRunScript, config?.worktreeFileSync]);
 
   // Ctrl+Shift+D: Run Dev Server
   useHotkey({
@@ -816,7 +857,14 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           {session && (
             <Tooltip content={
                 <span className="flex flex-col items-start gap-1">
-                  <span className="text-text-secondary">Run Dev Server</span>
+                  <span className="text-text-secondary">
+                    {resolvedRunScript
+                      ? `Run: ${resolvedRunScript.command}`
+                      : 'Set up run script (via Claude)'}
+                  </span>
+                  {resolvedRunScript && (
+                    <span className="text-text-tertiary text-[10px]">from {resolvedRunScript.source}</span>
+                  )}
                   {hotkeyDisplay('run-dev-server') && <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{hotkeyDisplay('run-dev-server')}</Kbd>}
                 </span>
               } side="bottom">

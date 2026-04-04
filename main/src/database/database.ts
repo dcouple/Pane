@@ -558,6 +558,18 @@ export class DatabaseService {
         .run();
     }
 
+    // Add archive_script column to projects table if it doesn't exist.
+    // `archive_script` stores an optional multi-line shell script (newline-delimited
+    // commands) that Pane runs inside the session's worktree *before* the worktree
+    // directory is deleted during session archiving.  It was introduced as part of the
+    // pane.json feature so that projects can define cleanup commands in version control
+    // (pane.json `scripts.archive`); the DB column lets users override that value from
+    // the Project Settings UI without modifying the config file.
+    // Added: pane.json feature branch.
+    if (!projectsTableInfo.some((col: { name: string }) => col.name === 'archive_script')) {
+      this.db.exec('ALTER TABLE projects ADD COLUMN archive_script TEXT');
+    }
+
     // Create project_run_commands table if it doesn't exist
     const runCommandsTable = this.db
       .prepare(
@@ -2258,6 +2270,12 @@ export class DatabaseService {
     if (updates.build_script !== undefined) {
       fields.push("build_script = ?");
       values.push(updates.build_script);
+    }
+    // Persist the user-supplied archive script override. A null value means "fall
+    // back to whatever detectProjectConfig finds in pane.json / conductor.json".
+    if (updates.archive_script !== undefined) {
+      fields.push("archive_script = ?");
+      values.push(updates.archive_script);
     }
     if (updates.default_permission_mode !== undefined) {
       fields.push("default_permission_mode = ?");

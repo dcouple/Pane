@@ -16,6 +16,7 @@ import type { Project } from '../database/models';
 import { worktreeFileSyncService } from './worktreeFileSyncService';
 import { terminalPanelManager } from './terminalPanelManager';
 import { configManager } from '../index';
+import { detectProjectConfig } from './projectConfigDetector';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -339,8 +340,33 @@ export class TaskQueue {
           }
         }
 
-        // Run build script after session is visible in UI
-        if (targetProject.build_script) {
+        // Run build script after session is visible in UI.
+        //
+        // Resolution chain (first match wins):
+        //   1. DB `project.build_script` — set explicitly by the user in Project Settings.
+        //   2. `detectProjectConfig(worktreePath)` → `setup` field — read from the
+        //      session's worktree path (not the project root) so that branch-local
+        //      config changes in pane.json / conductor.json are picked up immediately,
+        //      even before they are merged to main.
+        //   3. Skip — no build script runs.
+        //
+        // The `ctx` null-guard is required because `getProjectContextByProjectId` returns
+        // null when the project has no active runtime context (e.g. not yet initialised
+        // or running on a WSL path before the first session). Skipping config detection
+        // when ctx is absent is safe — the user can always set build_script explicitly.
+        let buildScript = targetProject.build_script;
+        if (!buildScript && ctx) {
+          const detected = await detectProjectConfig(
+            worktreePath || targetProject.path,
+            ctx.pathResolver.environment,
+            ctx.commandRunner
+          );
+          if (detected?.setup) {
+            buildScript = detected.setup;
+          }
+        }
+
+        if (buildScript) {
           console.log(`[TaskQueue] Running build script for session ${session.id}`);
 
           // Update status message
@@ -354,7 +380,7 @@ export class TaskQueue {
             timestamp: new Date()
           });
 
-          const buildCommands = targetProject.build_script.split('\n').filter(cmd => cmd.trim());
+          const buildCommands = buildScript.split('\n').filter(cmd => cmd.trim());
           const buildResult = await sessionManager.runBuildScript(session.id, buildCommands, worktreePath);
           console.log(`[TaskQueue] Build script completed. Success: ${buildResult.success}`);
         }

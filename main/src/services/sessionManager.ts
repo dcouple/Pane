@@ -1235,6 +1235,100 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  /**
+   * Runs an archive script before a worktree is removed during session deletion.
+   *
+   * This method is called by the `cleanupCallback` in `ipc/session.ts` after an
+   * archive script has been resolved (from DB `archive_script` or from a detected
+   * config file via `detectProjectConfig`). It gives the project a chance to run
+   * cleanup commands — e.g. stopping background processes, uploading artifacts,
+   * sending a notification — inside the worktree before the directory is deleted.
+   *
+   * HOW IT DIFFERS FROM `runBuildScript`:
+   * - `runBuildScript` uses the legacy node `child_process.exec` path which does not
+   *   route through WSL. It is suitable for simple shell commands on the host OS.
+   * - `runArchiveScript` accepts an optional `commandRunner` (the project's
+   *   `CommandRunner` instance, which is WSL-aware). When a `commandRunner` is
+   *   provided the commands are executed through it — correctly translating paths and
+   *   shell invocations for WSL environments. When no `commandRunner` is provided it
+   *   falls back to `runBuildScript` for backward compatibility.
+   *
+   * CALL SITE:
+   *   `ipc/session.ts` → `cleanupCallback` → after archive script is resolved,
+   *   before `worktreeManager.removeWorktree`.
+   *
+   * FALLBACK CHAIN (caller is responsible for resolving the script):
+   *   1. DB `project.archive_script`  (set by user in Project Settings)
+   *   2. Detected config `archive` field from `detectProjectConfig` (pane.json etc.)
+   *   3. Skip — no archive script runs
+   *
+   * @param sessionId    - Session being archived; used for log attribution.
+   * @param commands     - Individual commands to execute, split from the script string.
+   * @param worktreePath - Absolute path to the session's worktree directory.
+   * @param commandRunner - WSL-aware executor from the project context. When omitted
+   *                        the method delegates to `runBuildScript`.
+   * @returns Object with `success` (all commands exited 0) and `output` (combined stdout/stderr).
+   */
+  async runArchiveScript(
+    sessionId: string,
+    commands: string[],
+    worktreePath: string,
+    commandRunner?: CommandRunner,
+  ): Promise<{ success: boolean; output: string }> {
+    if (!commandRunner) {
+      return this.runBuildScript(sessionId, commands, worktreePath);
+    }
+
+    const timestamp = new Date().toLocaleTimeString();
+    addSessionLog(sessionId, 'info', `🗄 ARCHIVE SCRIPT RUNNING at ${timestamp}`, 'Archive');
+
+    let allOutput = '';
+    let overallSuccess = true;
+
+    for (const command of commands) {
+      if (command.trim()) {
+        console.log(`[SessionManager] Executing archive command: ${command}`);
+        addSessionLog(sessionId, 'info', `$ ${command}`, 'Archive');
+
+        try {
+          const { stdout, stderr } = await commandRunner.execAsync(command, worktreePath);
+
+          if (stdout) {
+            allOutput += stdout;
+            stdout.split('\n').filter(line => line.trim()).forEach(line => {
+              addSessionLog(sessionId, 'info', line, 'Archive');
+            });
+          }
+          if (stderr) {
+            allOutput += stderr;
+            stderr.split('\n').filter(line => line.trim()).forEach(line => {
+              addSessionLog(sessionId, 'warn', line, 'Archive');
+            });
+          }
+        } catch (cmdError: unknown) {
+          console.error(`[SessionManager] Archive command failed: ${command}`, cmdError);
+          const error = cmdError as { stderr?: string; stdout?: string; message?: string };
+          const errorMessage = error.stderr || error.stdout || error.message || String(cmdError);
+          allOutput += errorMessage;
+
+          addSessionLog(sessionId, 'error', `Command failed: ${command}`, 'Archive');
+          addSessionLog(sessionId, 'error', errorMessage, 'Archive');
+
+          overallSuccess = false;
+        }
+      }
+    }
+
+    const archiveEndTimestamp = new Date().toLocaleTimeString();
+    if (overallSuccess) {
+      addSessionLog(sessionId, 'info', `✅ ARCHIVE COMPLETED at ${archiveEndTimestamp}`, 'Archive');
+    } else {
+      addSessionLog(sessionId, 'error', `❌ ARCHIVE FAILED at ${archiveEndTimestamp}`, 'Archive');
+    }
+
+    return { success: overallSuccess, output: allOutput };
+  }
+
   async runBuildScript(sessionId: string, commands: string[], workingDirectory: string): Promise<{ success: boolean; output: string }> {
     // Get enhanced shell PATH
     const shellPath = getShellPath();

@@ -5,7 +5,20 @@ export interface ArchiveTask {
   sessionName: string;
   worktreeName: string;
   projectName: string;
-  status: 'pending' | 'queued' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
+  /**
+   * Lifecycle stage of this archive task.
+   *
+   * - `queued`                — Task is waiting in the serial queue.
+   * - `pending`               — Task has been dequeued and its callback is about to run.
+   * - `running-archive-script`— The project's archive script (from DB or pane.json) is
+   *                             executing inside the worktree. Set by `ipc/session.ts`
+   *                             `cleanupCallback` before calling `sessionManager.runArchiveScript`.
+   * - `removing-worktree`     — `worktreeManager.removeWorktree` is in progress.
+   * - `cleaning-artifacts`    — Session artefact files (screenshots etc.) are being deleted.
+   * - `completed`             — All steps finished successfully.
+   * - `failed`                — A step threw an unrecoverable error.
+   */
+  status: 'pending' | 'queued' | 'running-archive-script' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
   startTime: Date;
   endTime?: Date;
   error?: string;
@@ -17,7 +30,8 @@ export interface SerializedArchiveTask {
   sessionName: string;
   worktreeName: string;
   projectName: string;
-  status: 'pending' | 'queued' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
+  /** Serialisable mirror of `ArchiveTask.status` — same values, no `executeCallback`. */
+  status: 'pending' | 'queued' | 'running-archive-script' | 'removing-worktree' | 'cleaning-artifacts' | 'completed' | 'failed';
   startTime: string;
   endTime?: string;
   error?: string;

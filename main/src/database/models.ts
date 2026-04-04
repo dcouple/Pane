@@ -5,6 +5,21 @@ export interface Project {
   system_prompt?: string | null;
   run_script?: string | null;
   build_script?: string | null;
+  /**
+   * Optional multi-line shell script (newline-delimited commands) that Pane executes
+   * inside the session's worktree *before* the worktree directory is deleted during
+   * session archiving.
+   *
+   * Resolution priority (first match wins):
+   *   1. This DB field — set by the user in Project Settings, overrides config files.
+   *   2. `detectProjectConfig()` → `archive` field from pane.json / conductor.json.
+   *   3. `null` — no archive script runs, worktree is removed immediately.
+   *
+   * The script is split on newlines and each non-empty line is executed individually
+   * by `SessionManager.runArchiveScript`, which uses the project's `CommandRunner`
+   * for correct WSL path handling.
+   */
+  archive_script?: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
