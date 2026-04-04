@@ -404,14 +404,41 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     action: () => setShowDropdown(true),
   });
 
-  // Run Dev Server handler (shared between button and hotkey)
+  /**
+   * Run Dev Server — Play button handler (also triggered by Ctrl+Shift+D hotkey).
+   *
+   * Behavior depends on whether a run script was resolved:
+   *
+   * 1. If resolved: runs the resolved command in a terminal panel.
+   *    Resolution is done by `projects:resolve-run-script` IPC (see project.ts)
+   *    which checks, in order:
+   *      - DB run_script (Project Settings)
+   *      - pane.json scripts.run
+   *      - conductor.json scripts.run
+   *      - .gitpod.yml first task command
+   *      - devcontainer.json postStartCommand
+   *      - scripts/pane-run-script.js in the worktree
+   *
+   * 2. If nothing resolved: launches Claude to auto-generate a run script
+   *    tailored to the project's framework (the "Setup Run Script" flow).
+   *
+   * The tooltip shows which command will run and its source (e.g. "from pane.json").
+   */
   const handleRunDevServer = useCallback(async () => {
-    if (!session || !resolvedRunScript) return;
-    handleAddPanel('terminal', {
-      initialCommand: resolvedRunScript.command,
-      title: 'Dev Server'
-    });
-  }, [session, handleAddPanel, resolvedRunScript]);
+    if (!session) return;
+    if (resolvedRunScript) {
+      handleAddPanel('terminal', {
+        initialCommand: resolvedRunScript.command,
+        title: 'Dev Server'
+      });
+    } else {
+      // No run script resolved — let Claude set one up
+      handleAddPanel('terminal', {
+        initialCommand: `claude --dangerously-skip-permissions "${buildSetupRunScriptPrompt(config?.worktreeFileSync).replace(/\n/g, ' ')}"`,
+        title: 'Setup Run Script'
+      });
+    }
+  }, [session, handleAddPanel, resolvedRunScript, config?.worktreeFileSync]);
 
   // Ctrl+Shift+D: Run Dev Server
   useHotkey({
@@ -833,7 +860,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   <span className="text-text-secondary">
                     {resolvedRunScript
                       ? `Run: ${resolvedRunScript.command}`
-                      : 'No run script configured'}
+                      : 'Set up run script (via Claude)'}
                   </span>
                   {resolvedRunScript && (
                     <span className="text-text-tertiary text-[10px]">from {resolvedRunScript.source}</span>
@@ -842,9 +869,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 </span>
               } side="bottom">
               <button
-                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-text-tertiary disabled:hover:bg-transparent"
+                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
                 onClick={handleRunDevServer}
-                disabled={!resolvedRunScript}
               >
                 <Play className="w-4 h-4" />
               </button>

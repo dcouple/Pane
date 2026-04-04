@@ -1,3 +1,31 @@
+/**
+ * Project Config File Detector
+ *
+ * Detects workspace configuration files at a project/worktree root and extracts
+ * lifecycle scripts (setup, run, archive). Pane is tool-agnostic — it reads config
+ * files from multiple workspace managers, not just its own format.
+ *
+ * Detection priority (first file with at least one script wins):
+ *   1. pane.json         — Pane's native format (matches conductor.json schema)
+ *   2. conductor.json    — Conductor.build workspace config
+ *   3. .gitpod.yml       — Gitpod workspace config (first task's init/command)
+ *   4. .devcontainer/devcontainer.json — Dev Containers (postCreateCommand/postStartCommand)
+ *
+ * The returned {@link DetectedProjectConfig} maps to Pane's project settings:
+ *   - setup  → build_script  (runs on worktree creation)
+ *   - run    → run_script    (runs on Play button click)
+ *   - archive → archive_script (runs before worktree deletion)
+ *
+ * Override model (Conductor pattern): DB values in Project Settings always win.
+ * Config files provide team-shared defaults that apply when no DB value is set.
+ * Config files are read from the session's worktree path (not project root) so
+ * branch-local changes are respected.
+ *
+ * @see {@link detectProjectConfig} — main entry point
+ * @see resolve-run-script IPC in project.ts — uses this for Play button resolution
+ * @see taskQueue.ts — uses this for build_script fallback on session creation
+ * @see session.ts cleanup — uses this for archive_script fallback on session deletion
+ */
 import path from 'path';
 import fs from 'fs';
 import yaml from 'js-yaml';
@@ -77,6 +105,18 @@ const CONFIG_FILES: Array<{ file: string; parser: ConfigParser }> = [
   { file: '.devcontainer/devcontainer.json', parser: parseDevcontainerJson },
 ];
 
+/**
+ * Detects and parses the highest-priority config file at the given path.
+ *
+ * Checks pane.json → conductor.json → .gitpod.yml → devcontainer.json in order.
+ * Returns the first config that defines at least one script (setup/run/archive).
+ * If a file exists but has no scripts, falls through to the next file.
+ *
+ * @param projectPath - Path to check for config files (typically session worktree path)
+ * @param environment - Platform environment for correct path handling
+ * @param commandRunner - Required for non-Windows environments (WSL/Linux/macOS)
+ * @returns Parsed config with scripts and source filename, or null if nothing found
+ */
 export async function detectProjectConfig(
   projectPath: string,
   environment: ProjectEnvironment,
