@@ -56,8 +56,8 @@ export function DocsDialog({ isOpen, onClose }: DocsDialogProps) {
       try {
         const targetUrl = new URL(e.url);
         if (targetUrl.hostname !== DOCS_HOSTNAME && targetUrl.hostname !== `www.${DOCS_HOSTNAME}`) {
-          // External link — stop the webview and revert, then open externally
-          webview.stop();
+          // External link — block in-webview navigation and open in system browser
+          e.preventDefault();
           window.electronAPI?.openExternal(e.url);
         }
       } catch {
