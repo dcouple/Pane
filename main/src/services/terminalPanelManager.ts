@@ -201,6 +201,19 @@ export class TerminalPanelManager {
     const isLinux = process.platform === 'linux';
     const enhancedPath = isLinux ? (process.env.PATH || '') : getShellPath();
 
+    /**
+     * PANE_PORT: deterministic port block per session (10 consecutive ports).
+     * Avoids port conflicts when running parallel worktree dev servers.
+     * Hash the sessionId to a port in the 3000–8990 range (600 blocks of 10).
+     * Usage in pane.json: { "scripts": { "run": "PORT=$PANE_PORT pnpm dev" } }
+     */
+    let portHash = 0;
+    for (let i = 0; i < panel.sessionId.length; i++) {
+      portHash = ((portHash << 5) - portHash) + panel.sessionId.charCodeAt(i);
+      portHash |= 0;
+    }
+    const panePort = 3000 + (Math.abs(portHash) % 600) * 10;
+
     // Create PTY process with enhanced environment
     const ptyProcess = pty.spawn(shellPath, shellArgs, {
       name: 'xterm-256color',
@@ -216,7 +229,9 @@ export class TerminalPanelManager {
         LANG: process.env.LANG || 'en_US.UTF-8',
         WORKTREE_PATH: cwd,
         PANE_SESSION_ID: panel.sessionId,
-        PANE_PANEL_ID: panel.id
+        PANE_PANEL_ID: panel.id,
+        PANE_PORT: String(panePort),
+        PANE_WORKSPACE_PATH: cwd
       }
     });
     
