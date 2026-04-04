@@ -44,6 +44,7 @@ interface SidebarProps {
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   onHelpClick: () => void;
+  onDocsClick: () => void;
 }
 
 const HelpCircleIcon = ({ className }: { className?: string }) => (
@@ -52,7 +53,7 @@ const HelpCircleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse, onHelpClick }: SidebarProps) {
+export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick }: SidebarProps) {
   const paneLogo = usePaneLogo();
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
@@ -382,12 +383,22 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
           {/* Version display at bottom */}
           {version && (
             <div className="px-3 py-2 border-t border-border-primary">
-              <div
-                className="text-xs text-text-tertiary text-center cursor-pointer hover:text-text-secondary transition-colors truncate"
-                onClick={onAboutClick}
-                title="Click to view version details"
-              >
-                v{version}{worktreeName && ` • ${worktreeName}`}{gitCommit && ` • ${gitCommit}`}
+              <div className="flex items-center justify-center gap-1.5 text-xs text-text-tertiary truncate">
+                <span
+                  className="cursor-pointer hover:text-text-secondary transition-colors"
+                  onClick={onAboutClick}
+                  title="Click to view version details"
+                >
+                  v{version}{worktreeName && ` \u00b7 ${worktreeName}`}{gitCommit && ` \u00b7 ${gitCommit}`}
+                </span>
+                <span className="text-border-primary">&middot;</span>
+                <span
+                  className="cursor-pointer hover:text-text-secondary transition-colors"
+                  onClick={onDocsClick}
+                  title="Open documentation"
+                >
+                  Docs
+                </span>
               </div>
             </div>
           )}

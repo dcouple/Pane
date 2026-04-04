@@ -224,7 +224,7 @@ export function AboutDialog({ isOpen, onClose, onUpdate }: AboutDialogProps) {
             </a>
             <span className="text-border-primary">•</span>
             <a
-              href="https://docs.anthropic.com/en/docs/claude-code"
+              href="https://runpane.com/docs"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-text-secondary transition-colors"
