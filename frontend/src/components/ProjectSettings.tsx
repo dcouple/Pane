@@ -331,9 +331,27 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
               </p>
             </FieldWithTooltip>
 
+            {detectedConfig && (
+              <div className="rounded-lg border border-border-secondary bg-surface-secondary/30 px-3 py-2.5 text-xs text-text-tertiary">
+                <p className="font-medium text-text-secondary mb-1">
+                  Auto-detected: <span className="font-mono text-text-accent">{detectedConfig.source}</span>
+                </p>
+                <p className="leading-relaxed">
+                  Pane found a config file in your repo root and will use its scripts as defaults.
+                  Values you set below override the config file.
+                  {detectedConfig.source === 'pane.json' || detectedConfig.source === 'conductor.json'
+                    ? ' This file uses the pane.json format: { "scripts": { "setup": "...", "run": "...", "archive": "..." } }'
+                    : ''}
+                </p>
+                <p className="mt-1 text-[10px] text-text-quaternary">
+                  Detection priority: pane.json → conductor.json → .gitpod.yml → devcontainer.json
+                </p>
+              </div>
+            )}
+
             <FieldWithTooltip
               label="Build Script"
-              tooltip="Commands that run once when creating a new worktree. Use for setup tasks like installing dependencies."
+              tooltip="Commands that run once when creating a new worktree. Use for setup tasks like installing dependencies. If left empty, Pane checks for pane.json, conductor.json, .gitpod.yml, or devcontainer.json in your repo."
             >
               <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
                 <Textarea
@@ -361,7 +379,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
 
             <FieldWithTooltip
               label="Run Commands"
-              tooltip="Commands that run continuously during panes. Perfect for development servers and test watchers."
+              tooltip="Commands for the Play button (dev servers, test watchers). If left empty, Pane uses your repo's pane.json, conductor.json, .gitpod.yml, or devcontainer.json — or falls back to Claude-generated setup."
             >
               <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
                 <Textarea
@@ -385,7 +403,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate, on
 
             <FieldWithTooltip
               label="Archive Script"
-              tooltip="Commands that run before a worktree is removed when archiving a session."
+              tooltip="Cleanup commands that run before a worktree is removed when archiving a session. If left empty, Pane checks your repo's config files for a scripts.archive entry."
             >
               <Card variant="bordered" padding="sm" className="bg-surface-secondary/50">
                 <Textarea
