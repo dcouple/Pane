@@ -6,7 +6,6 @@ import { useHotkey } from '../../hooks/useHotkey';
 import { PanelTabBarProps, PanelCreateOptions } from '../../types/panelComponents';
 import { ToolPanel, ToolPanelType, PANEL_CAPABILITIES, LogsPanelState } from '../../../../shared/types/panels';
 import { useSession } from '../../contexts/SessionContext';
-import { StatusIndicator } from '../StatusIndicator';
 import { useConfigStore } from '../../stores/configStore';
 import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
@@ -522,22 +521,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     <div className="panel-tab-bar bg-bg-chrome flex-shrink-0">
       {/* Flex container */}
       <div
-        className="flex items-center min-h-[var(--panel-tab-height)] px-2 gap-x-1"
+        className="flex items-center min-h-[var(--panel-tab-height)] px-2"
         role="tablist"
         aria-label="Panel Tabs"
       >
-        {/* Session identity */}
-        {session && (
-          <div className="flex items-center gap-2 px-2 mr-1 flex-shrink-0 border-r border-border-primary">
-            <StatusIndicator session={session} size="small" />
-            <span className="text-sm text-text-secondary truncate min-w-0 select-none" style={{ maxWidth: '140px' }}>
-              {sessionContext?.projectName || session.name}
-            </span>
-          </div>
-        )}
-
         {/* Scrollable tab area */}
-        <div className="flex items-center gap-x-1 overflow-x-auto scrollbar-none min-w-0 flex-1">
+        <div className="flex items-center overflow-x-auto scrollbar-none min-w-0 flex-1">
           {/* Render panel tabs */}
           {sortedPanels.map((panel, index) => {
           const isPermanent = panel.metadata?.permanent === true;
@@ -545,11 +534,15 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           const isDiffPanel = panel.type === 'diff';
           const displayTitle = isDiffPanel ? 'Diff' : panel.title;
           const shortcutHint = index < 9 ? hotkeyDisplay(`panel-tab-${index + 1}`) ?? undefined : undefined;
+          const isCompactTab = panel.type === 'diff' || panel.type === 'explorer' || panel.type === 'browser';
 
           const tab = (
             <div
               className={cn(
-                "group relative inline-flex items-center h-[var(--panel-tab-height)] min-w-[8rem] justify-center px-3 pr-7 text-sm whitespace-nowrap cursor-pointer select-none",
+                "group relative inline-flex items-center h-[var(--panel-tab-height)] justify-center whitespace-nowrap cursor-pointer select-none",
+                isCompactTab
+                  ? cn("min-w-[5rem] text-xs", isPermanent ? "px-2" : "px-2 pr-6")
+                  : cn("min-w-[8rem] text-sm", isPermanent ? "px-3" : "px-3 pr-7"),
                 activePanel?.id === panel.id
                   ? "text-text-primary"
                   : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
@@ -584,7 +577,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   style={{ width: `${Math.max(50, editingTitle.length * 8)}px` }}
                 />
               ) : (
-                <span className="inline-flex items-center justify-center gap-2 text-sm min-w-0">
+                <span className="inline-flex items-center justify-center gap-2 min-w-0">
                   {getPanelIcon(panel.type, panel)}
                   <span>{displayTitle}</span>
                 </span>
@@ -601,20 +594,27 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             </div>
           );
 
+          const showDividerAfter = panel.type === 'browser';
+          const divider = showDividerAfter ? (
+            <div className="h-4 w-px bg-border-primary mx-1 flex-shrink-0" aria-hidden="true" />
+          ) : null;
+
           return shortcutHint ? (
-            <Tooltip
-              key={panel.id}
-              content={
-                <span className="flex flex-col items-start gap-1">
-                  <span className="text-text-secondary">{displayTitle}</span>
-                  <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{shortcutHint}</Kbd>
-                </span>
-              }
-              side="bottom"
-            >
-              {tab}
-            </Tooltip>
-          ) : <React.Fragment key={panel.id}>{tab}</React.Fragment>;
+            <React.Fragment key={panel.id}>
+              <Tooltip
+                content={
+                  <span className="flex flex-col items-start gap-1">
+                    <span className="text-text-secondary">{displayTitle}</span>
+                    <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{shortcutHint}</Kbd>
+                  </span>
+                }
+                side="bottom"
+              >
+                {tab}
+              </Tooltip>
+              {divider}
+            </React.Fragment>
+          ) : <React.Fragment key={panel.id}>{tab}{divider}</React.Fragment>;
         })}
 
         </div>

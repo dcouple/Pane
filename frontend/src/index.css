@@ -87,7 +87,7 @@ body.light-rounded {
 
 /* Tab indicator — default fill mode */
 .panel-tab-bar [aria-selected="true"] {
-  background-color: var(--color-surface-primary);
+  background-color: var(--color-surface-hover);
 }
 
 /* Tab indicator — Forge underline mode */
