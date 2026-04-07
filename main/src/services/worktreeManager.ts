@@ -448,6 +448,37 @@ export class WorktreeManager {
     }
   }
 
+  /**
+   * Return the ref a session's diff/status should be compared against.
+   *
+   * Source of truth: session.baseBranch — the ref the user picked at creation.
+   * For legacy sessions where baseBranch is null, falls back to today's
+   * behavior (project root current branch, with isMainRepo origin fallback).
+   *
+   * The returned ref is a raw branch name (`main`, `my-feature`) or remote
+   * ref (`origin/main`, `origin/staging`) — pass it directly to git diff /
+   * git log / git rev-list. DO NOT prepend `origin/`.
+   */
+  async getSessionComparisonBranch(
+    session: { baseBranch?: string; isMainRepo?: boolean; worktreePath?: string },
+    ctx: { project: { path: string }; commandRunner: CommandRunner },
+  ): Promise<string> {
+    if (session.baseBranch) {
+      return session.baseBranch; // user-chosen, stable, the right answer
+    }
+
+    // Legacy fallback path (sessions created before base_branch column existed).
+    const fallback = await this.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
+
+    if (session.isMainRepo && session.worktreePath) {
+      // Preserve existing isMainRepo behavior: prefer origin/<branch> if present.
+      const origin = await this.getOriginBranch(session.worktreePath, fallback, ctx.commandRunner);
+      return origin || fallback;
+    }
+
+    return fallback;
+  }
+
   async getProjectMainBranch(projectPath: string, commandRunner: CommandRunner): Promise<string> {
 
     try {
@@ -467,18 +498,6 @@ export class WorktreeManager {
       }
       throw new Error(`Failed to get main branch for project at ${projectPath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }
-
-  // Deprecated: Use getProjectMainBranch instead
-  async detectMainBranch(projectPath: string, commandRunner: CommandRunner): Promise<string> {
-    console.warn('[WorktreeManager] detectMainBranch is deprecated, use getProjectMainBranch instead');
-    return await this.getProjectMainBranch(projectPath, commandRunner);
-  }
-
-  // Deprecated: Use getProjectMainBranch instead
-  async getEffectiveMainBranch(project: { path: string; main_branch?: string }, commandRunner: CommandRunner): Promise<string> {
-    console.warn('[WorktreeManager] getEffectiveMainBranch is deprecated, use getProjectMainBranch instead');
-    return await this.getProjectMainBranch(project.path, commandRunner);
   }
 
   async hasChangesToRebase(worktreePath: string, mainBranch: string, commandRunner: CommandRunner): Promise<boolean> {

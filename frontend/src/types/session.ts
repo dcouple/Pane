@@ -160,7 +160,7 @@ export interface GitCommands {
   rebaseCommands: string[];
   squashCommands: string[];
   mergeCommands: string[];
-  mainBranch?: string;
+  comparisonBaseBranch?: string;
   originBranch?: string;
   currentBranch?: string;
   getPullCommand?: () => string;

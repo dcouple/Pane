@@ -41,8 +41,8 @@ export const CommitMessageDialog: React.FC<CommitMessageDialogProps> = ({
         {dialogType === 'commit'
           ? 'Commit Changes'
           : dialogType === 'squash'
-            ? `Merge to ${gitCommands?.mainBranch || 'Main'}`
-            : `Rebase from ${gitCommands?.mainBranch || 'Main'}`
+            ? `Merge to ${gitCommands?.comparisonBaseBranch || 'Main'}`
+            : `Rebase from ${gitCommands?.comparisonBaseBranch || 'Main'}`
         }
       </ModalHeader>
       

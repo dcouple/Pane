@@ -113,17 +113,15 @@ export class GitDiffManager {
   /**
    * Get git commit history for a worktree (only commits unique to this branch)
    */
-  getCommitHistory(worktreePath: string, limit: number, mainBranch: string, commandRunner: CommandRunner): GitCommit[] {
+  getCommitHistory(worktreePath: string, limit: number, comparisonBranch: string, commandRunner: CommandRunner): GitCommit[] {
     try {
-      // Get commit log with stats, excluding commits that are in main branch
-      // This shows only commits unique to the current branch
-      // Using --cherry-pick to also exclude commits that have equivalent patches on main
-      // (e.g., commits that were cherry-picked or rebased to main)
+      // Get commit log with stats for commits in HEAD not in the comparison branch.
+      // Two-dot range: commits reachable from HEAD but not from comparisonBranch.
       const logFormat = '%H|%s|%ai|%an';
-      const gitCommand = `git log --format="${logFormat}" --numstat -n ${limit} --cherry-pick --left-only HEAD...${mainBranch} --`;
+      const gitCommand = `git log --format="${logFormat}" --numstat -n ${limit} ${comparisonBranch}..HEAD --`;
 
       console.log(`[GitDiffManager] Getting commit history for worktree: ${worktreePath}`);
-      console.log(`[GitDiffManager] Main branch: ${mainBranch}`);
+      console.log(`[GitDiffManager] Comparison branch: ${comparisonBranch}`);
       console.log(`[GitDiffManager] Git command: ${gitCommand}`);
 
       const logOutput = commandRunner.exec(gitCommand, worktreePath);
@@ -185,9 +183,9 @@ export class GitDiffManager {
       console.log(`[GitDiffManager] Found ${commits.length} commits unique to this branch`);
       if (commits.length === 0) {
         console.log(`[GitDiffManager] No unique commits found. This could mean:`);
-        console.log(`[GitDiffManager]   - The branch is up-to-date with ${mainBranch}`);
-        console.log(`[GitDiffManager]   - The branch has been rebased onto ${mainBranch}`);
-        console.log(`[GitDiffManager]   - The ${mainBranch} branch doesn't exist in this worktree`);
+        console.log(`[GitDiffManager]   - The branch is up-to-date with ${comparisonBranch}`);
+        console.log(`[GitDiffManager]   - The branch has been rebased onto ${comparisonBranch}`);
+        console.log(`[GitDiffManager]   - The ${comparisonBranch} branch doesn't exist in this worktree`);
       }
 
       return commits;
@@ -199,7 +197,7 @@ export class GitDiffManager {
       
       // If it's a git command error, throw it so the caller can handle it appropriately
       if (errorMessage.includes('fatal:') || errorMessage.includes('error:')) {
-        console.error(`[GitDiffManager] Git command failed. This might happen if the ${mainBranch} branch doesn't exist.`);
+        console.error(`[GitDiffManager] Git command failed. This might happen if the ${comparisonBranch} branch doesn't exist.`);
         throw new Error(`Git error: ${errorMessage}`);
       }
       
@@ -215,14 +213,14 @@ export class GitDiffManager {
     worktreePath: string,
     branch: string,
     limit: number = 50,
-    mainBranch: string = 'main',
+    comparisonBranch: string = 'main',
     commandRunner: CommandRunner
   ): GitGraphCommit[] {
     try {
       // Use %x00 (NUL) as field delimiter since commit messages can contain pipes
       // Use %x01 as record delimiter to separate commits (--shortstat adds extra lines)
       const logFormat = '%x01%h%x00%p%x00%s%x00%ai%x00%an%x00%ae';
-      const gitCommand = `git log --format="${logFormat}" --shortstat -n ${limit} --cherry-pick --left-only HEAD...${mainBranch} --`;
+      const gitCommand = `git log --format="${logFormat}" --shortstat -n ${limit} ${comparisonBranch}..HEAD --`;
 
       const logOutput = commandRunner.exec(gitCommand, worktreePath);
 
@@ -402,35 +400,6 @@ export class GitDiffManager {
     }
 
     return result;
-  }
-
-  async getCombinedDiff(worktreePath: string, mainBranch: string, commandRunner: CommandRunner): Promise<GitDiffResult> {
-    // Get diff against main branch
-    try {
-
-      // Get diff between current branch and main
-      const diff = commandRunner.exec(`git diff origin/${mainBranch}...HEAD`, worktreePath);
-
-      // Get changed files
-      const changedFiles = commandRunner.exec(`git diff --name-only origin/${mainBranch}...HEAD`, worktreePath).trim().split('\n').filter((f: string) => f.length > 0);
-
-      // Get stats
-      const statsOutput = commandRunner.exec(`git diff --stat origin/${mainBranch}...HEAD`, worktreePath);
-
-      const stats = this.parseDiffStats(statsOutput);
-
-      return {
-        diff,
-        stats,
-        changedFiles,
-        beforeHash: `origin/${mainBranch}`,
-        afterHash: 'HEAD'
-      };
-    } catch (error) {
-      this.logger?.warn(`Could not get combined diff in ${worktreePath}:`, error instanceof Error ? error : undefined);
-      // Fallback to working directory diff
-      return this.captureWorkingDirectoryDiff(worktreePath, commandRunner);
-    }
   }
 
   private getGitDiffString(worktreePath: string, commandRunner: CommandRunner): string {

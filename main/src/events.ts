@@ -342,11 +342,11 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
         if (!historyCtx) {
           throw new Error('Project context not found for session');
         }
-        const mainBranch = await worktreeManager.getProjectMainBranch(historyCtx.project.path, historyCtx.commandRunner);
+        const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, historyCtx);
 
         let commits: GitCommit[] = [];
         try {
-          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, mainBranch, historyCtx.commandRunner);
+          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, comparisonBranch, historyCtx.commandRunner);
         } catch (error) {
           console.error(`[Events] Error getting commit history:`, error);
           // If there's an error, try without specifying main branch (get all commits)
@@ -458,11 +458,11 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
         if (!errorHistoryCtx) {
           throw new Error('Project context not found for session');
         }
-        const mainBranch = await worktreeManager.getProjectMainBranch(errorHistoryCtx.project.path, errorHistoryCtx.commandRunner);
+        const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, errorHistoryCtx);
 
         let commits: GitCommit[] = [];
         try {
-          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, mainBranch, errorHistoryCtx.commandRunner);
+          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, comparisonBranch, errorHistoryCtx.commandRunner);
         } catch (error) {
           console.error(`[Events] Error getting commit history:`, error);
           // If there's an error, try without specifying main branch (get all commits)

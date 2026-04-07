@@ -1107,10 +1107,10 @@ export const useSessionView = (
     } catch (error) {
       console.error('Error generating default commit message:', error);
     }
-    const mainBranch = gitCommands?.mainBranch || 'main';
+    const comparisonBaseBranch = gitCommands?.comparisonBaseBranch || 'main';
     return dialogType === 'squash'
       ? `Squashed commits from ${gitCommands?.currentBranch || 'feature branch'}`
-      : `Rebase from ${mainBranch}`;
+      : `Rebase from ${comparisonBaseBranch}`;
   };
 
   const handleSquashAndRebaseToMain = async () => {
@@ -1123,8 +1123,8 @@ export const useSessionView = (
         // Show warning that rebase is needed first
         setGitErrorDetails({
           title: 'Rebase Required',
-          message: `Your worktree has changes from ${gitCommands?.mainBranch || 'main'} that need to be rebased first.\n\nYou must rebase your worktree before merging to prevent conflicts.`,
-          output: `Your worktree branch is behind ${gitCommands?.mainBranch || 'main'}.\n\nClick "Rebase from ${gitCommands?.mainBranch || 'Main'}" first to update your worktree, then try merging again.`,
+          message: `Your worktree has changes from ${gitCommands?.comparisonBaseBranch || 'main'} that need to be rebased first.\n\nYou must rebase your worktree before merging to prevent conflicts.`,
+          output: `Your worktree branch is behind ${gitCommands?.comparisonBaseBranch || 'main'}.\n\nClick "Rebase from ${gitCommands?.comparisonBaseBranch || 'Main'}" first to update your worktree, then try merging again.`,
           workingDirectory: activeSession.worktreePath,
         });
         setShowGitErrorDialog(true);

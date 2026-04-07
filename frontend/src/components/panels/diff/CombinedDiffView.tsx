@@ -162,7 +162,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       try {
         const response = await API.sessions.getGitCommands(sessionId);
         if (response.success && response.data) {
-          const baseBranch = response.data.originBranch || response.data.mainBranch || 'main';
+          const baseBranch = response.data.originBranch || response.data.comparisonBaseBranch || 'main';
           setMainBranch(baseBranch);
           if (isMainRepo) {
             setHistorySource(response.data.originBranch ? 'remote' : 'local');
