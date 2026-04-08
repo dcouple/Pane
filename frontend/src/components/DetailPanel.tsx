@@ -415,8 +415,9 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
                     ? <span className="text-[10px] text-status-success font-medium ml-1">&uarr;{aheadCount}</span> : null;
 
                   const isRebaseMerge = left.id === 'rebase-from-main';
-                  const mainBranchRaw = gitCommands?.mainBranch || 'main';
-                  const mainBranch = mainBranchRaw.length > 6 ? mainBranchRaw.slice(0, 6) + '…' : mainBranchRaw;
+                  const mainBranchRaw = gitCommands?.comparisonBaseBranch || 'main';
+                  const mainBranchLastSegment = mainBranchRaw.includes('/') ? mainBranchRaw.split('/').pop()! : mainBranchRaw;
+                  const mainBranch = mainBranchLastSegment.length > 12 ? mainBranchLastSegment.slice(0, 12) + '…' : mainBranchLastSegment;
 
                   const pairBtnClass = isRebaseMerge
                     ? 'flex-1 justify-start text-xs !px-2'

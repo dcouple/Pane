@@ -142,7 +142,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     limit: number = 50
   ): Promise<{
     commits: GitCommit[];
-    mainBranch: string;
     comparisonBranch: string;
     historySource: 'remote' | 'local' | 'branch';
     limitReached: boolean;
@@ -151,51 +150,31 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       throw new Error('Session has no worktree path');
     }
 
-    const project = sessionManager.getProjectForSession(session.id);
-    if (!project?.path) {
-      throw new Error('Project path not found for session');
-    }
-
     const ctx = sessionManager.getProjectContext(session.id);
     if (!ctx) throw new Error('Project context not found for session');
 
-    const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
-    let comparisonBranch = mainBranch;
-    let historySource: 'remote' | 'local' | 'branch' = 'branch';
-    let useFallback = false;
-
-    if (session.isMainRepo) {
-      const originBranch = await worktreeManager.getOriginBranch(session.worktreePath, mainBranch, ctx.commandRunner);
-      if (originBranch) {
-        comparisonBranch = originBranch;
-        historySource = 'remote';
-      } else {
-        historySource = 'local';
-        comparisonBranch = mainBranch;
-        useFallback = true;
-      }
-    }
+    // Single source of truth for comparison base — respects session.baseBranch when set,
+    // falls back to project root current branch for legacy sessions.
+    const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
 
     let commits: GitCommit[] = [];
+    let useFallback = false;
 
-    if (!useFallback) {
-      try {
-        commits = gitDiffManager.getCommitHistory(session.worktreePath, limit, comparisonBranch, ctx.commandRunner);
-      } catch (error) {
-        if (session.isMainRepo) {
-          console.warn(`[IPC:git] Falling back to local commit history for session ${session.id}:`, error);
-          useFallback = true;
-          historySource = 'local';
-          comparisonBranch = mainBranch;
-        } else {
-          throw error;
-        }
+    try {
+      commits = gitDiffManager.getCommitHistory(session.worktreePath, limit, comparisonBranch, ctx.commandRunner);
+    } catch (error) {
+      // Only isMainRepo sessions have a fallback path (raw last-N commits);
+      // worktree sessions should propagate the error.
+      if (session.isMainRepo) {
+        console.warn(`[IPC:git] Falling back to local commit history for session ${session.id}:`, error);
+        useFallback = true;
+      } else {
+        throw error;
       }
     }
 
     if (useFallback) {
-      const fallbackLimit = limit;
-      const fallbackCommits = await worktreeManager.getLastCommits(session.worktreePath, fallbackLimit, ctx.commandRunner);
+      const fallbackCommits = await worktreeManager.getLastCommits(session.worktreePath, limit, ctx.commandRunner);
       commits = fallbackCommits.map((commit: RawCommitData) => ({
         hash: commit.hash,
         message: commit.message,
@@ -209,15 +188,15 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       }));
     }
 
-    if (!session.isMainRepo) {
-      historySource = 'branch';
-    }
+    // historySource: 'branch' when baseBranch was set (the new stable path),
+    // 'local' for the isMainRepo fallback path, 'branch' otherwise.
+    const historySource: 'remote' | 'local' | 'branch' =
+      session.baseBranch ? 'branch' : (useFallback ? 'local' : 'branch');
 
     const limitReached = commits.length === limit;
 
     return {
       commits,
-      mainBranch,
       comparisonBranch,
       historySource,
       limitReached
@@ -328,7 +307,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
       let branch: string;
       try {
         branch = ctx.commandRunner.exec('git rev-parse --abbrev-ref HEAD', session.worktreePath).trim() || session.baseBranch || 'unknown';
@@ -339,28 +318,16 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       let entries: GitGraphCommit[] = [];
       let useFallback = false;
 
-      if (session.isMainRepo) {
-        const originBranch = await worktreeManager.getOriginBranch(session.worktreePath, mainBranch, ctx.commandRunner);
-        if (!originBranch) {
+      try {
+        entries = gitDiffManager.getGraphCommitHistory(session.worktreePath, branch, 50, comparisonBranch, ctx.commandRunner);
+        if (entries.length === 0 && session.isMainRepo) {
           useFallback = true;
         }
-      }
-
-      if (!useFallback) {
-        try {
-          const comparisonBranch = session.isMainRepo
-            ? (await worktreeManager.getOriginBranch(session.worktreePath, mainBranch, ctx.commandRunner)) || mainBranch
-            : mainBranch;
-          entries = gitDiffManager.getGraphCommitHistory(session.worktreePath, branch, 50, comparisonBranch, ctx.commandRunner);
-          if (entries.length === 0 && session.isMainRepo) {
-            useFallback = true;
-          }
-        } catch (error) {
-          if (session.isMainRepo) {
-            useFallback = true;
-          } else {
-            throw error;
-          }
+      } catch (error) {
+        if (session.isMainRepo) {
+          useFallback = true;
+        } else {
+          throw error;
         }
       }
 
@@ -832,11 +799,10 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Always get the current branch from the project directory
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
 
       // Check for conflicts
-      const conflictInfo = await worktreeManager.checkForRebaseConflicts(session.worktreePath, mainBranch, ctx.commandRunner);
+      const conflictInfo = await worktreeManager.checkForRebaseConflicts(session.worktreePath, comparisonBranch, ctx.commandRunner);
 
       return {
         success: true,
@@ -871,20 +837,19 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the main branch from the project directory's current branch
-      const mainBranch = await Promise.race([
-        worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('getProjectMainBranch timeout')), 30000))
+      const comparisonBranch = await Promise.race([
+        worktreeManager.getSessionComparisonBranch(session, ctx),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionComparisonBranch timeout')), 30000))
       ]) as string;
 
       // Check for conflicts before attempting rebase
-      const conflictCheck = await worktreeManager.checkForRebaseConflicts(session.worktreePath, mainBranch, ctx.commandRunner);
-      
+      const conflictCheck = await worktreeManager.checkForRebaseConflicts(session.worktreePath, comparisonBranch, ctx.commandRunner);
+
       if (conflictCheck.hasConflicts) {
-        
+
         // Build detailed error message
         let errorMessage = `Rebase would result in conflicts. Cannot proceed automatically.\n\n`;
-        
+
         if (conflictCheck.conflictingFiles && conflictCheck.conflictingFiles.length > 0) {
           errorMessage += `Conflicting files:\n`;
           conflictCheck.conflictingFiles.forEach(file => {
@@ -892,7 +857,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
           });
           errorMessage += '\n';
         }
-        
+
         if (conflictCheck.conflictingCommits) {
           if (conflictCheck.conflictingCommits.ours.length > 0) {
             errorMessage += `Your commits:\n`;
@@ -904,9 +869,9 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
             }
             errorMessage += '\n';
           }
-          
+
           if (conflictCheck.conflictingCommits.theirs.length > 0) {
-            errorMessage += `Incoming commits from ${mainBranch}:\n`;
+            errorMessage += `Incoming commits from ${comparisonBranch}:\n`;
             conflictCheck.conflictingCommits.theirs.slice(0, 5).forEach(commit => {
               errorMessage += `  ${commit}\n`;
             });
@@ -915,22 +880,22 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
             }
           }
         }
-        
+
         // Emit git operation failed event for conflict detection
         const conflictMessage = `✗ Rebase aborted: Conflicts detected\n\n${errorMessage}`;
         emitGitOperationToProject(sessionId, 'git:operation_failed', conflictMessage, {
           operation: 'rebase_from_main',
-          mainBranch,
+          comparisonBranch,
           hasConflicts: true,
           conflictingFiles: conflictCheck.conflictingFiles
         });
-        
+
         // Return detailed conflict information
         return {
           success: false,
           error: 'Rebase would result in conflicts',
           gitError: {
-            command: `git rebase ${mainBranch}`,
+            command: `git rebase ${comparisonBranch}`,
             output: errorMessage,
             workingDirectory: session.worktreePath,
             hasConflicts: true,
@@ -941,22 +906,22 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       }
 
       // Emit git operation started event to all sessions in project
-      const startMessage = `🔄 GIT OPERATION\nRebasing from ${mainBranch}...`;
+      const startMessage = `🔄 GIT OPERATION\nRebasing from ${comparisonBranch}...`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'rebase_from_main',
-        mainBranch
+        comparisonBranch
       });
 
       await Promise.race([
-        worktreeManager.rebaseMainIntoWorktree(session.worktreePath, mainBranch, ctx.commandRunner),
+        worktreeManager.rebaseMainIntoWorktree(session.worktreePath, comparisonBranch, ctx.commandRunner),
         new Promise((_, reject) => setTimeout(() => reject(new Error('rebaseMainIntoWorktree timeout')), 120000))
       ]);
 
       // Emit git operation completed event to all sessions in project
-      const successMessage = `✓ Successfully rebased ${mainBranch} into worktree`;
+      const successMessage = `✓ Successfully rebased ${comparisonBranch} into worktree`;
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'rebase_from_main',
-        mainBranch
+        comparisonBranch
       });
 
       // Update git status directly after rebasing from main (more efficient than refresh)
@@ -965,7 +930,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         console.error(`[IPC:git] Failed to update git status for session ${sessionId}:`, error);
       });
 
-      return { success: true, data: { message: `Successfully rebased ${mainBranch} into worktree` } };
+      return { success: true, data: { message: `Successfully rebased ${comparisonBranch} into worktree` } };
     } catch (error: unknown) {
       console.error(`[IPC:git] Failed to rebase main into worktree for session ${sessionId}:`, error);
 
@@ -1018,8 +983,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the main branch from the project directory's current branch
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
 
       // Check if we're actually in a rebase state (could have been pre-detected conflicts)
       // Try to abort any existing rebase, but don't fail if there isn't one
@@ -1039,7 +1003,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       }
 
       // Use session-based Claude to handle the rebase and conflicts
-      const prompt = `Please rebase the local ${mainBranch} branch (not origin/${mainBranch}) into this branch and resolve all conflicts`;
+      const prompt = `Please rebase ${comparisonBranch} into this branch and resolve all conflicts`;
 
       try {
         // Start Claude session to handle rebase
@@ -1104,30 +1068,33 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the effective main branch (override or auto-detected)
-      const mainBranch = await Promise.race([
-        worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('getProjectMainBranch timeout')), 30000))
+      // Use the LOCAL base branch (not the comparison ref) — this is a write
+      // operation that runs `git checkout <branch>` in the project repo, and
+      // checking out a remote ref like `origin/main` produces detached HEAD
+      // and silently fast-forwards detached HEAD instead of the local target.
+      const localBaseBranch = await Promise.race([
+        worktreeManager.getSessionLocalBaseBranch(session, ctx),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionLocalBaseBranch timeout')), 30000))
       ]) as string;
 
       // Emit git operation started event to all sessions in project
-      const startMessage = `🔄 GIT OPERATION\nSquashing commits and merging to ${mainBranch}...\nCommit message: ${commitMessage.split('\n')[0]}${commitMessage.includes('\n') ? '...' : ''}`;
+      const startMessage = `🔄 GIT OPERATION\nSquashing commits and merging to ${localBaseBranch}...\nCommit message: ${commitMessage.split('\n')[0]}${commitMessage.includes('\n') ? '...' : ''}`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'squash_and_merge',
-        mainBranch,
+        comparisonBranch: localBaseBranch,
         commitMessage: commitMessage.split('\n')[0]
       });
 
       await Promise.race([
-        worktreeManager.squashAndMergeWorktreeToMain(project.path, session.worktreePath, mainBranch, commitMessage, ctx.commandRunner),
+        worktreeManager.squashAndMergeWorktreeToMain(project.path, session.worktreePath, localBaseBranch, commitMessage, ctx.commandRunner),
         new Promise((_, reject) => setTimeout(() => reject(new Error('squashAndMergeWorktreeToMain timeout')), 180000))
       ]);
 
       // Emit git operation completed event to all sessions in project
-      const successMessage = `✓ Successfully squashed and merged worktree to ${mainBranch}`;
+      const successMessage = `✓ Successfully squashed and merged worktree to ${localBaseBranch}`;
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'squash_and_merge',
-        mainBranch
+        comparisonBranch: localBaseBranch
       });
 
       // Update git status for ALL sessions in the project since main was updated
@@ -1141,7 +1108,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         }
       }
 
-      return { success: true, data: { message: `Successfully squashed and merged worktree to ${mainBranch}` } };
+      return { success: true, data: { message: `Successfully squashed and merged worktree to ${localBaseBranch}` } };
     } catch (error: unknown) {
       console.error(`[IPC:git] Failed to squash and merge worktree to main for session ${sessionId}:`, error);
 
@@ -1196,23 +1163,25 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the effective main branch (override or auto-detected)
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      // Use the LOCAL base branch (not the comparison ref) — this is a write
+      // operation that runs `git checkout <branch>` in the project repo, and
+      // checking out a remote ref like `origin/main` produces detached HEAD.
+      const localBaseBranch = await worktreeManager.getSessionLocalBaseBranch(session, ctx);
 
       // Emit git operation started event to all sessions in project
-      const startMessage = `🔄 GIT OPERATION\nMerging to ${mainBranch} (preserving all commits)...`;
+      const startMessage = `🔄 GIT OPERATION\nMerging to ${localBaseBranch} (preserving all commits)...`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'merge_to_main',
-        mainBranch
+        comparisonBranch: localBaseBranch
       });
 
-      await worktreeManager.mergeWorktreeToMain(project.path, session.worktreePath, mainBranch, ctx.commandRunner);
+      await worktreeManager.mergeWorktreeToMain(project.path, session.worktreePath, localBaseBranch, ctx.commandRunner);
 
       // Emit git operation completed event to all sessions in project
-      const successMessage = `✓ Successfully merged worktree to ${mainBranch}`;
+      const successMessage = `✓ Successfully merged worktree to ${localBaseBranch}`;
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'merge_to_main',
-        mainBranch
+        comparisonBranch: localBaseBranch
       });
       sessionManager.addSessionOutput(sessionId, {
         type: 'stdout',
@@ -1231,7 +1200,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         }
       }
 
-      return { success: true, data: { message: `Successfully merged worktree to ${mainBranch}` } };
+      return { success: true, data: { message: `Successfully merged worktree to ${localBaseBranch}` } };
     } catch (error: unknown) {
       console.error('Failed to merge worktree to main:', error);
 
@@ -1439,12 +1408,10 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
 
       // Use session's base commit as the undo boundary — this ensures only commits
       // created within this session can be undone, not pre-existing branch commits.
-      // Falls back to main branch if base_commit isn't recorded.
+      // Falls back to comparison branch if base_commit isn't recorded.
       let undoBoundary = session.baseCommit;
       if (!undoBoundary) {
-        const project = sessionManager.getProjectForSession(sessionId);
-        if (!project?.path) throw new Error('Project path not found for session');
-        undoBoundary = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+        undoBoundary = await worktreeManager.getSessionComparisonBranch(session, ctx);
       }
 
       // Run git soft reset with live safety check against the undo boundary
@@ -1898,9 +1865,8 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the effective main branch (override or auto-detected)
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
-      const hasChanges = await worktreeManager.hasChangesToRebase(session.worktreePath, mainBranch, ctx.commandRunner);
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
+      const hasChanges = await worktreeManager.hasChangesToRebase(session.worktreePath, comparisonBranch, ctx.commandRunner);
 
       return { success: true, data: hasChanges };
     } catch (error) {
@@ -1929,19 +1895,21 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      // Get the effective main branch (override or auto-detected)
-      const mainBranch = await worktreeManager.getProjectMainBranch(project.path, ctx.commandRunner);
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
 
       // Get current branch name
       const currentBranch = ctx.commandRunner.exec('git branch --show-current', session.worktreePath).trim();
 
-      const originBranch = session.isMainRepo
-        ? await worktreeManager.getOriginBranch(session.worktreePath, mainBranch, ctx.commandRunner)
+      // Only call getOriginBranch for legacy isMainRepo sessions where baseBranch is not set.
+      // When baseBranch is set it already includes the origin/ prefix if applicable — calling
+      // getOriginBranch with it would produce a double-origin/ probe.
+      const originBranch = (session.isMainRepo && !session.baseBranch)
+        ? await worktreeManager.getOriginBranch(session.worktreePath, comparisonBranch, ctx.commandRunner)
         : null;
 
-      const rebaseCommands = worktreeManager.generateRebaseCommands(mainBranch);
-      const squashCommands = worktreeManager.generateSquashCommands(mainBranch, currentBranch);
-      const mergeCommands = worktreeManager.generateMergeCommands(mainBranch, currentBranch);
+      const rebaseCommands = worktreeManager.generateRebaseCommands(comparisonBranch);
+      const squashCommands = worktreeManager.generateSquashCommands(comparisonBranch, currentBranch);
+      const mergeCommands = worktreeManager.generateMergeCommands(comparisonBranch, currentBranch);
 
       return {
         success: true,
@@ -1949,7 +1917,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
           rebaseCommands,
           squashCommands,
           mergeCommands,
-          mainBranch,
+          comparisonBaseBranch: comparisonBranch,
           originBranch: originBranch || undefined,
           currentBranch
         }

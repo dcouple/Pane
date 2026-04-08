@@ -247,8 +247,8 @@ export class GitStatusManager extends EventEmitter {
               // Quick check for new ahead/behind status
               const ctx = this.sessionManager.getProjectContext(session.id);
               if (ctx) {
-                const mainBranch = await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-                const { ahead, behind } = fastGetAheadBehind(session.worktreePath, mainBranch);
+                const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
+                const { ahead, behind } = fastGetAheadBehind(session.worktreePath, comparisonBranch);
                 
                 const updatedStatus = { ...cached.status };
                 updatedStatus.ahead = ahead;
@@ -301,8 +301,6 @@ export class GitStatusManager extends EventEmitter {
         return;
       }
 
-      const mainBranch = await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-      
       // Create updated status based on rebase type
       const updatedStatus = { ...cached.status };
       
@@ -685,9 +683,12 @@ export class GitStatusManager extends EventEmitter {
       if (!currentHasChanges) {
         const ctx = this.sessionManager.getProjectContext(sessionId);
         if (ctx) {
-          const mainBranch = await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-          const { ahead, behind } = fastGetAheadBehind(worktreePath, mainBranch);
-          
+          const session = await this.sessionManager.getSession(sessionId);
+          const comparisonBranch = session
+            ? await this.worktreeManager.getSessionComparisonBranch(session, ctx)
+            : await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
+          const { ahead, behind } = fastGetAheadBehind(worktreePath, comparisonBranch);
+
           if ((cached.status.ahead || 0) !== ahead || (cached.status.behind || 0) !== behind) {
             return true;
           }
@@ -750,17 +751,17 @@ export class GitStatusManager extends EventEmitter {
       }
 
       // Get ahead/behind status using fast plumbing command
-      const mainBranch = await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-      const { ahead, behind } = fastGetAheadBehind(session.worktreePath, mainBranch);
+      const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
+      const { ahead, behind } = fastGetAheadBehind(session.worktreePath, comparisonBranch);
 
-      // Get total additions/deletions for all commits in the branch (compared to main)
+      // Get total additions/deletions for all commits in the branch (compared to comparison branch)
       let totalCommitAdditions = 0;
       let totalCommitDeletions = 0;
       let totalCommitFilesChanged = 0;
       if (ahead > 0) {
         // Use git diff --shortstat for commit statistics
         try {
-          const statLine = execSync(`git diff --shortstat ${mainBranch}...HEAD`, { cwd: session.worktreePath }).toString().trim();
+          const statLine = execSync(`git diff --shortstat ${comparisonBranch}...HEAD`, { cwd: session.worktreePath }).toString().trim();
           if (statLine) {
             const filesMatch = statLine.match(/(\d+) files? changed/);
             const additionsMatch = statLine.match(/(\d+) insertions?\(\+\)/);
@@ -816,7 +817,7 @@ export class GitStatusManager extends EventEmitter {
       // Get total number of commits in the branch
       let totalCommits = ahead;
       try {
-        const countStr = execSync(`git rev-list --count ${mainBranch}..HEAD`, { cwd: session.worktreePath }).toString().trim();
+        const countStr = execSync(`git rev-list --count ${comparisonBranch}..HEAD`, { cwd: session.worktreePath }).toString().trim();
         totalCommits = parseInt(countStr, 10) || ahead;
       } catch {
         // Keep default of ahead if command fails

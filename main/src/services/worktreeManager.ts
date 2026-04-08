@@ -448,6 +448,110 @@ export class WorktreeManager {
     }
   }
 
+  /**
+   * Return the ref a session's diff/status should be compared against.
+   *
+   * Source of truth: session.baseBranch — the ref the user picked at creation.
+   * For legacy sessions where baseBranch is null/empty/the literal "HEAD"
+   * (createWorktree stores "HEAD" as the placeholder when no base was picked),
+   * falls back to today's behavior: project root current branch, with
+   * isMainRepo origin fallback.
+   *
+   * The returned ref is a raw branch name (`main`, `my-feature`) or remote
+   * ref (`origin/main`, `origin/staging`) — pass it directly to git diff /
+   * git log / git rev-list. DO NOT prepend `origin/`.
+   *
+   * Use this for READ operations (diff, log, rev-list, status). For WRITE
+   * operations that need to `git checkout` the integration target (squash/
+   * merge to main), use getSessionLocalBaseBranch instead — checking out a
+   * remote ref like `origin/main` puts the project repo in detached HEAD.
+   */
+  async getSessionComparisonBranch(
+    session: { baseBranch?: string; isMainRepo?: boolean; worktreePath?: string },
+    ctx: { project: { path: string }; commandRunner: CommandRunner },
+  ): Promise<string> {
+    // Treat the literal "HEAD" placeholder as missing — createWorktree
+    // stores it when the user doesn't pick a base branch, and using it as
+    // a comparison ref collapses every diff to HEAD..HEAD (empty).
+    if (session.baseBranch && session.baseBranch !== 'HEAD') {
+      // Guard against the degenerate case where the stored base IS the
+      // worktree's own branch. This happens for sessions created on an
+      // EXISTING branch (createWorktree's branchExists path stores the
+      // branch name as actualBaseBranch). Comparing the branch to itself
+      // makes ${base}..HEAD empty and write ops try to merge into the
+      // checked-out branch. Fall through to legacy behavior in that case.
+      if (session.worktreePath) {
+        try {
+          const { stdout } = await ctx.commandRunner.execAsync(
+            'git branch --show-current',
+            session.worktreePath,
+          );
+          if (stdout.trim() !== session.baseBranch) {
+            return session.baseBranch; // user-chosen, stable, the right answer
+          }
+          // Falls through to the legacy fallback path below.
+        } catch {
+          // Worktree query failed — trust the stored value, it's the best we have.
+          return session.baseBranch;
+        }
+      } else {
+        return session.baseBranch;
+      }
+    }
+
+    // Legacy / unspecified / degenerate fallback path.
+    const fallback = await this.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
+
+    if (session.isMainRepo && session.worktreePath) {
+      // Preserve existing isMainRepo behavior: prefer origin/<branch> if present.
+      const origin = await this.getOriginBranch(session.worktreePath, fallback, ctx.commandRunner);
+      return origin || fallback;
+    }
+
+    return fallback;
+  }
+
+  /**
+   * Return the LOCAL branch name to use as the integration target for write
+   * operations (squash-and-merge to main, merge to main). Unlike
+   * getSessionComparisonBranch, this strips a remote prefix when present so
+   * the result can be safely passed to `git checkout` in the project repo
+   * without producing detached HEAD.
+   *
+   * - `origin/main`     → `main`
+   * - `origin/staging`  → `staging`
+   * - `my-feature`      → `my-feature`
+   * - `HEAD` / null     → falls back to project root's current branch
+   *
+   * If the local branch does not yet exist, the caller is responsible for
+   * creating it (e.g. via `git checkout -b name --track origin/name`). Today
+   * the write handlers run `git checkout <name>` which will DWIM-create a
+   * tracking branch from origin/<name> when one exists.
+   */
+  async getSessionLocalBaseBranch(
+    session: { baseBranch?: string; isMainRepo?: boolean; worktreePath?: string },
+    ctx: { project: { path: string }; commandRunner: CommandRunner },
+  ): Promise<string> {
+    const ref = await this.getSessionComparisonBranch(session, ctx);
+
+    // Strip any known remote prefix. Cross-check against `git remote` so we
+    // don't mangle a local branch that legitimately has a slash in its name.
+    try {
+      const { stdout } = await ctx.commandRunner.execAsync('git remote', ctx.project.path);
+      const remotes = stdout.trim().split('\n').filter(Boolean);
+      for (const remote of remotes) {
+        const prefix = `${remote}/`;
+        if (ref.startsWith(prefix)) {
+          return ref.slice(prefix.length);
+        }
+      }
+    } catch {
+      // If we can't list remotes, fall through and treat as local.
+    }
+
+    return ref;
+  }
+
   async getProjectMainBranch(projectPath: string, commandRunner: CommandRunner): Promise<string> {
 
     try {
@@ -467,18 +571,6 @@ export class WorktreeManager {
       }
       throw new Error(`Failed to get main branch for project at ${projectPath}: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }
-
-  // Deprecated: Use getProjectMainBranch instead
-  async detectMainBranch(projectPath: string, commandRunner: CommandRunner): Promise<string> {
-    console.warn('[WorktreeManager] detectMainBranch is deprecated, use getProjectMainBranch instead');
-    return await this.getProjectMainBranch(projectPath, commandRunner);
-  }
-
-  // Deprecated: Use getProjectMainBranch instead
-  async getEffectiveMainBranch(project: { path: string; main_branch?: string }, commandRunner: CommandRunner): Promise<string> {
-    console.warn('[WorktreeManager] getEffectiveMainBranch is deprecated, use getProjectMainBranch instead');
-    return await this.getProjectMainBranch(project.path, commandRunner);
   }
 
   async hasChangesToRebase(worktreePath: string, mainBranch: string, commandRunner: CommandRunner): Promise<boolean> {
