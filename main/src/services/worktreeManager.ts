@@ -474,10 +474,32 @@ export class WorktreeManager {
     // stores it when the user doesn't pick a base branch, and using it as
     // a comparison ref collapses every diff to HEAD..HEAD (empty).
     if (session.baseBranch && session.baseBranch !== 'HEAD') {
-      return session.baseBranch; // user-chosen, stable, the right answer
+      // Guard against the degenerate case where the stored base IS the
+      // worktree's own branch. This happens for sessions created on an
+      // EXISTING branch (createWorktree's branchExists path stores the
+      // branch name as actualBaseBranch). Comparing the branch to itself
+      // makes ${base}..HEAD empty and write ops try to merge into the
+      // checked-out branch. Fall through to legacy behavior in that case.
+      if (session.worktreePath) {
+        try {
+          const { stdout } = await ctx.commandRunner.execAsync(
+            'git branch --show-current',
+            session.worktreePath,
+          );
+          if (stdout.trim() !== session.baseBranch) {
+            return session.baseBranch; // user-chosen, stable, the right answer
+          }
+          // Falls through to the legacy fallback path below.
+        } catch {
+          // Worktree query failed — trust the stored value, it's the best we have.
+          return session.baseBranch;
+        }
+      } else {
+        return session.baseBranch;
+      }
     }
 
-    // Legacy / unspecified fallback path.
+    // Legacy / unspecified / degenerate fallback path.
     const fallback = await this.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
 
     if (session.isMainRepo && session.worktreePath) {
