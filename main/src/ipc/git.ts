@@ -1068,29 +1068,33 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      const comparisonBranch = await Promise.race([
-        worktreeManager.getSessionComparisonBranch(session, ctx),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionComparisonBranch timeout')), 30000))
+      // Use the LOCAL base branch (not the comparison ref) — this is a write
+      // operation that runs `git checkout <branch>` in the project repo, and
+      // checking out a remote ref like `origin/main` produces detached HEAD
+      // and silently fast-forwards detached HEAD instead of the local target.
+      const localBaseBranch = await Promise.race([
+        worktreeManager.getSessionLocalBaseBranch(session, ctx),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionLocalBaseBranch timeout')), 30000))
       ]) as string;
 
       // Emit git operation started event to all sessions in project
-      const startMessage = `🔄 GIT OPERATION\nSquashing commits and merging to ${comparisonBranch}...\nCommit message: ${commitMessage.split('\n')[0]}${commitMessage.includes('\n') ? '...' : ''}`;
+      const startMessage = `🔄 GIT OPERATION\nSquashing commits and merging to ${localBaseBranch}...\nCommit message: ${commitMessage.split('\n')[0]}${commitMessage.includes('\n') ? '...' : ''}`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'squash_and_merge',
-        comparisonBranch,
+        comparisonBranch: localBaseBranch,
         commitMessage: commitMessage.split('\n')[0]
       });
 
       await Promise.race([
-        worktreeManager.squashAndMergeWorktreeToMain(project.path, session.worktreePath, comparisonBranch, commitMessage, ctx.commandRunner),
+        worktreeManager.squashAndMergeWorktreeToMain(project.path, session.worktreePath, localBaseBranch, commitMessage, ctx.commandRunner),
         new Promise((_, reject) => setTimeout(() => reject(new Error('squashAndMergeWorktreeToMain timeout')), 180000))
       ]);
 
       // Emit git operation completed event to all sessions in project
-      const successMessage = `✓ Successfully squashed and merged worktree to ${comparisonBranch}`;
+      const successMessage = `✓ Successfully squashed and merged worktree to ${localBaseBranch}`;
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'squash_and_merge',
-        comparisonBranch
+        comparisonBranch: localBaseBranch
       });
 
       // Update git status for ALL sessions in the project since main was updated
@@ -1104,7 +1108,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         }
       }
 
-      return { success: true, data: { message: `Successfully squashed and merged worktree to ${comparisonBranch}` } };
+      return { success: true, data: { message: `Successfully squashed and merged worktree to ${localBaseBranch}` } };
     } catch (error: unknown) {
       console.error(`[IPC:git] Failed to squash and merge worktree to main for session ${sessionId}:`, error);
 
@@ -1159,22 +1163,25 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
+      // Use the LOCAL base branch (not the comparison ref) — this is a write
+      // operation that runs `git checkout <branch>` in the project repo, and
+      // checking out a remote ref like `origin/main` produces detached HEAD.
+      const localBaseBranch = await worktreeManager.getSessionLocalBaseBranch(session, ctx);
 
       // Emit git operation started event to all sessions in project
-      const startMessage = `🔄 GIT OPERATION\nMerging to ${comparisonBranch} (preserving all commits)...`;
+      const startMessage = `🔄 GIT OPERATION\nMerging to ${localBaseBranch} (preserving all commits)...`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'merge_to_main',
-        comparisonBranch
+        comparisonBranch: localBaseBranch
       });
 
-      await worktreeManager.mergeWorktreeToMain(project.path, session.worktreePath, comparisonBranch, ctx.commandRunner);
+      await worktreeManager.mergeWorktreeToMain(project.path, session.worktreePath, localBaseBranch, ctx.commandRunner);
 
       // Emit git operation completed event to all sessions in project
-      const successMessage = `✓ Successfully merged worktree to ${comparisonBranch}`;
+      const successMessage = `✓ Successfully merged worktree to ${localBaseBranch}`;
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'merge_to_main',
-        comparisonBranch
+        comparisonBranch: localBaseBranch
       });
       sessionManager.addSessionOutput(sessionId, {
         type: 'stdout',
@@ -1193,7 +1200,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
         }
       }
 
-      return { success: true, data: { message: `Successfully merged worktree to ${comparisonBranch}` } };
+      return { success: true, data: { message: `Successfully merged worktree to ${localBaseBranch}` } };
     } catch (error: unknown) {
       console.error('Failed to merge worktree to main:', error);
 
