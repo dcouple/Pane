@@ -613,13 +613,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const handlePaste = (e: ClipboardEvent) => {
             // Step 1: Check for images in browser clipboard (works on native Windows/macOS)
             const items = e.clipboardData?.items;
+            const allItemTypes = items ? Array.from({ length: items.length }, (_, i) => `${items[i].kind}:${items[i].type}`) : [];
+            const textVal = e.clipboardData?.getData('text') ?? '';
+            console.warn('[PASTE-DBG] capture fired — items:', allItemTypes, '| text:', JSON.stringify(textVal.slice(0, 60)), '| phase:', e.eventPhase);
             if (items) {
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.startsWith('image/')) {
+                  console.warn('[PASTE-DBG] Step1: browser image found, type:', items[i].type);
                   e.stopPropagation();
                   e.preventDefault();
                   const file = items[i].getAsFile();
-                  if (!file) return;
+                  if (!file) { console.warn('[PASTE-DBG] Step1: getAsFile() returned null — bailing'); return; }
 
                   if (file.size > 10 * 1024 * 1024) {
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
@@ -636,6 +640,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                     if (!dataUrl) return;
 
                     try {
+                      console.warn('[PASTE-DBG] Step1: calling terminal:paste-image IPC');
                       const result = await window.electronAPI.invoke(
                         'terminal:paste-image',
                         panel.id,
@@ -643,6 +648,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                         dataUrl,
                         file.type
                       ) as { filePath: string; imageNumber: number } | null;
+                      console.warn('[PASTE-DBG] Step1: terminal:paste-image result:', result);
                       if (result?.filePath && !disposed && terminal) {
                         terminal.paste(`[Image] ${result.filePath}\n`);
                       }
@@ -661,7 +667,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             // We always check regardless of whether text is present — the old `!text`
             // guard caused silent failures when Windows put "[Image]" in text/plain
             // alongside the actual bitmap (making text non-empty, skipping the fallback).
-            const text = e.clipboardData?.getData('text') ?? '';
+            const text = textVal;
+            console.warn('[PASTE-DBG] Step2: no browser image — blocking xterm, calling Electron clipboard IPC. text was:', JSON.stringify(text.slice(0, 60)));
             e.stopPropagation();
             e.preventDefault();
 
@@ -672,6 +679,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   'terminal:clipboard-paste-image',
                   sessionId || panel.sessionId
                 ) as { filePath: string; imageNumber: number } | null;
+                console.warn('[PASTE-DBG] Step2: terminal:clipboard-paste-image result:', result);
                 if (result?.filePath && !disposed && terminal) {
                   terminal.paste(`[Image] ${result.filePath}\n`);
                   return;
@@ -681,6 +689,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               }
 
               // No image found — forward the text content xterm would have pasted.
+              console.warn('[PASTE-DBG] Step2: no image from Electron clipboard, forwarding text:', JSON.stringify(text.slice(0, 60)));
               if (text && !disposed && terminal) {
                 terminal.paste(text);
               }

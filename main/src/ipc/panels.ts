@@ -116,6 +116,7 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   };
 
   const wsl = await isWSL();
+  console.warn('[PASTE-DBG] readClipboardImageFallback: platform=' + process.platform + ' isWSL=' + String(wsl));
 
   if (wsl) {
     // WSL: Try Electron's clipboard.readImage() first (instant, works when
@@ -165,6 +166,7 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   } else if (process.platform === 'win32') {
     // Native Windows: Use Electron's clipboard.readImage()
     const img = clipboard.readImage();
+    console.warn('[PASTE-DBG] win32 clipboard.readImage() empty=' + String(img.isEmpty()) + ' size=' + String(img.isEmpty() ? 0 : img.toPNG().length));
     if (img.isEmpty()) return null;
     await fs.writeFile(buildFilePath(), img.toPNG());
   } else {
