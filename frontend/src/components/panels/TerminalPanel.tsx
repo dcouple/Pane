@@ -593,22 +593,29 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           }
 
           // Handle paste events (Ctrl+V, voice transcription, external text injection)
-          // Attached on xterm's internal textarea so we fire alongside xterm's own handler.
-          // When an image is detected we call stopPropagation() so xterm's container-level
-          // bubble handler never fires — this prevents xterm from also pasting whatever
-          // text/plain happens to be in the clipboard alongside the image, which caused
-          // bare "[Image]" (no path) to appear on Windows. The textarea attachment (vs
-          // container capture) is required for WSL: on WSL the clipboard data is not
-          // bridged to browser ClipboardEvents, so we need xterm's own paste path to
-          // remain reachable for text paste when our image fallback finds nothing.
+          // Attached on the container in CAPTURE phase so we fire BEFORE xterm's textarea
+          // handler. This is required for correct image paste in packaged builds: when
+          // pasting a screenshot on Windows the clipboard contains both the image bitmap
+          // AND a text/plain representation (e.g. "[Image]"). If xterm's handler fires
+          // first it pastes that text before we can intercept, and our old `!text` fallback
+          // condition was then false — so the Electron clipboard IPC was never called and
+          // no image path was pasted.
+          //
+          // Strategy:
+          //   1. Check browser clipboardData.items for an image (fast path, works on
+          //      native Windows/macOS when Chromium exposes the bitmap).
+          //   2. If not found, always try terminal:clipboard-paste-image (Electron's native
+          //      clipboard API, works for WSL screenshots and any case where Chromium
+          //      doesn't expose the image in items).  We capture the text from clipboardData
+          //      first so we can forward it manually if the Electron check finds no image.
+          //   3. If Electron clipboard has no image either, call terminal.paste(text) to
+          //      forward the text content — this replaces the xterm handler we blocked.
           const handlePaste = (e: ClipboardEvent) => {
-            // Check for images in browser clipboard first (works on native Windows/macOS)
+            // Step 1: Check for images in browser clipboard (works on native Windows/macOS)
             const items = e.clipboardData?.items;
-            let foundBrowserImage = false;
             if (items) {
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.startsWith('image/')) {
-                  foundBrowserImage = true;
                   e.stopPropagation();
                   e.preventDefault();
                   const file = items[i].getAsFile();
@@ -649,49 +656,39 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               }
             }
 
-            if (!foundBrowserImage) {
-              // No image in browser clipboard — try system clipboard fallback
-              // (handles WSL, some Linux configs where browser doesn't see images)
-              const text = e.clipboardData?.getData('text');
+            // Step 2: No image in browser clipboard. Capture text now (before any
+            // preventDefault clears it), block xterm, then check the Electron clipboard.
+            // We always check regardless of whether text is present — the old `!text`
+            // guard caused silent failures when Windows put "[Image]" in text/plain
+            // alongside the actual bitmap (making text non-empty, skipping the fallback).
+            const text = e.clipboardData?.getData('text') ?? '';
+            e.stopPropagation();
+            e.preventDefault();
 
-              // Only attempt fallback if there's no text being pasted,
-              // or if text is empty (user likely intended to paste an image)
-              if (!text) {
-                e.preventDefault();
-                (async () => {
-                  if (disposed || !terminal) return;
-                  try {
-                    const result = await window.electronAPI.invoke(
-                      'terminal:clipboard-paste-image',
-                      sessionId || panel.sessionId
-                    ) as { filePath: string; imageNumber: number } | null;
-                    if (result?.filePath && !disposed && terminal) {
-                      terminal.paste(`[Image] ${result.filePath}\n`);
-                    }
-                  } catch (err) {
-                    console.error('[TerminalPanel] Clipboard fallback failed:', err);
-                  }
-                })();
-                return;
+            (async () => {
+              if (disposed || !terminal) return;
+              try {
+                const result = await window.electronAPI.invoke(
+                  'terminal:clipboard-paste-image',
+                  sessionId || panel.sessionId
+                ) as { filePath: string; imageNumber: number } | null;
+                if (result?.filePath && !disposed && terminal) {
+                  terminal.paste(`[Image] ${result.filePath}\n`);
+                  return;
+                }
+              } catch (err) {
+                console.error('[TerminalPanel] Clipboard fallback failed:', err);
               }
 
-              // Regular text paste — let event propagate to xterm's handler.
-            }
+              // No image found — forward the text content xterm would have pasted.
+              if (text && !disposed && terminal) {
+                terminal.paste(text);
+              }
+            })();
           };
-          // Attach on xterm's internal textarea — xterm calls stopPropagation() on paste
-          // events when they bubble to the container, so a container-level listener never
-          // fires on Windows. The textarea is the actual paste target, so our handler runs
-          // alongside xterm's own listener (registration order: xterm first, then ours).
-          // For images we call stopPropagation() to block xterm's container bubble handler
-          // from also pasting clipboard text/plain. For text and the system-clipboard
-          // fallback we do NOT stopPropagation so xterm can rescue the paste if needed
-          // (critical on WSL where clipboardData may be empty).
-          const xtermTextarea = terminalRef.current.querySelector('textarea.xterm-helper-textarea');
-          if (xtermTextarea) {
-            xtermTextarea.addEventListener('paste', handlePaste as EventListener);
-          } else {
-            terminalRef.current.addEventListener('paste', handlePaste);
-          }
+          // Attach on the container in CAPTURE phase — fires before xterm's textarea
+          // listener so we control whether an image or text is pasted.
+          terminalRef.current.addEventListener('paste', handlePaste, { capture: true });
 
           // Handle drag-and-drop of files onto the terminal
           const handleDragOver = (e: DragEvent) => {
@@ -1002,8 +999,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             unsubscribeFontUpdate();
             inputDisposable.dispose();
             scrollDisposable.dispose();
-            const pasteTarget = terminalElement?.querySelector('textarea.xterm-helper-textarea') ?? terminalElement;
-            pasteTarget?.removeEventListener('paste', handlePaste as EventListener);
+            terminalElement?.removeEventListener('paste', handlePaste, { capture: true });
           };
         }
       } catch (error) {
