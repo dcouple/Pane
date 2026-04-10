@@ -593,11 +593,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           }
 
           // Handle paste events (Ctrl+V, voice transcription, external text injection)
-          // Attached on the container in CAPTURE phase so we fire BEFORE xterm's own
-          // paste handler on the textarea.  When an image is detected we call
-          // stopPropagation() so xterm never sees the event — this prevents xterm from
-          // also pasting whatever text/plain happens to be in the clipboard alongside
-          // the image, which caused bare "[Image]" (no path) to appear on Windows/WSL.
+          // Attached on xterm's internal textarea so we fire alongside xterm's own handler.
+          // When an image is detected we call stopPropagation() so xterm's container-level
+          // bubble handler never fires — this prevents xterm from also pasting whatever
+          // text/plain happens to be in the clipboard alongside the image, which caused
+          // bare "[Image]" (no path) to appear on Windows. The textarea attachment (vs
+          // container capture) is required for WSL: on WSL the clipboard data is not
+          // bridged to browser ClipboardEvents, so we need xterm's own paste path to
+          // remain reachable for text paste when our image fallback finds nothing.
           const handlePaste = (e: ClipboardEvent) => {
             // Check for images in browser clipboard first (works on native Windows/macOS)
             const items = e.clipboardData?.items;
@@ -654,7 +657,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               // Only attempt fallback if there's no text being pasted,
               // or if text is empty (user likely intended to paste an image)
               if (!text) {
-                e.stopPropagation();
                 e.preventDefault();
                 (async () => {
                   if (disposed || !terminal) return;
@@ -676,9 +678,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               // Regular text paste — let event propagate to xterm's handler.
             }
           };
-          // Attach on the container in CAPTURE phase — this fires before xterm's
-          // listener on the textarea, letting us block image pastes from reaching xterm.
-          terminalRef.current.addEventListener('paste', handlePaste, { capture: true });
+          // Attach on xterm's internal textarea — xterm calls stopPropagation() on paste
+          // events when they bubble to the container, so a container-level listener never
+          // fires on Windows. The textarea is the actual paste target, so our handler runs
+          // alongside xterm's own listener (registration order: xterm first, then ours).
+          // For images we call stopPropagation() to block xterm's container bubble handler
+          // from also pasting clipboard text/plain. For text and the system-clipboard
+          // fallback we do NOT stopPropagation so xterm can rescue the paste if needed
+          // (critical on WSL where clipboardData may be empty).
+          const xtermTextarea = terminalRef.current.querySelector('textarea.xterm-helper-textarea');
+          if (xtermTextarea) {
+            xtermTextarea.addEventListener('paste', handlePaste as EventListener);
+          } else {
+            terminalRef.current.addEventListener('paste', handlePaste);
+          }
 
           // Handle drag-and-drop of files onto the terminal
           const handleDragOver = (e: DragEvent) => {
@@ -989,7 +1002,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             unsubscribeFontUpdate();
             inputDisposable.dispose();
             scrollDisposable.dispose();
-            terminalElement?.removeEventListener('paste', handlePaste, { capture: true });
+            const pasteTarget = terminalElement?.querySelector('textarea.xterm-helper-textarea') ?? terminalElement;
+            pasteTarget?.removeEventListener('paste', handlePaste as EventListener);
           };
         }
       } catch (error) {
