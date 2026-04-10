@@ -16,7 +16,7 @@ const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI fl
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
-const IDLE_THRESHOLD_MS = 3_000; // 3s — mark panel idle after no PTY output
+const IDLE_THRESHOLD_MS = 5_000; // 5s — mark panel idle after no PTY output
 
 interface TerminalProcess {
   pty: pty.IPty;
