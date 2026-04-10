@@ -73,6 +73,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
   const tuiActiveRef = useRef(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [interceptorState, setInterceptorState] = useState<InterceptorState | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1065,49 +1066,45 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     };
   }, [panel.id]); // Only depend on panel.id to prevent re-initialization on session switch
 
-  // Handle visibility changes (resize and focus when becoming visible)
+  // Handle visibility changes (resize and full refresh when becoming visible)
   // Include isInitialized so this effect re-runs after terminal initialization completes
   useEffect(() => {
-    if (isActive && isInitialized && fitAddonRef.current && xtermRef.current) {
-      // After display:none→block, the container needs time to reflow to its final size.
-      // We fit repeatedly until the width stabilizes, then do a final repaint + focus.
-      let lastWidth = 0;
-      let retries = 0;
-      const MAX_RETRIES = 10;
+    if (!isActive || !isInitialized || !fitAddonRef.current || !xtermRef.current) return;
 
-      const fitTerminal = () => {
-        if (!fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
+    // Show overlay immediately to mask the terminal.reset()+rewrite flicker
+    setIsRefreshing(true);
 
-        const containerWidth = terminalRef.current.clientWidth;
+    let lastWidth = 0;
+    let retries = 0;
+    const MAX_RETRIES = 10;
 
-        // If width is still changing or zero, the reflow isn't done — retry
-        if ((containerWidth === 0 || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
-          lastWidth = containerWidth;
-          retries++;
-          setTimeout(fitTerminal, 50);
-          return;
-        }
+    const fitAndRefresh = async () => {
+      if (!fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
 
-        fitAddonRef.current.fit();
-        const dimensions = fitAddonRef.current.proposeDimensions();
-        if (dimensions) {
-          window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
-        }
+      const containerWidth = terminalRef.current.clientWidth;
 
-        // Repaint all visible rows — after display:none→block, the WebGL/canvas
-        // renderer has stale glyph positions that cause janky shifted text.
-        const rows = xtermRef.current?.rows ?? 0;
-        if (rows > 0) {
-          xtermRef.current!.refresh(0, rows - 1);
-        }
-        if (autoFocus) {
-          xtermRef.current?.focus();
-        }
-      };
+      // If width is still changing or zero, the reflow isn't done — retry
+      if ((containerWidth === 0 || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
+        lastWidth = containerWidth;
+        retries++;
+        setTimeout(fitAndRefresh, 50);
+        return;
+      }
 
-      requestAnimationFrame(fitTerminal);
-    }
-  }, [isActive, panel.id, isInitialized, autoFocus]);
+      // Container stable — full refresh (reset + rewrite scrollback + fit)
+      // This is what the manual "Refresh terminal" button does and makes TUI apps repaint correctly
+      await handleRefreshTerminal();
+
+      if (autoFocus) {
+        xtermRef.current?.focus();
+      }
+
+      // Hide overlay 100ms after refresh resolves to ensure content is painted
+      setTimeout(() => setIsRefreshing(false), 100);
+    };
+
+    requestAnimationFrame(fitAndRefresh);
+  }, [isActive, panel.id, isInitialized, autoFocus, handleRefreshTerminal]);
 
   useEffect(() => {
     if (!xtermRef.current) {
@@ -1213,7 +1210,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         </button>
       )}
 
-      {(!isInitialized || (isCliPanel && !isCliReady)) && (
+      {(!isInitialized || isRefreshing || (isCliPanel && !isCliReady)) && (
         <div className="absolute inset-0 flex items-center justify-center bg-surface-primary z-10">
           <div className="flex flex-col items-center gap-3">
             <TerminalSpinner />
