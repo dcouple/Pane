@@ -14,6 +14,7 @@ import { cycleIndex } from '../utils/arrayUtils';
 import { cn } from '../utils/cn';
 import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
+import { usePanelStore } from '../stores/panelStore';
 
 
 
@@ -39,6 +40,8 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
   const setActiveSession = useSessionStore(s => s.setActiveSession);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
+  const panelPanels = usePanelStore(s => s.panels);
+  const panelActivityStatus = usePanelStore(s => s.activityStatus);
 
   // Hotkey registration
   const register = useHotkeyStore(s => s.register);
@@ -401,6 +404,11 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
+          const projectActivity = projectSessions.some(s => {
+            const sessionPanels = panelPanels[s.id] || [];
+            return sessionPanels.some(p => panelActivityStatus[p.id] === 'active');
+          }) ? 'active' : 'idle';
+
           const projectMenuItems: DropdownItem[] = [
             {
               id: 'main-workspace',
@@ -448,7 +456,15 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
               >
                 <Tooltip content={<span className="text-[10px] text-text-tertiary font-mono break-all">{project.path}</span>} side="right">
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs font-semibold text-text-primary truncate block">{project.name}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className={cn(
+                        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+                        projectActivity === 'active'
+                          ? 'bg-status-warning opacity-100 duration-150'
+                          : 'bg-text-muted/20 opacity-40 duration-[3s]'
+                      )} />
+                      <span className="text-xs font-semibold text-text-primary truncate">{project.name}</span>
+                    </div>
                   </div>
                 </Tooltip>
                 <div
@@ -525,16 +541,23 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
 // --- Session row button content ---
 
-function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels }: {
+function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activityStatus }: {
   session: Session;
   gs: GitStatus | undefined;
   iconColor: string;
   hasDiff: boolean;
   adds: number;
   dels: number;
+  activityStatus: 'active' | 'idle';
 }) {
   return (
     <div className="flex items-center gap-2 min-w-0 w-full">
+      <span className={cn(
+        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+        activityStatus === 'active'
+          ? 'bg-status-warning opacity-100 duration-150'
+          : 'bg-text-muted/20 opacity-40 duration-[3s]'
+      )} />
       {gs?.prNumber ? (
         <GitPullRequest className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
       ) : (
@@ -575,6 +598,11 @@ function SessionRow({
   onArchive,
 }: SessionRowProps) {
   const [localGitStatus, setLocalGitStatus] = useState<GitStatus | undefined>(session.gitStatus);
+
+  const sessionActivity = usePanelStore(s => {
+    const sessionPanels = s.panels[session.id] || [];
+    return sessionPanels.some(p => s.activityStatus[p.id] === 'active') ? 'active' : 'idle';
+  });
 
   // Fetch git status if not available
   useEffect(() => {
@@ -663,6 +691,7 @@ function SessionRow({
           hasDiff={hasDiff}
           adds={adds}
           dels={dels}
+          activityStatus={sessionActivity}
         />
       </Tooltip>
 

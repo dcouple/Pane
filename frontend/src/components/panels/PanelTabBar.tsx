@@ -13,6 +13,7 @@ import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { useResourceMonitor } from '../../hooks/useResourceMonitor';
 import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
+import { usePanelStore } from '../../stores/panelStore';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 
 function formatMemory(mb: number): string {
@@ -91,6 +92,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pane-app']));
   const { snapshot, startActive, stopActive, refresh } = useResourceMonitor();
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
+
+  const getPanelActivityStatus = usePanelStore(s => s.getPanelActivityStatus);
 
   const customCommands = config?.customCommands ?? [];
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
@@ -578,6 +581,14 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 />
               ) : (
                 <span className="inline-flex items-center justify-center gap-2 min-w-0">
+                  {panel.type === 'terminal' && (
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+                      getPanelActivityStatus(panel.id) === 'active'
+                        ? 'bg-status-warning opacity-100 duration-150'
+                        : 'bg-text-muted/20 opacity-40 duration-[3s]'
+                    )} />
+                  )}
                   {getPanelIcon(panel.type, panel)}
                   <span>{displayTitle}</span>
                 </span>

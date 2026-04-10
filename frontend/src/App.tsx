@@ -24,6 +24,7 @@ import { ResumeSessionsDialog } from './components/ResumeSessionsDialog';
 import { useErrorStore } from './stores/errorStore';
 import { useSessionStore } from './stores/sessionStore';
 import { useConfigStore } from './stores/configStore';
+import { usePanelStore } from './stores/panelStore';
 import { API } from './utils/api';
 import { createVisibilityAwareInterval } from './utils/performanceUtils';
 import { ContextMenuProvider } from './contexts/ContextMenuContext';
@@ -119,6 +120,14 @@ function App() {
   
   useIPCEvents();
   const { showNotification } = useNotifications();
+
+  // Global panel activity status listener
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.events?.onPanelActivityStatus?.((data) => {
+      usePanelStore.getState().setActivityStatus(data.panelId, data.status);
+    });
+    return () => unsubscribe?.();
+  }, []);
 
   // Keyboard shortcuts
 

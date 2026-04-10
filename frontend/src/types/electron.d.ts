@@ -268,6 +268,7 @@ interface ElectronAPI {
     // Panel events
     onPanelCreated: (callback: (panel: ToolPanel) => void) => () => void;
     onPanelUpdated: (callback: (panel: ToolPanel) => void) => () => void;
+    onPanelActivityStatus: (callback: (data: { panelId: string; sessionId: string; status: 'active' | 'idle' }) => void) => () => void;
     onPanelPromptAdded: (callback: (data: { panelId: string; content: string }) => void) => () => void;
     onPanelResponseAdded: (callback: (data: { panelId: string; content: string }) => void) => () => void;
     

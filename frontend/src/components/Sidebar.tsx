@@ -16,6 +16,7 @@ import { Dropdown } from './ui/Dropdown';
 import type { DropdownItem } from './ui/Dropdown';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
+import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
 
@@ -124,6 +125,8 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
+  const activityStatus = usePanelStore(s => s.activityStatus);
+  const panelsBySession = usePanelStore(s => s.panels);
 
   // State for collapsed sidebar
   const [projects, setProjects] = useState<Project[]>([]);
@@ -205,14 +208,10 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                   {/* Session status badges — grouped under this project */}
                   {projectSessions.map((session) => {
                     const isActive = session.id === activeSessionId;
-                    const statusColor = session.status === 'running' || session.status === 'initializing'
-                      ? 'bg-status-success'
-                      : session.status === 'waiting'
-                      ? 'bg-status-warning'
-                      : session.status === 'error'
-                      ? 'bg-status-error'
-                      : 'bg-status-neutral';
-                    const isAnimated = session.status === 'running' || session.status === 'initializing' || session.status === 'waiting';
+                    const sessionPanels = panelsBySession[session.id] || [];
+                    const isSessionActive = sessionPanels.some(p => activityStatus[p.id] === 'active');
+                    const statusColor = isSessionActive ? 'bg-status-warning opacity-100 duration-150' : 'bg-text-muted/20 opacity-40 duration-[3s]';
+                    const isAnimated = isSessionActive;
                     return (
                       <Tooltip key={session.id} content={<SessionDetailTooltip session={session} />} side="right">
                         <button
@@ -226,7 +225,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                            * TODO: Evolve into richer interactive badges with session identity
                            * (e.g., initials, mini name) and better click-to-navigate affordance.
                            */}
-                          <div className={`w-2.5 h-2.5 rounded-full ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
+                          <div className={`w-2.5 h-2.5 rounded-full transition-all ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
                         </button>
                       </Tooltip>
                     );
