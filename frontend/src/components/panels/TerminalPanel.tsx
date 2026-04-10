@@ -610,20 +610,25 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           //      first so we can forward it manually if the Electron check finds no image.
           //   3. If Electron clipboard has no image either, call terminal.paste(text) to
           //      forward the text content — this replaces the xterm handler we blocked.
+          // PASTE-DBG: fire-and-forget IPC to write a debug line to ~/.pane/logs/paste-dbg.log.
+          // console.warn in the renderer only shows in DevTools; this file is readable from disk.
+          const dbg = (msg: string) => {
+            try { window.electronAPI.invoke('terminal:paste-dbg', msg); } catch { /* ignore */ }
+          };
           const handlePaste = (e: ClipboardEvent) => {
             // Step 1: Check for images in browser clipboard (works on native Windows/macOS)
             const items = e.clipboardData?.items;
             const allItemTypes = items ? Array.from({ length: items.length }, (_, i) => `${items[i].kind}:${items[i].type}`) : [];
             const textVal = e.clipboardData?.getData('text') ?? '';
-            console.warn('[PASTE-DBG] capture fired — items:', allItemTypes, '| text:', JSON.stringify(textVal.slice(0, 60)), '| phase:', e.eventPhase);
+            dbg(`capture fired — items:${JSON.stringify(allItemTypes)} text:${JSON.stringify(textVal.slice(0, 60))} phase:${e.eventPhase}`);
             if (items) {
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.startsWith('image/')) {
-                  console.warn('[PASTE-DBG] Step1: browser image found, type:', items[i].type);
+                  dbg(`Step1: browser image found, type:${items[i].type}`);
                   e.stopPropagation();
                   e.preventDefault();
                   const file = items[i].getAsFile();
-                  if (!file) { console.warn('[PASTE-DBG] Step1: getAsFile() returned null — bailing'); return; }
+                  if (!file) { dbg('Step1: getAsFile() returned null — bailing'); return; }
 
                   if (file.size > 10 * 1024 * 1024) {
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
@@ -640,7 +645,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                     if (!dataUrl) return;
 
                     try {
-                      console.warn('[PASTE-DBG] Step1: calling terminal:paste-image IPC');
+                      dbg('Step1: calling terminal:paste-image IPC');
                       const result = await window.electronAPI.invoke(
                         'terminal:paste-image',
                         panel.id,
@@ -648,7 +653,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                         dataUrl,
                         file.type
                       ) as { filePath: string; imageNumber: number } | null;
-                      console.warn('[PASTE-DBG] Step1: terminal:paste-image result:', result);
+                      dbg(`Step1: terminal:paste-image result:${JSON.stringify(result)}`);
                       if (result?.filePath && !disposed && terminal) {
                         terminal.paste(`[Image] ${result.filePath}\n`);
                       }
@@ -668,7 +673,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             // guard caused silent failures when Windows put "[Image]" in text/plain
             // alongside the actual bitmap (making text non-empty, skipping the fallback).
             const text = textVal;
-            console.warn('[PASTE-DBG] Step2: no browser image — blocking xterm, calling Electron clipboard IPC. text was:', JSON.stringify(text.slice(0, 60)));
+            dbg(`Step2: no browser image — blocking xterm, calling Electron clipboard IPC. text was:${JSON.stringify(text.slice(0, 60))}`);
             e.stopPropagation();
             e.preventDefault();
 
@@ -679,17 +684,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   'terminal:clipboard-paste-image',
                   sessionId || panel.sessionId
                 ) as { filePath: string; imageNumber: number } | null;
-                console.warn('[PASTE-DBG] Step2: terminal:clipboard-paste-image result:', result);
+                dbg(`Step2: terminal:clipboard-paste-image result:${JSON.stringify(result)}`);
                 if (result?.filePath && !disposed && terminal) {
                   terminal.paste(`[Image] ${result.filePath}\n`);
                   return;
                 }
               } catch (err) {
+                dbg(`Step2: clipboard IPC threw: ${String(err)}`);
                 console.error('[TerminalPanel] Clipboard fallback failed:', err);
               }
 
               // No image found — forward the text content xterm would have pasted.
-              console.warn('[PASTE-DBG] Step2: no image from Electron clipboard, forwarding text:', JSON.stringify(text.slice(0, 60)));
+              dbg(`Step2: no image from Electron clipboard, forwarding text:${JSON.stringify(text.slice(0, 60))}`);
               if (text && !disposed && terminal) {
                 terminal.paste(text);
               }

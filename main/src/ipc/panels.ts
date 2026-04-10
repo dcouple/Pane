@@ -1,5 +1,5 @@
 import { IpcMain, BrowserWindow, clipboard } from 'electron';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, appendFileSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
@@ -13,6 +13,20 @@ import type { AppServices } from './types';
 import { getAppSubdirectory } from '../utils/appDirectory';
 
 const execFileAsync = promisify(execFile);
+
+// PASTE-DBG: write debug entries to a dedicated file that works in packaged builds.
+// console.warn from the main process isn't captured by any log file in production,
+// so we bypass the logger entirely and append directly to ~/.pane/logs/paste-dbg.log.
+function pasteDbgLog(source: 'main' | 'renderer', msg: string): void {
+  try {
+    const logsDir = getAppSubdirectory('logs');
+    const dbgFile = path.join(logsDir, 'paste-dbg.log');
+    const line = `[${new Date().toISOString()}] [${source}] ${msg}\n`;
+    appendFileSync(dbgFile, line);
+  } catch {
+    // Swallow — debug logging must never break paste.
+  }
+}
 
 /**
  * Convert a Windows path to a WSL mount path.
@@ -116,7 +130,7 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   };
 
   const wsl = await isWSL();
-  console.warn('[PASTE-DBG] readClipboardImageFallback: platform=' + process.platform + ' isWSL=' + String(wsl));
+  pasteDbgLog('main', 'readClipboardImageFallback: platform=' + process.platform + ' isWSL=' + String(wsl));
 
   if (wsl) {
     // WSL: Try Electron's clipboard.readImage() first (instant, works when
@@ -166,7 +180,7 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   } else if (process.platform === 'win32') {
     // Native Windows: Use Electron's clipboard.readImage()
     const img = clipboard.readImage();
-    console.warn('[PASTE-DBG] win32 clipboard.readImage() empty=' + String(img.isEmpty()) + ' size=' + String(img.isEmpty() ? 0 : img.toPNG().length));
+    pasteDbgLog('main', 'win32 clipboard.readImage() empty=' + String(img.isEmpty()) + ' size=' + String(img.isEmpty() ? 0 : img.toPNG().length));
     if (img.isEmpty()) return null;
     await fs.writeFile(buildFilePath(), img.toPNG());
   } else {
@@ -483,6 +497,12 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
       console.error('[IPC] Failed to get clean scrollback:', error);
       return { success: false, error: (error as Error).message };
     }
+  });
+
+  // PASTE-DBG: renderer-side debug logging endpoint — writes to ~/.pane/logs/paste-dbg.log
+  ipcMain.handle('terminal:paste-dbg', async (_, msg: string) => {
+    pasteDbgLog('renderer', String(msg));
+    return true;
   });
 
   // Save a pasted image to ~/.pane/images/ and return the file path with image number
