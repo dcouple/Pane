@@ -655,7 +655,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                       ) as { filePath: string; imageNumber: number } | null;
                       dbg(`Step1: terminal:paste-image result:${JSON.stringify(result)}`);
                       if (result?.filePath && !disposed && terminal) {
-                        terminal.paste(`[Image] ${result.filePath}\n`);
+                        const pasteStr = `[Image] ${result.filePath}\n`;
+                        dbg(`Step1: calling terminal.paste with len=${pasteStr.length} str=${JSON.stringify(pasteStr)}`);
+                        terminal.paste(pasteStr);
+                        dbg(`Step1: terminal.paste returned (disposed=${disposed} terminal=${!!terminal})`);
+                      } else {
+                        dbg(`Step1: NOT pasting — filePath=${result?.filePath} disposed=${disposed} terminal=${!!terminal}`);
                       }
                     } catch (err) {
                       console.error('[TerminalPanel] Failed to paste image:', err);
@@ -955,6 +960,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
           // Handle terminal input — route through interceptor first
           const inputDisposable = terminal.onData((data) => {
+            // PASTE-DBG: log anything that looks paste-like (multi-char, likely a paste or escape seq)
+            if (data.length > 3) {
+              try { window.electronAPI.invoke('terminal:paste-dbg', `onData len=${data.length} data=${JSON.stringify(data.slice(0, 300))}`); } catch { /* ignore */ }
+            }
             // Skip interception for AltGr-produced @ (e.g. German keyboard)
             if (skipNextInterceptRef.current) {
               skipNextInterceptRef.current = false;
@@ -962,6 +971,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               return;
             }
             const result = interceptor.handleInput(data);
+            if (data.length > 3) {
+              try { window.electronAPI.invoke('terminal:paste-dbg', `onData interceptor consumed=${result.consumed}`); } catch { /* ignore */ }
+            }
             if (!result.consumed) {
               window.electronAPI.invoke('terminal:input', panel.id, data);
             }

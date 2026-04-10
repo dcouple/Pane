@@ -422,6 +422,10 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   
   // Terminal-specific handlers (internal use)
   ipcMain.handle('terminal:input', async (_, panelId: string, data: string) => {
+    // PASTE-DBG: log any paste-like input reaching the main process
+    if (data.length > 3) {
+      pasteDbgLog('main', `terminal:input IPC received len=${data.length} data=${JSON.stringify(data.slice(0, 300))}`);
+    }
     return terminalPanelManager.writeToTerminal(panelId, data);
   });
   
