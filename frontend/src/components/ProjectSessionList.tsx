@@ -460,7 +460,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                       <span className={cn(
                         "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
                         projectActivity === 'active'
-                          ? 'bg-status-warning opacity-100 duration-150'
+                          ? 'bg-status-info opacity-100 duration-150'
                           : 'bg-text-muted/20 opacity-40 duration-[3s]'
                       )} />
                       <span className="text-xs font-semibold text-text-primary truncate">{project.name}</span>
@@ -555,7 +555,7 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activi
       <span className={cn(
         "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
         activityStatus === 'active'
-          ? 'bg-status-warning opacity-100 duration-150'
+          ? 'bg-status-info opacity-100 duration-150'
           : 'bg-text-muted/20 opacity-40 duration-[3s]'
       )} />
       {gs?.prNumber ? (
