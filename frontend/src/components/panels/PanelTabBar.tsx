@@ -583,8 +583,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 <span className="inline-flex items-center justify-center gap-2 min-w-0">
                   {panel.type === 'terminal' && (
                     <span className={cn(
-                      "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all duration-500",
-                      getPanelActivityStatus(panel.id) === 'active' ? 'bg-status-warning opacity-100' : 'bg-text-muted/20 opacity-40'
+                      "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+                      getPanelActivityStatus(panel.id) === 'active'
+                        ? 'bg-status-warning opacity-100 duration-150'
+                        : 'bg-text-muted/20 opacity-40 duration-[3s]'
                     )} />
                   )}
                   {getPanelIcon(panel.type, panel)}

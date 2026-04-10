@@ -210,7 +210,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                     const isActive = session.id === activeSessionId;
                     const sessionPanels = panelsBySession[session.id] || [];
                     const isSessionActive = sessionPanels.some(p => activityStatus[p.id] === 'active');
-                    const statusColor = isSessionActive ? 'bg-status-warning opacity-100' : 'bg-text-muted/20 opacity-40';
+                    const statusColor = isSessionActive ? 'bg-status-warning opacity-100 duration-150' : 'bg-text-muted/20 opacity-40 duration-[3s]';
                     const isAnimated = isSessionActive;
                     return (
                       <Tooltip key={session.id} content={<SessionDetailTooltip session={session} />} side="right">
@@ -225,7 +225,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                            * TODO: Evolve into richer interactive badges with session identity
                            * (e.g., initials, mini name) and better click-to-navigate affordance.
                            */}
-                          <div className={`w-2.5 h-2.5 rounded-full transition-all duration-500 ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
+                          <div className={`w-2.5 h-2.5 rounded-full transition-all ${statusColor} ${isAnimated ? 'animate-pulse' : ''}`} />
                         </button>
                       </Tooltip>
                     );

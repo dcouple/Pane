@@ -458,8 +458,10 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={cn(
-                        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all duration-500",
-                        projectActivity === 'active' ? 'bg-status-warning opacity-100' : 'bg-text-muted/20 opacity-40'
+                        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+                        projectActivity === 'active'
+                          ? 'bg-status-warning opacity-100 duration-150'
+                          : 'bg-text-muted/20 opacity-40 duration-[3s]'
                       )} />
                       <span className="text-xs font-semibold text-text-primary truncate">{project.name}</span>
                     </div>
@@ -551,8 +553,10 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activi
   return (
     <div className="flex items-center gap-2 min-w-0 w-full">
       <span className={cn(
-        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all duration-500",
-        activityStatus === 'active' ? 'bg-status-warning opacity-100' : 'bg-text-muted/20 opacity-40'
+        "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
+        activityStatus === 'active'
+          ? 'bg-status-warning opacity-100 duration-150'
+          : 'bg-text-muted/20 opacity-40 duration-[3s]'
       )} />
       {gs?.prNumber ? (
         <GitPullRequest className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
