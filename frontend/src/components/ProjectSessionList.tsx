@@ -40,7 +40,8 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
   const setActiveSession = useSessionStore(s => s.setActiveSession);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
-  const panelState = usePanelStore(s => ({ panels: s.panels, activityStatus: s.activityStatus }));
+  const panelPanels = usePanelStore(s => s.panels);
+  const panelActivityStatus = usePanelStore(s => s.activityStatus);
 
   // Hotkey registration
   const register = useHotkeyStore(s => s.register);
@@ -404,8 +405,8 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           const projectSessions = sessionsByProject.get(project.id) || [];
 
           const projectActivity = projectSessions.some(s => {
-            const sessionPanels = panelState.panels[s.id] || [];
-            return sessionPanels.some(p => panelState.activityStatus[p.id] === 'active');
+            const sessionPanels = panelPanels[s.id] || [];
+            return sessionPanels.some(p => panelActivityStatus[p.id] === 'active');
           }) ? 'active' : 'idle';
 
           const projectMenuItems: DropdownItem[] = [
@@ -458,7 +459,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className={cn(
                         "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-300",
-                        projectActivity === 'active' ? 'bg-status-warning' : 'bg-status-success'
+                        projectActivity === 'active' ? 'bg-status-warning' : 'bg-text-muted/20'
                       )} />
                       <span className="text-xs font-semibold text-text-primary truncate">{project.name}</span>
                     </div>
@@ -551,7 +552,7 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activi
     <div className="flex items-center gap-2 min-w-0 w-full">
       <span className={cn(
         "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-colors duration-300",
-        activityStatus === 'active' ? 'bg-status-warning' : 'bg-status-success'
+        activityStatus === 'active' ? 'bg-status-warning' : 'bg-text-muted/20'
       )} />
       {gs?.prNumber ? (
         <GitPullRequest className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
