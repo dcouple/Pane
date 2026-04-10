@@ -16,6 +16,7 @@ const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI fl
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
+const IDLE_THRESHOLD_MS = 4_000; // 4s — mark panel idle after no PTY output
 
 interface TerminalProcess {
   pty: pty.IPty;
@@ -35,6 +36,8 @@ interface TerminalProcess {
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
   // Alternate screen buffer tracking — universal TUI detection signal
   isAlternateScreen: boolean;
+  activityStatus: 'active' | 'idle';
+  idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export class TerminalPanelManager {
@@ -250,7 +253,9 @@ export class TerminalPanelManager {
       pauseSafetyTimer: null,
       outputBuffer: '',
       outputFlushTimer: null,
-      isAlternateScreen: false
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      idleTimer: null
     };
     
     // Store in map
@@ -406,6 +411,18 @@ export class TerminalPanelManager {
       // Update last activity
       terminal.lastActivity = new Date();
 
+      // Activity status transition: mark active on first byte after idle
+      if (terminal.activityStatus !== 'active') {
+        terminal.activityStatus = 'active';
+        this.emitActivityStatus(terminal);
+      }
+      if (terminal.idleTimer) clearTimeout(terminal.idleTimer);
+      terminal.idleTimer = setTimeout(() => {
+        terminal.activityStatus = 'idle';
+        terminal.idleTimer = null;
+        this.emitActivityStatus(terminal);
+      }, IDLE_THRESHOLD_MS);
+
       // Detect alternate screen buffer enter/exit for universal TUI detection
       // (works on WSL where pty.process reports wsl.exe instead of the Linux foreground app)
       // \x1b[?1049h = enter alternate screen, \x1b[?1049l = leave alternate screen
@@ -480,6 +497,16 @@ export class TerminalPanelManager {
     
     // Handle terminal exit
     terminal.pty.onExit((exitCode: { exitCode: number; signal?: number }) => {
+      // Clear idle timer and mark as idle on exit
+      if (terminal.idleTimer) {
+        clearTimeout(terminal.idleTimer);
+        terminal.idleTimer = null;
+      }
+      if (terminal.activityStatus !== 'idle') {
+        terminal.activityStatus = 'idle';
+        this.emitActivityStatus(terminal);
+      }
+
       // Emit exit event
       panelManager.emitPanelEvent(
         terminal.panelId,
@@ -695,6 +722,16 @@ export class TerminalPanelManager {
     };
   }
   
+  private emitActivityStatus(terminal: TerminalProcess): void {
+    if (mainWindow) {
+      mainWindow.webContents.send('panel:activityStatus', {
+        panelId: terminal.panelId,
+        sessionId: terminal.sessionId,
+        status: terminal.activityStatus
+      });
+    }
+  }
+
   destroyTerminal(panelId: string): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) {
@@ -712,6 +749,10 @@ export class TerminalPanelManager {
     if (terminal.pauseSafetyTimer) {
       clearTimeout(terminal.pauseSafetyTimer);
       terminal.pauseSafetyTimer = null;
+    }
+    if (terminal.idleTimer) {
+      clearTimeout(terminal.idleTimer);
+      terminal.idleTimer = null;
     }
     this.flushOutputBuffer(terminal);
 
@@ -847,6 +888,10 @@ export class TerminalPanelManager {
         if (terminal.pauseSafetyTimer) {
           clearTimeout(terminal.pauseSafetyTimer);
           terminal.pauseSafetyTimer = null;
+        }
+        if (terminal.idleTimer) {
+          clearTimeout(terminal.idleTimer);
+          terminal.idleTimer = null;
         }
         this.flushOutputBuffer(terminal);
 

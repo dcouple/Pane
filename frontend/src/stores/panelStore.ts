@@ -8,6 +8,7 @@ export const usePanelStore = create<PanelStore>()(
   immer((set, get) => ({
     panels: {},
     activePanels: {},
+    activityStatus: {},
 
     // Pure synchronous state updates
     setPanels: (sessionId, panels) => {
@@ -46,6 +47,7 @@ export const usePanelStore = create<PanelStore>()(
         if (state.activePanels[sessionId] === panelId) {
           delete state.activePanels[sessionId];
         }
+        delete state.activityStatus[panelId];
       });
     },
 
@@ -61,11 +63,29 @@ export const usePanelStore = create<PanelStore>()(
       });
     },
 
+    setActivityStatus: (panelId, status) => {
+      set((state) => {
+        state.activityStatus[panelId] = status;
+      });
+    },
+
+    clearActivityStatus: (panelId) => {
+      set((state) => {
+        delete state.activityStatus[panelId];
+      });
+    },
+
     // Getters remain the same
     getSessionPanels: (sessionId) => get().panels[sessionId] || [],
     getActivePanel: (sessionId) => {
       const panels = get().panels[sessionId] || [];
       return panels.find(p => p.id === get().activePanels[sessionId]);
-    }
+    },
+    getPanelActivityStatus: (panelId) => get().activityStatus[panelId] || 'idle',
+    getSessionActivityStatus: (sessionId) => {
+      const sessionPanels = get().panels[sessionId] || [];
+      const actStatus = get().activityStatus;
+      return sessionPanels.some((p) => actStatus[p.id] === 'active') ? 'active' : 'idle';
+    },
   }))
 );
