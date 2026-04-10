@@ -38,6 +38,8 @@ interface TerminalProcess {
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
   idleTimer: ReturnType<typeof setTimeout> | null;
+  // DEC Mode 2026 synchronized-output block tracking — persists across chunks
+  inSyncBlock: boolean;
 }
 
 export class TerminalPanelManager {
@@ -255,7 +257,8 @@ export class TerminalPanelManager {
       outputFlushTimer: null,
       isAlternateScreen: false,
       activityStatus: 'idle',
-      idleTimer: null
+      idleTimer: null,
+      inSyncBlock: false
     };
     
     // Store in map
@@ -405,6 +408,47 @@ export class TerminalPanelManager {
     }
   }
 
+  /**
+   * Strips \x1b[2J (clear-screen) sequences that appear inside DEC Mode 2026
+   * synchronized-output blocks. Claude Code uses these blocks for full-screen
+   * redraws; the clear-screen causes xterm.js to reset scroll position, yanking
+   * users away from where they were reading. State (inSyncBlock) persists across
+   * chunk boundaries on the terminal object.
+   */
+  private filterSyncBlockClears(terminal: TerminalProcess, data: string): string {
+    const SYNC_START = '\x1b[?2026h';
+    const SYNC_END   = '\x1b[?2026l';
+    const CLEAR      = '\x1b[2J';
+
+    // Fast path: no sync sequences and not already inside a block
+    if (!terminal.inSyncBlock && !data.includes(SYNC_START)) {
+      return data;
+    }
+
+    let result = '';
+    let i = 0;
+
+    while (i < data.length) {
+      if (data.startsWith(SYNC_START, i)) {
+        terminal.inSyncBlock = true;
+        result += SYNC_START;
+        i += SYNC_START.length;
+      } else if (data.startsWith(SYNC_END, i)) {
+        terminal.inSyncBlock = false;
+        result += SYNC_END;
+        i += SYNC_END.length;
+      } else if (terminal.inSyncBlock && data.startsWith(CLEAR, i)) {
+        // Strip the clear-screen — scroll position preserved in xterm.js
+        i += CLEAR.length;
+      } else {
+        result += data[i];
+        i++;
+      }
+    }
+
+    return result;
+  }
+
   private setupTerminalHandlers(terminal: TerminalProcess): void {
     // Handle terminal output
     terminal.pty.onData((data: string) => {
@@ -444,14 +488,17 @@ export class TerminalPanelManager {
         }
       }
 
+      // Strip \x1b[2J inside DEC 2026 sync blocks before xterm.js sees the data
+      const filtered = this.filterSyncBlockClears(terminal, data);
+
       // Add to scrollback buffer
-      this.addToScrollback(terminal, data);
-      
+      this.addToScrollback(terminal, filtered);
+
       // Detect commands (simple heuristic - look for carriage returns)
       if (data.includes('\r') || data.includes('\n')) {
         if (terminal.currentCommand.trim()) {
           terminal.commandHistory.push(terminal.currentCommand);
-          
+
           // Emit command executed event
           panelManager.emitPanelEvent(
             terminal.panelId,
@@ -461,7 +508,7 @@ export class TerminalPanelManager {
               timestamp: new Date().toISOString()
             }
           );
-          
+
           // Check for file operation commands
           if (this.isFileOperationCommand(terminal.currentCommand)) {
             panelManager.emitPanelEvent(
@@ -473,16 +520,16 @@ export class TerminalPanelManager {
               }
             );
           }
-          
+
           terminal.currentCommand = '';
         }
       } else {
         // Accumulate command input
         terminal.currentCommand += data;
       }
-      
+
       // Buffer output for batching instead of sending immediately
-      terminal.outputBuffer += data;
+      terminal.outputBuffer += filtered;
 
       if (terminal.outputBuffer.length >= OUTPUT_BATCH_SIZE) {
         // Buffer is large enough — flush immediately
