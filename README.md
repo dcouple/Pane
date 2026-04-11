@@ -94,7 +94,7 @@ Pane is the only tool that is a real desktop app, agent-agnostic, cross-platform
 
 ## How It Works
 
-Two primitives: **panes** and **panels**. One pane per feature, one worktree each. Inside every pane, everything lives in panels — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every panel persists across restarts.
+Two primitives: **panes** and **tabs**. One pane per feature, one worktree each. Inside every pane, everything lives in tabs — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every tab persists across restarts.
 
 Your agents already talk to Linear, Jira, GitHub, and Slack through MCPs and CLI tools. The terminal is the universal integration layer. Pane doesn't re-integrate what your agents already access — it gives them a place to run.
 
