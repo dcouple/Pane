@@ -74,24 +74,6 @@ Each of these is a small thing. Together they compound fast.
 
 ---
 
-## How Pane Is Different
-
-| | Pane | Superset | Conductor | Claude Squad | Cursor/Windsurf |
-|---|---|---|---|---|---|
-| **Platform** | Win + Mac + Linux | Mac (unofficial Win/Linux) | Mac (Apple Silicon only) | Unix (tmux) | Win + Mac |
-| **Agents** | Any CLI | Any CLI | Claude + Codex | Any (tmux) | Built-in only |
-| **Diff Viewer** | Built-in, syntax-highlighted | Built-in | Built-in | None | Editor-level |
-| **Git Workflow** | Commit, push, rebase, squash, merge — all keyboard | Worktrees + merge | Worktrees + PR | Worktrees only | Editor-level |
-| **Keyboard-First** | Every action | Partial | Partial | Terminal only | IDE shortcuts |
-| **Open Source** | Yes (AGPL-3.0) | Yes (Apache-2.0) | No | Yes | No |
-| **Session Persistence** | Yes | Yes | Yes | No | N/A |
-
-Every tool in the AI coding space either only works on Mac, only works with one agent, is a terminal hack that requires tmux, treats Windows as an afterthought, or wants to be your editor, your terminal, and your agent all at once.
-
-Pane is the only tool that is a real desktop app, agent-agnostic, cross-platform with every OS as a first-class citizen, keyboard-first, and git-native. That combination doesn't exist anywhere else.
-
----
-
 ## How It Works
 
 Two primitives: **panes** and **tabs**. One pane per feature, one worktree each. Inside every pane, everything lives in tabs — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every tab persists across restarts.
@@ -198,6 +180,24 @@ Pane is not your editor. Not your terminal. Not your agent.
 It replaces the chaos. The twelve terminal windows. The alt-tabbing. The mental overhead of tracking which agent is on which branch. The frustration of tools that don't work on your OS.
 
 Pane replaces the mess with a single, fast, keyboard-driven surface. It's the thing you wish tmux was.
+
+---
+
+## How Pane Is Different
+
+| | Pane | Superset | Conductor | Claude Squad | Cursor/Windsurf |
+|---|---|---|---|---|---|
+| **Platform** | Win + Mac + Linux | Mac (unofficial Win/Linux) | Mac (Apple Silicon only) | Unix (tmux) | Win + Mac |
+| **Agents** | Any CLI | Any CLI | Claude + Codex | Any (tmux) | Built-in only |
+| **Diff Viewer** | Built-in, syntax-highlighted | Built-in | Built-in | None | Editor-level |
+| **Git Workflow** | Commit, push, rebase, squash, merge — all keyboard | Worktrees + merge | Worktrees + PR | Worktrees only | Editor-level |
+| **Keyboard-First** | Every action | Partial | Partial | Terminal only | IDE shortcuts |
+| **Open Source** | Yes (AGPL-3.0) | Yes (Apache-2.0) | No | Yes | No |
+| **Session Persistence** | Yes | Yes | Yes | No | N/A |
+
+Every tool in the AI coding space either only works on Mac, only works with one agent, is a terminal hack that requires tmux, treats Windows as an afterthought, or wants to be your editor, your terminal, and your agent all at once.
+
+Pane is the only tool that is a real desktop app, agent-agnostic, cross-platform with every OS as a first-class citizen, keyboard-first, and git-native. That combination doesn't exist anywhere else.
 
 ---
 
