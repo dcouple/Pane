@@ -52,7 +52,27 @@ And then there's git worktrees. Everyone agrees worktrees are the right way to r
 
 Pane makes worktrees invisible. You create a session, Pane creates the worktree. You delete a session, Pane cleans it up. You hit a shortcut, Pane rebases from main. You never type `git worktree` again. All the isolation benefits, none of the pain.
 
-Pane fixes the interaction layer. It gives you a single, keyboard-driven surface to run multiple agents in parallel, each in its own isolated workspace, with git workflow built in. You see what every agent is doing. You switch between them instantly. You review diffs, commit, push, and rebase without leaving the app.
+---
+
+## What Flying Feels Like
+
+Each of these is a small thing. Together they compound fast.
+
+| Feature | | |
+|---|---|---|
+| **Auto Secrets Copy** | Every pane automatically mirrors `.env` files and secrets from your root project — your worktree is runnable the moment it's created. | |
+| **@mention Terminals** | Type `@` in any terminal to pull the last 500 lines from another pane's terminal directly into context — no copy-paste, no tab-switching. | <img src="images/qol-at-mention.png" alt="Cross-terminal @mention picker" width="420"> |
+| **Clipboard Shortcuts** | `Ctrl+Alt+[key]` pastes any saved text snippet instantly — assign your most-used prompts once, fire them forever. | <img src="images/qol-clipboard.png" alt="Terminal clipboard shortcuts popover" width="280"> |
+| **Terminal Popover** | Highlight any text — URLs, file paths, error IDs — and an intelligent popover surfaces the right action: copy, open in browser, show in explorer. | <img src="images/qol-terminal-popover.png" alt="Terminal text selection popover" width="420"> |
+| **Isolated Ports** | Each pane runs on its own port range automatically — spin up five dev servers in parallel without a single conflict. | |
+| **Built-in Browser** | Preview any URL in a tab next to your terminals — paired with isolated ports, every pane sees its own running app without alt-tabbing. | <img src="images/qol-browser.png" alt="Built-in browser tab previewing a local dev server" width="420"> |
+| **Resource Manager** | Built-in CPU and memory monitor, broken down per pane and per process — catch a runaway agent before it eats your laptop. | <img src="images/qol-resource-manager.png" alt="Built-in resource manager" width="420"> |
+| **Status Dots** | Activity indicators at the tab, pane, and project level — you always know which agent is idle, working, or waiting, without looking at it. | <img src="images/qol-status-dots.png" alt="Session activity status dots" width="280"> |
+| **Terminal Rendering Patches** | Claude Code's scroll-jump bug — long conversations snapping to top when you scroll up — is fixed here. It's not fixed in Claude Code itself. | |
+| **Jump + Refresh** | Jump to top, jump to bottom, or hard-refresh any terminal from the toolbar — unstick a frozen state in one click. | |
+| **Drag and Drop** | Drop any file up to 50MB into a terminal and it lands exactly where you need it. | |
+
+---
 
 ## How Pane Is Different
 
