@@ -1,4 +1,36 @@
-import { execSync as nodeExecSync } from 'child_process';
+import { execSync as nodeExecSync, execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+// Cache WSL user's $HOME per distro (one-time detection per distro).
+const wslHomeCache = new Map<string, string>();
+
+/**
+ * Get the WSL user's $HOME directory for a given distro, cached after first call.
+ * Used to save files to the WSL-native filesystem (e.g. pasted images) so that
+ * CLI tools running inside WSL can read them at a normal Linux path instead of
+ * a /mnt/c/... DrvFs path, which some tools (Claude Code CLI) can't attach.
+ */
+export async function getWSLHome(distro: string): Promise<string | null> {
+  const cached = wslHomeCache.get(distro);
+  if (cached) return cached;
+  try {
+    const { stdout } = await execFileAsync(
+      'wsl.exe',
+      ['-d', distro, '--', 'bash', '-c', 'echo "$HOME"'],
+      { timeout: 5000, encoding: 'utf8' }
+    );
+    const home = stdout.trim();
+    if (home && home.startsWith('/')) {
+      wslHomeCache.set(distro, home);
+      return home;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Escape a value for bash single quotes — always uses Unix-style escaping.

@@ -11,6 +11,7 @@ import { databaseService } from '../services/database';
 import { CreatePanelRequest, PanelEventType, ToolPanel } from '../../../shared/types/panels';
 import type { AppServices } from './types';
 import { getAppSubdirectory } from '../utils/appDirectory';
+import { getWSLHome, linuxToUNCPath, posixJoin } from '../utils/wslUtils';
 
 const execFileAsync = promisify(execFile);
 
@@ -50,6 +51,64 @@ function resolveImagePathForSession(filePath: string, sessionId: string): string
   const project = databaseService.getProject(session.project_id);
   if (!project?.wsl_enabled) return filePath;
   return windowsPathToWSLMount(filePath);
+}
+
+/**
+ * Save file bytes for a session and return the path to pass to the CLI tool.
+ *
+ * For WSL-enabled sessions on Windows, writes directly to WSL's ~/.pane/<subdir>/
+ * via the \\wsl.localhost UNC share and returns the native Linux path
+ * (/home/<user>/.pane/<subdir>/<filename>). Claude Code CLI running inside WSL
+ * can read this directly, unlike a /mnt/c/... DrvFs path which it silently
+ * rejects when trying to attach pasted images.
+ *
+ * For native Mac/Linux, or WSL sessions where the UNC write fails, falls back
+ * to writing to the host's .pane/<subdir>/ via getAppSubdirectory() and returns
+ * the result of resolveImagePathForSession() — same behavior as before this
+ * helper existed.
+ */
+async function saveFileForSession(
+  sessionId: string,
+  subdir: 'images' | 'files',
+  filename: string,
+  bytes: Buffer,
+): Promise<string> {
+  // Only attempt WSL-native save on Windows hosts with a WSL-enabled project.
+  if (process.platform === 'win32') {
+    const session = databaseService.getSession(sessionId);
+    const projectId = session?.project_id;
+    const project = projectId ? databaseService.getProject(projectId) : null;
+    if (project?.wsl_enabled && project.wsl_distribution) {
+      const distro = project.wsl_distribution;
+      try {
+        const wslHome = await getWSLHome(distro);
+        if (wslHome) {
+          const linuxDir = posixJoin(wslHome, '.pane', subdir);
+          const linuxPath = posixJoin(linuxDir, filename);
+          const uncDir = linuxToUNCPath(linuxDir, distro);
+          const uncPath = linuxToUNCPath(linuxPath, distro);
+          if (!existsSync(uncDir)) {
+            await fs.mkdir(uncDir, { recursive: true });
+          }
+          await fs.writeFile(uncPath, bytes);
+          return linuxPath;
+        }
+      } catch (err) {
+        // Fall through to native-host save below — no worse than the old behavior.
+        console.warn(`[saveFileForSession] WSL-native save failed for ${distro}, falling back:`, err);
+      }
+    }
+  }
+
+  // Fallback: save to the host's .pane/<subdir>/ and let resolveImagePathForSession
+  // convert to /mnt/c/... if the session happens to be WSL-enabled.
+  const hostDir = getAppSubdirectory(subdir);
+  if (!existsSync(hostDir)) {
+    await fs.mkdir(hostDir, { recursive: true });
+  }
+  const hostPath = path.join(hostDir, filename);
+  await fs.writeFile(hostPath, bytes);
+  return resolveImagePathForSession(hostPath, sessionId);
 }
 
 // In-memory cache: sessionId -> imageCount for terminal image paste
@@ -178,11 +237,21 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
     if (img.isEmpty()) return null;
     await fs.writeFile(buildFilePath(), img.toPNG());
   } else if (process.platform === 'win32') {
-    // Native Windows: Use Electron's clipboard.readImage()
+    // Native Windows: Use Electron's clipboard.readImage().
+    // Route through saveFileForSession so WSL-enabled sessions get the image
+    // written to the WSL distro's ~/.pane/images/ — Claude CLI inside WSL can
+    // read that path directly, unlike a /mnt/c/... DrvFs fallback.
     const img = clipboard.readImage();
     pasteDbgLog('main', 'win32 clipboard.readImage() empty=' + String(img.isEmpty()) + ' size=' + String(img.isEmpty() ? 0 : img.toPNG().length));
     if (img.isEmpty()) return null;
-    await fs.writeFile(buildFilePath(), img.toPNG());
+    const bytes = img.toPNG();
+    if (bytes.length > 10 * 1024 * 1024) {
+      throw new Error('Image too large');
+    }
+    const filename = `${sessionId}_${count}_${timestamp}_${randomStr}.${extension}`;
+    const resolvedPath = await saveFileForSession(sessionId, 'images', filename, bytes);
+    sessionImageCounters.set(sessionId, count);
+    return { filePath: resolvedPath, imageNumber: count };
   } else {
     // Linux: Try xclip — detect actual MIME type from clipboard
     try {
@@ -509,7 +578,9 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     return true;
   });
 
-  // Save a pasted image to ~/.pane/images/ and return the file path with image number
+  // Save a pasted image to the appropriate .pane/images/ and return the file path with image number.
+  // For WSL-enabled sessions, the file is written to the WSL distro's ~/.pane/images/ so
+  // Claude CLI (running inside WSL) can read it at a native Linux path instead of /mnt/c/...
   ipcMain.handle('terminal:paste-image', async (
     _,
     _panelId: string,
@@ -517,29 +588,28 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     dataUrl: string,
     mimeType: string
   ) => {
-    const imagesDir = getAppSubdirectory('images');
-    if (!existsSync(imagesDir)) {
-      await fs.mkdir(imagesDir, { recursive: true });
+    // Initialize counter from existing files on disk if not cached.
+    // Note: this counts files in the host-side .pane/images/ for backwards compat —
+    // it's just a counter for UI ordering, not a strict inventory of saved files.
+    const hostImagesDir = getAppSubdirectory('images');
+    if (!existsSync(hostImagesDir)) {
+      await fs.mkdir(hostImagesDir, { recursive: true });
     }
-
-    // Initialize counter from existing files on disk if not cached
     if (!sessionImageCounters.has(sessionId)) {
-      const existing = readdirSync(imagesDir)
+      const existing = readdirSync(hostImagesDir)
         .filter(f => f.startsWith(`${sessionId}_`));
       sessionImageCounters.set(sessionId, existing.length);
     }
 
     // Increment counter
     const count = (sessionImageCounters.get(sessionId) ?? 0) + 1;
-    sessionImageCounters.set(sessionId, count);
 
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 9);
     const extension = MIME_EXTENSIONS[mimeType] ?? 'png';
     const filename = `${sessionId}_${count}_${timestamp}_${randomStr}.${extension}`;
-    const filePath = path.join(imagesDir, filename);
 
-    // Decode and save
+    // Decode base64
     const base64Data = dataUrl.split(',')[1];
     if (!base64Data) {
       throw new Error('Invalid image data URL');
@@ -551,9 +621,12 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
       throw new Error('Image too large');
     }
 
-    await fs.writeFile(filePath, buffer);
+    const resolvedPath = await saveFileForSession(sessionId, 'images', filename, buffer);
 
-    return { filePath: resolveImagePathForSession(filePath, sessionId), imageNumber: count };
+    // Commit counter only after successful save
+    sessionImageCounters.set(sessionId, count);
+
+    return { filePath: resolvedPath, imageNumber: count };
   });
 
   // Fallback clipboard image check for platforms where browser clipboardData
@@ -607,20 +680,13 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
       const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
 
-      // Save to ~/.pane/files/
-      const filesDir = getAppSubdirectory('files');
-      if (!existsSync(filesDir)) {
-        await fs.mkdir(filesDir, { recursive: true });
-      }
-
       const timestamp = Date.now();
       const randomStr = Math.random().toString(36).substring(2, 9);
       const filename = `${sessionId}_scrollback_${timestamp}_${randomStr}.txt`;
-      const filePath = path.join(filesDir, filename);
 
-      await fs.writeFile(filePath, content, 'utf-8');
-
-      const resolvedPath = resolveImagePathForSession(filePath, sessionId);
+      // Save to .pane/files/ — routes to WSL-native path for WSL sessions so
+      // Claude CLI inside WSL can read the file at a native Linux path.
+      const resolvedPath = await saveFileForSession(sessionId, 'files', filename, Buffer.from(content, 'utf-8'));
       return { success: true, data: { filePath: resolvedPath, lineCount: lastLines.length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to save scrollback:', error);
@@ -628,18 +694,13 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
 
-  // Save a dropped file (any type) to ~/.pane/files/ and return the resolved path
+  // Save a dropped file (any type) to .pane/files/ and return the resolved path
   ipcMain.handle('terminal:paste-file', async (
     _,
     sessionId: string,
     dataUrl: string,
     originalFileName: string
   ) => {
-    const filesDir = getAppSubdirectory('files');
-    if (!existsSync(filesDir)) {
-      await fs.mkdir(filesDir, { recursive: true });
-    }
-
     // Derive extension from original filename
     const extMatch = originalFileName.match(/\.([a-zA-Z0-9]+)$/);
     const extension = extMatch ? extMatch[1].toLowerCase() : 'bin';
@@ -647,7 +708,6 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 9);
     const filename = `${sessionId}_${timestamp}_${randomStr}.${extension}`;
-    const filePath = path.join(filesDir, filename);
 
     const base64Data = dataUrl.split(',')[1];
     if (!base64Data) {
@@ -659,8 +719,8 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
       throw new Error('File too large (max 50 MB)');
     }
 
-    await fs.writeFile(filePath, buffer);
-    return { filePath: resolveImagePathForSession(filePath, sessionId) };
+    const resolvedPath = await saveFileForSession(sessionId, 'files', filename, buffer);
+    return { filePath: resolvedPath };
   });
 
   // Check if a panel type should be auto-created (not previously closed by user)
