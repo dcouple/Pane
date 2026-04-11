@@ -655,7 +655,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                       ) as { filePath: string; imageNumber: number } | null;
                       dbg(`Step1: terminal:paste-image result:${JSON.stringify(result)}`);
                       if (result?.filePath && !disposed && terminal) {
-                        const pasteStr = `[Image] ${result.filePath}\n`;
+                        // Paste the raw path, no [Image] prefix. Claude Code CLI's own
+                        // image-paste UX (placeholder + auto-attach) works on Mac but
+                        // silently drops the file on Windows+WSL. By pasting the full
+                        // path verbatim we avoid that code path entirely — the user
+                        // sees the literal path, and Claude can read it via its Read
+                        // tool. Consistent behavior across all platforms.
+                        const pasteStr = `${result.filePath}\n`;
                         dbg(`Step1: calling terminal.paste with len=${pasteStr.length} str=${JSON.stringify(pasteStr)}`);
                         terminal.paste(pasteStr);
                         dbg(`Step1: terminal.paste returned (disposed=${disposed} terminal=${!!terminal})`);
@@ -691,7 +697,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                 ) as { filePath: string; imageNumber: number } | null;
                 dbg(`Step2: terminal:clipboard-paste-image result:${JSON.stringify(result)}`);
                 if (result?.filePath && !disposed && terminal) {
-                  terminal.paste(`[Image] ${result.filePath}\n`);
+                  // See Step 1 comment: paste raw path, no [Image] prefix.
+                  terminal.paste(`${result.filePath}\n`);
                   return;
                 }
               } catch (err) {
@@ -763,8 +770,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   }
 
                   if (resolvedPath && !disposed && terminal) {
-                    const prefix = isImage ? '[Image] ' : '';
-                    terminal.paste(`${prefix}${resolvedPath}\n`);
+                    // Paste the raw path without any [Image] prefix — see paste-handler
+                    // comment above: Claude's [Image] placeholder UX drops the file on
+                    // Windows+WSL, so we always paste the full visible path instead.
+                    terminal.paste(`${resolvedPath}\n`);
                   }
                 } catch (err) {
                   console.error('[TerminalPanel] Failed to drop file:', err);
