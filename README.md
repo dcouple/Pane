@@ -66,10 +66,10 @@ Each of these is a small thing. Together they compound fast.
 | **Built-in Browser** | Preview any URL in a tab next to your terminals so every pane can see its own running dev server without alt-tabbing. | <img src="images/qol-browser.png" alt="Built-in browser tab previewing a local dev server" width="420"> |
 | **Resource Manager** | Built-in CPU and memory monitor broken down per pane and per process, so you can catch a runaway agent before it eats your laptop. | <img src="images/qol-resource-manager.png" alt="Built-in resource manager" width="420"> |
 | **Status Dots** | Activity indicators at the tab, pane, and project level tell you which agent is idle, working, or waiting without you having to look. | <img src="images/qol-status-dots.png" alt="Session activity status dots" width="280"> |
+| **Jump + Refresh** | Jump to top, jump to bottom, or hard-refresh any terminal from the toolbar to unstick a frozen state in one click. | <img src="images/qol-jump-refresh.png" alt="Terminal jump and refresh controls" width="120"> |
 | **Auto Secrets Copy** | Every pane automatically mirrors `.env` files and secrets from your root project so your worktree is runnable the moment it's created. | |
 | **Isolated Ports** | Each pane runs on its own port range automatically, so you can spin up five dev servers in parallel without a single conflict. | |
 | **Terminal Rendering Patches** | Claude Code's scroll-jump bug (long conversations snapping to top when you scroll up) is fixed here, even though it's still broken in Claude Code itself. | |
-| **Jump + Refresh** | Jump to top, jump to bottom, or hard-refresh any terminal from the toolbar to unstick a frozen state in one click. | |
 | **Drag and Drop** | Drop any file up to 50MB into a terminal and it lands exactly where you need it. | |
 
 ---
@@ -185,7 +185,7 @@ Pane is for the other 75%. And for Mac developers who want to choose their own a
 
 ## Who Pane Is For
 
-- **Developers on Windows and Linux** who are underserved by Mac-only AI coding tools
+- **Developers on any OS**: Mac, Windows, and Linux are all first-class citizens, with no "Mac-first with a Windows waitlist"
 - **Multi-agent users** who run Claude Code, Codex, Aider, or Goose depending on the task and want one app to manage them all
 - **Keyboard-driven developers** who want Superhuman-level speed in their AI-assisted coding workflow
 - **Teams** where different engineers use different agents and need a consistent workflow layer
@@ -204,16 +204,22 @@ Pane replaces the mess with a single, fast, keyboard-driven surface. It's the th
 ## FAQ
 
 **"Isn't this just tmux with extra steps?"**
-tmux is from 2007. Pane is a modern desktop app with a diff viewer, git workflow, command palette, pane management, notifications, and Windows support.
+tmux is from 2007. Pane is a modern desktop app with a built-in diff viewer, file explorer, git workflow, command palette, browser tab, resource manager, persistent state, cross-terminal context sharing, and (unlike tmux) it works on Windows. tmux is a terminal multiplexer; Pane is a workstation for managing AI coding agents.
 
 **"What if a new AI agent comes out tomorrow?"**
-You just run it. Pane doesn't bundle agents or lock you in. No waiting for support — instant execution.
+You just run it. Pane doesn't bundle agents or lock you in. If it runs in a terminal, it runs in Pane, instantly. No plugins, no SDK, no waiting for support.
+
+**"Do I have to know how git worktrees work?"**
+No. Pane creates and tears down worktrees automatically when you create or delete a pane, so you get all the isolation benefits without ever typing `git worktree`.
+
+**"Can I run multiple agents in parallel without them stepping on each other?"**
+Yes. Each pane gets its own worktree, its own port range, and its own copy of your secrets. Five agents, five isolated workspaces, zero conflicts.
 
 **"Why is it called Pane?"**
 Because you look through a pane to see what's happening. Each pane is a window into an agent's work.
 
 **"Why Electron?"**
-Pane uses xterm.js — the same terminal engine powering VS Code's integrated terminal. Same rendering, same reliability, battle-tested with 50,000-line scrollback history. Electron powers VS Code, Slack, Discord, and Figma.
+Pane uses xterm.js, the same terminal engine that powers VS Code's integrated terminal. Same rendering, same reliability, with 50,000 lines of scrollback. Electron also powers VS Code, Slack, Discord, and Figma.
 
 ---
 
