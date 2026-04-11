@@ -22,6 +22,18 @@ window.addEventListener('error', (event) => {
   // Note: We don't prevent default here as the error boundary should catch React errors
 });
 
+// Swallow OS file drops outside of registered drop zones (terminal, editor, etc.)
+// Without this, Chromium's default behavior on a file drop is to navigate the
+// window to the dropped file's URI — which wipes the entire Pane UI. Components
+// that want to accept drops still register their own handlers; this is just a
+// safety net for dropping into empty space.
+window.addEventListener('dragover', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+});
+window.addEventListener('drop', (e) => {
+  if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
+});
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>

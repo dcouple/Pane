@@ -697,16 +697,22 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // listener so we control whether an image or text is pasted.
           terminalRef.current.addEventListener('paste', handlePaste, { capture: true });
 
-          // Handle drag-and-drop of files onto the terminal
+          // Handle drag-and-drop of files onto the terminal.
+          //
+          // Quirk: the old code only preventDefault'd when dataTransfer.types
+          // contained exactly 'Files'. Chromium restricts access to types during
+          // dragover on some platforms/versions, so that check could silently fail
+          // mid-drag and the subsequent drop event would never reach us. We always
+          // preventDefault on dragover now — harmless if the drop isn't a file,
+          // and critical for letting the drop event fire when it is.
           const handleDragOver = (e: DragEvent) => {
-            if (e.dataTransfer?.types.includes('Files')) {
-              e.preventDefault();
-              if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
-            }
+            if (!e.dataTransfer) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
           };
           const handleDrop = (e: DragEvent) => {
-            if (!e.dataTransfer?.files.length || disposed || !terminal) return;
             e.preventDefault();
+            if (!e.dataTransfer?.files.length || disposed || !terminal) return;
 
             // Save all dropped files to disk and paste the resolved path
             const files = Array.from(e.dataTransfer.files);
@@ -1008,6 +1014,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             inputDisposable.dispose();
             scrollDisposable.dispose();
             terminalElement?.removeEventListener('paste', handlePaste, { capture: true });
+            terminalElement?.removeEventListener('dragover', handleDragOver);
+            terminalElement?.removeEventListener('drop', handleDrop);
           };
         }
       } catch (error) {
