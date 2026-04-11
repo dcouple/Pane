@@ -24,6 +24,7 @@ import { createAtTerminalHandler } from '../../services/terminalInterceptor/hand
 import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
 import { InterceptorToast } from '../terminal/InterceptorToast';
 import { usePanelStore } from '../../stores/panelStore';
+import { isWindows } from '../../utils/platformUtils';
 import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
@@ -655,13 +656,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                       ) as { filePath: string; imageNumber: number } | null;
                       dbg(`Step1: terminal:paste-image result:${JSON.stringify(result)}`);
                       if (result?.filePath && !disposed && terminal) {
-                        // Paste the raw path, no [Image] prefix. Claude Code CLI's own
-                        // image-paste UX (placeholder + auto-attach) works on Mac but
-                        // silently drops the file on Windows+WSL. By pasting the full
-                        // path verbatim we avoid that code path entirely — the user
-                        // sees the literal path, and Claude can read it via its Read
-                        // tool. Consistent behavior across all platforms.
-                        const pasteStr = `${result.filePath}\n`;
+                        // On Mac/Linux, prefix the path with "[Image] " — Claude Code
+                        // CLI's auto-attach UX turns this into a placeholder and
+                        // attaches the file to the next API call. That works on those
+                        // platforms but silently drops the file on Windows+WSL (Claude
+                        // caches the file but never attaches it to the API message),
+                        // so on Windows we paste the raw path instead. The user sees
+                        // the literal path and Claude can read it via its Read tool.
+                        const prefix = isWindows() ? '' : '[Image] ';
+                        const pasteStr = `${prefix}${result.filePath}\n`;
                         dbg(`Step1: calling terminal.paste with len=${pasteStr.length} str=${JSON.stringify(pasteStr)}`);
                         terminal.paste(pasteStr);
                         dbg(`Step1: terminal.paste returned (disposed=${disposed} terminal=${!!terminal})`);
@@ -697,8 +700,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                 ) as { filePath: string; imageNumber: number } | null;
                 dbg(`Step2: terminal:clipboard-paste-image result:${JSON.stringify(result)}`);
                 if (result?.filePath && !disposed && terminal) {
-                  // See Step 1 comment: paste raw path, no [Image] prefix.
-                  terminal.paste(`${result.filePath}\n`);
+                  // See Step 1 comment: [Image] prefix on Mac/Linux only.
+                  const prefix = isWindows() ? '' : '[Image] ';
+                  terminal.paste(`${prefix}${result.filePath}\n`);
                   return;
                 }
               } catch (err) {
@@ -770,10 +774,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   }
 
                   if (resolvedPath && !disposed && terminal) {
-                    // Paste the raw path without any [Image] prefix — see paste-handler
-                    // comment above: Claude's [Image] placeholder UX drops the file on
-                    // Windows+WSL, so we always paste the full visible path instead.
-                    terminal.paste(`${resolvedPath}\n`);
+                    // See paste-handler comment: [Image] prefix only on Mac/Linux
+                    // (works there), omitted on Windows where Claude's auto-attach
+                    // silently drops the file.
+                    const prefix = isImage && !isWindows() ? '[Image] ' : '';
+                    terminal.paste(`${prefix}${resolvedPath}\n`);
                   }
                 } catch (err) {
                   console.error('[TerminalPanel] Failed to drop file:', err);
