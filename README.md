@@ -28,7 +28,7 @@
 
 <br />
 
-[Installation](#installation) · [Features](#features) · [Keyboard Shortcuts](#keyboard-shortcuts) · [Building from Source](#building-from-source)
+[Installation](#installation) · [What Flying Feels Like](#what-flying-feels-like) · [Keyboard Shortcuts](#keyboard-shortcuts) · [Building from Source](#building-from-source)
 
 </div>
 
@@ -92,45 +92,13 @@ Pane is the only tool that is a real desktop app, agent-agnostic, cross-platform
 
 ---
 
-## Two Core Primitives
+## How It Works
 
-**Panes** — One per feature, one worktree each. Create a pane, get an isolated workspace. Delete a pane, everything cleans up.
+Two primitives: **panes** and **tabs**. One pane per feature, one worktree each. Inside every pane, everything lives in tabs — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every tab persists across restarts.
 
-**Tabs** — Agents, diff viewer, file explorer, git tree, logs — everything lives in tabs. Everything persists across restarts.
+Your agents already talk to Linear, Jira, GitHub, and Slack through MCPs and CLI tools. The terminal is the universal integration layer. Pane doesn't re-integrate what your agents already access — it gives them a place to run.
 
----
-
-## The Integration Layer
-
-Agents already access Linear, Jira, GitHub, Slack through MCPs and CLI tools. The terminal is the universal integration layer. Pane doesn't re-integrate what your agents already access — it provides the runtime environment.
-
----
-
-## Features
-
-### Agent-Agnostic
-Run any CLI tool. Future agents work instantly — no waiting for official support. This is a promise, not a feature.
-
-### Parallel Panes
-Each pane gets its own worktree and multiple terminals. Close your laptop; everything persists when reopened.
-
-### Keyboard-First
-Every action has a shortcut. Command palette via `⌘K`. If something takes more than 100ms, it's a bug.
-
-### Built-In Git Workflow
-View diffs with syntax highlighting. Commit, push, rebase, squash, merge — all from keyboard shortcuts. Preview git commands before executing.
-
-### Cross-Platform — Actually
-Not "Mac-first with a Windows waitlist." Windows, Mac, and Linux — same UI, same shortcuts, same speed. Built by developers who use Windows daily.
-
-### Everything is a Tab
-Multiple views per session: Output, Diff, Terminal, Editor, Logs. Full xterm.js terminals with 50,000-line scrollback. Navigate with left/right arrows without touching the mouse.
-
-### Session Management
-Create sessions with templates. Archive instead of delete. Continue conversations with full history. AI-powered session naming. Real-time status tracking. Prompt history with search and one-click reuse.
-
-### Notifications
-Desktop and sound notifications for session status changes. Know when an agent is waiting for input, finished, or errored — without watching it.
+Other tools build custom chat UIs that only work with agents they've explicitly added support for. Pane gives every agent a real terminal. "Future CLI agent support" isn't a roadmap item here — it's the default. You bring the agents, Pane makes them fly.
 
 ---
 
@@ -211,20 +179,6 @@ Pane is for the other 75%. And for Mac developers who want to choose their own a
 
 ---
 
-## Design Principles
-
-**Keyboard-first, always.** Every action has a shortcut. Power users never touch the mouse. New users discover shortcuts naturally. The keyboard isn't an alternative input — it's THE input.
-
-**Agent-agnostic, forever.** We will never lock you into a single agent. Claude Code, Codex, Aider, Goose, your custom CLI tool — if it runs in a terminal, it runs in Pane.
-
-**Cross-platform, actually.** The developer on a Surface Pro deserves the same tool as the developer on a MacBook Pro.
-
-**Git-native, not git-adjacent.** Managing agent output IS managing git. The agent writes code. You review it. You commit it. That loop should be seamless.
-
-**Speed is a feature.** If something takes more than 100ms, it's a bug. If an animation doesn't serve a purpose, remove it. If a UI element doesn't earn its pixels, it goes.
-
----
-
 ## Who Pane Is For
 
 - **Developers on Windows and Linux** who are underserved by Mac-only AI coding tools
@@ -256,15 +210,6 @@ Because you look through a pane to see what's happening. Each pane is a window i
 
 **"Why Electron?"**
 Pane uses xterm.js — the same terminal engine powering VS Code's integrated terminal. Same rendering, same reliability, battle-tested with 50,000-line scrollback history. Electron powers VS Code, Slack, Discord, and Figma.
-
----
-
-## Adding Custom Agents
-
-Pane supports any CLI tool that runs in a terminal. See the docs for extending it:
-
-- [Adding New CLI Tools](./docs/ADDING_NEW_CLI_TOOLS.md)
-- [Implementing New CLI Agents](./docs/IMPLEMENTING_NEW_CLI_AGENTS.md)
 
 ---
 
