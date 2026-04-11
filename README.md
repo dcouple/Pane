@@ -185,7 +185,7 @@ Pane is for the other 75%. And for Mac developers who want to choose their own a
 
 ## Who Pane Is For
 
-- **Developers on Windows and Linux** who are underserved by Mac-only AI coding tools
+- **Developers on any OS** — Mac, Windows, and Linux all treated as first-class citizens. No "Mac-first with a Windows waitlist."
 - **Multi-agent users** who run Claude Code, Codex, Aider, or Goose depending on the task and want one app to manage them all
 - **Keyboard-driven developers** who want Superhuman-level speed in their AI-assisted coding workflow
 - **Teams** where different engineers use different agents and need a consistent workflow layer
