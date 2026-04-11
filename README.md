@@ -9,12 +9,9 @@
 
 <div align="center">
 
-<table>
-  <tr>
-    <td width="50%"><a href="https://runpane.com"><img src="assets/screenshot-white.png" alt="Pane — light mode" width="100%"></a></td>
-    <td width="50%"><a href="https://runpane.com"><img src="assets/screenshot-dark.png" alt="Pane — dark mode" width="100%"></a></td>
-  </tr>
-</table>
+<a href="https://runpane.com">
+  <img src="assets/screenshot-dark.png" alt="Pane — running Claude Code with multiple sessions" width="100%">
+</a>
 
 <sub>See more themes and demo at <a href="https://runpane.com">runpane.com</a></sub>
 
