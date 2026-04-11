@@ -60,16 +60,16 @@ Each of these is a small thing. Together they compound fast.
 
 | Feature | | |
 |---|---|---|
-| **@mention Terminals** | Type `@` in any terminal to pull the last 500 lines from another pane's terminal directly into context — no copy-paste, no tab-switching. | <img src="images/qol-at-mention.png" alt="Cross-terminal @mention picker" width="420"> |
-| **Clipboard Shortcuts** | `Ctrl+Alt+[key]` pastes any saved text snippet instantly — assign your most-used prompts once, fire them forever. | <img src="images/qol-clipboard.png" alt="Terminal clipboard shortcuts popover" width="280"> |
-| **Terminal Popover** | Highlight any text — URLs, file paths, error IDs — and an intelligent popover surfaces the right action: copy, open in browser, show in explorer. | <img src="images/qol-terminal-popover.png" alt="Terminal text selection popover" width="420"> |
-| **Built-in Browser** | Preview any URL in a tab next to your terminals — every pane can see its own running dev server without alt-tabbing. | <img src="images/qol-browser.png" alt="Built-in browser tab previewing a local dev server" width="420"> |
-| **Resource Manager** | Built-in CPU and memory monitor, broken down per pane and per process — catch a runaway agent before it eats your laptop. | <img src="images/qol-resource-manager.png" alt="Built-in resource manager" width="420"> |
-| **Status Dots** | Activity indicators at the tab, pane, and project level — you always know which agent is idle, working, or waiting, without looking at it. | <img src="images/qol-status-dots.png" alt="Session activity status dots" width="280"> |
-| **Auto Secrets Copy** | Every pane automatically mirrors `.env` files and secrets from your root project — your worktree is runnable the moment it's created. | |
-| **Isolated Ports** | Each pane runs on its own port range automatically — spin up five dev servers in parallel without a single conflict. | |
-| **Terminal Rendering Patches** | Claude Code's scroll-jump bug — long conversations snapping to top when you scroll up — is fixed here. It's not fixed in Claude Code itself. | |
-| **Jump + Refresh** | Jump to top, jump to bottom, or hard-refresh any terminal from the toolbar — unstick a frozen state in one click. | |
+| **@mention Terminals** | Type `@` in any terminal to pull the last 500 lines from another pane's terminal directly into your context, no copy-paste required. | <img src="images/qol-at-mention.png" alt="Cross-terminal @mention picker" width="420"> |
+| **Clipboard Shortcuts** | `Ctrl+Alt+[key]` pastes any saved text snippet instantly, so your most-used prompts are one keystroke away forever. | <img src="images/qol-clipboard.png" alt="Terminal clipboard shortcuts popover" width="280"> |
+| **Terminal Popover** | Highlight any text in a terminal and an intelligent popover offers the right action: copy, open in browser, or show in explorer. | <img src="images/qol-terminal-popover.png" alt="Terminal text selection popover" width="420"> |
+| **Built-in Browser** | Preview any URL in a tab next to your terminals so every pane can see its own running dev server without alt-tabbing. | <img src="images/qol-browser.png" alt="Built-in browser tab previewing a local dev server" width="420"> |
+| **Resource Manager** | Built-in CPU and memory monitor broken down per pane and per process, so you can catch a runaway agent before it eats your laptop. | <img src="images/qol-resource-manager.png" alt="Built-in resource manager" width="420"> |
+| **Status Dots** | Activity indicators at the tab, pane, and project level tell you which agent is idle, working, or waiting without you having to look. | <img src="images/qol-status-dots.png" alt="Session activity status dots" width="280"> |
+| **Auto Secrets Copy** | Every pane automatically mirrors `.env` files and secrets from your root project so your worktree is runnable the moment it's created. | |
+| **Isolated Ports** | Each pane runs on its own port range automatically, so you can spin up five dev servers in parallel without a single conflict. | |
+| **Terminal Rendering Patches** | Claude Code's scroll-jump bug (long conversations snapping to top when you scroll up) is fixed here, even though it's still broken in Claude Code itself. | |
+| **Jump + Refresh** | Jump to top, jump to bottom, or hard-refresh any terminal from the toolbar to unstick a frozen state in one click. | |
 | **Drag and Drop** | Drop any file up to 50MB into a terminal and it lands exactly where you need it. | |
 
 ---
