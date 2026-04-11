@@ -10,7 +10,7 @@
 <div align="center">
 
 <a href="https://runpane.com">
-  <img src="screenshot.png" alt="Pane — running Claude Code with multiple sessions" width="100%">
+  <img src="assets/screenshot-white.png" alt="Pane — running Claude Code with multiple sessions" width="100%">
 </a>
 
 <sub>See more themes and demo at <a href="https://runpane.com">runpane.com</a></sub>
