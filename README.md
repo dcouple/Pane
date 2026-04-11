@@ -94,7 +94,7 @@ Pane is the only tool that is a real desktop app, agent-agnostic, cross-platform
 
 ## How It Works
 
-Two primitives: **panes** and **tabs**. One pane per feature, one worktree each. Inside every pane, everything lives in tabs — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every tab persists across restarts.
+Two primitives: **panes** and **panels**. One pane per feature, one worktree each. Inside every pane, everything lives in panels — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every panel persists across restarts.
 
 Your agents already talk to Linear, Jira, GitHub, and Slack through MCPs and CLI tools. The terminal is the universal integration layer. Pane doesn't re-integrate what your agents already access — it gives them a place to run.
 
@@ -106,11 +106,15 @@ Other tools build custom chat UIs that only work with agents they've explicitly 
 
 | Shortcut | Action |
 |----------|--------|
-| `⌘K` / `Ctrl+K` | Open Command Palette |
+| `⌘K` / `Ctrl+K` | Open command palette |
 | `⌘Enter` / `Ctrl+Enter` | Send message to AI agent |
-| `⌘N` / `Ctrl+N` | New session |
+| `⌘N` / `Ctrl+N` | New pane |
+| `⌘⇧W` / `Ctrl+Shift+W` | Archive pane |
+| `⌘1-9` / `Ctrl+1-9` | Switch pane |
 | `⌘,` / `Ctrl+,` | Open settings |
-| `⌘1-9` / `Ctrl+1-9` | Switch between sessions |
+| `⌘⌥<key>` / `Ctrl+Alt+<key>` | Paste a clipboard shortcut into the active terminal |
+| `⌘⌥/` / `Ctrl+Alt+/` | Open Settings → Shortcuts |
+| `⌘⌥` (hold) / `Ctrl+Alt` (hold) | Show all configured shortcuts as an overlay |
 | `Ctrl+B` | Toggle sidebar |
 
 ---
@@ -155,9 +159,9 @@ irm https://runpane.com/install.ps1 | iex
 ## Usage
 
 1. **Open Pane** and create or select a project (any git repository)
-2. **Create a session** — enter a prompt and pick your agent
-3. **Add tools** — launch Terminal (Claude), Terminal (Codex), or any CLI tool
-4. **Work in parallel** — create multiple sessions for different approaches
+2. **Create a pane** — enter a prompt and pick your agent
+3. **Add panels** — launch a Claude terminal, Codex terminal, diff viewer, file explorer, or any CLI tool
+4. **Work in parallel** — create multiple panes for different approaches
 5. **Review diffs** — see what changed with the built-in diff viewer
 6. **Ship** — commit, rebase, and merge from keyboard shortcuts
 
