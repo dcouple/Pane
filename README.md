@@ -3,19 +3,15 @@
 </p>
 
 <p align="center">
-  <strong>Run Pane on any agent. Any OS. Ship faster.</strong><br>
+  <strong>Run Pane with any agent. Any OS.</strong><br>
   <em>just terminals. no abstractions.</em>
 </p>
 
 <div align="center">
 
-<a href="https://runpane.com">
-  <img src="assets/screenshot-dark.png" alt="Pane — running Claude Code with multiple sessions" width="100%">
+<a href="https://runpane.com" title="Click on this image to see more themes and demo">
+  <img src="assets/screenshot-dark.png" alt="Click on this image to see more themes and demo" title="Click on this image to see more themes and demo" width="100%">
 </a>
-
-<sub>See more themes and demo at <a href="https://runpane.com">runpane.com</a></sub>
-
-<br /><br />
 
 [![AGPL-3.0 License](https://img.shields.io/badge/License-AGPL--3.0-555555.svg?labelColor=333333&color=666666)](./LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/Dcouple-Inc/Pane/total?labelColor=333333&color=666666)](https://github.com/Dcouple-Inc/Pane/releases)
