@@ -1,5 +1,4 @@
 import * as pty from '@lydell/node-pty';
-import { appendFileSync } from 'fs';
 import { ToolPanel, TerminalPanelState, PanelEventType } from '../../../shared/types/panels';
 import { panelManager } from './panelManager';
 import { mainWindow, configManager } from '../index';
@@ -10,15 +9,6 @@ import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
-import { getAppSubdirectory } from '../utils/appDirectory';
-
-// PASTE-DBG: write to the same debug file panels.ts writes to.
-function pasteDbgTPM(msg: string): void {
-  try {
-    const dbgFile = path.join(getAppSubdirectory('logs'), 'paste-dbg.log');
-    appendFileSync(dbgFile, `[${new Date().toISOString()}] [main:tpm] ${msg}\n`);
-  } catch { /* ignore */ }
-}
 
 const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
 const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
@@ -624,21 +614,10 @@ export class TerminalPanelManager {
       return;
     }
 
-    // PASTE-DBG: log paste-like writes hitting the PTY
-    if (data.length > 3) {
-      pasteDbgTPM(`writeToTerminal panelId=${panelId} len=${data.length} data=${JSON.stringify(data.slice(0, 300))}`);
-    }
-
     try {
       terminal.pty.write(data);
-      if (data.length > 3) {
-        pasteDbgTPM(`pty.write succeeded`);
-      }
     } catch (err) {
       // PTY may have exited between the map lookup and the write call
-      if (data.length > 3) {
-        pasteDbgTPM(`pty.write THREW: ${String(err)}`);
-      }
       console.warn(`[TerminalPanelManager] Failed to write to terminal ${panelId}:`, err);
       this.terminals.delete(panelId);
       return;

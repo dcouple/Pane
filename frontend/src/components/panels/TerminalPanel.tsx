@@ -24,7 +24,6 @@ import { createAtTerminalHandler } from '../../services/terminalInterceptor/hand
 import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
 import { InterceptorToast } from '../terminal/InterceptorToast';
 import { usePanelStore } from '../../stores/panelStore';
-import { isWindows } from '../../utils/platformUtils';
 import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
@@ -611,25 +610,23 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           //      first so we can forward it manually if the Electron check finds no image.
           //   3. If Electron clipboard has no image either, call terminal.paste(text) to
           //      forward the text content — this replaces the xterm handler we blocked.
-          // PASTE-DBG: fire-and-forget IPC to write a debug line to ~/.pane/logs/paste-dbg.log.
-          // console.warn in the renderer only shows in DevTools; this file is readable from disk.
-          const dbg = (msg: string) => {
-            try { window.electronAPI.invoke('terminal:paste-dbg', msg); } catch { /* ignore */ }
-          };
+          // Paste handler: we always paste the raw file path (no "[Image] " prefix).
+          // Claude Code CLI's paste parser auto-detects bare image file paths and
+          // attaches them as [Image #N] in the next API message on every platform.
+          // The "[Image] " prefix we used to add actually broke the parser's
+          // path-detection — on Windows+WSL it caused Claude to cache the file but
+          // never attach it to the API call (see commit 7b76ee5).
           const handlePaste = (e: ClipboardEvent) => {
             // Step 1: Check for images in browser clipboard (works on native Windows/macOS)
             const items = e.clipboardData?.items;
-            const allItemTypes = items ? Array.from({ length: items.length }, (_, i) => `${items[i].kind}:${items[i].type}`) : [];
             const textVal = e.clipboardData?.getData('text') ?? '';
-            dbg(`capture fired — items:${JSON.stringify(allItemTypes)} text:${JSON.stringify(textVal.slice(0, 60))} phase:${e.eventPhase}`);
             if (items) {
               for (let i = 0; i < items.length; i++) {
                 if (items[i].type.startsWith('image/')) {
-                  dbg(`Step1: browser image found, type:${items[i].type}`);
                   e.stopPropagation();
                   e.preventDefault();
                   const file = items[i].getAsFile();
-                  if (!file) { dbg('Step1: getAsFile() returned null — bailing'); return; }
+                  if (!file) return;
 
                   if (file.size > 10 * 1024 * 1024) {
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
@@ -646,7 +643,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                     if (!dataUrl) return;
 
                     try {
-                      dbg('Step1: calling terminal:paste-image IPC');
                       const result = await window.electronAPI.invoke(
                         'terminal:paste-image',
                         panel.id,
@@ -654,22 +650,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                         dataUrl,
                         file.type
                       ) as { filePath: string; imageNumber: number } | null;
-                      dbg(`Step1: terminal:paste-image result:${JSON.stringify(result)}`);
                       if (result?.filePath && !disposed && terminal) {
-                        // On Mac/Linux, prefix the path with "[Image] " — Claude Code
-                        // CLI's auto-attach UX turns this into a placeholder and
-                        // attaches the file to the next API call. That works on those
-                        // platforms but silently drops the file on Windows+WSL (Claude
-                        // caches the file but never attaches it to the API message),
-                        // so on Windows we paste the raw path instead. The user sees
-                        // the literal path and Claude can read it via its Read tool.
-                        const prefix = isWindows() ? '' : '[Image] ';
-                        const pasteStr = `${prefix}${result.filePath}\n`;
-                        dbg(`Step1: calling terminal.paste with len=${pasteStr.length} str=${JSON.stringify(pasteStr)}`);
-                        terminal.paste(pasteStr);
-                        dbg(`Step1: terminal.paste returned (disposed=${disposed} terminal=${!!terminal})`);
-                      } else {
-                        dbg(`Step1: NOT pasting — filePath=${result?.filePath} disposed=${disposed} terminal=${!!terminal}`);
+                        terminal.paste(`${result.filePath}\n`);
                       }
                     } catch (err) {
                       console.error('[TerminalPanel] Failed to paste image:', err);
@@ -687,7 +669,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             // guard caused silent failures when Windows put "[Image]" in text/plain
             // alongside the actual bitmap (making text non-empty, skipping the fallback).
             const text = textVal;
-            dbg(`Step2: no browser image — blocking xterm, calling Electron clipboard IPC. text was:${JSON.stringify(text.slice(0, 60))}`);
             e.stopPropagation();
             e.preventDefault();
 
@@ -698,20 +679,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   'terminal:clipboard-paste-image',
                   sessionId || panel.sessionId
                 ) as { filePath: string; imageNumber: number } | null;
-                dbg(`Step2: terminal:clipboard-paste-image result:${JSON.stringify(result)}`);
                 if (result?.filePath && !disposed && terminal) {
-                  // See Step 1 comment: [Image] prefix on Mac/Linux only.
-                  const prefix = isWindows() ? '' : '[Image] ';
-                  terminal.paste(`${prefix}${result.filePath}\n`);
+                  terminal.paste(`${result.filePath}\n`);
                   return;
                 }
               } catch (err) {
-                dbg(`Step2: clipboard IPC threw: ${String(err)}`);
                 console.error('[TerminalPanel] Clipboard fallback failed:', err);
               }
 
               // No image found — forward the text content xterm would have pasted.
-              dbg(`Step2: no image from Electron clipboard, forwarding text:${JSON.stringify(text.slice(0, 60))}`);
               if (text && !disposed && terminal) {
                 terminal.paste(text);
               }
@@ -774,11 +750,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
                   }
 
                   if (resolvedPath && !disposed && terminal) {
-                    // See paste-handler comment: [Image] prefix only on Mac/Linux
-                    // (works there), omitted on Windows where Claude's auto-attach
-                    // silently drops the file.
-                    const prefix = isImage && !isWindows() ? '[Image] ' : '';
-                    terminal.paste(`${prefix}${resolvedPath}\n`);
+                    // See paste-handler comment above: paste the raw path, Claude's
+                    // parser detects image file paths and auto-attaches them.
+                    terminal.paste(`${resolvedPath}\n`);
                   }
                 } catch (err) {
                   console.error('[TerminalPanel] Failed to drop file:', err);
@@ -974,10 +948,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
           // Handle terminal input — route through interceptor first
           const inputDisposable = terminal.onData((data) => {
-            // PASTE-DBG: log anything that looks paste-like (multi-char, likely a paste or escape seq)
-            if (data.length > 3) {
-              try { window.electronAPI.invoke('terminal:paste-dbg', `onData len=${data.length} data=${JSON.stringify(data.slice(0, 300))}`); } catch { /* ignore */ }
-            }
             // Skip interception for AltGr-produced @ (e.g. German keyboard)
             if (skipNextInterceptRef.current) {
               skipNextInterceptRef.current = false;
@@ -985,9 +955,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               return;
             }
             const result = interceptor.handleInput(data);
-            if (data.length > 3) {
-              try { window.electronAPI.invoke('terminal:paste-dbg', `onData interceptor consumed=${result.consumed}`); } catch { /* ignore */ }
-            }
             if (!result.consumed) {
               window.electronAPI.invoke('terminal:input', panel.id, data);
             }
