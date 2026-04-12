@@ -134,6 +134,26 @@ export function getWSLExecArgs(command: string, distro: string, cwd?: string, ex
 }
 
 /**
+ * Build a WSLENV value that tells WSL to propagate the given Windows env var
+ * names into the Linux environment of child shells.
+ *
+ * Background: env vars passed to `pty.spawn('wsl.exe', ..., {env})` are set on
+ * the wsl.exe Windows process — they do NOT automatically cross the WSL boundary
+ * into the bash process that wsl.exe launches. Microsoft's documented mechanism
+ * for crossing that boundary is WSLENV: a colon-delimited list of variable names
+ * (plus optional flags) that WSL copies from the Windows env into the Linux env
+ * at shell startup. See: https://learn.microsoft.com/en-us/windows/wsl/filesystems#wslenv
+ *
+ * We append to any pre-existing WSLENV on the user's Windows environment so we
+ * don't clobber their own tooling.
+ */
+export function buildWSLENV(varNames: readonly string[]): string {
+  const ours = varNames.join(':');
+  const existing = process.env.WSLENV;
+  return existing ? `${existing}:${ours}` : ours;
+}
+
+/**
  * Get shell spawn info for opening an interactive WSL terminal.
  * Returns shape compatible with ShellDetector's ShellInfo.
  */
