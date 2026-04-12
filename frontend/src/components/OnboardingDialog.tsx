@@ -3,6 +3,7 @@ import { GitFork, Download, AlertCircle, Star, ExternalLink, CheckCircle2, Loade
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { capture } from '../services/posthog';
 
 type DialogStep = 'detecting' | 'ready' | 'cloning' | 'success' | 'error';
@@ -24,6 +25,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
   const [env, setEnv] = useState<EnvironmentInfo | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [hasStarred, setHasStarred] = useState(false);
+  const [shouldStarOnSetup, setShouldStarOnSetup] = useState(true);
 
   const detectEnvironment = useCallback(async () => {
     setStep('detecting');
@@ -54,6 +56,22 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
     try {
       const result = await window.electronAPI.onboarding.setupDefaultRepo();
       if (result.success) {
+        // Best-effort star during setup when the user opted in and gh is authed.
+        // Fire-and-forget: star failure or latency must not block or delay the
+        // transition to the success screen. When the promise later resolves,
+        // setHasStarred will flip the success-screen copy to "Thanks!".
+        if (shouldStarOnSetup && env?.ghAuthenticated) {
+          void window.electronAPI.onboarding.starRepo()
+            .then((starResult) => {
+              if (starResult?.success) {
+                setHasStarred(true);
+                capture('onboarding_repo_starred_during_setup');
+              }
+            })
+            .catch(() => {
+              // swallow: star failure is non-fatal
+            });
+        }
         setStep('success');
       } else {
         setErrorMessage(result.error || 'Failed to set up project');
@@ -144,18 +162,41 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
         {step === 'ready' && env && (
           <div className="space-y-4">
             {env.ghAuthenticated ? (
-              <div className="flex items-start gap-3">
-                <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
-                <div className="space-y-2">
-                  <p className="text-text-primary font-medium">
-                    Fork &amp; Clone
-                  </p>
-                  <p className="text-text-secondary text-sm">
-                    We&apos;ll fork the Pane repository to your GitHub account and clone it locally.
-                    You&apos;ll have your own copy to push changes to.
-                  </p>
+              <>
+                <div className="flex items-start gap-3">
+                  <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
+                  <div className="space-y-2">
+                    <p className="text-text-primary font-medium">
+                      Start developing with Pane as your first project
+                    </p>
+                    <p className="text-text-secondary text-sm">
+                      We&apos;ll set up a real codebase so you&apos;re not staring at a blank screen.
+                    </p>
+                  </div>
                 </div>
-              </div>
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input
+                    type="checkbox"
+                    checked={shouldStarOnSetup}
+                    onChange={(e) => setShouldStarOnSetup(e.target.checked)}
+                    className="rounded border-border-primary text-interactive focus:ring-interactive"
+                  />
+                  <Star className="h-3.5 w-3.5 text-text-secondary flex-shrink-0" />
+                  <Tooltip
+                    side="top"
+                    interactive
+                    content={
+                      <div className="max-w-xs whitespace-normal">
+                        Stars are the cheapest form of support, and they help this project reach more developers. Pane is built by Dcouple, a self-funded two-person studio.
+                      </div>
+                    }
+                  >
+                    <span className="text-text-secondary text-xs underline decoration-dotted underline-offset-2">
+                      Help us keep building Pane independently
+                    </span>
+                  </Tooltip>
+                </label>
+              </>
             ) : env.gitInstalled ? (
               <div className="flex items-start gap-3">
                 <Download className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
@@ -257,7 +298,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
             <Button onClick={handleSkip} variant="ghost">Skip</Button>
             {env.ghAuthenticated ? (
               <Button onClick={handleSetup} variant="primary" icon={<GitFork className="h-4 w-4" />}>
-                Fork &amp; Clone
+                Let&apos;s go
               </Button>
             ) : env.gitInstalled ? (
               <Button onClick={handleSetup} variant="primary" icon={<Download className="h-4 w-4" />}>
