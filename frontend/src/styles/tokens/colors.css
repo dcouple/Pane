@@ -1009,7 +1009,7 @@
   --color-text-on-secondary: #e3c9ff;
   --color-text-on-tertiary: #e3c9ff;
   --color-text-on-surface: #e3c9ff;
-  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-interactive: rgb(0 0 0);
   --color-text-on-status-success: rgb(255 255 255);
   --color-text-on-status-warning: rgb(0 0 0);
   --color-text-on-status-error: rgb(255 255 255);
@@ -1018,7 +1018,7 @@
 
   --color-button-primary-bg: #ff6ac1;
   --color-button-primary-hover: #ff8bd1;
-  --color-button-primary-text: rgb(255 255 255);
+  --color-button-primary-text: rgb(0 0 0);
   --color-button-secondary-bg: #35234d;
   --color-button-secondary-hover: #452a61;
   --color-button-secondary-text: #e3c9ff;
@@ -1145,7 +1145,7 @@
   --color-text-on-secondary: #d9d7f0;
   --color-text-on-tertiary: #d9d7f0;
   --color-text-on-surface: #d9d7f0;
-  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-interactive: rgb(0 0 0);
   --color-text-on-status-success: rgb(255 255 255);
   --color-text-on-status-warning: rgb(0 0 0);
   --color-text-on-status-error: rgb(255 255 255);
@@ -1154,7 +1154,7 @@
 
   --color-button-primary-bg: #c4a7e7;
   --color-button-primary-hover: #d2b7ef;
-  --color-button-primary-text: rgb(255 255 255);
+  --color-button-primary-text: rgb(0 0 0);
   --color-button-secondary-bg: #393552;
   --color-button-secondary-hover: #524f67;
   --color-button-secondary-text: #d9d7f0;
