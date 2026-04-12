@@ -762,6 +762,10 @@ export class SessionManager extends EventEmitter {
     return this.db.getConversationMessages(id);
   }
 
+  getConversationMessageCount(sessionId: string): number {
+    return this.db.getConversationMessageCount(sessionId);
+  }
+
   // Panel-based methods for Claude panels (use panel_id instead of session_id)
   addPanelOutput(panelId: string, output: Omit<SessionOutput, 'sessionId'>): void {
     const panel = this.db.getPanel(panelId);

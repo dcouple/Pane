@@ -306,9 +306,10 @@ export const useSessionView = (
     // Check if session has conversation history
     const checkConversationHistory = async () => {
       try {
-        const response = await API.sessions.getConversationMessages(activeSession.id);
-        if (response.success && response.data) {
-          setHasConversationHistory(response.data.length > 0);
+        const response = await API.sessions.getConversationMessageCount(activeSession.id);
+        const hasMessages = (response.data ?? 0) > 0;
+        if (response.success) {
+          setHasConversationHistory(hasMessages);
         }
       } catch (error) {
         console.error('Failed to check conversation history:', error);

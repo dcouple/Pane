@@ -33,91 +33,92 @@ function validateEventSession(eventData: ValidatedEventData, activeSessionId?: s
 }
 
 
-// Throttle utility function  
-function throttle<T extends (...args: never[]) => void>(
-  func: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let lastCall = 0;
-  let timeoutId: NodeJS.Timeout | null = null;
+// Throttle utility with external drain support
+function createThrottledWithDrain<T extends (...args: Parameters<T>) => unknown>(
+  fn: T,
+  delayMs: number,
+  keyFn: (...args: Parameters<T>) => string,
+): {
+  throttled: (...args: Parameters<T>) => void;
+  drain: (sessionId: string) => void;
+} {
   const pendingCalls = new Map<string, Parameters<T>>();
+  let lastCallTime = 0;
+  let timeoutId: NodeJS.Timeout | null = null;
 
-  return (...args: Parameters<T>) => {
+  const throttled = (...args: Parameters<T>): void => {
     const now = Date.now();
-    const timeSinceLastCall = now - lastCall;
-    
-    // Store the latest args for this session
-    const firstArg = args[0] as Record<string, unknown> | undefined;
-    const rawKey = firstArg?.sessionId || firstArg?.id || 'default';
-    const key = String(rawKey);
+    const key = keyFn(...args);
     pendingCalls.set(key, args);
 
-    if (timeSinceLastCall >= delay) {
-      // Execute immediately
-      lastCall = now;
-      pendingCalls.forEach((pendingArgs) => {
-        func(...pendingArgs);
-      });
-      pendingCalls.clear();
-    } else {
-      // Schedule execution
-      if (timeoutId) {
-        clearTimeout(timeoutId);
+    const delay = Math.max(0, delayMs - (now - lastCallTime));
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      lastCallTime = Date.now();
+      for (const callArgs of pendingCalls.values()) {
+        fn(...callArgs);
       }
-      
-      timeoutId = setTimeout(() => {
-        lastCall = Date.now();
-        pendingCalls.forEach((pendingArgs) => {
-          func(...pendingArgs);
-        });
-        pendingCalls.clear();
-        timeoutId = null;
-      }, delay - timeSinceLastCall);
-    }
+      pendingCalls.clear();
+      timeoutId = null;
+    }, delay);
   };
+
+  const drain = (sessionId: string): void => {
+    pendingCalls.delete(sessionId);
+  };
+
+  return { throttled, drain };
 }
 
 export function useIPCEvents() {
   const { setSessions, loadSessions, addSession, updateSession, deleteSession } = useSessionStore();
   const { showError } = useErrorStore();
   
-  // Create throttled handlers for git status events
-  const throttledGitStatusLoading = useRef(
-    throttle((data: { sessionId: string }) => {
-      // Validate event has required session context
-      if (!validateEventSession(data)) {
-        return; // Ignore invalid events
-      }
-      useSessionStore.getState().setGitStatusLoading(data.sessionId, true);
-      
-      // Also emit a custom event for individual components to listen to
-      window.dispatchEvent(new CustomEvent('git-status-loading', {
-        detail: { sessionId: data.sessionId }
-      }));
-    }, 100)
-  ).current;
-  
-  const throttledGitStatusUpdated = useRef(
-    throttle((data: { sessionId: string; gitStatus: GitStatus }) => {
-      // Validate event has required session context
-      if (!validateEventSession(data)) {
-        return; // Ignore invalid events
-      }
+  // Create throttled handlers for git status events (with drain support)
+  const gitStatusLoadingRef = useRef(
+    createThrottledWithDrain(
+      (data: { sessionId: string }) => {
+        // Validate event has required session context
+        if (!validateEventSession(data)) {
+          return; // Ignore invalid events
+        }
+        useSessionStore.getState().setGitStatusLoading(data.sessionId, true);
 
-      // Only log significant status changes in production
-      if (data.gitStatus.state !== 'clean' || process.env.NODE_ENV === 'development') {
-        console.log(`[useIPCEvents] Git status: ${data.sessionId.substring(0, 8)} → ${data.gitStatus.state}`);
-      }
-      
-      // Update the store and clear loading state
-      useSessionStore.getState().updateSessionGitStatus(data.sessionId, data.gitStatus);
-      useSessionStore.getState().setGitStatusLoading(data.sessionId, false);
-      
-      // Also emit a custom event for individual components to listen to
-      window.dispatchEvent(new CustomEvent('git-status-updated', {
-        detail: { sessionId: data.sessionId, gitStatus: data.gitStatus }
-      }));
-    }, 100)
+        // Also emit a custom event for individual components to listen to
+        window.dispatchEvent(new CustomEvent('git-status-loading', {
+          detail: { sessionId: data.sessionId }
+        }));
+      },
+      100,
+      (data) => data.sessionId,
+    )
+  ).current;
+
+  const gitStatusUpdatedRef = useRef(
+    createThrottledWithDrain(
+      (data: { sessionId: string; gitStatus: GitStatus }) => {
+        // Validate event has required session context
+        if (!validateEventSession(data)) {
+          return; // Ignore invalid events
+        }
+
+        // Only log significant status changes in production
+        if (data.gitStatus.state !== 'clean' || process.env.NODE_ENV === 'development') {
+          console.log(`[useIPCEvents] Git status: ${data.sessionId.substring(0, 8)} → ${data.gitStatus.state}`);
+        }
+
+        // Update the store and clear loading state
+        useSessionStore.getState().updateSessionGitStatus(data.sessionId, data.gitStatus);
+        useSessionStore.getState().setGitStatusLoading(data.sessionId, false);
+
+        // Also emit a custom event for individual components to listen to
+        window.dispatchEvent(new CustomEvent('git-status-updated', {
+          detail: { sessionId: data.sessionId, gitStatus: data.gitStatus }
+        }));
+      },
+      100,
+      (data) => data.sessionId,
+    )
   ).current;
   
   useEffect(() => {
@@ -176,12 +177,18 @@ export function useIPCEvents() {
       console.log('[useIPCEvents] Session deleted:', sessionData);
       // The backend sends just { id } for deleted sessions
       const sessionId = typeof sessionData === 'string' ? sessionData : sessionData.id || sessionData.sessionId;
-      
+
+      // Drain any pending throttled git status calls for this session
+      if (sessionId) {
+        gitStatusLoadingRef.drain(sessionId);
+        gitStatusUpdatedRef.drain(sessionId);
+      }
+
       // Dispatch a custom event for other components to listen to
       window.dispatchEvent(new CustomEvent('session-deleted', {
         detail: { id: sessionId }
       }));
-      
+
       // Create a minimal session object for deletion
       deleteSession({ id: sessionId } as Session);
     });
@@ -278,41 +285,51 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeZombieProcesses);
 
     // Listen for git status updates (throttled)
-    const unsubscribeGitStatusUpdated = window.electronAPI.events.onGitStatusUpdated(throttledGitStatusUpdated);
+    const unsubscribeGitStatusUpdated = window.electronAPI.events.onGitStatusUpdated(gitStatusUpdatedRef.throttled);
     unsubscribeFunctions.push(unsubscribeGitStatusUpdated);
 
     // Listen for git status loading events (throttled)
-    const unsubscribeGitStatusLoading = window.electronAPI.events.onGitStatusLoading?.(throttledGitStatusLoading);
+    const unsubscribeGitStatusLoading = window.electronAPI.events.onGitStatusLoading?.(gitStatusLoadingRef.throttled);
     if (unsubscribeGitStatusLoading) {
       unsubscribeFunctions.push(unsubscribeGitStatusLoading);
     }
     
     // Listen for batch git status events
     const unsubscribeGitStatusLoadingBatch = window.electronAPI.events.onGitStatusLoadingBatch?.((sessionIds: string[]) => {
-      const updates = sessionIds.map(sessionId => ({ sessionId, loading: true }));
-      useSessionStore.getState().setGitStatusLoadingBatch(updates);
-      
-      // Dispatch custom events for each session
-      sessionIds.forEach(sessionId => {
-        window.dispatchEvent(new CustomEvent('git-status-loading', {
-          detail: { sessionId }
-        }));
-      });
+      const state = useSessionStore.getState();
+      const knownIds = new Set(state.sessions.map((s) => s.id));
+      const filteredIds = sessionIds.filter((id) => knownIds.has(id));
+      if (filteredIds.length > 0) {
+        const updates = filteredIds.map(sessionId => ({ sessionId, loading: true }));
+        state.setGitStatusLoadingBatch(updates);
+
+        // Dispatch custom events for each session
+        filteredIds.forEach(sessionId => {
+          window.dispatchEvent(new CustomEvent('git-status-loading', {
+            detail: { sessionId }
+          }));
+        });
+      }
     });
     if (unsubscribeGitStatusLoadingBatch) {
       unsubscribeFunctions.push(unsubscribeGitStatusLoadingBatch);
     }
-    
+
     const unsubscribeGitStatusUpdatedBatch = window.electronAPI.events.onGitStatusUpdatedBatch?.((updates: Array<{ sessionId: string; status: GitStatus }>) => {
       console.log(`[useIPCEvents] Git status batch update: ${updates.length} sessions`);
-      useSessionStore.getState().updateSessionGitStatusBatch(updates);
-      
-      // Dispatch custom events for each session
-      updates.forEach(({ sessionId, status }) => {
-        window.dispatchEvent(new CustomEvent('git-status-updated', {
-          detail: { sessionId, gitStatus: status }
-        }));
-      });
+      const state = useSessionStore.getState();
+      const knownIds = new Set(state.sessions.map((s) => s.id));
+      const filtered = updates.filter((entry) => knownIds.has(entry.sessionId));
+      if (filtered.length > 0) {
+        state.updateSessionGitStatusBatch(filtered);
+
+        // Dispatch custom events for each session
+        filtered.forEach(({ sessionId, status }) => {
+          window.dispatchEvent(new CustomEvent('git-status-updated', {
+            detail: { sessionId, gitStatus: status }
+          }));
+        });
+      }
     });
     if (unsubscribeGitStatusUpdatedBatch) {
       unsubscribeFunctions.push(unsubscribeGitStatusUpdatedBatch);

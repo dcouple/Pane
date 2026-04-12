@@ -3128,8 +3128,8 @@ export class DatabaseService {
     return this.db
       .prepare(
         `
-      SELECT * FROM conversation_messages 
-      WHERE session_id = ? 
+      SELECT * FROM conversation_messages
+      WHERE session_id = ?
       ORDER BY timestamp ASC
     `,
       )
