@@ -8,6 +8,13 @@ import type { AnalyticsManager } from './analyticsManager';
 
 export class PanelManager {
   private panels = new Map<string, ToolPanel>();
+  // Sessions that have been archived during this process lifetime.
+  // Used by getPanel / getPanelsForSession to skip re-caching from DB
+  // fallback after cleanupSessionPanelsInMemory has cleared the Map.
+  // Without this, a post-archive event (e.g. a PTY exit handler) that
+  // calls getPanel(archivedPanelId) would re-populate the cache and
+  // silently undo the L3 cleanup.
+  private archivedSessionIds = new Set<string>();
   private analyticsManager: AnalyticsManager | null = null;
 
   setAnalyticsManager(analyticsManager: AnalyticsManager): void {
@@ -330,7 +337,7 @@ export class PanelManager {
     if (this.panels.has(panelId)) {
       return this.panels.get(panelId);
     }
-    
+
     // Load from database if not cached
     const panel = databaseService.getPanel(panelId);
     if (panel) {
@@ -351,17 +358,27 @@ export class PanelManager {
           panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
         }
       }
-      this.panels.set(panelId, panel);
+      // Skip caching if this panel belongs to a session we've already
+      // archived in this process. Prevents a post-archive event from
+      // resurrecting the cache entry and undoing L3 cleanup.
+      if (!this.archivedSessionIds.has(panel.sessionId)) {
+        this.panels.set(panelId, panel);
+      }
       return panel;
     }
-    
+
     return undefined;
   }
   
   getPanelsForSession(sessionId: string): ToolPanel[] {
     // Always get fresh from database to ensure consistency
     const panels = databaseService.getPanelsForSession(sessionId);
-    
+    // If this session has been archived in this process, we still
+    // return the panels (callers like the sessions:delete PTY-destroy
+    // loop need them) but we do NOT re-populate this.panels — doing so
+    // would undo the L3 cleanup that cleared them moments earlier.
+    const shouldCache = !this.archivedSessionIds.has(sessionId);
+
     // Fix any panels that have state stored as a string (defensive programming)
     panels.forEach(panel => {
       if (typeof panel.state === 'string') {
@@ -380,10 +397,12 @@ export class PanelManager {
           panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
         }
       }
-      // Update cache
-      this.panels.set(panel.id, panel);
+      // Update cache unless we've archived this session
+      if (shouldCache) {
+        this.panels.set(panel.id, panel);
+      }
     });
-    
+
     return panels;
   }
   
@@ -464,10 +483,19 @@ export class PanelManager {
    * Also sweeps webviewContextMap for any entries owned by this session.
    */
   async cleanupSessionPanelsInMemory(sessionId: string): Promise<void> {
-    // 1. Resolve panels for this session BEFORE mutating the Map.
+    // 1. Mark this session as archived FIRST, so that any subsequent
+    //    getPanel / getPanelsForSession call (including our own
+    //    resolution on the next line, and any late-arriving PTY exit
+    //    or output handler after archive) will NOT re-populate
+    //    this.panels from the DB fallback path.
+    this.archivedSessionIds.add(sessionId);
+
+    // 2. Resolve panels for this session. With the marker set above,
+    //    getPanelsForSession will return fresh rows from the DB but
+    //    will not cache them.
     const panelsForSession = this.getPanelsForSession(sessionId);
 
-    // 2. Unsubscribe panelEventBus for each panel.
+    // 3. Unsubscribe panelEventBus for each panel.
     for (const panel of panelsForSession) {
       try {
         panelEventBus.unsubscribePanel(panel.id);
@@ -476,13 +504,14 @@ export class PanelManager {
       }
     }
 
-    // 3. Drop in-memory panels Map entries, keyed by panel.id
-    //    (NOT sessionId — this.panels is Map<string, ToolPanel> keyed by panel.id).
+    // 4. Drop any in-memory panels Map entries that survived from
+    //    before the archive (e.g. created while the session was
+    //    active). Keyed by panel.id, not sessionId.
     for (const panel of panelsForSession) {
       this.panels.delete(panel.id);
     }
 
-    // 4. Sweep webviewContextMap for entries owned by this session.
+    // 5. Sweep webviewContextMap for entries owned by this session.
     for (const [wcId, ctx] of webviewContextMap.entries()) {
       if (ctx.sessionId === sessionId) {
         webviewContextMap.delete(wcId);
