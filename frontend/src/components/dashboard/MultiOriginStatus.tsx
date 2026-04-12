@@ -216,7 +216,7 @@ export const MultiOriginStatus: React.FC<MultiOriginStatusProps> = ({
               {onReviewUpdates && (
                 <button 
                   onClick={onReviewUpdates}
-                  className="text-sm bg-status-warning hover:bg-status-warning-hover text-white px-3 py-1.5 rounded font-medium transition-colors"
+                  className="text-sm bg-status-warning hover:bg-status-warning-hover text-text-on-status-warning px-3 py-1.5 rounded font-medium transition-colors"
                 >
                   Review Updates →
                 </button>

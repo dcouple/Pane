@@ -316,7 +316,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
         <p className="mt-1 text-sm text-status-error/80">{error}</p>
         <button
           onClick={() => fetchDashboardData(false)}
-          className="mt-3 px-3 py-1 text-sm bg-status-error text-white rounded hover:bg-status-error-hover"
+          className="mt-3 px-3 py-1 text-sm bg-status-error text-text-on-status-error rounded hover:bg-status-error-hover"
         >
           Try Again
         </button>

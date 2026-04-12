@@ -564,7 +564,7 @@ function HeadlessFileTree({
               <button
                 type="submit"
                 disabled={!newItemName.trim()}
-                className="flex-1 px-3 py-1 bg-interactive hover:bg-interactive-hover disabled:bg-surface-tertiary disabled:text-text-tertiary text-white rounded text-sm transition-colors"
+                className="flex-1 px-3 py-1 bg-interactive hover:bg-interactive-hover disabled:bg-surface-tertiary disabled:text-text-tertiary text-text-on-interactive rounded text-sm transition-colors"
               >
                 Create
               </button>
@@ -1187,8 +1187,8 @@ export function FileEditor({
                 {gitStatus !== 'clean' && (
                   <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
                     gitStatus === 'untracked'
-                      ? 'bg-status-success text-white'
-                      : 'bg-interactive text-white'
+                      ? 'bg-status-success text-text-on-status-success'
+                      : 'bg-interactive text-text-on-interactive'
                   }`}>
                     {gitStatus === 'untracked' ? 'U' : 'M'}
                   </span>
@@ -1202,7 +1202,7 @@ export function FileEditor({
                       onClick={() => setViewMode('edit')}
                       className={`px-2 py-1 text-xs font-medium rounded-l-lg transition-colors flex items-center gap-1 ${
                         viewMode === 'edit'
-                          ? 'bg-interactive text-white'
+                          ? 'bg-interactive text-text-on-interactive'
                           : 'text-text-secondary hover:bg-surface-hover'
                       }`}
                       title="Edit mode"
@@ -1214,7 +1214,7 @@ export function FileEditor({
                       onClick={() => setViewMode('preview')}
                       className={`px-2 py-1 text-xs font-medium rounded-r-lg transition-colors flex items-center gap-1 ${
                         viewMode === 'preview'
-                          ? 'bg-interactive text-white'
+                          ? 'bg-interactive text-text-on-interactive'
                           : 'text-text-secondary hover:bg-surface-hover'
                       }`}
                       title="Preview mode"

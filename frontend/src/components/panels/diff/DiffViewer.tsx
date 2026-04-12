@@ -64,10 +64,10 @@ const FileAccordion = memo<FileAccordionProps>(({
           <FileText className="w-4 h-4 flex-shrink-0 text-text-tertiary" />
           <span className="text-sm font-medium text-text-primary truncate">{file.path}</span>
           {file.type === 'deleted' && (
-            <span className="text-xs bg-status-error text-white px-1.5 py-0.5 rounded flex-shrink-0">Deleted</span>
+            <span className="text-xs bg-status-error text-text-on-status-error px-1.5 py-0.5 rounded flex-shrink-0">Deleted</span>
           )}
           {file.type === 'added' && (
-            <span className="text-xs bg-status-success text-white px-1.5 py-0.5 rounded flex-shrink-0">New</span>
+            <span className="text-xs bg-status-success text-text-on-status-success px-1.5 py-0.5 rounded flex-shrink-0">New</span>
           )}
           {file.type === 'renamed' && (
             <span className="text-xs text-text-tertiary flex-shrink-0">
@@ -233,7 +233,7 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
             onClick={() => handleViewTypeChange(DiffModeEnum.Unified)}
             className={`px-3 py-1 text-sm font-medium rounded-l-lg transition-colors ${
               viewType === DiffModeEnum.Unified
-                ? 'bg-interactive text-white'
+                ? 'bg-interactive text-text-on-interactive'
                 : 'text-text-secondary hover:bg-surface-hover'
             }`}
           >
@@ -243,7 +243,7 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
             onClick={() => handleViewTypeChange(DiffModeEnum.Split)}
             className={`px-3 py-1 text-sm font-medium rounded-r-lg transition-colors ${
               viewType === DiffModeEnum.Split
-                ? 'bg-interactive text-white'
+                ? 'bg-interactive text-text-on-interactive'
                 : 'text-text-secondary hover:bg-surface-hover'
             }`}
           >
