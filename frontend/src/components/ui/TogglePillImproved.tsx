@@ -123,11 +123,11 @@ export const TogglePillImproved = forwardRef<HTMLButtonElement, TogglePillImprov
         )}>
           {checked && (
             icon ? (
-              <span className={cn('text-white', iconSizeClasses[size])}>
+              <span className={cn('text-text-on-interactive', iconSizeClasses[size])}>
                 {icon}
               </span>
             ) : (
-              <Check className={cn('text-white', iconSizeClasses[size])} />
+              <Check className={cn('text-text-on-interactive', iconSizeClasses[size])} />
             )
           )}
         </div>

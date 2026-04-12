@@ -30,10 +30,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       primary: 'bg-interactive text-text-on-interactive hover:bg-interactive-hover focus:ring-interactive shadow-button hover:shadow-button-hover',
       secondary: 'bg-surface-secondary text-text-secondary hover:bg-surface-hover focus:ring-border-primary',
       ghost: 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover focus:ring-border-primary',
-      danger: 'bg-status-error text-white hover:bg-status-error-hover focus:ring-status-error',
-      warning: 'bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400',
+      danger: 'bg-status-error text-text-on-status-error hover:bg-status-error-hover focus:ring-status-error',
+      warning: 'bg-status-warning text-text-on-status-warning hover:bg-status-warning-hover focus:ring-status-warning',
     };
-    
+
     const sizes = {
       sm: 'px-button-x-sm py-button-y-sm text-sm rounded-button',
       md: 'px-button-x py-button-y text-button rounded-button',
@@ -106,8 +106,8 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
       primary: 'bg-interactive text-text-on-interactive hover:bg-interactive-hover focus:ring-interactive',
       secondary: 'bg-surface-secondary text-text-secondary hover:bg-surface-hover focus:ring-border-primary',
       ghost: 'text-text-tertiary hover:text-text-secondary hover:bg-bg-hover focus:ring-border-primary',
-      danger: 'bg-status-error text-white hover:bg-status-error-hover focus:ring-status-error',
-      warning: 'bg-amber-500 text-white hover:bg-amber-600 focus:ring-amber-400',
+      danger: 'bg-status-error text-text-on-status-error hover:bg-status-error-hover focus:ring-status-error',
+      warning: 'bg-status-warning text-text-on-status-warning hover:bg-status-warning-hover focus:ring-status-warning',
     };
 
     const sizes = {

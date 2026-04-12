@@ -395,7 +395,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         }}
                         className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                           uiScale === preset
-                            ? 'bg-interactive text-white border-interactive'
+                            ? 'bg-interactive text-text-on-interactive border-interactive'
                             : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
                         }`}
                       >
@@ -538,7 +538,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                             }}
                             className={`px-3 py-1.5 text-xs font-medium rounded-md border transition-colors ${
                               terminalFontSize === preset
-                                ? 'bg-interactive text-white border-interactive'
+                                ? 'bg-interactive text-text-on-interactive border-interactive'
                                 : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
                             }`}
                           >
@@ -574,7 +574,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         }}
                         className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
                           atPasteMode === 'raw'
-                            ? 'bg-interactive text-white border-interactive'
+                            ? 'bg-interactive text-text-on-interactive border-interactive'
                             : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
                         }`}
                       >
@@ -588,7 +588,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         }}
                         className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
                           atPasteMode === 'embed'
-                            ? 'bg-interactive text-white border-interactive'
+                            ? 'bg-interactive text-text-on-interactive border-interactive'
                             : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
                         }`}
                       >
@@ -616,7 +616,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                           }}
                           className={`flex-1 px-3 py-2 rounded-lg border text-sm font-mono transition-colors ${
                             atLineCount === preset
-                              ? 'bg-interactive text-white border-interactive'
+                              ? 'bg-interactive text-text-on-interactive border-interactive'
                               : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
                           }`}
                         >
