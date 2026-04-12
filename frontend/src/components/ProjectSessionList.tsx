@@ -651,8 +651,6 @@ function SessionRow({
     : 'text-green-400'
     : session.status === 'running' || session.status === 'initializing'
     ? 'text-status-success'
-    : session.status === 'waiting'
-    ? 'text-status-warning'
     : session.status === 'error'
     ? 'text-status-error'
     : 'text-text-tertiary';

@@ -163,7 +163,7 @@ export function useIPCEvents() {
       // Force a re-render if this is the active session and status changed to stopped
       const state = useSessionStore.getState();
       if (state.activeSessionId === session.id && 
-          (session.status === 'stopped' || session.status === 'completed_unviewed' || session.status === 'error')) {
+          (session.status === 'stopped' || session.status === 'error')) {
         // Emit a custom event to trigger UI updates
         window.dispatchEvent(new CustomEvent('session-status-changed', { 
           detail: { sessionId: session.id, status: session.status } 

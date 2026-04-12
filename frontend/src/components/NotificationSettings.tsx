@@ -6,11 +6,9 @@ import { SettingsSection } from './ui/SettingsSection';
 import { Bell, BellOff, Volume2, VolumeX, Zap, Shield } from 'lucide-react';
 
 interface NotificationSettings {
-  enabled: boolean;
   playSound: boolean;
-  notifyOnStatusChange: boolean;
-  notifyOnWaiting: boolean;
-  notifyOnComplete: boolean;
+  notifyWhenBackgrounded: boolean;
+  notifyWhenViewingOtherPanel: boolean;
 }
 
 interface NotificationSettingsProps {
@@ -39,8 +37,8 @@ export function NotificationSettings({ settings, onUpdateSettings }: Notificatio
 
   const testNotification = () => {
     if (Notification.permission === 'granted') {
-      new Notification('Pane', {
-        body: 'This is a test notification! 🎉',
+      new Notification('Pane is ready to ping you', {
+        body: 'You will see notifications like this when a terminal panel finishes',
         icon: '/favicon.ico',
       });
     } else {
@@ -125,22 +123,9 @@ export function NotificationSettings({ settings, onUpdateSettings }: Notificatio
       <CollapsibleCard
         title="Notification Preferences"
         subtitle="Customize when and how you receive notifications"
-        icon={settings.enabled ? <Bell className="w-5 h-5" /> : <BellOff className="w-5 h-5" />}
+        icon={<Bell className="w-5 h-5" />}
         defaultExpanded={true}
       >
-        <SettingsSection
-          title="Master Control"
-          description="Turn all notifications on or off"
-          icon={settings.enabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-        >
-          <ToggleField
-            label="Enable Notifications"
-            description="Show browser notifications for session events"
-            checked={settings.enabled}
-            onChange={(checked) => onUpdateSettings({ enabled: checked })}
-          />
-        </SettingsSection>
-
         <SettingsSection
           title="Sound & Audio"
           description="Control notification sounds"
@@ -155,31 +140,23 @@ export function NotificationSettings({ settings, onUpdateSettings }: Notificatio
         </SettingsSection>
 
         <SettingsSection
-          title="Event Triggers"
-          description="Choose which session events should trigger notifications"
+          title="Activity Alerts"
+          description="When a terminal panel goes idle, Pane can ping you with a desktop notification"
           icon={<Zap className="w-4 h-4" />}
           spacing="sm"
         >
           <div className="space-y-3">
             <ToggleField
-              label="Status changes"
-              description="When sessions start, stop, or change state"
-              checked={settings.notifyOnStatusChange}
-              onChange={(checked) => onUpdateSettings({ notifyOnStatusChange: checked })}
+              label="Notify when Pane is in the background"
+              description="Ping me when a panel finishes while I'm using another app"
+              checked={settings.notifyWhenBackgrounded}
+              onChange={(checked) => onUpdateSettings({ notifyWhenBackgrounded: checked })}
             />
-
             <ToggleField
-              label="Input required"
-              description="When Claude is waiting for your response"
-              checked={settings.notifyOnWaiting}
-              onChange={(checked) => onUpdateSettings({ notifyOnWaiting: checked })}
-            />
-
-            <ToggleField
-              label="Task completion"
-              description="When sessions finish successfully"
-              checked={settings.notifyOnComplete}
-              onChange={(checked) => onUpdateSettings({ notifyOnComplete: checked })}
+              label="Notify when viewing a different panel"
+              description="Ping me when a panel finishes while I'm looking at a different one inside Pane"
+              checked={settings.notifyWhenViewingOtherPanel}
+              onChange={(checked) => onUpdateSettings({ notifyWhenViewingOtherPanel: checked })}
             />
           </div>
         </SettingsSection>

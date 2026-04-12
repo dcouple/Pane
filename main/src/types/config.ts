@@ -39,11 +39,9 @@ export interface AppConfig {
   uiScale?: number;
   // Notification settings
   notifications?: {
-    enabled: boolean;
     playSound: boolean;
-    notifyOnStatusChange: boolean;
-    notifyOnWaiting: boolean;
-    notifyOnComplete: boolean;
+    notifyWhenBackgrounded: boolean;
+    notifyWhenViewingOtherPanel: boolean;
   };
   // Dev mode for debugging
   devMode?: boolean;
@@ -103,11 +101,9 @@ export interface UpdateConfigRequest {
   theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
   uiScale?: number;
   notifications?: {
-    enabled: boolean;
     playSound: boolean;
-    notifyOnStatusChange: boolean;
-    notifyOnWaiting: boolean;
-    notifyOnComplete: boolean;
+    notifyWhenBackgrounded: boolean;
+    notifyWhenViewingOtherPanel: boolean;
   };
   devMode?: boolean;
   additionalPaths?: string[];

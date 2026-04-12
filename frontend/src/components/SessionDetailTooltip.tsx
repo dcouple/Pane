@@ -38,9 +38,6 @@ export function SessionDetailTooltip({ session, gitStatus, showName = true, show
   if (session.status === 'running' || session.status === 'initializing') {
     statusText = session.status === 'initializing' ? 'Initializing' : 'Running';
     statusColor = 'text-status-success';
-  } else if (session.status === 'waiting') {
-    statusText = 'Waiting for input';
-    statusColor = 'text-status-warning';
   } else if (session.status === 'error') {
     statusText = 'Error';
     statusColor = 'text-status-error';

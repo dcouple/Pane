@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
+import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
+import { ToolPanel } from '../../../shared/types/panels';
 
 // Extend window interface for webkit audio context compatibility
 declare global {
@@ -10,30 +12,44 @@ declare global {
 }
 
 interface NotificationSettings {
-  enabled: boolean;
   playSound: boolean;
-  notifyOnStatusChange: boolean;
-  notifyOnWaiting: boolean;
-  notifyOnComplete: boolean;
+  notifyWhenBackgrounded: boolean;
+  notifyWhenViewingOtherPanel: boolean;
 }
 
 export function useNotifications() {
-  const sessions = useSessionStore((state) => state.sessions);
-  const prevSessionsRef = useRef<typeof sessions>([]);
   const [settings, setSettings] = useState<NotificationSettings>({
-    enabled: true,
     playSound: true,
-    notifyOnStatusChange: true,
-    notifyOnWaiting: true,
-    notifyOnComplete: true,
+    notifyWhenBackgrounded: true,
+    notifyWhenViewingOtherPanel: false,
   });
   const settingsLoaded = useRef(false);
-  const initialLoadComplete = useRef(false);
 
-  // Track shown notifications to prevent duplicate analytics tracking
-  // Key format: `${sessionId}:${status}` for status notifications, or `${sessionId}:created` for new sessions
-  // This ensures we only track each unique notification once, even if the component re-renders
-  const trackedNotificationsRef = useRef<Set<string>>(new Set());
+  // Mirror settings into a ref so the Zustand subscription callback reads the
+  // latest value without needing to re-subscribe every time a toggle changes.
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  // Track previous activityStatus per panelId to detect active -> idle transitions.
+  const prevActivityRef = useRef<Record<string, 'active' | 'idle'>>({});
+
+  // Project name cache keyed by project id, refreshed on mount and on project changes.
+  const projectNamesRef = useRef<Map<number, string>>(new Map());
+  useEffect(() => {
+    const loadProjects = async () => {
+      const res = await API.projects.getAll();
+      if (res.success && res.data) {
+        projectNamesRef.current = new Map(
+          (res.data as { id: number; name: string }[]).map((p) => [p.id, p.name])
+        );
+      }
+    };
+    loadProjects();
+    window.addEventListener('project-changed', loadProjects);
+    return () => window.removeEventListener('project-changed', loadProjects);
+  }, []);
 
   const requestPermission = async (): Promise<boolean> => {
     if (!('Notification' in window)) {
@@ -54,8 +70,8 @@ export function useNotifications() {
   };
 
   const playNotificationSound = () => {
-    if (!settings.playSound) return;
-    
+    if (!settingsRef.current.playSound) return;
+
     try {
       // Create a simple notification sound using Web Audio API
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -66,16 +82,16 @@ export function useNotifications() {
       const audioContext = new AudioContextClass();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      
+
       oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
       oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-      
+
       gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
       gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
-      
+
       oscillator.start(audioContext.currentTime);
       oscillator.stop(audioContext.currentTime + 0.3);
     } catch (error) {
@@ -83,9 +99,16 @@ export function useNotifications() {
     }
   };
 
-  const showNotification = (title: string, body: string, icon?: string, _triggerEvent?: string, trackingKey?: string) => {
-    if (!settings.enabled) return;
-
+  // showNotification fires unconditionally so that the two direct callers in
+  // App.tsx (unclean-shutdown and version-update) always work. Activity gating
+  // lives only inside maybeNotifyPanelIdle.
+  const showNotification = (
+    title: string,
+    body: string,
+    icon?: string,
+    _triggerEvent?: string,
+    _trackingKey?: string,
+  ) => {
     requestPermission().then((hasPermission) => {
       if (hasPermission) {
         new Notification(title, {
@@ -97,144 +120,95 @@ export function useNotifications() {
         });
 
         playNotificationSound();
-
-        // Track notification shown analytics - only if this is a unique notification
-        // trackingKey is used to deduplicate notifications (e.g., "sessionId:status")
-        // If no trackingKey is provided, we track every notification (backwards compatibility)
-        if (!trackingKey || !trackedNotificationsRef.current.has(trackingKey)) {
-          // Mark this notification as tracked
-          if (trackingKey) {
-            trackedNotificationsRef.current.add(trackingKey);
-          }
-
-        }
       }
     });
   };
 
-  const getStatusEmoji = (status: string): string => {
-    switch (status) {
-      case 'initializing': return '🔄';
-      case 'running': return '🏃';
-      case 'waiting': return '⏸️';
-      case 'stopped': return '✅';
-      case 'completed_unviewed': return '🔔';
-      case 'error': return '❌';
-      default: return '📝';
-    }
-  };
+  function maybeNotifyPanelIdle(panelId: string) {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.notifyWhenBackgrounded && !currentSettings.notifyWhenViewingOtherPanel) return;
 
-  const getStatusMessage = (status: string): string => {
-    switch (status) {
-      case 'initializing': return 'is starting up';
-      case 'running': return 'is working';
-      case 'waiting': return 'needs your input';
-      case 'stopped': return 'has completed';
-      case 'completed_unviewed': return 'has new activity';
-      case 'error': return 'encountered an error';
-      default: return 'status changed';
-    }
-  };
+    const panelStoreState = usePanelStore.getState();
+    const sessionStoreState = useSessionStore.getState();
 
+    let foundSessionId: string | undefined;
+    let foundPanel: ToolPanel | undefined;
+    for (const [sessionId, panels] of Object.entries(panelStoreState.panels)) {
+      const panel = panels.find((p) => p.id === panelId);
+      if (panel) {
+        foundSessionId = sessionId;
+        foundPanel = panel;
+        break;
+      }
+    }
+    if (!foundSessionId || !foundPanel) return;
+
+    const session = sessionStoreState.sessions.find((s) => s.id === foundSessionId);
+    if (!session) return;
+
+    const windowFocused = document.hasFocus();
+    const activeSessionId = sessionStoreState.activeSessionId;
+    const activePanelId = panelStoreState.activePanels[foundSessionId];
+
+    const userIsViewingThisPanel =
+      windowFocused &&
+      activeSessionId === foundSessionId &&
+      activePanelId === panelId;
+
+    if (userIsViewingThisPanel) return;
+
+    const shouldFire =
+      (currentSettings.notifyWhenBackgrounded && !windowFocused) ||
+      (currentSettings.notifyWhenViewingOtherPanel && windowFocused && !userIsViewingThisPanel);
+
+    if (!shouldFire) return;
+
+    const projectName = session.projectId
+      ? projectNamesRef.current.get(session.projectId) ?? ''
+      : '';
+    const panelName = foundPanel.title || 'Terminal';
+
+    showNotification(
+      `${panelName} finished`,
+      projectName ? `${session.name} · ${projectName}` : session.name,
+      undefined,
+      'panel_idle',
+      `idle:${panelId}:${Date.now()}`,
+    );
+  }
+
+  // Subscribe to panelStore.activityStatus and fire notifications on
+  // active -> idle transitions. Uses the unary subscribe form since panelStore
+  // does not use the subscribeWithSelector middleware.
   useEffect(() => {
-    const prevSessions = prevSessionsRef.current;
-    
-    // If this is the initial load (prevSessions is empty and we have sessions),
-    // just update the ref without triggering notifications
-    if (!initialLoadComplete.current && prevSessions.length === 0 && sessions.length > 0) {
-      prevSessionsRef.current = sessions;
-      initialLoadComplete.current = true;
-      return;
-    }
-    
-    // Only process notifications after the initial load is complete
-    if (!initialLoadComplete.current) {
-      return;
-    }
-    
-    // Compare current sessions with previous sessions to detect changes
-    sessions.forEach((currentSession) => {
-      const prevSession = prevSessions.find(s => s.id === currentSession.id);
-      
-      if (!prevSession) {
-        // New session created - use tracking key to prevent duplicate tracking
-        if (settings.notifyOnStatusChange) {
-          showNotification(
-            `New Session Created ${getStatusEmoji('initializing')}`,
-            `"${currentSession.name}" is starting up`,
-            undefined,
-            'session_created',
-            `${currentSession.id}:created` // Tracking key ensures we only track this once
-          );
-        }
-        return;
-      }
-
-      // Check for status changes
-      if (prevSession.status !== currentSession.status) {
-        const emoji = getStatusEmoji(currentSession.status);
-        const message = getStatusMessage(currentSession.status);
-
-        // Use tracking key format: `sessionId:status` to deduplicate per-status notifications
-        // This ensures that if a session transitions from waiting->running->waiting,
-        // we track both 'waiting' notifications, but if the component re-renders while
-        // in 'waiting' state, we don't track it multiple times
-        const trackingKey = `${currentSession.id}:${currentSession.status}`;
-
-        // Notify based on specific status
-        if (currentSession.status === 'waiting' && settings.notifyOnWaiting) {
-          showNotification(
-            `Input Required ${emoji}`,
-            `"${currentSession.name}" is waiting for your response`,
-            undefined,
-            'status_waiting',
-            trackingKey
-          );
-        } else if (currentSession.status === 'completed_unviewed' && settings.notifyOnComplete) {
-          showNotification(
-            `Session Complete ✅`,
-            `"${currentSession.name}" has finished`,
-            undefined,
-            'status_completed',
-            trackingKey
-          );
-        } else if (currentSession.status === 'error') {
-          showNotification(
-            `Session Error ${emoji}`,
-            `"${currentSession.name}" encountered an error`,
-            undefined,
-            'status_error',
-            trackingKey
-          );
-        } else if (settings.notifyOnStatusChange) {
-          showNotification(
-            `Status Update ${emoji}`,
-            `"${currentSession.name}" ${message}`,
-            undefined,
-            `status_${currentSession.status}`,
-            trackingKey
-          );
+    const unsubscribe = usePanelStore.subscribe((state) => {
+      const activityStatus = state.activityStatus;
+      const prev = prevActivityRef.current;
+      for (const [panelId, status] of Object.entries(activityStatus)) {
+        const prevStatus = prev[panelId];
+        if (prevStatus === 'active' && status === 'idle') {
+          maybeNotifyPanelIdle(panelId);
         }
       }
+      prevActivityRef.current = { ...activityStatus };
     });
-
-    // Update the ref for next comparison
-    prevSessionsRef.current = sessions;
-  }, [sessions, settings]);
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscription must be created once; maybeNotifyPanelIdle reads live state via refs
+  }, []);
 
   // Load settings on first mount
   useEffect(() => {
     if (!settingsLoaded.current) {
       settingsLoaded.current = true;
-      
-      API.config.get().then(response => {
+
+      API.config.get().then((response) => {
         if (response.success && response.data?.notifications) {
           setSettings(response.data.notifications);
         }
-      }).catch(error => {
+      }).catch((error) => {
         console.error('Failed to load notification settings:', error);
       });
-      
+
       requestPermission();
     }
   }, []);
@@ -242,7 +216,7 @@ export function useNotifications() {
   return {
     settings,
     updateSettings: (newSettings: Partial<NotificationSettings>) => {
-      setSettings(prev => ({ ...prev, ...newSettings }));
+      setSettings((prev) => ({ ...prev, ...newSettings }));
     },
     requestPermission,
     showNotification,

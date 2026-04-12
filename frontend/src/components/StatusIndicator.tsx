@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Session } from '../types/session';
-import { AlertCircle, CheckCircle, Loader2, PauseCircle, Bell } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { isDocumentVisible } from '../utils/performanceUtils';
 import { Badge } from './ui/Badge';
 import { StatusDot } from './ui/StatusDot';
@@ -56,17 +56,6 @@ export const StatusIndicator = React.memo(({
           spin: true,
           animated: true
         };
-      case 'waiting':
-        return {
-          variant: 'warning' as const,
-          badgeVariant: 'warning' as const,
-          dotStatus: 'waiting' as const,
-          icon: PauseCircle,
-          text: 'Waiting for input',
-          tooltip: 'Claude needs your input to continue',
-          pulse: true,
-          animated: true
-        };
       case 'stopped':
         return {
           variant: 'default' as const,
@@ -76,17 +65,6 @@ export const StatusIndicator = React.memo(({
           text: 'Completed',
           tooltip: 'Task finished successfully',
           animated: false
-        };
-      case 'completed_unviewed':
-        return {
-          variant: 'info' as const,
-          badgeVariant: 'info' as const,
-          dotStatus: 'info' as const,
-          icon: Bell,
-          text: 'New activity',
-          tooltip: 'Session has new unviewed results',
-          pulse: true,
-          animated: true
         };
       case 'error':
         return {
@@ -144,7 +122,6 @@ export const StatusIndicator = React.memo(({
   const estimateProgress = (): number => {
     if (currentStatus === 'stopped') return 100;
     if (currentStatus === 'error') return 0;
-    if (currentStatus === 'waiting') return 75;
     if (currentStatus === 'running') return 50;
     if (currentStatus === 'initializing') return 25;
     return 0;
@@ -159,7 +136,6 @@ export const StatusIndicator = React.memo(({
           variant={config.badgeVariant}
           size={badgeSize}
           animated={shouldAnimate}
-          pulse={config.pulse}
           icon={React.createElement(config.icon, {
             className: cn(
               'w-4 h-4',
@@ -180,9 +156,7 @@ export const StatusIndicator = React.memo(({
                 className={cn(
                   'h-1.5 rounded-full transition-all duration-1000 ease-out',
                   config.dotStatus === 'running' && 'bg-status-success',
-                  config.dotStatus === 'waiting' && 'bg-status-warning',
                   config.dotStatus === 'error' && 'bg-status-error',
-                  config.dotStatus === 'info' && 'bg-status-info',
                   config.dotStatus === 'default' && 'bg-text-tertiary'
                 )}
                 style={{ width: `${estimateProgress()}%` }}
@@ -199,8 +173,7 @@ export const StatusIndicator = React.memo(({
     <StatusDot
       status={config.dotStatus}
       size={dotSize}
-      animated={shouldAnimate && !config.pulse}
-      pulse={config.pulse && shouldAnimate}
+      animated={shouldAnimate}
       className={config.tooltip ? 'cursor-help' : undefined}
       title={config.tooltip}
     />

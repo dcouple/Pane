@@ -9,7 +9,6 @@ interface SessionInputProps {
   input: string;
   setInput: (input: string) => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  handleSendInput: () => void;
   handleContinueConversation: (
     attachedImages?: unknown[],
     attachedTexts?: unknown[],
@@ -24,7 +23,6 @@ export const SessionInput: React.FC<SessionInputProps> = ({
   input,
   setInput,
   textareaRef,
-  handleSendInput,
   handleContinueConversation,
   ultrathink,
   setUltrathink,
@@ -45,50 +43,42 @@ export const SessionInput: React.FC<SessionInputProps> = ({
     const shouldSend = e.key === 'Enter' && (e.metaKey || e.ctrlKey);
     if (shouldSend) {
       e.preventDefault();
-      
+
       // Prevent duplicate submissions
       if (isSubmitting) {
         console.log('[SessionInput] Ignoring duplicate submission attempt');
         return;
       }
-      
+
       setIsSubmitting(true);
-      
+
       try {
-        if (activeSession.status === 'waiting') {
-          await handleSendInput();
-        } else {
-          await handleContinueConversation(undefined, undefined, selectedModel);
-        }
+        await handleContinueConversation(undefined, undefined, selectedModel);
       } finally {
         // Reset submission state after a short delay to prevent rapid resubmissions
         setTimeout(() => setIsSubmitting(false), 500);
       }
     }
   };
-  
+
   const onClickSend = async () => {
     // Prevent duplicate submissions
     if (isSubmitting) {
       console.log('[SessionInput] Ignoring duplicate submission attempt');
       return;
     }
-    
+
     setIsSubmitting(true);
-    
+
     try {
-      if (activeSession.status === 'waiting') {
-        await handleSendInput();
-      } else {
-        await handleContinueConversation(undefined, undefined, selectedModel);
-      }
+      await handleContinueConversation(undefined, undefined, selectedModel);
     } finally {
       // Reset submission state after a short delay to prevent rapid resubmissions
       setTimeout(() => setIsSubmitting(false), 500);
     }
   };
 
-  const placeholder = activeSession.status === 'waiting' ? "Enter your response... (⌘↵ to send)" : "Continue conversation... (⌘↵ to send)";
+  const placeholder = "Continue conversation... (⌘↵ to send)";
 
   return (
     <div className="border-t border-border-primary p-4 bg-surface-primary flex-shrink-0">
@@ -114,7 +104,7 @@ export const SessionInput: React.FC<SessionInputProps> = ({
           }`}
           style={{ height: '67px' }}
         >
-          {isSubmitting ? 'Processing...' : (activeSession.status === 'waiting' ? 'Send' : 'Continue')}
+          {isSubmitting ? 'Processing...' : 'Continue'}
         </button>
       </div>
       <div className="mt-2 flex items-center gap-4">
@@ -123,8 +113,7 @@ export const SessionInput: React.FC<SessionInputProps> = ({
           <span className="text-sm text-text-secondary">ultrathink</span>
         </label>
         {/* Model selector for continue conversation */}
-        {activeSession.status !== 'waiting' && (
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
             <Cpu className="w-4 h-4 text-text-tertiary" />
             <select
               value={selectedModel}
@@ -151,13 +140,10 @@ export const SessionInput: React.FC<SessionInputProps> = ({
               <option value="haiku">Haiku: Fast & cost-effective for simple tasks</option>
             </select>
           </div>
-        )}
       </div>
-      {activeSession.status !== 'waiting' && (
-        <p className="text-sm text-text-tertiary mt-2">
-          This will interrupt the current session if running and restart with conversation history.
-        </p>
-      )}
+      <p className="text-sm text-text-tertiary mt-2">
+        This will interrupt the current session if running and restart with conversation history.
+      </p>
     </div>
   );
 }; 

@@ -26,11 +26,9 @@ export interface AppConfig {
   theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
   uiScale?: number;
   notifications?: {
-    enabled: boolean;
     playSound: boolean;
-    notifyOnStatusChange: boolean;
-    notifyOnWaiting: boolean;
-    notifyOnComplete: boolean;
+    notifyWhenBackgrounded: boolean;
+    notifyWhenViewingOtherPanel: boolean;
   };
   devMode?: boolean;
   sessionCreationPreferences?: {

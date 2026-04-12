@@ -227,7 +227,7 @@ export class SessionManager extends EventEmitter {
       name: dbSession.name,
       worktreePath: dbSession.worktree_path,
       prompt: dbSession.initial_prompt,
-      status: this.mapDbStatusToSessionStatus(dbSession.status, dbSession.last_viewed_at, dbSession.updated_at),
+      status: this.mapDbStatusToSessionStatus(dbSession.status),
       statusMessage: dbSession.status_message,
       pid: dbSession.pid,
       createdAt: new Date(dbSession.created_at),
@@ -253,24 +253,13 @@ export class SessionManager extends EventEmitter {
     };
   }
 
-  private mapDbStatusToSessionStatus(dbStatus: string, lastViewedAt?: string, updatedAt?: string): Session['status'] {
+  private mapDbStatusToSessionStatus(dbStatus: string): Session['status'] {
     switch (dbStatus) {
       case 'pending': return 'initializing';
       case 'running': return 'running';
       case 'interrupted': return 'stopped'; // Map interrupted to stopped for frontend display (resume dialog handles these separately)
       case 'stopped':
-      case 'completed': {
-        // Show as unviewed if:
-        // 1. Database status is 'completed' and session has never been viewed, OR
-        // 2. Session was viewed but has been updated since that view
-        if (dbStatus === 'completed' && !lastViewedAt) {
-          return 'completed_unviewed';
-        }
-        if (lastViewedAt && updatedAt && new Date(lastViewedAt) < new Date(updatedAt)) {
-          return 'completed_unviewed';
-        }
-        return 'stopped';
-      }
+      case 'completed': return 'stopped';
       case 'failed': return 'error';
       default: return 'stopped';
     }
@@ -281,9 +270,7 @@ export class SessionManager extends EventEmitter {
       case 'initializing': return 'pending';
       case 'ready': return 'running';
       case 'running': return 'running';
-      case 'waiting': return 'running';
       case 'stopped': return 'stopped';
-      case 'completed_unviewed': return 'stopped';
       case 'error': return 'failed';
       default: return 'stopped';
     }
@@ -430,11 +417,8 @@ export class SessionManager extends EventEmitter {
         existing_archived_sessions_count: archivedSessions.length,
         existing_sessions_initializing: statusCounts['initializing'] || 0,
         existing_sessions_running: statusCounts['running'] || 0,
-        existing_sessions_waiting: statusCounts['waiting'] || 0,
         existing_sessions_stopped: statusCounts['stopped'] || 0,
         existing_sessions_error: statusCounts['error'] || 0,
-        existing_sessions_completed: statusCounts['completed'] || 0,
-        existing_sessions_completed_unviewed: statusCounts['completed_unviewed'] || 0,
         existing_projects_count: projectCount
       });
     }
@@ -533,12 +517,6 @@ export class SessionManager extends EventEmitter {
 
     const session = this.convertDbSessionToSession(updatedDbSession);
 
-    // Don't override the status if convertDbSessionToSession determined it should be completed_unviewed
-    // This allows the blue dot indicator to work properly when a session completes
-    if (update.status !== undefined && session.status === 'completed_unviewed') {
-      delete update.status; // Remove status from update to preserve completed_unviewed
-    }
-
     // Apply any additional updates not stored in DB
     Object.assign(session, update);
 
@@ -609,46 +587,10 @@ export class SessionManager extends EventEmitter {
       this.db.updateSession(id, { claude_session_id: (output.data as GenericMessageData).session_id });
     }
     
-    // Check if this is a system result message indicating Claude has completed
+    // Check if this is a system result message — update the completion timestamp for the most recent prompt
     if (output.type === 'json' && isJSONMessage(output.data as Record<string, unknown>, 'system', 'result')) {
-      // Update the completion timestamp for the most recent prompt
       const completionTimestamp = output.timestamp instanceof Date ? output.timestamp.toISOString() : output.timestamp;
       this.db.updatePromptMarkerCompletion(id, completionTimestamp);
-
-      // Mark the session as completed (this will trigger the completed_unviewed logic if not viewed)
-      const dbSession = this.db.getSession(id);
-      if (dbSession && dbSession.status === 'running') {
-        // Track session completion with analytics
-        if (this.analyticsManager) {
-          // Calculate duration
-          let durationSeconds = 0;
-          if (dbSession.run_started_at) {
-            const startTime = new Date(dbSession.run_started_at).getTime();
-            const endTime = Date.now();
-            durationSeconds = Math.floor((endTime - startTime) / 1000);
-          }
-
-          // Get prompt count
-          const promptMarkers = this.db.getPromptMarkers(id);
-          const promptCount = promptMarkers.length;
-
-          this.analyticsManager.track('session_completed', {
-            duration_seconds: durationSeconds,
-            duration_category: this.analyticsManager.categorizeDuration(durationSeconds),
-            prompt_count: promptCount
-          });
-        }
-
-        this.db.updateSession(id, { status: 'completed' });
-
-        // Re-convert to get the proper status (completed_unviewed if not viewed)
-        const updatedDbSession = this.db.getSession(id);
-        if (updatedDbSession) {
-          const session = this.convertDbSessionToSession(updatedDbSession);
-          this.activeSessions.set(id, session);
-          this.emit('session-updated', session);
-        }
-      }
     }
     
     // Check if this is a user message in JSON format to track prompts

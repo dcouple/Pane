@@ -435,13 +435,6 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         return createValidationError(sessionValidation);
       }
 
-      // Update session status back to running when user sends input
-      const currentSession = await sessionManager.getSession(sessionId);
-      if (currentSession && currentSession.status === 'waiting') {
-        console.log(`[Main] User sent input to session ${sessionId}, updating status to 'running'`);
-        await sessionManager.updateSession(sessionId, { status: 'running' });
-      }
-
       // Store user input in session outputs for persistence
       const userInputDisplay = `> ${input.trim()}\n`;
       await sessionManager.addSessionOutput(sessionId, {
@@ -1391,7 +1384,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
 
       // Calculate session duration
       const startTime = new Date(session.createdAt).getTime();
-      const endTime = session.status === 'stopped' || session.status === 'completed_unviewed'
+      const endTime = session.status === 'stopped'
         ? (session.lastActivity ? new Date(session.lastActivity).getTime() : Date.now())
         : Date.now();
       const duration = endTime - startTime;
