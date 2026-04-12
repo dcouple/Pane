@@ -197,6 +197,11 @@ export function useNotifications() {
   // subscribeWithSelector middleware.
   useEffect(() => {
     const pending = pendingIdleTimersRef.current;
+    // Seed from current store state so panels already active at mount time
+    // (e.g. restored terminals, agents still running during app startup) are
+    // correctly detected on their first idle transition instead of being
+    // dismissed as `undefined -> idle`.
+    prevActivityRef.current = { ...usePanelStore.getState().activityStatus };
     const unsubscribe = usePanelStore.subscribe((state) => {
       const activityStatus = state.activityStatus;
       const prev = prevActivityRef.current;

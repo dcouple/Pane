@@ -270,6 +270,7 @@ export class SessionManager extends EventEmitter {
       case 'initializing': return 'pending';
       case 'ready': return 'running';
       case 'running': return 'running';
+      case 'waiting': return 'running';
       case 'stopped': return 'stopped';
       case 'error': return 'failed';
       default: return 'stopped';

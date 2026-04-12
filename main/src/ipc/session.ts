@@ -435,6 +435,12 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         return createValidationError(sessionValidation);
       }
 
+      // Interactive Claude mode: user replied to a prompt, flip back to running.
+      const currentSession = sessionManager.getSession(sessionId);
+      if (currentSession && currentSession.status === 'waiting') {
+        await sessionManager.updateSession(sessionId, { status: 'running' });
+      }
+
       // Store user input in session outputs for persistence
       const userInputDisplay = `> ${input.trim()}\n`;
       await sessionManager.addSessionOutput(sessionId, {

@@ -56,6 +56,16 @@ export const StatusIndicator = React.memo(({
           spin: true,
           animated: true
         };
+      case 'waiting':
+        return {
+          variant: 'default' as const,
+          badgeVariant: 'default' as const,
+          dotStatus: 'default' as const,
+          icon: CheckCircle,
+          text: 'Waiting for input',
+          tooltip: 'Claude is waiting for your response',
+          animated: false
+        };
       case 'stopped':
         return {
           variant: 'default' as const,

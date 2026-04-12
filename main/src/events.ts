@@ -218,6 +218,19 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
       });
     }
 
+    // In interactive Claude mode, the process stays alive between turns. Flip
+    // session status to 'waiting' when Claude emits a prompt so the UI
+    // re-enables git actions (SessionView gates on status === 'running').
+    if (
+      output.type === 'json' &&
+      typeof output.data === 'object' &&
+      output.data &&
+      'type' in output.data &&
+      (output.data as { type?: string }).type === 'prompt'
+    ) {
+      await sessionManager.updateSession(output.sessionId, { status: 'waiting' });
+    }
+
     // Send real-time updates to renderer
     const mw = getMainWindow();
     if (mw) {
