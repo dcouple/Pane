@@ -24,6 +24,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
   const [env, setEnv] = useState<EnvironmentInfo | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [hasStarred, setHasStarred] = useState(false);
+  const [shouldStarOnSetup, setShouldStarOnSetup] = useState(true);
 
   const detectEnvironment = useCallback(async () => {
     setStep('detecting');
@@ -54,6 +55,19 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
     try {
       const result = await window.electronAPI.onboarding.setupDefaultRepo();
       if (result.success) {
+        // Best-effort star during setup when the user opted in and gh is authed.
+        // Star failure must not fail the setup flow.
+        if (shouldStarOnSetup && env?.ghAuthenticated) {
+          try {
+            const starResult = await window.electronAPI.onboarding.starRepo();
+            if (starResult.success) {
+              setHasStarred(true);
+              capture('onboarding_repo_starred_during_setup');
+            }
+          } catch {
+            // swallow: star failure is non-fatal
+          }
+        }
         setStep('success');
       } else {
         setErrorMessage(result.error || 'Failed to set up project');
@@ -144,18 +158,34 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
         {step === 'ready' && env && (
           <div className="space-y-4">
             {env.ghAuthenticated ? (
-              <div className="flex items-start gap-3">
-                <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
-                <div className="space-y-2">
-                  <p className="text-text-primary font-medium">
-                    Fork &amp; Clone
-                  </p>
-                  <p className="text-text-secondary text-sm">
-                    We&apos;ll fork the Pane repository to your GitHub account and clone it locally.
-                    You&apos;ll have your own copy to push changes to.
-                  </p>
+              <>
+                <div className="flex items-start gap-3">
+                  <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
+                  <div className="space-y-2">
+                    <p className="text-text-primary font-medium">
+                      Fork &amp; Clone
+                    </p>
+                    <p className="text-text-secondary text-sm">
+                      We&apos;ll fork the Pane repository to your GitHub account and clone it locally.
+                      You&apos;ll have your own copy to push changes to.
+                    </p>
+                  </div>
                 </div>
-              </div>
+                <label className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary hover:bg-surface-hover cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={shouldStarOnSetup}
+                    onChange={(e) => setShouldStarOnSetup(e.target.checked)}
+                    className="rounded border-border-primary text-interactive focus:ring-interactive"
+                  />
+                  <div className="flex items-center gap-2 flex-1">
+                    <Star className="h-4 w-4 text-text-secondary" />
+                    <span className="text-text-primary text-sm">
+                      Star Pane on GitHub
+                    </span>
+                  </div>
+                </label>
+              </>
             ) : env.gitInstalled ? (
               <div className="flex items-start gap-3">
                 <Download className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
