@@ -68,6 +68,7 @@ interface ElectronAPI {
     getStatistics: (sessionId: string) => Promise<IPCResponse>;
     getConversation: (sessionId: string) => Promise<IPCResponse>;
     getConversationMessages: (sessionId: string) => Promise<IPCResponse>;
+    getConversationMessageCount: (sessionId: string) => Promise<IPCResponse<number>>;
     generateCompactedContext: (sessionId: string) => Promise<IPCResponse>;
     markViewed: (sessionId: string) => Promise<IPCResponse>;
     stop: (sessionId: string) => Promise<IPCResponse>;

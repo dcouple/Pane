@@ -11,6 +11,8 @@ import { getShellPath, findExecutableInPath } from '../../../utils/shellPath';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { GIT_ATTRIBUTION_ENV } from '../../../utils/attribution';
 
+const LAST_OUTPUT_TAIL_BYTES = 16 * 1024;
+
 interface CliProcess {
   process: pty.IPty;
   panelId: string;
@@ -725,7 +727,10 @@ export abstract class AbstractCliManager extends EventEmitter {
 
     ptyProcess.onData((data: string) => {
       hasReceivedOutput = true;
-      lastOutput += data;
+      const combined = lastOutput + data;
+      lastOutput = combined.length > LAST_OUTPUT_TAIL_BYTES
+        ? combined.slice(-LAST_OUTPUT_TAIL_BYTES)
+        : combined;
       buffer += data;
 
       // Process complete lines
@@ -856,14 +861,14 @@ export abstract class AbstractCliManager extends EventEmitter {
    * Handle process runtime failure
    */
   protected async handleProcessRuntimeFailure(exitCode: number | null, signal: number | undefined, panelId: string, sessionId: string, lastOutput: string): Promise<void> {
-    this.logger?.error(`Last output from ${this.getCliToolName()}: ${lastOutput.substring(-500)}`);
+    this.logger?.error(`Last output from ${this.getCliToolName()}: ${lastOutput.slice(-500)}`);
 
     const errorMessage = {
       type: 'session',
       data: {
         status: 'error',
         message: `${this.getCliToolName()} exited with error (exit code: ${exitCode})`,
-        details: lastOutput.length > 0 ? `Last output:\n${lastOutput.substring(-500)}` : 'No additional details available'
+        details: lastOutput.length > 0 ? `Last output:\n${lastOutput.slice(-500)}` : 'No additional details available'
       }
     };
 

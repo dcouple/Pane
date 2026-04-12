@@ -37,7 +37,8 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     worktreeNameGenerator,
     gitStatusManager,
     archiveProgressManager,
-    spotlightManager
+    spotlightManager,
+    runCommandManager
   } = services;
 
   // Helper function to get CLI manager for a specific tool
@@ -255,7 +256,11 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
       });
 
       // Kill all panel processes for this session before worktree cleanup
-      // This prevents leaked node-pty processes and ensures worktree removal succeeds
+      // This prevents leaked node-pty processes and ensures worktree removal succeeds.
+      // NOTE: must run BEFORE cleanupSessionPanelsInMemory because
+      // getPanelsForSession has a DB-read side effect that repopulates
+      // panelManager.panels; calling it after the in-memory cleanup would
+      // re-insert the entries we just cleared.
       const panels = panelManager.getPanelsForSession(sessionId);
       for (const panel of panels) {
         try {
@@ -267,10 +272,32 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         }
       }
 
+      // Release in-memory panel state (does NOT hard-delete DB rows — archive-safe)
+      try {
+        await panelManager.cleanupSessionPanelsInMemory(sessionId);
+      } catch (err) {
+        console.error(`[Session IPC] cleanupSessionPanelsInMemory failed for ${sessionId}:`, err);
+      }
+
+      // Drain git status cache, pending events, timers, abort controllers, and file watcher
+      try {
+        gitStatusManager.clearSessionCache(sessionId);
+      } catch (err) {
+        console.error(`[Session IPC] clearSessionCache failed for ${sessionId}:`, err);
+      }
+
       // Create cleanup callback for background operations
       const cleanupCallback = async () => {
         let cleanupMessage = '';
-        
+
+        // Stop any active run commands for this session so their file handles are released
+        // before worktree removal. Must run before worktree-removal logic below.
+        try {
+          await runCommandManager.stopRunCommands(sessionId);
+        } catch (err) {
+          console.error(`[Session IPC] stopRunCommands failed for ${sessionId}:`, err);
+        }
+
         // Clean up the worktree if session has one (but not for main repo sessions)
         if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo) {
           const project = databaseService.getProject(dbSession.project_id);
@@ -669,7 +696,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
       }
 
       // Performance optimization: Default to loading only recent outputs
-      const DEFAULT_OUTPUT_LIMIT = 5000;
+      const DEFAULT_OUTPUT_LIMIT = 500;
       const outputLimit = limit || DEFAULT_OUTPUT_LIMIT;
 
       console.log(`[IPC] sessions:get-output called for session: ${sessionId} with limit: ${outputLimit}`);
@@ -743,6 +770,21 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
       return { success: false, error: 'Failed to get conversation messages' };
     }
   });
+
+  ipcMain.handle(
+    'sessions:get-conversation-message-count',
+    async (_event, sessionId: string) => {
+      try {
+        const count = sessionManager.getConversationMessageCount(sessionId);
+        return { success: true, data: count };
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        };
+      }
+    },
+  );
 
   // Panel-based handlers for Claude panels
   ipcMain.handle('panels:get-output', async (_event, panelId: string, limit?: number) => {

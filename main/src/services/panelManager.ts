@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ToolPanel, CreatePanelRequest, PanelEventType, ToolPanelState, ToolPanelMetadata, ToolPanelType, LogsPanelState } from '../../../shared/types/panels';
 import { databaseService } from './database';
 import { panelEventBus } from './panelEventBus';
-import { mainWindow } from '../index';
+import { mainWindow, webviewContextMap } from '../index';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
 
@@ -456,6 +456,40 @@ export class PanelManager {
     databaseService.deletePanelsForSession(sessionId);
 
     console.log(`[PanelManager] Cleaned up ${panels.length} panels for session ${sessionId}`);
+  }
+
+  /**
+   * Archive-safe cleanup. Clears in-memory state and unsubscribes
+   * panelEventBus. Does NOT hard-delete DB rows (archive keeps DB rows alive).
+   * Also sweeps webviewContextMap for any entries owned by this session.
+   */
+  async cleanupSessionPanelsInMemory(sessionId: string): Promise<void> {
+    // 1. Resolve panels for this session BEFORE mutating the Map.
+    const panelsForSession = this.getPanelsForSession(sessionId);
+
+    // 2. Unsubscribe panelEventBus for each panel.
+    for (const panel of panelsForSession) {
+      try {
+        panelEventBus.unsubscribePanel(panel.id);
+      } catch (err) {
+        console.error(`[PanelManager] unsubscribePanel failed for ${panel.id}`, err);
+      }
+    }
+
+    // 3. Drop in-memory panels Map entries, keyed by panel.id
+    //    (NOT sessionId — this.panels is Map<string, ToolPanel> keyed by panel.id).
+    for (const panel of panelsForSession) {
+      this.panels.delete(panel.id);
+    }
+
+    // 4. Sweep webviewContextMap for entries owned by this session.
+    for (const [wcId, ctx] of webviewContextMap.entries()) {
+      if (ctx.sessionId === sessionId) {
+        webviewContextMap.delete(wcId);
+      }
+    }
+
+    console.log(`[PanelManager] In-memory cleanup for ${panelsForSession.length} panels of session ${sessionId}`);
   }
 
   /**

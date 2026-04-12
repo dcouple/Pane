@@ -1,14 +1,45 @@
 import { EventEmitter } from 'events';
-import { watch, FSWatcher } from 'fs';
+import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
+import path from 'path';
+import type { Stats } from 'fs';
 import { execSync } from '../utils/commandExecutor';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
 import type { Logger } from '../utils/logger';
 
+const IGNORED_DIRS = new Set<string>([
+  'node_modules',
+  '.git', // narrow .git watcher is separate
+  'dist',
+  'build',
+  '.next',
+  '.nuxt',
+  '.turbo',
+  '.cache',
+  '.parcel-cache',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'target',
+  '.svelte-kit',
+  'coverage',
+]);
+
+const IGNORED_FILE_PATTERNS: RegExp[] = [
+  /^\.DS_Store$/,
+  /^thumbs\.db$/i,
+  /\.swp$/,
+  /\.swo$/,
+  /~$/,
+  /^\.#/,
+  /^#.+#$/,
+];
+
 interface WatchedSession {
   sessionId: string;
   worktreePath: string;
-  watcher?: FSWatcher;
+  worktreeWatcher?: FSWatcher;
+  gitWatcher?: FSWatcher;
   lastModified: number;
   pendingRefresh: boolean;
 }
@@ -17,8 +48,8 @@ interface WatchedSession {
  * Smart file watcher that detects when git status actually needs refreshing
  *
  * Key optimizations:
- * 1. Uses native fs.watch for efficient file monitoring
- * 2. Filters out events that don't affect git status
+ * 1. Uses chokidar with function-form ignored for efficient file monitoring
+ * 2. Short-circuits descent into heavy directories (node_modules, dist, etc.)
  * 3. Batches rapid file changes
  * 4. Uses git update-index to quickly check if index is dirty
  */
@@ -26,17 +57,6 @@ export class GitFileWatcher extends EventEmitter {
   private watchedSessions: Map<string, WatchedSession> = new Map();
   private refreshDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private readonly DEBOUNCE_MS = 1500; // 1.5 second debounce for file changes
-  private readonly IGNORE_PATTERNS = [
-    '.git/',
-    'node_modules/',
-    '.DS_Store',
-    'thumbs.db',
-    '*.swp',
-    '*.swo',
-    '*~',
-    '.#*',
-    '#*#'
-  ];
 
   constructor(
     private logger?: Logger,
@@ -54,28 +74,75 @@ export class GitFileWatcher extends EventEmitter {
     // Stop existing watcher if any
     this.stopWatching(sessionId);
 
-    this.logger?.info(`[GitFileWatcher] Starting watch for session ${sessionId} at ${worktreePath}`);
-
     try {
-      // Convert path for fs.watch (needs UNC path on WSL)
+      // Convert path for the watcher (needs platform-appropriate path)
       const watchPath = this.pathResolver ? this.pathResolver.toFileSystem(worktreePath) : worktreePath;
 
-      // Create a watcher for the worktree directory
-      const watcher = watch(watchPath, { recursive: true }, (eventType, filename) => {
-        if (filename) {
-          this.handleFileChange(sessionId, filename, eventType);
+      // Function-form ignored: short-circuits descent into heavy directories
+      // stats may be undefined on initial calls — return false (don't ignore) if unknown
+      const ignored = (targetPath: string, stats?: Stats): boolean => {
+        if (!stats) return false;
+        const base = path.basename(targetPath);
+        if (stats.isDirectory()) {
+          return IGNORED_DIRS.has(base);
         }
+        return IGNORED_FILE_PATTERNS.some((p) => p.test(base));
+      };
+
+      const worktreeWatcher = chokidarWatch(watchPath, {
+        ignored,
+        ignoreInitial: true,
+        persistent: true,
+        followSymlinks: false,
+        awaitWriteFinish: false,
+        usePolling: false,
+        atomic: false,
+      });
+
+      worktreeWatcher.on('all', (_eventName, changedPath) => {
+        const rel = path.relative(watchPath, changedPath) || changedPath;
+        this.handleFileChange(sessionId, rel, 'change');
+      });
+      worktreeWatcher.on('error', (err) => {
+        this.logger?.error(`[GitFileWatcher] worktree watcher error`, err as Error);
+      });
+
+      const gitDir = path.join(watchPath, '.git');
+      const gitWatcher = chokidarWatch(
+        [path.join(gitDir, 'index'), path.join(gitDir, 'HEAD')],
+        {
+          ignoreInitial: true,
+          persistent: true,
+          followSymlinks: false,
+          usePolling: false,
+        }
+      );
+      gitWatcher.on('all', () => {
+        // intentional: bypass any ignore checks — always trigger on git index/HEAD changes
+        this.handleFileChange(sessionId, '.git/index', 'change');
+      });
+      gitWatcher.on('error', (err) => {
+        this.logger?.error(`[GitFileWatcher] .git watcher error`, err as Error);
       });
 
       this.watchedSessions.set(sessionId, {
         sessionId,
         worktreePath,
-        watcher,
+        worktreeWatcher,
+        gitWatcher,
         lastModified: Date.now(),
-        pendingRefresh: false
+        pendingRefresh: false,
       });
+
+      // Validation signal — keep in production: confirms watcher count is bounded
+      this.logger?.info(
+        `[GitFileWatcher] startWatching(${sessionId}) watchedSessions.size=${this.watchedSessions.size}`
+      );
     } catch (error) {
-      this.logger?.error(`[GitFileWatcher] Failed to start watching session ${sessionId}:`, error as Error);
+      this.logger?.error(
+        `[GitFileWatcher] Failed to start watching session ${sessionId}:`,
+        error as Error
+      );
     }
   }
 
@@ -84,19 +151,21 @@ export class GitFileWatcher extends EventEmitter {
    */
   stopWatching(sessionId: string): void {
     const session = this.watchedSessions.get(sessionId);
-    if (session) {
-      session.watcher?.close();
-      this.watchedSessions.delete(sessionId);
-      
-      // Clear any pending refresh timer
-      const timer = this.refreshDebounceTimers.get(sessionId);
-      if (timer) {
-        clearTimeout(timer);
-        this.refreshDebounceTimers.delete(sessionId);
-      }
-      
-      this.logger?.info(`[GitFileWatcher] Stopped watching session ${sessionId}`);
+    if (!session) return;
+
+    // fire-and-forget async close — keeps stopWatching synchronous from callers' perspective
+    session.worktreeWatcher?.close().catch(() => {});
+    session.gitWatcher?.close().catch(() => {});
+    this.watchedSessions.delete(sessionId);
+
+    // Clear any pending refresh timer
+    const timer = this.refreshDebounceTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.refreshDebounceTimers.delete(sessionId);
     }
+
+    this.logger?.info(`[GitFileWatcher] Stopped watching session ${sessionId}`);
   }
 
   /**
@@ -111,12 +180,7 @@ export class GitFileWatcher extends EventEmitter {
   /**
    * Handle a file change event
    */
-  private handleFileChange(sessionId: string, filename: string, eventType: string): void {
-    // Ignore changes to files that don't affect git status
-    if (this.shouldIgnoreFile(filename)) {
-      return;
-    }
-
+  private handleFileChange(sessionId: string, _filename: string, _eventType: string): void {
     const session = this.watchedSessions.get(sessionId);
     if (!session) return;
 
@@ -126,44 +190,6 @@ export class GitFileWatcher extends EventEmitter {
 
     // Debounce the refresh to batch rapid changes
     this.scheduleRefreshCheck(sessionId);
-  }
-
-  /**
-   * Check if a file should be ignored
-   */
-  private shouldIgnoreFile(filename: string): boolean {
-    // Check against ignore patterns
-    for (const pattern of this.IGNORE_PATTERNS) {
-      if (pattern.endsWith('/')) {
-        // Directory pattern
-        if (filename.startsWith(pattern) || filename.includes('/' + pattern)) {
-          return true;
-        }
-      } else if (pattern.startsWith('*.')) {
-        // Extension pattern
-        const ext = pattern.slice(1);
-        if (filename.endsWith(ext)) {
-          return true;
-        }
-      } else if (pattern.startsWith('.#') || pattern.startsWith('#')) {
-        // Editor temp file patterns
-        const basename = filename.split('/').pop() || '';
-        if (basename.startsWith('.#') || (basename.startsWith('#') && basename.endsWith('#'))) {
-          return true;
-        }
-      } else if (pattern.endsWith('~')) {
-        // Backup file pattern
-        if (filename.endsWith('~')) {
-          return true;
-        }
-      } else {
-        // Exact match
-        if (filename === pattern || filename.endsWith('/' + pattern)) {
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   /**
@@ -200,7 +226,7 @@ export class GitFileWatcher extends EventEmitter {
       // Quick check if the index is dirty using git update-index
       // This is much faster than running full git status
       const needsRefresh = this.checkIfRefreshNeeded(session.worktreePath);
-      
+
       if (needsRefresh) {
         this.logger?.info(`[GitFileWatcher] Session ${sessionId} needs refresh`);
         this.emit('needs-refresh', sessionId);
@@ -214,10 +240,6 @@ export class GitFileWatcher extends EventEmitter {
     }
   }
 
-  /**
-   * Quick check if git status needs refreshing
-   * Returns true if there are changes, false if working tree is clean
-   */
   /** Run a git command, using CommandRunner when available for WSL support */
   private execGit(command: string, cwd: string): string {
     if (this.commandRunner) {
@@ -226,6 +248,10 @@ export class GitFileWatcher extends EventEmitter {
     return execSync(command, { cwd, encoding: 'utf8', silent: true }) as string;
   }
 
+  /**
+   * Quick check if git status needs refreshing
+   * Returns true if there are changes, false if working tree is clean
+   */
   private checkIfRefreshNeeded(worktreePath: string): boolean {
     try {
       // First, refresh the index to ensure it's up to date
@@ -274,10 +300,10 @@ export class GitFileWatcher extends EventEmitter {
         sessionsNeedingRefresh++;
       }
     }
-    
+
     return {
       totalWatched: this.watchedSessions.size,
-      sessionsNeedingRefresh
+      sessionsNeedingRefresh,
     };
   }
 }

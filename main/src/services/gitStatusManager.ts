@@ -886,6 +886,28 @@ export class GitStatusManager extends EventEmitter {
    */
   clearSessionCache(sessionId: string): void {
     delete this.cache[sessionId];
+
+    // L5: drain pendingEvents. Key is plain sessionId
+    // (verified at line 906 where it is set).
+    this.pendingEvents.delete(sessionId);
+
+    // L5: drain refreshDebounceTimers
+    const timer = this.refreshDebounceTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.refreshDebounceTimers.delete(sessionId);
+    }
+
+    // L5: drain abortControllers
+    const ac = this.abortControllers.get(sessionId);
+    if (ac) {
+      ac.abort();
+      this.abortControllers.delete(sessionId);
+    }
+
+    // L3: stop the file watcher for this session. No-op for
+    // non-active sessions (they never had a watcher started).
+    this.fileWatcher.stopWatching(sessionId);
   }
 
   /**
