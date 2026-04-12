@@ -167,10 +167,10 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
                   <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
                   <div className="space-y-2">
                     <p className="text-text-primary font-medium">
-                      Start with Pane as your first project
+                      Start developing with Pane as your first project
                     </p>
                     <p className="text-text-secondary text-sm">
-                      Start developing with Pane.
+                      We&apos;ll set up a real codebase so you&apos;re not staring at a blank screen.
                     </p>
                   </div>
                 </div>
