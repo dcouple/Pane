@@ -3,6 +3,7 @@ import { GitFork, Download, AlertCircle, Star, ExternalLink, CheckCircle2, Loade
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { capture } from '../services/posthog';
 
 type DialogStep = 'detecting' | 'ready' | 'cloning' | 'success' | 'error';
@@ -166,27 +167,34 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
                   <GitFork className="h-6 w-6 text-interactive flex-shrink-0 mt-0.5" />
                   <div className="space-y-2">
                     <p className="text-text-primary font-medium">
-                      Fork &amp; Clone
+                      Start with Pane as your first project
                     </p>
                     <p className="text-text-secondary text-sm">
-                      We&apos;ll fork the Pane repository to your GitHub account and clone it locally.
-                      You&apos;ll have your own copy to push changes to.
+                      Don&apos;t start empty. Try Pane on Pane and start developing right away.
                     </p>
                   </div>
                 </div>
-                <label className="flex items-start gap-2 cursor-pointer w-fit">
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
                   <input
                     type="checkbox"
                     checked={shouldStarOnSetup}
                     onChange={(e) => setShouldStarOnSetup(e.target.checked)}
-                    className="rounded border-border-primary text-interactive focus:ring-interactive mt-0.5"
+                    className="rounded border-border-primary text-interactive focus:ring-interactive"
                   />
-                  <div className="flex flex-col">
-                    <span className="text-text-secondary text-xs">Star Pane on GitHub</span>
-                    <span className="text-text-tertiary text-[11px] leading-tight">
-                      Helps other developers discover Pane
+                  <Star className="h-3.5 w-3.5 text-text-secondary flex-shrink-0" />
+                  <Tooltip
+                    side="top"
+                    interactive
+                    content={
+                      <div className="max-w-xs whitespace-normal">
+                        Stars are the cheapest form of support, and they help this project reach more developers. Pane is built by Dcouple, a self-funded two-person studio.
+                      </div>
+                    }
+                  >
+                    <span className="text-text-secondary text-xs underline decoration-dotted underline-offset-2">
+                      Help us keep building Pane independently
                     </span>
-                  </div>
+                  </Tooltip>
                 </label>
               </>
             ) : env.gitInstalled ? (
@@ -290,7 +298,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
             <Button onClick={handleSkip} variant="ghost">Skip</Button>
             {env.ghAuthenticated ? (
               <Button onClick={handleSetup} variant="primary" icon={<GitFork className="h-4 w-4" />}>
-                Fork &amp; Clone
+                Let&apos;s go
               </Button>
             ) : env.gitInstalled ? (
               <Button onClick={handleSetup} variant="primary" icon={<Download className="h-4 w-4" />}>
