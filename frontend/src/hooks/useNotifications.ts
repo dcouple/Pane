@@ -158,6 +158,12 @@ export function useNotifications() {
     const session = sessionStoreState.sessions.find((s) => s.id === foundSessionId);
     if (!session) return;
 
+    // A panel going idle while the session is in 'waiting' state means
+    // Claude is blocked on user input, not finished. Suppress the
+    // "${panel} finished" notification entirely in that case, otherwise
+    // we would mislead the user into thinking the task completed.
+    if (session.status === 'waiting') return;
+
     const windowFocused = document.hasFocus();
     const activeSessionId = sessionStoreState.activeSessionId;
     const activePanelId = panelStoreState.activePanels[foundSessionId];
