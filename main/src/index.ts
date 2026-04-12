@@ -11,6 +11,11 @@ if (process.platform === 'linux') {
 // Force integrated GPU for better battery life on dual-GPU systems
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
+// Set Windows App User Model ID so notifications show "Pane" instead of "electron.app.Pane"
+if (process.platform === 'win32') {
+  app.setAppUserModelId('Pane');
+}
+
 // Now import the rest of electron
 import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView } from 'electron';
 import * as path from 'path';
