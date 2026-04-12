@@ -695,8 +695,13 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
         return createValidationError(sessionValidation);
       }
 
-      // Performance optimization: Default to loading only recent outputs
-      const DEFAULT_OUTPUT_LIMIT = 500;
+      // Performance optimization: Default to loading only recent outputs.
+      // Left at the pre-fix value of 5000 for this PR; lowering risks
+      // silently truncating long sessions on reopen because callers do
+      // not yet pass a pagination-aware limit. Revisit when the
+      // deprecated JSON / non-terminal output pipeline is deleted at
+      // source in the L6 follow-up.
+      const DEFAULT_OUTPUT_LIMIT = 5000;
       const outputLimit = limit || DEFAULT_OUTPUT_LIMIT;
 
       console.log(`[IPC] sessions:get-output called for session: ${sessionId} with limit: ${outputLimit}`);

@@ -107,23 +107,54 @@ export class GitFileWatcher extends EventEmitter {
         this.logger?.error(`[GitFileWatcher] worktree watcher error`, err as Error);
       });
 
-      const gitDir = path.join(watchPath, '.git');
-      const gitWatcher = chokidarWatch(
-        [path.join(gitDir, 'index'), path.join(gitDir, 'HEAD')],
-        {
-          ignoreInitial: true,
-          persistent: true,
-          followSymlinks: false,
-          usePolling: false,
+      // Resolve the real gitdir. Pane sessions usually run in git
+      // worktrees, where `.git` inside the worktree is a FILE
+      // containing `gitdir: /path/to/main/.git/worktrees/<name>` — the
+      // real `index` and `HEAD` live under that resolved path, not
+      // under `<worktreePath>/.git`. Use `git rev-parse
+      // --absolute-git-dir` so we get the correct location for both
+      // worktrees and normal repos. If resolution fails (e.g., the
+      // path is not yet a valid repo) we skip the narrow .git watcher
+      // and rely on the worktree watcher alone.
+      let gitWatcher: FSWatcher | undefined;
+      try {
+        const resolvedGitDir = this.execGit(
+          'git rev-parse --absolute-git-dir',
+          watchPath,
+        ).trim();
+        if (resolvedGitDir) {
+          gitWatcher = chokidarWatch(
+            [
+              path.join(resolvedGitDir, 'index'),
+              path.join(resolvedGitDir, 'HEAD'),
+            ],
+            {
+              ignoreInitial: true,
+              persistent: true,
+              followSymlinks: false,
+              usePolling: false,
+            },
+          );
+          gitWatcher.on('all', () => {
+            // intentional: bypass any ignore checks, always trigger on
+            // git index/HEAD changes
+            this.handleFileChange(sessionId, '.git/index', 'change');
+          });
+          gitWatcher.on('error', (err) => {
+            this.logger?.error(
+              `[GitFileWatcher] .git watcher error`,
+              err as Error,
+            );
+          });
         }
-      );
-      gitWatcher.on('all', () => {
-        // intentional: bypass any ignore checks — always trigger on git index/HEAD changes
-        this.handleFileChange(sessionId, '.git/index', 'change');
-      });
-      gitWatcher.on('error', (err) => {
-        this.logger?.error(`[GitFileWatcher] .git watcher error`, err as Error);
-      });
+      } catch (gitDirErr) {
+        this.logger?.error(
+          `[GitFileWatcher] Failed to resolve gitdir for ${sessionId}, ` +
+            `narrow .git watcher disabled (metadata-only operations will ` +
+            `not trigger refresh until worktree watcher fires):`,
+          gitDirErr as Error,
+        );
+      }
 
       this.watchedSessions.set(sessionId, {
         sessionId,
