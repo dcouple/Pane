@@ -7,11 +7,14 @@ import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
 import type { Logger } from '../utils/logger';
 
+// Directories that are effectively never tracked in git and are
+// expensive to watch (node_modules alone can be tens of thousands of
+// subdirectories). Dirs that are SOMETIMES tracked (dist, build,
+// target, coverage) are intentionally excluded from this list so that
+// repos that commit build output still get accurate status refreshes.
 const IGNORED_DIRS = new Set<string>([
   'node_modules',
   '.git', // narrow .git watcher is separate
-  'dist',
-  'build',
   '.next',
   '.nuxt',
   '.turbo',
@@ -20,9 +23,7 @@ const IGNORED_DIRS = new Set<string>([
   '.venv',
   'venv',
   '__pycache__',
-  'target',
   '.svelte-kit',
-  'coverage',
 ]);
 
 const IGNORED_FILE_PATTERNS: RegExp[] = [
