@@ -218,16 +218,17 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
       });
     }
 
-    // Check if Claude is waiting for user input
-    if (output.type === 'json' && typeof output.data === 'object' && output.data && 'type' in output.data && output.data.type === 'prompt') {
-      console.log(`[Main] Claude is waiting for user input in session ${output.sessionId}`);
+    // In interactive Claude mode, the process stays alive between turns. Flip
+    // session status to 'waiting' when Claude emits a prompt so the UI
+    // re-enables git actions (SessionView gates on status === 'running').
+    if (
+      output.type === 'json' &&
+      typeof output.data === 'object' &&
+      output.data &&
+      'type' in output.data &&
+      (output.data as { type?: string }).type === 'prompt'
+    ) {
       await sessionManager.updateSession(output.sessionId, { status: 'waiting' });
-    }
-
-    // Check if Claude has completed (when it sends a result message)
-    if (output.type === 'json' && typeof output.data === 'object' && output.data && 'type' in output.data && output.data.type === 'system' && 'subtype' in output.data && output.data.subtype === 'result') {
-      console.log(`[Main] Claude completed task in session ${output.sessionId}`);
-      // Don't update status here - let the exit handler determine if it should be completed_unviewed
     }
 
     // Send real-time updates to renderer

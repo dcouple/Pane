@@ -75,12 +75,9 @@ function getStatusVariant(
   switch (status) {
     case 'running':
       return 'success';
-    case 'waiting':
-      return 'warning';
     case 'error':
       return 'error';
     case 'initializing':
-    case 'completed_unviewed':
       return 'info';
     case 'stopped':
     case 'ready':
@@ -93,14 +90,10 @@ function getStatusLabel(status: Session['status']): string {
   switch (status) {
     case 'running':
       return 'Running';
-    case 'waiting':
-      return 'Waiting';
     case 'error':
       return 'Error';
     case 'initializing':
       return 'Initializing';
-    case 'completed_unviewed':
-      return 'New Activity';
     case 'stopped':
       return 'Stopped';
     case 'ready':

@@ -658,7 +658,7 @@ export const useSessionView = (
     
     // Trigger reload when status changes indicate output might be available
     if (prevStatus && prevStatus !== status) {
-      if (['stopped', 'waiting'].includes(prevStatus) && status === 'initializing') {
+      if (prevStatus === 'stopped' && status === 'initializing') {
         setShouldReloadOutput(true);
       } else if (prevStatus === 'initializing' && status === 'running') {
         setShouldReloadOutput(true);

@@ -79,7 +79,7 @@ export interface Session {
   name: string;
   worktreePath: string;
   prompt: string;
-  status: 'initializing' | 'ready' | 'running' | 'waiting' | 'stopped' | 'completed_unviewed' | 'error';
+  status: 'initializing' | 'ready' | 'running' | 'waiting' | 'stopped' | 'error';
   statusMessage?: string;
   pid?: number;
   createdAt: string;

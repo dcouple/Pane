@@ -65,11 +65,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [atPasteMode, setAtPasteMode] = useState<'raw' | 'embed'>('raw');
   const [atLineCount, setAtLineCount] = useState(500);
   const [notificationSettings, setNotificationSettings] = useState({
-    enabled: true,
     playSound: true,
-    notifyOnStatusChange: true,
-    notifyOnWaiting: true,
-    notifyOnComplete: true
+    notifyWhenBackgrounded: true,
+    notifyWhenViewingOtherPanel: false
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -34,11 +34,9 @@ export class ConfigManager extends EventEmitter {
       stravuApiKey: undefined,
       stravuServerUrl: '', // Stravu integration disabled
       notifications: {
-        enabled: true,
         playSound: true,
-        notifyOnStatusChange: true,
-        notifyOnWaiting: true,
-        notifyOnComplete: true
+        notifyWhenBackgrounded: true,
+        notifyWhenViewingOtherPanel: false
       },
       sessionCreationPreferences: {
         sessionCount: 1,

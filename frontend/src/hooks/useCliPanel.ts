@@ -331,7 +331,7 @@ export function useCliPanel(
         const mockSession: Session = {
           id: 'mock-session',
           name: 'Mock Session',
-          status: 'waiting',
+          status: 'stopped',
           prompt: '',
           worktreePath: '/mock/path',
           createdAt: new Date().toISOString(),
