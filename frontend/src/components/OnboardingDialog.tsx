@@ -170,7 +170,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
                       Start with Pane as your first project
                     </p>
                     <p className="text-text-secondary text-sm">
-                      Don&apos;t start empty. Try Pane on Pane and start developing right away.
+                      Start developing with Pane.
                     </p>
                   </div>
                 </div>
