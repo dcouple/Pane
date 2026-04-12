@@ -7,7 +7,7 @@ import * as path from 'path';
 import { getShellPath } from '../utils/shellPath';
 import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
-import { getWSLShellSpawn, WSLContext } from '../utils/wslUtils';
+import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
 
 const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
@@ -219,6 +219,29 @@ export class TerminalPanelManager {
     }
     const panePort = 3000 + (Math.abs(portHash) % 600) * 10;
 
+    /**
+     * When spawning into WSL, pty.spawn's `env` sets variables on the wsl.exe
+     * Windows process, which does NOT propagate them to the bash shell inside
+     * the distro. WSLENV is Microsoft's opt-in mechanism: listing a var name
+     * here tells WSL to copy that var's value from the Windows env into the
+     * Linux env at shell startup. Without this, GIT_COMMITTER_* (and every
+     * PANE_* var) silently disappear inside WSL terminals.
+     */
+    const isWSL = !!wslContext && process.platform === 'win32';
+    const wslEnvVars = isWSL
+      ? {
+          WSLENV: buildWSLENV([
+            'GIT_COMMITTER_NAME',
+            'GIT_COMMITTER_EMAIL',
+            'PANE_PORT',
+            'PANE_SESSION_ID',
+            'PANE_PANEL_ID',
+            'WORKTREE_PATH',
+            'PANE_WORKSPACE_PATH',
+          ]),
+        }
+      : {};
+
     // Create PTY process with enhanced environment
     const ptyProcess = pty.spawn(shellPath, shellArgs, {
       name: 'xterm-256color',
@@ -236,7 +259,8 @@ export class TerminalPanelManager {
         PANE_SESSION_ID: panel.sessionId,
         PANE_PANEL_ID: panel.id,
         PANE_PORT: String(panePort),
-        PANE_WORKSPACE_PATH: cwd
+        PANE_WORKSPACE_PATH: cwd,
+        ...wslEnvVars,
       }
     });
     
