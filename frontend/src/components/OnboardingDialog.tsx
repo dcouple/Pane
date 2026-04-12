@@ -56,17 +56,20 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
       const result = await window.electronAPI.onboarding.setupDefaultRepo();
       if (result.success) {
         // Best-effort star during setup when the user opted in and gh is authed.
-        // Star failure must not fail the setup flow.
+        // Fire-and-forget: star failure or latency must not block or delay the
+        // transition to the success screen. When the promise later resolves,
+        // setHasStarred will flip the success-screen copy to "Thanks!".
         if (shouldStarOnSetup && env?.ghAuthenticated) {
-          try {
-            const starResult = await window.electronAPI.onboarding.starRepo();
-            if (starResult.success) {
-              setHasStarred(true);
-              capture('onboarding_repo_starred_during_setup');
-            }
-          } catch {
-            // swallow: star failure is non-fatal
-          }
+          void window.electronAPI.onboarding.starRepo()
+            .then((starResult) => {
+              if (starResult?.success) {
+                setHasStarred(true);
+                capture('onboarding_repo_starred_during_setup');
+              }
+            })
+            .catch(() => {
+              // swallow: star failure is non-fatal
+            });
         }
         setStep('success');
       } else {
