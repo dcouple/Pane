@@ -174,17 +174,17 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
                     </p>
                   </div>
                 </div>
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-surface-secondary hover:bg-surface-hover cursor-pointer transition-colors">
+                <label className="flex items-start gap-2 cursor-pointer w-fit">
                   <input
                     type="checkbox"
                     checked={shouldStarOnSetup}
                     onChange={(e) => setShouldStarOnSetup(e.target.checked)}
-                    className="rounded border-border-primary text-interactive focus:ring-interactive"
+                    className="rounded border-border-primary text-interactive focus:ring-interactive mt-0.5"
                   />
-                  <div className="flex items-center gap-2 flex-1">
-                    <Star className="h-4 w-4 text-text-secondary" />
-                    <span className="text-text-primary text-sm">
-                      Star Pane on GitHub
+                  <div className="flex flex-col">
+                    <span className="text-text-secondary text-xs">Star Pane on GitHub</span>
+                    <span className="text-text-tertiary text-[11px] leading-tight">
+                      Helps other developers discover Pane
                     </span>
                   </div>
                 </label>
