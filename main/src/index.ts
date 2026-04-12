@@ -11,9 +11,10 @@ if (process.platform === 'linux') {
 // Force integrated GPU for better battery life on dual-GPU systems
 app.commandLine.appendSwitch('force_discrete_gpu', '0');
 
-// Set Windows App User Model ID so notifications show "Pane" instead of "electron.app.Pane"
+// Set Windows AUMID to match electron-builder's appId so Windows resolves
+// the installed Start Menu shortcut for notification icon and display name.
 if (process.platform === 'win32') {
-  app.setAppUserModelId('Pane');
+  app.setAppUserModelId('com.dcouple.pane');
 }
 
 // Now import the rest of electron
