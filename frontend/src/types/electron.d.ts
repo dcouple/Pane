@@ -292,6 +292,9 @@ interface ElectronAPI {
     // Process management events
     onZombieProcessesDetected: (callback: (data: { sessionId?: string | null; pids?: number[]; message: string }) => void) => () => void;
 
+    // Window focus state from BrowserWindow (more reliable than document.hasFocus())
+    onWindowFocusChanged: (callback: (focused: boolean) => void) => () => void;
+
     // Spotlight events
     onSpotlightStatusChanged?: (callback: (data: { sessionId: string; projectId: number; active: boolean }) => void) => () => void;
     onSpotlightSyncError?: (callback: (data: { sessionId: string; projectId: number; error: string }) => void) => () => void;
@@ -394,6 +397,11 @@ interface ElectronAPI {
     getSnapshot: () => Promise<IPCResponse>;
     startActive: () => Promise<IPCResponse>;
     stopActive: () => Promise<IPCResponse>;
+  };
+
+  // Window state queries (invoke, not event subscriptions)
+  window: {
+    isFocused: () => Promise<boolean>;
   };
 }
 

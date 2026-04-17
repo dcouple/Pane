@@ -693,6 +693,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('zombie-processes-detected', wrappedCallback);
       return () => ipcRenderer.removeListener('zombie-processes-detected', wrappedCallback);
     },
+
+    // Window focus state from BrowserWindow (more reliable than document.hasFocus())
+    onWindowFocusChanged: (callback: (focused: boolean) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, focused: boolean) => callback(focused);
+      ipcRenderer.on('window:focus-changed', wrappedCallback);
+      return () => ipcRenderer.removeListener('window:focus-changed', wrappedCallback);
+    },
   },
 
   // Panels API for Claude panels and other panel types
@@ -777,6 +784,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSnapshot: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:get-snapshot'),
     startActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:start-active'),
     stopActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:stop-active'),
+  },
+
+  // Window state queries (invoke, not event subscriptions)
+  window: {
+    isFocused: (): Promise<boolean> => ipcRenderer.invoke('window:is-focused') as Promise<boolean>,
   },
 });
 

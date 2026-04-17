@@ -7,8 +7,7 @@ import { Bell, BellOff, Volume2, VolumeX, Zap, Shield } from 'lucide-react';
 
 interface NotificationSettings {
   playSound: boolean;
-  notifyWhenBackgrounded: boolean;
-  notifyWhenViewingOtherPanel: boolean;
+  enabled: boolean;
 }
 
 interface NotificationSettingsProps {
@@ -145,20 +144,12 @@ export function NotificationSettings({ settings, onUpdateSettings }: Notificatio
           icon={<Zap className="w-4 h-4" />}
           spacing="sm"
         >
-          <div className="space-y-3">
-            <ToggleField
-              label="Notify when Pane is in the background"
-              description="Ping me when a panel finishes while I'm using another app"
-              checked={settings.notifyWhenBackgrounded}
-              onChange={(checked) => onUpdateSettings({ notifyWhenBackgrounded: checked })}
-            />
-            <ToggleField
-              label="Notify when viewing a different panel"
-              description="Ping me when a panel finishes while I'm looking at a different one inside Pane"
-              checked={settings.notifyWhenViewingOtherPanel}
-              onChange={(checked) => onUpdateSettings({ notifyWhenViewingOtherPanel: checked })}
-            />
-          </div>
+          <ToggleField
+            label="Desktop notifications"
+            description="Ping me when a panel finishes while Pane is in the background. Stays quiet while Pane is focused."
+            checked={settings.enabled}
+            onChange={(checked) => onUpdateSettings({ enabled: checked })}
+          />
         </SettingsSection>
       </CollapsibleCard>
     </div>

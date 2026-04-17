@@ -819,8 +819,12 @@ async function createWindow() {
     }
   });
 
-  // Handle window focus/blur/minimize for smart git status polling
+  // Handle window focus/blur/minimize for smart git status polling and
+  // renderer-side notification gating. Send focus state to renderer so
+  // useNotifications can use the reliable BrowserWindow source of truth
+  // instead of document.hasFocus() (which lies when DevTools is focused).
   mainWindow.on('focus', () => {
+    mainWindow?.webContents.send('window:focus-changed', true);
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(false); // false = visible/focused
     }
@@ -828,6 +832,7 @@ async function createWindow() {
   });
 
   mainWindow.on('blur', () => {
+    mainWindow?.webContents.send('window:focus-changed', false);
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(true); // true = hidden/blurred
     }
@@ -835,13 +840,21 @@ async function createWindow() {
   });
 
   mainWindow.on('minimize', () => {
+    mainWindow?.webContents.send('window:focus-changed', false);
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(true); // true = hidden/minimized
     }
     resourceMonitorService.handleVisibilityChange(true);
   });
 
+  // Pull-path query so the renderer can get the authoritative focus state on
+  // mount without waiting for the next focus-change event. Default to true
+  // (focused) if mainWindow is somehow null at call time.
+  ipcMain.handle('window:is-focused', () => mainWindow?.isFocused() ?? true);
+
   mainWindow.on('restore', () => {
+    // Don't assume restore = focused. The OS will fire 'focus' if/when the user
+    // actually focuses the window. Keep git/resource hooks as-is.
     if (gitStatusManager) {
       gitStatusManager.handleVisibilityChange(false); // false = visible/restored
     }

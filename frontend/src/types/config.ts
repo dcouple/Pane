@@ -27,8 +27,7 @@ export interface AppConfig {
   uiScale?: number;
   notifications?: {
     playSound: boolean;
-    notifyWhenBackgrounded: boolean;
-    notifyWhenViewingOtherPanel: boolean;
+    enabled: boolean;
   };
   devMode?: boolean;
   sessionCreationPreferences?: {
