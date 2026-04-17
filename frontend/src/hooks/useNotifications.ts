@@ -13,8 +13,7 @@ declare global {
 
 interface NotificationSettings {
   playSound: boolean;
-  notifyWhenBackgrounded: boolean;
-  notifyWhenViewingOtherPanel: boolean;
+  enabled: boolean;
 }
 
 // Extra delay on top of the 5s PTY idle threshold before firing a "finished"
@@ -26,8 +25,7 @@ const NOTIFICATION_DEBOUNCE_MS = 25_000;
 export function useNotifications() {
   const [settings, setSettings] = useState<NotificationSettings>({
     playSound: true,
-    notifyWhenBackgrounded: true,
-    notifyWhenViewingOtherPanel: false,
+    enabled: true,
   });
   const settingsLoaded = useRef(false);
 
@@ -37,6 +35,18 @@ export function useNotifications() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  // Window focus state synced from the main process via IPC. document.hasFocus()
+  // lies when DevTools is focused or another Electron sub-window has focus, so
+  // we use the BrowserWindow.isFocused() source of truth exposed by preload.
+  const windowFocusedRef = useRef<boolean>(typeof document !== 'undefined' ? document.hasFocus() : true);
+
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.events.onWindowFocusChanged((focused) => {
+      windowFocusedRef.current = focused;
+    });
+    return unsubscribe;
+  }, []);
 
   // Track previous activityStatus per panelId to detect active -> idle transitions.
   const prevActivityRef = useRef<Record<string, 'active' | 'idle'>>({});
@@ -138,10 +148,18 @@ export function useNotifications() {
 
   function maybeNotifyPanelIdle(panelId: string) {
     const currentSettings = settingsRef.current;
-    if (!currentSettings.notifyWhenBackgrounded && !currentSettings.notifyWhenViewingOtherPanel) return;
+    if (!currentSettings.enabled) return;
+
+    // Sole gate: window must be blurred. Everything else (same session, same
+    // panel, different panel) is moot if the user can see Pane.
+    if (windowFocusedRef.current) return;
 
     const panelStoreState = usePanelStore.getState();
-    const sessionStoreState = useSessionStore.getState();
+
+    // Re-check idle at fire time. The debounced timer may fire right as the
+    // panel re-activates; without this check we'd ping "finished" for a
+    // panel that is actively running again.
+    if (panelStoreState.activityStatus[panelId] !== 'idle') return;
 
     let foundSessionId: string | undefined;
     let foundPanel: ToolPanel | undefined;
@@ -155,31 +173,13 @@ export function useNotifications() {
     }
     if (!foundSessionId || !foundPanel) return;
 
+    const sessionStoreState = useSessionStore.getState();
     const session = sessionStoreState.sessions.find((s) => s.id === foundSessionId);
     if (!session) return;
 
-    // A panel going idle while the session is in 'waiting' state means
-    // Claude is blocked on user input, not finished. Suppress the
-    // "${panel} finished" notification entirely in that case, otherwise
-    // we would mislead the user into thinking the task completed.
+    // A panel going idle while the session is in 'waiting' state means Claude
+    // is blocked on user input, not finished. Suppress the "finished" ping.
     if (session.status === 'waiting') return;
-
-    const windowFocused = document.hasFocus();
-    const activeSessionId = sessionStoreState.activeSessionId;
-    const activePanelId = panelStoreState.activePanels[foundSessionId];
-
-    const userIsViewingThisPanel =
-      windowFocused &&
-      activeSessionId === foundSessionId &&
-      activePanelId === panelId;
-
-    if (userIsViewingThisPanel) return;
-
-    const shouldFire =
-      (currentSettings.notifyWhenBackgrounded && !windowFocused) ||
-      (currentSettings.notifyWhenViewingOtherPanel && windowFocused && !userIsViewingThisPanel);
-
-    if (!shouldFire) return;
 
     const projectName = session.projectId
       ? projectNamesRef.current.get(session.projectId) ?? ''

@@ -693,6 +693,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('zombie-processes-detected', wrappedCallback);
       return () => ipcRenderer.removeListener('zombie-processes-detected', wrappedCallback);
     },
+
+    // Window focus state from BrowserWindow (more reliable than document.hasFocus())
+    onWindowFocusChanged: (callback: (focused: boolean) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, focused: boolean) => callback(focused);
+      ipcRenderer.on('window:focus-changed', wrappedCallback);
+      return () => ipcRenderer.removeListener('window:focus-changed', wrappedCallback);
+    },
   },
 
   // Panels API for Claude panels and other panel types

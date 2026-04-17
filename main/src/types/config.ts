@@ -40,8 +40,7 @@ export interface AppConfig {
   // Notification settings
   notifications?: {
     playSound: boolean;
-    notifyWhenBackgrounded: boolean;
-    notifyWhenViewingOtherPanel: boolean;
+    enabled: boolean;
   };
   // Dev mode for debugging
   devMode?: boolean;
@@ -102,8 +101,7 @@ export interface UpdateConfigRequest {
   uiScale?: number;
   notifications?: {
     playSound: boolean;
-    notifyWhenBackgrounded: boolean;
-    notifyWhenViewingOtherPanel: boolean;
+    enabled: boolean;
   };
   devMode?: boolean;
   additionalPaths?: string[];

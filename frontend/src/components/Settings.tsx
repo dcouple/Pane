@@ -66,8 +66,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [atLineCount, setAtLineCount] = useState(500);
   const [notificationSettings, setNotificationSettings] = useState({
     playSound: true,
-    notifyWhenBackgrounded: true,
-    notifyWhenViewingOtherPanel: false
+    enabled: true,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

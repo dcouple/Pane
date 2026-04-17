@@ -35,8 +35,7 @@ export class ConfigManager extends EventEmitter {
       stravuServerUrl: '', // Stravu integration disabled
       notifications: {
         playSound: true,
-        notifyWhenBackgrounded: true,
-        notifyWhenViewingOtherPanel: false
+        enabled: true
       },
       sessionCreationPreferences: {
         sessionCount: 1,
@@ -98,14 +97,25 @@ export class ConfigManager extends EventEmitter {
       const data = await fs.readFile(this.configPath, 'utf-8');
       const loadedConfig = JSON.parse(data);
       
+      // Migrate legacy notification fields from older config files.
+      // notifyWhenBackgrounded -> enabled (if enabled is not explicitly set)
+      // notifyWhenViewingOtherPanel is dropped silently.
+      const incomingNotifications = loadedConfig.notifications as (
+        Partial<{ playSound: boolean; enabled: boolean }> &
+        { notifyWhenBackgrounded?: boolean; notifyWhenViewingOtherPanel?: boolean }
+      ) | undefined;
+      const migratedNotifications = incomingNotifications
+        ? {
+            playSound: incomingNotifications.playSound ?? this.config.notifications!.playSound,
+            enabled: incomingNotifications.enabled ?? incomingNotifications.notifyWhenBackgrounded ?? this.config.notifications!.enabled,
+          }
+        : this.config.notifications!;
+
       // Merge loaded config with defaults, ensuring nested settings exist
       this.config = {
         ...this.config,
         ...loadedConfig,
-        notifications: {
-          ...this.config.notifications,
-          ...loadedConfig.notifications
-        },
+        notifications: migratedNotifications,
         sessionCreationPreferences: {
           ...this.config.sessionCreationPreferences,
           ...loadedConfig.sessionCreationPreferences,
