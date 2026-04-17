@@ -847,6 +847,11 @@ async function createWindow() {
     resourceMonitorService.handleVisibilityChange(true);
   });
 
+  // Pull-path query so the renderer can get the authoritative focus state on
+  // mount without waiting for the next focus-change event. Default to true
+  // (focused) if mainWindow is somehow null at call time.
+  ipcMain.handle('window:is-focused', () => mainWindow?.isFocused() ?? true);
+
   mainWindow.on('restore', () => {
     // Don't assume restore = focused. The OS will fire 'focus' if/when the user
     // actually focuses the window. Keep git/resource hooks as-is.

@@ -785,6 +785,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     startActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:start-active'),
     stopActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:stop-active'),
   },
+
+  // Window state queries (invoke, not event subscriptions)
+  window: {
+    isFocused: (): Promise<boolean> => ipcRenderer.invoke('window:is-focused') as Promise<boolean>,
+  },
 });
 
 // Expose electron event listeners and utilities for permission requests

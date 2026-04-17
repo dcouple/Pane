@@ -42,6 +42,17 @@ export function useNotifications() {
   const windowFocusedRef = useRef<boolean>(typeof document !== 'undefined' ? document.hasFocus() : true);
 
   useEffect(() => {
+    // Pull authoritative initial state from the main process. document.hasFocus()
+    // is a cold-start fallback; if DevTools or another Electron sub-window owns
+    // DOM focus at mount time, document.hasFocus() returns false even though
+    // BrowserWindow.isFocused() is true. Without this pull, no focus event
+    // fires until the next focus change, and notifications misfire in between.
+    window.electronAPI.window.isFocused().then((focused) => {
+      windowFocusedRef.current = focused;
+    }).catch(() => {
+      // Leave the document.hasFocus() bootstrap in place on IPC failure.
+    });
+
     const unsubscribe = window.electronAPI.events.onWindowFocusChanged((focused) => {
       windowFocusedRef.current = focused;
     });

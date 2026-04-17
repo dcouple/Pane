@@ -398,6 +398,11 @@ interface ElectronAPI {
     startActive: () => Promise<IPCResponse>;
     stopActive: () => Promise<IPCResponse>;
   };
+
+  // Window state queries (invoke, not event subscriptions)
+  window: {
+    isFocused: () => Promise<boolean>;
+  };
 }
 
 interface CloudVmState {
