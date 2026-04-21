@@ -49,6 +49,22 @@ For each group:
    - If the resolution is **ambiguous** (e.g., both sides changed the same logic, semantic conflicts), show the user the conflict with context and ask them how to resolve it. Wait for their response before continuing.
 4. After rebase completes, verify with `git log --oneline -10` that history looks correct.
 
+## Step 2.5: Generate Production Migration SQL (If Schema Changed)
+
+Check if `apps/api/src/shared/db/schema.ts` was modified in any commit on this branch (vs origin/main):
+
+```bash
+git diff origin/main...HEAD --name-only | grep schema.ts
+```
+
+If schema.ts was changed:
+1. Run `npm run db:diff:prod` and capture the actual output SQL.
+2. Wrap it in a transaction block (`BEGIN; ... COMMIT;`).
+3. Include the **actual SQL** in the PR description under the **Schema Changes** section — not instructions to run a command.
+4. Only include additive SQL (CREATE, ADD). If destructive SQL (DROP, ALTER type) appears, flag it for the user to review and confirm.
+
+If schema.ts was NOT changed, omit the **Schema Changes** section from the PR template entirely.
+
 ## Step 3: Build and Fix Errors
 
 Run both builds and fix any errors:
@@ -113,6 +129,25 @@ Build the PR description from the done-plans. List work in **chronological order
 ### 3. [Plan/Feature Name from latest done-plan]
 - Key changes and what they accomplish
 
+## Pre-Merge Testing
+- [ ] [Short, specific thing to test based on the changes — e.g., "Verify new endpoint returns 200 with valid payload"]
+- [ ] [Another key behavior to verify]
+- [ ] [Edge case or integration point worth checking]
+
+## Schema Changes
+<!-- Only include this section if schema.ts was modified -->
+- [ ] Migration SQL reviewed
+- [ ] Migration applied to staging
+- [ ] Migration applied to production
+
+### Production Migration SQL
+⚠️ Run this SQL against the production database BEFORE deploying:
+```sql
+BEGIN;
+-- actual generated SQL from npm run db:diff:prod goes here
+COMMIT;
+```
+
 ## Build Verification
 - [x] `npx nx build @doozy/webapp` passes
 - [x] `npx nx build @doozy/api` passes
@@ -126,24 +161,7 @@ Use `$ARGUMENTS` as the PR title if provided, otherwise derive one from the done
    - Use `--force-with-lease` since we rebased (safer than `--force`).
 2. If `--force-with-lease` fails (remote has new commits not in local), tell the user and ask how to proceed.
 
-## Step 6: Codex Review Loop
-
-Run `codex review --base main` in a subagent and read its full output.
-
-### Review loop
-
-1. Launch a **Bash subagent** (via the Task tool) that runs `codex review --base main` in the repo root. Wait for the full output.
-2. Read the response carefully.
-3. **If codex reports issues**:
-   - Fix every issue it raised in the codebase.
-   - Commit the fixes: `fix: address codex review feedback`
-   - Push: `git push origin <branch>`
-   - Go back to step 1 — run `codex review --base main` again.
-4. **If codex reports no issues** (e.g., "no defects", "no issues", "changes appear consistent"), the loop is done. Move on.
-
-**Important**: Do not summarize or skip the codex output. Read it in full each iteration so you can act on every finding.
-
-## Step 7: Summary
+## Step 6: Summary
 
 Present the final result:
 
@@ -156,8 +174,6 @@ Commits:
 Build:
   webapp: PASS
   api: PASS
-
-Codex Review: PASS (no issues)
 
 PR: <url>
 Branch: <branch name> (rebased on main)

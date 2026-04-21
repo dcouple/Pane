@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Conducts comprehensive technical research using web sources and codebase analysis. Compiles detailed, actionable documentation with citations.
-model: sonnet
+model: opus
 color: green
 ---
 
