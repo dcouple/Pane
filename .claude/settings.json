@@ -1,6 +1,19 @@
 {
     "$schema": "https://json.schemastore.org/claude-code-settings.json",
     "includeCoAuthoredBy": false,
+    "hooks": {
+        "PreToolUse": [
+            {
+                "matcher": "Bash",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-terraform-destructive.sh"
+                    }
+                ]
+            }
+        ]
+    },
     "statusLine": {
         "type": "command",
         "command": "bash .claude/statusline-command.sh"

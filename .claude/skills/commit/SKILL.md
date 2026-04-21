@@ -6,13 +6,13 @@ argument-hint: "[optional: commit message or description of what to commit]"
 
 # Commit Agent
 
-Selectively commit changes from this session, ignoring unrelated modifications.
+Commit only the changes you made in this session to the local branch. Ignore all other changes. **Do not ask for confirmation at any step — just classify, stage, commit, and report.**
 
 ## Step 1: Understand What Was Done
 
-Gather context about what was implemented:
+Gather context about what you implemented:
 1. Check for plans in `./tmp/done-plans/` and `./tmp/ready-plans/` — if any exist, read them for file lists and feature descriptions.
-2. If no plans exist, use the conversation history to understand what files were created or modified and why.
+2. If no plans exist, use the conversation history to understand what files you created or modified and why.
 3. If `$ARGUMENTS` is provided and does NOT match the `type: description` commit message format, use it as additional context for what should be committed (it will be used for classification in Step 3, not as the commit message).
 
 ## Step 2: Inspect All Changes
@@ -23,40 +23,29 @@ Gather context about what was implemented:
 
 ## Step 3: Classify Changes
 
-For each changed file (whether staged or unstaged), determine if it's **relevant** or **unrelated**:
+For each changed file (whether staged or unstaged), determine if it was changed **by you in this session** or not:
 
-**Relevant** — changes that match work done in this session:
-- Files explicitly created or edited during the conversation
-- Files referenced in plans (done-plans or ready-plans)
-- Supporting changes (imports, types, config) that are clearly tied to the main work
-- `./tmp/done-plans/` files and `./tmp/context.md` changes associated with the work
+**Your changes** — include these:
+- Files you explicitly created or edited during this conversation
+- Files referenced in plans you implemented (done-plans or ready-plans)
+- Supporting changes (imports, types, config) that are clearly tied to your work
+- `./tmp/done-plans/` files and `./tmp/context.md` changes associated with your work
 
-**Unrelated** — changes that don't match:
-- Files not discussed or touched in the conversation
+**Not your changes** — skip these entirely:
+- Files you did not touch in this conversation
 - Pre-existing modifications from before the session
-- Changes from other agents or manual edits unrelated to the current task
+- Changes from other agents or manual edits unrelated to your task
 - Unrelated `./tmp/` files (research notes, other plans)
 
-When in doubt, **ask the user** rather than guessing.
+When in doubt, include the file rather than leaving it out.
 
-If zero files are classified as relevant, tell the user that no changes match the current session's work and stop.
+If zero files are classified as yours, tell the user that no changes match this session's work and stop.
 
-Present the classification to the user and wait for their confirmation before proceeding:
-
-```
-Relevant changes (will commit):
-  - path/to/file1.ts — [brief reason]
-  - path/to/file2.ts — [brief reason]
-
-Skipped changes (not committing):
-  - path/to/other.ts — [brief reason]
-```
-
-If the user wants to adjust the classification, update accordingly.
+**Do not present the classification for confirmation. Proceed directly to staging.**
 
 ## Step 4: Stage and Verify
 
-1. `git add <specific files>` — only the relevant files from Step 3. **Never** `git add .` or `git add -A`.
+1. `git add <specific files>` — only the files you changed. **Never** `git add .` or `git add -A`.
 2. Review the staged diff (`git diff --cached`) for secrets or credentials:
    - API keys, tokens, passwords
    - .env files or credential files
@@ -65,12 +54,14 @@ If the user wants to adjust the classification, update accordingly.
 
 ## Step 5: Create the Commit
 
+Do not ask for confirmation. Just create the commit.
+
 1. Write a commit message:
    - If `$ARGUMENTS` matches the `type: description` format (e.g., `feat: add commit skill`), use it verbatim as the commit message.
    - Otherwise, derive a message from the work context.
    - Format: `type: short description` (feat, fix, refactor, docs, chore). Under 72 characters. Imperative mood.
    - Add a body with bullet points if the commit covers multiple logical changes.
-2. Create the commit.
+2. Create the commit to the local branch. Do not push.
 
 ## Step 6: Report
 
