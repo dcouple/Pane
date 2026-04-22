@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Executes implementation plans systematically with quality checks. Takes structured plans and implements them while following project standards.
-model: sonnet
+model: opus
 color: cyan
 ---
 
