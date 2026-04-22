@@ -14,6 +14,7 @@ import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { AbstractCliManager } from '../cli/AbstractCliManager';
 import { withLock } from '../../../utils/mutex';
 import { getAppDirectory } from '../../../utils/appDirectory';
+import { escapeForBash } from '../../../utils/wslUtils';
 
 // Extend global object for MCP configuration storage  
 interface GlobalMcpStorage {
@@ -534,8 +535,22 @@ export class ClaudeCodeManager extends AbstractCliManager {
     });
   }
 
-  // Claude now uses the base class spawnPtyProcess with Node.js fallback
-  // No override needed - the base class handles everything
+  // Claude uses the base class spawnPtyProcess with Node.js fallback. The only
+  // hook we override is wrapSpawnArgs so that on Unix the Bun-compiled Claude
+  // binary (v2.1.113+) launches under `sh -c 'exec …'` — the shell resets fd
+  // and signal state before Bun loads, which avoids Electron main's libuv fds,
+  // V8 inspector sockets, renderer-IPC pipes, and (on macOS) Mach exception
+  // ports leaking into Claude's process. Windows stays on the existing
+  // Node-fallback path in AbstractCliManager.
+  protected wrapSpawnArgs(
+    cmd: string,
+    args: string[],
+    env: { [key: string]: string }
+  ): { cmd: string; args: string[]; env: { [key: string]: string } } {
+    if (process.platform === 'win32') return { cmd, args, env };
+    const line = [cmd, ...args].map(escapeForBash).join(' ');
+    return { cmd: '/bin/sh', args: ['-c', `exec ${line}`], env };
+  }
 
   // Implementation of abstract methods from AbstractCliManager
 
