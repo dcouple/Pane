@@ -98,6 +98,20 @@ export abstract class AbstractCliManager extends EventEmitter {
   protected abstract buildCommandArgs(options: CliSpawnOptions): string[];
 
   /**
+   * Optionally rewrite the resolved spawn tuple (command, args, env) immediately
+   * before `spawnPtyProcess` is called. Default is identity. Subclasses override
+   * when the target binary needs a sanitized parent process (e.g. wrapping the
+   * Bun-compiled Claude CLI in `sh -c 'exec …'` to reset fd/signal inheritance).
+   */
+  protected wrapSpawnArgs(
+    cmd: string,
+    args: string[],
+    env: { [key: string]: string }
+  ): { cmd: string; args: string[]; env: { [key: string]: string } } {
+    return { cmd, args, env };
+  }
+
+  /**
    * Get the CLI executable path (custom or from PATH)
    */
   protected abstract getCliExecutablePath(): Promise<string>;
@@ -177,8 +191,12 @@ export abstract class AbstractCliManager extends EventEmitter {
       this.logger?.info(`[${this.getCliToolName()}-command] Working directory: ${worktreePath}`);
       this.logger?.info(`[${this.getCliToolName()}-command] Environment vars: ${Object.keys(cliEnv).join(', ')}`);
 
+      // Allow subclasses to wrap the resolved spawn tuple (e.g. sh -c 'exec …'
+      // on Unix for the Claude Bun-native binary). Default is identity.
+      const { cmd: finalCmd, args: finalArgs, env: finalEnv } = this.wrapSpawnArgs(cliCommand, args, env);
+
       // Spawn the process
-      const ptyProcess = await this.spawnPtyProcess(cliCommand, args, worktreePath, env);
+      const ptyProcess = await this.spawnPtyProcess(finalCmd, finalArgs, worktreePath, finalEnv);
 
       // Create process record
       const cliProcess: CliProcess = {

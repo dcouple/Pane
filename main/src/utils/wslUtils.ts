@@ -42,7 +42,7 @@ export async function getWSLHome(distro: string): Promise<string | null> {
  * expansion. Safe on Windows because the escaped string goes inside a bash -c
  * argument passed to wsl.exe — it never touches cmd.exe or PowerShell.
  */
-function escapeForBash(value: string): string {
+export function escapeForBash(value: string): string {
   if (!value) return "''";
   return "'" + value.replace(/'/g, "'\\''") + "'";
 }
