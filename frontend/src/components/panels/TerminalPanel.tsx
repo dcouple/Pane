@@ -140,10 +140,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Tell main when this panel's visibility changes so PTY output cadence
   // can drop to 250 ms while hidden and snap back to 32 ms when shown.
-  // Not gated on isInitialized — the main handler is no-op for unknown panel IDs.
+  // Gate on isInitialized so panels that mount inactive (hidden background
+  // sessions) actually deliver the signal — main's no-op-on-missing guard
+  // would drop it otherwise. isInitialized in deps ensures re-fire with the
+  // current isActive the moment the PTY exists.
   useEffect(() => {
+    if (!isInitialized) return;
     window.electronAPI.invoke('terminal:setVisibility', panel.id, isActive);
-  }, [isActive, panel.id]);
+  }, [isActive, panel.id, isInitialized]);
 
   // Terminal link handling hook
   const {
