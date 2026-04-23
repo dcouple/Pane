@@ -138,6 +138,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     }
   }, [isActive, panel.id]);
 
+  // Tell main when this panel's visibility changes so PTY output cadence
+  // can drop to 250 ms while hidden and snap back to 32 ms when shown.
+  // Not gated on isInitialized — the main handler is no-op for unknown panel IDs.
+  useEffect(() => {
+    window.electronAPI.invoke('terminal:setVisibility', panel.id, isActive);
+  }, [isActive, panel.id]);
+
   // Terminal link handling hook
   const {
     onMouseMove,
@@ -1059,7 +1066,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     // Not when just switching tabs
     return () => {
       disposed = true;
-      
+
+      // Synchronously push hidden cadence so backgrounded-session unmount
+      // and unmount-during-init both reliably reach main. The inner cleanup
+      // below is deferred via cleanupPromise.then(...) and may never run if
+      // unmount happens before init resolves.
+      window.electronAPI.invoke('terminal:setVisibility', panel.id, false);
+
       // Clean up async initialization
       cleanupPromise.then(cleanupFn => cleanupFn?.());
 

@@ -13,6 +13,7 @@ import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
 const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
 const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
+const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
@@ -34,6 +35,8 @@ interface TerminalProcess {
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
+  // Visibility-driven cadence: true → OUTPUT_BATCH_INTERVAL, false → OUTPUT_BATCH_INTERVAL_HIDDEN
+  isVisible: boolean;
   // Alternate screen buffer tracking — universal TUI detection signal
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
@@ -145,6 +148,18 @@ export class TerminalPanelManager {
         clearTimeout(terminal.pauseSafetyTimer);
         terminal.pauseSafetyTimer = null;
       }
+    }
+  }
+
+  setVisibility(panelId: string, isVisible: boolean): void {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return;
+    const wasVisible = terminal.isVisible;
+    terminal.isVisible = isVisible;
+    if (!wasVisible && isVisible) {
+      // hidden → visible: flush any buffered output immediately so the user
+      // sees catch-up content without waiting for the next 250 ms tick.
+      this.flushOutputBuffer(terminal);
     }
   }
 
@@ -279,6 +294,7 @@ export class TerminalPanelManager {
       pauseSafetyTimer: null,
       outputBuffer: '',
       outputFlushTimer: null,
+      isVisible: true,
       isAlternateScreen: false,
       activityStatus: 'idle',
       idleTimer: null,
@@ -559,10 +575,14 @@ export class TerminalPanelManager {
         // Buffer is large enough — flush immediately
         this.flushOutputBuffer(terminal);
       } else if (!terminal.outputFlushTimer) {
-        // Schedule flush for next frame
+        // Schedule flush for next frame. Hidden panels use a slower cadence
+        // to cut main-process IPC wake-ups; foreground panels keep 32 ms.
+        const interval = terminal.isVisible
+          ? OUTPUT_BATCH_INTERVAL
+          : OUTPUT_BATCH_INTERVAL_HIDDEN;
         terminal.outputFlushTimer = setTimeout(() => {
           this.flushOutputBuffer(terminal);
-        }, OUTPUT_BATCH_INTERVAL);
+        }, interval);
       }
     });
     
