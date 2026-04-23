@@ -37,7 +37,7 @@ import { Logger } from './utils/logger';
 import { ArchiveProgressManager } from './services/archiveProgressManager';
 import { AnalyticsManager } from './services/analyticsManager';
 import { SpotlightManager } from './services/spotlightManager';
-import { ScrollbackRetentionService } from './services/scrollbackRetention';
+import { startupRetentionResult } from './services/database';
 import { resourceMonitorService } from './services/resourceMonitorService';
 import { setAppDirectory, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
@@ -870,7 +870,22 @@ async function initializeServices() {
   // Initialize logger early so it can capture all logs
   logger = new Logger(configManager);
   console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
-  
+
+  // Log the scrollback retention result captured at database module load.
+  // The sweep itself runs before panelManager's constructor caches rows into
+  // RAM (see services/database.ts), so by the time we reach here the DB is
+  // already trimmed and the panel cache is built from the trimmed state.
+  if (startupRetentionResult.error) {
+    logger.error('[ScrollbackRetention] Sweep failed', startupRetentionResult.error);
+  } else if (startupRetentionResult.result && startupRetentionResult.result.panelsCleared > 0) {
+    const r = startupRetentionResult.result;
+    logger.info(
+      `[ScrollbackRetention] Cleared ${r.panelsCleared} panels across ` +
+      `${r.sessionsTouched} sessions, freed ~${(r.bytesFreed / 1_000_000).toFixed(1)} MB`
+    );
+  }
+
+
   // Use the same database path as the original backend
   const dbPath = configManager.getDatabasePath();
   databaseService = new DatabaseService(dbPath);
@@ -1107,25 +1122,7 @@ app.whenReady().then(async () => {
     await versionChecker.checkOnStartup();
   }, 1000); // Small delay to ensure window is fully ready
 
-  // Scrollback retention sweep: clears $.customState.scrollbackBuffer from
-  // tool_panels rows whose session is archived and stale. Deferred so it
-  // doesn't contend with window-ready work. See briefs/wsl-performance-bg-cost.md.
-  setTimeout(() => {
-    try {
-      const retentionService = new ScrollbackRetentionService(databaseService);
-      const result = retentionService.runRetentionSweep();
-      if (result.panelsCleared > 0) {
-        logger.info(
-          `[ScrollbackRetention] Cleared ${result.panelsCleared} panels across ` +
-          `${result.sessionsTouched} sessions, freed ~${(result.bytesFreed / 1_000_000).toFixed(1)} MB`
-        );
-      }
-    } catch (error) {
-      logger.error('[ScrollbackRetention] Sweep failed', error instanceof Error ? error : new Error(String(error)));
-    }
-  }, 3000);
-
-  // Initialize worktree pool — cleanup orphans and seed reserves
+// Initialize worktree pool — cleanup orphans and seed reserves
   setTimeout(async () => {
     try {
       const projects = databaseService.getAllProjects();
