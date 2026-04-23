@@ -30,19 +30,28 @@ export class ScrollbackRetentionService {
 
     const sizeRow = sqlite
       .prepare(
-        `SELECT COALESCE(SUM(LENGTH(json_extract(state, '$.customState.scrollbackBuffer'))), 0) AS bytes
+        `SELECT COALESCE(SUM(
+           COALESCE(LENGTH(json_extract(state, '$.customState.scrollbackBuffer')), 0) +
+           COALESCE(LENGTH(json_extract(state, '$.customState.serializedBuffer')), 0)
+         ), 0) AS bytes
          FROM tool_panels
          WHERE session_id IN (SELECT value FROM json_each(?))
-           AND json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL`
+           AND (
+             json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL
+             OR json_extract(state, '$.customState.serializedBuffer') IS NOT NULL
+           )`
       )
       .get(idsJson) as { bytes: number };
 
     const result = sqlite
       .prepare(
         `UPDATE tool_panels
-         SET state = json_remove(state, '$.customState.scrollbackBuffer')
+         SET state = json_remove(state, '$.customState.scrollbackBuffer', '$.customState.serializedBuffer')
          WHERE session_id IN (SELECT value FROM json_each(?))
-           AND json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL`
+           AND (
+             json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL
+             OR json_extract(state, '$.customState.serializedBuffer') IS NOT NULL
+           )`
       )
       .run(idsJson);
 

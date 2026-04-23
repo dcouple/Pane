@@ -10,11 +10,13 @@ import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
 
-const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
+const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this (visible panels)
+const HIGH_WATERMARK_HIDDEN = 300_000; // 300KB — raised watermark for hidden panels so the slower 250ms cadence doesn't trigger pause/resume churn on verbose builds
 const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
+const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap per-flush size on hidden panels below HIGH_WATERMARK so a single flush can't trip backpressure; high-throughput jobs degrade to size-driven flushes
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 5_000; // 5s — mark panel idle after no PTY output
@@ -116,8 +118,10 @@ export class TerminalPanelManager {
       });
     }
 
-    // Apply backpressure if watermark exceeded
-    if (terminal.pendingBytes > HIGH_WATERMARK && !terminal.isPaused) {
+    // Apply backpressure if watermark exceeded. Hidden panels get a higher
+    // watermark to absorb the 250ms cadence without constant pause/resume.
+    const watermark = terminal.isVisible ? HIGH_WATERMARK : HIGH_WATERMARK_HIDDEN;
+    if (terminal.pendingBytes > watermark && !terminal.isPaused) {
       terminal.isPaused = true;
       terminal.pty.pause();
 
@@ -571,7 +575,10 @@ export class TerminalPanelManager {
       // Buffer output for batching instead of sending immediately
       terminal.outputBuffer += filtered;
 
-      if (terminal.outputBuffer.length >= OUTPUT_BATCH_SIZE) {
+      // Hidden panels cap per-flush size below HIGH_WATERMARK so a single
+      // flush on a verbose background build can't alone trip backpressure.
+      const sizeThreshold = terminal.isVisible ? OUTPUT_BATCH_SIZE : OUTPUT_BATCH_SIZE_HIDDEN;
+      if (terminal.outputBuffer.length >= sizeThreshold) {
         // Buffer is large enough — flush immediately
         this.flushOutputBuffer(terminal);
       } else if (!terminal.outputFlushTimer) {
