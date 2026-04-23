@@ -108,6 +108,12 @@ export class DatabaseService {
     });
   }
 
+  // Raw better-sqlite3 handle for services that need to issue ad-hoc queries
+  // (e.g. retention sweeps) without adding one-off methods to this facade.
+  getDb(): Database.Database {
+    return this.db;
+  }
+
   initialize(): void {
     this.initializeSchema();
     this.runMigrations();

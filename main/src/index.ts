@@ -37,6 +37,7 @@ import { Logger } from './utils/logger';
 import { ArchiveProgressManager } from './services/archiveProgressManager';
 import { AnalyticsManager } from './services/analyticsManager';
 import { SpotlightManager } from './services/spotlightManager';
+import { ScrollbackRetentionService } from './services/scrollbackRetention';
 import { resourceMonitorService } from './services/resourceMonitorService';
 import { setAppDirectory, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
@@ -997,25 +998,38 @@ async function initializeServices() {
   // Then set up event listeners that may rely on initialized managers
   setupEventListeners(services, () => mainWindow);
   
-  // Register console logging IPC handler for development
-  if (isDevelopment) {
-    ipcMain.handle('console:log', (event, logData) => {
-      const { level, args, timestamp, source } = logData;
-      const message = args.join(' ');
+  // Console log IPC handler. The preload console wrapper (dev-only) forwards
+  // every renderer console call here for frontend-debug.log capture. Renderer
+  // callers can also invoke this directly and set `toMainLog: true` to also
+  // land the message in the main Logger's pane-*.log — used for surfacing
+  // WebGL lifecycle events so ARM-Windows validation can confirm WebGL loaded
+  // in production builds, where the preload wrapper is inactive.
+  ipcMain.handle('console:log', (_event, logData: { level: string; args: string[]; timestamp: string; source: string; toMainLog?: boolean }) => {
+    const { level, args, timestamp, source, toMainLog } = logData;
+    const message = args.join(' ');
+
+    if (isDevelopment) {
       const logLine = `[${timestamp}] [${source.toUpperCase()} ${level.toUpperCase()}] ${message}\n`;
-      
-      // Write to debug log file
       const debugLogPath = path.join(process.cwd(), 'frontend-debug.log');
       try {
         fs.appendFileSync(debugLogPath, logLine);
       } catch (error) {
         console.error('Failed to write console log to debug file:', error);
       }
-      
-      // Also log to main console with prefix
       console.log(`[Frontend ${level}] ${message}`);
-    });
-  }
+    }
+
+    if (toMainLog) {
+      const forwarded = `[${source}] ${message}`;
+      if (level === 'error') {
+        logger.error(forwarded);
+      } else if (level === 'warn') {
+        logger.warn(forwarded);
+      } else {
+        logger.info(forwarded);
+      }
+    }
+  });
   
   // Start periodic version checking (only if enabled in settings)
   versionChecker.startPeriodicCheck();
@@ -1092,6 +1106,24 @@ app.whenReady().then(async () => {
     console.log('[Main] Performing startup version check...');
     await versionChecker.checkOnStartup();
   }, 1000); // Small delay to ensure window is fully ready
+
+  // Scrollback retention sweep: clears $.customState.scrollbackBuffer from
+  // tool_panels rows whose session is archived and stale. Deferred so it
+  // doesn't contend with window-ready work. See briefs/wsl-performance-bg-cost.md.
+  setTimeout(() => {
+    try {
+      const retentionService = new ScrollbackRetentionService(databaseService);
+      const result = retentionService.runRetentionSweep();
+      if (result.panelsCleared > 0) {
+        logger.info(
+          `[ScrollbackRetention] Cleared ${result.panelsCleared} panels across ` +
+          `${result.sessionsTouched} sessions, freed ~${(result.bytesFreed / 1_000_000).toFixed(1)} MB`
+        );
+      }
+    } catch (error) {
+      logger.error('[ScrollbackRetention] Sweep failed', error instanceof Error ? error : new Error(String(error)));
+    }
+  }, 3000);
 
   // Initialize worktree pool — cleanup orphans and seed reserves
   setTimeout(async () => {

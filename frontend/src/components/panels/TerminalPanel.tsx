@@ -121,6 +121,23 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     isActiveRef.current = isActive;
   }, [isActive]);
 
+  // Replaces the old 30 s snapshot interval: fire once on active-to-inactive
+  // transitions (tab switches / panel hides). The dispose-time snapshot in the
+  // terminal init effect stays as a backstop for full unmount.
+  const wasActiveRef = useRef(isActive);
+  useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = isActive;
+    if (wasActive && !isActive && serializeAddonRef.current) {
+      try {
+        const serialized = serializeAddonRef.current.serialize();
+        window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
+      } catch {
+        // xterm buffer in a bad state — not worth surfacing
+      }
+    }
+  }, [isActive, panel.id]);
+
   // Terminal link handling hook
   const {
     onMouseMove,
@@ -419,6 +436,25 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           console.log('[TerminalPanel] FitAddon fitted');
           terminal.options.theme = getTerminalTheme();
 
+          // Forward WebGL lifecycle events through the existing console:log IPC
+          // so they land in the main-process pane-*.log. The renderer console
+          // calls stay in place for DevTools visibility; this wrapper adds the
+          // toMainLog flag so the main handler knows to route to Logger (needed
+          // in production, where the preload console wrapper is inactive).
+          const forwardToMainLog = (level: 'info' | 'warn', message: string) => {
+            try {
+              window.electronAPI.invoke('console:log', {
+                level,
+                args: [message],
+                timestamp: new Date().toISOString(),
+                source: 'renderer',
+                toMainLog: true,
+              });
+            } catch {
+              // IPC failure shouldn't break terminal init
+            }
+          };
+
           // Try loading WebGL renderer for GPU-accelerated rendering
           try {
             const { WebglAddon: WebglAddonImpl } = await import('@xterm/addon-webgl');
@@ -426,15 +462,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
               const addon = new WebglAddonImpl();
               addon.onContextLoss(() => {
                 console.warn('[TerminalPanel] WebGL context lost for panel', panel.id, ', falling back to DOM renderer');
+                forwardToMainLog('warn', `[TerminalPanel] WebGL context lost for panel ${panel.id}, falling back to DOM renderer`);
                 try { addon.dispose(); } catch { /* already disposed */ }
                 webglAddonRef.current = null;
               });
               terminal.loadAddon(addon);
               webglAddonRef.current = addon;
               console.log('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
+              forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id}`);
             }
           } catch (e) {
             console.warn('[TerminalPanel] WebGL renderer failed for panel', panel.id, ', using DOM renderer:', e);
+            forwardToMainLog('warn', `[TerminalPanel] WebGL renderer failed for panel ${panel.id}, using DOM renderer: ${e instanceof Error ? e.message : String(e)}`);
             webglAddonRef.current = null;
           }
 
@@ -544,19 +583,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             }
           };
 
-          // Periodically save serialized snapshot so it's available on app quit
-          // (main process can't call SerializeAddon — only the renderer can)
-          const SNAPSHOT_INTERVAL = 30_000; // 30 seconds
-          const snapshotInterval = setInterval(() => {
-            if (serializeAddonRef.current && terminal && !disposed) {
-              try {
-                const serialized = serializeAddonRef.current.serialize();
-                window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
-              } catch {
-                // Serialization can fail if terminal is in a bad state — ignore
-              }
-            }
-          }, SNAPSHOT_INTERVAL);
+          // Snapshot persistence: see the active-to-inactive effect below and
+          // the dispose-time snapshot in this effect's cleanup. The previous
+          // 30 s interval was removed to stop hidden panels from doing a full
+          // buffer walk + IPC payload once per half-minute for no visible gain.
 
           // Restore scrollback if we have saved state FOR THIS PANEL
           // When the PTY is alive (initialized === true), always prefer raw scrollback
@@ -1002,7 +1032,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             disposed = true;
             interceptor.dispose();
             interceptorRef.current = null;
-            clearInterval(snapshotInterval);
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
             resizeObserver.disconnect();
