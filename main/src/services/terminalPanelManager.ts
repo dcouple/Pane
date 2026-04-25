@@ -20,12 +20,15 @@ const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap per-flush size on hidde
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 5_000; // 5s — mark panel idle after no PTY output
+const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
+const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
 
 interface TerminalProcess {
   pty: pty.IPty;
   panelId: string;
   sessionId: string;
   scrollbackBuffer: string;
+  alternateScreenBuffer: string;
   commandHistory: string[];
   currentCommand: string;
   lastActivity: Date;
@@ -94,6 +97,50 @@ export class TerminalPanelManager {
       this.activeSpawns++;
       next.resolve();
     }
+  }
+
+  private trimAnsiSafe(buffer: string, maxSize: number): string {
+    if (buffer.length <= maxSize) return buffer;
+
+    let start = buffer.length - maxSize;
+
+    // Prefer a line boundary so replay starts from a sane row.
+    const nextNewline = buffer.indexOf('\n', start);
+    if (nextNewline !== -1 && nextNewline < buffer.length - 1) {
+      start = nextNewline + 1;
+    }
+
+    // If the cut lands inside a common ANSI escape sequence, advance past it.
+    const lastEsc = buffer.lastIndexOf('\x1b', start);
+    if (lastEsc !== -1) {
+      let sequenceEnd = -1;
+      const introducer = buffer[lastEsc + 1];
+
+      if (introducer === '[') {
+        const finalByte = buffer.slice(lastEsc + 2).search(/[@-~]/);
+        sequenceEnd = finalByte === -1 ? -1 : lastEsc + 2 + finalByte;
+      } else if (introducer === ']') {
+        const belEnd = buffer.indexOf('\x07', lastEsc + 2);
+        const stEnd = buffer.indexOf('\x1b\\', lastEsc + 2);
+        if (belEnd !== -1 && stEnd !== -1) {
+          sequenceEnd = Math.min(belEnd, stEnd + 1);
+        } else if (belEnd !== -1) {
+          sequenceEnd = belEnd;
+        } else if (stEnd !== -1) {
+          sequenceEnd = stEnd + 1;
+        }
+      } else if (introducer) {
+        sequenceEnd = lastEsc + 1;
+      }
+
+      if (sequenceEnd === -1) {
+        start = buffer.length;
+      } else if (sequenceEnd >= start) {
+        start = sequenceEnd + 1;
+      }
+    }
+
+    return buffer.slice(start);
   }
 
   private flushOutputBuffer(terminal: TerminalProcess): void {
@@ -311,6 +358,7 @@ export class TerminalPanelManager {
       panelId: panel.id,
       sessionId: panel.sessionId,
       scrollbackBuffer: '',
+      alternateScreenBuffer: '',
       commandHistory: [],
       currentCommand: '',
       lastActivity: new Date(),
@@ -557,7 +605,9 @@ export class TerminalPanelManager {
       // Strip \x1b[2J inside DEC 2026 sync blocks before xterm.js sees the data
       const filtered = this.filterSyncBlockClears(terminal, data);
 
-      // Add to scrollback buffer
+      // Keep TUI redraw traffic separate from durable shell scrollback. Full-screen
+      // apps emit high-volume cursor/clear sequences that are useful only as a
+      // recent visual frame and should not evict normal history.
       this.addToScrollback(terminal, filtered);
 
       // Detect commands (simple heuristic - look for carriage returns)
@@ -654,15 +704,18 @@ export class TerminalPanelManager {
   }
   
   private addToScrollback(terminal: TerminalProcess, data: string): void {
-    // Add raw data to scrollback buffer
-    terminal.scrollbackBuffer += data;
-    
-    // Trim buffer if it exceeds max size (keep last ~500KB of data)
-    const maxBufferSize = 500000; // 500KB
-    if (terminal.scrollbackBuffer.length > maxBufferSize) {
-      // Keep the most recent data
-      terminal.scrollbackBuffer = terminal.scrollbackBuffer.slice(-maxBufferSize);
+    if (terminal.isAlternateScreen) {
+      terminal.alternateScreenBuffer = this.trimAnsiSafe(
+        terminal.alternateScreenBuffer + data,
+        MAX_ALTERNATE_SCREEN_BUFFER_SIZE
+      );
+      return;
     }
+
+    terminal.scrollbackBuffer = this.trimAnsiSafe(
+      terminal.scrollbackBuffer + data,
+      MAX_SCROLLBACK_BUFFER_SIZE
+    );
   }
   
   private isFileOperationCommand(command: string): boolean {
@@ -765,6 +818,8 @@ export class TerminalPanelManager {
       isInitialized: true,
       cwd: cwd,
       scrollbackBuffer: terminal.scrollbackBuffer,
+      alternateScreenBuffer: terminal.alternateScreenBuffer,
+      isAlternateScreen: terminal.isAlternateScreen,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
@@ -810,6 +865,7 @@ export class TerminalPanelManager {
     } else {
       terminal.scrollbackBuffer = '';
     }
+    terminal.alternateScreenBuffer = state.alternateScreenBuffer || '';
     terminal.commandHistory = state.commandHistory || [];
     
     // Send restoration indicator to terminal
@@ -835,6 +891,8 @@ export class TerminalPanelManager {
       cwd: process.cwd(), // Simplified - would need platform-specific implementation
       shellType: process.env.SHELL || 'bash',
       scrollbackBuffer: terminal.scrollbackBuffer,
+      alternateScreenBuffer: terminal.alternateScreenBuffer,
+      isAlternateScreen: terminal.isAlternateScreen,
       commandHistory: terminal.commandHistory,
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,

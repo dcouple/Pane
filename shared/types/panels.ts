@@ -33,6 +33,8 @@ export interface TerminalPanelState {
   
   // Enhanced persistence (can be added incrementally)
   scrollbackBuffer?: string | string[];   // Full terminal output history (string for new format, array for legacy)
+  alternateScreenBuffer?: string;         // Recent TUI/alternate-screen output, kept separate from shell scrollback
+  isAlternateScreen?: boolean;            // Whether the live terminal is currently in alternate-screen/TUI mode
   serializedBuffer?: string;             // xterm.js serialized terminal state (includes full visual buffer)
   commandHistory?: string[];     // Commands entered by user
   environmentVars?: Record<string, string>; // Modified env vars

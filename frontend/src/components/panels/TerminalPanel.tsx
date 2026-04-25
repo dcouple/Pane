@@ -45,6 +45,8 @@ const TerminalSpinner: React.FC = () => {
 // Type for terminal state restoration
 interface TerminalRestoreState {
   scrollbackBuffer: string | string[];
+  alternateScreenBuffer?: string;
+  isAlternateScreen?: boolean;
   serializedBuffer?: string;
   cursorX?: number;
   cursorY?: number;
@@ -256,12 +258,29 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     onStep,
   } = useTerminalSearch(xtermRef);
 
-  // Refresh terminal: reset and rewrite fresh scrollback from backend
+  const resizePtyToFit = useCallback(() => {
+    if (!fitAddonRef.current) return;
+    fitAddonRef.current.fit();
+    const dimensions = fitAddonRef.current.proposeDimensions();
+    if (dimensions) {
+      window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
+    }
+  }, [panel.id]);
+
+  // Refresh terminal: normal shells replay raw scrollback; live TUIs repaint via resize.
   const handleRefreshTerminal = useCallback(async () => {
     const terminal = xtermRef.current;
     if (!terminal) return;
     try {
       const state = await window.electronAPI.invoke('terminal:getState', panel.id);
+      if (state?.isAlternateScreen) {
+        resizePtyToFit();
+        if (terminal.rows > 0) {
+          terminal.refresh(0, terminal.rows - 1);
+        }
+        return;
+      }
+
       terminal.reset();
       if (state?.scrollbackBuffer) {
         const content = typeof state.scrollbackBuffer === 'string'
@@ -271,11 +290,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             : '';
         if (content) terminal.write(content);
       }
-      fitAddonRef.current?.fit();
+      resizePtyToFit();
     } catch (e) {
       console.warn('[TerminalPanel] Failed to refresh terminal:', e);
     }
-  }, [panel.id]);
+  }, [panel.id, resizePtyToFit]);
 
   // Open search on Ctrl/Cmd+F from the container div
   const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
