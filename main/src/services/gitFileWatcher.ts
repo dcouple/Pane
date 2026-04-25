@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 import path from 'path';
 import type { Stats } from 'fs';
+import { spawn, type ChildProcess } from 'child_process';
 import { execSync } from '../utils/commandExecutor';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
@@ -41,6 +42,7 @@ interface WatchedSession {
   worktreePath: string;
   worktreeWatcher?: FSWatcher;
   gitWatcher?: FSWatcher;
+  wslWatcher?: ChildProcess;
   lastModified: number;
   pendingRefresh: boolean;
 }
@@ -68,6 +70,11 @@ export class GitFileWatcher extends EventEmitter {
     this.setMaxListeners(100);
   }
 
+  setExecutionContext(commandRunner?: CommandRunner, pathResolver?: PathResolver): void {
+    this.commandRunner = commandRunner;
+    this.pathResolver = pathResolver;
+  }
+
   /**
    * Start watching a session's worktree for changes
    */
@@ -76,6 +83,12 @@ export class GitFileWatcher extends EventEmitter {
     this.stopWatching(sessionId);
 
     try {
+      if (this.commandRunner?.wslContext) {
+        if (this.startWSLNativeWatcher(sessionId, worktreePath)) {
+          return;
+        }
+      }
+
       // Convert path for the watcher (needs platform-appropriate path)
       const watchPath = this.pathResolver ? this.pathResolver.toFileSystem(worktreePath) : worktreePath;
 
@@ -178,6 +191,94 @@ export class GitFileWatcher extends EventEmitter {
     }
   }
 
+  private startWSLNativeWatcher(sessionId: string, worktreePath: string): boolean {
+    const distro = this.commandRunner?.wslContext?.distribution;
+    if (!distro || process.platform !== 'win32') return false;
+
+    const script = `
+      set -e
+      cd "$1"
+      if ! command -v inotifywait >/dev/null 2>&1; then
+        echo "__PANE_WSL_MISSING_INOTIFYWAIT__" >&2
+        exit 127
+      fi
+      gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
+      watch_args=(.)
+      if [ -n "$gitdir" ]; then
+        [ -e "$gitdir/index" ] && watch_args+=("$gitdir/index")
+        [ -e "$gitdir/HEAD" ] && watch_args+=("$gitdir/HEAD")
+      fi
+      exec inotifywait -m -r -q \
+        -e modify,create,delete,move,attrib \
+        --format '%w%f' \
+        --exclude '(^|/)(node_modules|\\.git|\\.next|\\.nuxt|\\.turbo|\\.cache|\\.parcel-cache|\\.venv|venv|__pycache__|\\.svelte-kit)(/|$)' \
+        "\${watch_args[@]}"
+    `;
+
+    const child = spawn('wsl.exe', ['-d', distro, '--', 'bash', '-lc', script, 'pane-wsl-watch', worktreePath], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let stdoutBuffer = '';
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      stdoutBuffer += chunk;
+      const lines = stdoutBuffer.split('\n');
+      stdoutBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim()) {
+          this.handleFileChange(sessionId, line.trim(), 'change');
+        }
+      }
+    });
+
+    let missingInotify = false;
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
+      if (chunk.includes('__PANE_WSL_MISSING_INOTIFYWAIT__')) {
+        missingInotify = true;
+        return;
+      }
+      const message = chunk.trim();
+      if (message) {
+        this.logger?.warn(`[GitFileWatcher] WSL native watcher stderr for ${sessionId}: ${message}`);
+      }
+    });
+
+    child.on('exit', (code, signal) => {
+      const session = this.watchedSessions.get(sessionId);
+      if (session?.wslWatcher === child) {
+        this.watchedSessions.delete(sessionId);
+      }
+      if (missingInotify) {
+        this.logger?.warn(
+          `[GitFileWatcher] WSL native watcher unavailable for ${sessionId}: ` +
+          `install inotify-tools in the distro for live git refresh; falling back to focus/manual refresh only.`
+        );
+      } else if (code !== 0 && signal !== 'SIGTERM') {
+        this.logger?.warn(`[GitFileWatcher] WSL native watcher exited for ${sessionId} with code=${code} signal=${signal ?? 'none'}`);
+      }
+    });
+
+    child.on('error', (error) => {
+      this.logger?.error(`[GitFileWatcher] Failed to start WSL native watcher for ${sessionId}:`, error);
+    });
+
+    this.watchedSessions.set(sessionId, {
+      sessionId,
+      worktreePath,
+      wslWatcher: child,
+      lastModified: Date.now(),
+      pendingRefresh: false,
+    });
+
+    this.logger?.info(
+      `[GitFileWatcher] startWatching(${sessionId}) using WSL native inotify watcher; watchedSessions.size=${this.watchedSessions.size}`
+    );
+    return true;
+  }
+
   /**
    * Stop watching a session's worktree
    */
@@ -188,6 +289,7 @@ export class GitFileWatcher extends EventEmitter {
     // fire-and-forget async close — keeps stopWatching synchronous from callers' perspective
     session.worktreeWatcher?.close().catch(() => {});
     session.gitWatcher?.close().catch(() => {});
+    session.wslWatcher?.kill();
     this.watchedSessions.delete(sessionId);
 
     // Clear any pending refresh timer

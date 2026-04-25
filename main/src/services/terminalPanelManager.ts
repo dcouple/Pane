@@ -10,10 +10,13 @@ import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
 
-const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this
+const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this (visible panels)
+const HIGH_WATERMARK_HIDDEN = 300_000; // 300KB — raised watermark for hidden panels so the slower 250ms cadence doesn't trigger pause/resume churn on verbose builds
 const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
+const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
+const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap per-flush size on hidden panels below HIGH_WATERMARK so a single flush can't trip backpressure; high-throughput jobs degrade to size-driven flushes
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 5_000; // 5s — mark panel idle after no PTY output
@@ -34,6 +37,9 @@ interface TerminalProcess {
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
+  // Visibility-driven cadence: true → OUTPUT_BATCH_INTERVAL + renderer writes,
+  // false → OUTPUT_BATCH_INTERVAL_HIDDEN + main-process scrollback only.
+  isVisible: boolean;
   // Alternate screen buffer tracking — universal TUI detection signal
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
@@ -101,6 +107,12 @@ export class TerminalPanelManager {
     const data = terminal.outputBuffer;
     terminal.outputBuffer = '';
 
+    if (!terminal.isVisible) {
+      // Hidden terminals run headless: keep PTY output in main scrollback, but
+      // avoid waking the renderer/xterm/WebGL for every background token.
+      return;
+    }
+
     // Track pending bytes for flow control
     terminal.pendingBytes += data.length;
 
@@ -113,8 +125,10 @@ export class TerminalPanelManager {
       });
     }
 
-    // Apply backpressure if watermark exceeded
-    if (terminal.pendingBytes > HIGH_WATERMARK && !terminal.isPaused) {
+    // Apply backpressure if watermark exceeded. Hidden panels get a higher
+    // watermark to absorb the 250ms cadence without constant pause/resume.
+    const watermark = terminal.isVisible ? HIGH_WATERMARK : HIGH_WATERMARK_HIDDEN;
+    if (terminal.pendingBytes > watermark && !terminal.isPaused) {
       terminal.isPaused = true;
       terminal.pty.pause();
 
@@ -145,6 +159,33 @@ export class TerminalPanelManager {
         clearTimeout(terminal.pauseSafetyTimer);
         terminal.pauseSafetyTimer = null;
       }
+    }
+  }
+
+  setVisibility(panelId: string, isVisible: boolean): void {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return;
+    const wasVisible = terminal.isVisible;
+    terminal.isVisible = isVisible;
+    if (wasVisible === isVisible) return;
+
+    if (!isVisible) {
+      // Once hidden, renderer ACKs stop. Do not leave a visible-mode pause
+      // pending against bytes the renderer may never acknowledge.
+      terminal.outputBuffer = '';
+      terminal.pendingBytes = 0;
+      if (terminal.pauseSafetyTimer) {
+        clearTimeout(terminal.pauseSafetyTimer);
+        terminal.pauseSafetyTimer = null;
+      }
+      if (terminal.isPaused) {
+        terminal.isPaused = false;
+        terminal.pty.resume();
+      }
+    } else {
+      // Hidden output is already present in scrollbackBuffer. Drop any stale
+      // hidden batch so the renderer can refresh exactly once from getState.
+      terminal.outputBuffer = '';
     }
   }
 
@@ -279,6 +320,7 @@ export class TerminalPanelManager {
       pauseSafetyTimer: null,
       outputBuffer: '',
       outputFlushTimer: null,
+      isVisible: true,
       isAlternateScreen: false,
       activityStatus: 'idle',
       idleTimer: null,
@@ -555,14 +597,21 @@ export class TerminalPanelManager {
       // Buffer output for batching instead of sending immediately
       terminal.outputBuffer += filtered;
 
-      if (terminal.outputBuffer.length >= OUTPUT_BATCH_SIZE) {
+      // Hidden panels cap per-flush size below HIGH_WATERMARK so a single
+      // flush on a verbose background build can't alone trip backpressure.
+      const sizeThreshold = terminal.isVisible ? OUTPUT_BATCH_SIZE : OUTPUT_BATCH_SIZE_HIDDEN;
+      if (terminal.outputBuffer.length >= sizeThreshold) {
         // Buffer is large enough — flush immediately
         this.flushOutputBuffer(terminal);
       } else if (!terminal.outputFlushTimer) {
-        // Schedule flush for next frame
+        // Schedule flush for next frame. Hidden panels use a slower cadence
+        // to cut main-process IPC wake-ups; foreground panels keep 32 ms.
+        const interval = terminal.isVisible
+          ? OUTPUT_BATCH_INTERVAL
+          : OUTPUT_BATCH_INTERVAL_HIDDEN;
         terminal.outputFlushTimer = setTimeout(() => {
           this.flushOutputBuffer(terminal);
-        }, OUTPUT_BATCH_INTERVAL);
+        }, interval);
       }
     });
     

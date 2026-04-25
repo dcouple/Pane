@@ -37,6 +37,7 @@ import { Logger } from './utils/logger';
 import { ArchiveProgressManager } from './services/archiveProgressManager';
 import { AnalyticsManager } from './services/analyticsManager';
 import { SpotlightManager } from './services/spotlightManager';
+import { startupRetentionResult } from './services/database';
 import { resourceMonitorService } from './services/resourceMonitorService';
 import { setAppDirectory, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
@@ -869,7 +870,22 @@ async function initializeServices() {
   // Initialize logger early so it can capture all logs
   logger = new Logger(configManager);
   console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
-  
+
+  // Log the scrollback retention result captured at database module load.
+  // The sweep itself runs before panelManager's constructor caches rows into
+  // RAM (see services/database.ts), so by the time we reach here the DB is
+  // already trimmed and the panel cache is built from the trimmed state.
+  if (startupRetentionResult.error) {
+    logger.error('[ScrollbackRetention] Sweep failed', startupRetentionResult.error);
+  } else if (startupRetentionResult.result && startupRetentionResult.result.panelsCleared > 0) {
+    const r = startupRetentionResult.result;
+    logger.info(
+      `[ScrollbackRetention] Cleared ${r.panelsCleared} panels across ` +
+      `${r.sessionsTouched} sessions, freed ~${(r.bytesFreed / 1_000_000).toFixed(1)} MB`
+    );
+  }
+
+
   // Use the same database path as the original backend
   const dbPath = configManager.getDatabasePath();
   databaseService = new DatabaseService(dbPath);
@@ -997,25 +1013,38 @@ async function initializeServices() {
   // Then set up event listeners that may rely on initialized managers
   setupEventListeners(services, () => mainWindow);
   
-  // Register console logging IPC handler for development
-  if (isDevelopment) {
-    ipcMain.handle('console:log', (event, logData) => {
-      const { level, args, timestamp, source } = logData;
-      const message = args.join(' ');
+  // Console log IPC handler. The preload console wrapper (dev-only) forwards
+  // every renderer console call here for frontend-debug.log capture. Renderer
+  // callers can also invoke this directly and set `toMainLog: true` to also
+  // land the message in the main Logger's pane-*.log — used for surfacing
+  // WebGL lifecycle events so ARM-Windows validation can confirm WebGL loaded
+  // in production builds, where the preload wrapper is inactive.
+  ipcMain.handle('console:log', (_event, logData: { level: string; args: string[]; timestamp: string; source: string; toMainLog?: boolean }) => {
+    const { level, args, timestamp, source, toMainLog } = logData;
+    const message = args.join(' ');
+
+    if (isDevelopment) {
       const logLine = `[${timestamp}] [${source.toUpperCase()} ${level.toUpperCase()}] ${message}\n`;
-      
-      // Write to debug log file
       const debugLogPath = path.join(process.cwd(), 'frontend-debug.log');
       try {
         fs.appendFileSync(debugLogPath, logLine);
       } catch (error) {
         console.error('Failed to write console log to debug file:', error);
       }
-      
-      // Also log to main console with prefix
       console.log(`[Frontend ${level}] ${message}`);
-    });
-  }
+    }
+
+    if (toMainLog) {
+      const forwarded = `[${source}] ${message}`;
+      if (level === 'error') {
+        logger.error(forwarded);
+      } else if (level === 'warn') {
+        logger.warn(forwarded);
+      } else {
+        logger.info(forwarded);
+      }
+    }
+  });
   
   // Start periodic version checking (only if enabled in settings)
   versionChecker.startPeriodicCheck();
@@ -1093,7 +1122,7 @@ app.whenReady().then(async () => {
     await versionChecker.checkOnStartup();
   }, 1000); // Small delay to ensure window is fully ready
 
-  // Initialize worktree pool — cleanup orphans and seed reserves
+// Initialize worktree pool — cleanup orphans and seed reserves
   setTimeout(async () => {
     try {
       const projects = databaseService.getAllProjects();

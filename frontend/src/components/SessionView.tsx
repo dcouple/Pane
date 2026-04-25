@@ -1097,7 +1097,7 @@ export const SessionView = memo(() => {
                   <div className="pane-terminal-shell-body flex-1 relative min-h-0 pb-1">
                     <PanelContainer
                       panel={defaultTerminalPanel}
-                      isActive={true}
+                      isActive={!immersiveMode}
                       autoFocus={false}
                       isMainRepo={!!activeSession.isMainRepo}
                     />

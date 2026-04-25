@@ -500,6 +500,13 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
 
+  // Renderer tells main when a terminal panel becomes (in)visible so PTY
+  // output cadence can drop to OUTPUT_BATCH_INTERVAL_HIDDEN while hidden.
+  // No-op when the panel's PTY isn't in the map (pre-init / post-destroy).
+  ipcMain.handle('terminal:setVisibility', async (_event, panelId: string, isVisible: boolean) => {
+    terminalPanelManager.setVisibility(panelId, !!isVisible);
+  });
+
   ipcMain.handle('terminal:ack', async (_, panelId: string, bytesConsumed: number) => {
     terminalPanelManager.acknowledgeBytes(panelId, bytesConsumed);
   });
