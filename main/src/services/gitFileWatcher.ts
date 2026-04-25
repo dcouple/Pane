@@ -199,8 +199,15 @@ export class GitFileWatcher extends EventEmitter {
       set -e
       cd "$1"
       if ! command -v inotifywait >/dev/null 2>&1; then
-        echo "__PANE_WSL_MISSING_INOTIFYWAIT__" >&2
-        exit 127
+        echo "__PANE_WSL_POLLING_FALLBACK__" >&2
+        last="$(git status --porcelain=v1 --branch --untracked-files=normal 2>/dev/null || true)"
+        while sleep 5; do
+          current="$(git status --porcelain=v1 --branch --untracked-files=normal 2>/dev/null || true)"
+          if [ "$current" != "$last" ]; then
+            printf '%s\n' "__PANE_WSL_POLL__"
+            last="$current"
+          fi
+        done
       fi
       gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null || true)"
       watch_args=(.)
@@ -233,11 +240,15 @@ export class GitFileWatcher extends EventEmitter {
       }
     });
 
-    let missingInotify = false;
+    let pollingFallback = false;
     child.stderr?.setEncoding('utf8');
     child.stderr?.on('data', (chunk: string) => {
-      if (chunk.includes('__PANE_WSL_MISSING_INOTIFYWAIT__')) {
-        missingInotify = true;
+      if (chunk.includes('__PANE_WSL_POLLING_FALLBACK__')) {
+        pollingFallback = true;
+        this.logger?.warn(
+          `[GitFileWatcher] WSL native inotify unavailable for ${sessionId}; ` +
+          `using WSL-native 5s git polling fallback. Install inotify-tools for lower battery use.`
+        );
         return;
       }
       const message = chunk.trim();
@@ -251,12 +262,7 @@ export class GitFileWatcher extends EventEmitter {
       if (session?.wslWatcher === child) {
         this.watchedSessions.delete(sessionId);
       }
-      if (missingInotify) {
-        this.logger?.warn(
-          `[GitFileWatcher] WSL native watcher unavailable for ${sessionId}: ` +
-          `install inotify-tools in the distro for live git refresh; falling back to focus/manual refresh only.`
-        );
-      } else if (code !== 0 && signal !== 'SIGTERM') {
+      if (code !== 0 && signal !== 'SIGTERM') {
         this.logger?.warn(`[GitFileWatcher] WSL native watcher exited for ${sessionId} with code=${code} signal=${signal ?? 'none'}`);
       }
     });
@@ -274,7 +280,8 @@ export class GitFileWatcher extends EventEmitter {
     });
 
     this.logger?.info(
-      `[GitFileWatcher] startWatching(${sessionId}) using WSL native inotify watcher; watchedSessions.size=${this.watchedSessions.size}`
+      `[GitFileWatcher] startWatching(${sessionId}) using WSL native watcher; watchedSessions.size=${this.watchedSessions.size}` +
+      (pollingFallback ? ' mode=polling' : '')
     );
     return true;
   }

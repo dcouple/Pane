@@ -14,6 +14,13 @@ Use these reference pages for more information:
 - [**Implementing New CLI Agents**](./docs/IMPLEMENTING_NEW_CLI_AGENTS.md): Step-by-step instructions for adding new CLI agent tools with code examples and best practices
 - [**Codex Configuration**](./main/src/services/panels/codex/CODEX_CONFIG.md): Configuration guide for Codex CLI integration
 
+## WSL Performance Notes
+
+- WSL projects should avoid Windows-side filesystem watchers over `\\wsl.localhost` / `\\wsl$`; crossing the Windows/WSL boundary requires filesystem emulation and is expensive.
+- Pane uses an in-distro watcher for WSL git status refresh. Preferred setup inside each WSL distro: `sudo apt install inotify-tools`.
+- If `inotifywait` is unavailable, Pane falls back to a WSL-native 5s `git status` polling loop while the app is focused. This keeps git status working without UNC watching, but uses more battery than `inotify-tools`.
+- Release bumps should use `pnpm run release patch|minor|major|<version>`. The script is expected to work from any clean worktree whose `HEAD` matches `origin/main` and pushes the release commit with `HEAD:main`.
+
 ## Implementation Status: ✅ COMPLETE
 
 All core features have been successfully implemented with significant enhancements beyond the original requirements.
