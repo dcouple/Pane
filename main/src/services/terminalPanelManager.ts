@@ -37,7 +37,8 @@ interface TerminalProcess {
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
-  // Visibility-driven cadence: true → OUTPUT_BATCH_INTERVAL, false → OUTPUT_BATCH_INTERVAL_HIDDEN
+  // Visibility-driven cadence: true → OUTPUT_BATCH_INTERVAL + renderer writes,
+  // false → OUTPUT_BATCH_INTERVAL_HIDDEN + main-process scrollback only.
   isVisible: boolean;
   // Alternate screen buffer tracking — universal TUI detection signal
   isAlternateScreen: boolean;
@@ -106,6 +107,12 @@ export class TerminalPanelManager {
     const data = terminal.outputBuffer;
     terminal.outputBuffer = '';
 
+    if (!terminal.isVisible) {
+      // Hidden terminals run headless: keep PTY output in main scrollback, but
+      // avoid waking the renderer/xterm/WebGL for every background token.
+      return;
+    }
+
     // Track pending bytes for flow control
     terminal.pendingBytes += data.length;
 
@@ -160,10 +167,25 @@ export class TerminalPanelManager {
     if (!terminal) return;
     const wasVisible = terminal.isVisible;
     terminal.isVisible = isVisible;
-    if (!wasVisible && isVisible) {
-      // hidden → visible: flush any buffered output immediately so the user
-      // sees catch-up content without waiting for the next 250 ms tick.
-      this.flushOutputBuffer(terminal);
+    if (wasVisible === isVisible) return;
+
+    if (!isVisible) {
+      // Once hidden, renderer ACKs stop. Do not leave a visible-mode pause
+      // pending against bytes the renderer may never acknowledge.
+      terminal.outputBuffer = '';
+      terminal.pendingBytes = 0;
+      if (terminal.pauseSafetyTimer) {
+        clearTimeout(terminal.pauseSafetyTimer);
+        terminal.pauseSafetyTimer = null;
+      }
+      if (terminal.isPaused) {
+        terminal.isPaused = false;
+        terminal.pty.resume();
+      }
+    } else {
+      // Hidden output is already present in scrollbackBuffer. Drop any stale
+      // hidden batch so the renderer can refresh exactly once from getState.
+      terminal.outputBuffer = '';
     }
   }
 

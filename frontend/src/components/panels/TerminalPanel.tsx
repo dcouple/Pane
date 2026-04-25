@@ -77,8 +77,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const [initError, setInitError] = useState<string | null>(null);
   const [interceptorState, setInterceptorState] = useState<InterceptorState | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [windowFocused, setWindowFocused] = useState(true);
   const interceptorRef = useRef<TerminalInterceptor | null>(null);
   const skipNextInterceptRef = useRef(false); // set by AltGr @ detection
+  const effectiveVisible = isActive && windowFocused;
 
   // Read CLI state from persisted panel state (handles remount case)
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
@@ -118,17 +120,81 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Keep isActiveRef in sync with isActive prop
   useEffect(() => {
-    isActiveRef.current = isActive;
-  }, [isActive]);
+    isActiveRef.current = effectiveVisible;
+  }, [effectiveVisible]);
+
+  useEffect(() => {
+    let disposed = false;
+    window.electronAPI.window?.isFocused?.()
+      .then((focused) => {
+        if (!disposed) setWindowFocused(focused);
+      })
+      .catch(() => {
+        // Default to focused if the focus query is unavailable.
+      });
+
+    const cleanup = window.electronAPI.events.onWindowFocusChanged((focused) => {
+      setWindowFocused(focused);
+    });
+
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, []);
+
+  const forwardToMainLog = (level: 'info' | 'warn', message: string) => {
+    try {
+      window.electronAPI.invoke('console:log', {
+        level,
+        args: [message],
+        timestamp: new Date().toISOString(),
+        source: 'renderer',
+        toMainLog: true,
+      });
+    } catch {
+      // IPC failure shouldn't break terminal lifecycle work.
+    }
+  };
+
+  const loadWebglRenderer = async (terminal: Terminal, isDisposed: () => boolean) => {
+    if (webglAddonRef.current) return;
+    try {
+      const { WebglAddon: WebglAddonImpl } = await import('@xterm/addon-webgl');
+      if (isDisposed() || webglAddonRef.current) return;
+      const addon = new WebglAddonImpl();
+      addon.onContextLoss(() => {
+        console.warn('[TerminalPanel] WebGL context lost for panel', panel.id, ', falling back to DOM renderer');
+        forwardToMainLog('warn', `[TerminalPanel] WebGL context lost for panel ${panel.id}, falling back to DOM renderer`);
+        try { addon.dispose(); } catch { /* already disposed */ }
+        webglAddonRef.current = null;
+      });
+      terminal.loadAddon(addon);
+      webglAddonRef.current = addon;
+      console.log('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
+      forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id}`);
+    } catch (e) {
+      console.warn('[TerminalPanel] WebGL renderer failed for panel', panel.id, ', using DOM renderer:', e);
+      forwardToMainLog('warn', `[TerminalPanel] WebGL renderer failed for panel ${panel.id}, using DOM renderer: ${e instanceof Error ? e.message : String(e)}`);
+      webglAddonRef.current = null;
+    }
+  };
+
+  const disposeWebglRenderer = () => {
+    if (!webglAddonRef.current) return;
+    try { webglAddonRef.current.dispose(); } catch { /* ignore */ }
+    webglAddonRef.current = null;
+    forwardToMainLog('info', `[TerminalPanel] WebGL renderer detached for hidden panel ${panel.id}`);
+  };
 
   // Replaces the old 30 s snapshot interval: fire once on active-to-inactive
   // transitions (tab switches / panel hides). The dispose-time snapshot in the
   // terminal init effect stays as a backstop for full unmount.
-  const wasActiveRef = useRef(isActive);
+  const wasActiveRef = useRef(effectiveVisible);
   useEffect(() => {
     const wasActive = wasActiveRef.current;
-    wasActiveRef.current = isActive;
-    if (wasActive && !isActive && serializeAddonRef.current) {
+    wasActiveRef.current = effectiveVisible;
+    if (wasActive && !effectiveVisible && serializeAddonRef.current) {
       try {
         const serialized = serializeAddonRef.current.serialize();
         window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
@@ -136,7 +202,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         // xterm buffer in a bad state — not worth surfacing
       }
     }
-  }, [isActive, panel.id]);
+  }, [effectiveVisible, panel.id]);
 
   // Tell main when this panel's visibility changes so PTY output cadence
   // can drop to 250 ms while hidden and snap back to 32 ms when shown.
@@ -146,8 +212,22 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   // current isActive the moment the PTY exists.
   useEffect(() => {
     if (!isInitialized) return;
-    window.electronAPI.invoke('terminal:setVisibility', panel.id, isActive);
-  }, [isActive, panel.id, isInitialized]);
+    window.electronAPI.invoke('terminal:setVisibility', panel.id, effectiveVisible);
+  }, [effectiveVisible, panel.id, isInitialized]);
+
+  useEffect(() => {
+    if (!isInitialized || !xtermRef.current) return;
+    if (!effectiveVisible) {
+      disposeWebglRenderer();
+      return;
+    }
+
+    let disposed = false;
+    void loadWebglRenderer(xtermRef.current, () => disposed);
+    return () => {
+      disposed = true;
+    };
+  }, [effectiveVisible, isInitialized, panel.id]);
 
   // Terminal link handling hook
   const {
@@ -447,45 +527,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           console.log('[TerminalPanel] FitAddon fitted');
           terminal.options.theme = getTerminalTheme();
 
-          // Forward WebGL lifecycle events through the existing console:log IPC
-          // so they land in the main-process pane-*.log. The renderer console
-          // calls stay in place for DevTools visibility; this wrapper adds the
-          // toMainLog flag so the main handler knows to route to Logger (needed
-          // in production, where the preload console wrapper is inactive).
-          const forwardToMainLog = (level: 'info' | 'warn', message: string) => {
-            try {
-              window.electronAPI.invoke('console:log', {
-                level,
-                args: [message],
-                timestamp: new Date().toISOString(),
-                source: 'renderer',
-                toMainLog: true,
-              });
-            } catch {
-              // IPC failure shouldn't break terminal init
-            }
-          };
-
-          // Try loading WebGL renderer for GPU-accelerated rendering
-          try {
-            const { WebglAddon: WebglAddonImpl } = await import('@xterm/addon-webgl');
-            if (!disposed) {
-              const addon = new WebglAddonImpl();
-              addon.onContextLoss(() => {
-                console.warn('[TerminalPanel] WebGL context lost for panel', panel.id, ', falling back to DOM renderer');
-                forwardToMainLog('warn', `[TerminalPanel] WebGL context lost for panel ${panel.id}, falling back to DOM renderer`);
-                try { addon.dispose(); } catch { /* already disposed */ }
-                webglAddonRef.current = null;
-              });
-              terminal.loadAddon(addon);
-              webglAddonRef.current = addon;
-              console.log('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
-              forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id}`);
-            }
-          } catch (e) {
-            console.warn('[TerminalPanel] WebGL renderer failed for panel', panel.id, ', using DOM renderer:', e);
-            forwardToMainLog('warn', `[TerminalPanel] WebGL renderer failed for panel ${panel.id}, using DOM renderer: ${e instanceof Error ? e.message : String(e)}`);
-            webglAddonRef.current = null;
+          // Try loading WebGL renderer for GPU-accelerated rendering. The
+          // visibility effect detaches it while hidden and reloads it on show.
+          if (effectiveVisible) {
+            await loadWebglRenderer(terminal, () => disposed);
           }
 
           // Load WebLinksAddon for clickable URLs
@@ -823,7 +868,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             // Check if this is panel terminal output (has panelId) vs session terminal output (has sessionId)
             if (data && typeof data === 'object' && 'panelId' in data && data.panelId && 'output' in data) {
               const typedData = data as { panelId: string; output: string };
-              if (typedData.panelId === panel.id && terminal && !disposed) {
+              if (typedData.panelId === panel.id && terminal && !disposed && isActiveRef.current) {
                 const outputLength = typedData.output.length;
                 terminal.write(typedData.output, () => {
                   if (disposed) return;
@@ -1141,7 +1186,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   // Handle visibility changes (resize and full refresh when becoming visible)
   // Include isInitialized so this effect re-runs after terminal initialization completes
   useEffect(() => {
-    if (!isActive || !isInitialized || !fitAddonRef.current || !xtermRef.current) return;
+    if (!effectiveVisible || !isInitialized || !fitAddonRef.current || !xtermRef.current) return;
 
     // Show overlay immediately to mask the terminal.reset()+rewrite flicker
     setIsRefreshing(true);
@@ -1176,7 +1221,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     };
 
     requestAnimationFrame(fitAndRefresh);
-  }, [isActive, panel.id, isInitialized, autoFocus, handleRefreshTerminal]);
+  }, [effectiveVisible, panel.id, isInitialized, autoFocus, handleRefreshTerminal]);
 
   useEffect(() => {
     if (!xtermRef.current) {

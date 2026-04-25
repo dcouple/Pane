@@ -89,16 +89,15 @@ export class GitStatusManager extends EventEmitter {
     if (previousActive !== sessionId) {
       console.log(`[GitStatus] Active session changed from ${previousActive} to ${sessionId}`);
       
-      // Start watching the active session's files if we have one
-      if (sessionId) {
+      // Start watching only while the window is visible. When Pane is
+      // blurred/minimized, focus refresh is cheaper than keeping recursive
+      // watchers hot, especially for WSL UNC paths.
+      if (sessionId && this.isWindowVisible) {
         this.startWatchingSession(sessionId);
-        
-        // If window is visible, also refresh immediately
-        if (this.isWindowVisible) {
-          this.refreshSessionGitStatus(sessionId, false).catch(error => {
-            console.warn(`[GitStatus] Failed to refresh active session ${sessionId}:`, error);
-          });
-        }
+
+        this.refreshSessionGitStatus(sessionId, false).catch(error => {
+          console.warn(`[GitStatus] Failed to refresh active session ${sessionId}:`, error);
+        });
       }
       
       // Stop watching the previous active session if it exists
@@ -115,6 +114,8 @@ export class GitStatusManager extends EventEmitter {
     try {
       const session = await this.sessionManager.getSession(sessionId);
       if (session?.worktreePath) {
+        const ctx = this.sessionManager.getProjectContext(sessionId);
+        this.fileWatcher.setExecutionContext(ctx?.commandRunner, ctx?.pathResolver);
         this.fileWatcher.startWatching(sessionId, session.worktreePath);
         this.logger?.info(`[GitStatus] Started file watching for session ${sessionId}`);
       }
@@ -169,9 +170,18 @@ export class GitStatusManager extends EventEmitter {
   handleVisibilityChange(isHidden: boolean): void {
     this.isWindowVisible = !isHidden;
     this.gitLogger.logFocusChange(!isHidden);
-    
-    // If window becomes visible and we have an active session, refresh it
-    if (!isHidden && this.activeSessionId) {
+
+    if (isHidden) {
+      if (this.activeSessionId) {
+        this.stopWatchingSession(this.activeSessionId);
+      }
+      return;
+    }
+
+    // If window becomes visible and we have an active session, restart the
+    // watcher and do one authoritative refresh for any changes missed while hidden.
+    if (this.activeSessionId) {
+      this.startWatchingSession(this.activeSessionId);
       this.refreshSessionGitStatus(this.activeSessionId, false).catch(error => {
         console.warn(`[GitStatus] Failed to refresh active session on focus:`, error);
       });
