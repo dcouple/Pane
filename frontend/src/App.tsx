@@ -124,7 +124,7 @@ function App() {
   // Global panel activity status listener
   useEffect(() => {
     const unsubscribe = window.electronAPI?.events?.onPanelActivityStatus?.((data) => {
-      usePanelStore.getState().setActivityStatus(data.panelId, data.status);
+      usePanelStore.getState().setActivityStatus(data.panelId, data.status, data.lastActivityAt);
     });
     return () => unsubscribe?.();
   }, []);

@@ -9,6 +9,7 @@ export const usePanelStore = create<PanelStore>()(
     panels: {},
     activePanels: {},
     activityStatus: {},
+    lastActivityAt: {},
 
     // Pure synchronous state updates
     setPanels: (sessionId, panels) => {
@@ -48,6 +49,7 @@ export const usePanelStore = create<PanelStore>()(
           delete state.activePanels[sessionId];
         }
         delete state.activityStatus[panelId];
+        delete state.lastActivityAt[panelId];
       });
     },
 
@@ -63,15 +65,19 @@ export const usePanelStore = create<PanelStore>()(
       });
     },
 
-    setActivityStatus: (panelId, status) => {
+    setActivityStatus: (panelId, status, lastActivityAt) => {
       set((state) => {
         state.activityStatus[panelId] = status;
+        if (lastActivityAt) {
+          state.lastActivityAt[panelId] = lastActivityAt;
+        }
       });
     },
 
     clearActivityStatus: (panelId) => {
       set((state) => {
         delete state.activityStatus[panelId];
+        delete state.lastActivityAt[panelId];
       });
     },
 

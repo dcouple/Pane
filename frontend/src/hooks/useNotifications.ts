@@ -16,11 +16,11 @@ interface NotificationSettings {
   enabled: boolean;
 }
 
-// Extra delay on top of the 5s PTY idle threshold before firing a "finished"
+// Extra delay on top of the 30s PTY idle threshold before firing a "finished"
 // notification. Guards against false positives from mid-task pauses: network
 // waits, slow tool calls, shells sitting between commands. Total silent time
-// before a notification fires is roughly 5s (dot flip) + 25s = 30s.
-const NOTIFICATION_DEBOUNCE_MS = 25_000;
+// before a notification fires is roughly 30s (dot flip) + 60s = 90s.
+const NOTIFICATION_DEBOUNCE_MS = 60_000;
 
 export function useNotifications() {
   const [settings, setSettings] = useState<NotificationSettings>({
@@ -157,7 +157,7 @@ export function useNotifications() {
     });
   };
 
-  function maybeNotifyPanelIdle(panelId: string) {
+  function maybeNotifyPanelIdle(panelId: string, scheduledLastActivityAt?: string) {
     const currentSettings = settingsRef.current;
     if (!currentSettings.enabled) return;
 
@@ -171,6 +171,16 @@ export function useNotifications() {
     // panel re-activates; without this check we'd ping "finished" for a
     // panel that is actively running again.
     if (panelStoreState.activityStatus[panelId] !== 'idle') return;
+
+    // Re-check that no PTY output arrived after the idle transition that
+    // scheduled this timer. This catches stale timers around rapid quiet/resume
+    // edges without scanning scrollback.
+    if (
+      scheduledLastActivityAt &&
+      panelStoreState.lastActivityAt[panelId] !== scheduledLastActivityAt
+    ) {
+      return;
+    }
 
     let foundSessionId: string | undefined;
     let foundPanel: ToolPanel | undefined;
@@ -228,9 +238,10 @@ export function useNotifications() {
           // Schedule a debounced notification. Clear any stale timer first.
           const existing = pending.get(panelId);
           if (existing) clearTimeout(existing);
+          const scheduledLastActivityAt = state.lastActivityAt[panelId];
           const timer = setTimeout(() => {
             pending.delete(panelId);
-            maybeNotifyPanelIdle(panelId);
+            maybeNotifyPanelIdle(panelId, scheduledLastActivityAt);
           }, NOTIFICATION_DEBOUNCE_MS);
           pending.set(panelId, timer);
         } else if (prevStatus === 'idle' && status === 'active') {
