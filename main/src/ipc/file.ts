@@ -38,6 +38,7 @@ interface FileWriteBinaryRequest {
   sessionId: string;
   fileName: string;
   contentBase64: string;
+  targetDir?: string;
 }
 
 interface FilePathRequest {
@@ -53,6 +54,26 @@ interface FileListRequest {
 interface FileDeleteRequest {
   sessionId: string;
   filePath: string;
+  useTrash?: boolean;
+}
+
+interface FileRenameRequest {
+  sessionId: string;
+  filePath: string;
+  newName: string;
+}
+
+interface FileMoveRequest {
+  sessionId: string;
+  sourcePath: string;
+  targetDir: string;
+}
+
+interface FileCopyRequest {
+  sessionId: string;
+  sourcePath: string;
+  targetDir: string;
+  newName?: string;
 }
 
 interface FileItem {
@@ -71,7 +92,65 @@ interface FileSearchRequest {
 }
 
 export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): void {
-  const { sessionManager, databaseService, gitStatusManager, configManager } = services;
+  const { sessionManager, gitStatusManager, configManager } = services;
+
+  async function resolveWorktreePath(sessionId: string, relativePath = ''): Promise<{
+    session: Session;
+    basePath: string;
+    fullPath: string;
+    normalizedPath: string;
+  }> {
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    const ctx = sessionManager.getProjectContext(sessionId);
+    if (!ctx) throw new Error('Project not found for session');
+    const { pathResolver } = ctx;
+
+    const normalizedPath = relativePath ? path.normalize(relativePath) : '';
+    if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
+      throw new Error('Invalid path');
+    }
+
+    const basePath = pathResolver.toFileSystem(session.worktreePath);
+    const fullPath = normalizedPath ? path.join(basePath, normalizedPath) : basePath;
+
+    if (!await pathResolver.isWithin(basePath, fullPath)) {
+      throw new Error('File path is outside worktree');
+    }
+
+    return { session, basePath, fullPath, normalizedPath };
+  }
+
+  function validateSimpleName(name: string): string {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === '.' || trimmed === '..') {
+      throw new Error('Name is required');
+    }
+    if (trimmed.includes('/') || trimmed.includes('\\') || path.basename(trimmed) !== trimmed) {
+      throw new Error('Name must not contain path separators');
+    }
+    return trimmed;
+  }
+
+  async function uniqueDestinationPath(dirPath: string, requestedName: string): Promise<{ fullPath: string; name: string }> {
+    const parsed = path.parse(requestedName);
+    let candidateName = requestedName;
+    let candidatePath = path.join(dirPath, candidateName);
+    let counter = 1;
+
+    while (await fileExists(candidatePath)) {
+      candidateName = counter === 1
+        ? `${parsed.name} copy${parsed.ext}`
+        : `${parsed.name} copy ${counter}${parsed.ext}`;
+      candidatePath = path.join(dirPath, candidateName);
+      counter++;
+    }
+
+    return { fullPath: candidatePath, name: candidateName };
+  }
 
   // Read file contents from a session's worktree
   ipcMain.handle('file:read', async (_, request: FileReadRequest) => {
@@ -262,6 +341,13 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       }
 
       const basePath = pathResolver.toFileSystem(session.worktreePath);
+      const targetDir = request.targetDir || '';
+      if (targetDir) {
+        const normalizedTargetDir = path.normalize(targetDir);
+        if (normalizedTargetDir.startsWith('..') || path.isAbsolute(normalizedTargetDir)) {
+          throw new Error('Invalid target directory');
+        }
+      }
 
       // Validate fileName: must be a simple filename, no slashes or ..
       const sanitized = path.basename(request.fileName);
@@ -271,7 +357,13 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
 
       // Resolve full path and verify it's within worktree
       let finalName = sanitized;
-      let fullPath = path.join(basePath, finalName);
+      const targetDirPath = targetDir ? path.join(basePath, targetDir) : basePath;
+      if (!await pathResolver.isWithin(basePath, targetDirPath)) {
+        throw new Error('Target directory is outside worktree');
+      }
+      await fs.mkdir(targetDirPath, { recursive: true });
+
+      let fullPath = path.join(targetDirPath, finalName);
 
       if (!await pathResolver.isWithin(basePath, fullPath)) {
         throw new Error('File path is outside worktree');
@@ -284,7 +376,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
         let counter = 1;
         while (await fileExists(fullPath)) {
           finalName = `${base} (${counter})${ext}`;
-          fullPath = path.join(basePath, finalName);
+          fullPath = path.join(targetDirPath, finalName);
           counter++;
         }
       }
@@ -293,7 +385,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       const buffer = Buffer.from(request.contentBase64, 'base64');
       await fs.writeFile(fullPath, buffer);
 
-      return { success: true, finalFileName: finalName };
+      return { success: true, finalFileName: finalName, filePath: targetDir ? path.join(targetDir, finalName) : finalName };
     } catch (error) {
       console.error('Error writing binary file:', error);
       return {
@@ -613,38 +705,26 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   // Delete a file from a session's worktree
   ipcMain.handle('file:delete', async (_, request: FileDeleteRequest) => {
     try {
-      const session = sessionManager.getSession(request.sessionId);
-      if (!session) {
-        throw new Error(`Session not found: ${request.sessionId}`);
-      }
-
-      const ctx = sessionManager.getProjectContext(request.sessionId);
-      if (!ctx) throw new Error('Project not found for session');
-      const { pathResolver } = ctx;
-
-      // Ensure the file path is relative and safe
-      const normalizedPath = path.normalize(request.filePath);
-      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
-        throw new Error('Invalid file path');
-      }
-
-      const basePath = pathResolver.toFileSystem(session.worktreePath);
-      const fullPath = path.join(basePath, normalizedPath);
-
-      // Verify the file is within the worktree
-      if (!await pathResolver.isWithin(basePath, fullPath)) {
-        throw new Error('File path is outside worktree');
-      }
+      const { fullPath, normalizedPath } = await resolveWorktreePath(request.sessionId, request.filePath);
 
       // Check if the file exists
       try {
         await fs.access(fullPath);
-      } catch (err) {
+      } catch {
         throw new Error(`File not found: ${normalizedPath}`);
       }
 
       // Check if it's a directory or file
       const stats = await fs.stat(fullPath);
+
+      if (request.useTrash !== false) {
+        try {
+          await shell.trashItem(fullPath);
+          return { success: true };
+        } catch (trashError) {
+          console.warn('Failed to move item to trash, permanently deleting instead:', trashError);
+        }
+      }
 
       if (stats.isDirectory()) {
         // For directories, use rm with recursive option
@@ -657,6 +737,116 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       return { success: true };
     } catch (error) {
       console.error('Error deleting file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Rename a file or folder within a session's worktree
+  ipcMain.handle('file:rename', async (_, request: FileRenameRequest) => {
+    try {
+      const { basePath, fullPath, normalizedPath } = await resolveWorktreePath(request.sessionId, request.filePath);
+      const newName = validateSimpleName(request.newName);
+      const parentDir = path.dirname(fullPath);
+      const newFullPath = path.join(parentDir, newName);
+
+      const relativeToBase = path.relative(basePath, newFullPath);
+      if (relativeToBase.startsWith('..') || path.isAbsolute(relativeToBase)) {
+        throw new Error('Target path is outside worktree');
+      }
+      if (await fileExists(newFullPath)) {
+        throw new Error(`An item named "${newName}" already exists`);
+      }
+
+      await fs.rename(fullPath, newFullPath);
+      const parentRelative = path.dirname(normalizedPath);
+      const newPath = parentRelative === '.' ? newName : path.join(parentRelative, newName);
+      return { success: true, path: newPath };
+    } catch (error) {
+      console.error('Error renaming file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Move a file or folder into a target directory within a session's worktree
+  ipcMain.handle('file:move', async (_, request: FileMoveRequest) => {
+    try {
+      const source = await resolveWorktreePath(request.sessionId, request.sourcePath);
+      const target = await resolveWorktreePath(request.sessionId, request.targetDir);
+
+      const sourceName = path.basename(source.fullPath);
+      const targetStats = await fs.stat(target.fullPath);
+      if (!targetStats.isDirectory()) {
+        throw new Error('Target must be a directory');
+      }
+
+      if (source.fullPath === target.fullPath || target.fullPath.startsWith(source.fullPath + path.sep)) {
+        throw new Error('Cannot move a folder into itself');
+      }
+
+      const destinationPath = path.join(target.fullPath, sourceName);
+      if (await fileExists(destinationPath)) {
+        throw new Error(`An item named "${sourceName}" already exists in the target folder`);
+      }
+
+      await fs.rename(source.fullPath, destinationPath);
+      const newPath = request.targetDir ? path.join(request.targetDir, sourceName) : sourceName;
+      return { success: true, path: newPath };
+    } catch (error) {
+      console.error('Error moving file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Copy a file or folder into a target directory within a session's worktree
+  ipcMain.handle('file:copy', async (_, request: FileCopyRequest) => {
+    try {
+      const source = await resolveWorktreePath(request.sessionId, request.sourcePath);
+      const target = await resolveWorktreePath(request.sessionId, request.targetDir);
+
+      const targetStats = await fs.stat(target.fullPath);
+      if (!targetStats.isDirectory()) {
+        throw new Error('Target must be a directory');
+      }
+
+      const requestedName = request.newName ? validateSimpleName(request.newName) : path.basename(source.fullPath);
+      const destination = await uniqueDestinationPath(target.fullPath, requestedName);
+      await fs.cp(source.fullPath, destination.fullPath, { recursive: true, errorOnExist: true });
+
+      const newPath = request.targetDir ? path.join(request.targetDir, destination.name) : destination.name;
+      return { success: true, path: newPath };
+    } catch (error) {
+      console.error('Error copying file:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  // Duplicate a file or folder next to itself within a session's worktree
+  ipcMain.handle('file:duplicate', async (_, request: FilePathRequest) => {
+    try {
+      const source = await resolveWorktreePath(request.sessionId, request.filePath);
+      const parentDir = path.dirname(source.fullPath);
+      const requestedName = path.basename(source.fullPath);
+      const destination = await uniqueDestinationPath(parentDir, requestedName);
+
+      await fs.cp(source.fullPath, destination.fullPath, { recursive: true, errorOnExist: true });
+
+      const parentRelative = path.dirname(source.normalizedPath);
+      const newPath = parentRelative === '.' ? destination.name : path.join(parentRelative, destination.name);
+      return { success: true, path: newPath };
+    } catch (error) {
+      console.error('Error duplicating file:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
@@ -715,7 +905,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       }
 
       // Get list of tracked files (not gitignored) using git
-      let gitTrackedFiles = new Set<string>();
+      const gitTrackedFiles = new Set<string>();
       let isGitRepo = true;
       try {
         // Get list of all tracked files in the repository
