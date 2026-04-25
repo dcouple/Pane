@@ -1,20 +1,43 @@
 ---
 name: simple-plan
-description: Produce a lightweight implementation plan for a direct user request before coding anything. Use when the change is likely straightforward and the user wants a quick gut-check rather than a full formal plan.
+description: Quick gut-check before implementing when the user directly asks you to do something. Investigates, proposes a lightweight plan, and implements only after approval. Use this instead of `plan` when the change is straightforward.
+argument-hint: "[what the user wants done]"
 ---
 
 # Simple Plan
 
-Give the user a short, concrete plan before implementation.
+When the user directly asks for a change, investigate first and propose a short
+plan before writing code.
 
-Workflow:
-1. Investigate the current state enough to understand the change.
-2. Explain the likely root cause or current behavior.
-3. Propose the file-level changes and implementation order.
-4. Include brief advice about risks or better alternatives when useful.
-5. Stop and wait for approval before editing code.
+## Plan Contents
 
-Rules:
-- Do not implement during the initial plan response.
-- Keep the plan concise, but include concrete file references.
-- If the task turns out to be broad or risky, recommend switching to `plan`.
+### Current State
+- root cause or current behavior
+- concrete file references
+
+### Proposed Changes
+- what needs to change
+- file references where relevant
+- task list in implementation order
+
+### Advice
+- architectural or implementation guidance when useful
+
+## Process
+
+1. Investigate the codebase first
+2. Present the plan to the user
+3. Only implement after approval
+4. After approval, keep one primary implementation authority by default
+5. Keep the user's why, constraints, and non-goals explicit during implementation
+6. After implementation, run `implementation-reviewer`
+7. Prefer a fresh skeptical second review pass before declaring completion
+8. If you have a separate Claude workflow available, it can be the parallel
+   second-opinion lane, but Codex remains primary on this path
+
+## Notes
+
+- Keep the plan concise but concrete
+- Include file references whenever possible
+- If the task is broad or risky, recommend switching to `plan`
+- Do not implement anything until the user approves
