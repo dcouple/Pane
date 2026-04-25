@@ -98,7 +98,7 @@ export const TerminalPopover: React.FC<TerminalPopoverProps> = ({
   return createPortal(
     <div
       ref={ref}
-      className="fixed z-[10001] bg-surface-primary border border-border-primary rounded-lg shadow-dropdown-elevated py-1 min-w-[180px]"
+      className="fixed z-[10001] w-max min-w-[180px] max-w-[calc(100vw-20px)] max-h-[calc(100vh-20px)] overflow-y-auto bg-surface-primary border border-border-primary rounded-lg shadow-dropdown-elevated py-1"
       style={{ left: position.left, top: position.top }}
     >
       {children}
@@ -130,7 +130,7 @@ export const PopoverButton: React.FC<PopoverButtonProps> = ({
   return (
     <button
       className={cn(
-        'w-full px-3 py-2 text-left text-sm transition-colors duration-fast',
+        'w-full whitespace-nowrap px-3 py-2 text-left text-sm transition-colors duration-fast',
         'focus:outline-none focus:bg-bg-hover',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variants[variant],

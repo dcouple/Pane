@@ -8,6 +8,7 @@
 # Dependencies
 node_modules/
 .pnpm-store/
+package-lock.json
 
 # Build outputs
 dist/
@@ -92,6 +93,7 @@ test-report/
 # Temporary test files
 test-file.txt
 *.test.tmp
+tmp/
 
 # foozol user data directory (if accidentally placed in repo)
 .foozol/
