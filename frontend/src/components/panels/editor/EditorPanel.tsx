@@ -151,18 +151,6 @@ export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     }
   }, [panel.id, handleStateChange]);
   
-  // Only render when active (for memory efficiency)
-  if (!isActive) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-secondary">
-        <div className="text-center">
-          <div className="text-sm">Explorer panel not active</div>
-          <div className="text-xs mt-1 text-text-tertiary">Click to activate</div>
-        </div>
-      </div>
-    );
-  }
-  
   return (
     <div className="h-full w-full">
       <FileEditor

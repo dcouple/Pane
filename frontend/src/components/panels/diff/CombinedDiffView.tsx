@@ -317,6 +317,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   // Background prefetch: when git status changes, fetch executions + diff even when not visible
   // This ensures the diff tab has data ready before the user opens it
   useEffect(() => {
+    if (!isVisible) return;
     let cancelled = false;
 
     const handleGitStatusUpdated = (event: Event) => {
@@ -346,7 +347,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       cancelled = true;
       window.removeEventListener('git-status-updated', handleGitStatusUpdated);
     };
-  }, [sessionId, processExecutions]);
+  }, [sessionId, isVisible, processExecutions]);
 
   // Keep refs to avoid stale closures in event handlers
   const executionsLengthRef = useRef(executions.length);

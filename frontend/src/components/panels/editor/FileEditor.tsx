@@ -32,6 +32,7 @@ const PDF_EXTENSIONS = new Set(['pdf']);
 interface HeadlessFileTreeProps {
   sessionId: string;
   onFileSelect: (file: FileItem | null) => void;
+  onFileCreateSelect?: (filePath: string) => void;
   selectedPath: string | null;
   initialExpandedDirs?: string[];
   initialSearchQuery?: string;
@@ -42,6 +43,7 @@ interface HeadlessFileTreeProps {
 function HeadlessFileTree({
   sessionId,
   onFileSelect,
+  onFileCreateSelect,
   selectedPath,
   initialExpandedDirs,
   initialSearchQuery,
@@ -73,6 +75,7 @@ function HeadlessFileTree({
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [renamingValue, setRenamingValue] = useState('');
   const skipRenameCommitRef = useRef(false);
+  const itemElementRefs = useRef(new Map<string, HTMLDivElement>());
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -158,6 +161,33 @@ function HeadlessFileTree({
     filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : ''
   ), []);
 
+  const getAncestorDirs = useCallback((filePath: string) => {
+    const parts = filePath.split('/').filter(Boolean);
+    const ancestors: string[] = [];
+    for (let i = 1; i < parts.length; i++) {
+      ancestors.push(parts.slice(0, i).join('/'));
+    }
+    return ancestors;
+  }, []);
+
+  const revealItem = useCallback((filePath: string) => {
+    let attempts = 0;
+    const tryReveal = () => {
+      const element = itemElementRefs.current.get(filePath);
+      if (element) {
+        element.scrollIntoView({ block: 'nearest' });
+        return;
+      }
+
+      attempts += 1;
+      if (attempts < 10) {
+        window.setTimeout(tryReveal, 50);
+      }
+    };
+
+    window.setTimeout(tryReveal, 0);
+  }, []);
+
   const refreshDirectory = useCallback((dirPath: string) => {
     filesCacheRef.current.delete(dirPath);
     tree.getItemInstance(dirPath || ROOT_ID)?.invalidateChildrenIds();
@@ -167,6 +197,7 @@ function HeadlessFileTree({
     const dirs = new Set<string>(['']);
     for (const filePath of paths) {
       dirs.add(getParentPath(filePath));
+      getAncestorDirs(filePath).forEach(dir => dirs.add(dir));
       filesCacheRef.current.delete(filePath);
       const prefix = `${filePath}/`;
       for (const key of filesCacheRef.current.keys()) {
@@ -174,7 +205,14 @@ function HeadlessFileTree({
       }
     }
     dirs.forEach(refreshDirectory);
-  }, [getParentPath, refreshDirectory]);
+  }, [getParentPath, getAncestorDirs, refreshDirectory]);
+
+  useEffect(() => {
+    if (!selectedPath) return;
+    setSelectedItems([selectedPath]);
+    setExpandedItems(prev => Array.from(new Set([ROOT_ID, ...prev, ...getAncestorDirs(selectedPath)])));
+    revealItem(selectedPath);
+  }, [selectedPath, getAncestorDirs, revealItem]);
 
   const getSelectedFilesForAction = useCallback((fallback: FileItem | null) => {
     if (fallback && !selectedItems.includes(fallback.path)) return [fallback];
@@ -427,9 +465,16 @@ function HeadlessFileTree({
       });
 
       if (result.success) {
-        filesCacheRef.current.delete(newItemParentPath);
-        const parentItemId = newItemParentPath || ROOT_ID;
-        tree.getItemInstance(parentItemId)?.invalidateChildrenIds();
+        const createdItemPath = isFolder ? relativePath : filePath;
+        refreshAfterPathsChanged([createdItemPath]);
+        const dirsToExpand = [
+          ROOT_ID,
+          ...getAncestorDirs(createdItemPath),
+          ...(isFolder ? [relativePath] : []),
+        ];
+        setExpandedItems(prev => Array.from(new Set([...prev, ...dirsToExpand])));
+        setSelectedItems([createdItemPath]);
+        revealItem(createdItemPath);
 
         // AUTO-OPEN: Select and open the new file in editor — this is the bug fix
         if (!isFolder) {
@@ -438,6 +483,7 @@ function HeadlessFileTree({
             path: relativePath,
             isDirectory: false,
           };
+          onFileCreateSelect?.(newFile.path);
           onFileSelect(newFile);
         }
 
@@ -451,7 +497,7 @@ function HeadlessFileTree({
       console.error('Failed to create item:', err);
       setError(err instanceof Error ? err.message : 'Failed to create item');
     }
-  }, [sessionId, newItemName, newItemParentPath, showNewItemDialog, onFileSelect, tree]);
+  }, [sessionId, newItemName, newItemParentPath, showNewItemDialog, onFileSelect, onFileCreateSelect, getAncestorDirs, revealItem, refreshAfterPathsChanged]);
 
   // Refresh all
   const handleRefreshAll = useCallback(() => {
@@ -872,14 +918,20 @@ function HeadlessFileTree({
           const level = item.getItemMeta().level;
           const isExpanded = item.isExpanded();
           const isItemSelected = item.isSelected();
-          const isSelected = selectedPath === data.path || isItemSelected;
+          const isOpenFile = selectedPath === data.path && !isFolder;
 
           return (
             <div
               key={item.getId()}
               {...item.getProps()}
+              ref={(element) => {
+                if (element) itemElementRefs.current.set(data.path, element);
+                else itemElementRefs.current.delete(data.path);
+              }}
               className={`flex items-center px-2 py-1 hover:bg-surface-hover cursor-pointer group ${
-                isSelected ? 'bg-interactive' : ''
+                isItemSelected ? 'bg-interactive' : ''
+              } ${
+                isOpenFile && !isItemSelected ? 'bg-surface-hover/60' : ''
               } ${
                 dragOverPath === data.path ? 'ring-1 ring-interactive bg-interactive/10' : ''
               }`}
@@ -1131,6 +1183,7 @@ export function FileEditor({
   const binaryBlobUrlRef = useRef<string | null>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
+  const pendingEditorFocusPathRef = useRef<string | null>(null);
 
   // Keep ref in sync and clean up blob URLs to prevent memory leaks
   useEffect(() => {
@@ -1253,6 +1306,9 @@ export function FileEditor({
         setOriginalContent(result.content);
         setSelectedFile(file);
         setViewMode('edit'); // Reset to edit mode when opening a new file
+        if (pendingEditorFocusPathRef.current === file.path) {
+          window.setTimeout(() => editorRef.current?.focus(), 100);
+        }
         
         // Notify parent about file change
         if (onFileChange) {
@@ -1314,6 +1370,17 @@ export function FileEditor({
       setLoading(false);
     }
   }, [sessionId, onFileChange, onStateChange, initialState, binaryBlobUrlRef]);
+
+  const selectedFilePath = selectedFile?.path;
+
+  useEffect(() => {
+    if (!selectedFilePath || pendingEditorFocusPathRef.current !== selectedFilePath) return;
+    const focusTimer = window.setTimeout(() => {
+      editorRef.current?.focus();
+      pendingEditorFocusPathRef.current = null;
+    }, 100);
+    return () => window.clearTimeout(focusTimer);
+  }, [selectedFilePath]);
 
 
   const handleEditorMount = (editor: monaco.editor.IStandaloneCodeEditor, monacoInstance: typeof monaco) => {
@@ -1514,6 +1581,9 @@ export function FileEditor({
         <HeadlessFileTree
           sessionId={sessionId}
           onFileSelect={loadFile}
+          onFileCreateSelect={(filePath) => {
+            pendingEditorFocusPathRef.current = filePath;
+          }}
           selectedPath={selectedFile?.path || null}
           initialExpandedDirs={initialState?.expandedDirs}
           initialSearchQuery={initialState?.searchQuery}
