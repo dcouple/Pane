@@ -136,6 +136,11 @@ function handleKeyDown(e: KeyboardEvent) {
   const def = store.hotkeys.get(hotkeyId);
   if (!def) return;
 
+  // Let native text editing win for shortcuts users expect in focused inputs.
+  // In particular, tab cycling uses mod+a/mod+d, but inputs need mod+a
+  // for select-all and mod+d for normal browser/text-field behavior.
+  if (isInput && (pressed === 'mod+a' || pressed === 'mod+d')) return;
+
   // Skip if typing in input and shortcut doesn't use mod key
   if (isInput && !pressed.includes('mod')) return;
 

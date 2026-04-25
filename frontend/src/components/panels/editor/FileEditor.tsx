@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
 import type * as monaco from 'monaco-editor';
-import { ChevronRight, ChevronDown, File, Folder, RefreshCw, Plus, Trash2, FolderPlus, Search, X, Eye, Code, Copy, FolderOpen } from 'lucide-react';
+import { ChevronRight, ChevronDown, File, Folder, RefreshCw, Plus, Trash2, FolderPlus, Search, X, Eye, Code, Copy, FolderOpen, Pencil, Clipboard, ClipboardPaste, CopyPlus } from 'lucide-react';
 import { useTree } from '@headless-tree/react';
 import { asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature, expandAllFeature } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
@@ -66,13 +66,19 @@ function HeadlessFileTree({
   const [newItemParentPath, setNewItemParentPath] = useState('');
   const newItemInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<{ paths: string[]; mode: 'copy' | 'cut' } | null>(null);
+  const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState('');
+  const skipRenameCommitRef = useRef(false);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    file: FileItem;
+    file: FileItem | null;
   } | null>(null);
 
   // Platform-adaptive label
@@ -143,9 +149,45 @@ function HeadlessFileTree({
     dataLoader,
     createLoadingItemData: () => ({ name: 'Loading...', path: '', isDirectory: false }),
     features: [asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature, expandAllFeature],
-    state: { expandedItems },
+    state: { expandedItems, selectedItems },
     setExpandedItems,
+    setSelectedItems,
   });
+
+  const getParentPath = useCallback((filePath: string) => (
+    filePath.includes('/') ? filePath.substring(0, filePath.lastIndexOf('/')) : ''
+  ), []);
+
+  const refreshDirectory = useCallback((dirPath: string) => {
+    filesCacheRef.current.delete(dirPath);
+    tree.getItemInstance(dirPath || ROOT_ID)?.invalidateChildrenIds();
+  }, [tree]);
+
+  const refreshAfterPathsChanged = useCallback((paths: string[]) => {
+    const dirs = new Set<string>(['']);
+    for (const filePath of paths) {
+      dirs.add(getParentPath(filePath));
+      filesCacheRef.current.delete(filePath);
+      const prefix = `${filePath}/`;
+      for (const key of filesCacheRef.current.keys()) {
+        if (key.startsWith(prefix)) filesCacheRef.current.delete(key);
+      }
+    }
+    dirs.forEach(refreshDirectory);
+  }, [getParentPath, refreshDirectory]);
+
+  const getSelectedFilesForAction = useCallback((fallback: FileItem | null) => {
+    if (fallback && !selectedItems.includes(fallback.path)) return [fallback];
+    const selectedFiles = tree.getSelectedItems()
+      .map(item => item.getItemData())
+      .filter((item): item is FileItem => !!item && item.path !== '');
+    return selectedFiles.length > 0 ? selectedFiles : fallback ? [fallback] : [];
+  }, [selectedItems, tree]);
+
+  const getContextTargetDir = useCallback((file: FileItem | null) => {
+    if (!file) return '';
+    return file.isDirectory ? file.path : getParentPath(file.path);
+  }, [getParentPath]);
 
   // Session switch: clear cache and invalidate root
   const prevSessionIdRef = useRef(sessionId);
@@ -194,7 +236,7 @@ function HeadlessFileTree({
 
   // Context menu handlers
   const handleCopyPath = useCallback(async () => {
-    if (!contextMenu) return;
+    if (!contextMenu?.file) return;
     try {
       const result = await window.electronAPI.invoke('file:resolveAbsolutePath', {
         sessionId,
@@ -209,8 +251,18 @@ function HeadlessFileTree({
     setContextMenu(null);
   }, [contextMenu, sessionId]);
 
+  const handleCopyRelativePath = useCallback(async () => {
+    if (!contextMenu?.file) return;
+    try {
+      await navigator.clipboard.writeText(contextMenu.file.path);
+    } catch (err) {
+      console.error('Failed to copy relative path:', err);
+    }
+    setContextMenu(null);
+  }, [contextMenu]);
+
   const handleRevealInFileManager = useCallback(async () => {
-    if (!contextMenu) return;
+    if (!contextMenu?.file) return;
     try {
       await window.electronAPI.invoke('file:showInFolder', {
         sessionId,
@@ -224,48 +276,138 @@ function HeadlessFileTree({
 
   // Delete handler
   const handleDelete = useCallback(async (file: FileItem) => {
-    const confirmMessage = file.isDirectory
-      ? `Are you sure you want to delete the folder "${file.name}" and all its contents?`
-      : `Are you sure you want to delete the file "${file.name}"?`;
+    const files = getSelectedFilesForAction(file);
+    const confirmMessage = files.length > 1
+      ? `Move ${files.length} items to trash?`
+      : files[0]?.isDirectory
+        ? `Move folder "${files[0].name}" and all its contents to trash?`
+        : `Move file "${files[0]?.name}" to trash?`;
     if (!confirm(confirmMessage)) return;
 
     try {
-      const result = await window.electronAPI.invoke('file:delete', {
-        sessionId,
-        filePath: file.path,
-      });
+      for (const target of files) {
+        const result = await window.electronAPI.invoke('file:delete', {
+          sessionId,
+          filePath: target.path,
+          useTrash: true,
+        });
 
-      if (result.success) {
-        const parentPath = file.path.includes('/')
-          ? file.path.substring(0, file.path.lastIndexOf('/'))
-          : '';
-        filesCacheRef.current.delete(parentPath);
-
-        // Purge deleted directory's subtree from cache so stale entries
-        // don't appear in search results
-        if (file.isDirectory) {
-          const prefix = file.path + '/';
-          for (const key of filesCacheRef.current.keys()) {
-            if (key === file.path || key.startsWith(prefix)) {
-              filesCacheRef.current.delete(key);
-            }
-          }
+        if (!result.success) {
+          setError(`Failed to delete: ${result.error}`);
+          return;
         }
+      }
 
-        const parentItemId = parentPath || ROOT_ID;
-        tree.getItemInstance(parentItemId)?.invalidateChildrenIds();
+      refreshAfterPathsChanged(files.map(f => f.path));
+      setSelectedItems(prev => prev.filter(path => !files.some(f => f.path === path || path.startsWith(`${f.path}/`))));
 
-        if (selectedPath === file.path) {
-          onFileSelect(null);
-        }
-      } else {
-        setError(`Failed to delete: ${result.error}`);
+      if (files.some(target => selectedPath === target.path || selectedPath?.startsWith(`${target.path}/`))) {
+        onFileSelect(null);
       }
     } catch (err) {
       console.error('Failed to delete:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete item');
     }
-  }, [sessionId, selectedPath, onFileSelect, tree]);
+  }, [getSelectedFilesForAction, sessionId, refreshAfterPathsChanged, selectedPath, onFileSelect]);
+
+  const startRename = useCallback((file: FileItem) => {
+    skipRenameCommitRef.current = false;
+    setRenamingPath(file.path);
+    setRenamingValue(file.name);
+    setContextMenu(null);
+  }, []);
+
+  const commitRename = useCallback(async (file: FileItem, value: string) => {
+    const newName = value.trim();
+    setRenamingPath(null);
+    if (!newName || newName === file.name) return;
+
+    try {
+      const result = await window.electronAPI.invoke('file:rename', {
+        sessionId,
+        filePath: file.path,
+        newName: newName.trim(),
+      });
+
+      if (!result.success) {
+        setError(`Failed to rename: ${result.error}`);
+        return;
+      }
+
+      const newPath = result.path as string;
+      refreshAfterPathsChanged([file.path, newPath]);
+      setSelectedItems([newPath]);
+      if (selectedPath === file.path) {
+        onFileSelect({ ...file, name: newName.trim(), path: newPath });
+      }
+    } catch (err) {
+      console.error('Failed to rename:', err);
+      setError(err instanceof Error ? err.message : 'Failed to rename item');
+    }
+  }, [sessionId, refreshAfterPathsChanged, selectedPath, onFileSelect]);
+
+  const handleDuplicate = useCallback(async (file: FileItem) => {
+    try {
+      const result = await window.electronAPI.invoke('file:duplicate', {
+        sessionId,
+        filePath: file.path,
+      });
+
+      if (!result.success) {
+        setError(`Failed to duplicate: ${result.error}`);
+        return;
+      }
+
+      refreshAfterPathsChanged([file.path, result.path as string]);
+    } catch (err) {
+      console.error('Failed to duplicate:', err);
+      setError(err instanceof Error ? err.message : 'Failed to duplicate item');
+    }
+  }, [sessionId, refreshAfterPathsChanged]);
+
+  const handleSetClipboard = useCallback((file: FileItem, mode: 'copy' | 'cut') => {
+    const files = getSelectedFilesForAction(file);
+    setClipboard({ paths: files.map(f => f.path), mode });
+    setContextMenu(null);
+  }, [getSelectedFilesForAction]);
+
+  const handlePaste = useCallback(async (targetFile: FileItem | null) => {
+    if (!clipboard || clipboard.paths.length === 0) return;
+    const targetDir = getContextTargetDir(targetFile);
+
+    try {
+      for (const sourcePath of clipboard.paths) {
+        if (clipboard.mode === 'cut' && getParentPath(sourcePath) === targetDir) {
+          continue;
+        }
+        const result = await window.electronAPI.invoke(clipboard.mode === 'cut' ? 'file:move' : 'file:copy', {
+          sessionId,
+          sourcePath,
+          targetDir,
+        });
+
+        if (!result.success) {
+          setError(`Failed to ${clipboard.mode === 'cut' ? 'move' : 'copy'}: ${result.error}`);
+          return;
+        }
+      }
+
+      refreshAfterPathsChanged([...clipboard.paths, targetDir]);
+      if (clipboard.mode === 'cut') setClipboard(null);
+    } catch (err) {
+      console.error('Failed to paste:', err);
+      setError(err instanceof Error ? err.message : 'Failed to paste item');
+    } finally {
+      setContextMenu(null);
+    }
+  }, [clipboard, getContextTargetDir, getParentPath, sessionId, refreshAfterPathsChanged]);
+
+  const openCreateDialog = useCallback((type: 'file' | 'folder', parent: FileItem | null) => {
+    setShowNewItemDialog(type);
+    setNewItemName('');
+    setNewItemParentPath(getContextTargetDir(parent));
+    setContextMenu(null);
+  }, [getContextTargetDir]);
 
   // New file/folder creation with auto-open (the .md bug fix)
   const handleCreateNewItem = useCallback(async () => {
@@ -322,7 +464,7 @@ function HeadlessFileTree({
     }
   }, [tree]);
 
-  const uploadFile = useCallback((file: File): Promise<{ success: boolean; name: string; error?: string }> => {
+  const uploadFile = useCallback((file: File, targetDir = ''): Promise<{ success: boolean; name: string; error?: string; filePath?: string }> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = async () => {
@@ -332,9 +474,10 @@ function HeadlessFileTree({
             sessionId: sessionIdRef.current,
             fileName: file.name,
             contentBase64: base64,
+            targetDir,
           });
           if (result.success) {
-            resolve({ success: true, name: file.name });
+            resolve({ success: true, name: file.name, filePath: result.filePath });
           } else {
             resolve({ success: false, name: file.name, error: result.error });
           }
@@ -346,6 +489,68 @@ function HeadlessFileTree({
       reader.readAsDataURL(file);
     });
   }, []);
+
+  const handleMoveToDirectory = useCallback(async (files: FileItem[], targetDir: string) => {
+    const movingFiles = files.filter(file => file.path !== targetDir && !targetDir.startsWith(`${file.path}/`));
+    if (movingFiles.length === 0) return;
+
+    try {
+      for (const file of movingFiles) {
+        const result = await window.electronAPI.invoke('file:move', {
+          sessionId,
+          sourcePath: file.path,
+          targetDir,
+        });
+        if (!result.success) {
+          setError(`Failed to move "${file.name}": ${result.error}`);
+          return;
+        }
+      }
+      refreshAfterPathsChanged([...movingFiles.map(f => f.path), targetDir]);
+    } catch (err) {
+      console.error('Failed to move files:', err);
+      setError(err instanceof Error ? err.message : 'Failed to move files');
+    }
+  }, [sessionId, refreshAfterPathsChanged]);
+
+  const handleExternalFileDrop = useCallback(async (files: File[], targetDir = '') => {
+    if (files.length === 0) return;
+
+    const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
+    const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
+
+    if (validFiles.length === 0) {
+      if (oversized.length > 0) {
+        setError(`Files too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
+      }
+      return;
+    }
+
+    setUploadStatus(`Uploading ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
+
+    try {
+      const results: { success: boolean; name: string; error?: string; filePath?: string }[] = [];
+      for (const file of validFiles) {
+        results.push(await uploadFile(file, targetDir));
+      }
+      const failed = results.filter(r => !r.success);
+
+      const errors: string[] = [];
+      if (oversized.length > 0) {
+        errors.push(`Too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
+      }
+      if (failed.length > 0) {
+        errors.push(`Failed: ${failed.map(r => `${r.name}${r.error ? ` (${r.error})` : ''}`).join(', ')}`);
+      }
+      if (errors.length > 0) setError(errors.join('. '));
+
+      if (results.some(r => r.success)) {
+        refreshDirectory(targetDir);
+      }
+    } finally {
+      setUploadStatus(null);
+    }
+  }, [refreshDirectory, uploadFile]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -367,52 +572,36 @@ function HeadlessFileTree({
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
+    setDragOverPath(null);
     setError(null);
 
     const files = Array.from(e.dataTransfer.files);
-    if (files.length === 0) return;
+    await handleExternalFileDrop(files, '');
+  }, [handleExternalFileDrop]);
 
-    const oversized = files.filter(f => f.size > MAX_FILE_SIZE);
-    const validFiles = files.filter(f => f.size <= MAX_FILE_SIZE);
+  const handleInternalDrop = useCallback(async (e: React.DragEvent, targetDir: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(null);
+    setIsDragOver(false);
 
-    if (validFiles.length === 0) {
-      if (oversized.length > 0) {
-        setError(`Files too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
+    const internalPayload = e.dataTransfer.getData('application/x-pane-file-paths');
+    if (internalPayload) {
+      try {
+        const paths = JSON.parse(internalPayload) as string[];
+        const files = paths
+          .map(filePath => tree.getItemInstance(filePath)?.getItemData())
+          .filter((item): item is FileItem => !!item);
+        await handleMoveToDirectory(files, targetDir);
+      } catch (err) {
+        console.error('Failed to parse dropped file paths:', err);
+        setError('Failed to move dropped items');
       }
       return;
     }
 
-    setUploadStatus(`Uploading ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}...`);
-
-    try {
-      // Upload sequentially to avoid race condition when multiple files share the same name
-      const results: { success: boolean; name: string; error?: string }[] = [];
-      for (const file of validFiles) {
-        results.push(await uploadFile(file));
-      }
-      const failed = results.filter(r => !r.success);
-
-      // Combine oversized and failed errors into one message
-      const errors: string[] = [];
-      if (oversized.length > 0) {
-        errors.push(`Too large (max 15MB): ${oversized.map(f => f.name).join(', ')}`);
-      }
-      if (failed.length > 0) {
-        errors.push(`Failed: ${failed.map(r => `${r.name}${r.error ? ` (${r.error})` : ''}`).join(', ')}`);
-      }
-      if (errors.length > 0) {
-        setError(errors.join('. '));
-      }
-
-      const succeeded = results.filter(r => r.success);
-      if (succeeded.length > 0) {
-        filesCacheRef.current.delete('');
-        tree.getItemInstance(ROOT_ID)?.invalidateChildrenIds();
-      }
-    } finally {
-      setUploadStatus(null);
-    }
-  }, [tree, uploadFile]);
+    await handleExternalFileDrop(Array.from(e.dataTransfer.files), targetDir);
+  }, [handleExternalFileDrop, handleMoveToDirectory, tree]);
 
   // Focus input when dialog is shown
   useEffect(() => {
@@ -456,6 +645,10 @@ function HeadlessFileTree({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || !!target?.isContentEditable;
+      if (isEditingText && e.key !== 'Escape') return;
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(prev => !prev);
@@ -475,11 +668,37 @@ function HeadlessFileTree({
           searchInputRef.current?.focus();
         }
       }
+      if (e.key === 'F2' && selectedItems.length === 1) {
+        const item = tree.getItemInstance(selectedItems[0])?.getItemData();
+        if (item) {
+          e.preventDefault();
+          startRename(item);
+        }
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItems.length > 0) {
+        const item = tree.getItemInstance(selectedItems[0])?.getItemData();
+        if (item) {
+          e.preventDefault();
+          handleDelete(item);
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c' && selectedItems.length > 0) {
+        e.preventDefault();
+        setClipboard({ paths: selectedItems, mode: 'copy' });
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'x' && selectedItems.length > 0) {
+        e.preventDefault();
+        setClipboard({ paths: selectedItems, mode: 'cut' });
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v' && clipboard) {
+        e.preventDefault();
+        handlePaste(null);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchQuery, showNewItemDialog, contextMenu]);
+  }, [searchQuery, showNewItemDialog, contextMenu, selectedItems, tree, startRename, handleDelete, clipboard, handlePaste]);
 
   return (
     <div
@@ -631,6 +850,19 @@ function HeadlessFileTree({
       <div
         {...tree.getContainerProps()}
         className={`overflow-auto outline-none ${searchQuery ? 'hidden' : 'flex-1'}`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY, file: null });
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOverPath('');
+          e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-pane-file-paths') ? 'move' : 'copy';
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverPath(null);
+        }}
+        onDrop={(e) => handleInternalDrop(e, '')}
       >
         {tree.getItems().map((item: ItemInstance<FileItem>) => {
           const data = item.getItemData();
@@ -639,7 +871,8 @@ function HeadlessFileTree({
           const isFolder = data.isDirectory;
           const level = item.getItemMeta().level;
           const isExpanded = item.isExpanded();
-          const isSelected = selectedPath === data.path;
+          const isItemSelected = item.isSelected();
+          const isSelected = selectedPath === data.path || isItemSelected;
 
           return (
             <div
@@ -647,10 +880,40 @@ function HeadlessFileTree({
               {...item.getProps()}
               className={`flex items-center px-2 py-1 hover:bg-surface-hover cursor-pointer group ${
                 isSelected ? 'bg-interactive' : ''
+              } ${
+                dragOverPath === data.path ? 'ring-1 ring-interactive bg-interactive/10' : ''
               }`}
               style={{ paddingLeft: `${level * 16 + 8}px` }}
+              draggable
+              onDragStart={(e) => {
+                const files = getSelectedFilesForAction(data);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('application/x-pane-file-paths', JSON.stringify(files.map(file => file.path)));
+                e.dataTransfer.setData('text/plain', files.map(file => file.path).join('\n'));
+              }}
+              onDragOver={(e) => {
+                if (!isFolder) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverPath(data.path);
+                e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-pane-file-paths') ? 'move' : 'copy';
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverPath(null);
+              }}
+              onDrop={(e) => {
+                if (!isFolder) return;
+                handleInternalDrop(e, data.path);
+              }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (e.metaKey || e.ctrlKey) {
+                  item.toggleSelect();
+                } else if (e.shiftKey) {
+                  item.selectUpTo(false);
+                } else {
+                  item.select();
+                }
                 if (isFolder) {
                   if (isExpanded) item.collapse();
                   else item.expand();
@@ -673,6 +936,7 @@ function HeadlessFileTree({
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (!item.isSelected()) item.select();
                 setContextMenu({ x: e.clientX, y: e.clientY, file: data });
               }}
             >
@@ -691,7 +955,34 @@ function HeadlessFileTree({
                   <File className="w-4 h-4 mr-2 text-text-tertiary" />
                 </>
               )}
-              <span className="flex-1 text-sm truncate text-text-primary">{data.name}</span>
+              {renamingPath === data.path ? (
+                <input
+                  autoFocus
+                  value={renamingValue}
+                  onChange={(e) => setRenamingValue(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitRename(data, renamingValue);
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      skipRenameCommitRef.current = true;
+                      setRenamingPath(null);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (skipRenameCommitRef.current) {
+                      skipRenameCommitRef.current = false;
+                      return;
+                    }
+                    commitRename(data, renamingValue);
+                  }}
+                  className="flex-1 min-w-0 px-1 py-0.5 bg-surface-primary border border-interactive rounded text-sm text-text-primary focus:outline-none"
+                />
+              ) : (
+                <span className="flex-1 text-sm truncate text-text-primary">{data.name}</span>
+              )}
               {isFolder && (
                 <button
                   onClick={(e) => {
@@ -725,18 +1016,83 @@ function HeadlessFileTree({
         y={contextMenu?.y ?? 0}
         onClose={() => setContextMenu(null)}
       >
-        <PopoverButton onClick={handleCopyPath}>
+        <PopoverButton onClick={() => openCreateDialog('file', contextMenu?.file ?? null)}>
           <span className="flex items-center gap-2">
-            <Copy className="w-4 h-4" />
-            Copy Path
+            <Plus className="w-4 h-4" />
+            New File
           </span>
         </PopoverButton>
-        <PopoverButton onClick={handleRevealInFileManager}>
+        <PopoverButton onClick={() => openCreateDialog('folder', contextMenu?.file ?? null)}>
           <span className="flex items-center gap-2">
-            <FolderOpen className="w-4 h-4" />
-            {revealLabel}
+            <FolderPlus className="w-4 h-4" />
+            New Folder
           </span>
         </PopoverButton>
+        {contextMenu?.file && (
+          <>
+            <div className="my-1 border-t border-border-primary" />
+            <PopoverButton onClick={() => { if (contextMenu.file) startRename(contextMenu.file); }}>
+              <span className="flex items-center gap-2">
+                <Pencil className="w-4 h-4" />
+                Rename
+              </span>
+            </PopoverButton>
+            <PopoverButton onClick={() => { if (contextMenu.file) handleSetClipboard(contextMenu.file, 'copy'); }}>
+              <span className="flex items-center gap-2">
+                <Clipboard className="w-4 h-4" />
+                Copy
+              </span>
+            </PopoverButton>
+            <PopoverButton onClick={() => { if (contextMenu.file) handleSetClipboard(contextMenu.file, 'cut'); }}>
+              <span className="flex items-center gap-2">
+                <Clipboard className="w-4 h-4" />
+                Cut
+              </span>
+            </PopoverButton>
+            <PopoverButton onClick={() => { if (contextMenu.file) { handleDuplicate(contextMenu.file); setContextMenu(null); } }}>
+              <span className="flex items-center gap-2">
+                <CopyPlus className="w-4 h-4" />
+                Duplicate
+              </span>
+            </PopoverButton>
+          </>
+        )}
+        <PopoverButton disabled={!clipboard} onClick={() => handlePaste(contextMenu?.file ?? null)}>
+          <span className="flex items-center gap-2">
+            <ClipboardPaste className="w-4 h-4" />
+            Paste
+          </span>
+        </PopoverButton>
+        {contextMenu?.file && (
+          <>
+            <div className="my-1 border-t border-border-primary" />
+            <PopoverButton onClick={handleCopyRelativePath}>
+              <span className="flex items-center gap-2">
+                <Copy className="w-4 h-4" />
+                Copy Relative Path
+              </span>
+            </PopoverButton>
+            <PopoverButton onClick={handleCopyPath}>
+              <span className="flex items-center gap-2">
+                <Copy className="w-4 h-4" />
+                Copy Absolute Path
+              </span>
+            </PopoverButton>
+            <PopoverButton onClick={handleRevealInFileManager}>
+              <span className="flex items-center gap-2">
+                <FolderOpen className="w-4 h-4" />
+                {revealLabel}
+              </span>
+            </PopoverButton>
+            <div className="my-1 border-t border-border-primary" />
+            <PopoverButton variant="danger" onClick={() => { if (contextMenu.file) { handleDelete(contextMenu.file); setContextMenu(null); } }}>
+              <span className="flex items-center gap-2">
+                <Trash2 className="w-4 h-4" />
+                Move to Trash
+              </span>
+            </PopoverButton>
+          </>
+        )}
       </TerminalPopover>
     </div>
   );
