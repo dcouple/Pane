@@ -19,7 +19,7 @@ const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size
 const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap per-flush size on hidden panels below HIGH_WATERMARK so a single flush can't trip backpressure; high-throughput jobs degrade to size-driven flushes
 const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
 const MAX_CONCURRENT_SPAWNS = 3;
-const IDLE_THRESHOLD_MS = 5_000; // 5s — mark panel idle after no PTY output
+const IDLE_THRESHOLD_MS = 30_000; // 30s — mark panel idle after no PTY output
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
 
@@ -905,7 +905,8 @@ export class TerminalPanelManager {
       mainWindow.webContents.send('panel:activityStatus', {
         panelId: terminal.panelId,
         sessionId: terminal.sessionId,
-        status: terminal.activityStatus
+        status: terminal.activityStatus,
+        lastActivityAt: terminal.lastActivity.toISOString()
       });
     }
   }

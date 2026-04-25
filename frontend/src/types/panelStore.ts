@@ -5,6 +5,7 @@ export interface PanelStore {
   panels: Record<string, ToolPanel[]>;        // sessionId -> panels
   activePanels: Record<string, string>;       // sessionId -> active panelId
   activityStatus: Record<string, 'active' | 'idle'>; // panelId -> status
+  lastActivityAt: Record<string, string>;     // panelId -> last PTY output timestamp
 
   // Synchronous state update actions
   setPanels: (sessionId: string, panels: ToolPanel[]) => void;
@@ -12,7 +13,7 @@ export interface PanelStore {
   addPanel: (panel: ToolPanel) => void;
   removePanel: (sessionId: string, panelId: string) => void;
   updatePanelState: (panel: ToolPanel) => void;
-  setActivityStatus: (panelId: string, status: 'active' | 'idle') => void;
+  setActivityStatus: (panelId: string, status: 'active' | 'idle', lastActivityAt?: string) => void;
   clearActivityStatus: (panelId: string) => void;
 
   // Getters
