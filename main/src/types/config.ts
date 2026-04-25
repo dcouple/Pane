@@ -65,6 +65,9 @@ export interface AppConfig {
   enableCommitFooter?: boolean;
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
+  // Route PTY spawns through an isolated ptyHost UtilityProcess for crash isolation.
+  // Off by default. Requires app restart; the supervisor is forked once at `app.whenReady`.
+  usePtyHost?: boolean;
   // PostHog analytics settings
   analytics?: {
     enabled: boolean;
@@ -122,6 +125,9 @@ export interface UpdateConfigRequest {
   disableCommitFooter?: boolean;
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
+  // Route PTY spawns through an isolated ptyHost UtilityProcess for crash isolation.
+  // Off by default. Requires app restart to take effect.
+  usePtyHost?: boolean;
   // PostHog analytics settings
   analytics?: {
     enabled: boolean;

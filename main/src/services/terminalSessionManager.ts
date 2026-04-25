@@ -6,9 +6,96 @@ import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
+import { configManager, getPtyHostSupervisor } from '../index';
+import type { PtyHandle, PtyHostSupervisor } from '../ptyHost/ptyHostSupervisor';
+
+/**
+ * IPty-compatible shim over a ptyHost `PtyHandle`.
+ *
+ * Mirrors `PtyHandleShim` in `terminalPanelManager.ts`. Kept file-local
+ * because the other shim is not exported; a tiny amount of duplication is
+ * acceptable to keep each manager's surface decoupled.
+ *
+ * Critical: `pid` is cached from the spawn response so synchronous `.pid`
+ * reads in `killProcessTree` (lines ~203-311) and the `session.pty.pid`
+ * read at `:109` keep working after we route through the async RPC seam.
+ */
+class TerminalSessionPtyShim implements pty.IPty {
+  readonly pid: number;
+  cols: number;
+  rows: number;
+  readonly process = 'ptyHost';
+  handleFlowControl = false;
+  readonly ptyId: string;
+  private readonly handle: PtyHandle;
+
+  constructor(handle: PtyHandle, cols: number, rows: number) {
+    this.handle = handle;
+    this.ptyId = handle.id;
+    this.pid = handle.pid;
+    this.cols = cols;
+    this.rows = rows;
+  }
+
+  readonly onData = (listener: (data: string) => void): pty.IDisposable => {
+    return this.handle.onData(listener);
+  };
+
+  readonly onExit = (
+    listener: (e: { exitCode: number; signal?: number }) => void,
+  ): pty.IDisposable => {
+    return this.handle.onExit((exitCode, signal) => {
+      listener({
+        exitCode: exitCode ?? 0,
+        signal: signal === null ? undefined : signal,
+      });
+    });
+  };
+
+  resize(columns: number, rows: number): void {
+    this.cols = columns;
+    this.rows = rows;
+    this.handle.resize(columns, rows).catch((err: unknown) => {
+      console.warn('[ptyHost] terminal-session resize failed', err);
+    });
+  }
+
+  clear(): void {
+    // No-op; ptyHost does not expose a clear RPC.
+  }
+
+  write(data: string | Buffer): void {
+    const str = typeof data === 'string' ? data : data.toString();
+    this.handle.write(str).catch((err: unknown) => {
+      console.warn('[ptyHost] terminal-session write failed', err);
+    });
+  }
+
+  kill(signal?: string): void {
+    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err: unknown) => {
+      console.warn('[ptyHost] terminal-session kill failed', err);
+    });
+  }
+
+  pause(): void {
+    this.handle.pause().catch((err: unknown) => {
+      console.warn('[ptyHost] terminal-session pause failed', err);
+    });
+  }
+
+  resume(): void {
+    this.handle.resume().catch((err: unknown) => {
+      console.warn('[ptyHost] terminal-session resume failed', err);
+    });
+  }
+}
 
 interface TerminalSession {
   pty: pty.IPty;
+  /** Host-allocated PTY id when routed through ptyHost; undefined on legacy path. */
+  ptyId?: string;
+  /** True when `pty` is a `TerminalSessionPtyShim` wrapping a ptyHost handle. */
+  isPtyHost: boolean;
   sessionId: string;
   cwd: string;
 }
@@ -36,26 +123,78 @@ export class TerminalSessionManager extends EventEmitter {
     const shellInfo = ShellDetector.getDefaultShell();
     console.log(`Using shell: ${shellInfo.path} (${shellInfo.name})`);
     
-    // Create a new PTY instance with proper terminal settings
-    const ptyProcess = pty.spawn(shellInfo.path, shellInfo.args || [], {
-      name: 'xterm-256color',  // Better terminal emulation
-      cwd: worktreePath,
-      cols: 80,
-      rows: 24,
-      env: {
-        ...process.env,
-        ...GIT_ATTRIBUTION_ENV,
-        PATH: shellPath,
-        WORKTREE_PATH: worktreePath,
-        TERM: 'xterm-256color',  // Ensure TERM is set for color support
-        COLORTERM: 'truecolor',  // Enable 24-bit color
-        LANG: process.env.LANG || 'en_US.UTF-8',  // Set locale for proper character handling
-      },
-    });
+    // Build spawn env once so both paths see identical values.
+    const rawEnv: Record<string, string | undefined> = {
+      ...process.env,
+      ...GIT_ATTRIBUTION_ENV,
+      PATH: shellPath,
+      WORKTREE_PATH: worktreePath,
+      TERM: 'xterm-256color',      // Ensure TERM is set for color support
+      COLORTERM: 'truecolor',      // Enable 24-bit color
+      LANG: process.env.LANG || 'en_US.UTF-8',  // Set locale for proper character handling
+    };
 
-    // Store the session
+    const spawnCols = 80;
+    const spawnRows = 24;
+    const shellArgs = shellInfo.args || [];
+
+    // When the `usePtyHost` setting is on (with a live supervisor) the spawn
+    // is routed through the ptyHost `UtilityProcess`; otherwise fall back to
+    // the legacy in-main `pty.spawn`. Under setting-off or when the
+    // supervisor is unavailable, behavior is byte-identical.
+    const useFlag = configManager.getUsePtyHost();
+    let supervisor: PtyHostSupervisor | null = null;
+    if (useFlag) {
+      supervisor = getPtyHostSupervisor();
+      if (!supervisor) {
+        console.warn('[ptyHost] supervisor unavailable, falling back to legacy pty.spawn for terminal-session');
+      }
+    }
+    const usePtyHost = !!supervisor;
+
+    let ptyProcess: pty.IPty;
+    let ptyHostId: string | undefined;
+
+    if (usePtyHost && supervisor) {
+      // RPC DTO requires `Record<string, string>`; drop undefined keys.
+      const envStr: Record<string, string> = {};
+      for (const [key, value] of Object.entries(rawEnv)) {
+        if (typeof value === 'string') {
+          envStr[key] = value;
+        }
+      }
+      const spawned = await supervisor.spawn({
+        shell: shellInfo.path,
+        args: shellArgs,
+        cwd: worktreePath,
+        cols: spawnCols,
+        rows: spawnRows,
+        env: envStr,
+        name: 'xterm-256color',
+      });
+      const handle = supervisor.getHandle(spawned.ptyId);
+      if (!handle) {
+        throw new Error(`[ptyHost] supervisor returned ptyId=${spawned.ptyId} but getHandle() was undefined`);
+      }
+      ptyProcess = new TerminalSessionPtyShim(handle, spawnCols, spawnRows);
+      ptyHostId = spawned.ptyId;
+    } else {
+      // Legacy path: direct in-main pty.spawn. Unchanged behavior.
+      ptyProcess = pty.spawn(shellInfo.path, shellArgs, {
+        name: 'xterm-256color',
+        cwd: worktreePath,
+        cols: spawnCols,
+        rows: spawnRows,
+        env: rawEnv as { [key: string]: string },
+      });
+    }
+
+    // Store the session. Pid is already cached on the shim for the ptyHost path
+    // so `session.pty.pid` reads inside `closeTerminalSession` stay synchronous.
     this.terminalSessions.set(sessionId, {
       pty: ptyProcess,
+      ptyId: ptyHostId,
+      isPtyHost: usePtyHost,
       sessionId,
       cwd: worktreePath,
     });
@@ -306,7 +445,62 @@ export class TerminalSessionManager extends EventEmitter {
       console.error('Error in killProcessTree:', error);
       success = false;
     }
-    
+
     return success;
+  }
+
+  /**
+   * Re-spawn every live terminal-session after a ptyHost `UtilityProcess`
+   * restart.
+   *
+   * Order in the supervisor (see `ptyHostSupervisor.onProcExit`):
+   *   rejectPendingRpcs → keep manager maps → await nextReady → respawnAll
+   *
+   * The supervisor intentionally does not emit synthetic exits on host crash.
+   * A synthetic exit would run `createTerminalSession`'s `onExit` cleanup and
+   * delete the session records this method needs to respawn.
+   *
+   * Skip rules:
+   * - Legacy (non-ptyHost) sessions: supervisor restart is irrelevant;
+   *   their `pty.IPty` is still alive.
+   * - Shell scrollback is NOT preserved; users see a fresh shell prompt.
+   *   That matches the terminal-panel behavior documented in Task 6b.
+   */
+  async respawnAll(): Promise<void> {
+    const snapshots: Array<{ sessionId: string; cwd: string }> = [];
+
+    for (const [sessionId, session] of this.terminalSessions) {
+      if (!session.isPtyHost || !session.ptyId) continue;
+      snapshots.push({ sessionId, cwd: session.cwd });
+    }
+
+    if (snapshots.length === 0) {
+      console.log('[ptyHost] TerminalSessionManager respawnAll: no ptyHost-backed sessions to restart');
+      return;
+    }
+
+    // Drop stale entries so `createTerminalSession`'s duplicate-check
+    // (`this.terminalSessions.has(sessionId)`) doesn't early-return.
+    for (const { sessionId } of snapshots) {
+      this.terminalSessions.delete(sessionId);
+    }
+
+    console.log(`[ptyHost] TerminalSessionManager respawnAll: ${snapshots.length} sessions`);
+
+    const results = await Promise.all(
+      snapshots.map(async ({ sessionId, cwd }) => {
+        try {
+          await this.createTerminalSession(sessionId, cwd);
+          return { sessionId, ok: true as const };
+        } catch (err) {
+          console.error(`[ptyHost] respawnAll: createTerminalSession failed for ${sessionId}:`, err);
+          return { sessionId, ok: false as const };
+        }
+      }),
+    );
+
+    const ok = results.filter(r => r.ok).length;
+    const failed = results.length - ok;
+    console.log(`[ptyHost] TerminalSessionManager respawn complete: ${ok} sessions (${failed} failed)`);
   }
 }

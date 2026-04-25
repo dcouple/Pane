@@ -262,6 +262,16 @@ export class ConfigManager extends EventEmitter {
     return this.config.verbose || false;
   }
 
+  /**
+   * Whether PTY spawns should be routed through the isolated ptyHost
+   * `UtilityProcess`. Off by default. The `PANE_USE_PTY_HOST=1` env var is
+   * honored as a dev override so testing doesn't require flipping the config.
+   */
+  getUsePtyHost(): boolean {
+    if (process.env.PANE_USE_PTY_HOST === '1') return true;
+    return this.config.usePtyHost === true;
+  }
+
   getDatabasePath(): string {
     return path.join(this.configDir, 'sessions.db');
   }

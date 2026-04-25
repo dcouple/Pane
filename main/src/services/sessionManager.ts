@@ -1637,6 +1637,16 @@ export class SessionManager extends EventEmitter {
     await this.terminalSessionManager.cleanup();
   }
 
+  /**
+   * Re-spawn every live PTY-backed terminal-session after a ptyHost
+   * `UtilityProcess` restart. Delegates to the owned `TerminalSessionManager`.
+   * Today this is a no-op stub; Chunk F (Task 7) fills it in when
+   * `terminalSessionManager.ts:40` is routed through ptyHost.
+   */
+  async respawnAll(): Promise<void> {
+    await this.terminalSessionManager.respawnAll();
+  }
+
   async runTerminalCommand(sessionId: string, command: string): Promise<void> {
     // Add log entry for terminal command
     addSessionLog(sessionId, 'info', `Running terminal command: ${command}`, 'Terminal');

@@ -117,7 +117,8 @@
       "!node_modules/@anthropic-ai/claude-code/vendor/**",
       "main/dist/services/mcpPermissionBridge.js",
       "main/dist/services/mcpPermissionBridgeStandalone.js",
-      "main/dist/services/**/*.js"
+      "main/dist/services/**/*.js",
+      "main/dist/main/src/ptyHost/**/*.js"
     ],
     "afterSign": "build/afterSign.js",
     "mac": {

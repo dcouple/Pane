@@ -52,6 +52,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [devMode, setDevMode] = useState(false);
+  const [usePtyHost, setUsePtyHost] = useState(false);
+  const [initialUsePtyHost, setInitialUsePtyHost] = useState(false);
   const [additionalPathsText, setAdditionalPathsText] = useState('');
   const [platform, setPlatform] = useState<string>('darwin');
   const [enableCommitFooter, setEnableCommitFooter] = useState(true);
@@ -142,6 +144,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setVerbose(data.verbose || false);
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
+      setUsePtyHost(data.usePtyHost === true);
+      setInitialUsePtyHost(data.usePtyHost === true);
       setClaudeExecutablePath(data.claudeExecutablePath || '');
       setEnableCommitFooter(data.enableCommitFooter !== false); // Default to true
       setUiScale(data.uiScale || 1.0);
@@ -213,6 +217,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         verbose,
         autoCheckUpdates,
         devMode,
+        usePtyHost,
         claudeExecutablePath,
         enableCommitFooter,
         uiScale,
@@ -1083,6 +1088,22 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   <p className="text-xs text-text-tertiary mt-1">
                     Adds a "Messages" tab to each pane showing raw JSON responses from Claude Code. Useful for debugging and development.
                   </p>
+                </div>
+
+                <div className="mt-4">
+                  <Checkbox
+                    label="Use isolated PTY host (experimental)"
+                    checked={usePtyHost}
+                    onChange={(e) => setUsePtyHost(e.target.checked)}
+                  />
+                  <p className="text-xs text-text-tertiary mt-1">
+                    Run terminal processes in a separate utility process for better crash isolation and fixes for Claude Code v2.1.113+ on macOS. Requires app restart; existing terminals keep their current backend, and new terminals after restart use the selected PTY mode.
+                  </p>
+                  {usePtyHost !== initialUsePtyHost && (
+                    <p className="text-xs text-status-warning mt-1">
+                      Restart Pane for this change to take effect.
+                    </p>
+                  )}
                 </div>
               </SettingsSection>
 

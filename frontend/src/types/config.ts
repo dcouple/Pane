@@ -30,6 +30,9 @@ export interface AppConfig {
     enabled: boolean;
   };
   devMode?: boolean;
+  // Route PTY spawns through an isolated ptyHost UtilityProcess for crash
+  // isolation. Off by default. Requires app restart to take effect.
+  usePtyHost?: boolean;
   sessionCreationPreferences?: {
     sessionCount?: number;
     toolType?: 'claude' | 'none';

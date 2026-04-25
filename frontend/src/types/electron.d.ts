@@ -277,6 +277,13 @@ interface ElectronAPI {
     onTerminalCliReady: (callback: (data: { panelId: string }) => void) => () => void;
     onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => void) => () => void;
     onTerminalAlternateScreen: (callback: (data: { panelId: string; active: boolean }) => void) => () => void;
+    /**
+     * Fired when a terminal panel is spawned via the ptyHost UtilityProcess.
+     * Carries the host-allocated `ptyId` so TerminalPanel.tsx can subscribe to
+     * `electronAPI.ptyHost.onData(ptyId, cb)` when the `usePtyHost` setting is on.
+     * Re-fires on auto-reattach after a supervisor restart with a new ptyId.
+     */
+    onTerminalPtyReady: (callback: (data: { sessionId: string; panelId: string; ptyId: string }) => void) => () => void;
     onUncleanShutdownDetected: (callback: () => void) => () => void;
     onMainLog: (callback: (level: string, message: string) => void) => () => void;
     onVersionUpdateAvailable: (callback: (versionInfo: VersionUpdateInfo) => void) => () => void;
@@ -402,6 +409,25 @@ interface ElectronAPI {
   // Window state queries (invoke, not event subscriptions)
   window: {
     isFocused: () => Promise<boolean>;
+  };
+
+  // ptyHost: typed wrapper over the per-window MessagePort installed by the
+  // preload script. The raw port never crosses contextBridge — these
+  // functions are the only surface. Chunk D will switch TerminalPanel.tsx
+  // over to these; Chunk C ships the plumbing so renderer code can start
+  // subscribing when the `usePtyHost` setting is on.
+  ptyHost: {
+    /** Subscribe to PTY byte output for a given ptyId. Returns unsubscribe. */
+    onData: (ptyId: string, cb: (data: string) => void) => () => void;
+    /** Subscribe to PTY exit for a given ptyId. Returns unsubscribe. */
+    onExit: (
+      ptyId: string,
+      cb: (exitCode: number | null, signal: number | null) => void,
+    ) => () => void;
+    /** Ack `bytes` bytes back over the port for flow-control bookkeeping. */
+    ack: (ptyId: string, bytes: number) => void;
+    /** Write `data` over the port without round-tripping through IPC invoke. */
+    write: (ptyId: string, data: string) => void;
   };
 }
 

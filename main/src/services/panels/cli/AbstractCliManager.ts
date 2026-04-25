@@ -10,14 +10,49 @@ import type { ConversationMessage } from '../../../database/models';
 import { getShellPath, findExecutableInPath } from '../../../utils/shellPath';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { GIT_ATTRIBUTION_ENV } from '../../../utils/attribution';
+import { getPtyHostSupervisor } from '../../../index';
+import type { PtyHandle } from '../../../ptyHost/ptyHostSupervisor';
 
 const LAST_OUTPUT_TAIL_BYTES = 16 * 1024;
 
+/**
+ * Minimal shim of the `pty.IPty` surface actually touched by this base class
+ * and the three `killProcessTree` implementations in the codebase.
+ *
+ * Two implementers satisfy this at runtime:
+ * - `pty.IPty` directly (legacy path, flag off or supervisor null).
+ * - A `PtyHandle`-backed wrapper produced by `spawnViaHost()` (ptyHost path).
+ *
+ * Synchronous reads of `.pid` in `killProcess` / `getSessionPids` / the
+ * `killProcessTree` branch are preserved because the ptyHost spawn response
+ * carries the pid and the shim caches it before `spawnViaHost()` resolves.
+ *
+ * Mutation methods widen the IPty-sync `void` return to `void | Promise<void>`
+ * so the `PtyHandle`-backed wrapper (whose methods are async) satisfies the
+ * same interface. All existing call sites ignore the return value.
+ */
+interface PtyLike {
+  readonly pid: number;
+  write(data: string | Buffer): void | Promise<void>;
+  resize(columns: number, rows: number): void | Promise<void>;
+  kill(signal?: string): void | Promise<void>;
+  pause(): void | Promise<void>;
+  resume(): void | Promise<void>;
+  onData(listener: (data: string) => void): { dispose(): void };
+  onExit(listener: (event: { exitCode: number; signal?: number }) => void): { dispose(): void };
+}
+
 interface CliProcess {
-  process: pty.IPty;
+  process: PtyLike;
   panelId: string;
   sessionId: string;
   worktreePath: string;
+  /**
+   * Snapshot of the spawn options used for this process. Required so
+   * `respawnAll()` can re-enter `spawnCliProcess` after a ptyHost restart
+   * without guessing prompt/isResume/model/permissionMode. Plan Task 6b.
+   */
+  spawnOptions: CliSpawnOptions;
 }
 
 interface AvailabilityCache {
@@ -25,7 +60,7 @@ interface AvailabilityCache {
   timestamp: number;
 }
 
-interface CliSpawnOptions {
+export interface CliSpawnOptions {
   panelId: string;
   sessionId: string;
   worktreePath: string;
@@ -198,12 +233,15 @@ export abstract class AbstractCliManager extends EventEmitter {
       // Spawn the process
       const ptyProcess = await this.spawnPtyProcess(finalCmd, finalArgs, worktreePath, finalEnv);
 
-      // Create process record
+      // Create process record. We snapshot `options` verbatim so `respawnAll()`
+      // can re-enter `spawnCliProcess` after a ptyHost restart without
+      // reconstructing prompt/isResume/model from panel state guesses.
       const cliProcess: CliProcess = {
         process: ptyProcess,
         panelId,
         sessionId,
-        worktreePath
+        worktreePath,
+        spawnOptions: options
       };
 
       this.processes.set(panelId, cliProcess);
@@ -617,9 +655,19 @@ export abstract class AbstractCliManager extends EventEmitter {
   /**
    * Spawn PTY process with error handling and Node.js fallback
    * This handles the common case where CLI tools are Node.js scripts with shebangs
-   * that may not work correctly on all systems
+   * that may not work correctly on all systems.
+   *
+   * When the `usePtyHost` setting is on (and a live supervisor), both spawn
+   * attempts are routed through `spawnViaHost`. The Node-fallback classifier below still
+   * runs in main: ptyHost rejects with a `.code`-tagged error (see
+   * `PtyHostSpawnError` / `rpc.ts:toError`) AND preserves the original message,
+   * so the substring-based branching at lines ~717 continues to match.
+   * `withLock('claude-spawn-<panelId>')` at `claudeCodeManager.ts:438-439`
+   * wraps this call; on supervisor restart mid-RPC, the reject with
+   * `PTY_HOST_RESTARTED` propagates through and the lock's try/finally
+   * releases normally.
    */
-  protected async spawnPtyProcess(command: string, args: string[], cwd: string, env: { [key: string]: string }): Promise<pty.IPty> {
+  protected async spawnPtyProcess(command: string, args: string[], cwd: string, env: { [key: string]: string }): Promise<PtyLike> {
     if (!pty) {
       throw new Error('node-pty not available');
     }
@@ -628,7 +676,7 @@ export abstract class AbstractCliManager extends EventEmitter {
     this.logger?.verbose(`Executing ${this.getCliToolName()} command: ${fullCommand}`);
     this.logger?.verbose(`Working directory: ${cwd}`);
 
-    let ptyProcess: pty.IPty;
+    let ptyProcess: PtyLike;
     let spawnAttempt = 0;
     let lastError: unknown;
     const toolName = this.getCliToolName().toLowerCase();
@@ -652,22 +700,32 @@ export abstract class AbstractCliManager extends EventEmitter {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
 
+        const supervisor = getPtyHostSupervisor();
+        const useHost = (this.configManager?.getUsePtyHost() ?? false) && supervisor !== null;
+
         if (spawnAttempt === 0 && !(global as typeof global & Record<string, boolean>)[needsNodeFallbackKey]) {
           // First attempt: normal spawn
-          ptyProcess = pty.spawn(command, args, {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            cwd,
-            env
-          });
+          ptyProcess = useHost
+            ? await this.spawnViaHost(command, args, cwd, env, 80, 30)
+            : pty.spawn(command, args, {
+                name: 'xterm-color',
+                cols: 80,
+                rows: 30,
+                cwd,
+                env
+              });
         } else {
-          // Second attempt or if we know we need Node.js: use Node.js directly
+          // Second attempt or if we know we need Node.js: use Node.js directly.
+          // The Phase 0 `wrapSpawnArgs` hook fires ONCE in `spawnCliProcess` before
+          // entering this loop, so the Node-fallback branch operates on the
+          // unwrapped `(nodePath, nodeArgs)` pair. Claude v2.1.113+ is a native
+          // binary that never trips the fallback; v1.x Node-based Claude still
+          // works because sh exec'd the Node wrapper transparently on attempt 1.
           this.logger?.verbose(`[${this.getCliToolName()}] Using Node.js fallback for execution`);
 
           // Try to find the CLI script (for npm-installed tools)
           let scriptPath = command;
-          
+
           // For tools installed via npm, the command might be a symlink to a script
           // Try using the nodeFinder utility to locate the actual script
           try {
@@ -687,17 +745,19 @@ export abstract class AbstractCliManager extends EventEmitter {
           this.logger?.verbose(`[${this.getCliToolName()}] Using Node.js: ${nodePath}`);
 
           // Spawn with Node.js directly
-          const nodeArgs = scriptPath === command 
+          const nodeArgs = scriptPath === command
             ? [command, ...args] // Command might be a direct script path
             : ['--no-warnings', '--enable-source-maps', scriptPath, ...args]; // Found script path
-            
-          ptyProcess = pty.spawn(nodePath, nodeArgs, {
-            name: 'xterm-color',
-            cols: 80,
-            rows: 30,
-            cwd,
-            env
-          });
+
+          ptyProcess = useHost
+            ? await this.spawnViaHost(nodePath, nodeArgs, cwd, env, 80, 30)
+            : pty.spawn(nodePath, nodeArgs, {
+                name: 'xterm-color',
+                cols: 80,
+                rows: 30,
+                cwd,
+                env
+              });
         }
 
         const spawnTime = Date.now() - startTime;
@@ -736,9 +796,207 @@ export abstract class AbstractCliManager extends EventEmitter {
   }
 
   /**
+   * Spawn the CLI binary through the ptyHost `UtilityProcess` and return a
+   * `PtyLike`-compatible shim. The shim caches `pid` from the spawn response
+   * so synchronous `.pid` reads (killProcess, getSessionPids, killProcessTree)
+   * remain synchronous.
+   *
+   * Error mapping: on reject, the supervisor's `RpcDispatcher` converts the
+   * host's `PtyHostSpawnError` into an `Error` with the original `message`
+   * preserved verbatim AND a `.code` property set to one of
+   * `ENOENT | E193 | SHEBANG | OTHER` (see `rpc.ts:toError`). The two-attempt
+   * classifier above branches on the message substring, so the existing
+   * shebang / ENOENT / Windows-193 checks continue to match transparently.
+   * The `.code` property is preserved on the thrown error for any future
+   * callers that want to branch on it directly.
+   */
+  private async spawnViaHost(
+    cmd: string,
+    args: string[],
+    cwd: string,
+    env: { [key: string]: string },
+    cols: number,
+    rows: number
+  ): Promise<PtyLike> {
+    const supervisor = getPtyHostSupervisor();
+    if (!supervisor) {
+      // Guard: caller must have checked already; if we got here without one,
+      // surface a classifier-agnostic OTHER to avoid accidental fallback.
+      const err = new Error('ptyHost supervisor not available') as Error & { code?: string };
+      err.code = 'OTHER';
+      throw err;
+    }
+
+    const { ptyId, pid } = await supervisor.spawn({
+      shell: cmd,
+      args,
+      cwd,
+      cols,
+      rows,
+      env,
+      name: 'xterm-256color',
+    });
+
+    const handle = supervisor.getHandle(ptyId);
+    if (!handle) {
+      // This shouldn't happen: supervisor.spawn() registers the handle before
+      // resolving. If it does, treat as OTHER so the fallback path doesn't fire.
+      const err = new Error(`ptyHost returned ptyId ${ptyId} but no handle`) as Error & { code?: string };
+      err.code = 'OTHER';
+      throw err;
+    }
+
+    return this.wrapPtyHandle(handle, pid);
+  }
+
+  /**
+   * Adapt a `PtyHandle` to the `PtyLike` surface this base class uses. The
+   * adapter is strictly local; it converts `PtyHandle.onExit`'s positional
+   * `(exitCode, signal)` shape to the `{exitCode, signal}` object shape the
+   * rest of this file (and `pty.IPty`) expects.
+   */
+  private wrapPtyHandle(handle: PtyHandle, pid: number): PtyLike {
+    return {
+      pid,
+      write(data: string | Buffer): Promise<void> {
+        return handle.write(typeof data === 'string' ? data : data.toString('utf8'));
+      },
+      resize(columns: number, rowsValue: number): Promise<void> {
+        return handle.resize(columns, rowsValue);
+      },
+      kill(signal?: string): Promise<void> {
+        return handle.kill(signal as NodeJS.Signals | undefined);
+      },
+      pause(): Promise<void> {
+        return handle.pause();
+      },
+      resume(): Promise<void> {
+        return handle.resume();
+      },
+      onData(listener: (data: string) => void) {
+        return handle.onData(listener);
+      },
+      onExit(listener: (event: { exitCode: number; signal?: number }) => void) {
+        // Preserve the raw signal number; SIGSEGV/SIGABRT/SIGBUS detection at
+        // `setupProcessHandlers` depends on it. Widen `exitCode: number | null`
+        // to `number` by passing it through; downstream code already tolerates
+        // null via `exitCode ?? 0` / `exitCode !== 0`.
+        return handle.onExit((exitCode, signal) => {
+          listener({
+            exitCode: (exitCode ?? 0),
+            signal: signal ?? undefined,
+          });
+        });
+      },
+    };
+  }
+
+  /**
+   * Re-spawn every live CLI process after a ptyHost `UtilityProcess` restart.
+   *
+   * Order inside the supervisor (see `ptyHostSupervisor.onProcExit`):
+   *   rejectPendingRpcs → keep manager maps → await nextReady → respawnAll
+   *
+   * The supervisor intentionally does not emit synthetic exits on host crash.
+   * A synthetic exit would run this file's `onExit` cleanup and delete the
+   * process records we need to snapshot here.
+   *
+   * Per-panel work is delegated to `respawnPanel()` so subclasses (Claude)
+   * can wrap each re-entry in their `withLock('claude-spawn-<panelId>')`
+   * envelope without duplicating the iteration logic here.
+   *
+   * Plan Task 6b: "Run per-panel respawns in parallel via Promise.all."
+   */
+  async respawnAll(): Promise<void> {
+    const entries = Array.from(this.processes.entries());
+    if (entries.length === 0) {
+      this.logger?.info(`[ptyHost] ${this.getCliToolName()} respawnAll: no live panels`);
+      return;
+    }
+
+    this.logger?.info(`[ptyHost] ${this.getCliToolName()} respawnAll: ${entries.length} panels`);
+
+    const results = await Promise.all(entries.map(async ([panelId, cliProcess]) => {
+      // Snapshot the options BEFORE clearing the stale entry; the entry's
+      // `spawnOptions` still points at the pre-restart invocation.
+      const snapshot = cliProcess.spawnOptions;
+
+      // Clear the stale entry so the re-entry's `spawnCliProcess` duplicate
+      // check doesn't throw.
+      this.processes.delete(panelId);
+
+      // Skip panels whose CLI never finished spawning. The pending RPC
+      // rejection (`PTY_HOST_RESTARTED`) already propagated the error up to
+      // the original caller's `spawnCliProcess` promise, whose error-handler
+      // runs its own cleanup. Re-spawning here would duplicate work.
+      if (this.isSpawnInProgress(panelId)) {
+        this.logger?.warn(`[ptyHost] ${this.getCliToolName()} skipping respawn for ${panelId}: spawn in progress at restart`);
+        return { panelId, skipped: 'in-progress' as const };
+      }
+
+      // Skip non-interactive `-p` spawns. The prompt is not recoverable from
+      // panel state alone and re-running the original prompt after a mid-flight
+      // crash risks double-executing work the user already saw partially complete.
+      if (this.isNonInteractiveSpawn(snapshot)) {
+        this.logger?.warn(`[ptyHost] ${this.getCliToolName()} skipping respawn for ${panelId}: non-interactive -p spawn interrupted`);
+        this.emit('output', {
+          panelId,
+          sessionId: cliProcess.sessionId,
+          type: 'stderr',
+          data: `\n[${this.getCliToolName()}] ptyHost restarted mid-spawn; non-interactive prompt lost. Start a new message to continue.\n`,
+          timestamp: new Date()
+        } as CliOutputEvent);
+        return { panelId, skipped: 'non-interactive' as const };
+      }
+
+      try {
+        await this.respawnPanel(snapshot);
+        return { panelId, skipped: false as const };
+      } catch (err) {
+        this.logger?.error(`[ptyHost] ${this.getCliToolName()} respawn failed for ${panelId}:`, err instanceof Error ? err : undefined);
+        return { panelId, skipped: 'error' as const };
+      }
+    }));
+
+    const respawned = results.filter(r => r.skipped === false).length;
+    const skipped = results.length - respawned;
+    this.logger?.info(`[ptyHost] ${this.getCliToolName()} respawn complete: ${respawned} respawned, ${skipped} skipped`);
+  }
+
+  /**
+   * Re-enter the spawn flow for a single panel. Base implementation calls
+   * `spawnCliProcess(options)` directly. Subclasses (e.g. `ClaudeCodeManager`)
+   * override to wrap in their per-panel lock so a concurrent user-initiated
+   * spawn cannot race with the restart-driven respawn.
+   *
+   * Not a public entry point — only called from `respawnAll`.
+   */
+  protected async respawnPanel(options: CliSpawnOptions): Promise<void> {
+    await this.spawnCliProcess(options);
+  }
+
+  /**
+   * Hook for subclasses to tell respawnAll whether the pre-restart spawn had
+   * completed enough that re-entering makes sense. Default: always respawn.
+   * `ClaudeCodeManager` overrides to check `isCliReady` on the panel state.
+   */
+  protected isSpawnInProgress(_panelId: string): boolean {
+    return false;
+  }
+
+  /**
+   * Hook for subclasses to tell respawnAll whether the pre-restart spawn was
+   * a non-interactive `-p` invocation that can't be reproduced after a crash.
+   * Default: false. `ClaudeCodeManager` overrides to check `isInteractive`.
+   */
+  protected isNonInteractiveSpawn(_options: CliSpawnOptions): boolean {
+    return false;
+  }
+
+  /**
    * Set up event handlers for a PTY process
    */
-  protected setupProcessHandlers(ptyProcess: pty.IPty, panelId: string, sessionId: string): void {
+  protected setupProcessHandlers(ptyProcess: PtyLike, panelId: string, sessionId: string): void {
     let hasReceivedOutput = false;
     let lastOutput = '';
     let buffer = '';

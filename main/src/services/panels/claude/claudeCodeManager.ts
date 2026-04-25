@@ -552,6 +552,51 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return { cmd: '/bin/sh', args: ['-c', `exec ${line}`], env };
   }
 
+  /**
+   * Claude respawn on ptyHost restart.
+   *
+   * We rely on the base class's `respawnPanel` → `this.spawnCliProcess(options)`
+   * dispatch, which invokes Claude's own `spawnCliProcess` override. That
+   * override already wraps the spawn in `withLock('claude-spawn-<panelId>')`
+   * at line 440, so no additional lock-wrapping is needed here. The base
+   * implementation is sufficient and preserves the serialization contract.
+   *
+   * This comment exists so future editors don't add a redundant override;
+   * doing so would deadlock on the same lock name.
+   */
+  // (intentionally no override of respawnPanel — base implementation is correct)
+
+  /**
+   * Plan Task 6b: skip panels whose Claude process had not finished its
+   * interactive-init handshake at restart time. `isCliReady` is persisted on
+   * panel state by the spawn flow (see `terminalPanelManager.ts:566-569` and
+   * the `system:init` branch in `parseCliOutput`) so we can read it back here.
+   */
+  protected override isSpawnInProgress(panelId: string): boolean {
+    // Use synchronous cache-hit path; panelManager.getPanel is sync.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { panelManager } = require('../../panelManager') as typeof import('../../panelManager');
+    const panel = panelManager.getPanel(panelId);
+    if (!panel) return false;
+    const cs = (panel.state.customState || {}) as { isCliReady?: boolean; isCliPanel?: boolean };
+    // Only consider "in progress" if this is a CLI panel but the CLI has not
+    // reported ready yet. Non-CLI callers shouldn't hit this (Claude entries
+    // are always CLI) but guard anyway.
+    if (cs.isCliPanel === false) return false;
+    return cs.isCliReady === false;
+  }
+
+  /**
+   * Plan Task 6b: skip respawn when the original spawn was non-interactive
+   * `-p` mode. Claude's options carry `isInteractive`; absence means headless
+   * (i.e. `-p` will be injected by `buildCommandArgs`). We can't reproduce the
+   * original prompt meaningfully after a mid-spawn crash.
+   */
+  protected override isNonInteractiveSpawn(options: import('../cli/AbstractCliManager').CliSpawnOptions): boolean {
+    const opts = options as ClaudeSpawnOptions;
+    return opts.isInteractive !== true;
+  }
+
   // Implementation of abstract methods from AbstractCliManager
 
   async startPanel(panelId: string, sessionId: string, worktreePath: string, prompt: string, permissionMode?: 'approve' | 'ignore', model?: string): Promise<void> {

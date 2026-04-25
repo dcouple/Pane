@@ -158,6 +158,14 @@ export class CliManagerFactory {
   }
 
   /**
+   * Get every registered CLI manager instance. Used by the ptyHost supervisor's
+   * `ready-after-restart` hook in `index.ts` to fan out `respawnAll()` calls.
+   */
+  public getAllManagers(): AbstractCliManager[] {
+    return this.registry.getAllManagers();
+  }
+
+  /**
    * Shutdown all managers
    */
   public async shutdown(): Promise<void> {

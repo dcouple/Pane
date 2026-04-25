@@ -90,6 +90,84 @@ interface UpdaterInfo {
 // Increase max listeners for ipcRenderer to prevent warnings when many components listen to events
 ipcRenderer.setMaxListeners(50);
 
+// ptyHost data port wiring.
+//
+// Main posts `webContents.postMessage('ptyHost-port', null, [rendererPort])`
+// after `did-finish-load`. The renderer end is a DOM-style `MessagePort` —
+// use `.onmessage`, not `.on('message')`. The port CANNOT cross contextBridge
+// directly, so we keep it in this preload-scoped closure and expose a typed
+// function surface on `window.electronAPI.ptyHost` below.
+//
+// Chunk C: ptyHost does not yet tee bytes to this port; the RPC path on the
+// main side continues to deliver bytes via the existing `terminal:output`
+// channel. Subscribers are still wired so Chunk D can flip the byte path over
+// without further preload changes.
+type PtyHostDataFrame = { type: 'data'; ptyId: string; data: string };
+type PtyHostExitFrame = {
+  type: 'exit';
+  ptyId: string;
+  exitCode: number | null;
+  signal: number | null;
+};
+type PtyHostInboundFrame = PtyHostDataFrame | PtyHostExitFrame;
+
+type PtyDataCallback = (data: string) => void;
+type PtyExitCallback = (exitCode: number | null, signal: number | null) => void;
+
+let ptyHostPort: MessagePort | null = null;
+const ptyDataSubscribers = new Map<string, Set<PtyDataCallback>>();
+const ptyExitSubscribers = new Map<string, Set<PtyExitCallback>>();
+
+function isPtyHostInboundFrame(frame: unknown): frame is PtyHostInboundFrame {
+  if (typeof frame !== 'object' || frame === null) return false;
+  const f = frame as { type?: unknown; ptyId?: unknown };
+  if (typeof f.ptyId !== 'string') return false;
+  return f.type === 'data' || f.type === 'exit';
+}
+
+ipcRenderer.on('ptyHost-port', (event) => {
+  const [port] = event.ports;
+  if (!port) {
+    console.error('[ptyHost] ptyHost-port IPC arrived with no port');
+    return;
+  }
+  // Renderer-world MessagePort is DOM-style: use .start() + .onmessage.
+  port.start();
+  port.onmessage = (e: MessageEvent) => {
+    const frame = e.data as unknown;
+    if (!isPtyHostInboundFrame(frame)) {
+      return;
+    }
+    if (frame.type === 'data') {
+      const subs = ptyDataSubscribers.get(frame.ptyId);
+      if (subs) {
+        for (const cb of subs) {
+          try {
+            cb(frame.data);
+          } catch (err) {
+            console.error('[ptyHost] data subscriber threw', err);
+          }
+        }
+      }
+      return;
+    }
+    if (frame.type === 'exit') {
+      const subs = ptyExitSubscribers.get(frame.ptyId);
+      if (subs) {
+        for (const cb of subs) {
+          try {
+            cb(frame.exitCode, frame.signal);
+          } catch (err) {
+            console.error('[ptyHost] exit subscriber threw', err);
+          }
+        }
+      }
+      return;
+    }
+  };
+  ptyHostPort = port;
+});
+
 // Bridge panel events from main process to renderer window as DOM CustomEvents
 // This allows React components to listen with `window.addEventListener('panel:event', ...)`
 try {
@@ -606,6 +684,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('terminal:alternateScreen', wrappedCallback);
     },
 
+    // Fired once per terminal spawn when the `usePtyHost` setting is on and
+    // the ptyHost supervisor is live. Carries the host-allocated `ptyId` so
+    // `TerminalPanel.tsx` can subscribe to `electronAPI.ptyHost.onData(ptyId, ...)`
+    // instead of the legacy `terminal:output` channel. Fires again on auto-reattach
+    // after a supervisor restart so the renderer re-subscribes to the new ptyId.
+    onTerminalPtyReady: (callback: (data: { sessionId: string; panelId: string; ptyId: string }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; panelId: string; ptyId: string }) => callback(data);
+      ipcRenderer.on('terminal:ptyReady', wrappedCallback);
+      return () => ipcRenderer.removeListener('terminal:ptyReady', wrappedCallback);
+    },
+
     // Spotlight events
     onSpotlightStatusChanged: (callback: (data: { sessionId: string; projectId: number; active: boolean }) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { sessionId: string; projectId: number; active: boolean }) => callback(data);
@@ -789,6 +878,58 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Window state queries (invoke, not event subscriptions)
   window: {
     isFocused: (): Promise<boolean> => ipcRenderer.invoke('window:is-focused') as Promise<boolean>,
+  },
+
+  // ptyHost: typed wrapper over the per-window MessagePort. The raw port is
+  // kept in preload scope; only these functions cross the contextBridge.
+  //
+  // `onData` / `onExit` return an unsubscribe function matching the existing
+  // event-subscription convention elsewhere on `electronAPI.events`. Chunks
+  // D/E switch `TerminalPanel.tsx` over to these.
+  //
+  // `write` / `ack` post frames back over the port; Chunk D wires these in
+  // main-side via `PtyHostSupervisor.onRendererMessage` when they land.
+  ptyHost: {
+    onData: (ptyId: string, cb: PtyDataCallback): (() => void) => {
+      let set = ptyDataSubscribers.get(ptyId);
+      if (!set) {
+        set = new Set();
+        ptyDataSubscribers.set(ptyId, set);
+      }
+      set.add(cb);
+      return () => {
+        const current = ptyDataSubscribers.get(ptyId);
+        if (!current) return;
+        current.delete(cb);
+        if (current.size === 0) {
+          ptyDataSubscribers.delete(ptyId);
+        }
+      };
+    },
+    onExit: (ptyId: string, cb: PtyExitCallback): (() => void) => {
+      let set = ptyExitSubscribers.get(ptyId);
+      if (!set) {
+        set = new Set();
+        ptyExitSubscribers.set(ptyId, set);
+      }
+      set.add(cb);
+      return () => {
+        const current = ptyExitSubscribers.get(ptyId);
+        if (!current) return;
+        current.delete(cb);
+        if (current.size === 0) {
+          ptyExitSubscribers.delete(ptyId);
+        }
+      };
+    },
+    ack: (ptyId: string, bytes: number): void => {
+      if (!ptyHostPort) return;
+      ptyHostPort.postMessage({ type: 'ack', ptyId, bytes });
+    },
+    write: (ptyId: string, data: string): void => {
+      if (!ptyHostPort) return;
+      ptyHostPort.postMessage({ type: 'write', ptyId, data });
+    },
   },
 });
 

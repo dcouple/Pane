@@ -54,6 +54,7 @@ import { terminalPanelManager } from './services/terminalPanelManager';
 import { panelManager } from './services/panelManager';
 import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
+import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -114,6 +115,23 @@ let versionChecker: VersionChecker;
 let archiveProgressManager: ArchiveProgressManager;
 let analyticsManager: AnalyticsManager;
 let spotlightManager: SpotlightManager;
+
+// ptyHost supervisor — forked as an Electron UtilityProcess on app ready,
+// but only when the `usePtyHost` setting is enabled (default: off). When
+// disabled, the supervisor is never forked and every manager transparently
+// falls through to the legacy in-main `pty.spawn` path.
+let ptyHostSupervisor: PtyHostSupervisor | null = null;
+
+/**
+ * Getter for the ptyHost supervisor. Managers route spawn/write/resize/kill
+ * through this when `configManager.getUsePtyHost()` returns true and the
+ * supervisor fork succeeded. Returns null when the setting is off OR when
+ * fork failed — callers must handle the null case and fall back to the
+ * legacy `pty.spawn` path.
+ */
+export function getPtyHostSupervisor(): PtyHostSupervisor | null {
+  return ptyHostSupervisor;
+}
 
 // Store app start time for session duration tracking
 let appStartTime: number;
@@ -861,6 +879,15 @@ async function createWindow() {
     }
     resourceMonitorService.handleVisibilityChange(false);
   });
+
+  // Hand the renderer its per-window ptyHost data port once the preload
+  // listener is guaranteed to be installed. Chunk C: the port is a
+  // passthrough; Chunk D switches `TerminalPanel.tsx` to subscribe on it.
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (ptyHostSupervisor && mainWindow) {
+      ptyHostSupervisor.attachWindow(mainWindow.webContents);
+    }
+  });
 }
 
 async function initializeServices() {
@@ -1070,6 +1097,56 @@ app.whenReady().then(async () => {
   console.log('[Main] App is ready, initializing services...');
   await initializeServices();
   console.log('[Main] Services initialized, creating window...');
+
+  // Start the ptyHost supervisor before the window opens so the renderer's
+  // preload listener for 'ptyHost-port' has a port to receive when the window
+  // finishes loading. Gated on the `usePtyHost` setting: when off (default),
+  // the supervisor is never forked and every spawn site falls through to the
+  // legacy in-main `pty.spawn` path with zero ptyHost code executing.
+  if (configManager.getUsePtyHost()) {
+    try {
+      ptyHostSupervisor = new PtyHostSupervisor();
+      await ptyHostSupervisor.start();
+
+      ptyHostSupervisor.on('renderer-ack', (ptyId: string, bytes: number) => {
+        terminalPanelManager.acknowledgePtyHostBytes(ptyId, bytes);
+      });
+
+      // Auto-reattach: on ptyHost restart, every manager re-enters the spawn
+      // path for its live panels. Order (per plan Task 6b / gotcha line 825):
+      //   rejectPendingRpcs → keep manager maps → await nextReady → respawnAll
+      // The supervisor keeps manager maps intact; the `ready-after-restart`
+      // event marks "await nextReady" complete so we can drive respawnAll across
+      // every manager in parallel.
+      ptyHostSupervisor.on('ready-after-restart', () => {
+        console.log('[ptyHost] ready-after-restart; fanning respawnAll across managers');
+        const respawnTasks: Array<Promise<void>> = [
+          terminalPanelManager.respawnAll(),
+        ];
+        if (cliManagerFactory) {
+          const managers = cliManagerFactory.getAllManagers();
+          for (const manager of managers) {
+            respawnTasks.push(manager.respawnAll());
+          }
+        }
+        if (runCommandManager) {
+          respawnTasks.push(runCommandManager.respawnAll());
+        }
+        if (sessionManager) {
+          respawnTasks.push(sessionManager.respawnAll());
+        }
+        Promise.all(respawnTasks)
+          .then(() => console.log('[ptyHost] respawnAll fan-out complete'))
+          .catch((err) => console.error('[ptyHost] respawnAll fan-out error:', err));
+      });
+    } catch (error) {
+      console.error('[ptyHost] supervisor failed to start; legacy pty.spawn path will be used', error);
+      ptyHostSupervisor = null;
+    }
+  } else {
+    console.log('[ptyHost] usePtyHost setting is disabled; skipping supervisor fork');
+  }
+
   await createWindow();
   console.log('[Main] Window created successfully');
 

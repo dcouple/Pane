@@ -1,7 +1,7 @@
 import * as pty from '@lydell/node-pty';
 import { ToolPanel, TerminalPanelState, PanelEventType } from '../../../shared/types/panels';
 import { panelManager } from './panelManager';
-import { mainWindow, configManager } from '../index';
+import { mainWindow, configManager, getPtyHostSupervisor } from '../index';
 import * as os from 'os';
 import * as path from 'path';
 import { getShellPath } from '../utils/shellPath';
@@ -9,22 +9,113 @@ import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
+import type { PtyHandle, PtyHostSupervisor } from '../ptyHost/ptyHostSupervisor';
+import {
+  type FlowControlRecord,
+  createFlowControlRecord,
+  disposeFlowControlRecord,
+  onAck as flowControlOnAck,
+  onPtyBytes as flowControlOnPtyBytes,
+} from '../ptyHost/flowControl';
 
-const HIGH_WATERMARK = 100_000; // 100KB — pause PTY when pending exceeds this (visible panels)
-const HIGH_WATERMARK_HIDDEN = 300_000; // 300KB — raised watermark for hidden panels so the slower 250ms cadence doesn't trigger pause/resume churn on verbose builds
-const LOW_WATERMARK = 10_000;   // 10KB — resume PTY when pending drops below this
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
 const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size trigger is safety net
-const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap per-flush size on hidden panels below HIGH_WATERMARK so a single flush can't trip backpressure; high-throughput jobs degrade to size-driven flushes
-const PAUSE_SAFETY_TIMEOUT = 5_000; // 5s — auto-resume PTY if no acks arrive (prevents permanent stall)
+const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap hidden flush size to avoid foreground backpressure churn
 const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 30_000; // 30s — mark panel idle after no PTY output
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
 
+/**
+ * IPty-compatible shim over a ptyHost `PtyHandle`.
+ *
+ * When the `usePtyHost` setting is on and the supervisor is available,
+ * terminal spawns route through the ptyHost UtilityProcess and we get back a
+ * `PtyHandle` whose methods are async. The managers treat the
+ * `TerminalProcess.pty` field as a sync `IPty`; this shim preserves that
+ * assumption by fire-and-forgetting the async calls (errors logged, not
+ * awaited at call sites) and exposing `pid`/`cols`/`rows` synchronously.
+ *
+ * Critical: `pid` is cached from the spawn response so the synchronous
+ * `.pid` reads in `getSessionPids()` and `killProcessTree` keep working.
+ */
+class PtyHandleShim implements pty.IPty {
+  readonly pid: number;
+  cols: number;
+  rows: number;
+  readonly process = 'ptyHost';
+  handleFlowControl = false;
+  readonly ptyId: string;
+  private readonly handle: PtyHandle;
+
+  constructor(handle: PtyHandle, cols: number, rows: number) {
+    this.handle = handle;
+    this.ptyId = handle.id;
+    this.pid = handle.pid;
+    this.cols = cols;
+    this.rows = rows;
+  }
+
+  readonly onData = (listener: (data: string) => void): pty.IDisposable => {
+    return this.handle.onData(listener);
+  };
+
+  readonly onExit = (
+    listener: (e: { exitCode: number; signal?: number }) => void,
+  ): pty.IDisposable => {
+    return this.handle.onExit((exitCode, signal) => {
+      listener({
+        exitCode: exitCode ?? 0,
+        signal: signal === null ? undefined : signal,
+      });
+    });
+  };
+
+  resize(columns: number, rows: number): void {
+    this.cols = columns;
+    this.rows = rows;
+    this.handle.resize(columns, rows).catch((err: unknown) => {
+      console.warn('[ptyHost] resize failed', err);
+    });
+  }
+
+  clear(): void {
+    // No-op on non-Windows; ptyHost does not currently expose a clear RPC.
+  }
+
+  write(data: string | Buffer): void {
+    const str = typeof data === 'string' ? data : data.toString();
+    this.handle.write(str).catch((err: unknown) => {
+      console.warn('[ptyHost] write failed', err);
+    });
+  }
+
+  kill(signal?: string): void {
+    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err: unknown) => {
+      console.warn('[ptyHost] kill failed', err);
+    });
+  }
+
+  pause(): void {
+    this.handle.pause().catch((err: unknown) => {
+      console.warn('[ptyHost] pause failed', err);
+    });
+  }
+
+  resume(): void {
+    this.handle.resume().catch((err: unknown) => {
+      console.warn('[ptyHost] resume failed', err);
+    });
+  }
+}
+
 interface TerminalProcess {
   pty: pty.IPty;
+  /** Host-allocated PTY id when routed through ptyHost; undefined under legacy `pty.spawn`. */
+  ptyId?: string;
+  /** True when `pty` is a `PtyHandleShim` wrapping a ptyHost handle. */
+  isPtyHost: boolean;
   panelId: string;
   sessionId: string;
   scrollbackBuffer: string;
@@ -33,10 +124,19 @@ interface TerminalProcess {
   currentCommand: string;
   lastActivity: Date;
   isWSL?: boolean;
-  // Flow control
-  pendingBytes: number;
-  isPaused: boolean;
-  pauseSafetyTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * WSL context captured at spawn time. Stored so `respawnAll` can re-inject
+   * the same distro / user / WSLENV propagation after a ptyHost supervisor
+   * restart without needing to reconstruct it from project state.
+   */
+  wslContext: WSLContext | null;
+  /**
+   * Flow-control bookkeeping (pending bytes, pause state, safety timer,
+   * `pauseRpcInFlight` gate). Lives on the shared `FlowControlRecord` so the
+   * same state-machine semantics apply to both the legacy `pty.spawn` path
+   * and the ptyHost `usePtyHost` path.
+   */
+  flowControl: FlowControlRecord;
   // Output batching
   outputBuffer: string;
   outputFlushTimer: ReturnType<typeof setTimeout> | null;
@@ -160,10 +260,11 @@ export class TerminalPanelManager {
       return;
     }
 
-    // Track pending bytes for flow control
-    terminal.pendingBytes += data.length;
-
-    // Send batched output to renderer
+    // Send batched output to renderer. Legacy path: IPC send via
+    // `terminal:output`. Flag-on ptyHost path: post the filtered bytes over
+    // the per-window MessagePort so `electronAPI.ptyHost.onData` subscribers
+    // fire. Both paths continue to run; the renderer short-circuits the
+    // legacy handler once a `ptyId` is set to avoid double-delivery.
     if (mainWindow) {
       mainWindow.webContents.send('terminal:output', {
         sessionId: terminal.sessionId,
@@ -171,40 +272,76 @@ export class TerminalPanelManager {
         output: data
       });
     }
-
-    // Apply backpressure if watermark exceeded. Hidden panels get a higher
-    // watermark to absorb the 250ms cadence without constant pause/resume.
-    const watermark = terminal.isVisible ? HIGH_WATERMARK : HIGH_WATERMARK_HIDDEN;
-    if (terminal.pendingBytes > watermark && !terminal.isPaused) {
-      terminal.isPaused = true;
-      terminal.pty.pause();
-
-      // Safety valve: auto-resume if no acks arrive (e.g., renderer unmounted)
-      if (terminal.pauseSafetyTimer) clearTimeout(terminal.pauseSafetyTimer);
-      terminal.pauseSafetyTimer = setTimeout(() => {
-        if (terminal.isPaused) {
-          terminal.isPaused = false;
-          terminal.pendingBytes = 0;
-          terminal.pty.resume();
-        }
-        terminal.pauseSafetyTimer = null;
-      }, PAUSE_SAFETY_TIMEOUT);
+    if (terminal.isPtyHost && terminal.ptyId) {
+      const supervisor = getPtyHostSupervisor();
+      supervisor?.postDataToRenderers(terminal.ptyId, data);
     }
+
+    // Update flow-control bookkeeping with the bytes just flushed. The record
+    // owns the HIGH/LOW watermark check, the `pauseRpcInFlight` gate, and the
+    // 5s safety timer; both the legacy and ptyHost paths go through the same
+    // state machine (see `main/src/ptyHost/flowControl.ts`).
+    flowControlOnPtyBytes(
+      terminal.flowControl,
+      data.length,
+      () => this.pausePty(terminal),
+      () => this.resumePty(terminal),
+    );
+  }
+
+  /**
+   * Pause the underlying PTY. Under the ptyHost flag, routes the RPC directly
+   * through the supervisor; flag-off uses the legacy `pty.IPty.pause()` path.
+   *
+   * Returns a promise so the flow-control state machine can defer arming its
+   * safety timer until the pause RPC actually lands (plan lines 619-624).
+   * Legacy path resolves synchronously; ptyHost path resolves when the RPC
+   * response returns.
+   */
+  private pausePty(terminal: TerminalProcess): Promise<void> {
+    if (terminal.isPtyHost && terminal.ptyId) {
+      const supervisor = getPtyHostSupervisor();
+      if (supervisor) {
+        return supervisor.pause(terminal.ptyId).catch((err: unknown) => {
+          console.warn('[TerminalPanelManager] ptyHost pause failed', err);
+        });
+      }
+    }
+    terminal.pty.pause();
+    return Promise.resolve();
+  }
+
+  /**
+   * Resume the underlying PTY. Mirror of `pausePty` for the resume side.
+   */
+  private resumePty(terminal: TerminalProcess): void {
+    if (terminal.isPtyHost && terminal.ptyId) {
+      const supervisor = getPtyHostSupervisor();
+      if (supervisor) {
+        supervisor.resume(terminal.ptyId).catch((err: unknown) => {
+          console.warn('[TerminalPanelManager] ptyHost resume failed', err);
+        });
+        return;
+      }
+    }
+    terminal.pty.resume();
   }
 
   acknowledgeBytes(panelId: string, bytesConsumed: number): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return;
 
-    terminal.pendingBytes = Math.max(0, terminal.pendingBytes - bytesConsumed);
+    // Delegate to the shared flow-control helper. It decrements `pendingBytes`,
+    // clears the safety timer, and invokes the resume callback only when the
+    // record is actually paused and bytes drop below `LOW_WATERMARK`.
+    flowControlOnAck(terminal.flowControl, bytesConsumed, () => this.resumePty(terminal));
+  }
 
-    if (terminal.isPaused && terminal.pendingBytes < LOW_WATERMARK) {
-      terminal.isPaused = false;
-      terminal.pty.resume();
-      // Cancel safety timer — normal ack flow is working
-      if (terminal.pauseSafetyTimer) {
-        clearTimeout(terminal.pauseSafetyTimer);
-        terminal.pauseSafetyTimer = null;
+  acknowledgePtyHostBytes(ptyId: string, bytesConsumed: number): void {
+    for (const [panelId, terminal] of this.terminals) {
+      if (terminal.ptyId === ptyId) {
+        this.acknowledgeBytes(panelId, bytesConsumed);
+        return;
       }
     }
   }
@@ -220,14 +357,10 @@ export class TerminalPanelManager {
       // Once hidden, renderer ACKs stop. Do not leave a visible-mode pause
       // pending against bytes the renderer may never acknowledge.
       terminal.outputBuffer = '';
-      terminal.pendingBytes = 0;
-      if (terminal.pauseSafetyTimer) {
-        clearTimeout(terminal.pauseSafetyTimer);
-        terminal.pauseSafetyTimer = null;
-      }
-      if (terminal.isPaused) {
-        terminal.isPaused = false;
-        terminal.pty.resume();
+      const wasPaused = terminal.flowControl.isPaused;
+      disposeFlowControlRecord(terminal.flowControl);
+      if (wasPaused) {
+        this.resumePty(terminal);
       }
     } else {
       // Hidden output is already present in scrollbackBuffer. Drop any stale
@@ -243,19 +376,13 @@ export class TerminalPanelManager {
 
     console.log(`[TerminalPanelManager] Resetting flow control for panel ${panelId}`);
 
-    // Clear any pending safety timer
-    if (terminal.pauseSafetyTimer) {
-      clearTimeout(terminal.pauseSafetyTimer);
-      terminal.pauseSafetyTimer = null;
-    }
+    const wasPaused = terminal.flowControl.isPaused;
+    // Dispose clears timers, paused state, and pending bytes on the record.
+    disposeFlowControlRecord(terminal.flowControl);
 
-    // Reset flow control state
-    terminal.pendingBytes = 0;
-
-    // Resume PTY if paused
-    if (terminal.isPaused) {
-      terminal.isPaused = false;
-      terminal.pty.resume();
+    // If we interrupted a paused PTY, explicitly resume so bytes flow again.
+    if (wasPaused) {
+      this.resumePty(terminal);
     }
   }
 
@@ -316,7 +443,7 @@ export class TerminalPanelManager {
      * PANE_* var) silently disappear inside WSL terminals.
      */
     const isWSL = !!wslContext && process.platform === 'win32';
-    const wslEnvVars = isWSL
+    const wslEnvVars: Record<string, string> = isWSL
       ? {
           WSLENV: buildWSLENV([
             'GIT_COMMITTER_NAME',
@@ -330,31 +457,87 @@ export class TerminalPanelManager {
         }
       : {};
 
-    // Create PTY process with enhanced environment
-    const ptyProcess = pty.spawn(shellPath, shellArgs, {
-      name: 'xterm-256color',
-      cols: initialDimensions?.cols || 80,
-      rows: initialDimensions?.rows || 30,
-      cwd: spawnCwd,
-      env: {
-        ...process.env,
-        ...GIT_ATTRIBUTION_ENV,
-        PATH: enhancedPath,
-        TERM: 'xterm-256color',
-        COLORTERM: 'truecolor',
-        LANG: process.env.LANG || 'en_US.UTF-8',
-        WORKTREE_PATH: cwd,
-        PANE_SESSION_ID: panel.sessionId,
-        PANE_PANEL_ID: panel.id,
-        PANE_PORT: String(panePort),
-        PANE_WORKSPACE_PATH: cwd,
-        ...wslEnvVars,
+    // Build spawn env once so legacy and ptyHost paths receive identical values.
+    const spawnCols = initialDimensions?.cols || 80;
+    const spawnRows = initialDimensions?.rows || 30;
+
+    // `process.env` is `NodeJS.ProcessEnv` which allows `undefined` values; the
+    // ptyHost RPC DTO requires `Record<string, string>`. Drop undefined keys so
+    // both the legacy `pty.spawn` path and the ptyHost path see the same shape.
+    const baseEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (typeof value === 'string') {
+        baseEnv[key] = value;
       }
-    });
-    
+    }
+    const spawnEnv: Record<string, string> = {
+      ...baseEnv,
+      ...GIT_ATTRIBUTION_ENV,
+      PATH: enhancedPath,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      LANG: process.env.LANG || 'en_US.UTF-8',
+      WORKTREE_PATH: cwd,
+      PANE_SESSION_ID: panel.sessionId,
+      PANE_PANEL_ID: panel.id,
+      PANE_PORT: String(panePort),
+      PANE_WORKSPACE_PATH: cwd,
+      ...wslEnvVars,
+    };
+
+    // Read the setting once per spawn so we don't scatter config reads.
+    // `getPtyHostSupervisor()` returns null when the setting is off or when
+    // supervisor startup failed; in either case we transparently fall back to
+    // the legacy `pty.spawn` path.
+    const useFlag = configManager.getUsePtyHost();
+    let supervisor: PtyHostSupervisor | null = null;
+    if (useFlag) {
+      supervisor = getPtyHostSupervisor();
+      if (!supervisor) {
+        console.warn('[ptyHost] supervisor unavailable, falling back to legacy pty.spawn');
+      }
+    }
+    const usePtyHost = !!supervisor;
+
+    let ptyProcess: pty.IPty;
+    let ptyHostId: string | undefined;
+
+    if (usePtyHost && supervisor) {
+      // Flag-on path: spawn via ptyHost UtilityProcess. Critical invariant:
+      // `this.terminals.set(...)` happens only AFTER the spawn response lands
+      // so synchronous `.pid` readers (getSessionPids, killProcessTree) never
+      // observe a pid-less handle.
+      const spawned = await supervisor.spawn({
+        shell: shellPath,
+        args: shellArgs,
+        cwd: spawnCwd,
+        cols: spawnCols,
+        rows: spawnRows,
+        env: spawnEnv,
+        name: 'xterm-256color',
+      });
+      const handle = supervisor.getHandle(spawned.ptyId);
+      if (!handle) {
+        throw new Error(`[ptyHost] supervisor returned ptyId=${spawned.ptyId} but getHandle() was undefined`);
+      }
+      ptyProcess = new PtyHandleShim(handle, spawnCols, spawnRows);
+      ptyHostId = spawned.ptyId;
+    } else {
+      // Flag-off path: legacy direct pty.spawn. Unchanged behavior.
+      ptyProcess = pty.spawn(shellPath, shellArgs, {
+        name: 'xterm-256color',
+        cols: spawnCols,
+        rows: spawnRows,
+        cwd: spawnCwd,
+        env: spawnEnv,
+      });
+    }
+
     // Create terminal process object
     const terminalProcess: TerminalProcess = {
       pty: ptyProcess,
+      ptyId: ptyHostId,
+      isPtyHost: usePtyHost,
       panelId: panel.id,
       sessionId: panel.sessionId,
       scrollbackBuffer: '',
@@ -363,9 +546,11 @@ export class TerminalPanelManager {
       currentCommand: '',
       lastActivity: new Date(),
       isWSL: !!(wslContext && process.platform === 'win32'),
-      pendingBytes: 0,
-      isPaused: false,
-      pauseSafetyTimer: null,
+      // Capture wslContext so `respawnAll` can re-inject the same WSLENV /
+      // distro / user settings after a ptyHost supervisor restart without
+      // having to reconstruct it from project state.
+      wslContext: wslContext ?? null,
+      flowControl: createFlowControlRecord(),
       outputBuffer: '',
       outputFlushTimer: null,
       isVisible: true,
@@ -374,9 +559,21 @@ export class TerminalPanelManager {
       idleTimer: null,
       inSyncBlock: false
     };
-    
-    // Store in map
+
+    // Store in map (ptyHost path: pid is already populated on the shim).
     this.terminals.set(panel.id, terminalProcess);
+
+    // Tell the renderer which `ptyId` to subscribe to for this panel so
+    // `TerminalPanel.tsx` can use `electronAPI.ptyHost.onData(ptyId, ...)`
+    // under the flag. Flag-off path skips this: the renderer keeps using
+    // the legacy `terminal:output` channel.
+    if (usePtyHost && ptyHostId && mainWindow) {
+      mainWindow.webContents.send('terminal:ptyReady', {
+        sessionId: panel.sessionId,
+        panelId: panel.id,
+        ptyId: ptyHostId,
+      });
+    }
     
     // Get initialCommand from existing state before updating
     const existingState = panel.state.customState as TerminalPanelState | undefined;
@@ -872,13 +1069,21 @@ export class TerminalPanelManager {
     const restorationMsg = `\r\n[Session Restored from ${state.lastActivityTime || 'previous session'}]\r\n`;
     terminal.pty.write(restorationMsg);
     
-    // Send scrollback to frontend
+    // Send scrollback to frontend. Dual-path mirrors `flushOutputBuffer`:
+    // `terminal:output` IPC for legacy subscribers, ptyHost port for flag-on.
     if (mainWindow && state.scrollbackBuffer) {
+      const output = typeof state.scrollbackBuffer === 'string'
+        ? state.scrollbackBuffer + restorationMsg
+        : state.scrollbackBuffer.join('\n') + restorationMsg;
       mainWindow.webContents.send('terminal:output', {
         sessionId: panel.sessionId,
         panelId: panel.id,
-        output: state.scrollbackBuffer + restorationMsg
+        output,
       });
+      if (terminal.isPtyHost && terminal.ptyId) {
+        const supervisor = getPtyHostSupervisor();
+        supervisor?.postDataToRenderers(terminal.ptyId, output);
+      }
     }
   }
   
@@ -925,10 +1130,7 @@ export class TerminalPanelManager {
       clearTimeout(terminal.outputFlushTimer);
       terminal.outputFlushTimer = null;
     }
-    if (terminal.pauseSafetyTimer) {
-      clearTimeout(terminal.pauseSafetyTimer);
-      terminal.pauseSafetyTimer = null;
-    }
+    disposeFlowControlRecord(terminal.flowControl);
     if (terminal.idleTimer) {
       clearTimeout(terminal.idleTimer);
       terminal.idleTimer = null;
@@ -989,6 +1191,109 @@ export class TerminalPanelManager {
     for (const panelId of this.terminals.keys()) {
       await this.saveTerminalState(panelId);
     }
+  }
+
+  /**
+   * Re-spawn every live terminal panel after a ptyHost `UtilityProcess` restart.
+   *
+   * Order in the supervisor (see `ptyHostSupervisor.onProcExit`):
+   *   rejectPendingRpcs → keep manager maps → await nextReady → respawnAll
+   *
+   * The supervisor intentionally does not emit synthetic exits on host crash:
+   * doing so would run `setupTerminalHandlers.onExit` and delete the state this
+   * method needs to respawn. Entries here reference stale `PtyHandleShim`s and
+   * are replaced in-place.
+   *
+   * Skip rules:
+   * - Legacy (non-ptyHost) terminals: supervisor restart is irrelevant to them.
+   *   Their underlying `pty.IPty` is still alive; do not touch.
+   * - Panels where spawn never finished (`ptyId` absent): no live PTY to revive.
+   *
+   * Plan Task 6b: run per-panel respawns in parallel via Promise.all.
+   */
+  async respawnAll(): Promise<void> {
+    // Snapshot entries up-front so we can mutate `this.terminals` (delete
+    // stale shims) while iterating without affecting the working set.
+    const snapshots: Array<{
+      panelId: string;
+      sessionId: string;
+      panel: ToolPanel;
+      cwd: string;
+      dimensions: { cols: number; rows: number };
+      wslContext: WSLContext | null;
+    }> = [];
+
+    for (const [panelId, terminal] of this.terminals) {
+      // Only ptyHost-backed terminals participate in supervisor restart.
+      // Legacy `pty.spawn` processes survive the ptyHost crash untouched.
+      if (!terminal.isPtyHost || !terminal.ptyId) {
+        continue;
+      }
+
+      const panel = panelManager.getPanel(panelId);
+      if (!panel) {
+        console.warn(`[ptyHost] respawnAll: panel ${panelId} no longer exists, skipping`);
+        this.terminals.delete(panelId);
+        continue;
+      }
+
+      // Read state for respawn: cwd is persisted on panel state by
+      // `initializeTerminal` (see lines 616-622). Dimensions likewise.
+      const cs = (panel.state.customState || {}) as TerminalPanelState;
+      const cwd = cs.cwd || process.cwd();
+      const dimensions = cs.dimensions || { cols: 80, rows: 30 };
+
+      snapshots.push({
+        panelId,
+        sessionId: terminal.sessionId,
+        panel,
+        cwd,
+        dimensions,
+        // Carry the original wslContext through so WSL panels get the same
+        // WSLENV / distro / user propagation on respawn. Without this, WSL
+        // terminals lose GIT_COMMITTER_* and PANE_* after a supervisor restart.
+        wslContext: terminal.wslContext,
+      });
+
+      // Clear the stale entry so `initializeTerminal`'s duplicate-check at
+      // `:304` doesn't early-return on the stub we're replacing.
+      // We also clear any active timers on the stale entry to prevent
+      // zombie callbacks firing against the new process.
+      if (terminal.outputFlushTimer) {
+        clearTimeout(terminal.outputFlushTimer);
+        terminal.outputFlushTimer = null;
+      }
+      disposeFlowControlRecord(terminal.flowControl);
+      if (terminal.idleTimer) {
+        clearTimeout(terminal.idleTimer);
+        terminal.idleTimer = null;
+      }
+      this.terminals.delete(panelId);
+    }
+
+    if (snapshots.length === 0) {
+      console.log('[ptyHost] TerminalPanelManager respawnAll: no ptyHost-backed panels to restart');
+      return;
+    }
+
+    console.log(`[ptyHost] TerminalPanelManager respawnAll: ${snapshots.length} terminal panels`);
+
+    // Run respawns in parallel. Individual failures don't cancel siblings.
+    // wslContext is the one captured at original spawn time (Option A); see
+    // snapshot construction above.
+    const results = await Promise.all(snapshots.map(async ({ panel, cwd, dimensions, panelId, wslContext }) => {
+      try {
+        await this.initializeTerminal(panel, cwd, wslContext, 1, dimensions);
+        return { panelId, ok: true as const };
+      } catch (err) {
+        console.error(`[ptyHost] respawnAll: initializeTerminal failed for panel ${panelId}:`, err);
+        return { panelId, ok: false as const };
+      }
+    }));
+
+    const ok = results.filter(r => r.ok).length;
+    const failed = results.length - ok;
+    console.log(`[ptyHost] respawn complete: ${ok} terminal panels (${failed} failed)`);
   }
 
   /**
@@ -1064,10 +1369,7 @@ export class TerminalPanelManager {
           clearTimeout(terminal.outputFlushTimer);
           terminal.outputFlushTimer = null;
         }
-        if (terminal.pauseSafetyTimer) {
-          clearTimeout(terminal.pauseSafetyTimer);
-          terminal.pauseSafetyTimer = null;
-        }
+        disposeFlowControlRecord(terminal.flowControl);
         if (terminal.idleTimer) {
           clearTimeout(terminal.idleTimer);
           terminal.idleTimer = null;
