@@ -117,6 +117,10 @@ function normalizeHotkeyString(keys: string): string {
 let listenerAttached = false;
 let lookupIndex: Map<string, string> = new Map(); // normalized keys → hotkey id
 
+function isXtermHelperTarget(target: HTMLElement): boolean {
+  return target.classList.contains('xterm-helper-textarea') || target.closest('.xterm') !== null;
+}
+
 function handleKeyDown(e: KeyboardEvent) {
   const target = e.target as HTMLElement;
   const isInput =
@@ -139,7 +143,7 @@ function handleKeyDown(e: KeyboardEvent) {
   // Let native text editing win for shortcuts users expect in focused inputs.
   // In particular, tab cycling uses mod+a/mod+d, but inputs need mod+a
   // for select-all and mod+d for normal browser/text-field behavior.
-  if (isInput && (pressed === 'mod+a' || pressed === 'mod+d')) return;
+  if (isInput && !isXtermHelperTarget(target) && (pressed === 'mod+a' || pressed === 'mod+d')) return;
 
   // Skip if typing in input and shortcut doesn't use mod key
   if (isInput && !pressed.includes('mod')) return;
