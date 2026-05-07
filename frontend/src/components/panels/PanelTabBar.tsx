@@ -90,7 +90,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const resourceChipRef = useRef<HTMLButtonElement>(null);
   const resourcePopoverRef = useRef<HTMLDivElement>(null);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pane-app']));
-  const { snapshot, startActive, stopActive, refresh } = useResourceMonitor();
+  const { snapshot, isLoading: resourceLoading, startActive, stopActive, refresh } = useResourceMonitor();
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
 
   const getPanelActivityStatus = usePanelStore(s => s.getPanelActivityStatus);
@@ -150,12 +150,16 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   
   // Resource monitor handlers
   const toggleResourcePopover = useCallback(() => {
-    setShowResourcePopover(prev => {
-      if (!prev) startActive();
-      else stopActive();
-      return !prev;
-    });
-  }, [startActive, stopActive]);
+    if (showResourcePopover) {
+      setShowResourcePopover(false);
+      stopActive();
+      return;
+    }
+
+    setShowResourcePopover(true);
+    void refresh();
+    startActive();
+  }, [showResourcePopover, refresh, startActive, stopActive]);
 
   // Popover positioning
   useEffect(() => {
@@ -230,7 +234,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     });
   }, []);
 
-  const handleRefresh = useCallback(() => { refresh(); }, [refresh]);
+  const handleRefresh = useCallback(() => { void refresh(); }, [refresh]);
 
   const electronTotalCpu = useMemo(() =>
     snapshot?.electronProcesses.reduce((sum, p) => sum + p.cpuPercent, 0) ?? 0
@@ -910,7 +914,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     </div>
 
     {/* Resource monitor popover */}
-    {showResourcePopover && snapshot && createPortal(
+    {showResourcePopover && createPortal(
       <div
         ref={resourcePopoverRef}
         className="bg-surface-primary border border-border-subtle/60 rounded-lg shadow-dropdown-elevated backdrop-blur-sm animate-dropdown-enter overflow-hidden w-[320px]"
@@ -924,90 +928,99 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           <button
             onClick={handleRefresh}
             className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
+            disabled={resourceLoading}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className={cn("w-3.5 h-3.5", resourceLoading && "animate-spin")} />
           </button>
         </div>
 
-        {/* Summary */}
-        <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
-          <span className="text-sm text-text-secondary">
-            CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '—'}</strong>
-          </span>
-          <span className="text-sm text-text-secondary">
-            Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
-          </span>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="max-h-[400px] overflow-y-auto">
-          {/* Pane App section */}
-          <div className="border-b border-border-secondary">
-            <button
-              onClick={() => toggleSection('pane-app')}
-              className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-            >
-              <div className="flex items-center gap-1.5">
-                {expandedSections.has('pane-app')
-                  ? <ChevronDown className="w-3 h-3 text-text-quaternary" />
-                  : <ChevronRight className="w-3 h-3 text-text-quaternary" />}
-                <span className="text-sm font-medium text-text-primary">Pane App</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '—'}</span>
-                <span>{formatMemory(electronTotalMem)}</span>
-              </div>
-            </button>
-            {expandedSections.has('pane-app') && snapshot.electronProcesses.map(p => (
-              <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                <span className="text-xs text-text-secondary">{p.label}</span>
-                <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                  <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '—'}</span>
-                  <span>{formatMemory(p.memoryMB)}</span>
-                </div>
-              </div>
-            ))}
+        {!snapshot ? (
+          <div className="px-3 py-4 text-sm text-text-secondary">
+            {resourceLoading ? 'Loading resource usage...' : 'No resource snapshot yet.'}
           </div>
+        ) : (
+          <>
+            {/* Summary */}
+            <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
+              <span className="text-sm text-text-secondary">
+                CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '—'}</strong>
+              </span>
+              <span className="text-sm text-text-secondary">
+                Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
+              </span>
+            </div>
 
-          {/* Per-session sections */}
-          {snapshot.sessions.map(sess => (
-            <div
-              key={sess.sessionId}
-              className={cn(
-                "border-b border-border-secondary",
-                sess.sessionId === session?.id && "bg-interactive/5"
-              )}
-            >
-              <button
-                onClick={() => toggleSection(sess.sessionId)}
-                className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-              >
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {expandedSections.has(sess.sessionId)
-                    ? <ChevronDown className="w-3 h-3 text-text-quaternary flex-shrink-0" />
-                    : <ChevronRight className="w-3 h-3 text-text-quaternary flex-shrink-0" />}
-                  {sess.sessionId === session?.id && (
-                    <div className="w-1.5 h-1.5 rounded-full bg-interactive flex-shrink-0" />
-                  )}
-                  <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
-                </div>
-                <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                  <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '—'}</span>
-                  <span>{formatMemory(sess.totalMemoryMB)}</span>
-                </div>
-              </button>
-              {expandedSections.has(sess.sessionId) && sess.children.map(child => (
-                <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                  <span className="text-xs text-text-secondary truncate">{child.name}</span>
-                  <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                    <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '—'}</span>
-                    <span>{formatMemory(child.memoryMB)}</span>
+            {/* Scrollable content */}
+            <div className="max-h-[400px] overflow-y-auto">
+              {/* Pane App section */}
+              <div className="border-b border-border-secondary">
+                <button
+                  onClick={() => toggleSection('pane-app')}
+                  className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    {expandedSections.has('pane-app')
+                      ? <ChevronDown className="w-3 h-3 text-text-quaternary" />
+                      : <ChevronRight className="w-3 h-3 text-text-quaternary" />}
+                    <span className="text-sm font-medium text-text-primary">Pane App</span>
                   </div>
+                  <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
+                    <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '—'}</span>
+                    <span>{formatMemory(electronTotalMem)}</span>
+                  </div>
+                </button>
+                {expandedSections.has('pane-app') && snapshot.electronProcesses.map(p => (
+                  <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
+                    <span className="text-xs text-text-secondary">{p.label}</span>
+                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
+                      <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '—'}</span>
+                      <span>{formatMemory(p.memoryMB)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Per-session sections */}
+              {snapshot.sessions.map(sess => (
+                <div
+                  key={sess.sessionId}
+                  className={cn(
+                    "border-b border-border-secondary",
+                    sess.sessionId === session?.id && "bg-interactive/5"
+                  )}
+                >
+                  <button
+                    onClick={() => toggleSection(sess.sessionId)}
+                    className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {expandedSections.has(sess.sessionId)
+                        ? <ChevronDown className="w-3 h-3 text-text-quaternary flex-shrink-0" />
+                        : <ChevronRight className="w-3 h-3 text-text-quaternary flex-shrink-0" />}
+                      {sess.sessionId === session?.id && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-interactive flex-shrink-0" />
+                      )}
+                      <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
+                      <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '—'}</span>
+                      <span>{formatMemory(sess.totalMemoryMB)}</span>
+                    </div>
+                  </button>
+                  {expandedSections.has(sess.sessionId) && sess.children.map(child => (
+                    <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
+                      <span className="text-xs text-text-secondary truncate">{child.name}</span>
+                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
+                        <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '—'}</span>
+                        <span>{formatMemory(child.memoryMB)}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>,
       document.body
     )}

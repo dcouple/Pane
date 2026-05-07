@@ -73,17 +73,29 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const [selectedExecutions, setSelectedExecutions] = useState<number[]>(initialSelected);
   const [lastSessionId, setLastSessionId] = useState<string>(sessionId);
   const [combinedDiff, setCombinedDiff] = useState<GitDiffResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [executionsLoading, setExecutionsLoading] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewingCommitHash, setViewingCommitHash] = useState<string | null>(null);
 
   const [showCommitDialog, setShowCommitDialog] = useState(false);
   const [mainBranch, setMainBranch] = useState<string>('main');
   const [historySource, setHistorySource] = useState<'remote' | 'local' | 'branch'>(isMainRepo ? 'remote' : 'branch');
-  const [forceRefresh, setForceRefresh] = useState<number>(0);
+  const [executionRefreshNonce, setExecutionRefreshNonce] = useState<number>(0);
 
   // Diff cache: keyed by sessionId + sorted selection
   const diffCacheRef = useRef<Map<string, { diff: GitDiffResult; parsedFiles: FileDiff[] }>>(new Map());
+  const executionsRequestIdRef = useRef(0);
+  const combinedDiffRequestIdRef = useRef(0);
+  const commitDiffRequestIdRef = useRef(0);
+  const executionsRef = useRef(executions);
+  const selectedExecutionsRef = useRef(selectedExecutions);
+  const viewingCommitHashRef = useRef(viewingCommitHash);
+  const mountedRef = useRef(true);
+  executionsRef.current = executions;
+  selectedExecutionsRef.current = selectedExecutions;
+  viewingCommitHashRef.current = viewingCommitHash;
 
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -100,18 +112,13 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
   const diffViewerRef = useRef<DiffViewerHandle>(null);
 
-  // Expose refresh() to parent (DiffPanel) via ref
-  // Keeps current diff visible while new data loads (no flash),
-  // but resets selection since execution IDs are positional and
-  // may point to different commits after history changes.
-  useImperativeHandle(ref, () => ({
-    refresh: () => {
-      diffCacheRef.current.clear();
-      setSelectedExecutions([]);
-      setViewingCommitHash(null);
-      setForceRefresh(prev => prev + 1);
-    }
-  }));
+  const isAnyLoading = executionsLoading || diffLoading || commitDiffLoading;
+  const showInitialSkeleton = executionsLoading && executions.length === 0;
+  const showDiffSkeleton = (diffLoading || commitDiffLoading) && combinedDiff === null;
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Save sidebar width to localStorage
   useEffect(() => {
@@ -182,13 +189,51 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       setLastSessionId(sessionId);
       setCombinedDiff(null);
       setExecutions([]);
+      setExecutionsLoading(false);
+      setDiffLoading(false);
+      setCommitDiffLoading(false);
       setHistorySource(isMainRepo ? 'remote' : 'branch');
       diffCacheRef.current.clear();
+      executionsRequestIdRef.current += 1;
+      combinedDiffRequestIdRef.current += 1;
+      commitDiffRequestIdRef.current += 1;
     }
   }, [sessionId, lastSessionId, isMainRepo]);
 
+  const getDefaultSelection = useCallback((data: ExecutionDiff[]) => {
+    const allCommitIds = data
+      .filter((exec: ExecutionDiff) => exec.id !== 0)
+      .map((exec: ExecutionDiff) => exec.id);
+
+    if (allCommitIds.length > 0) {
+      return [allCommitIds[allCommitIds.length - 1], allCommitIds[0]];
+    }
+
+    return data.map((exec: ExecutionDiff) => exec.id);
+  }, []);
+
+  const getSelectedHashes = useCallback((data: ExecutionDiff[], selection: number[]) => {
+    const executionById = new Map(data.map(exec => [exec.id, exec]));
+    return selection
+      .map(id => executionById.get(id)?.after_commit_hash)
+      .filter((hash): hash is string => Boolean(hash));
+  }, []);
+
+  const reconcileSelection = useCallback((data: ExecutionDiff[], selectedHashes: string[]) => {
+    if (selectedHashes.length === 0) {
+      return getDefaultSelection(data);
+    }
+
+    const executionByHash = new Map(data.map(exec => [exec.after_commit_hash, exec]));
+    const reconciled = selectedHashes
+      .map(hash => executionByHash.get(hash)?.id)
+      .filter((id): id is number => typeof id === 'number');
+
+    return reconciled.length > 0 ? reconciled : getDefaultSelection(data);
+  }, [getDefaultSelection]);
+
   // Shared logic to process loaded executions
-  const processExecutions = useCallback((data: ExecutionDiff[], autoSelect: boolean) => {
+  const processExecutions = useCallback((data: ExecutionDiff[]) => {
     setError(null);
     setExecutions(data);
 
@@ -210,20 +255,64 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         return 'branch';
       });
     }
+  }, [isMainRepo]);
 
-    // Auto-select executions when no selection exists or when prefetching
-    if (autoSelect && data.length > 0) {
-      const allCommitIds = data
-        .filter((exec: ExecutionDiff) => exec.id !== 0)
-        .map((exec: ExecutionDiff) => exec.id);
+  const refreshExecutions = useCallback(async ({ preserveSelection }: { preserveSelection: boolean }) => {
+    if (!isVisible) return;
 
-      if (allCommitIds.length > 0) {
-        setSelectedExecutions([allCommitIds[allCommitIds.length - 1], allCommitIds[0]]);
-      } else {
-        setSelectedExecutions(data.map((exec: ExecutionDiff) => exec.id));
+    const requestId = ++executionsRequestIdRef.current;
+    const selectedHashes = getSelectedHashes(executionsRef.current, selectedExecutionsRef.current);
+    const shouldAutoSelect = selectedExecutionsRef.current.length === 0 && !viewingCommitHashRef.current;
+
+    try {
+      setExecutionsLoading(true);
+      const response = await API.sessions.getExecutions(sessionId);
+
+      if (!mountedRef.current || requestId !== executionsRequestIdRef.current) return;
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to load executions');
+      }
+
+      const data: ExecutionDiff[] = response.data || [];
+      processExecutions(data);
+
+      if (!viewingCommitHashRef.current) {
+        if (data.length > 0) {
+          if (preserveSelection) {
+            setSelectedExecutions(reconcileSelection(data, selectedHashes));
+          } else if (shouldAutoSelect) {
+            setSelectedExecutions(getDefaultSelection(data));
+          }
+        } else {
+          setSelectedExecutions([]);
+          setCombinedDiff(null);
+        }
+      }
+    } catch (err) {
+      if (mountedRef.current && requestId === executionsRequestIdRef.current) {
+        setError(err instanceof Error ? err.message : 'Failed to load executions');
+      }
+    } finally {
+      if (mountedRef.current && requestId === executionsRequestIdRef.current) {
+        setExecutionsLoading(false);
       }
     }
-  }, [isMainRepo]);
+  }, [getDefaultSelection, getSelectedHashes, isVisible, processExecutions, reconcileSelection, sessionId]);
+
+  const triggerSoftRefresh = useCallback(() => {
+    diffCacheRef.current.clear();
+    commitDiffRequestIdRef.current += 1;
+    combinedDiffRequestIdRef.current += 1;
+    setViewingCommitHash(null);
+    setExecutionRefreshNonce(prev => prev + 1);
+  }, []);
+
+  // Expose refresh() to parent (DiffPanel) via ref.
+  // Same-session refresh keeps current diff visible while refreshed data loads.
+  useImperativeHandle(ref, () => ({
+    refresh: triggerSoftRefresh
+  }), [triggerSoftRefresh]);
 
   // Listen for commit-click events dispatched from GitHistoryGraph via SessionView.
   // Also check the module-level pendingViewCommit on mount — the event may have
@@ -231,6 +320,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   useEffect(() => {
     // Consume any pending hash written before this component mounted
     if (pendingViewCommit && pendingViewCommit.sessionId === sessionId) {
+      combinedDiffRequestIdRef.current += 1;
       setViewingCommitHash(pendingViewCommit.commitHash);
       setSelectedExecutions([]);
       pendingViewCommit = null;
@@ -239,6 +329,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     const handler = (event: Event) => {
       const { sessionId: eventSessionId, commitHash } = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
       if (eventSessionId !== sessionId) return;
+      combinedDiffRequestIdRef.current += 1;
       setViewingCommitHash(commitHash);
       setSelectedExecutions([]);
       pendingViewCommit = null; // consumed
@@ -250,22 +341,23 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   // Load diff when viewingCommitHash changes
   useEffect(() => {
     if (!viewingCommitHash) return;
+    const requestId = ++commitDiffRequestIdRef.current;
     let cancelled = false;
     const load = async () => {
-      setLoading(true);
+      setCommitDiffLoading(true);
       setError(null);
       try {
         const response = await API.sessions.getCommitDiffByHash(sessionId, viewingCommitHash);
-        if (cancelled) return;
+        if (cancelled || requestId !== commitDiffRequestIdRef.current) return;
         if (!response.success) throw new Error(response.error);
         setCombinedDiff(response.data);
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && requestId === commitDiffRequestIdRef.current) {
           setError(err instanceof Error ? err.message : 'Failed to load commit diff');
           setCombinedDiff(null);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && requestId === commitDiffRequestIdRef.current) setCommitDiffLoading(false);
       }
     };
     load();
@@ -275,50 +367,24 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   // Load executions for the session (skip when panel is not visible)
   useEffect(() => {
     if (!isVisible) return;
-    let cancelled = false;
 
     const timeoutId = setTimeout(() => {
-      const loadExecutions = async () => {
-        try {
-          setLoading(true);
-          const response = await API.sessions.getExecutions(sessionId);
-
-          if (cancelled) return;
-
-          if (!response.success) {
-            throw new Error(response.error || 'Failed to load executions');
-          }
-          const data: ExecutionDiff[] = response.data || [];
-          processExecutions(data, selectedExecutions.length === 0 && !viewingCommitHashRef.current);
-        } catch (err) {
-          if (!cancelled) {
-            setError(err instanceof Error ? err.message : 'Failed to load executions');
-          }
-        } finally {
-          if (!cancelled) {
-            setLoading(false);
-          }
-        }
-      };
-
-      loadExecutions();
+      void refreshExecutions({ preserveSelection: selectedExecutionsRef.current.length > 0 });
     }, 100);
 
     return () => {
-      cancelled = true;
       clearTimeout(timeoutId);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedExecutions read inside closure to check if auto-select needed; must not re-trigger on selection change
-  }, [sessionId, isMainRepo, forceRefresh, isVisible, processExecutions]);
+  }, [executionRefreshNonce, isVisible, refreshExecutions]);
 
   // Keep refs to avoid stale closures in event handlers
   const executionsLengthRef = useRef(executions.length);
   executionsLengthRef.current = executions.length;
-  const viewingCommitHashRef = useRef(viewingCommitHash);
-  viewingCommitHashRef.current = viewingCommitHash;
 
   // Load combined diff when selection changes (with caching)
   useEffect(() => {
+    if (viewingCommitHash) return;
+    const requestId = ++combinedDiffRequestIdRef.current;
     let cancelled = false;
 
     const timeoutId = setTimeout(() => {
@@ -333,13 +399,13 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         const cached = diffCacheRef.current.get(cacheKey);
         if (cached) {
           setCombinedDiff(cached.diff);
-          setLoading(false);
+          setDiffLoading(false);
           setError(null);
           return;
         }
 
         try {
-          setLoading(true);
+          setDiffLoading(true);
           setError(null);
 
           let response;
@@ -355,7 +421,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             response = await API.sessions.getCombinedDiff(sessionId, selectedExecutions);
           }
 
-          if (cancelled) return;
+          if (cancelled || requestId !== combinedDiffRequestIdRef.current) return;
 
           if (!response.success) {
             throw new Error(response.error || 'Failed to load combined diff');
@@ -370,13 +436,12 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             diffCacheRef.current.set(cacheKey, { diff: data, parsedFiles });
           }
         } catch (err) {
-          if (!cancelled) {
+          if (!cancelled && requestId === combinedDiffRequestIdRef.current) {
             setError(err instanceof Error ? err.message : 'Failed to load combined diff');
-            setCombinedDiff(null);
           }
         } finally {
-          if (!cancelled) {
-            setLoading(false);
+          if (!cancelled && requestId === combinedDiffRequestIdRef.current) {
+            setDiffLoading(false);
           }
         }
       };
@@ -388,18 +453,16 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [selectedExecutions, sessionId, forceRefresh]);
+  }, [selectedExecutions, sessionId, viewingCommitHash]);
 
   const handleSelectionChange = (newSelection: number[]) => {
+    commitDiffRequestIdRef.current += 1;
     setViewingCommitHash(null); // exit hash mode
     setSelectedExecutions(newSelection);
   };
 
   const handleManualRefresh = () => {
-    diffCacheRef.current.clear();
-    setForceRefresh(prev => prev + 1);
-    setCombinedDiff(null);
-    setSelectedExecutions([]);
+    triggerSoftRefresh();
   };
 
   const handleCommit = useCallback(async (message: string) => {
@@ -413,13 +476,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     }
 
     // Invalidate cache and reload to reflect the new commit
-    diffCacheRef.current.clear();
-    setCombinedDiff(null);
-    const response = await API.sessions.getExecutions(sessionId);
-    if (response.success) {
-      setExecutions(response.data);
-    }
-  }, [sessionId]);
+    triggerSoftRefresh();
+  }, [sessionId, triggerSoftRefresh]);
 
   const handleRevert = useCallback(async (commitHash: string) => {
     if (!window.confirm(`Are you sure you want to revert commit ${commitHash.substring(0, 7)}? This will create a new commit that undoes the changes.`)) {
@@ -436,16 +494,12 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         throw new Error(result.error || 'Failed to revert commit');
       }
 
-      const response = await API.sessions.getExecutions(sessionId);
-      if (response.success) {
-        setExecutions(response.data);
-        setSelectedExecutions([]);
-      }
+      triggerSoftRefresh();
     } catch (err) {
       console.error('Error reverting commit:', err);
       alert(`Failed to revert commit: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [sessionId]);
+  }, [sessionId, triggerSoftRefresh]);
 
   const limitReached = useMemo(
     () => executions.some(exec => exec.history_limit_reached),
@@ -472,25 +526,12 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         throw new Error(result.error || 'Failed to restore changes');
       }
 
-      // Reload executions and diff
-      const response = await API.sessions.getExecutions(sessionId);
-      if (response.success) {
-        setExecutions(response.data);
-      }
-
-      // Reload the uncommitted changes diff if selected
-      diffCacheRef.current.clear();
-      if (selectedExecutions.includes(0)) {
-        const diffResponse = await API.sessions.getCombinedDiff(sessionId, [0]);
-        if (diffResponse.success) {
-          setCombinedDiff(diffResponse.data);
-        }
-      }
+      triggerSoftRefresh();
     } catch (err) {
       console.error('Error restoring changes:', err);
       alert(`Failed to restore changes: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [sessionId, selectedExecutions]);
+  }, [sessionId, triggerSoftRefresh]);
 
   // Open file in an Explorer (editor) panel
   const handleOpenInEditor = useCallback(async (filePath: string) => {
@@ -508,7 +549,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     await panelApi.setActivePanel(sessionId, newPanel.id);
   }, [sessionId, addPanel, setActivePanelInStore]);
 
-  if (loading && executions.length === 0) {
+  if (showInitialSkeleton) {
     return (
       <div className="flex flex-col h-full animate-pulse">
         {/* Header skeleton */}
@@ -536,7 +577,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     );
   }
 
-  if (error && executions.length === 0) {
+  if (error && executions.length === 0 && combinedDiff === null) {
     return (
       <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded">
         <h3 className="font-medium mb-2">Error</h3>
@@ -573,9 +614,9 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             onClick={handleManualRefresh}
             className="p-1 rounded hover:bg-surface-hover transition-colors"
             title="Refresh"
-            disabled={loading}
+            disabled={isAnyLoading}
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-text-tertiary ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-text-tertiary ${isAnyLoading ? 'animate-spin' : ''}`} />
           </button>
         </div>
       </div>
@@ -621,17 +662,12 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
                 <p className="text-sm text-text-tertiary mt-1">Please wait while the operation completes...</p>
               </div>
             </div>
-          ) : loading && combinedDiff === null ? (
+          ) : showDiffSkeleton ? (
             <div className="animate-pulse p-4 space-y-3">
               <div className="h-4 w-48 bg-surface-tertiary rounded" />
               <div className="h-3 w-full bg-surface-tertiary rounded" />
               <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
               <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
-            </div>
-          ) : error ? (
-            <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded m-4">
-              <h3 className="font-medium mb-2">Error loading diff</h3>
-              <p>{error}</p>
             </div>
           ) : combinedDiff ? (
             <DiffViewer
@@ -641,6 +677,11 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
               className="h-full"
               onOpenInEditor={handleOpenInEditor}
             />
+          ) : error ? (
+            <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded m-4">
+              <h3 className="font-medium mb-2">Error loading diff</h3>
+              <p>{error}</p>
+            </div>
           ) : executions.length === 0 ? (
             <div className="flex items-center justify-center h-full text-text-secondary">
               <div className="text-center space-y-2">

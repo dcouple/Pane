@@ -9,7 +9,7 @@ if (process.platform === 'linux') {
 }
 
 // Force integrated GPU for better battery life on dual-GPU systems
-app.commandLine.appendSwitch('force_discrete_gpu', '0');
+app.commandLine.appendSwitch('force_low_power_gpu');
 
 // Set Windows AUMID to match electron-builder's appId so Windows resolves
 // the installed Start Menu shortcut for notification icon and display name.
@@ -873,11 +873,9 @@ async function createWindow() {
 
   mainWindow.on('restore', () => {
     // Don't assume restore = focused. The OS will fire 'focus' if/when the user
-    // actually focuses the window. Keep git/resource hooks as-is.
-    if (gitStatusManager) {
-      gitStatusManager.handleVisibilityChange(false); // false = visible/restored
-    }
-    resourceMonitorService.handleVisibilityChange(false);
+    // actually focuses the window; that is what restarts git/resource work.
+    const focused = mainWindow?.isFocused() ?? false;
+    mainWindow?.webContents.send('window:focus-changed', focused);
   });
 
   // Hand the renderer its per-window ptyHost data port once the preload
@@ -1081,7 +1079,6 @@ async function initializeServices() {
 
   // Start resource monitoring
   resourceMonitorService.initialize(app);
-  resourceMonitorService.startIdlePolling();
 
   // Restore spotlight state from previous session
   try {

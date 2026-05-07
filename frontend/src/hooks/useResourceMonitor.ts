@@ -9,7 +9,7 @@ interface IPCResponse {
 
 export function useResourceMonitor() {
   const [snapshot, setSnapshot] = useState<ResourceSnapshot | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   // Listen for push updates from main process
   useEffect(() => {
@@ -19,14 +19,6 @@ export function useResourceMonitor() {
       setIsLoading(false);
     };
     window.addEventListener('resource-monitor:update', handler);
-
-    // Also fetch initial snapshot
-    window.electronAPI?.resourceMonitor?.getSnapshot?.().then((response: IPCResponse) => {
-      if (response?.success && response.data) {
-        setSnapshot(response.data);
-      }
-      setIsLoading(false);
-    });
 
     return () => {
       window.removeEventListener('resource-monitor:update', handler);
@@ -44,9 +36,14 @@ export function useResourceMonitor() {
   }, []);
 
   const refresh = useCallback(async () => {
-    const response: IPCResponse | undefined = await window.electronAPI?.resourceMonitor?.getSnapshot?.();
-    if (response?.success && response.data) {
-      setSnapshot(response.data);
+    setIsLoading(true);
+    try {
+      const response: IPCResponse | undefined = await window.electronAPI?.resourceMonitor?.getSnapshot?.();
+      if (response?.success && response.data) {
+        setSnapshot(response.data);
+      }
+    } finally {
+      setIsLoading(false);
     }
   }, []);
 

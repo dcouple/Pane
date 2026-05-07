@@ -374,14 +374,13 @@ export class ResourceMonitorService extends EventEmitter {
         this.pollInProgress = false;
       }
     };
-    void poll();
     this.activeTimer = setInterval(() => void poll(), 5_000);
   }
 
   stopActivePolling(): void {
     if (this.isActivePolling) {
       this.isActivePolling = false;
-      this.startIdlePolling();
+      this.stopAllPolling();
     }
   }
 
@@ -391,12 +390,8 @@ export class ResourceMonitorService extends EventEmitter {
       this.stopAllPolling();
       this.previousCpuSamples.clear();
       this.needsCpuWarmup = true;
-    } else {
-      if (this.isActivePolling) {
-        this.startActivePolling();
-      } else {
-        this.startIdlePolling();
-      }
+    } else if (this.isActivePolling) {
+      this.startActivePolling();
     }
   }
 
