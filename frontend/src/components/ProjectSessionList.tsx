@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -92,6 +92,27 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
     return map;
   }, [sessions, sessionSortAscending]);
 
+  const projectById = useMemo(() => {
+    const map = new Map<number, Project>();
+    projects.forEach(project => map.set(project.id, project));
+    return map;
+  }, [projects]);
+
+  const getPinnedSessionLabel = useCallback((session: Session) => {
+    const projectName = session.projectId != null ? projectById.get(session.projectId)?.name : undefined;
+    return `${projectName || 'Unknown'}/${session.name || 'Untitled'}`;
+  }, [projectById]);
+
+  const pinnedSessions = useMemo(() => {
+    return sessions
+      .filter(session => !session.archived && session.isFavorite)
+      .map(session => ({
+        session,
+        label: getPinnedSessionLabel(session),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  }, [sessions, getPinnedSessionLabel]);
+
   // Flat list of all visible sessions (for hotkey mapping)
   const allVisibleSessions = useMemo(() => {
     const result: Session[] = [];
@@ -119,6 +140,8 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
   allVisibleSessionsRef.current = allVisibleSessions;
   const allActiveSessionsRef = useRef(allActiveSessions);
   allActiveSessionsRef.current = allActiveSessions;
+  const pinnedSessionsRef = useRef(pinnedSessions);
+  pinnedSessionsRef.current = pinnedSessions;
   const activeSessionIdRef = useRef(activeSessionId);
   activeSessionIdRef.current = activeSessionId;
   const setActiveSessionRef = useRef(setActiveSession);
@@ -194,10 +217,24 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
     navigateToSessionsRef.current();
   }, []);
 
+  const cyclePinnedOrAllSessions = useCallback((direction: 'next' | 'prev') => {
+    const pinned = pinnedSessionsRef.current.map(item => item.session);
+    const sessions = pinned.length > 0 ? pinned : allActiveSessionsRef.current;
+    if (sessions.length === 0) return;
+
+    const currentId = activeSessionIdRef.current;
+    const currentIndex = sessions.findIndex(s => s.id === currentId);
+    const nextIndex = cycleIndex(currentIndex, sessions.length, direction);
+    if (nextIndex === -1) return;
+
+    setActiveSessionRef.current(sessions[nextIndex].id);
+    navigateToSessionsRef.current();
+  }, []);
+
   // Register session cycling hotkeys
   useEffect(() => {
-    const nextKeys = ['mod+Tab', 'mod+ArrowDown'];
-    const prevKeys = ['mod+shift+Tab', 'mod+ArrowUp'];
+    const nextKeys = ['mod+Tab'];
+    const prevKeys = ['mod+shift+Tab'];
     const ids: string[] = [];
 
     nextKeys.forEach((keys, i) => {
@@ -228,6 +265,36 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
     return () => ids.forEach(id => unregister(id));
   }, [register, unregister, cycleSession]);
+
+  // Register pinned-aware cycling hotkeys. When anything is pinned, Cmd/Ctrl+Up
+  // and Cmd/Ctrl+Down only traverse the pinned section in visible order.
+  useEffect(() => {
+    const ids = ['cycle-pinned-or-all-next', 'cycle-pinned-or-all-prev'];
+    register({
+      id: ids[0],
+      label: 'Next Pinned Pane',
+      keys: 'mod+ArrowDown',
+      category: 'session',
+      enabled: () => {
+        const pinnedCount = pinnedSessionsRef.current.length;
+        return pinnedCount > 1 || (pinnedCount === 0 && allActiveSessionsRef.current.length > 1);
+      },
+      action: () => cyclePinnedOrAllSessions('next'),
+    });
+    register({
+      id: ids[1],
+      label: 'Previous Pinned Pane',
+      keys: 'mod+ArrowUp',
+      category: 'session',
+      enabled: () => {
+        const pinnedCount = pinnedSessionsRef.current.length;
+        return pinnedCount > 1 || (pinnedCount === 0 && allActiveSessionsRef.current.length > 1);
+      },
+      action: () => cyclePinnedOrAllSessions('prev'),
+    });
+
+    return () => ids.forEach(id => unregister(id));
+  }, [register, unregister, cyclePinnedOrAllSessions]);
 
   // Track known project IDs so we only auto-expand newly added ones
   const knownProjectIds = useRef<Set<number>>(new Set());
@@ -289,6 +356,14 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
       await API.sessions.delete(sessionId);
     } catch (e) {
       console.error('Failed to archive session:', e);
+    }
+  };
+
+  const handleTogglePinnedSession = async (sessionId: string) => {
+    try {
+      await API.sessions.toggleFavorite(sessionId);
+    } catch (e) {
+      console.error('Failed to toggle pinned session:', e);
     }
   };
 
@@ -387,6 +462,29 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           <Home className="w-4 h-4" />
           <span>Home</span>
         </button>
+
+        {pinnedSessions.length > 0 && (
+          <>
+            <div className="mt-2 px-3 pt-1 pb-1">
+              <span className="text-sm text-text-tertiary truncate">Pinned</span>
+            </div>
+            <div className="mt-0.5">
+              {pinnedSessions.map(({ session, label }) => (
+                <SessionRow
+                  key={`pinned-${session.id}`}
+                  session={session}
+                  isActive={session.id === activeSessionId}
+                  globalIndex={-1}
+                  displayName={label}
+                  onClick={() => handleSessionClick(session.id)}
+                  onArchive={() => handleArchiveSession(session.id)}
+                  onTogglePinned={() => handleTogglePinnedSession(session.id)}
+                  showPinnedToggle={false}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="mt-2 px-3 pt-1 pb-1 flex items-center justify-between gap-2">
           <span className="text-sm text-text-tertiary truncate">Repositories</span>
@@ -506,6 +604,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
                       globalIndex={globalSessionIndex.get(session.id) ?? -1}
                       onClick={() => handleSessionClick(session.id)}
                       onArchive={() => handleArchiveSession(session.id)}
+                      onTogglePinned={() => handleTogglePinnedSession(session.id)}
                     />
                   ))}
                 </div>
@@ -541,7 +640,7 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
 
 // --- Session row button content ---
 
-function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activityStatus }: {
+function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activityStatus, displayName }: {
   session: Session;
   gs: GitStatus | undefined;
   iconColor: string;
@@ -549,6 +648,7 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activi
   adds: number;
   dels: number;
   activityStatus: 'active' | 'idle';
+  displayName?: string;
 }) {
   return (
     <div className="flex items-center gap-2 min-w-0 w-full">
@@ -564,7 +664,7 @@ function SessionRowContent({ session, gs, iconColor, hasDiff, adds, dels, activi
         <GitBranch className={`w-3.5 h-3.5 flex-shrink-0 ${iconColor}`} />
       )}
       <span className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">
-        {gs?.prTitle || session.name || 'Untitled'}
+        {displayName || gs?.prTitle || session.name || 'Untitled'}
       </span>
       {gs?.prNumber ? (
         <span className="text-xs text-text-tertiary flex-shrink-0">#{gs.prNumber}</span>
@@ -586,6 +686,9 @@ interface SessionRowProps {
   globalIndex: number;
   onClick: () => void;
   onArchive: () => void;
+  onTogglePinned: () => void;
+  displayName?: string;
+  showPinnedToggle?: boolean;
 }
 
 interface GitStatusIPCResponse {
@@ -595,7 +698,7 @@ interface GitStatusIPCResponse {
 
 function SessionRow({
   session, isActive, globalIndex, onClick,
-  onArchive,
+  onArchive, onTogglePinned, displayName, showPinnedToggle = true,
 }: SessionRowProps) {
   const [localGitStatus, setLocalGitStatus] = useState<GitStatus | undefined>(session.gitStatus);
 
@@ -660,28 +763,43 @@ function SessionRow({
   const hasDiff = adds > 0 || dels > 0;
 
   return (
-    <div
-      className={`group/session w-full text-left pl-4 pr-1 py-1.5 transition-colors flex items-center gap-1 cursor-pointer ${
-        isActive
-          ? 'bg-interactive/30 border-l-4 border-interactive'
-          : 'hover:bg-surface-hover border-l-4 border-transparent'
-      }`}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick();
-        }
-      }}
+    <Tooltip
+      content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName={false} showDiffStats={false} globalIndex={globalIndex} />}
+      side="right"
+      className="block w-full"
+      interactive
     >
-      <Tooltip
-        content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName={false} showDiffStats={false} globalIndex={globalIndex} />}
-        side="right"
-        className="block flex-1 min-w-0"
-        interactive
+      <div
+        className={`group/session relative w-full text-left pl-3 pr-3 py-1.5 transition-colors flex items-center gap-1 cursor-pointer ${
+          isActive
+            ? 'bg-interactive/30 border-l-4 border-interactive'
+            : 'hover:bg-surface-hover border-l-4 border-transparent'
+        }`}
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onClick();
+          }
+        }}
       >
+        {showPinnedToggle && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onTogglePinned(); }}
+            className={`absolute left-0.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded hover:bg-surface-hover transition-all ${
+              session.isFavorite
+                ? 'text-text-muted opacity-100'
+                : 'text-text-muted hover:text-text-tertiary opacity-0 group-hover/session:opacity-100'
+            }`}
+            title={session.isFavorite ? 'Unpin' : 'Pin'}
+            aria-label={session.isFavorite ? 'Unpin pane' : 'Pin pane'}
+          >
+            <Pin className="w-3 h-3 rotate-45" />
+          </button>
+        )}
+
         <SessionRowContent
           session={session}
           gs={gs}
@@ -690,18 +808,21 @@ function SessionRow({
           adds={adds}
           dels={dels}
           activityStatus={sessionActivity}
+          displayName={displayName}
         />
-      </Tooltip>
 
-      {/* Archive button - on hover */}
-      <button
-        onClick={(e) => { e.stopPropagation(); onArchive(); }}
-        className="flex-shrink-0 p-1 rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/session:opacity-100"
-        title="Archive"
-      >
-        <Archive className="w-4 h-4" />
-      </button>
-    </div>
+        <div className="flex flex-shrink-0 items-center gap-0.5">
+          {/* Archive button - on hover */}
+          <button
+            onClick={(e) => { e.stopPropagation(); onArchive(); }}
+            className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/session:opacity-100"
+            title="Archive"
+          >
+            <Archive className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </Tooltip>
   );
 }
 
