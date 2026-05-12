@@ -2,3 +2,4 @@ packages:
   - 'frontend'
   - 'main'
   - 'shared'
+minimumReleaseAge: 10080
