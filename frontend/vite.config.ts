@@ -8,15 +8,16 @@ export default defineConfig({
     strictPort: true
   },
   base: './',
-  // Workaround for @xterm/xterm 6.0 double-minification bug (issue #103):
-  // xterm ships pre-minified ESM; Vite's esbuild re-minify pass renames the
-  // `ansi` parameter in InputHandler.requestMode but leaves a closure capture
-  // pointing at the old name, throwing `ReferenceError: i is not defined`
-  // when TUI apps (vim, opencode, etc.) trigger a DCS mode request.
+  // Workaround for @xterm/xterm 6.0 + esbuild downlevel/minify bug (issues #103/#166):
+  // xterm ships pre-minified ESM using `let r; ... (r ||= {})` in
+  // InputHandler.requestMode. When Vite targets `modules`/es2020, esbuild can
+  // lower that to `void 0 || (r = {})`, dropping the local declaration and
+  // crashing on DECRQM (`CSI ? Pm $ p`) requests from TUIs like vim/opencode.
   esbuild: {
     minifyIdentifiers: false
   },
   build: {
+    target: 'es2021',
     // Ensure assets are copied and paths are relative
     assetsDir: 'assets',
     // Copy public files to dist

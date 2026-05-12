@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node ../scripts/verify-xterm-request-mode-build.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit"
