@@ -45,7 +45,7 @@ import { getCurrentWorktreeName } from './utils/worktreeUtils';
 import { registerIpcHandlers } from './ipc';
 import { setupAutoUpdater } from './autoUpdater';
 import { setupEventListeners } from './events';
-import type { PaneEventSink } from './core/eventSink';
+import { createFanoutEventSink, type PaneEventSink } from './core/eventSink';
 import { setPaneRuntime } from './core/runtime';
 import { AppServices } from './ipc/types';
 import { getCloudVmManager } from './ipc/cloud';
@@ -58,6 +58,7 @@ import { panelManager } from './services/panelManager';
 import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
+import { PaneDaemonServer } from './daemon/server';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -75,6 +76,15 @@ const electronPaneEventSink: PaneEventSink = {
     window.webContents.send(channel, ...args);
   },
 };
+
+function installPaneRuntime(eventSink: PaneEventSink): void {
+  setPaneRuntime({
+    eventSink,
+    getConfigManager: () => configManager,
+    getPtyHostRuntime: () => ptyHostSupervisor,
+    getWebviewContextMap: () => webviewContextMap,
+  });
+}
 
 // Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
 const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
@@ -177,6 +187,7 @@ let worktreeNameGenerator: WorktreeNameGenerator;
 let databaseService: DatabaseService;
 let runCommandManager: RunCommandManager;
 let permissionIpcServer: PermissionIpcServer | null;
+let paneDaemonServer: PaneDaemonServer | null = null;
 let versionChecker: VersionChecker;
 let archiveProgressManager: ArchiveProgressManager;
 let analyticsManager: AnalyticsManager;
@@ -965,12 +976,7 @@ async function createWindow() {
 async function initializeServices() {
   configManager = new ConfigManager();
   await configManager.initialize();
-  setPaneRuntime({
-    eventSink: electronPaneEventSink,
-    getConfigManager: () => configManager,
-    getPtyHostRuntime: () => ptyHostSupervisor,
-    getWebviewContextMap: () => webviewContextMap,
-  });
+  installPaneRuntime(electronPaneEventSink);
 
   // Initialize logger early so it can capture all logs
   logger = new Logger(configManager);
@@ -1126,7 +1132,20 @@ async function initializeServices() {
   };
 
   // Initialize IPC handlers first so managers (like ClaudePanelManager) are ready
-  registerIpcHandlers(services);
+  const commandRegistry = registerIpcHandlers(services);
+
+  try {
+    paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
+    await paneDaemonServer.start();
+    installPaneRuntime(createFanoutEventSink([
+      electronPaneEventSink,
+      paneDaemonServer.getEventSink(),
+    ]));
+  } catch (error) {
+    paneDaemonServer = null;
+    console.error('[Pane daemon] Failed to start local daemon server; continuing with Electron-only runtime events', error);
+  }
+
   // Then set up event listeners that may rely on initialized managers
   setupEventListeners(services);
   
@@ -1558,6 +1577,13 @@ app.on('before-quit', async (event) => {
       console.log('[Main] Stopping permission IPC server...');
       await permissionIpcServer.stop();
       console.log('[Main] Permission IPC server stopped');
+    }
+
+    if (paneDaemonServer) {
+      console.log('[Main] Stopping Pane daemon server...');
+      await paneDaemonServer.stop();
+      paneDaemonServer = null;
+      console.log('[Main] Pane daemon server stopped');
     }
 
     // Stop version checker

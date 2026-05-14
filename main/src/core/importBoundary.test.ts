@@ -44,4 +44,13 @@ describe('daemon/client import boundary', () => {
       expect(source, relativePath).not.toContain('mainWindow');
     }
   });
+
+  it('keeps the daemon server free of Electron bootstrap imports', () => {
+    const source = readMainSrcFile('daemon/server.ts');
+
+    expect(source).not.toContain("from 'electron'");
+    expect(source).not.toContain('mainWindow');
+    expect(source).not.toMatch(/from ['"](?:\.\.\/)+(?:index)['"]/);
+    expect(source).not.toMatch(/from ['"](?:\.\.\/)+(?:index)\.ts['"]/);
+  });
 });
