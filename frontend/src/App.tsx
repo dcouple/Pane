@@ -204,6 +204,8 @@ function App() {
 
   // Detect unclean shutdown from previous session and notify user
   useEffect(() => {
+    if (!window.electronAPI?.events?.onUncleanShutdownDetected) return;
+
     return window.electronAPI.events.onUncleanShutdownDetected(() => {
       showNotification(
         'Pane didn\'t shut down cleanly',

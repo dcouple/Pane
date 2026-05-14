@@ -1,4 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { installElectronApiMock } from './electronApiMock';
+
+test.beforeEach(async ({ page }) => {
+  await installElectronApiMock(page);
+});
 
 test.describe('Health Check', () => {
   test('Electron app should start', async ({ page }) => {
@@ -11,7 +16,7 @@ test.describe('Health Check', () => {
     // Check that the page has loaded
     const title = await page.title();
     expect(title).toBeTruthy();
-    
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
     
     // Take a screenshot for debugging
     await page.screenshot({ path: 'test-results/health-check.png' });

@@ -1,4 +1,9 @@
 import { test, expect, Page } from '@playwright/test';
+import { installElectronApiMock } from './electronApiMock';
+
+test.beforeEach(async ({ page }) => {
+  await installElectronApiMock(page);
+});
 
 async function dismissStartupDialogs(page: Page) {
   // Dismiss analytics consent dialog if present (shows before welcome)
@@ -27,6 +32,7 @@ test.describe('Smoke Tests', () => {
     // Check that the page has loaded
     const title = await page.title();
     expect(title).toBe('Pane');
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
 
     // Take a screenshot for debugging
     await page.screenshot({ path: 'test-results/smoke-test.png' });
@@ -41,25 +47,24 @@ test.describe('Smoke Tests', () => {
     const sidebar = page.locator('[data-testid="sidebar"]').first();
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    // Settings button should exist (even if not immediately visible)
-    const settingsButton = page.locator('[data-testid="settings-button"]');
-    await expect(settingsButton).toHaveCount(1);
+    const sidebarMenuButton = page.getByRole('button', { name: 'Sidebar menu' });
+    await expect(sidebarMenuButton).toBeVisible();
   });
 
-  test('Settings button is clickable', async ({ page }) => {
+  test('Settings menu item is clickable', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     await dismissStartupDialogs(page);
 
-    // Wait for the settings button to be visible
-    const settingsButton = page.locator('[data-testid="settings-button"]');
-    await expect(settingsButton).toBeVisible({ timeout: 5000 });
+    const sidebarMenuButton = page.getByRole('button', { name: 'Sidebar menu' });
+    await expect(sidebarMenuButton).toBeVisible({ timeout: 5000 });
 
-    // Verify the button is enabled and clickable
-    await expect(settingsButton).toBeEnabled();
+    await expect(sidebarMenuButton).toBeEnabled();
+    await sidebarMenuButton.click();
 
-    // Try to click it
-    await settingsButton.click();
+    const settingsItem = page.getByRole('button', { name: 'Settings' });
+    await expect(settingsItem).toBeVisible({ timeout: 5000 });
+    await settingsItem.click();
 
     // Small wait to ensure no errors are thrown
     await page.waitForTimeout(500);

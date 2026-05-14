@@ -9,7 +9,7 @@ on:
 
 jobs:
   quality-checks:
-    name: Quality Checks
+    name: Quality Checks + Smoke
     runs-on: ubuntu-latest
 
     steps:
@@ -33,3 +33,41 @@ jobs:
 
     - name: Run linting
       run: pnpm lint
+
+    - name: Install Playwright browser dependencies
+      run: pnpm exec playwright install --with-deps chromium
+
+    - name: Run minimal functional smoke tests
+      run: xvfb-run -a pnpm test:ci:minimal
+      env:
+        PANE_DIR: ${{ runner.temp }}/pane-ci
+
+  cross-os-main-tests:
+    name: Main Process Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.15.1'
+        cache: 'pnpm'
+
+    - name: Install dependencies
+      run: pnpm install
+
+    - name: Run main process type checking
+      run: pnpm --filter main typecheck
+
+    - name: Run main process unit tests
+      run: pnpm --filter main test
