@@ -11,7 +11,7 @@ import { existsSync } from 'fs';
 import type { AppServices } from './types';
 import type { CreateSessionRequest } from '../types/session';
 import { getAppSubdirectory } from '../utils/appDirectory';
-import { convertDbFolderToFolder } from './folders';
+import { convertDbFolderToRendererFolder } from '../services/folderEvents';
 import { sessionImageCounters } from './panels';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
@@ -89,7 +89,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
       const projectsWithSessions = allProjects.map(project => {
         const sessions = sessionManager.getSessionsForProject(project.id);
         const folders = databaseService.getFoldersForProject(project.id);
-        const convertedFolders = folders.map(convertDbFolderToFolder);
+        const convertedFolders = folders.map(convertDbFolderToRendererFolder);
         return {
           ...project,
           sessions,

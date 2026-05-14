@@ -1,6 +1,7 @@
-import { ipcMain } from 'electron';
+import type { IpcMain } from 'electron';
+import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { getPaneEventSink } from '../core/runtime';
 import { SessionManager } from '../services/sessionManager';
-import { mainWindow } from '../index';
 
 interface LogEntry {
   timestamp: string;
@@ -12,9 +13,30 @@ interface LogEntry {
 // Store logs per session in memory
 const sessionLogs = new Map<string, LogEntry[]>();
 
-export function setupLogHandlers(sessionManager: SessionManager) {
+const DAEMON_LOG_CHANNELS = [
+  'sessions:get-logs',
+  'sessions:clear-logs',
+  'sessions:add-log',
+] as const;
+
+function sendSessionLogEvent(sessionId: string, entry: LogEntry): void {
+  getPaneEventSink().send('session-log', {
+    sessionId,
+    entry,
+  });
+}
+
+function sendSessionLogsClearedEvent(sessionId: string): void {
+  getPaneEventSink().send('session-logs-cleared', { sessionId });
+}
+
+export function setupLogHandlers(
+  ipcMain: IpcMain,
+  _sessionManager: SessionManager,
+  commandRegistry: PaneCommandRegistry,
+) {
   // Get logs for a session
-  ipcMain.handle('sessions:get-logs', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-logs', async (sessionId: string) => {
     try {
       const logs = sessionLogs.get(sessionId) || [];
       return { success: true, data: logs };
@@ -28,9 +50,10 @@ export function setupLogHandlers(sessionManager: SessionManager) {
   });
 
   // Clear logs for a session
-  ipcMain.handle('sessions:clear-logs', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:clear-logs', async (sessionId: string) => {
     try {
       sessionLogs.set(sessionId, []);
+      sendSessionLogsClearedEvent(sessionId);
       return { success: true };
     } catch (error) {
       console.error('Failed to clear logs:', error);
@@ -42,20 +65,13 @@ export function setupLogHandlers(sessionManager: SessionManager) {
   });
 
   // Add a log entry
-  ipcMain.handle('sessions:add-log', async (_event, sessionId: string, entry: LogEntry) => {
+  commandRegistry.register('sessions:add-log', async (sessionId: string, entry: LogEntry) => {
     try {
       const logs = sessionLogs.get(sessionId) || [];
       logs.push(entry);
       sessionLogs.set(sessionId, logs);
-      
-      // Send the log entry to the renderer
-      if (mainWindow) {
-        mainWindow.webContents.send('session-log', {
-          sessionId,
-          entry
-        });
-      }
-      
+
+      sendSessionLogEvent(sessionId, entry);
       return { success: true };
     } catch (error) {
       console.error('Failed to add log:', error);
@@ -65,6 +81,8 @@ export function setupLogHandlers(sessionManager: SessionManager) {
       };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_LOG_CHANNELS);
 }
 
 // Helper function to add a log from internal sources
@@ -79,22 +97,13 @@ export function addSessionLog(sessionId: string, level: LogEntry['level'], messa
   const logs = sessionLogs.get(sessionId) || [];
   logs.push(entry);
   sessionLogs.set(sessionId, logs);
-  
-  // Send the log entry to the renderer
-  if (mainWindow) {
-    mainWindow.webContents.send('session-log', {
-      sessionId,
-      entry
-    });
-  }
+
+  sendSessionLogEvent(sessionId, entry);
 }
 
 // Helper to clean up logs when a session is deleted or when starting a new run
 export function cleanupSessionLogs(sessionId: string) {
   sessionLogs.delete(sessionId);
-  
-  // Notify the frontend to clear logs
-  if (mainWindow) {
-    mainWindow.webContents.send('session-logs-cleared', { sessionId });
-  }
+
+  sendSessionLogsClearedEvent(sessionId);
 }

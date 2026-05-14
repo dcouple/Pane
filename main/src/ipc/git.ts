@@ -3,7 +3,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import type { AppServices } from './types';
 import { buildGitCommitCommand } from '../utils/shellEscape';
-import { mainWindow } from '../index';
+import { getPaneEventSink } from '../core/runtime';
 import { panelEventBus } from '../services/panelEventBus';
 import { PanelEventType, ToolPanelType, PanelEvent } from '../../../shared/types/panels';
 import type { Session } from '../types/session';
@@ -100,9 +100,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
 
       // Also forward to renderer so UI components listening for window 'panel:event' receive it
       try {
-        if (mainWindow) {
-          mainWindow.webContents.send('panel:event', event);
-        }
+        getPaneEventSink().send('panel:event', event);
       } catch (ipcError) {
         console.error('[Git] Failed to forward git operation event to renderer:', ipcError);
       }

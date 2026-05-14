@@ -17,6 +17,7 @@ import type { Project } from '../database/models';
 import { worktreeFileSyncService } from './worktreeFileSyncService';
 import { terminalPanelManager } from './terminalPanelManager';
 import { detectProjectConfig } from './projectConfigDetector';
+import { emitFolderCreatedEvent } from './folderEvents';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -503,12 +504,10 @@ export class TaskQueue {
         folderId = folder.id;
         
         // Emit folder created event immediately
-        const getMainWindow = this.options.getMainWindow;
-        const mainWindow = getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('folder:created', folder);
-        } else {
-          console.warn(`[TaskQueue] Could not emit folder:created event - main window not available`);
+        try {
+          emitFolderCreatedEvent(folder);
+        } catch (error) {
+          console.error('[TaskQueue] Failed to emit folder:created event:', error);
         }
       } catch (error) {
         console.error('[TaskQueue] Failed to create folder for multi-session prompt:', error);

@@ -22,9 +22,12 @@ import { registerCloudHandlers } from './cloud';
 import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
+import { PaneCommandRegistry } from '../daemon/commandRegistry';
 
 
-export function registerIpcHandlers(services: AppServices): void {
+export function registerIpcHandlers(services: AppServices): PaneCommandRegistry {
+  const commandRegistry = new PaneCommandRegistry();
+
   registerAppHandlers(ipcMain, services);
   registerUpdaterHandlers(ipcMain, services);
   registerSessionHandlers(ipcMain, services);
@@ -35,16 +38,18 @@ export function registerIpcHandlers(services: AppServices): void {
   registerScriptHandlers(ipcMain, services);
   registerPromptHandlers(ipcMain, services);
   registerFileHandlers(ipcMain, services);
-  registerFolderHandlers(ipcMain, services);
+  registerFolderHandlers(ipcMain, services, commandRegistry);
   registerUIStateHandlers(services);
   registerDashboardHandlers(ipcMain, services);
-  setupLogHandlers(services.sessionManager);
+  setupLogHandlers(ipcMain, services.sessionManager, commandRegistry);
   registerPanelHandlers(ipcMain, services);
   registerEditorPanelHandlers(ipcMain, services);
   registerNimbalystHandlers(ipcMain, services);
   registerSpotlightHandlers(ipcMain, services);
   registerCloudHandlers(ipcMain, services);
   registerClipboardHandlers(ipcMain, services);
-  registerResourceMonitorHandlers(ipcMain, services);
+  registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);
+
+  return commandRegistry;
 } 

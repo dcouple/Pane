@@ -1,28 +1,31 @@
-import { IpcMain } from 'electron';
-import type { Folder } from '../database/models';
+import type { IpcMain } from 'electron';
+import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { AppServices } from './types';
+import {
+  convertDbFolderToRendererFolder,
+  emitFolderCreatedEvent,
+  emitFolderDeletedEvent,
+  emitFolderUpdatedEvent,
+} from '../services/folderEvents';
 
-// Convert database folder (snake_case) to frontend folder (camelCase)
-export function convertDbFolderToFolder(dbFolder: Folder) {
-  return {
-    id: dbFolder.id,
-    name: dbFolder.name,
-    projectId: dbFolder.project_id,
-    parentFolderId: dbFolder.parent_folder_id,
-    displayOrder: dbFolder.display_order,
-    createdAt: dbFolder.created_at,
-    updatedAt: dbFolder.updated_at
-  };
-}
+const DAEMON_FOLDER_CHANNELS = [
+  'folders:get-by-project',
+  'folders:create',
+  'folders:update',
+  'folders:delete',
+  'folders:reorder',
+  'folders:move-session',
+  'folders:move',
+] as const;
 
-export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) {
-  const { databaseService, getMainWindow, analyticsManager } = services;
+export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices, commandRegistry: PaneCommandRegistry) {
+  const { databaseService, analyticsManager } = services;
 
   // Get all folders for a project
-  ipcMain.handle('folders:get-by-project', async (_, projectId: number) => {
+  commandRegistry.register('folders:get-by-project', async (projectId: number) => {
     try {
       const folders = databaseService.getFoldersForProject(projectId);
-      const convertedFolders = folders.map(convertDbFolderToFolder);
+      const convertedFolders = folders.map(convertDbFolderToRendererFolder);
       return { success: true, data: convertedFolders };
     } catch (error: unknown) {
       console.error('[IPC] Failed to get folders:', error);
@@ -31,10 +34,10 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Create a new folder
-  ipcMain.handle('folders:create', async (_, name: string, projectId: number, parentFolderId?: string | null) => {
+  commandRegistry.register('folders:create', async (name: string, projectId: number, parentFolderId?: string | null) => {
     try {
       const folder = databaseService.createFolder(name, projectId, parentFolderId);
-      const convertedFolder = convertDbFolderToFolder(folder);
+      const convertedFolder = convertDbFolderToRendererFolder(folder);
 
       // Track folder creation
       if (analyticsManager) {
@@ -44,6 +47,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
         });
       }
 
+      emitFolderCreatedEvent(folder);
       return { success: true, data: convertedFolder };
     } catch (error: unknown) {
       console.error('[IPC] Failed to create folder:', error);
@@ -52,7 +56,10 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Update a folder
-  ipcMain.handle('folders:update', async (_, folderId: string, updates: { name?: string; display_order?: number; parent_folder_id?: string | null }) => {
+  commandRegistry.register('folders:update', async (
+    folderId: string,
+    updates: { name?: string; display_order?: number; parent_folder_id?: string | null },
+  ) => {
     try {
       // Track folder rename if name is being updated
       if (analyticsManager && updates.name !== undefined) {
@@ -64,14 +71,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
       // Get the updated folder to emit the event
       const updatedFolder = databaseService.getFolder(folderId);
       if (updatedFolder) {
-
-        // Emit the folder:updated event to notify the frontend
-        const mainWindow = getMainWindow();
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          console.log(`[IPC] Emitting folder:updated event for folder ${folderId}`);
-          const convertedFolder = convertDbFolderToFolder(updatedFolder);
-          mainWindow.webContents.send('folder:updated', convertedFolder);
-        }
+        emitFolderUpdatedEvent(updatedFolder);
       }
 
       return { success: true };
@@ -82,7 +82,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Delete a folder
-  ipcMain.handle('folders:delete', async (_, folderId: string) => {
+  commandRegistry.register('folders:delete', async (folderId: string) => {
     try {
       // Count sessions in the folder before deletion for analytics
       if (analyticsManager) {
@@ -100,12 +100,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
 
       databaseService.deleteFolder(folderId);
 
-      // Emit the folder:deleted event to notify the frontend
-      const mainWindow = getMainWindow();
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        console.log(`[IPC] Emitting folder:deleted event for folder ${folderId}`);
-        mainWindow.webContents.send('folder:deleted', folderId);
-      }
+      emitFolderDeletedEvent(folderId);
 
       return { success: true };
     } catch (error: unknown) {
@@ -115,7 +110,10 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Reorder folders within a project
-  ipcMain.handle('folders:reorder', async (_, projectId: number, folderOrders: Array<{ id: string; displayOrder: number }>) => {
+  commandRegistry.register('folders:reorder', async (
+    projectId: number,
+    folderOrders: Array<{ id: string; displayOrder: number }>,
+  ) => {
     try {
       databaseService.reorderFolders(projectId, folderOrders);
       return { success: true };
@@ -126,7 +124,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Move session to folder
-  ipcMain.handle('folders:move-session', async (_, sessionId: string, folderId: string | null) => {
+  commandRegistry.register('folders:move-session', async (sessionId: string, folderId: string | null) => {
     try {
       // Get the session to verify it exists
       const session = databaseService.getSession(sessionId);
@@ -155,7 +153,7 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
   });
 
   // Move folder to another folder (for nesting)
-  ipcMain.handle('folders:move', async (_, folderId: string, parentFolderId: string | null) => {
+  commandRegistry.register('folders:move', async (folderId: string, parentFolderId: string | null) => {
     try {
       // Get the folder to verify it exists
       const folder = databaseService.getFolder(folderId);
@@ -187,10 +185,18 @@ export function registerFolderHandlers(ipcMain: IpcMain, services: AppServices) 
 
       // Update the folder
       databaseService.updateFolder(folderId, { parent_folder_id: parentFolderId });
+
+      const updatedFolder = databaseService.getFolder(folderId);
+      if (updatedFolder) {
+        emitFolderUpdatedEvent(updatedFolder);
+      }
+
       return { success: true };
     } catch (error: unknown) {
       console.error('[IPC] Failed to move folder:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Failed to move folder' };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_FOLDER_CHANNELS);
 }
