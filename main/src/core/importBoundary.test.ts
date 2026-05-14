@@ -46,11 +46,28 @@ describe('daemon/client import boundary', () => {
   });
 
   it('keeps the daemon server free of Electron bootstrap imports', () => {
-    const source = readMainSrcFile('daemon/server.ts');
+    const daemonBoundaryFiles = [
+      'daemon/server.ts',
+      'ipc/daemon.ts',
+    ];
 
-    expect(source).not.toContain("from 'electron'");
-    expect(source).not.toContain('mainWindow');
-    expect(source).not.toMatch(/from ['"](?:\.\.\/)+(?:index)['"]/);
-    expect(source).not.toMatch(/from ['"](?:\.\.\/)+(?:index)\.ts['"]/);
+    for (const relativePath of daemonBoundaryFiles) {
+      const source = readMainSrcFile(relativePath);
+
+      expect(source, relativePath).not.toContain("from 'electron'");
+      expect(source, relativePath).not.toContain('mainWindow');
+      expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)['"]/);
+      expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)\.ts['"]/);
+    }
+  });
+
+  it('routes daemon-owned preload invokes through the shared bridge helper', () => {
+    const source = readMainSrcFile('preload.ts');
+
+    expect(source).toContain('isDaemonOwnedChannel');
+    expect(source).toContain("ipcRenderer.invoke('daemon:invoke', channel, ...args)");
+    expect(source).not.toMatch(
+      /ipcRenderer\.invoke\('(sessions:|projects:|folders:|prompts:|resource-monitor:|panels:|terminal:|logs:|git:(cancel-status-for-project|clone-repo|commit|execute-project|file-status|get-github-remote|restore|revert)|file:(copy|delete|duplicate|exists|getPath|list|move|read|read-binary|read-project|readAtRevision|rename|resolveAbsolutePath|search|write|write-binary|write-project))/,
+    );
   });
 });
