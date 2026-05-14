@@ -35,14 +35,14 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerConfigHandlers(ipcMain, services);
   registerDialogHandlers(ipcMain, services);
   registerGitHandlers(ipcMain, services);
-  registerScriptHandlers(ipcMain, services);
+  registerScriptHandlers(ipcMain, services, commandRegistry);
   registerPromptHandlers(ipcMain, services, commandRegistry);
   registerFileHandlers(ipcMain, services, commandRegistry);
   registerFolderHandlers(ipcMain, services, commandRegistry);
   registerUIStateHandlers(services);
   registerDashboardHandlers(ipcMain, services);
   setupLogHandlers(ipcMain, services.sessionManager, commandRegistry);
-  registerPanelHandlers(ipcMain, services);
+  registerPanelHandlers(ipcMain, services, commandRegistry);
   registerEditorPanelHandlers(ipcMain, services);
   registerNimbalystHandlers(ipcMain, services);
   registerSpotlightHandlers(ipcMain, services);

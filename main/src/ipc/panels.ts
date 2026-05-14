@@ -1,9 +1,11 @@
-import { IpcMain, BrowserWindow, clipboard } from 'electron';
+import { clipboard } from 'electron';
+import type { IpcMain } from 'electron';
 import { existsSync, readdirSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { webviewContextMap } from '../index';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
@@ -311,9 +313,42 @@ function stripAnsiCodes(text: string): string {
   return result;
 }
 
-export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
+const DAEMON_PANEL_CHANNELS = [
+  'panels:create',
+  'panels:delete',
+  'panels:update',
+  'panels:list',
+  'panels:set-active',
+  'panels:getActive',
+  'panels:initialize',
+  'panels:checkInitialized',
+  'panels:emitEvent',
+  'panels:resize-terminal',
+  'panels:send-terminal-input',
+  'panels:shouldAutoCreate',
+  'terminal:input',
+  'terminal:resize',
+  'terminal:getState',
+  'terminal:saveState',
+  'terminal:saveSnapshot',
+  'terminal:clearScrollback',
+  'terminal:setVisibility',
+  'terminal:ack',
+  'terminal:resetFlowControl',
+  'terminal:getAltScreenState',
+  'terminal:getScrollbackClean',
+  'terminal:paste-image',
+  'terminal:save-scrollback',
+  'terminal:paste-file',
+] as const;
+
+export function registerPanelHandlers(
+  ipcMain: IpcMain,
+  services: AppServices,
+  commandRegistry: PaneCommandRegistry,
+) {
   // Panel CRUD operations
-  ipcMain.handle('panels:create', async (_, request: CreatePanelRequest) => {
+  commandRegistry.register('panels:create', async (request: CreatePanelRequest) => {
     try {
       const panel = await panelManager.createPanel(request);
       return { success: true, data: panel };
@@ -323,7 +358,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:delete', async (_, panelId: string) => {
+  commandRegistry.register('panels:delete', async (panelId: string) => {
     try {
       // Clean up terminal process if it's a terminal panel
       const panel = panelManager.getPanel(panelId);
@@ -339,7 +374,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:update', async (_, panelId: string, updates: Partial<ToolPanel>) => {
+  commandRegistry.register('panels:update', async (panelId: string, updates: Partial<ToolPanel>) => {
     try {
       // Track panel rename if title is being updated
       if (updates.title) {
@@ -359,7 +394,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:list', async (_, sessionId: string) => {
+  commandRegistry.register('panels:list', async (sessionId: string) => {
     try {
       const panels = panelManager.getPanelsForSession(sessionId);
       return { success: true, data: panels };
@@ -369,7 +404,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:set-active', async (_, sessionId: string, panelId: string) => {
+  commandRegistry.register('panels:set-active', async (sessionId: string, panelId: string) => {
     try {
       await panelManager.setActivePanel(sessionId, panelId);
       return { success: true };
@@ -379,12 +414,12 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:getActive', async (_, sessionId: string) => {
+  commandRegistry.register('panels:getActive', async (sessionId: string) => {
     return databaseService.getActivePanel(sessionId);
   });
   
   // Panel initialization (lazy loading)
-  ipcMain.handle('panels:initialize', async (_, panelId: string, options?: { cwd?: string; sessionId?: string; cols?: number; rows?: number }) => {
+  commandRegistry.register('panels:initialize', async (panelId: string, options?: { cwd?: string; sessionId?: string; cols?: number; rows?: number }) => {
 
     const panel = panelManager.getPanel(panelId);
     if (!panel) {
@@ -418,7 +453,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     return true;
   });
   
-  ipcMain.handle('panels:checkInitialized', async (_, panelId: string) => {
+  commandRegistry.register('panels:checkInitialized', async (panelId: string) => {
     const panel = panelManager.getPanel(panelId);
     if (!panel) return false;
 
@@ -444,13 +479,13 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   });
   
   // Event handlers
-  ipcMain.handle('panels:emitEvent', async (_, panelId: string, eventType: PanelEventType, data: unknown) => {
+  commandRegistry.register('panels:emitEvent', async (panelId: string, eventType: PanelEventType, data: unknown) => {
     return panelManager.emitPanelEvent(panelId, eventType, data);
   });
 
   
   // Panel-specific terminal handlers (called via panels: namespace from frontend)
-  ipcMain.handle('panels:resize-terminal', async (_, panelId: string, cols: number, rows: number) => {
+  commandRegistry.register('panels:resize-terminal', async (panelId: string, cols: number, rows: number) => {
     try {
       await terminalPanelManager.resizeTerminal(panelId, cols, rows);
       return { success: true };
@@ -460,7 +495,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
   
-  ipcMain.handle('panels:send-terminal-input', async (_, panelId: string, data: string) => {
+  commandRegistry.register('panels:send-terminal-input', async (panelId: string, data: string) => {
     try {
       await terminalPanelManager.writeToTerminal(panelId, data);
       return { success: true };
@@ -474,23 +509,23 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // are implemented in session.ts as they need access to sessionManager methods
   
   // Terminal-specific handlers (internal use)
-  ipcMain.handle('terminal:input', async (_, panelId: string, data: string) => {
+  commandRegistry.register('terminal:input', async (panelId: string, data: string) => {
     return terminalPanelManager.writeToTerminal(panelId, data);
   });
   
-  ipcMain.handle('terminal:resize', async (_, panelId: string, cols: number, rows: number) => {
+  commandRegistry.register('terminal:resize', async (panelId: string, cols: number, rows: number) => {
     return terminalPanelManager.resizeTerminal(panelId, cols, rows);
   });
   
-  ipcMain.handle('terminal:getState', async (_, panelId: string) => {
+  commandRegistry.register('terminal:getState', async (panelId: string) => {
     return terminalPanelManager.getTerminalState(panelId);
   });
 
-  ipcMain.handle('terminal:saveState', async (_, panelId: string) => {
+  commandRegistry.register('terminal:saveState', async (panelId: string) => {
     return terminalPanelManager.saveTerminalState(panelId);
   });
 
-  ipcMain.handle('terminal:saveSnapshot', async (_event, panelId: string, serializedData: string) => {
+  commandRegistry.register('terminal:saveSnapshot', async (panelId: string, serializedData: string) => {
     try {
       terminalPanelManager.saveSerializedSnapshot(panelId, serializedData);
       return { success: true };
@@ -500,7 +535,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     }
   });
 
-  ipcMain.handle('terminal:clearScrollback', async (_event, panelId: string) => {
+  commandRegistry.register('terminal:clearScrollback', async (panelId: string) => {
     try {
       await terminalPanelManager.clearTerminalScrollback(panelId);
       return { success: true };
@@ -513,25 +548,25 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Renderer tells main when a terminal panel becomes (in)visible so PTY
   // output cadence can drop to OUTPUT_BATCH_INTERVAL_HIDDEN while hidden.
   // No-op when the panel's PTY isn't in the map (pre-init / post-destroy).
-  ipcMain.handle('terminal:setVisibility', async (_event, panelId: string, isVisible: boolean) => {
+  commandRegistry.register('terminal:setVisibility', async (panelId: string, isVisible: boolean) => {
     terminalPanelManager.setVisibility(panelId, !!isVisible);
   });
 
-  ipcMain.handle('terminal:ack', async (_, panelId: string, bytesConsumed: number) => {
+  commandRegistry.register('terminal:ack', async (panelId: string, bytesConsumed: number) => {
     terminalPanelManager.acknowledgeBytes(panelId, bytesConsumed);
   });
 
   // Reset flow control state (for recovering from stuck terminals)
-  ipcMain.handle('terminal:resetFlowControl', async (_, panelId: string) => {
+  commandRegistry.register('terminal:resetFlowControl', async (panelId: string) => {
     terminalPanelManager.resetFlowControl(panelId);
   });
 
   // Get alternate screen state for TUI detection on panel mount
-  ipcMain.handle('terminal:getAltScreenState', async (_, panelId: string) => {
+  commandRegistry.register('terminal:getAltScreenState', async (panelId: string) => {
     return terminalPanelManager.getAltScreenState(panelId);
   });
 
-  ipcMain.handle('terminal:getScrollbackClean', async (_, panelId: string, lines: number) => {
+  commandRegistry.register('terminal:getScrollbackClean', async (panelId: string, lines: number) => {
     try {
       // Try live in-memory scrollback first (active terminals)
       let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
@@ -572,8 +607,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Save a pasted image to the appropriate .pane/images/ and return the file path with image number.
   // For WSL-enabled sessions, the file is written to the WSL distro's ~/.pane/images/ so
   // Claude CLI (running inside WSL) can read it at a native Linux path instead of /mnt/c/...
-  ipcMain.handle('terminal:paste-image', async (
-    _,
+  commandRegistry.register('terminal:paste-image', async (
     _panelId: string,
     sessionId: string,
     dataUrl: string,
@@ -623,6 +657,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   // Fallback clipboard image check for platforms where browser clipboardData
   // doesn't contain image data (WSL, some Linux configs).
   // Reads system clipboard using platform-specific tools.
+  // This remains adapter-side because the source clipboard belongs to the local client.
   ipcMain.handle('terminal:clipboard-paste-image', async (_, sessionId: string) => {
     try {
       return await readClipboardImageFallback(sessionId);
@@ -636,8 +671,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   });
 
   // Save terminal scrollback to ~/.pane/files/ as a .txt and return the resolved path
-  ipcMain.handle('terminal:save-scrollback', async (
-    _,
+  commandRegistry.register('terminal:save-scrollback', async (
     panelId: string,
     sessionId: string,
     lines: number,
@@ -686,8 +720,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   });
 
   // Save a dropped file (any type) to .pane/files/ and return the resolved path
-  ipcMain.handle('terminal:paste-file', async (
-    _,
+  commandRegistry.register('terminal:paste-file', async (
     sessionId: string,
     dataUrl: string,
     originalFileName: string
@@ -715,7 +748,7 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
   });
 
   // Check if a panel type should be auto-created (not previously closed by user)
-  ipcMain.handle('panels:shouldAutoCreate', async (_, sessionId: string, panelType: string) => {
+  commandRegistry.register('panels:shouldAutoCreate', async (sessionId: string, panelType: string) => {
     return panelManager.shouldAutoCreatePanel(sessionId, panelType);
   });
 
@@ -726,4 +759,5 @@ export function registerPanelHandlers(ipcMain: IpcMain, services: AppServices) {
     return { success: true };
   });
 
+  commandRegistry.bindChannels(ipcMain, DAEMON_PANEL_CHANNELS);
 }

@@ -87,6 +87,8 @@ const DAEMON_OWNED_EXACT_CHANNELS = [
 
 const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
   'file:showInFolder',
+  'sessions:open-ide',
+  'terminal:clipboard-paste-image',
 ]);
 
 export function isDaemonOwnedChannel(channel: string): boolean {

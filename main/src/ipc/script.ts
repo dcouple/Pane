@@ -1,14 +1,33 @@
-import { IpcMain } from 'electron';
+import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { getShellPath, findExecutableInPath } from '../utils/shellPath';
 import { logsManager } from '../services/panels/logPanel/logsManager';
 import { panelManager } from '../services/panelManager';
-import { ExecException } from 'child_process';
+import type { ExecException } from 'child_process';
 import { scriptExecutionTracker } from '../services/scriptExecutionTracker';
 
-export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: AppServices): void {
+const DAEMON_SCRIPT_CHANNELS = [
+  'sessions:has-run-script',
+  'sessions:get-running-session',
+  'sessions:run-script',
+  'sessions:stop-script',
+  'sessions:run-terminal-command',
+  'sessions:send-terminal-input',
+  'sessions:pre-create-terminal',
+  'sessions:resize-terminal',
+  'logs:runScript',
+  'logs:stopScript',
+  'logs:isRunning',
+] as const;
+
+export function registerScriptHandlers(
+  ipcMain: IpcMain,
+  { sessionManager }: AppServices,
+  commandRegistry: PaneCommandRegistry,
+): void {
   // Script execution handlers
-  ipcMain.handle('sessions:has-run-script', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:has-run-script', async (sessionId: string) => {
     try {
       const runScript = sessionManager.getProjectRunScript(sessionId);
       return { success: true, data: !!runScript };
@@ -18,7 +37,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:get-running-session', async () => {
+  commandRegistry.register('sessions:get-running-session', async () => {
     try {
       const runningSessionId = sessionManager.getCurrentRunningSessionId();
       return { success: true, data: runningSessionId };
@@ -28,7 +47,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:run-script', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:run-script', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -101,7 +120,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:stop-script', async (_event, sessionId?: string) => {
+  commandRegistry.register('sessions:stop-script', async (sessionId?: string) => {
     try {
       // If sessionId provided, stop that session's logs panel
       // Otherwise stop the old running script (for backward compatibility)
@@ -149,7 +168,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:run-terminal-command', async (_event, sessionId: string, command: string) => {
+  commandRegistry.register('sessions:run-terminal-command', async (sessionId: string, command: string) => {
     try {
       await sessionManager.runTerminalCommand(sessionId, command);
       return { success: true };
@@ -165,7 +184,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:send-terminal-input', async (_event, sessionId: string, data: string) => {
+  commandRegistry.register('sessions:send-terminal-input', async (sessionId: string, data: string) => {
     try {
       await sessionManager.sendTerminalInput(sessionId, data);
       return { success: true };
@@ -181,7 +200,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:pre-create-terminal', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:pre-create-terminal', async (sessionId: string) => {
     try {
       await sessionManager.preCreateTerminalSession(sessionId);
       return { success: true };
@@ -191,7 +210,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('sessions:resize-terminal', async (_event, sessionId: string, cols: number, rows: number) => {
+  commandRegistry.register('sessions:resize-terminal', async (sessionId: string, cols: number, rows: number) => {
     try {
       sessionManager.resizeTerminal(sessionId, cols, rows);
       return { success: true };
@@ -207,6 +226,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     cursor: 'cursor .',
   };
 
+  // Opening a local IDE is a client-local adapter action, not daemon-owned runtime behavior.
   ipcMain.handle('sessions:open-ide', async (_event, sessionId: string, ideKey?: unknown) => {
     try {
       const session = await sessionManager.getSession(sessionId);
@@ -288,7 +308,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
   });
 
   // Logs panel specific handlers
-  ipcMain.handle('logs:runScript', async (_event, sessionId: string, command: string, cwd: string) => {
+  commandRegistry.register('logs:runScript', async (sessionId: string, command: string, cwd: string) => {
     try {
       const ctx = sessionManager.getProjectContext(sessionId);
       await logsManager.runScript(sessionId, command, cwd, ctx?.commandRunner.wslContext || null);
@@ -299,7 +319,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('logs:stopScript', async (_event, panelId: string) => {
+  commandRegistry.register('logs:stopScript', async (panelId: string) => {
     try {
       await logsManager.stopScript(panelId);
       return { success: true };
@@ -309,7 +329,7 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
     }
   });
 
-  ipcMain.handle('logs:isRunning', async (_event, sessionId: string) => {
+  commandRegistry.register('logs:isRunning', async (sessionId: string) => {
     try {
       const isRunning = await logsManager.isRunning(sessionId);
       return { success: true, data: isRunning };
@@ -318,4 +338,6 @@ export function registerScriptHandlers(ipcMain: IpcMain, { sessionManager }: App
       return { success: false, error: error instanceof Error ? error.message : 'Failed to check script status' };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_SCRIPT_CHANNELS);
 } 
