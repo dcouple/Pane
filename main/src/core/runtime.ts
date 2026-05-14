@@ -46,6 +46,7 @@ export interface PtyHostRuntime {
  */
 export interface PaneRuntime {
   eventSink: PaneEventSink;
+  daemonEventSink?: PaneEventSink;
   getConfigManager(): ConfigManager;
   getPtyHostRuntime(): PtyHostRuntime | null;
   getWebviewContextMap(): Map<number, PaneWebviewContext>;
@@ -67,6 +68,10 @@ export function getPaneRuntime(): PaneRuntime {
 
 export function getPaneEventSink(): PaneEventSink {
   return paneRuntime?.eventSink ?? noopPaneEventSink;
+}
+
+export function getPaneDaemonEventSink(): PaneEventSink {
+  return paneRuntime?.daemonEventSink ?? noopPaneEventSink;
 }
 
 export function getRuntimeConfigManager(): ConfigManager {

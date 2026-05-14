@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ConfigManager } from '../services/configManager';
 import {
+  getPaneDaemonEventSink,
   getPaneEventSink,
   getPaneRuntime,
   getPaneWebviewContextMap,
@@ -25,10 +26,14 @@ describe('pane runtime', () => {
   it('returns the installed runtime and helper accessors', () => {
     const configManager = { source: 'test' } as unknown as ConfigManager;
     const webviewContextMap = new Map([[1, { panelId: 'panel-1', sessionId: 'session-1' }]]);
+    const daemonEventSink = {
+      send: () => undefined,
+    };
     const runtime: PaneRuntime = {
       eventSink: {
         send: () => undefined,
       },
+      daemonEventSink,
       getConfigManager: () => configManager,
       getPtyHostRuntime: () => null,
       getWebviewContextMap: () => webviewContextMap,
@@ -38,6 +43,7 @@ describe('pane runtime', () => {
 
     expect(getPaneRuntime()).toBe(runtime);
     expect(getPaneEventSink()).toBe(runtime.eventSink);
+    expect(getPaneDaemonEventSink()).toBe(daemonEventSink);
     expect(getRuntimeConfigManager()).toBe(configManager);
     expect(getPtyHostRuntime()).toBeNull();
     expect(getPaneWebviewContextMap()).toBe(webviewContextMap);

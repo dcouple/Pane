@@ -1,6 +1,6 @@
 import * as pty from '@lydell/node-pty';
 import { ToolPanel, TerminalPanelState, PanelEventType } from '../../../shared/types/panels';
-import { getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
+import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
 import * as os from 'os';
 import * as path from 'path';
@@ -280,6 +280,10 @@ export class TerminalPanelManager {
     getPaneEventSink().send(channel, ...args);
   }
 
+  private sendDaemonEvent(channel: string, ...args: unknown[]): void {
+    getPaneDaemonEventSink().send(channel, ...args);
+  }
+
   /**
    * Returns a map of sessionId → array of PTY PIDs for that session.
    * Used by resource monitoring to discover which processes belong to which session.
@@ -372,6 +376,13 @@ export class TerminalPanelManager {
     if (!terminal.isVisible) {
       // Hidden terminals run headless: keep PTY output in main scrollback, but
       // avoid waking the renderer/xterm/WebGL for every background token.
+      // Daemon subscribers still need the live bytes so non-Electron clients
+      // are not starved by one hidden desktop panel.
+      this.sendDaemonEvent('terminal:output', {
+        sessionId: terminal.sessionId,
+        panelId: terminal.panelId,
+        output: data,
+      });
       return;
     }
 

@@ -77,9 +77,10 @@ const electronPaneEventSink: PaneEventSink = {
   },
 };
 
-function installPaneRuntime(eventSink: PaneEventSink): void {
+function installPaneRuntime(eventSink: PaneEventSink, daemonEventSink?: PaneEventSink): void {
   setPaneRuntime({
     eventSink,
+    daemonEventSink,
     getConfigManager: () => configManager,
     getPtyHostRuntime: () => ptyHostSupervisor,
     getWebviewContextMap: () => webviewContextMap,
@@ -1140,7 +1141,7 @@ async function initializeServices() {
     installPaneRuntime(createFanoutEventSink([
       electronPaneEventSink,
       paneDaemonServer.getEventSink(),
-    ]));
+    ]), paneDaemonServer.getEventSink());
   } catch (error) {
     paneDaemonServer = null;
     console.error('[Pane daemon] Failed to start local daemon server; continuing with Electron-only runtime events', error);
