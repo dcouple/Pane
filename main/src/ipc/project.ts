@@ -1,6 +1,7 @@
-import { IpcMain } from 'electron';
+import type { IpcMain } from 'electron';
 import { mkdir, access } from 'fs/promises';
 import path from 'path';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { AppServices } from './types';
 import type { CreateProjectRequest, UpdateProjectRequest } from '../../../frontend/src/types/project';
 import { scriptExecutionTracker } from '../services/scriptExecutionTracker';
@@ -50,10 +51,32 @@ async function stopProjectScriptInternal(projectId?: number): Promise<{ success:
   }
 }
 
-export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices): void {
+const DAEMON_PROJECT_CHANNELS = [
+  'projects:get-all',
+  'projects:get-active',
+  'projects:create',
+  'projects:activate',
+  'projects:update',
+  'projects:delete',
+  'projects:reorder',
+  'projects:detect-branch',
+  'projects:list-branches',
+  'projects:refresh-git-status',
+  'projects:get-running-script',
+  'projects:stop-script',
+  'projects:detect-config',
+  'projects:resolve-run-script',
+  'projects:run-script',
+] as const;
+
+export function registerProjectHandlers(
+  ipcMain: IpcMain,
+  services: AppServices,
+  commandRegistry: PaneCommandRegistry,
+): void {
   const { databaseService, sessionManager, worktreeManager, analyticsManager } = services;
 
-  ipcMain.handle('projects:get-all', async () => {
+  commandRegistry.register('projects:get-all', async () => {
     try {
       const projects = databaseService.getAllProjects();
       const projectsWithEnv = projects.map(p => ({
@@ -67,7 +90,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:get-active', async () => {
+  commandRegistry.register('projects:get-active', async () => {
     try {
       const activeProject = sessionManager.getActiveProject();
       const projectWithEnv = activeProject ? {
@@ -81,7 +104,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:create', async (_event, projectData: CreateProjectRequest) => {
+  commandRegistry.register('projects:create', async (projectData: CreateProjectRequest) => {
     try {
       console.log('[Main] Creating project:', projectData);
 
@@ -231,7 +254,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:activate', async (_event, projectId: string) => {
+  commandRegistry.register('projects:activate', async (projectId: string) => {
     try {
       const project = databaseService.setActiveProject(parseInt(projectId));
       if (project) {
@@ -258,7 +281,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:update', async (_event, projectId: string, updates: UpdateProjectRequest) => {
+  commandRegistry.register('projects:update', async (projectId: string, updates: UpdateProjectRequest) => {
     try {
       const projectIdNum = parseInt(projectId);
 
@@ -319,7 +342,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:delete', async (_event, projectId: string) => {
+  commandRegistry.register('projects:delete', async (projectId: string) => {
     try {
       const projectIdNum = parseInt(projectId);
       
@@ -413,7 +436,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:reorder', async (_event, projectOrders: Array<{ id: number; displayOrder: number }>) => {
+  commandRegistry.register('projects:reorder', async (projectOrders: Array<{ id: number; displayOrder: number }>) => {
     try {
       databaseService.reorderProjects(projectOrders);
       return { success: true };
@@ -423,7 +446,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:detect-branch', async (_event, path: string) => {
+  commandRegistry.register('projects:detect-branch', async (path: string) => {
     try {
       const wslInfo = parseWSLPath(path);
       const tempProject = {
@@ -440,7 +463,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:list-branches', async (_event, projectId: string) => {
+  commandRegistry.register('projects:list-branches', async (projectId: string) => {
     try {
       const project = databaseService.getProject(parseInt(projectId));
       if (!project) {
@@ -460,7 +483,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:refresh-git-status', async (_event, projectId: string) => {
+  commandRegistry.register('projects:refresh-git-status', async (projectId: string) => {
     try {
       const projectIdNum = parseInt(projectId);
       const { gitStatusManager } = services;
@@ -510,7 +533,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:get-running-script', async () => {
+  commandRegistry.register('projects:get-running-script', async () => {
     try {
       const runningProjectId = scriptExecutionTracker.getRunningScriptId('project');
       return { success: true, data: runningProjectId };
@@ -520,7 +543,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:stop-script', async (_event, projectId?: number) => {
+  commandRegistry.register('projects:stop-script', async (projectId?: number) => {
     return stopProjectScriptInternal(projectId);
   });
 
@@ -547,7 +570,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
    *   - `main/src/services/projectConfigDetector.ts` — `detectProjectConfig` implementation
    *   - `frontend/src/components/ProjectSettings.tsx` — consumer (badge rendering)
    */
-  ipcMain.handle('projects:detect-config', async (_event, projectId: string) => {
+  commandRegistry.register('projects:detect-config', async (projectId: string) => {
     try {
       const project = databaseService.getProject(parseInt(projectId));
       if (!project) return { success: false, error: 'Project not found' };
@@ -578,7 +601,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
    * Steps 2-5 are handled by `detectProjectConfig()`.
    * DB values always override config files (Conductor model).
    */
-  ipcMain.handle('projects:resolve-run-script', async (_event, sessionId: string) => {
+  commandRegistry.register('projects:resolve-run-script', async (sessionId: string) => {
     try {
       const dbSession = databaseService.getSession(sessionId);
       if (!dbSession?.project_id) return { success: true, data: null };
@@ -629,7 +652,7 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('projects:run-script', async (_event, projectId: number) => {
+  commandRegistry.register('projects:run-script', async (projectId: number) => {
     try {
       // Get the project
       const project = databaseService.getProject(projectId);
@@ -723,4 +746,5 @@ export function registerProjectHandlers(ipcMain: IpcMain, services: AppServices)
       return { success: false, error: error instanceof Error ? error.message : 'Failed to run project script' };
     }
   });
+  commandRegistry.bindChannels(ipcMain, DAEMON_PROJECT_CHANNELS);
 }

@@ -1,9 +1,11 @@
-import { IpcMain, shell } from 'electron';
+import type { IpcMain } from 'electron';
+import { shell } from 'electron';
 import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { glob } from 'glob';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { AppServices } from './types';
 import type { Session } from '../types/session';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
@@ -91,7 +93,35 @@ interface FileSearchRequest {
   limit?: number;
 }
 
-export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): void {
+const DAEMON_FILE_CHANNELS = [
+  'file:read',
+  'file:read-binary',
+  'file:exists',
+  'file:write',
+  'file:write-binary',
+  'file:getPath',
+  'git:commit',
+  'git:revert',
+  'git:restore',
+  'file:readAtRevision',
+  'file:list',
+  'file:delete',
+  'file:rename',
+  'file:move',
+  'file:copy',
+  'file:duplicate',
+  'file:search',
+  'file:read-project',
+  'file:write-project',
+  'git:execute-project',
+  'file:resolveAbsolutePath',
+] as const;
+
+export function registerFileHandlers(
+  ipcMain: IpcMain,
+  services: AppServices,
+  commandRegistry: PaneCommandRegistry,
+): void {
   const { sessionManager, gitStatusManager, configManager } = services;
 
   async function resolveWorktreePath(sessionId: string, relativePath = ''): Promise<{
@@ -153,7 +183,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   }
 
   // Read file contents from a session's worktree
-  ipcMain.handle('file:read', async (_, request: FileReadRequest) => {
+  commandRegistry.register('file:read', async (request: FileReadRequest) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -191,7 +221,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Read a file as binary (base64-encoded) — used for image/PDF preview
-  ipcMain.handle('file:read-binary', async (_, request: FileReadRequest) => {
+  commandRegistry.register('file:read-binary', async (request: FileReadRequest) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -226,7 +256,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Check if a file exists in a session's worktree
-  ipcMain.handle('file:exists', async (_, request: FilePathRequest) => {
+  commandRegistry.register('file:exists', async (request: FilePathRequest) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -258,7 +288,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Write file contents to a session's worktree
-  ipcMain.handle('file:write', async (_, request: FileWriteRequest) => {
+  commandRegistry.register('file:write', async (request: FileWriteRequest) => {
     try {
       // Removed verbose logging of file:write requests to reduce console noise during auto-save
 
@@ -321,7 +351,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   }
 
   // Write binary file to a session's worktree root (for drag-and-drop uploads)
-  ipcMain.handle('file:write-binary', async (_, request: FileWriteBinaryRequest) => {
+  commandRegistry.register('file:write-binary', async (request: FileWriteBinaryRequest) => {
     try {
       if (!request.fileName) {
         throw new Error('File name is required');
@@ -396,7 +426,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Get the full path for a file in a session's worktree
-  ipcMain.handle('file:getPath', async (_, request: FilePathRequest) => {
+  commandRegistry.register('file:getPath', async (request: FilePathRequest) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -426,7 +456,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Commit changes in a session's worktree
-  ipcMain.handle('git:commit', async (_, request: { sessionId: string; message: string }) => {
+  commandRegistry.register('git:commit', async (request: { sessionId: string; message: string }) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -510,7 +540,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Revert a specific commit
-  ipcMain.handle('git:revert', async (_, request: { sessionId: string; commitHash: string }) => {
+  commandRegistry.register('git:revert', async (request: { sessionId: string; commitHash: string }) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -544,7 +574,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Restore all uncommitted changes
-  ipcMain.handle('git:restore', async (_, request: { sessionId: string }) => {
+  commandRegistry.register('git:restore', async (request: { sessionId: string }) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -576,7 +606,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Read file contents at a specific git revision
-  ipcMain.handle('file:readAtRevision', async (_, request: { sessionId: string; filePath: string; revision?: string }) => {
+  commandRegistry.register('file:readAtRevision', async (request: { sessionId: string; filePath: string; revision?: string }) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -623,7 +653,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // List files and directories in a session's worktree
-  ipcMain.handle('file:list', async (_, request: FileListRequest) => {
+  commandRegistry.register('file:list', async (request: FileListRequest) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) {
@@ -703,7 +733,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Delete a file from a session's worktree
-  ipcMain.handle('file:delete', async (_, request: FileDeleteRequest) => {
+  commandRegistry.register('file:delete', async (request: FileDeleteRequest) => {
     try {
       const { fullPath, normalizedPath } = await resolveWorktreePath(request.sessionId, request.filePath);
 
@@ -745,7 +775,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Rename a file or folder within a session's worktree
-  ipcMain.handle('file:rename', async (_, request: FileRenameRequest) => {
+  commandRegistry.register('file:rename', async (request: FileRenameRequest) => {
     try {
       const { basePath, fullPath, normalizedPath } = await resolveWorktreePath(request.sessionId, request.filePath);
       const newName = validateSimpleName(request.newName);
@@ -774,7 +804,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Move a file or folder into a target directory within a session's worktree
-  ipcMain.handle('file:move', async (_, request: FileMoveRequest) => {
+  commandRegistry.register('file:move', async (request: FileMoveRequest) => {
     try {
       const source = await resolveWorktreePath(request.sessionId, request.sourcePath);
       const target = await resolveWorktreePath(request.sessionId, request.targetDir);
@@ -807,7 +837,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Copy a file or folder into a target directory within a session's worktree
-  ipcMain.handle('file:copy', async (_, request: FileCopyRequest) => {
+  commandRegistry.register('file:copy', async (request: FileCopyRequest) => {
     try {
       const source = await resolveWorktreePath(request.sessionId, request.sourcePath);
       const target = await resolveWorktreePath(request.sessionId, request.targetDir);
@@ -833,7 +863,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Duplicate a file or folder next to itself within a session's worktree
-  ipcMain.handle('file:duplicate', async (_, request: FilePathRequest) => {
+  commandRegistry.register('file:duplicate', async (request: FilePathRequest) => {
     try {
       const source = await resolveWorktreePath(request.sessionId, request.filePath);
       const parentDir = path.dirname(source.fullPath);
@@ -855,7 +885,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Search for files matching a pattern
-  ipcMain.handle('file:search', async (_, request: FileSearchRequest) => {
+  commandRegistry.register('file:search', async (request: FileSearchRequest) => {
     try {
       // Determine the search directory and get path resolver
       // storedDir = Linux path (for CommandRunner cwd), searchDirectory = filesystem path (for fs ops)
@@ -1023,7 +1053,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Read file from project directory (not worktree)
-  ipcMain.handle('file:read-project', async (_, request: { projectId: number; filePath: string }) => {
+  commandRegistry.register('file:read-project', async (request: { projectId: number; filePath: string }) => {
     console.log('[file:read-project] Request:', request);
     try {
       const ctx = sessionManager.getProjectContextByProjectId(request.projectId);
@@ -1069,7 +1099,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Write file to project directory (not worktree)
-  ipcMain.handle('file:write-project', async (_, request: { projectId: number; filePath: string; content: string }) => {
+  commandRegistry.register('file:write-project', async (request: { projectId: number; filePath: string; content: string }) => {
     console.log('[file:write-project] Request:', { projectId: request.projectId, filePath: request.filePath, contentLength: request.content.length });
     try {
       const ctx = sessionManager.getProjectContextByProjectId(request.projectId);
@@ -1110,7 +1140,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Execute git command in project directory
-  ipcMain.handle('git:execute-project', async (_, request: { projectId: number; args: string[] }) => {
+  commandRegistry.register('git:execute-project', async (request: { projectId: number; args: string[] }) => {
     console.log('[git:execute-project] Request:', request);
     try {
       const ctx = sessionManager.getProjectContextByProjectId(request.projectId);
@@ -1155,7 +1185,7 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
   });
 
   // Resolve an absolute filesystem path for a file in a session's worktree
-  ipcMain.handle('file:resolveAbsolutePath', async (_, request: { sessionId: string; path?: string }) => {
+  commandRegistry.register('file:resolveAbsolutePath', async (request: { sessionId: string; path?: string }) => {
     try {
       const session = sessionManager.getSession(request.sessionId);
       if (!session) throw new Error(`Session not found: ${request.sessionId}`);
@@ -1179,6 +1209,8 @@ export function registerFileHandlers(ipcMain: IpcMain, services: AppServices): v
       return { success: false, error: error instanceof Error ? error.message : 'Failed to resolve path' };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_FILE_CHANNELS);
 
   // Show a file/folder from a session's worktree in the native file manager
   ipcMain.handle('file:showInFolder', async (_, request: { sessionId: string; path?: string }) => {

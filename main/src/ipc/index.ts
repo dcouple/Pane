@@ -31,13 +31,13 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerAppHandlers(ipcMain, services);
   registerUpdaterHandlers(ipcMain, services);
   registerSessionHandlers(ipcMain, services);
-  registerProjectHandlers(ipcMain, services);
+  registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services);
   registerDialogHandlers(ipcMain, services);
   registerGitHandlers(ipcMain, services);
   registerScriptHandlers(ipcMain, services);
-  registerPromptHandlers(ipcMain, services);
-  registerFileHandlers(ipcMain, services);
+  registerPromptHandlers(ipcMain, services, commandRegistry);
+  registerFileHandlers(ipcMain, services, commandRegistry);
   registerFolderHandlers(ipcMain, services, commandRegistry);
   registerUIStateHandlers(services);
   registerDashboardHandlers(ipcMain, services);
