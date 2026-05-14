@@ -1,13 +1,12 @@
 import { EventEmitter } from 'events';
 import * as pty from '@lydell/node-pty';
+import { getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { getShellPath } from '../utils/shellPath';
 import { ShellDetector } from '../utils/shellDetector';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
-import { configManager, getPtyHostSupervisor } from '../index';
-import type { PtyHandle, PtyHostSupervisor } from '../ptyHost/ptyHostSupervisor';
 
 /**
  * IPty-compatible shim over a ptyHost `PtyHandle`.
@@ -27,9 +26,9 @@ class TerminalSessionPtyShim implements pty.IPty {
   readonly process = 'ptyHost';
   handleFlowControl = false;
   readonly ptyId: string;
-  private readonly handle: PtyHandle;
+  private readonly handle: PtyHandleLike;
 
-  constructor(handle: PtyHandle, cols: number, rows: number) {
+  constructor(handle: PtyHandleLike, cols: number, rows: number) {
     this.handle = handle;
     this.ptyId = handle.id;
     this.pid = handle.pid;
@@ -142,10 +141,11 @@ export class TerminalSessionManager extends EventEmitter {
     // is routed through the ptyHost `UtilityProcess`; otherwise fall back to
     // the legacy in-main `pty.spawn`. Under setting-off or when the
     // supervisor is unavailable, behavior is byte-identical.
-    const useFlag = configManager.getUsePtyHost();
-    let supervisor: PtyHostSupervisor | null = null;
+    const runtimeConfigManager = getRuntimeConfigManager();
+    const useFlag = runtimeConfigManager.getUsePtyHost();
+    let supervisor: PtyHostRuntime | null = null;
     if (useFlag) {
-      supervisor = getPtyHostSupervisor();
+      supervisor = getPtyHostRuntime();
       if (!supervisor) {
         console.warn('[ptyHost] supervisor unavailable, falling back to legacy pty.spawn for terminal-session');
       }

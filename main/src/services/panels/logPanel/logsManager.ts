@@ -1,9 +1,9 @@
 import { ChildProcess, spawn, exec, execSync } from 'child_process';
 import * as os from 'os';
 import { ToolPanel, LogsPanelState } from '../../../../../shared/types/panels';
+import { getPaneEventSink } from '../../../core/runtime';
 import { panelManager } from '../../panelManager';
 import { addSessionLog, cleanupSessionLogs } from '../../../ipc/logs';
-import { mainWindow } from '../../../index';
 import { getShellPath } from '../../../utils/shellPath';
 import type { AnalyticsManager } from '../../analyticsManager';
 import { WSLContext } from '../../../utils/wslUtils';
@@ -28,6 +28,10 @@ export class LogsManager {
     this.analyticsManager = analyticsManager;
   }
 
+  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+    getPaneEventSink().send(channel, ...args);
+  }
+
   /**
    * Get or create singleton logs panel for session
    */
@@ -42,9 +46,7 @@ export class LogsManager {
       // Emit panel:created event to ensure frontend adds it back if it was closed
       // This is necessary because closing a panel in the frontend removes it from the store
       // but doesn't delete it from the backend database
-      if (mainWindow) {
-        mainWindow.webContents.send('panel:created', existingLogs);
-      }
+      this.sendRendererEvent('panel:created', existingLogs);
       
       return existingLogs;
     }
@@ -128,18 +130,16 @@ export class LogsManager {
     await panelManager.setActivePanel(sessionId, panel.id);
 
     // Emit process started event
-    if (mainWindow) {
-      mainWindow.webContents.send('panel:event', {
-        type: 'process:started',
-        source: {
-          panelId: panel.id,
-          panelType: 'logs',
-          sessionId
-        },
-        data: { command, cwd },
-        timestamp: startTime
-      });
-    }
+    this.sendRendererEvent('panel:event', {
+      type: 'process:started',
+      source: {
+        panelId: panel.id,
+        panelType: 'logs',
+        sessionId
+      },
+      data: { command, cwd },
+      timestamp: startTime
+    });
 
     // Get enhanced shell PATH for packaged apps
     const shellPath = getShellPath();
@@ -380,25 +380,23 @@ export class LogsManager {
     addSessionLog(sessionId, level, content, 'Script');
     
     // Emit output event
-    if (mainWindow) {
-      mainWindow.webContents.send('panel:event', {
-        type: 'process:output',
-        source: {
-          panelId,
-          panelType: 'logs',
-          sessionId
-        },
-        data: { content, type },
-        timestamp: new Date().toISOString()
-      });
-      
-      // Also send logs-specific output event for the panel
-      mainWindow.webContents.send('logs:output', {
+    this.sendRendererEvent('panel:event', {
+      type: 'process:output',
+      source: {
         panelId,
-        content,
-        type
-      });
-    }
+        panelType: 'logs',
+        sessionId
+      },
+      data: { content, type },
+      timestamp: new Date().toISOString()
+    });
+
+    // Also send logs-specific output event for the panel
+    this.sendRendererEvent('logs:output', {
+      panelId,
+      content,
+      type
+    });
     
     // Update panel state
     const panel = await panelManager.getPanel(panelId);
@@ -478,24 +476,22 @@ export class LogsManager {
     }
 
     // Emit process ended event
-    if (mainWindow) {
-      mainWindow.webContents.send('panel:event', {
-        type: 'process:ended',
-        source: {
-          panelId,
-          panelType: 'logs',
-          sessionId
-        },
-        data: { exitCode: code },
-        timestamp: new Date().toISOString()
-      });
-
-      // Also send specific event for the panel
-      mainWindow.webContents.send('process:ended', {
+    this.sendRendererEvent('panel:event', {
+      type: 'process:ended',
+      source: {
         panelId,
-        exitCode: code
-      });
-    }
+        panelType: 'logs',
+        sessionId
+      },
+      data: { exitCode: code },
+      timestamp: new Date().toISOString()
+    });
+
+    // Also send specific event for the panel
+    this.sendRendererEvent('process:ended', {
+      panelId,
+      exitCode: code
+    });
 
     // Add final log entry
     const message = code === 0

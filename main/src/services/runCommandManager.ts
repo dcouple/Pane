@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import * as pty from '@lydell/node-pty';
+import { getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import type { Logger } from '../utils/logger';
 import type { DatabaseService } from '../database/database';
 import type { ProjectRunCommand } from '../database/models';
@@ -8,9 +9,7 @@ import { ShellDetector } from '../utils/shellDetector';
 import * as os from 'os';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { configManager, getPtyHostSupervisor } from '../index';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
-import type { PtyHandle, PtyHostSupervisor } from '../ptyHost/ptyHostSupervisor';
 
 /**
  * IPty-compatible shim over a ptyHost `PtyHandle`.
@@ -31,9 +30,9 @@ class RunCommandPtyShim implements pty.IPty {
   readonly process = 'ptyHost';
   handleFlowControl = false;
   readonly ptyId: string;
-  private readonly handle: PtyHandle;
+  private readonly handle: PtyHandleLike;
 
-  constructor(handle: PtyHandle, cols: number, rows: number) {
+  constructor(handle: PtyHandleLike, cols: number, rows: number) {
     this.handle = handle;
     this.ptyId = handle.id;
     this.pid = handle.pid;
@@ -169,7 +168,7 @@ export class RunCommandManager extends EventEmitter {
             }
             
             // Get the user's default shell
-            const preferredShell = configManager.getPreferredShell();
+            const preferredShell = getRuntimeConfigManager().getPreferredShell();
             const shellInfo = ShellDetector.getDefaultShell(preferredShell);
             this.logger?.verbose(`Using shell: ${shellInfo.path} (${shellInfo.name})`);
             
@@ -200,10 +199,11 @@ export class RunCommandManager extends EventEmitter {
             // we fall back to the legacy in-main `pty.spawn`. Behavior is
             // byte-identical under setting-off or when the supervisor is
             // unavailable.
-            const useFlag = configManager.getUsePtyHost();
-            let supervisor: PtyHostSupervisor | null = null;
+            const runtimeConfigManager = getRuntimeConfigManager();
+            const useFlag = runtimeConfigManager.getUsePtyHost();
+            let supervisor: PtyHostRuntime | null = null;
             if (useFlag) {
-              supervisor = getPtyHostSupervisor();
+              supervisor = getPtyHostRuntime();
               if (!supervisor) {
                 this.logger?.warn('[ptyHost] supervisor unavailable, falling back to legacy pty.spawn for run-command');
               }

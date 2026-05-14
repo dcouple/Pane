@@ -1,7 +1,7 @@
 import * as pty from '@lydell/node-pty';
 import { ToolPanel, TerminalPanelState, PanelEventType } from '../../../shared/types/panels';
+import { getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
-import { mainWindow, configManager, getPtyHostSupervisor } from '../index';
 import * as os from 'os';
 import * as path from 'path';
 import { getShellPath } from '../utils/shellPath';
@@ -9,7 +9,6 @@ import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
-import type { PtyHandle, PtyHostSupervisor } from '../ptyHost/ptyHostSupervisor';
 import {
   type FlowControlRecord,
   createFlowControlRecord,
@@ -49,9 +48,9 @@ class PtyHandleShim implements pty.IPty {
   readonly process = 'ptyHost';
   handleFlowControl = false;
   readonly ptyId: string;
-  private readonly handle: PtyHandle;
+  private readonly handle: PtyHandleLike;
 
-  constructor(handle: PtyHandle, cols: number, rows: number) {
+  constructor(handle: PtyHandleLike, cols: number, rows: number) {
     this.handle = handle;
     this.ptyId = handle.id;
     this.pid = handle.pid;
@@ -277,6 +276,10 @@ export class TerminalPanelManager {
     this.analyticsManager = analyticsManager;
   }
 
+  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+    getPaneEventSink().send(channel, ...args);
+  }
+
   /**
    * Returns a map of sessionId → array of PTY PIDs for that session.
    * Used by resource monitoring to discover which processes belong to which session.
@@ -377,15 +380,13 @@ export class TerminalPanelManager {
     // the per-window MessagePort so `electronAPI.ptyHost.onData` subscribers
     // fire. Both paths continue to run; the renderer short-circuits the
     // legacy handler once a `ptyId` is set to avoid double-delivery.
-    if (mainWindow) {
-      mainWindow.webContents.send('terminal:output', {
-        sessionId: terminal.sessionId,
-        panelId: terminal.panelId,
-        output: data
-      });
-    }
+    this.sendRendererEvent('terminal:output', {
+      sessionId: terminal.sessionId,
+      panelId: terminal.panelId,
+      output: data
+    });
     if (terminal.isPtyHost && terminal.ptyId) {
-      const supervisor = getPtyHostSupervisor();
+      const supervisor = getPtyHostRuntime();
       supervisor?.postDataToRenderers(terminal.ptyId, data);
     }
 
@@ -412,7 +413,7 @@ export class TerminalPanelManager {
    */
   private pausePty(terminal: TerminalProcess): Promise<void> {
     if (terminal.isPtyHost && terminal.ptyId) {
-      const supervisor = getPtyHostSupervisor();
+      const supervisor = getPtyHostRuntime();
       if (supervisor) {
         return supervisor.pause(terminal.ptyId).catch((err: unknown) => {
           console.warn('[TerminalPanelManager] ptyHost pause failed', err);
@@ -428,7 +429,7 @@ export class TerminalPanelManager {
    */
   private resumePty(terminal: TerminalProcess): void {
     if (terminal.isPtyHost && terminal.ptyId) {
-      const supervisor = getPtyHostSupervisor();
+      const supervisor = getPtyHostRuntime();
       if (supervisor) {
         supervisor.resume(terminal.ptyId).catch((err: unknown) => {
           console.warn('[TerminalPanelManager] ptyHost resume failed', err);
@@ -524,7 +525,7 @@ export class TerminalPanelManager {
       shellArgs = wslShell.args;
       spawnCwd = undefined; // WSL handles cwd
     } else {
-      const preferredShell = configManager.getPreferredShell();
+      const preferredShell = getRuntimeConfigManager().getPreferredShell();
       const shellInfo = ShellDetector.getDefaultShell(preferredShell);
       shellPath = shellInfo.path;
       shellArgs = shellInfo.args || [];
@@ -598,13 +599,14 @@ export class TerminalPanelManager {
     };
 
     // Read the setting once per spawn so we don't scatter config reads.
-    // `getPtyHostSupervisor()` returns null when the setting is off or when
+    // `getPtyHostRuntime()` returns null when the setting is off or when
     // supervisor startup failed; in either case we transparently fall back to
     // the legacy `pty.spawn` path.
-    const useFlag = configManager.getUsePtyHost();
-    let supervisor: PtyHostSupervisor | null = null;
+    const runtimeConfigManager = getRuntimeConfigManager();
+    const useFlag = runtimeConfigManager.getUsePtyHost();
+    let supervisor: PtyHostRuntime | null = null;
     if (useFlag) {
-      supervisor = getPtyHostSupervisor();
+      supervisor = getPtyHostRuntime();
       if (!supervisor) {
         console.warn('[ptyHost] supervisor unavailable, falling back to legacy pty.spawn');
       }
@@ -680,8 +682,8 @@ export class TerminalPanelManager {
     // `TerminalPanel.tsx` can use `electronAPI.ptyHost.onData(ptyId, ...)`
     // under the flag. Flag-off path skips this: the renderer keeps using
     // the legacy `terminal:output` channel.
-    if (usePtyHost && ptyHostId && mainWindow) {
-      mainWindow.webContents.send('terminal:ptyReady', {
+    if (usePtyHost && ptyHostId) {
+      this.sendRendererEvent('terminal:ptyReady', {
         sessionId: panel.sessionId,
         panelId: panel.id,
         ptyId: ptyHostId,
@@ -746,9 +748,7 @@ export class TerminalPanelManager {
             }
 
             // Emit to renderer
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.webContents.send('terminal:cliReady', { panelId });
-            }
+            this.sendRendererEvent('terminal:cliReady', { panelId });
           };
 
           // Listen for first CLI output after command injection.
@@ -875,12 +875,10 @@ export class TerminalPanelManager {
         const newState = lastEnter > lastLeave;
         if (newState !== terminal.isAlternateScreen) {
           terminal.isAlternateScreen = newState;
-          if (mainWindow) {
-            mainWindow.webContents.send('terminal:alternateScreen', {
-              panelId: terminal.panelId,
-              active: newState
-            });
-          }
+          this.sendRendererEvent('terminal:alternateScreen', {
+            panelId: terminal.panelId,
+            active: newState
+          });
         }
       }
 
@@ -975,14 +973,12 @@ export class TerminalPanelManager {
       this.terminals.delete(terminal.panelId);
 
       // Notify frontend (include signal for crash detection)
-      if (mainWindow) {
-        mainWindow.webContents.send('terminal:exited', {
-          sessionId: terminal.sessionId,
-          panelId: terminal.panelId,
-          exitCode: exitCode.exitCode,
-          signal: exitCode.signal ?? null
-        });
-      }
+      this.sendRendererEvent('terminal:exited', {
+        sessionId: terminal.sessionId,
+        panelId: terminal.panelId,
+        exitCode: exitCode.exitCode,
+        signal: exitCode.signal ?? null
+      });
     });
   }
   
@@ -1160,17 +1156,17 @@ export class TerminalPanelManager {
     
     // Send scrollback to frontend. Dual-path mirrors `flushOutputBuffer`:
     // `terminal:output` IPC for legacy subscribers, ptyHost port for flag-on.
-    if (mainWindow && state.scrollbackBuffer) {
+    if (state.scrollbackBuffer) {
       const output = typeof state.scrollbackBuffer === 'string'
         ? state.scrollbackBuffer + restorationMsg
         : state.scrollbackBuffer.join('\n') + restorationMsg;
-      mainWindow.webContents.send('terminal:output', {
+      this.sendRendererEvent('terminal:output', {
         sessionId: panel.sessionId,
         panelId: panel.id,
         output,
       });
       if (terminal.isPtyHost && terminal.ptyId) {
-        const supervisor = getPtyHostSupervisor();
+        const supervisor = getPtyHostRuntime();
         supervisor?.postDataToRenderers(terminal.ptyId, output);
       }
     }
@@ -1215,14 +1211,12 @@ export class TerminalPanelManager {
   }
   
   private emitActivityStatus(terminal: TerminalProcess): void {
-    if (mainWindow) {
-      mainWindow.webContents.send('panel:activityStatus', {
-        panelId: terminal.panelId,
-        sessionId: terminal.sessionId,
-        status: terminal.activityStatus,
-        lastActivityAt: terminal.lastActivity.toISOString()
-      });
-    }
+    this.sendRendererEvent('panel:activityStatus', {
+      panelId: terminal.panelId,
+      sessionId: terminal.sessionId,
+      status: terminal.activityStatus,
+      lastActivityAt: terminal.lastActivity.toISOString()
+    });
   }
 
   destroyTerminal(panelId: string): void {

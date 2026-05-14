@@ -1,4 +1,5 @@
 import Bull from 'bull';
+import { getRuntimeConfigManager } from '../core/runtime';
 import { SimpleQueue } from './simpleTaskQueue';
 import { SessionManager } from './sessionManager';
 import type { WorktreeManager } from './worktreeManager';
@@ -15,7 +16,6 @@ import type { DatabaseService } from '../database/database';
 import type { Project } from '../database/models';
 import { worktreeFileSyncService } from './worktreeFileSyncService';
 import { terminalPanelManager } from './terminalPanelManager';
-import { configManager } from '../index';
 import { detectProjectConfig } from './projectConfigDetector';
 
 interface TaskQueueOptions {
@@ -269,7 +269,7 @@ export class TaskQueue {
           worktreePath,
           ctx.commandRunner,
           ctx.pathResolver.environment,
-          configManager.getWorktreeFileSyncEntries()
+          getRuntimeConfigManager().getWorktreeFileSyncEntries()
         ).then(async (installCommand) => {
           if (!installCommand) return;
           // Find the default terminal panel — may not exist yet if sync finished before

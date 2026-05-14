@@ -7,7 +7,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { mainWindow } from '../index';
+import { getPaneEventSink } from '../core/runtime';
 
 export type ScriptType = 'session' | 'project';
 
@@ -110,12 +110,10 @@ export class ScriptExecutionTracker extends EventEmitter {
     this.closingScript = this.runningScript;
 
     // Emit closing event to notify frontend
-    if (mainWindow) {
-      if (type === 'session') {
-        mainWindow.webContents.send('script-closing', id);
-      } else {
-        mainWindow.webContents.send('project-script-closing', { projectId: id });
-      }
+    if (type === 'session') {
+      getPaneEventSink().send('script-closing', id);
+    } else {
+      getPaneEventSink().send('project-script-closing', { projectId: id });
     }
 
     this.emit('script-closing', { type, id });
@@ -142,12 +140,10 @@ export class ScriptExecutionTracker extends EventEmitter {
    * Emit state change events to frontend based on type
    */
   private emitStateChange(type: ScriptType, id: string | number | null): void {
-    if (!mainWindow) return;
-
     if (type === 'session') {
-      mainWindow.webContents.send('script-session-changed', id);
+      getPaneEventSink().send('script-session-changed', id);
     } else {
-      mainWindow.webContents.send('project-script-changed', { projectId: id });
+      getPaneEventSink().send('project-script-changed', { projectId: id });
     }
   }
 

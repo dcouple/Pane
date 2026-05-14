@@ -45,6 +45,8 @@ import { getCurrentWorktreeName } from './utils/worktreeUtils';
 import { registerIpcHandlers } from './ipc';
 import { setupAutoUpdater } from './autoUpdater';
 import { setupEventListeners } from './events';
+import type { PaneEventSink } from './core/eventSink';
+import { setPaneRuntime } from './core/runtime';
 import { AppServices } from './ipc/types';
 import { getCloudVmManager } from './ipc/cloud';
 import { CliManagerFactory } from './services/cliManagerFactory';
@@ -62,6 +64,17 @@ export let mainWindow: BrowserWindow | null = null;
 // Map webContentsId → {panelId, sessionId} for webview popup interception.
 // Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
 export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
+
+const electronPaneEventSink: PaneEventSink = {
+  send(channel, ...args) {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    window.webContents.send(channel, ...args);
+  },
+};
 
 // Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
 const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
@@ -952,6 +965,12 @@ async function createWindow() {
 async function initializeServices() {
   configManager = new ConfigManager();
   await configManager.initialize();
+  setPaneRuntime({
+    eventSink: electronPaneEventSink,
+    getConfigManager: () => configManager,
+    getPtyHostRuntime: () => ptyHostSupervisor,
+    getWebviewContextMap: () => webviewContextMap,
+  });
 
   // Initialize logger early so it can capture all logs
   logger = new Logger(configManager);
@@ -1109,7 +1128,7 @@ async function initializeServices() {
   // Initialize IPC handlers first so managers (like ClaudePanelManager) are ready
   registerIpcHandlers(services);
   // Then set up event listeners that may rely on initialized managers
-  setupEventListeners(services, () => mainWindow);
+  setupEventListeners(services);
   
   // Console log IPC handler. The preload console wrapper (dev-only) forwards
   // every renderer console call here for frontend-debug.log capture. Renderer

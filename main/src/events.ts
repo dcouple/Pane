@@ -1,5 +1,5 @@
-import type { BrowserWindow } from 'electron';
 import { execSync } from './utils/commandExecutor';
+import { getPaneEventSink } from './core/runtime';
 import type { AppServices } from './ipc/types';
 import type { VersionInfo } from './services/versionChecker';
 import { addSessionLog } from './ipc/logs';
@@ -22,7 +22,15 @@ function isArchivedSessionOutputValidation(validation: { error?: string; session
   );
 }
 
-export function setupEventListeners(services: AppServices, getMainWindow: () => BrowserWindow | null): void {
+function sendRendererEvent(channel: string, ...args: unknown[]): void {
+  try {
+    getPaneEventSink().send(channel, ...args);
+  } catch (error) {
+    console.error(`[Main] Failed to send ${channel} event:`, error);
+  }
+}
+
+export function setupEventListeners(services: AppServices): void {
   const {
     sessionManager,
     claudeCodeManager,
@@ -43,10 +51,7 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
 
   // Bridge resource monitor events to renderer
   resourceMonitorService.on('resource-update', (snapshot: unknown) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      mw.webContents.send('resource-monitor:update', snapshot);
-    }
+    sendRendererEvent('resource-monitor:update', snapshot);
   });
 
 
@@ -59,14 +64,7 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
 
   // Listen to sessionManager events and broadcast to renderer
   sessionManager.on('session-created', async (session) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('session:created', session);
-      } catch (error) {
-        console.error('[Main] Failed to send session:created event:', error);
-      }
-    }
+    sendRendererEvent('session:created', session);
 
     // Auto-create a default terminal panel for every session
     try {
@@ -93,51 +91,21 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
 
   sessionManager.on('session-updated', (session) => {
     console.log(`[Main] session-updated event received for ${session.id} with status ${session.status}`);
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      console.log(`[Main] Sending session:updated to renderer for ${session.id}`);
-      try {
-        mw.webContents.send('session:updated', session);
-      } catch (error) {
-        console.error('[Main] Failed to send session:updated event:', error);
-      }
-    } else {
-      console.error(`[Main] Cannot send session:updated - mainWindow is ${mw ? 'destroyed' : 'null'}`);
-    }
+    console.log(`[Main] Sending session:updated to renderer for ${session.id}`);
+    sendRendererEvent('session:updated', session);
   });
 
   sessionManager.on('session-deleted', (session) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('session:deleted', session);
-      } catch (error) {
-        console.error('[Main] Failed to send session:deleted event:', error);
-      }
-    }
+    sendRendererEvent('session:deleted', session);
   });
 
   sessionManager.on('sessions-loaded', (sessions) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('sessions:loaded', sessions);
-      } catch (error) {
-        console.error('[Main] Failed to send sessions:loaded event:', error);
-      }
-    }
+    sendRendererEvent('sessions:loaded', sessions);
   });
 
   sessionManager.on('zombie-processes-detected', (data) => {
     console.error('[Main] Zombie processes detected:', data);
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('zombie-processes-detected', data);
-      } catch (error) {
-        console.error('[Main] Failed to send zombie-processes-detected event:', error);
-      }
-    }
+    sendRendererEvent('zombie-processes-detected', data);
   });
 
   sessionManager.on('session-output', (output) => {
@@ -153,52 +121,29 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
       return; // Don't broadcast invalid events
     }
 
-    const mw = getMainWindow();
-    if (mw) {
-      mw.webContents.send('session:output', output);
-    }
+    sendRendererEvent('session:output', output);
   });
 
   sessionManager.on('session-output-available', (info) => {
-    const mw = getMainWindow();
-    if (mw) {
-      mw.webContents.send('session:output-available', info);
-    }
+    sendRendererEvent('session:output-available', info);
   });
 
   // Listen for new prompts being added to panels
   sessionManager.on('panel-prompt-added', (data) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('panel:prompt-added', data);
-      } catch (error) {
-        console.error('[Main] Failed to send panel:prompt-added:', error);
-      }
-    }
+    sendRendererEvent('panel:prompt-added', data);
   });
 
   // Listen for assistant responses being added to panels
   sessionManager.on('panel-response-added', (data) => {
     console.log('[Events] Received panel-response-added event for panel:', data.panelId);
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        console.log('[Events] Sending panel:response-added to renderer for panel:', data.panelId);
-        mw.webContents.send('panel:response-added', data);
-      } catch (error) {
-        console.error('[Main] Failed to send panel:response-added:', error);
-      }
-    }
+    console.log('[Events] Sending panel:response-added to renderer for panel:', data.panelId);
+    sendRendererEvent('panel:response-added', data);
   });
 
   // Listen for project update events from sessionManager (since it extends EventEmitter)
   sessionManager.on('project:updated', (project: Project) => {
     console.log(`[Main] Project updated: ${project.id}`);
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      mw.webContents.send('project:updated', project);
-    }
+    sendRendererEvent('project:updated', project);
   });
 
   // Listen to claudeCodeManager events
@@ -244,13 +189,10 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
     }
 
     // Send real-time updates to renderer
-    const mw = getMainWindow();
-    if (mw) {
-      // Always send the output as-is, without formatting
-      // JSON messages will be formatted when loaded from the database via sessions:get-output
-      // This prevents duplicate formatted messages in the Output view
-      mw.webContents.send('session:output', output);
-    }
+    // Always send the output as-is, without formatting
+    // JSON messages will be formatted when loaded from the database via sessions:get-output
+    // This prevents duplicate formatted messages in the Output view
+    sendRendererEvent('session:output', output);
   });
 
   claudeCodeManager.on('spawned', async ({ panelId, sessionId }: { panelId?: string; sessionId: string }) => {
@@ -520,10 +462,7 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
   // Listen to terminal output events (independent terminal, not run scripts)
   sessionManager.on('terminal-output', (output) => {
     // Broadcast terminal output to renderer
-    const mw = getMainWindow();
-    if (mw) {
-      mw.webContents.send('terminal:output', output);
-    }
+    sendRendererEvent('terminal:output', output);
   });
 
   // Listen to run command manager events (these should go to logs, not terminal)
@@ -556,57 +495,30 @@ export function setupEventListeners(services: AppServices, getMainWindow: () => 
 
   runCommandManager.on('zombie-processes-detected', (data) => {
     console.error('[Main] Zombie processes detected from run command:', data);
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      mw.webContents.send('zombie-processes-detected', data);
-    }
+    sendRendererEvent('zombie-processes-detected', data);
   });
 
   // Listen for version update events
   process.on('version-update-available', (versionInfo: VersionInfo) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      // Only send to renderer for custom dialog - no native dialogs
-      mw.webContents.send('version:update-available', versionInfo);
-    }
+    // Only send to renderer for custom dialog - no native dialogs
+    sendRendererEvent('version:update-available', versionInfo);
   });
 
   // Listen to gitStatusManager events and broadcast to renderer
   // Only broadcast for active sessions or recent updates to reduce EventEmitter load
   gitStatusManager.on('git-status-updated', (sessionId: string, gitStatus: GitStatus) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('git-status-updated', { sessionId, gitStatus });
-      } catch (error) {
-        console.error('[Main] Failed to send git-status-updated event:', error);
-      }
-    }
+    sendRendererEvent('git-status-updated', { sessionId, gitStatus });
   });
 
   // Listen for git status loading events
   gitStatusManager.on('git-status-loading', (sessionId: string) => {
-    const mw = getMainWindow();
-    if (mw && !mw.isDestroyed()) {
-      try {
-        mw.webContents.send('git-status-loading', { sessionId });
-      } catch (error) {
-        console.error('[Main] Failed to send git-status-loading event:', error);
-      }
-    }
+    sendRendererEvent('git-status-loading', { sessionId });
   });
 
   // Listen for archive progress events
   if (archiveProgressManager) {
     archiveProgressManager.on('archive-progress', (progress) => {
-      const mw = getMainWindow();
-      if (mw && !mw.isDestroyed()) {
-        try {
-          mw.webContents.send('archive:progress', progress);
-        } catch (error) {
-          console.error('[Main] Failed to send archive:progress event:', error);
-        }
-      }
+      sendRendererEvent('archive:progress', progress);
     });
   }
 } 

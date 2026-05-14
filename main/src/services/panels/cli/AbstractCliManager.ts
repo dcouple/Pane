@@ -5,13 +5,12 @@ import * as os from 'os';
 import { execSync, exec } from 'child_process';
 import { promisify } from 'util';
 import type { Logger } from '../../../utils/logger';
+import { getPtyHostRuntime, type PtyHandleLike } from '../../../core/runtime';
 import type { ConfigManager } from '../../configManager';
 import type { ConversationMessage } from '../../../database/models';
 import { getShellPath, findExecutableInPath } from '../../../utils/shellPath';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { GIT_ATTRIBUTION_ENV } from '../../../utils/attribution';
-import { getPtyHostSupervisor } from '../../../index';
-import type { PtyHandle } from '../../../ptyHost/ptyHostSupervisor';
 
 const LAST_OUTPUT_TAIL_BYTES = 16 * 1024;
 
@@ -700,7 +699,7 @@ export abstract class AbstractCliManager extends EventEmitter {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
 
-        const supervisor = getPtyHostSupervisor();
+        const supervisor = getPtyHostRuntime();
         const useHost = (this.configManager?.getUsePtyHost() ?? false) && supervisor !== null;
 
         if (spawnAttempt === 0 && !(global as typeof global & Record<string, boolean>)[needsNodeFallbackKey]) {
@@ -818,7 +817,7 @@ export abstract class AbstractCliManager extends EventEmitter {
     cols: number,
     rows: number
   ): Promise<PtyLike> {
-    const supervisor = getPtyHostSupervisor();
+    const supervisor = getPtyHostRuntime();
     if (!supervisor) {
       // Guard: caller must have checked already; if we got here without one,
       // surface a classifier-agnostic OTHER to avoid accidental fallback.
@@ -855,7 +854,7 @@ export abstract class AbstractCliManager extends EventEmitter {
    * `(exitCode, signal)` shape to the `{exitCode, signal}` object shape the
    * rest of this file (and `pty.IPty`) expects.
    */
-  private wrapPtyHandle(handle: PtyHandle, pid: number): PtyLike {
+  private wrapPtyHandle(handle: PtyHandleLike, pid: number): PtyLike {
     return {
       pid,
       write(data: string | Buffer): Promise<void> {

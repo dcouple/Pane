@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ToolPanel, CreatePanelRequest, PanelEventType, ToolPanelState, ToolPanelMetadata, ToolPanelType, LogsPanelState } from '../../../shared/types/panels';
+import { getPaneEventSink, getPaneWebviewContextMap } from '../core/runtime';
 import { databaseService } from './database';
 import { panelEventBus } from './panelEventBus';
-import { mainWindow, webviewContextMap } from '../index';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
 
@@ -19,6 +19,10 @@ export class PanelManager {
 
   setAnalyticsManager(analyticsManager: AnalyticsManager): void {
     this.analyticsManager = analyticsManager;
+  }
+
+  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+    getPaneEventSink().send(channel, ...args);
   }
 
   constructor() {
@@ -128,9 +132,7 @@ export class PanelManager {
       });
       
       // Emit IPC event to notify frontend
-      if (mainWindow) {
-        mainWindow.webContents.send('panel:created', panel);
-      }
+      this.sendRendererEvent('panel:created', panel);
 
       // Track terminal panel creation analytics (only for new panels, not restoration)
       if (request.type === 'terminal' && this.analyticsManager) {
@@ -236,9 +238,7 @@ export class PanelManager {
       this.panels.delete(panelId);
 
       // Emit IPC event to notify frontend
-      if (mainWindow) {
-        mainWindow.webContents.send('panel:deleted', { panelId, sessionId: panel.sessionId });
-      }
+      this.sendRendererEvent('panel:deleted', { panelId, sessionId: panel.sessionId });
 
       // Track panel closure
       if (this.analyticsManager) {
@@ -273,9 +273,7 @@ export class PanelManager {
       if (updates.metadata !== undefined) panel.metadata = updates.metadata;
       
       // Emit IPC event to notify frontend
-      if (mainWindow) {
-        mainWindow.webContents.send('panel:updated', panel);
-      }
+      this.sendRendererEvent('panel:updated', panel);
       
       console.log(`[PanelManager] Updated panel ${panelId}`);
     });
@@ -316,9 +314,7 @@ export class PanelManager {
       });
 
       // Emit IPC event to notify frontend
-      if (mainWindow) {
-        mainWindow.webContents.send('panel:activeChanged', { sessionId, panelId });
-      }
+      this.sendRendererEvent('panel:activeChanged', { sessionId, panelId });
 
       // Track panel switching (only if both from and to panels exist)
       if (this.analyticsManager && fromPanelType && toPanelType && fromPanelType !== toPanelType) {
@@ -433,9 +429,7 @@ export class PanelManager {
     panelEventBus.emitPanelEvent(event);
     
     // Also emit to frontend via IPC
-    if (mainWindow) {
-      mainWindow.webContents.send('panel:event', event);
-    }
+    this.sendRendererEvent('panel:event', event);
     
     console.log(`[PanelManager] Emitted event ${eventType} from panel ${panelId}`);
   }
@@ -512,6 +506,7 @@ export class PanelManager {
     }
 
     // 5. Sweep webviewContextMap for entries owned by this session.
+    const webviewContextMap = getPaneWebviewContextMap();
     for (const [wcId, ctx] of webviewContextMap.entries()) {
       if (ctx.sessionId === sessionId) {
         webviewContextMap.delete(wcId);

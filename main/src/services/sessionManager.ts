@@ -7,8 +7,8 @@
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import { spawn, ChildProcess, exec, execSync } from 'child_process';
+import { getRuntimeConfigManager } from '../core/runtime';
 import { ShellDetector } from '../utils/shellDetector';
-import { configManager } from '../index';
 import type { Session, SessionUpdate, SessionOutput } from '../types/session';
 import type { DatabaseService } from '../database/database';
 import type { Session as DbSession, CreateSessionData, UpdateSessionData, ConversationMessage, PromptMarker, ExecutionDiff, CreateExecutionDiffData, Project } from '../database/models';
@@ -1123,7 +1123,7 @@ export class SessionManager extends EventEmitter {
     const shellPath = getShellPath();
     
     // Get the user's default shell and command arguments
-    const preferredShell = configManager.getPreferredShell();
+    const preferredShell = getRuntimeConfigManager().getPreferredShell();
     const { shell, args } = ShellDetector.getShellCommandArgs(command, preferredShell);
     
     // Spawn the process with its own process group for easier termination
