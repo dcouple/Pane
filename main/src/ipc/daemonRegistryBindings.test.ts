@@ -181,7 +181,7 @@ const GIT_STATUS_CHANNELS = [
   'git:get-github-remote',
 ] as const;
 
-const GIT_DIRECT_MUTATION_CHANNELS = [
+const GIT_MUTATION_CHANNELS = [
   'sessions:git-commit',
   'sessions:rebase-main-into-worktree',
   'sessions:abort-rebase-and-use-claude',
@@ -196,6 +196,11 @@ const GIT_DIRECT_MUTATION_CHANNELS = [
   'sessions:set-upstream',
   'sessions:git-stage-and-commit',
   'git:clone-repo',
+] as const;
+
+const GIT_CHANNELS = [
+  ...GIT_STATUS_CHANNELS,
+  ...GIT_MUTATION_CHANNELS,
 ] as const;
 
 interface IpcMainStub {
@@ -320,19 +325,14 @@ describe('daemon registry IPC bindings', () => {
     expect(registry.has('sessions:set-active-session')).toBe(false);
   });
 
-  it('keeps git mutators direct while routing git status and history through the registry', () => {
+  it('routes all daemon-owned git handlers through the shared registry', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
 
     registerGitHandlers(ipcMain, createServicesStub(), registry);
 
-    expect(registry.listChannels()).toEqual([...GIT_STATUS_CHANNELS].sort());
-    expect(
-      ipcMain.boundChannels.filter(channel => !GIT_DIRECT_MUTATION_CHANNELS.includes(channel as (typeof GIT_DIRECT_MUTATION_CHANNELS)[number])).sort(),
-    ).toEqual([...GIT_STATUS_CHANNELS].sort());
-    expect(ipcMain.boundChannels.filter(channel => GIT_DIRECT_MUTATION_CHANNELS.includes(channel as (typeof GIT_DIRECT_MUTATION_CHANNELS)[number])).sort()).toEqual(
-      [...GIT_DIRECT_MUTATION_CHANNELS].sort(),
-    );
-    expect(registry.has('git:clone-repo')).toBe(false);
+    expect(registry.listChannels()).toEqual([...GIT_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...GIT_CHANNELS].sort());
+    expect(registry.has('git:clone-repo')).toBe(true);
   });
 });

@@ -85,6 +85,28 @@ const DAEMON_GIT_STATUS_CHANNELS = [
   'git:get-github-remote',
 ] as const;
 
+const DAEMON_GIT_MUTATION_CHANNELS = [
+  'sessions:git-commit',
+  'sessions:rebase-main-into-worktree',
+  'sessions:abort-rebase-and-use-claude',
+  'sessions:squash-and-rebase-to-main',
+  'sessions:rebase-to-main',
+  'sessions:git-pull',
+  'sessions:git-push',
+  'sessions:git-soft-reset',
+  'sessions:git-fetch',
+  'sessions:git-stash',
+  'sessions:git-stash-pop',
+  'sessions:set-upstream',
+  'sessions:git-stage-and-commit',
+  'git:clone-repo',
+] as const;
+
+const DAEMON_GIT_CHANNELS = [
+  ...DAEMON_GIT_STATUS_CHANNELS,
+  ...DAEMON_GIT_MUTATION_CHANNELS,
+] as const;
+
 export function registerGitHandlers(
   ipcMain: IpcMain,
   services: AppServices,
@@ -408,7 +430,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-commit', async (_event, sessionId: string, message: string) => {
+  commandRegistry.register('sessions:git-commit', async (sessionId: string, message: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -840,7 +862,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:rebase-main-into-worktree', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:rebase-main-into-worktree', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -986,7 +1008,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:abort-rebase-and-use-claude', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:abort-rebase-and-use-claude', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1071,7 +1093,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:squash-and-rebase-to-main', async (_event, sessionId: string, commitMessage: string) => {
+  commandRegistry.register('sessions:squash-and-rebase-to-main', async (sessionId: string, commitMessage: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1166,7 +1188,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:rebase-to-main', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:rebase-to-main', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1253,7 +1275,7 @@ export function registerGitHandlers(
   });
 
   // Git pull/push operations for main repo sessions
-  ipcMain.handle('sessions:git-pull', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-pull', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1332,7 +1354,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-push', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-push', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1409,7 +1431,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-soft-reset', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-soft-reset', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1479,7 +1501,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-fetch', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-fetch', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1539,7 +1561,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-stash', async (_event, sessionId: string, message?: string) => {
+  commandRegistry.register('sessions:git-stash', async (sessionId: string, message?: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1599,7 +1621,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-stash-pop', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-stash-pop', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1684,7 +1706,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:set-upstream', async (_event, sessionId: string, remoteBranch: string) => {
+  commandRegistry.register('sessions:set-upstream', async (sessionId: string, remoteBranch: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1768,7 +1790,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('sessions:git-stage-and-commit', async (_event, sessionId: string, message: string) => {
+  commandRegistry.register('sessions:git-stage-and-commit', async (sessionId: string, message: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -2060,7 +2082,7 @@ export function registerGitHandlers(
     }
   });
 
-  ipcMain.handle('git:clone-repo', async (_event, url: string, destDir: string) => {
+  commandRegistry.register('git:clone-repo', async (url: string, destDir: string) => {
     if (!isValidGitUrl(url)) {
       return { success: false, error: 'Invalid repository URL. Use https:// or git@ format.' };
     }
@@ -2121,5 +2143,5 @@ export function registerGitHandlers(
     }
   });
 
-  commandRegistry.bindChannels(ipcMain, DAEMON_GIT_STATUS_CHANNELS);
+  commandRegistry.bindChannels(ipcMain, DAEMON_GIT_CHANNELS);
 }
