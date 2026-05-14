@@ -30,8 +30,14 @@ interface WindowsBatchItem {
   MemoryMB: number;
 }
 
+interface ResourceMonitorInitializationOptions {
+  app?: App | null;
+  getSessionById?: (sessionId: string) => { name?: string; initial_prompt?: string } | undefined;
+}
+
 export class ResourceMonitorService extends EventEmitter {
   private app: App | null = null;
+  private getSessionById: ((sessionId: string) => { name?: string; initial_prompt?: string } | undefined) | null = null;
   private idleTimer: ReturnType<typeof setInterval> | null = null;
   private activeTimer: ReturnType<typeof setInterval> | null = null;
   private isActivePolling = false;
@@ -40,8 +46,9 @@ export class ResourceMonitorService extends EventEmitter {
   private isHidden = false;
   private needsCpuWarmup = false;
 
-  initialize(app: App): void {
-    this.app = app;
+  initialize(options: ResourceMonitorInitializationOptions = {}): void {
+    this.app = options.app ?? null;
+    this.getSessionById = options.getSessionById ?? null;
   }
 
   private getElectronMetrics(): ElectronProcessInfo[] {
@@ -240,8 +247,6 @@ export class ResourceMonitorService extends EventEmitter {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { terminalPanelManager } = require('./terminalPanelManager') as { terminalPanelManager: { getSessionPids(): Map<string, number[]> } };
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { sessionManager } = require('../index') as { sessionManager: { getSession(id: string): { name?: string; initial_prompt?: string } | undefined } | null };
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { CliToolRegistry } = require('./cliToolRegistry') as { CliToolRegistry: { getInstance(): { getAllManagers(): { getSessionPids(): Map<string, number[]> }[] } } };
 
     // Collect PIDs from all sources: terminal panels + CLI managers (Claude, Codex, etc.)
@@ -270,7 +275,7 @@ export class ResourceMonitorService extends EventEmitter {
     const allTrackedPids = new Set<number>();
 
     for (const [sessionId, ptyPids] of sessionPids) {
-      const session = sessionManager?.getSession?.(sessionId);
+      const session = this.getSessionById?.(sessionId);
       const sessionName = session?.name || session?.initial_prompt?.slice(0, 30) || sessionId;
 
       const allPids: number[] = [];

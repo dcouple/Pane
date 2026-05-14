@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "tsc -w",
     "build": "rimraf dist && tsc && npm run copy:assets && npm run bundle:mcp",
+    "headless": "npm run build && electron dist/main/src/daemon/headless.js",
     "bundle:mcp": "node build-mcp-bridge.js",
     "copy:assets": "mkdirp dist/main/src/database/migrations && shx cp src/database/*.sql dist/main/src/database/ && shx cp src/database/migrations/*.sql dist/main/src/database/migrations/",
     "lint": "eslint src --ext .ts",

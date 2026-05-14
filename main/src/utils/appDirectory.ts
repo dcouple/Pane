@@ -1,12 +1,36 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync, renameSync } from 'fs';
-import { app } from 'electron';
 
 let customAppDir: string | undefined;
 
-function getCliAppDirectory(): string | undefined {
-  const args = process.argv.slice(2);
+interface ElectronAppLike {
+  isPackaged: boolean;
+  getPath(name: 'exe'): string;
+}
+
+function getElectronApp(): ElectronAppLike | null {
+  try {
+    // In a plain Node process, `require('electron')` resolves to the Electron
+    // binary path string rather than the runtime module. Guard that case.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const electronModule = require('electron') as unknown;
+    if (!electronModule || typeof electronModule !== 'object') {
+      return null;
+    }
+
+    const electronApp = (electronModule as { app?: ElectronAppLike }).app;
+    if (!electronApp || typeof electronApp.getPath !== 'function') {
+      return null;
+    }
+
+    return electronApp;
+  } catch {
+    return null;
+  }
+}
+
+export function getAppDirectoryOverrideFromArgs(args = process.argv.slice(2)): string | undefined {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--pane-dir=')) {
@@ -25,6 +49,15 @@ function getCliAppDirectory(): string | undefined {
   return undefined;
 }
 
+export function applyAppDirectoryOverrideFromArgs(args = process.argv.slice(2)): string | undefined {
+  const override = getAppDirectoryOverrideFromArgs(args);
+  if (override) {
+    setAppDirectory(override);
+  }
+
+  return override;
+}
+
 /**
  * Sets a custom Pane directory path. This should be called early in the
  * application lifecycle, before any services are initialized.
@@ -38,14 +71,16 @@ export function setAppDirectory(dir: string): void {
  * rather than a development build
  */
 function isInstalledApp(): boolean {
+  const electronApp = getElectronApp();
+
   // Check if app is packaged (built for distribution)
-  if (!app.isPackaged) {
+  if (!electronApp?.isPackaged) {
     return false;
   }
   
   // On macOS, check if running from /Applications or a mounted DMG volume
   if (process.platform === 'darwin') {
-    const appPath = app.getPath('exe');
+    const appPath = electronApp.getPath('exe');
     // Apps installed from DMG or in /Applications will have these paths
     const isInApplications = appPath.startsWith('/Applications/');
     const isInVolumes = appPath.startsWith('/Volumes/');
@@ -71,7 +106,7 @@ export function getAppDirectory(): string {
 
   // 2. Check CLI app-dir flags. This must happen inside getAppDirectory()
   // because services/database is imported before index.ts can parse argv.
-  const cliDir = getCliAppDirectory();
+  const cliDir = getAppDirectoryOverrideFromArgs();
   if (cliDir) {
     return cliDir;
   }
@@ -90,7 +125,8 @@ export function getAppDirectory(): string {
 
   // 5. If running inside Pane (detected by bundle identifier) in development, use development directory
   // This prevents development Pane from interfering with production Pane
-  if (process.env.__CFBundleIdentifier === 'com.dcouple.pane' && !app.isPackaged) {
+  const electronApp = getElectronApp();
+  if (process.env.__CFBundleIdentifier === 'com.dcouple.pane' && !electronApp?.isPackaged) {
     console.log('[Pane] Detected running inside Pane development, using ~/.pane_dev for isolation');
     return join(homedir(), '.pane_dev');
   }
@@ -106,7 +142,7 @@ export function getAppDirectory(): string {
 export function migrateDataDirectory(): void {
   // Skip migration if a custom directory is set (via --pane-dir, --foozol-dir, or env vars)
   // to avoid moving ~/.foozol out from under a running app that explicitly configured its path
-  if (customAppDir || getCliAppDirectory() || process.env.PANE_DIR || process.env.FOOZOL_DIR) {
+  if (customAppDir || getAppDirectoryOverrideFromArgs() || process.env.PANE_DIR || process.env.FOOZOL_DIR) {
     return;
   }
 

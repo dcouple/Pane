@@ -17,6 +17,7 @@ describe('daemon/client import boundary', () => {
   it('keeps targeted services off bootstrap globals', () => {
     const serviceFiles = [
       'events.ts',
+      'ipc/panels.ts',
       'services/panelManager.ts',
       'services/terminalPanelManager.ts',
       'services/terminalSessionManager.ts',
@@ -29,6 +30,21 @@ describe('daemon/client import boundary', () => {
     ];
 
     for (const relativePath of serviceFiles) {
+      const source = readMainSrcFile(relativePath);
+      expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)['"]/);
+      expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)\.ts['"]/);
+    }
+  });
+
+  it('keeps headless bootstrap paths off the desktop entrypoint', () => {
+    const boundaryFiles = [
+      'daemon/bootstrap.ts',
+      'daemon/headless.ts',
+      'ipc/panels.ts',
+      'services/resourceMonitorService.ts',
+    ];
+
+    for (const relativePath of boundaryFiles) {
       const source = readMainSrcFile(relativePath);
       expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)['"]/);
       expect(source, relativePath).not.toMatch(/from ['"](?:\.\.\/)+(?:index)\.ts['"]/);
@@ -93,5 +109,10 @@ describe('daemon/client import boundary', () => {
     for (const channel of ELECTRON_ADAPTER_ONLY_CHANNELS) {
       expect(source).toContain(`'${channel}'`);
     }
+  });
+
+  it('keeps task queue environment selection free of Electron globals', () => {
+    const source = readMainSrcFile('services/taskQueue.ts');
+    expect(source).not.toContain('process.versions.electron');
   });
 });

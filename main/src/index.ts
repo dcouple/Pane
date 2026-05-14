@@ -18,39 +18,26 @@ if (process.platform === 'win32') {
 }
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView, powerMonitor } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
-import { TaskQueue } from './services/taskQueue';
-import { SessionManager } from './services/sessionManager';
-import { ConfigManager } from './services/configManager';
-import { WorktreeManager } from './services/worktreeManager';
-import { WorktreeNameGenerator } from './services/worktreeNameGenerator';
-import { GitDiffManager } from './services/gitDiffManager';
-import { GitStatusManager } from './services/gitStatusManager';
-import { ExecutionTracker } from './services/executionTracker';
-import { DatabaseService } from './database/database';
-import { RunCommandManager } from './services/runCommandManager';
-import { PermissionIpcServer } from './services/permissionIpcServer';
-import { VersionChecker } from './services/versionChecker';
-import { Logger } from './utils/logger';
-import { ArchiveProgressManager } from './services/archiveProgressManager';
-import { AnalyticsManager } from './services/analyticsManager';
+import type { SessionManager } from './services/sessionManager';
+import type { ConfigManager } from './services/configManager';
+import type { WorktreeManager } from './services/worktreeManager';
+import type { GitStatusManager } from './services/gitStatusManager';
+import type { DatabaseService } from './database/database';
+import type { RunCommandManager } from './services/runCommandManager';
+import type { VersionChecker } from './services/versionChecker';
+import type { Logger } from './utils/logger';
+import type { ArchiveProgressManager } from './services/archiveProgressManager';
+import type { AnalyticsManager } from './services/analyticsManager';
 import { resolveAnalyticsIdentity } from './services/analyticsIdentity';
-import { SpotlightManager } from './services/spotlightManager';
-import { startupRetentionResult } from './services/database';
 import { resourceMonitorService } from './services/resourceMonitorService';
-import { setAppDirectory, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
+import { applyAppDirectoryOverrideFromArgs, migrateDataDirectory, getAppDirectory } from './utils/appDirectory';
 import { getCurrentWorktreeName } from './utils/worktreeUtils';
-import { registerIpcHandlers } from './ipc';
 import { setupAutoUpdater } from './autoUpdater';
-import { setupEventListeners } from './events';
-import { createFanoutEventSink, type PaneEventSink } from './core/eventSink';
-import { setPaneRuntime } from './core/runtime';
-import { AppServices } from './ipc/types';
 import { getCloudVmManager } from './ipc/cloud';
-import { CliManagerFactory } from './services/cliManagerFactory';
-import { AbstractCliManager } from './services/panels/cli/AbstractCliManager';
+import type { CliManagerFactory } from './services/cliManagerFactory';
 import { setupConsoleWrapper } from './utils/consoleWrapper';
 import * as fs from 'fs';
 import { terminalPanelManager } from './services/terminalPanelManager';
@@ -58,7 +45,7 @@ import { panelManager } from './services/panelManager';
 import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
-import { PaneDaemonServer } from './daemon/server';
+import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -66,31 +53,9 @@ export let mainWindow: BrowserWindow | null = null;
 // Populated by browser-panel:register-webview IPC, consumed by did-attach-webview handler.
 export const webviewContextMap = new Map<number, { panelId: string; sessionId: string }>();
 
-const electronPaneEventSink: PaneEventSink = {
-  send(channel, ...args) {
-    const window = mainWindow;
-    if (!window || window.isDestroyed()) {
-      return;
-    }
-
-    window.webContents.send(channel, ...args);
-  },
-};
-
-function installPaneRuntime(eventSink: PaneEventSink, daemonEventSink?: PaneEventSink): void {
-  setPaneRuntime({
-    eventSink,
-    daemonEventSink,
-    getConfigManager: () => configManager,
-    getPtyHostRuntime: () => ptyHostSupervisor,
-    getWebviewContextMap: () => webviewContextMap,
-  });
-}
-
 // Active DevTools WebContentsViews, keyed by the page webContentsId they inspect
 const activeDevToolsViews = new Map<number, Electron.WebContentsView>();
 let devToolsHandlersRegistered = false;
-let powerMonitorDiagnosticsRegistered = false;
 
 // Track partitions that already have the localhost header-stripping hook registered,
 // so we don't add duplicate listeners when multiple webviews share the same partition.
@@ -140,16 +105,6 @@ function formatRendererDiagnostic(payload: RendererDiagnosticPayload): string {
   ].filter(Boolean).join(' ');
 }
 
-function registerPowerMonitorDiagnostics(): void {
-  if (powerMonitorDiagnosticsRegistered) return;
-  powerMonitorDiagnosticsRegistered = true;
-
-  powerMonitor.on('suspend', () => logger?.info('[Lifecycle] power:suspend'));
-  powerMonitor.on('resume', () => logger?.info('[Lifecycle] power:resume'));
-  powerMonitor.on('lock-screen', () => logger?.info('[Lifecycle] power:lock-screen'));
-  powerMonitor.on('unlock-screen', () => logger?.info('[Lifecycle] power:unlock-screen'));
-}
-
 /**
  * Set the application title based on development mode and worktree
  */
@@ -172,27 +127,19 @@ function setAppTitle() {
   }
   return title;
 }
-let taskQueue: TaskQueue | null = null;
-
 // Service instances (configManager exported for shell preference access)
 export let configManager: ConfigManager;
 let logger: Logger;
 export let sessionManager: SessionManager;
 let worktreeManager: WorktreeManager;
 let cliManagerFactory: CliManagerFactory;
-let defaultCliManager: AbstractCliManager;
-let gitDiffManager: GitDiffManager;
 let gitStatusManager: GitStatusManager;
-let executionTracker: ExecutionTracker;
-let worktreeNameGenerator: WorktreeNameGenerator;
 let databaseService: DatabaseService;
 let runCommandManager: RunCommandManager;
-let permissionIpcServer: PermissionIpcServer | null;
-let paneDaemonServer: PaneDaemonServer | null = null;
 let versionChecker: VersionChecker;
 let archiveProgressManager: ArchiveProgressManager;
 let analyticsManager: AnalyticsManager;
-let spotlightManager: SpotlightManager;
+let paneDaemonHost: PaneDaemonHost | null = null;
 
 // ptyHost supervisor — forked as an Electron UtilityProcess on app ready,
 // but only when the `usePtyHost` setting is enabled (default: off). When
@@ -240,33 +187,9 @@ if (isDevelopment) {
 // Set up console wrapper to reduce logging in production
 setupConsoleWrapper();
 
-// Parse command-line arguments for custom Pane directory
-const args = process.argv.slice(2);
-for (let i = 0; i < args.length; i++) {
-  const arg = args[i];
-  
-  // Support both --pane-dir=/path and --pane-dir /path formats
-  if (arg.startsWith('--pane-dir=')) {
-    const dir = arg.substring('--pane-dir='.length);
-    setAppDirectory(dir);
-    console.log(`[Main] Using custom Pane directory: ${dir}`);
-  } else if (arg === '--pane-dir' && i + 1 < args.length) {
-    const dir = args[i + 1];
-    setAppDirectory(dir);
-    console.log(`[Main] Using custom Pane directory: ${dir}`);
-    i++; // Skip the next argument since we've consumed it
-  }
-  // Deprecated: support old --foozol-dir for backward compatibility
-  else if (arg.startsWith('--foozol-dir=')) {
-    const dir = arg.substring('--foozol-dir='.length);
-    setAppDirectory(dir);
-    console.log(`[Main] Using custom Pane directory (deprecated --foozol-dir): ${dir}`);
-  } else if (arg === '--foozol-dir' && i + 1 < args.length) {
-    const dir = args[i + 1];
-    setAppDirectory(dir);
-    console.log(`[Main] Using custom Pane directory (deprecated --foozol-dir): ${dir}`);
-    i++;
-  }
+const overrideDir = applyAppDirectoryOverrideFromArgs();
+if (overrideDir) {
+  console.log(`[Main] Using custom Pane directory: ${overrideDir}`);
 }
 
 // Migrate data directory from ~/.foozol to ~/.pane (one-time migration for existing users)
@@ -970,37 +893,37 @@ async function createWindow() {
 }
 
 async function initializeServices() {
-  configManager = new ConfigManager();
-  await configManager.initialize();
-  installPaneRuntime(electronPaneEventSink);
+  const electronPaneEventSink = {
+    send(channel: string, ...args: unknown[]) {
+      const window = mainWindow;
+      if (!window || window.isDestroyed()) {
+        return;
+      }
 
-  // Initialize logger early so it can capture all logs
-  logger = new Logger(configManager);
-  console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
-  registerPowerMonitorDiagnostics();
+      window.webContents.send(channel, ...args);
+    },
+  };
 
-  // Log the scrollback retention result captured at database module load.
-  // The sweep itself runs before panelManager's constructor caches rows into
-  // RAM (see services/database.ts), so by the time we reach here the DB is
-  // already trimmed and the panel cache is built from the trimmed state.
-  if (startupRetentionResult.error) {
-    logger.error('[ScrollbackRetention] Sweep failed', startupRetentionResult.error);
-  } else if (startupRetentionResult.result && startupRetentionResult.result.panelsCleared > 0) {
-    const r = startupRetentionResult.result;
-    logger.info(
-      `[ScrollbackRetention] Cleared ${r.panelsCleared} panels across ` +
-      `${r.sessionsTouched} sessions, freed ~${(r.bytesFreed / 1_000_000).toFixed(1)} MB`
-    );
-  }
+  paneDaemonHost = await createPaneDaemonHost({
+    app,
+    getMainWindow: () => mainWindow,
+    getPtyHostRuntime: () => ptyHostSupervisor,
+    getWebviewContextMap: () => webviewContextMap,
+    rendererEventSink: electronPaneEventSink,
+  });
 
-
-  // Use the same database path as the original backend
-  const dbPath = configManager.getDatabasePath();
-  databaseService = new DatabaseService(dbPath);
-  databaseService.initialize();
-
-  // Initialize analytics manager early so it can be used by SessionManager
-  analyticsManager = new AnalyticsManager(configManager);
+  const services = paneDaemonHost.services;
+  configManager = services.configManager;
+  databaseService = services.databaseService;
+  sessionManager = services.sessionManager;
+  worktreeManager = services.worktreeManager;
+  cliManagerFactory = services.cliManagerFactory;
+  gitStatusManager = services.gitStatusManager;
+  runCommandManager = services.runCommandManager;
+  versionChecker = services.versionChecker;
+  logger = services.logger as Logger;
+  archiveProgressManager = services.archiveProgressManager as ArchiveProgressManager;
+  analyticsManager = services.analyticsManager as AnalyticsManager;
 
   ipcMain.handle('analytics:get-identity', async () => {
     try {
@@ -1022,129 +945,6 @@ async function initializeServices() {
     }
   });
 
-  // Set analytics manager on logsManager for script execution tracking
-  const { logsManager } = await import('./services/panels/logPanel/logsManager');
-  logsManager.setAnalyticsManager(analyticsManager);
-
-  sessionManager = new SessionManager(databaseService, analyticsManager);
-  sessionManager.initializeFromDatabase();
-
-  // Bump WSL inotify limits if any WSL projects exist (limits don't persist across WSL reboots)
-  if (process.platform === 'win32') {
-    const wslDistros = databaseService.getAllProjects()
-      .filter(p => p.wsl_enabled && p.wsl_distribution)
-      .map(p => p.wsl_distribution!);
-    if (wslDistros.length > 0) {
-      import('./utils/wslUtils').then(({ bumpWSLInotifyLimits }) =>
-        bumpWSLInotifyLimits(wslDistros).catch(() => {})
-      );
-    }
-  }
-
-  archiveProgressManager = new ArchiveProgressManager();
-
-  spotlightManager = new SpotlightManager(sessionManager, logger, () => mainWindow);
-
-  // Start permission IPC server
-  console.log('[Main] Initializing Permission IPC server...');
-  permissionIpcServer = new PermissionIpcServer();
-  console.log('[Main] Starting Permission IPC server...');
-
-  let permissionIpcPath: string | null = null;
-  try {
-    await permissionIpcServer.start();
-    permissionIpcPath = permissionIpcServer.getSocketPath();
-    console.log('[Main] Permission IPC server started successfully');
-    console.log('[Main] Permission IPC socket path:', permissionIpcPath);
-  } catch (error) {
-    console.error('[Main] Failed to start Permission IPC server:', error);
-    console.error('[Main] Permission-based MCP will be disabled');
-    permissionIpcServer = null;
-  }
-
-  // Create worktree manager with configManager and analyticsManager
-  worktreeManager = new WorktreeManager(configManager, analyticsManager);
-
-  // Initialize the active project's worktree directory if one exists
-  const activeProject = sessionManager.getActiveProject();
-  if (activeProject) {
-    const ctx = sessionManager.getProjectContextByProjectId(activeProject.id);
-    if (ctx) {
-      await worktreeManager.initializeProject(activeProject.path, undefined, ctx.pathResolver, ctx.commandRunner);
-    }
-  }
-
-  // Initialize CLI manager factory
-  cliManagerFactory = CliManagerFactory.getInstance(logger, configManager);
-
-  // Create default CLI manager (Claude) with permission IPC path
-  // Skip validation during startup - tools will be validated when actually used
-  defaultCliManager = await cliManagerFactory.createManager('claude', {
-    sessionManager,
-    logger,
-    configManager,
-    additionalOptions: { permissionIpcPath },
-    skipValidation: true  // Allow Pane to start even if Claude Code is not installed
-  });
-  gitDiffManager = new GitDiffManager(logger, analyticsManager);
-  gitStatusManager = new GitStatusManager(sessionManager, worktreeManager, gitDiffManager, logger);
-  executionTracker = new ExecutionTracker(sessionManager, gitDiffManager);
-  worktreeNameGenerator = new WorktreeNameGenerator(configManager);
-  runCommandManager = new RunCommandManager(databaseService);
-
-  // Initialize version checker
-  versionChecker = new VersionChecker(configManager, logger);
-
-  taskQueue = new TaskQueue({
-    sessionManager,
-    worktreeManager,
-    claudeCodeManager: defaultCliManager, // Use default CLI manager for backward compatibility
-    gitDiffManager,
-    executionTracker,
-    worktreeNameGenerator,
-    getMainWindow: () => mainWindow
-  });
-
-  const services: AppServices = {
-    app,
-    configManager,
-    databaseService,
-    sessionManager,
-    worktreeManager,
-    cliManagerFactory,
-    claudeCodeManager: defaultCliManager, // Backward compatibility
-    gitDiffManager,
-    gitStatusManager,
-    executionTracker,
-    worktreeNameGenerator,
-    runCommandManager,
-    versionChecker,
-    taskQueue,
-    getMainWindow: () => mainWindow,
-    logger,
-    archiveProgressManager,
-    analyticsManager,
-    spotlightManager,
-  };
-
-  // Initialize IPC handlers first so managers (like ClaudePanelManager) are ready
-  const commandRegistry = registerIpcHandlers(services);
-
-  try {
-    paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
-    await paneDaemonServer.start();
-    installPaneRuntime(createFanoutEventSink([
-      electronPaneEventSink,
-      paneDaemonServer.getEventSink(),
-    ]), paneDaemonServer.getEventSink());
-  } catch (error) {
-    paneDaemonServer = null;
-    console.error('[Pane daemon] Failed to start local daemon server; continuing with Electron-only runtime events', error);
-  }
-
-  // Then set up event listeners that may rely on initialized managers
-  setupEventListeners(services);
-  
   // Console log IPC handler. The preload console wrapper (dev-only) forwards
   // every renderer console call here for frontend-debug.log capture. Renderer
   // callers can also invoke this directly and set `toMainLog: true` to also
@@ -1182,22 +982,6 @@ async function initializeServices() {
     logger.error(`[RendererFatal] ${formatRendererDiagnostic(payload || {})}`);
     return { success: true };
   });
-  
-  // Start periodic version checking (only if enabled in settings)
-  versionChecker.startPeriodicCheck();
-  
-  // Start git status polling
-  gitStatusManager.startPolling();
-
-  // Start resource monitoring
-  resourceMonitorService.initialize(app);
-
-  // Restore spotlight state from previous session
-  try {
-    spotlightManager.restoreAll();
-  } catch (error) {
-    console.error('[Main] Failed to restore spotlight state:', error);
-  }
 }
 
 app.whenReady().then(async () => {
@@ -1517,34 +1301,8 @@ app.on('before-quit', async (event) => {
     terminalPanelManager.destroyAllTerminals();
     console.log('[Main] Terminal panel processes destroyed');
 
-    // Phase 4: Normal cleanup (existing code)
-    // Disable all spotlights and restore repo roots
-    if (spotlightManager) {
-      console.log('[Main] Disabling all spotlights...');
-      spotlightManager.disableAll();
-      console.log('[Main] Spotlights disabled');
-    }
-
-    // Cleanup all sessions and terminate child processes
-    if (sessionManager) {
-      console.log('[Main] Cleaning up sessions and terminating child processes...');
-      await sessionManager.cleanup();
-      console.log('[Main] Session cleanup complete');
-    }
-
-    // Stop all run commands
-    if (runCommandManager) {
-      console.log('[Main] Stopping all run commands...');
-      await runCommandManager.stopAllRunCommands();
-      console.log('[Main] Run commands stopped');
-    }
-
-    // Stop git status polling
-    if (gitStatusManager) {
-      console.log('[Main] Stopping git status polling...');
-      gitStatusManager.stopPolling();
-      console.log('[Main] Git status polling stopped');
-    }
+    // Phase 4: Host/runtime cleanup
+    console.log('[Main] Shutting down daemon host services...');
 
     // Kill IAP tunnel if running
     const cloudManager = getCloudVmManager();
@@ -1555,40 +1313,10 @@ app.on('before-quit', async (event) => {
       console.log('[Main] Cloud tunnel stopped');
     }
 
-    // Stop config file watcher
-    if (configManager) {
-      configManager.stopWatching();
-    }
-
-    // Shutdown CLI manager factory and all CLI processes
-    if (cliManagerFactory) {
-      console.log('[Main] Shutting down CLI manager factory and all CLI processes...');
-      await cliManagerFactory.shutdown();
-      console.log('[Main] CLI manager factory shutdown complete');
-    }
-
-    // Close task queue
-    if (taskQueue) {
-      await taskQueue.close();
-    }
-
-    // Stop permission IPC server
-    if (permissionIpcServer) {
-      console.log('[Main] Stopping permission IPC server...');
-      await permissionIpcServer.stop();
-      console.log('[Main] Permission IPC server stopped');
-    }
-
-    if (paneDaemonServer) {
-      console.log('[Main] Stopping Pane daemon server...');
-      await paneDaemonServer.stop();
-      paneDaemonServer = null;
-      console.log('[Main] Pane daemon server stopped');
-    }
-
-    // Stop version checker
-    if (versionChecker) {
-      versionChecker.stopPeriodicCheck();
+    if (paneDaemonHost) {
+      await paneDaemonHost.shutdown();
+      paneDaemonHost = null;
+      console.log('[Main] Daemon host services stopped');
     }
 
     // Track app closed event with session duration.
@@ -1629,11 +1357,6 @@ app.on('before-quit', async (event) => {
       } catch (error) {
         console.error('[Analytics] Failed to track app_closed event:', error);
       }
-    }
-
-    // Close logger to ensure all logs are flushed
-    if (logger) {
-      logger.close();
     }
 
     const totalShutdownTime = Date.now() - shutdownStartTime;

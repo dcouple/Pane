@@ -26,7 +26,7 @@ interface TaskQueueOptions {
   gitDiffManager: GitDiffManager;
   executionTracker: ExecutionTracker;
   worktreeNameGenerator: WorktreeNameGenerator;
-  getMainWindow: () => Electron.BrowserWindow | null;
+  useSimpleQueue?: boolean;
 }
 
 interface CreateSessionJob {
@@ -60,8 +60,9 @@ export class TaskQueue {
   constructor(private options: TaskQueueOptions) {
     console.log('[TaskQueue] Initializing task queue...');
     
-    // Check if we're in Electron without Redis
-    this.useSimpleQueue = !process.env.REDIS_URL && typeof process.versions.electron !== 'undefined';
+    // Headless daemon mode still needs the in-process queue when Redis is not
+    // configured, so queue selection cannot depend on Electron globals.
+    this.useSimpleQueue = options.useSimpleQueue ?? !process.env.REDIS_URL;
     
     // Determine concurrency based on platform
     // Linux has stricter PTY and file descriptor limits, so we reduce concurrency
@@ -71,7 +72,7 @@ export class TaskQueue {
     console.log(`[TaskQueue] Platform: ${os.platform()}, Session concurrency: ${sessionConcurrency}`);
     
     if (this.useSimpleQueue) {
-      console.log('[TaskQueue] Using SimpleQueue for Electron environment');
+      console.log('[TaskQueue] Using SimpleQueue for local in-process queue');
       
       this.sessionQueue = new SimpleQueue<CreateSessionJob>('session-creation', sessionConcurrency);
       this.inputQueue = new SimpleQueue<SendInputJob>('session-input', 10);

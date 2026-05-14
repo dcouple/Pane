@@ -4,10 +4,13 @@ import type { TaskQueue } from '../services/taskQueue';
 import type { AnalyticsManager } from '../services/analyticsManager';
 import type { SpotlightManager } from '../services/spotlightManager';
 
-export interface AppServices extends CoreServices {
-  app: App;
+export interface DaemonHostServices extends CoreServices {
   taskQueue: TaskQueue | null;
   getMainWindow: () => BrowserWindow | null;
   analyticsManager?: AnalyticsManager;
   spotlightManager: SpotlightManager;
+}
+
+export interface AppServices extends DaemonHostServices {
+  app: App;
 }
