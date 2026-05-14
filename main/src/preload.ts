@@ -3,6 +3,7 @@ import type { CreateSessionRequest, Session } from './types/session';
 import type { AppConfig, UpdateConfigRequest } from './types/config';
 import type { CreateProjectRequest, UpdateProjectRequest, Project } from '../../frontend/src/types/project';
 import type { ToolPanel } from '../../shared/types/panels';
+import { isDaemonOwnedChannel } from '../../shared/types/daemon';
 
 interface LogEntry {
   timestamp: string;
@@ -271,7 +272,7 @@ if (process.env.NODE_ENV !== 'production') {
       
       // Send to main process for file logging
       try {
-        ipcRenderer.invoke('console:log', {
+        invokeIpc('console:log', {
           level,
           args: args.map(arg => {
             if (typeof arg === 'object') {
@@ -301,28 +302,36 @@ interface IPCResponse<T = unknown> {
   error?: string;
 }
 
+function invokeIpc(channel: string, ...args: unknown[]) {
+  if (isDaemonOwnedChannel(channel)) {
+    return ipcRenderer.invoke('daemon:invoke', channel, ...args);
+  }
+
+  return ipcRenderer.invoke(channel, ...args);
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Generic invoke method for direct IPC calls
-  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  invoke: (channel: string, ...args: unknown[]) => invokeIpc(channel, ...args),
   
   // Basic app info
-  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
-  getPlatform: () => ipcRenderer.invoke('get-platform'),
-  isPackaged: () => ipcRenderer.invoke('is-packaged'),
+  getAppVersion: () => invokeIpc('get-app-version'),
+  getPlatform: () => invokeIpc('get-platform'),
+  isPackaged: () => invokeIpc('is-packaged'),
 
   // Version checking
-  checkForUpdates: (): Promise<IPCResponse> => ipcRenderer.invoke('version:check-for-updates'),
-  getVersionInfo: (): Promise<IPCResponse> => ipcRenderer.invoke('version:get-info'),
+  checkForUpdates: (): Promise<IPCResponse> => invokeIpc('version:check-for-updates'),
+  getVersionInfo: (): Promise<IPCResponse> => invokeIpc('version:get-info'),
   
   // Auto-updater
   updater: {
-    checkAndDownload: (): Promise<IPCResponse> => ipcRenderer.invoke('updater:check-and-download'),
-    downloadUpdate: (): Promise<IPCResponse> => ipcRenderer.invoke('updater:download-update'),
-    installUpdate: (): Promise<IPCResponse> => ipcRenderer.invoke('updater:install-update'),
+    checkAndDownload: (): Promise<IPCResponse> => invokeIpc('updater:check-and-download'),
+    downloadUpdate: (): Promise<IPCResponse> => invokeIpc('updater:download-update'),
+    installUpdate: (): Promise<IPCResponse> => invokeIpc('updater:install-update'),
   },
 
   // System utilities
-  openExternal: (url: string): Promise<IPCResponse> => ipcRenderer.invoke('openExternal', url),
+  openExternal: (url: string): Promise<IPCResponse> => invokeIpc('openExternal', url),
 
   diagnostics: {
     rendererFatal: (payload: {
@@ -333,121 +342,121 @@ contextBridge.exposeInMainWorld('electronAPI', {
       url?: string;
       line?: number;
       column?: number;
-    }): Promise<IPCResponse> => ipcRenderer.invoke('diagnostics:renderer-fatal', payload),
+    }): Promise<IPCResponse> => invokeIpc('diagnostics:renderer-fatal', payload),
   },
 
   // Session management
   sessions: {
-    getAll: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-all'),
-    getAllWithProjects: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-all-with-projects'),
-    getArchivedWithProjects: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-archived-with-projects'),
-    restore: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:restore', sessionId),
-    get: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get', sessionId),
-    create: (request: CreateSessionRequest): Promise<IPCResponse> => ipcRenderer.invoke('sessions:create', request),
-    delete: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:delete', sessionId),
-    sendInput: (sessionId: string, input: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:input', sessionId, input),
-    continue: (sessionId: string, prompt?: string, model?: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:continue', sessionId, prompt, model),
-    getOutput: (sessionId: string, limit?: number): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-output', sessionId, limit),
-    getJsonMessages: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-json-messages', sessionId),
-    getStatistics: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-statistics', sessionId),
-    getConversation: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-conversation', sessionId),
-    getConversationMessages: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-conversation-messages', sessionId),
-    getConversationMessageCount: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-conversation-message-count', sessionId),
-    generateCompactedContext: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:generate-compacted-context', sessionId),
-    markViewed: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:mark-viewed', sessionId),
-    stop: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:stop', sessionId),
+    getAll: (): Promise<IPCResponse> => invokeIpc('sessions:get-all'),
+    getAllWithProjects: (): Promise<IPCResponse> => invokeIpc('sessions:get-all-with-projects'),
+    getArchivedWithProjects: (): Promise<IPCResponse> => invokeIpc('sessions:get-archived-with-projects'),
+    restore: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:restore', sessionId),
+    get: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get', sessionId),
+    create: (request: CreateSessionRequest): Promise<IPCResponse> => invokeIpc('sessions:create', request),
+    delete: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:delete', sessionId),
+    sendInput: (sessionId: string, input: string): Promise<IPCResponse> => invokeIpc('sessions:input', sessionId, input),
+    continue: (sessionId: string, prompt?: string, model?: string): Promise<IPCResponse> => invokeIpc('sessions:continue', sessionId, prompt, model),
+    getOutput: (sessionId: string, limit?: number): Promise<IPCResponse> => invokeIpc('sessions:get-output', sessionId, limit),
+    getJsonMessages: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-json-messages', sessionId),
+    getStatistics: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-statistics', sessionId),
+    getConversation: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-conversation', sessionId),
+    getConversationMessages: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-conversation-messages', sessionId),
+    getConversationMessageCount: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-conversation-message-count', sessionId),
+    generateCompactedContext: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:generate-compacted-context', sessionId),
+    markViewed: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:mark-viewed', sessionId),
+    stop: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:stop', sessionId),
     
     // Execution and Git operations
-    getExecutions: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-executions', sessionId),
-    getExecutionDiff: (sessionId: string, executionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-execution-diff', sessionId, executionId),
-    gitCommit: (sessionId: string, message: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-commit', sessionId, message),
-    gitDiff: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-diff', sessionId),
-    getCombinedDiff: (sessionId: string, executionIds?: number[]): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-combined-diff', sessionId, executionIds),
-    getCommitDiffByHash: (sessionId: string, commitHash: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-commit-diff-by-hash', sessionId, commitHash),
+    getExecutions: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-executions', sessionId),
+    getExecutionDiff: (sessionId: string, executionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-execution-diff', sessionId, executionId),
+    gitCommit: (sessionId: string, message: string): Promise<IPCResponse> => invokeIpc('sessions:git-commit', sessionId, message),
+    gitDiff: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-diff', sessionId),
+    getCombinedDiff: (sessionId: string, executionIds?: number[]): Promise<IPCResponse> => invokeIpc('sessions:get-combined-diff', sessionId, executionIds),
+    getCommitDiffByHash: (sessionId: string, commitHash: string): Promise<IPCResponse> => invokeIpc('sessions:get-commit-diff-by-hash', sessionId, commitHash),
 
     // Main repo session
-    getOrCreateMainRepoSession: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-or-create-main-repo', projectId),
+    getOrCreateMainRepoSession: (projectId: number): Promise<IPCResponse> => invokeIpc('sessions:get-or-create-main-repo', projectId),
     
     // Script operations
-    hasRunScript: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:has-run-script', sessionId),
-    getRunningSession: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-running-session'),
-    runScript: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:run-script', sessionId),
-    stopScript: (sessionId?: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:stop-script', sessionId),
-    runTerminalCommand: (sessionId: string, command: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:run-terminal-command', sessionId, command),
-    sendTerminalInput: (sessionId: string, data: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:send-terminal-input', sessionId, data),
-    preCreateTerminal: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:pre-create-terminal', sessionId),
-    resizeTerminal: (sessionId: string, cols: number, rows: number): Promise<IPCResponse> => ipcRenderer.invoke('sessions:resize-terminal', sessionId, cols, rows),
+    hasRunScript: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:has-run-script', sessionId),
+    getRunningSession: (): Promise<IPCResponse> => invokeIpc('sessions:get-running-session'),
+    runScript: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:run-script', sessionId),
+    stopScript: (sessionId?: string): Promise<IPCResponse> => invokeIpc('sessions:stop-script', sessionId),
+    runTerminalCommand: (sessionId: string, command: string): Promise<IPCResponse> => invokeIpc('sessions:run-terminal-command', sessionId, command),
+    sendTerminalInput: (sessionId: string, data: string): Promise<IPCResponse> => invokeIpc('sessions:send-terminal-input', sessionId, data),
+    preCreateTerminal: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:pre-create-terminal', sessionId),
+    resizeTerminal: (sessionId: string, cols: number, rows: number): Promise<IPCResponse> => invokeIpc('sessions:resize-terminal', sessionId, cols, rows),
     
     // Prompt operations
-    getPrompts: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-prompts', sessionId),
+    getPrompts: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-prompts', sessionId),
     
     // Git rebase operations
-    rebaseMainIntoWorktree: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:rebase-main-into-worktree', sessionId),
-    abortRebaseAndUseClaude: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:abort-rebase-and-use-claude', sessionId),
-    squashAndRebaseToMain: (sessionId: string, commitMessage: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:squash-and-rebase-to-main', sessionId, commitMessage),
-    rebaseToMain: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:rebase-to-main', sessionId),
+    rebaseMainIntoWorktree: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:rebase-main-into-worktree', sessionId),
+    abortRebaseAndUseClaude: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:abort-rebase-and-use-claude', sessionId),
+    squashAndRebaseToMain: (sessionId: string, commitMessage: string): Promise<IPCResponse> => invokeIpc('sessions:squash-and-rebase-to-main', sessionId, commitMessage),
+    rebaseToMain: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:rebase-to-main', sessionId),
     
     // Git pull/push operations
-    gitPull: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-pull', sessionId),
-    gitPush: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-push', sessionId),
-    gitFetch: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-fetch', sessionId),
-    gitStash: (sessionId: string, message?: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stash', sessionId, message),
-    gitStashPop: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stash-pop', sessionId),
-    gitSoftReset: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-soft-reset', sessionId),
-    gitStageAndCommit: (sessionId: string, message: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:git-stage-and-commit', sessionId, message),
-    hasStash: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:has-stash', sessionId),
-    setUpstream: (sessionId: string, remoteBranch: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:set-upstream', sessionId, remoteBranch),
-    getUpstream: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-upstream', sessionId),
-    getRemoteBranches: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-remote-branches', sessionId),
-    getGitStatus: (sessionId: string, nonBlocking?: boolean, isInitialLoad?: boolean): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-git-status', sessionId, nonBlocking, isInitialLoad),
-    getLastCommits: (sessionId: string, count: number): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-last-commits', sessionId, count),
-    getGitGraph: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-git-graph', sessionId),
+    gitPull: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-pull', sessionId),
+    gitPush: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-push', sessionId),
+    gitFetch: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-fetch', sessionId),
+    gitStash: (sessionId: string, message?: string): Promise<IPCResponse> => invokeIpc('sessions:git-stash', sessionId, message),
+    gitStashPop: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-stash-pop', sessionId),
+    gitSoftReset: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-soft-reset', sessionId),
+    gitStageAndCommit: (sessionId: string, message: string): Promise<IPCResponse> => invokeIpc('sessions:git-stage-and-commit', sessionId, message),
+    hasStash: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:has-stash', sessionId),
+    setUpstream: (sessionId: string, remoteBranch: string): Promise<IPCResponse> => invokeIpc('sessions:set-upstream', sessionId, remoteBranch),
+    getUpstream: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-upstream', sessionId),
+    getRemoteBranches: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-remote-branches', sessionId),
+    getGitStatus: (sessionId: string, nonBlocking?: boolean, isInitialLoad?: boolean): Promise<IPCResponse> => invokeIpc('sessions:get-git-status', sessionId, nonBlocking, isInitialLoad),
+    getLastCommits: (sessionId: string, count: number): Promise<IPCResponse> => invokeIpc('sessions:get-last-commits', sessionId, count),
+    getGitGraph: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-git-graph', sessionId),
 
     // Git operation helpers
-    hasChangesToRebase: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:has-changes-to-rebase', sessionId),
-    getGitCommands: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-git-commands', sessionId),
-    generateName: (prompt: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:generate-name', prompt),
-    rename: (sessionId: string, newName: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:rename', sessionId, newName),
-    toggleFavorite: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:toggle-favorite', sessionId),
+    hasChangesToRebase: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:has-changes-to-rebase', sessionId),
+    getGitCommands: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-git-commands', sessionId),
+    generateName: (prompt: string): Promise<IPCResponse> => invokeIpc('sessions:generate-name', prompt),
+    rename: (sessionId: string, newName: string): Promise<IPCResponse> => invokeIpc('sessions:rename', sessionId, newName),
+    toggleFavorite: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:toggle-favorite', sessionId),
 
     // Resume session operations
-    getResumable: (): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-resumable'),
-    resumeInterrupted: (sessionIds: string[]): Promise<IPCResponse> => ipcRenderer.invoke('sessions:resume-interrupted', sessionIds),
-    dismissInterrupted: (sessionIds: string[]): Promise<IPCResponse> => ipcRenderer.invoke('sessions:dismiss-interrupted', sessionIds),
+    getResumable: (): Promise<IPCResponse> => invokeIpc('sessions:get-resumable'),
+    resumeInterrupted: (sessionIds: string[]): Promise<IPCResponse> => invokeIpc('sessions:resume-interrupted', sessionIds),
+    dismissInterrupted: (sessionIds: string[]): Promise<IPCResponse> => invokeIpc('sessions:dismiss-interrupted', sessionIds),
     
     // IDE operations
-    openIDE: (sessionId: string, ideKey?: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:open-ide', sessionId, ideKey),
+    openIDE: (sessionId: string, ideKey?: string): Promise<IPCResponse> => invokeIpc('sessions:open-ide', sessionId, ideKey),
     
     // Reorder operations
-    reorder: (sessionOrders: Array<{ id: string; displayOrder: number }>): Promise<IPCResponse> => ipcRenderer.invoke('sessions:reorder', sessionOrders),
+    reorder: (sessionOrders: Array<{ id: string; displayOrder: number }>): Promise<IPCResponse> => invokeIpc('sessions:reorder', sessionOrders),
     
     // Image operations
-    saveImages: (sessionId: string, images: Array<{ name: string; dataUrl: string; type: string }>): Promise<string[]> => ipcRenderer.invoke('sessions:save-images', sessionId, images),
+    saveImages: (sessionId: string, images: Array<{ name: string; dataUrl: string; type: string }>): Promise<string[]> => invokeIpc('sessions:save-images', sessionId, images),
     
     // Text file operations
-    saveLargeText: (sessionId: string, text: string): Promise<string> => ipcRenderer.invoke('sessions:save-large-text', sessionId, text),
+    saveLargeText: (sessionId: string, text: string): Promise<string> => invokeIpc('sessions:save-large-text', sessionId, text),
     
     // Log operations
-    getLogs: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:get-logs', sessionId),
-    clearLogs: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('sessions:clear-logs', sessionId),
-    addLog: (sessionId: string, entry: LogEntry): Promise<IPCResponse> => ipcRenderer.invoke('sessions:add-log', sessionId, entry),
+    getLogs: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-logs', sessionId),
+    clearLogs: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:clear-logs', sessionId),
+    addLog: (sessionId: string, entry: LogEntry): Promise<IPCResponse> => invokeIpc('sessions:add-log', sessionId, entry),
   },
 
   // Project management
   projects: {
-    getAll: (): Promise<IPCResponse> => ipcRenderer.invoke('projects:get-all'),
-    getActive: (): Promise<IPCResponse> => ipcRenderer.invoke('projects:get-active'),
-    create: (projectData: CreateProjectRequest): Promise<IPCResponse> => ipcRenderer.invoke('projects:create', projectData),
-    activate: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:activate', projectId),
-    update: (projectId: string, updates: UpdateProjectRequest): Promise<IPCResponse> => ipcRenderer.invoke('projects:update', projectId, updates),
-    delete: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:delete', projectId),
-    detectBranch: (path: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:detect-branch', path),
-    reorder: (projectOrders: Array<{ id: number; displayOrder: number }>): Promise<IPCResponse> => ipcRenderer.invoke('projects:reorder', projectOrders),
-    listBranches: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:list-branches', projectId),
-    refreshGitStatus: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:refresh-git-status', projectId),
-    runScript: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:run-script', projectId),
-    getRunningScript: (): Promise<IPCResponse> => ipcRenderer.invoke('projects:get-running-script'),
-    stopScript: (projectId?: number): Promise<IPCResponse> => ipcRenderer.invoke('projects:stop-script', projectId),
+    getAll: (): Promise<IPCResponse> => invokeIpc('projects:get-all'),
+    getActive: (): Promise<IPCResponse> => invokeIpc('projects:get-active'),
+    create: (projectData: CreateProjectRequest): Promise<IPCResponse> => invokeIpc('projects:create', projectData),
+    activate: (projectId: string): Promise<IPCResponse> => invokeIpc('projects:activate', projectId),
+    update: (projectId: string, updates: UpdateProjectRequest): Promise<IPCResponse> => invokeIpc('projects:update', projectId, updates),
+    delete: (projectId: string): Promise<IPCResponse> => invokeIpc('projects:delete', projectId),
+    detectBranch: (path: string): Promise<IPCResponse> => invokeIpc('projects:detect-branch', path),
+    reorder: (projectOrders: Array<{ id: number; displayOrder: number }>): Promise<IPCResponse> => invokeIpc('projects:reorder', projectOrders),
+    listBranches: (projectId: string): Promise<IPCResponse> => invokeIpc('projects:list-branches', projectId),
+    refreshGitStatus: (projectId: number): Promise<IPCResponse> => invokeIpc('projects:refresh-git-status', projectId),
+    runScript: (projectId: number): Promise<IPCResponse> => invokeIpc('projects:run-script', projectId),
+    getRunningScript: (): Promise<IPCResponse> => invokeIpc('projects:get-running-script'),
+    stopScript: (projectId?: number): Promise<IPCResponse> => invokeIpc('projects:stop-script', projectId),
     /**
      * Detects the project's config file (pane.json, conductor.json, .gitpod.yml, or
      * devcontainer.json) and returns a `DetectedProjectConfig` with `setup`, `run`,
@@ -455,7 +464,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Used by ProjectSettings to show "From <source>" badges on script fields.
      * Reads from the project's main working directory, not a session worktree.
      */
-    detectConfig: (projectId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:detect-config', projectId),
+    detectConfig: (projectId: string): Promise<IPCResponse> => invokeIpc('projects:detect-config', projectId),
     /**
      * Resolves which run script should execute for a specific session.
      * Checks (in order): DB `project.run_script`, then config-file detection from the
@@ -464,78 +473,78 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Returns `{ command, source }` or null if nothing is configured.
      * Used by `PanelTabBar` to start/stop the dev server for a session.
      */
-    resolveRunScript: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('projects:resolve-run-script', sessionId),
+    resolveRunScript: (sessionId: string): Promise<IPCResponse> => invokeIpc('projects:resolve-run-script', sessionId),
   },
 
   // Git operations
   git: {
-    detectBranch: (path: string): Promise<IPCResponse<string>> => ipcRenderer.invoke('projects:detect-branch', path),
-    cancelStatusForProject: (projectId: number): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('git:cancel-status-for-project', projectId),
-    executeProject: (projectId: number, args: string[]): Promise<IPCResponse> => ipcRenderer.invoke('git:execute-project', { projectId, args }),
-    cloneRepo: (url: string, destDir: string): Promise<IPCResponse> => ipcRenderer.invoke('git:clone-repo', url, destDir),
+    detectBranch: (path: string): Promise<IPCResponse<string>> => invokeIpc('projects:detect-branch', path),
+    cancelStatusForProject: (projectId: number): Promise<{ success: boolean; error?: string }> => invokeIpc('git:cancel-status-for-project', projectId),
+    executeProject: (projectId: number, args: string[]): Promise<IPCResponse> => invokeIpc('git:execute-project', { projectId, args }),
+    cloneRepo: (url: string, destDir: string): Promise<IPCResponse> => invokeIpc('git:clone-repo', url, destDir),
   },
 
   // Folders
   folders: {
-    getByProject: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('folders:get-by-project', projectId),
-    create: (name: string, projectId: number, parentFolderId?: string | null): Promise<IPCResponse> => ipcRenderer.invoke('folders:create', name, projectId, parentFolderId),
-    update: (folderId: string, updates: { name?: string; display_order?: number; parent_folder_id?: string | null }): Promise<IPCResponse> => ipcRenderer.invoke('folders:update', folderId, updates),
-    delete: (folderId: string): Promise<IPCResponse> => ipcRenderer.invoke('folders:delete', folderId),
-    reorder: (projectId: number, folderOrders: Array<{ id: string; displayOrder: number }>): Promise<IPCResponse> => ipcRenderer.invoke('folders:reorder', projectId, folderOrders),
-    moveSession: (sessionId: string, folderId: string | null): Promise<IPCResponse> => ipcRenderer.invoke('folders:move-session', sessionId, folderId),
-    move: (folderId: string, parentFolderId: string | null): Promise<IPCResponse> => ipcRenderer.invoke('folders:move', folderId, parentFolderId),
+    getByProject: (projectId: number): Promise<IPCResponse> => invokeIpc('folders:get-by-project', projectId),
+    create: (name: string, projectId: number, parentFolderId?: string | null): Promise<IPCResponse> => invokeIpc('folders:create', name, projectId, parentFolderId),
+    update: (folderId: string, updates: { name?: string; display_order?: number; parent_folder_id?: string | null }): Promise<IPCResponse> => invokeIpc('folders:update', folderId, updates),
+    delete: (folderId: string): Promise<IPCResponse> => invokeIpc('folders:delete', folderId),
+    reorder: (projectId: number, folderOrders: Array<{ id: string; displayOrder: number }>): Promise<IPCResponse> => invokeIpc('folders:reorder', projectId, folderOrders),
+    moveSession: (sessionId: string, folderId: string | null): Promise<IPCResponse> => invokeIpc('folders:move-session', sessionId, folderId),
+    move: (folderId: string, parentFolderId: string | null): Promise<IPCResponse> => invokeIpc('folders:move', folderId, parentFolderId),
   },
 
   // Configuration
   config: {
-    get: (): Promise<IPCResponse> => ipcRenderer.invoke('config:get'),
-    update: (updates: UpdateConfigRequest): Promise<IPCResponse> => ipcRenderer.invoke('config:update', updates),
-    getSessionPreferences: (): Promise<IPCResponse> => ipcRenderer.invoke('config:get-session-preferences'),
-    updateSessionPreferences: (preferences: AppConfig['sessionCreationPreferences']): Promise<IPCResponse> => ipcRenderer.invoke('config:update-session-preferences', preferences),
-    getAvailableShells: (): Promise<IPCResponse> => ipcRenderer.invoke('config:get-available-shells'),
-    getMonospaceFonts: (): Promise<IPCResponse> => ipcRenderer.invoke('config:get-monospace-fonts'),
+    get: (): Promise<IPCResponse> => invokeIpc('config:get'),
+    update: (updates: UpdateConfigRequest): Promise<IPCResponse> => invokeIpc('config:update', updates),
+    getSessionPreferences: (): Promise<IPCResponse> => invokeIpc('config:get-session-preferences'),
+    updateSessionPreferences: (preferences: AppConfig['sessionCreationPreferences']): Promise<IPCResponse> => invokeIpc('config:update-session-preferences', preferences),
+    getAvailableShells: (): Promise<IPCResponse> => invokeIpc('config:get-available-shells'),
+    getMonospaceFonts: (): Promise<IPCResponse> => invokeIpc('config:get-monospace-fonts'),
   },
 
   // Prompts
   prompts: {
-    getAll: (): Promise<IPCResponse> => ipcRenderer.invoke('prompts:get-all'),
-    getByPromptId: (promptId: string): Promise<IPCResponse> => ipcRenderer.invoke('prompts:get-by-id', promptId),
+    getAll: (): Promise<IPCResponse> => invokeIpc('prompts:get-all'),
+    getByPromptId: (promptId: string): Promise<IPCResponse> => invokeIpc('prompts:get-by-id', promptId),
   },
 
   // File operations
   file: {
-    listProject: (projectId: number, path?: string): Promise<IPCResponse> => ipcRenderer.invoke('file:list-project', { projectId, path }),
-    readProject: (projectId: number, filePath: string): Promise<IPCResponse> => ipcRenderer.invoke('file:read-project', { projectId, filePath }),
-    writeProject: (projectId: number, filePath: string, content: string): Promise<IPCResponse> => ipcRenderer.invoke('file:write-project', { projectId, filePath, content }),
+    listProject: (projectId: number, path?: string): Promise<IPCResponse> => invokeIpc('file:list-project', { projectId, path }),
+    readProject: (projectId: number, filePath: string): Promise<IPCResponse> => invokeIpc('file:read-project', { projectId, filePath }),
+    writeProject: (projectId: number, filePath: string, content: string): Promise<IPCResponse> => invokeIpc('file:write-project', { projectId, filePath, content }),
   },
 
   // Dialog
   dialog: {
-    openFile: (options?: DialogOptions): Promise<IPCResponse<string | null>> => ipcRenderer.invoke('dialog:open-file', options),
-    openDirectory: (options?: DialogOptions): Promise<IPCResponse<string | null>> => ipcRenderer.invoke('dialog:open-directory', options),
+    openFile: (options?: DialogOptions): Promise<IPCResponse<string | null>> => invokeIpc('dialog:open-file', options),
+    openDirectory: (options?: DialogOptions): Promise<IPCResponse<string | null>> => invokeIpc('dialog:open-directory', options),
   },
 
   // Permissions
   permissions: {
-    respond: (requestId: string, response: boolean | { approved: boolean; remember?: boolean }): Promise<IPCResponse> => ipcRenderer.invoke('permission:respond', requestId, response),
-    getPending: (): Promise<IPCResponse> => ipcRenderer.invoke('permission:getPending'),
+    respond: (requestId: string, response: boolean | { approved: boolean; remember?: boolean }): Promise<IPCResponse> => invokeIpc('permission:respond', requestId, response),
+    getPending: (): Promise<IPCResponse> => invokeIpc('permission:getPending'),
   },
 
   // Stravu OAuth integration
   stravu: {
-    getConnectionStatus: (): Promise<IPCResponse> => ipcRenderer.invoke('stravu:get-connection-status'),
-    initiateAuth: (): Promise<IPCResponse> => ipcRenderer.invoke('stravu:initiate-auth'),
-    checkAuthStatus: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('stravu:check-auth-status', sessionId),
-    disconnect: (): Promise<IPCResponse> => ipcRenderer.invoke('stravu:disconnect'),
-    getNotebooks: (): Promise<IPCResponse> => ipcRenderer.invoke('stravu:get-notebooks'),
-    getNotebook: (notebookId: string): Promise<IPCResponse> => ipcRenderer.invoke('stravu:get-notebook', notebookId),
-    searchNotebooks: (query: string, limit?: number): Promise<IPCResponse> => ipcRenderer.invoke('stravu:search-notebooks', query, limit),
+    getConnectionStatus: (): Promise<IPCResponse> => invokeIpc('stravu:get-connection-status'),
+    initiateAuth: (): Promise<IPCResponse> => invokeIpc('stravu:initiate-auth'),
+    checkAuthStatus: (sessionId: string): Promise<IPCResponse> => invokeIpc('stravu:check-auth-status', sessionId),
+    disconnect: (): Promise<IPCResponse> => invokeIpc('stravu:disconnect'),
+    getNotebooks: (): Promise<IPCResponse> => invokeIpc('stravu:get-notebooks'),
+    getNotebook: (notebookId: string): Promise<IPCResponse> => invokeIpc('stravu:get-notebook', notebookId),
+    searchNotebooks: (query: string, limit?: number): Promise<IPCResponse> => invokeIpc('stravu:search-notebooks', query, limit),
   },
 
   // Dashboard
   dashboard: {
-    getProjectStatus: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('dashboard:get-project-status', projectId),
-    getProjectStatusProgressive: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('dashboard:get-project-status-progressive', projectId),
+    getProjectStatus: (projectId: number): Promise<IPCResponse> => invokeIpc('dashboard:get-project-status', projectId),
+    getProjectStatusProgressive: (projectId: number): Promise<IPCResponse> => invokeIpc('dashboard:get-project-status-progressive', projectId),
     onUpdate: (callback: (data: DashboardUpdateData) => void) => {
       const subscription = (_event: Electron.IpcRendererEvent, data: DashboardUpdateData) => callback(data);
       ipcRenderer.on('dashboard:update', subscription);
@@ -550,18 +559,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Onboarding
   onboarding: {
-    detectEnvironment: (): Promise<IPCResponse> => ipcRenderer.invoke('onboarding:detect-environment'),
-    setupDefaultRepo: (): Promise<IPCResponse> => ipcRenderer.invoke('onboarding:setup-default-repo'),
-    starRepo: (): Promise<IPCResponse> => ipcRenderer.invoke('onboarding:star-repo'),
+    detectEnvironment: (): Promise<IPCResponse> => invokeIpc('onboarding:detect-environment'),
+    setupDefaultRepo: (): Promise<IPCResponse> => invokeIpc('onboarding:setup-default-repo'),
+    starRepo: (): Promise<IPCResponse> => invokeIpc('onboarding:star-repo'),
   },
 
   // UI State management
   uiState: {
-    getExpanded: (): Promise<IPCResponse> => ipcRenderer.invoke('ui-state:get-expanded'),
-    saveExpanded: (projectIds: number[], folderIds: string[]): Promise<IPCResponse> => ipcRenderer.invoke('ui-state:save-expanded', projectIds, folderIds),
-    saveExpandedProjects: (projectIds: number[]): Promise<IPCResponse> => ipcRenderer.invoke('ui-state:save-expanded-projects', projectIds),
-    saveExpandedFolders: (folderIds: string[]): Promise<IPCResponse> => ipcRenderer.invoke('ui-state:save-expanded-folders', folderIds),
-    saveSessionSortAscending: (ascending: boolean): Promise<IPCResponse> => ipcRenderer.invoke('ui-state:save-session-sort-ascending', ascending),
+    getExpanded: (): Promise<IPCResponse> => invokeIpc('ui-state:get-expanded'),
+    saveExpanded: (projectIds: number[], folderIds: string[]): Promise<IPCResponse> => invokeIpc('ui-state:save-expanded', projectIds, folderIds),
+    saveExpandedProjects: (projectIds: number[]): Promise<IPCResponse> => invokeIpc('ui-state:save-expanded-projects', projectIds),
+    saveExpandedFolders: (folderIds: string[]): Promise<IPCResponse> => invokeIpc('ui-state:save-expanded-folders', folderIds),
+    saveSessionSortAscending: (ascending: boolean): Promise<IPCResponse> => invokeIpc('ui-state:save-session-sort-ascending', ascending),
   },
 
   // Event listeners for real-time updates
@@ -806,42 +815,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Panels API for Claude panels and other panel types
   panels: {
     createPanel: (sessionId: string, type: string, name: string, config?: Record<string, unknown>): Promise<IPCResponse> => 
-      ipcRenderer.invoke('panels:create', { sessionId, type, title: name, initialState: config }),
-    getSessionPanels: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:list', sessionId),
-    deletePanel: (panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:delete', panelId),
-    renamePanel: (panelId: string, name: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:update', panelId, { name }),
-    setActivePanel: (sessionId: string, panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:set-active', sessionId, panelId),
-    resizeTerminal: (panelId: string, cols: number, rows: number): Promise<IPCResponse> => ipcRenderer.invoke('panels:resize-terminal', panelId, cols, rows),
-    sendTerminalInput: (panelId: string, data: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:send-terminal-input', panelId, data),
-    getOutput: (panelId: string, limit?: number): Promise<IPCResponse> => ipcRenderer.invoke('panels:get-output', panelId, limit),
-    getConversationMessages: (panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:get-conversation-messages', panelId),
-    getJsonMessages: (panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:get-json-messages', panelId),
-    getPrompts: (panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:get-prompts', panelId),
-    sendInput: (panelId: string, input: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:send-input', panelId, input),
-    continue: (panelId: string, input: string, model?: string): Promise<IPCResponse> => ipcRenderer.invoke('panels:continue', panelId, input, model),
+      invokeIpc('panels:create', { sessionId, type, title: name, initialState: config }),
+    getSessionPanels: (sessionId: string): Promise<IPCResponse> => invokeIpc('panels:list', sessionId),
+    deletePanel: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:delete', panelId),
+    renamePanel: (panelId: string, name: string): Promise<IPCResponse> => invokeIpc('panels:update', panelId, { name }),
+    setActivePanel: (sessionId: string, panelId: string): Promise<IPCResponse> => invokeIpc('panels:set-active', sessionId, panelId),
+    resizeTerminal: (panelId: string, cols: number, rows: number): Promise<IPCResponse> => invokeIpc('panels:resize-terminal', panelId, cols, rows),
+    sendTerminalInput: (panelId: string, data: string): Promise<IPCResponse> => invokeIpc('panels:send-terminal-input', panelId, data),
+    getOutput: (panelId: string, limit?: number): Promise<IPCResponse> => invokeIpc('panels:get-output', panelId, limit),
+    getConversationMessages: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:get-conversation-messages', panelId),
+    getJsonMessages: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:get-json-messages', panelId),
+    getPrompts: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:get-prompts', panelId),
+    sendInput: (panelId: string, input: string): Promise<IPCResponse> => invokeIpc('panels:send-input', panelId, input),
+    continue: (panelId: string, input: string, model?: string): Promise<IPCResponse> => invokeIpc('panels:continue', panelId, input, model),
   },
 
   // Logs panel operations
   logs: {
-    runScript: (sessionId: string, command: string, cwd: string): Promise<IPCResponse> => ipcRenderer.invoke('logs:runScript', sessionId, command, cwd),
-    stopScript: (panelId: string): Promise<IPCResponse> => ipcRenderer.invoke('logs:stopScript', panelId),
-    isRunning: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('logs:isRunning', sessionId),
+    runScript: (sessionId: string, command: string, cwd: string): Promise<IPCResponse> => invokeIpc('logs:runScript', sessionId, command, cwd),
+    stopScript: (panelId: string): Promise<IPCResponse> => invokeIpc('logs:stopScript', panelId),
+    isRunning: (sessionId: string): Promise<IPCResponse> => invokeIpc('logs:isRunning', sessionId),
   },
 
   // Debug utilities
   debug: {
-    getTableStructure: (tableName: 'folders' | 'sessions'): Promise<IPCResponse> => ipcRenderer.invoke('debug:get-table-structure', tableName),
+    getTableStructure: (tableName: 'folders' | 'sessions'): Promise<IPCResponse> => invokeIpc('debug:get-table-structure', tableName),
   },
 
   // Nimbalyst integration
   nimbalyst: {
-    checkInstalled: (): Promise<IPCResponse> => ipcRenderer.invoke('nimbalyst:check-installed'),
-    openWorktree: (worktreePath: string): Promise<IPCResponse> => ipcRenderer.invoke('nimbalyst:open-worktree', worktreePath),
+    checkInstalled: (): Promise<IPCResponse> => invokeIpc('nimbalyst:check-installed'),
+    openWorktree: (worktreePath: string): Promise<IPCResponse> => invokeIpc('nimbalyst:open-worktree', worktreePath),
   },
 
   // Analytics tracking
   analytics: {
-    getIdentity: () => ipcRenderer.invoke('analytics:get-identity'),
+    getIdentity: () => invokeIpc('analytics:get-identity'),
     onMainEvent: (callback: (event: { eventName: string; properties: Record<string, unknown> }) => void) => {
       // Replay any events that arrived before this callback was registered
       for (const buffered of analyticsEventBuffer) {
@@ -860,20 +869,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Spotlight
   spotlight: {
-    enable: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('spotlight:enable', sessionId),
-    disable: (sessionId: string): Promise<IPCResponse> => ipcRenderer.invoke('spotlight:disable', sessionId),
-    getStatus: (projectId: number): Promise<IPCResponse> => ipcRenderer.invoke('spotlight:get-status', projectId),
+    enable: (sessionId: string): Promise<IPCResponse> => invokeIpc('spotlight:enable', sessionId),
+    disable: (sessionId: string): Promise<IPCResponse> => invokeIpc('spotlight:disable', sessionId),
+    getStatus: (projectId: number): Promise<IPCResponse> => invokeIpc('spotlight:get-status', projectId),
   },
 
   // Cloud VM management
   cloud: {
-    getState: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:get-state'),
-    startVm: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:start-vm'),
-    stopVm: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:stop-vm'),
-    startTunnel: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:start-tunnel'),
-    stopTunnel: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:stop-tunnel'),
-    startPolling: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:start-polling'),
-    stopPolling: (): Promise<IPCResponse> => ipcRenderer.invoke('cloud:stop-polling'),
+    getState: (): Promise<IPCResponse> => invokeIpc('cloud:get-state'),
+    startVm: (): Promise<IPCResponse> => invokeIpc('cloud:start-vm'),
+    stopVm: (): Promise<IPCResponse> => invokeIpc('cloud:stop-vm'),
+    startTunnel: (): Promise<IPCResponse> => invokeIpc('cloud:start-tunnel'),
+    stopTunnel: (): Promise<IPCResponse> => invokeIpc('cloud:stop-tunnel'),
+    startPolling: (): Promise<IPCResponse> => invokeIpc('cloud:start-polling'),
+    stopPolling: (): Promise<IPCResponse> => invokeIpc('cloud:stop-polling'),
     onStateChanged: (callback: (state: unknown) => void): (() => void) => {
       const wrappedCallback = (_event: unknown, state: unknown) => callback(state);
       ipcRenderer.on('cloud:state-changed', wrappedCallback);
@@ -883,14 +892,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Resource monitor
   resourceMonitor: {
-    getSnapshot: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:get-snapshot'),
-    startActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:start-active'),
-    stopActive: (): Promise<IPCResponse> => ipcRenderer.invoke('resource-monitor:stop-active'),
+    getSnapshot: (): Promise<IPCResponse> => invokeIpc('resource-monitor:get-snapshot'),
+    startActive: (): Promise<IPCResponse> => invokeIpc('resource-monitor:start-active'),
+    stopActive: (): Promise<IPCResponse> => invokeIpc('resource-monitor:stop-active'),
   },
 
   // Window state queries (invoke, not event subscriptions)
   window: {
-    isFocused: (): Promise<boolean> => ipcRenderer.invoke('window:is-focused') as Promise<boolean>,
+    isFocused: (): Promise<boolean> => invokeIpc('window:is-focused') as Promise<boolean>,
   },
 
   // ptyHost: typed wrapper over the per-window MessagePort. The raw port is
@@ -948,8 +957,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
 // Expose electron event listeners and utilities for permission requests
 contextBridge.exposeInMainWorld('electron', {
-  openExternal: (url: string) => ipcRenderer.invoke('openExternal', url),
-  invoke: (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args),
+  openExternal: (url: string) => invokeIpc('openExternal', url),
+  invoke: (channel: string, ...args: unknown[]) => invokeIpc(channel, ...args),
   on: (channel: string, callback: (...args: unknown[]) => void) => {
     const validChannels = [
       'permission:request'

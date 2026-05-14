@@ -22,6 +22,7 @@ import { registerCloudHandlers } from './cloud';
 import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
+import { registerDaemonBridgeHandlers } from './daemon';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 
 
@@ -50,6 +51,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerClipboardHandlers(ipcMain, services);
   registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);
+  registerDaemonBridgeHandlers(ipcMain, commandRegistry);
 
   return commandRegistry;
 } 

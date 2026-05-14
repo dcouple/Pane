@@ -39,7 +39,8 @@ interface IPCResponse<T = any> {
 }
 
 interface ElectronAPI {
-  // Generic invoke method for direct IPC calls
+  // Generic invoke method. Daemon-owned channels route through the main-process
+  // daemon bridge while adapter-only channels stay on direct Electron IPC.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC bridge that returns different types based on channel
   invoke: (channel: string, ...args: unknown[]) => Promise<any>;
   
@@ -460,6 +461,8 @@ interface CloudVmState {
 // Additional electron interface for IPC event listeners
 interface ElectronInterface {
   openExternal: (url: string) => Promise<void>;
+  // Generic invoke method. Daemon-owned channels route through the main-process
+  // daemon bridge while adapter-only channels stay on direct Electron IPC.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC bridge that returns different types based on channel
   invoke: (channel: string, ...args: unknown[]) => Promise<any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC event callback that receives different argument types
