@@ -34,7 +34,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services);
   registerDialogHandlers(ipcMain, services);
-  registerGitHandlers(ipcMain, services);
+  registerGitHandlers(ipcMain, services, commandRegistry);
   registerScriptHandlers(ipcMain, services, commandRegistry);
   registerPromptHandlers(ipcMain, services, commandRegistry);
   registerFileHandlers(ipcMain, services, commandRegistry);

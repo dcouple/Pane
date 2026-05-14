@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { registerFileHandlers } from './file';
+import { registerGitHandlers } from './git';
 import { registerPanelHandlers } from './panels';
 import { registerProjectHandlers } from './project';
 import { registerPromptHandlers } from './prompt';
@@ -160,6 +161,43 @@ const SESSION_CHANNELS = [
   'panels:continue',
 ] as const;
 
+const GIT_STATUS_CHANNELS = [
+  'sessions:get-executions',
+  'sessions:get-execution-diff',
+  'sessions:get-git-graph',
+  'git:file-status',
+  'sessions:git-diff',
+  'sessions:get-commit-diff-by-hash',
+  'sessions:get-combined-diff',
+  'sessions:check-rebase-conflicts',
+  'sessions:has-stash',
+  'sessions:get-upstream',
+  'sessions:get-remote-branches',
+  'sessions:get-last-commits',
+  'sessions:has-changes-to-rebase',
+  'sessions:get-git-commands',
+  'sessions:get-git-status',
+  'git:cancel-status-for-project',
+  'git:get-github-remote',
+] as const;
+
+const GIT_DIRECT_MUTATION_CHANNELS = [
+  'sessions:git-commit',
+  'sessions:rebase-main-into-worktree',
+  'sessions:abort-rebase-and-use-claude',
+  'sessions:squash-and-rebase-to-main',
+  'sessions:rebase-to-main',
+  'sessions:git-pull',
+  'sessions:git-push',
+  'sessions:git-soft-reset',
+  'sessions:git-fetch',
+  'sessions:git-stash',
+  'sessions:git-stash-pop',
+  'sessions:set-upstream',
+  'sessions:git-stage-and-commit',
+  'git:clone-repo',
+] as const;
+
 interface IpcMainStub {
   boundChannels: string[];
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown): void;
@@ -183,6 +221,7 @@ function createServicesStub(): AppServices {
     configManager: {},
     databaseService: {},
     worktreeManager: {},
+    gitDiffManager: {},
     analyticsManager: {},
     taskQueue: {},
     cliManagerFactory: {},
@@ -279,5 +318,21 @@ describe('daemon registry IPC bindings', () => {
       ).sort(),
     ).toEqual([...SESSION_CHANNELS].sort());
     expect(registry.has('sessions:set-active-session')).toBe(false);
+  });
+
+  it('keeps git mutators direct while routing git status and history through the registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerGitHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...GIT_STATUS_CHANNELS].sort());
+    expect(
+      ipcMain.boundChannels.filter(channel => !GIT_DIRECT_MUTATION_CHANNELS.includes(channel as (typeof GIT_DIRECT_MUTATION_CHANNELS)[number])).sort(),
+    ).toEqual([...GIT_STATUS_CHANNELS].sort());
+    expect(ipcMain.boundChannels.filter(channel => GIT_DIRECT_MUTATION_CHANNELS.includes(channel as (typeof GIT_DIRECT_MUTATION_CHANNELS)[number])).sort()).toEqual(
+      [...GIT_DIRECT_MUTATION_CHANNELS].sort(),
+    );
+    expect(registry.has('git:clone-repo')).toBe(false);
   });
 });

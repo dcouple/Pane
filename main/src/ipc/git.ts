@@ -1,7 +1,8 @@
-import { IpcMain } from 'electron';
+import type { IpcMain } from 'electron';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { AppServices } from './types';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { buildGitCommitCommand } from '../utils/shellEscape';
 import { getPaneEventSink } from '../core/runtime';
 import { panelEventBus } from '../services/panelEventBus';
@@ -64,7 +65,31 @@ function extractRepoName(url: string): string {
   return lastSegment;
 }
 
-export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): void {
+const DAEMON_GIT_STATUS_CHANNELS = [
+  'sessions:get-executions',
+  'sessions:get-execution-diff',
+  'sessions:get-git-graph',
+  'git:file-status',
+  'sessions:git-diff',
+  'sessions:get-commit-diff-by-hash',
+  'sessions:get-combined-diff',
+  'sessions:check-rebase-conflicts',
+  'sessions:has-stash',
+  'sessions:get-upstream',
+  'sessions:get-remote-branches',
+  'sessions:get-last-commits',
+  'sessions:has-changes-to-rebase',
+  'sessions:get-git-commands',
+  'sessions:get-git-status',
+  'git:cancel-status-for-project',
+  'git:get-github-remote',
+] as const;
+
+export function registerGitHandlers(
+  ipcMain: IpcMain,
+  services: AppServices,
+  commandRegistry: PaneCommandRegistry,
+): void {
   const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager, databaseService } = services;
 
   // Helper function to emit git operation events to all sessions in a project
@@ -201,7 +226,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     };
   };
 
-  ipcMain.handle('sessions:get-executions', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-executions', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -262,7 +287,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-execution-diff', async (_event, sessionId: string, executionId: string) => {
+  commandRegistry.register('sessions:get-execution-diff', async (sessionId: string, executionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -290,7 +315,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-git-graph', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-git-graph', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -427,7 +452,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('git:file-status', async (_event, sessionId: string, filePath: string) => {
+  commandRegistry.register('git:file-status', async (sessionId: string, filePath: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -455,7 +480,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:git-diff', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:git-diff', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -482,7 +507,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-commit-diff-by-hash', async (_event, sessionId: string, commitHash: string) => {
+  commandRegistry.register('sessions:get-commit-diff-by-hash', async (sessionId: string, commitHash: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -510,7 +535,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-combined-diff', async (_event, sessionId: string, executionIds?: number[]) => {
+  commandRegistry.register('sessions:get-combined-diff', async (sessionId: string, executionIds?: number[]) => {
     try {
       // Get session to find worktree path
       const session = await sessionManager.getSession(sessionId);
@@ -777,7 +802,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
   });
 
   // Git rebase operations
-  ipcMain.handle('sessions:check-rebase-conflicts', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:check-rebase-conflicts', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1634,7 +1659,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:has-stash', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:has-stash', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1693,7 +1718,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-upstream', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-upstream', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1718,7 +1743,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-remote-branches', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-remote-branches', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1804,7 +1829,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-last-commits', async (_event, sessionId: string, count: number = 50) => {
+  commandRegistry.register('sessions:get-last-commits', async (sessionId: string, count: number = 50) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
@@ -1848,7 +1873,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
   });
 
   // Git operation helpers
-  ipcMain.handle('sessions:has-changes-to-rebase', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:has-changes-to-rebase', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -1873,7 +1898,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-git-commands', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-git-commands', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -1930,7 +1955,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('sessions:get-git-status', async (_event, sessionId: string, nonBlocking?: boolean, isInitialLoad?: boolean) => {
+  commandRegistry.register('sessions:get-git-status', async (sessionId: string, nonBlocking?: boolean, isInitialLoad?: boolean) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -1979,7 +2004,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('git:cancel-status-for-project', async (_event, projectId: number) => {
+  commandRegistry.register('git:cancel-status-for-project', async (projectId: number) => {
     try {
       // Get all sessions for the project
       const sessions = await sessionManager.getAllSessions();
@@ -1996,7 +2021,7 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
     }
   });
 
-  ipcMain.handle('git:get-github-remote', async (_event, sessionId: string) => {
+  commandRegistry.register('git:get-github-remote', async (sessionId: string) => {
     try {
       const session = sessionManager.getSession(sessionId);
       if (!session?.worktreePath) {
@@ -2095,4 +2120,6 @@ export function registerGitHandlers(ipcMain: IpcMain, services: AppServices): vo
       return { success: false, error: errorMsg };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_GIT_STATUS_CHANNELS);
 }
