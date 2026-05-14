@@ -5,6 +5,7 @@ import { registerPanelHandlers } from './panels';
 import { registerProjectHandlers } from './project';
 import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
+import { registerSessionHandlers } from './session';
 import type { AppServices } from './types';
 
 vi.mock('../index', () => ({
@@ -122,6 +123,43 @@ const SCRIPT_CHANNELS = [
   'logs:isRunning',
 ] as const;
 
+const SESSION_CHANNELS = [
+  'sessions:get-all',
+  'sessions:get',
+  'sessions:get-all-with-projects',
+  'sessions:get-archived-with-projects',
+  'sessions:create',
+  'sessions:delete',
+  'sessions:input',
+  'sessions:get-or-create-main-repo',
+  'sessions:continue',
+  'sessions:get-output',
+  'sessions:get-conversation',
+  'sessions:get-conversation-messages',
+  'sessions:get-conversation-message-count',
+  'sessions:generate-compacted-context',
+  'sessions:get-json-messages',
+  'sessions:mark-viewed',
+  'sessions:stop',
+  'sessions:generate-name',
+  'sessions:rename',
+  'sessions:toggle-favorite',
+  'sessions:reorder',
+  'sessions:save-images',
+  'sessions:save-large-text',
+  'sessions:restore',
+  'sessions:get-statistics',
+  'sessions:get-resumable',
+  'sessions:resume-interrupted',
+  'sessions:dismiss-interrupted',
+  'panels:get-output',
+  'panels:get-conversation-messages',
+  'panels:get-json-messages',
+  'panels:get-prompts',
+  'panels:send-input',
+  'panels:continue',
+] as const;
+
 interface IpcMainStub {
   boundChannels: string[];
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown): void;
@@ -146,6 +184,13 @@ function createServicesStub(): AppServices {
     databaseService: {},
     worktreeManager: {},
     analyticsManager: {},
+    taskQueue: {},
+    cliManagerFactory: {},
+    claudeCodeManager: {},
+    worktreeNameGenerator: {},
+    archiveProgressManager: {},
+    spotlightManager: {},
+    runCommandManager: {},
   } as AppServices;
 }
 
@@ -213,5 +258,26 @@ describe('daemon registry IPC bindings', () => {
       [...SCRIPT_CHANNELS].sort(),
     );
     expect(registry.has('sessions:open-ide')).toBe(false);
+  });
+
+  it('keeps active-session polling hints outside the daemon registry surface', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerSessionHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...SESSION_CHANNELS].sort());
+    expect(ipcMain.boundChannels).toContain('sessions:set-active-session');
+    expect(ipcMain.boundChannels).toContain('debug:get-table-structure');
+    expect(ipcMain.boundChannels).toContain('archive:get-progress');
+    expect(
+      ipcMain.boundChannels.filter(
+        channel =>
+          channel !== 'sessions:set-active-session' &&
+          channel !== 'debug:get-table-structure' &&
+          channel !== 'archive:get-progress',
+      ).sort(),
+    ).toEqual([...SESSION_CHANNELS].sort());
+    expect(registry.has('sessions:set-active-session')).toBe(false);
   });
 });

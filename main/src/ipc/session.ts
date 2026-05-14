@@ -4,11 +4,12 @@
  * "sessions" in code, database, and IPC to avoid a massive refactor.
  */
 
-import { IpcMain } from 'electron';
+import type { IpcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { existsSync } from 'fs';
 import type { AppServices } from './types';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { CreateSessionRequest } from '../types/session';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { convertDbFolderToRendererFolder } from '../services/folderEvents';
@@ -17,16 +18,60 @@ import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import {
   validateSessionExists,
-  validatePanelSessionOwnership, 
+  validatePanelSessionOwnership,
   validatePanelExists,
   validateSessionIsActive,
   logValidationFailure,
-  createValidationError
+  createValidationError,
 } from '../utils/sessionValidation';
 import type { SerializedArchiveTask } from '../services/archiveProgressManager';
 import { detectProjectConfig } from '../services/projectConfigDetector';
 
-export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices): void {
+const DAEMON_SESSION_CHANNELS = [
+  'sessions:get-all',
+  'sessions:get',
+  'sessions:get-all-with-projects',
+  'sessions:get-archived-with-projects',
+  'sessions:create',
+  'sessions:delete',
+  'sessions:input',
+  'sessions:get-or-create-main-repo',
+  'sessions:continue',
+  'sessions:get-output',
+  'sessions:get-conversation',
+  'sessions:get-conversation-messages',
+  'sessions:get-conversation-message-count',
+  'sessions:generate-compacted-context',
+  'sessions:get-json-messages',
+  'sessions:mark-viewed',
+  'sessions:stop',
+  'sessions:generate-name',
+  'sessions:rename',
+  'sessions:toggle-favorite',
+  'sessions:reorder',
+  'sessions:save-images',
+  'sessions:save-large-text',
+  'sessions:restore',
+  'sessions:get-statistics',
+  'sessions:get-resumable',
+  'sessions:resume-interrupted',
+  'sessions:dismiss-interrupted',
+] as const;
+
+const DAEMON_SESSION_PANEL_CHANNELS = [
+  'panels:get-output',
+  'panels:get-conversation-messages',
+  'panels:get-json-messages',
+  'panels:get-prompts',
+  'panels:send-input',
+  'panels:continue',
+] as const;
+
+export function registerSessionHandlers(
+  ipcMain: IpcMain,
+  services: AppServices,
+  commandRegistry: PaneCommandRegistry,
+): void {
   const {
     sessionManager,
     databaseService,
@@ -59,7 +104,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   // Future versions will use getCliManager() to support multiple CLI tools dynamically
 
   // Session management handlers
-  ipcMain.handle('sessions:get-all', async () => {
+  commandRegistry.register('sessions:get-all', async () => {
     try {
       const sessions = await sessionManager.getAllSessions();
       return { success: true, data: sessions };
@@ -69,7 +114,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get', async (sessionId: string) => {
     try {
       const session = await sessionManager.getSession(sessionId);
 
@@ -83,7 +128,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-all-with-projects', async () => {
+  commandRegistry.register('sessions:get-all-with-projects', async () => {
     try {
       const allProjects = databaseService.getAllProjects();
       const projectsWithSessions = allProjects.map(project => {
@@ -103,7 +148,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-archived-with-projects', async () => {
+  commandRegistry.register('sessions:get-archived-with-projects', async () => {
     try {
       const allProjects = databaseService.getAllProjects();
       const projectsWithArchivedSessions = allProjects.map(project => {
@@ -121,7 +166,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:create', async (_event, request: CreateSessionRequest) => {
+  commandRegistry.register('sessions:create', async (request: CreateSessionRequest) => {
     try {
       let targetProject;
 
@@ -217,7 +262,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:delete', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:delete', async (sessionId: string) => {
     try {
       // Get database session details before archiving (includes worktree_name and project_id)
       const dbSession = databaseService.getSession(sessionId);
@@ -480,7 +525,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:input', async (_event, sessionId: string, input: string) => {
+  commandRegistry.register('sessions:input', async (sessionId: string, input: string) => {
     try {
       // Validate session exists and is active
       const sessionValidation = validateSessionIsActive(sessionId);
@@ -548,7 +593,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-or-create-main-repo', async (_event, projectId: number) => {
+  commandRegistry.register('sessions:get-or-create-main-repo', async (projectId: number) => {
     try {
       console.log('[IPC] sessions:get-or-create-main-repo handler called with projectId:', projectId);
 
@@ -574,7 +619,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:continue', async (_event, sessionId: string, prompt?: string, model?: string) => {
+  commandRegistry.register('sessions:continue', async (sessionId: string, prompt?: string, model?: string) => {
     try {
       // Validate session exists and is active
       const sessionValidation = validateSessionIsActive(sessionId);
@@ -713,7 +758,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-output', async (_event, sessionId: string, limit?: number) => {
+  commandRegistry.register('sessions:get-output', async (sessionId: string, limit?: number) => {
     try {
       // Validate session exists
       const sessionValidation = validateSessionExists(sessionId);
@@ -781,7 +826,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-conversation', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-conversation', async (sessionId: string) => {
     try {
       // Always use session-based conversation retrieval
       const messages = await sessionManager.getConversationMessages(sessionId);
@@ -792,7 +837,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-conversation-messages', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-conversation-messages', async (sessionId: string) => {
     try {
       // Always use session-based conversation retrieval
       const messages = await sessionManager.getConversationMessages(sessionId);
@@ -803,9 +848,9 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle(
+  commandRegistry.register(
     'sessions:get-conversation-message-count',
-    async (_event, sessionId: string) => {
+    async (sessionId: string) => {
       try {
         const count = sessionManager.getConversationMessageCount(sessionId);
         return { success: true, data: count };
@@ -819,7 +864,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   );
 
   // Panel-based handlers for Claude panels
-  ipcMain.handle('panels:get-output', async (_event, panelId: string, limit?: number) => {
+  commandRegistry.register('panels:get-output', async (panelId: string, limit?: number) => {
     try {
       // Validate panel exists
       const panelValidation = validatePanelExists(panelId);
@@ -845,7 +890,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('panels:get-conversation-messages', async (_event, panelId: string) => {
+  commandRegistry.register('panels:get-conversation-messages', async (panelId: string) => {
     try {
       if (!sessionManager.getPanelConversationMessages) {
         console.error('[IPC] Panel-based conversation methods not available on sessionManager');
@@ -867,7 +912,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('panels:get-json-messages', async (_event, panelId: string) => {
+  commandRegistry.register('panels:get-json-messages', async (panelId: string) => {
     try {
       console.log(`[IPC] panels:get-json-messages called for panel: ${panelId}`);
 
@@ -923,7 +968,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('panels:get-prompts', async (_event, panelId: string) => {
+  commandRegistry.register('panels:get-prompts', async (panelId: string) => {
     try {
       console.log(`[IPC] panels:get-prompts called for panel: ${panelId}`);
       
@@ -963,7 +1008,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   });
 
   // Generic panel input handlers that route to specific panel type handlers
-  ipcMain.handle('panels:send-input', async (_event, panelId: string, input: string) => {
+  commandRegistry.register('panels:send-input', async (panelId: string, input: string) => {
     try {
       console.log(`[IPC] panels:send-input called for panel: ${panelId}`);
 
@@ -1003,7 +1048,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('panels:continue', async (_event, panelId: string, input: string, model?: string) => {
+  commandRegistry.register('panels:continue', async (panelId: string, input: string, model?: string) => {
     try {
       console.log(`[IPC] panels:continue called for panel: ${panelId}`);
 
@@ -1037,7 +1082,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:generate-compacted-context', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:generate-compacted-context', async (sessionId: string) => {
     try {
       console.log('[IPC] sessions:generate-compacted-context called for sessionId:', sessionId);
 
@@ -1107,7 +1152,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:get-json-messages', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-json-messages', async (sessionId: string) => {
     try {
       console.log(`[IPC] sessions:get-json-messages called for session: ${sessionId}`);
 
@@ -1177,7 +1222,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:mark-viewed', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:mark-viewed', async (sessionId: string) => {
     try {
       await sessionManager.markSessionAsViewed(sessionId);
       return { success: true };
@@ -1187,7 +1232,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:stop', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:stop', async (sessionId: string) => {
     try {
       // Use session-based stop
       console.log(`[IPC] Stopping session ${sessionId} via session-based method`);
@@ -1222,7 +1267,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:generate-name', async (_event, prompt: string) => {
+  commandRegistry.register('sessions:generate-name', async (prompt: string) => {
     try {
       const name = await worktreeNameGenerator.generateWorktreeName(prompt);
       return { success: true, data: name };
@@ -1232,7 +1277,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:rename', async (_event, sessionId: string, newName: string) => {
+  commandRegistry.register('sessions:rename', async (sessionId: string, newName: string) => {
     try {
       // Update the session name in the database
       const updatedSession = databaseService.updateSession(sessionId, { name: newName });
@@ -1254,7 +1299,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:toggle-favorite', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:toggle-favorite', async (sessionId: string) => {
     try {
       console.log('[IPC] sessions:toggle-favorite called for sessionId:', sessionId);
       
@@ -1299,7 +1344,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:reorder', async (_event, sessionOrders: Array<{ id: string; displayOrder: number }>) => {
+  commandRegistry.register('sessions:reorder', async (sessionOrders: Array<{ id: string; displayOrder: number }>) => {
     try {
       databaseService.reorderSessions(sessionOrders);
       return { success: true };
@@ -1310,7 +1355,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   });
 
   // Save images for a session
-  ipcMain.handle('sessions:save-images', async (_event, sessionId: string, images: Array<{ name: string; dataUrl: string; type: string }>) => {
+  commandRegistry.register('sessions:save-images', async (sessionId: string, images: Array<{ name: string; dataUrl: string; type: string }>) => {
     try {
       // For pending sessions (those created before the actual session), we still need to save the files
       // Check if this is a pending session ID (starts with 'pending_')
@@ -1359,7 +1404,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   });
 
   // Save large text for a session
-  ipcMain.handle('sessions:save-large-text', async (_event, sessionId: string, text: string) => {
+  commandRegistry.register('sessions:save-large-text', async (sessionId: string, text: string) => {
     try {
       // For pending sessions (those created before the actual session), we still need to save the files
       // Check if this is a pending session ID (starts with 'pending_')
@@ -1398,7 +1443,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:restore', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:restore', async (sessionId: string) => {
     try {
       const restored = databaseService.restoreSession(sessionId);
       if (!restored) {
@@ -1452,7 +1497,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   });
 
   // Session statistics handler
-  ipcMain.handle('sessions:get-statistics', async (_event, sessionId: string) => {
+  commandRegistry.register('sessions:get-statistics', async (sessionId: string) => {
     try {
       console.log('[IPC] sessions:get-statistics called for sessionId:', sessionId);
       
@@ -1554,8 +1599,9 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  // Set active session for smart git status polling
-  ipcMain.handle('sessions:set-active-session', async (event, sessionId: string | null) => {
+  // Set active session for smart git status polling.
+  // This is a client-local visibility hint, not shared runtime state.
+  ipcMain.handle('sessions:set-active-session', async (_event, sessionId: string | null) => {
     try {
       // Notify GitStatusManager about the active session change
       gitStatusManager.setActiveSession(sessionId);
@@ -1567,7 +1613,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
   });
 
   // Resume session handlers
-  ipcMain.handle('sessions:get-resumable', async () => {
+  commandRegistry.register('sessions:get-resumable', async () => {
     try {
       const activeProject = sessionManager.getActiveProject();
       if (!activeProject) {
@@ -1581,7 +1627,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:resume-interrupted', async (_event, sessionIds: string[]) => {
+  commandRegistry.register('sessions:resume-interrupted', async (sessionIds: string[]) => {
     try {
       await sessionManager.resumeInterruptedSessions(sessionIds);
       return { success: true };
@@ -1591,7 +1637,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
     }
   });
 
-  ipcMain.handle('sessions:dismiss-interrupted', async (_event, sessionIds: string[]) => {
+  commandRegistry.register('sessions:dismiss-interrupted', async (sessionIds: string[]) => {
     try {
       await sessionManager.dismissInterruptedSessions(sessionIds);
       return { success: true };
@@ -1600,5 +1646,8 @@ export function registerSessionHandlers(ipcMain: IpcMain, services: AppServices)
       return { success: false, error: 'Failed to dismiss interrupted sessions' };
     }
   });
+
+  commandRegistry.bindChannels(ipcMain, DAEMON_SESSION_CHANNELS);
+  commandRegistry.bindChannels(ipcMain, DAEMON_SESSION_PANEL_CHANNELS);
 
 } 

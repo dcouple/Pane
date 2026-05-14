@@ -88,6 +88,7 @@ const DAEMON_OWNED_EXACT_CHANNELS = [
 const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
   'file:showInFolder',
   'sessions:open-ide',
+  'sessions:set-active-session',
   'terminal:clipboard-paste-image',
 ]);
 

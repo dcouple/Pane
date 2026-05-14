@@ -30,7 +30,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
 
   registerAppHandlers(ipcMain, services);
   registerUpdaterHandlers(ipcMain, services);
-  registerSessionHandlers(ipcMain, services);
+  registerSessionHandlers(ipcMain, services, commandRegistry);
   registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services);
   registerDialogHandlers(ipcMain, services);
