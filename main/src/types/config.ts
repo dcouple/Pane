@@ -1,3 +1,7 @@
+import type { CloudVmConfig } from '../../../shared/types/cloud';
+import type { RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
+import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
+
 export interface TerminalShortcut {
   id: string;
   label: string;
@@ -33,9 +37,6 @@ export interface AnalyticsConfig {
   gitEmailHash?: string;
   gitUserName?: string;
 }
-
-import type { CloudVmConfig } from '../../../shared/types/cloud';
-import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 
 export interface AppConfig {
   verbose?: boolean;
@@ -103,6 +104,8 @@ export interface AppConfig {
   preferredShell?: 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd';
   // Cloud VM settings
   cloud?: CloudVmConfig;
+  // Self-hosted remote daemon settings and saved client profiles
+  remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
 }
@@ -140,7 +143,7 @@ export interface UpdateConfigRequest {
     showAdvanced?: boolean;
     baseBranch?: string;
   };
-  disableCommitFooter?: boolean;
+  enableCommitFooter?: boolean;
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
   // Route PTY spawns through an isolated ptyHost UtilityProcess for crash isolation.
@@ -158,6 +161,8 @@ export interface UpdateConfigRequest {
   preferredShell?: 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd';
   // Cloud VM settings
   cloud?: CloudVmConfig;
+  // Self-hosted remote daemon settings and saved client profiles
+  remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
 }

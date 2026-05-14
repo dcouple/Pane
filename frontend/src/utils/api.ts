@@ -1,7 +1,14 @@
 // Utility for making API calls using Electron IPC
 import type { CreateSessionRequest } from '../types/session';
 import type { Project } from '../types/project';
+import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
+import type {
+  RemoteDaemonClientRecord,
+  RemoteDaemonClientSettings,
+  RemoteDaemonHostConfig,
+  RemotePaneConnectionProfile,
+} from '../../../shared/types/remoteDaemon';
 
 // Type for IPC response
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic type parameter default for flexible API responses
@@ -443,7 +450,7 @@ export class API {
       return window.electronAPI.config.get();
     },
 
-    async update(updates: Record<string, unknown>) {
+    async update(updates: UpdateConfigRequest) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.config.update(updates);
     },
@@ -461,6 +468,43 @@ export class API {
     async getAvailableShells() {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.config.getAvailableShells();
+    },
+  };
+
+  static remoteDaemon = {
+    async getConfig() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.getConfig();
+    },
+
+    async updateHostConfig(updates: Partial<RemoteDaemonHostConfig>) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.updateHostConfig(updates);
+    },
+
+    async upsertClientRecord(record: RemoteDaemonClientRecord) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.upsertClientRecord(record);
+    },
+
+    async deleteClientRecord(clientId: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.deleteClientRecord(clientId);
+    },
+
+    async upsertConnectionProfile(profile: RemotePaneConnectionProfile) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.upsertConnectionProfile(profile);
+    },
+
+    async deleteConnectionProfile(profileId: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.deleteConnectionProfile(profileId);
+    },
+
+    async updateClientState(updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.updateClientState(updates);
     },
   };
 

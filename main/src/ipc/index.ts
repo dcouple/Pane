@@ -19,6 +19,7 @@ import { registerEditorPanelHandlers } from './editorPanel';
 import { registerNimbalystHandlers } from './nimbalyst';
 import { registerSpotlightHandlers } from './spotlight';
 import { registerCloudHandlers } from './cloud';
+import { registerRemoteDaemonHandlers } from './remoteDaemon';
 import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
@@ -48,6 +49,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerNimbalystHandlers(ipcMain, services);
   registerSpotlightHandlers(ipcMain, services);
   registerCloudHandlers(ipcMain, services);
+  registerRemoteDaemonHandlers(ipcMain, services);
   registerClipboardHandlers(ipcMain, services);
   registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);

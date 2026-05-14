@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import type { AnalyticsIdentity, AppConfig } from '../types/config';
+import { createDefaultRemoteDaemonConfig, normalizeRemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import fs from 'fs/promises';
@@ -56,6 +57,7 @@ export class ConfigManager extends EventEmitter {
         posthogApiKey: 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1',
         posthogHost: 'https://us.i.posthog.com'
       },
+      remoteDaemon: createDefaultRemoteDaemonConfig(),
       terminalShortcuts: [
         {
           id: 'default-root-cause',
@@ -133,6 +135,7 @@ export class ConfigManager extends EventEmitter {
           ...this.config.analytics,
           ...loadedConfig.analytics
         },
+        remoteDaemon: normalizeRemoteDaemonConfig(loadedConfig.remoteDaemon),
         // Use !== undefined to distinguish "user cleared all entries" (empty array → preserve)
         // from "field absent in config file" (→ use defaults)
         worktreeFileSync: loadedConfig.worktreeFileSync !== undefined
@@ -256,7 +259,13 @@ export class ConfigManager extends EventEmitter {
   }
 
   async updateConfig(updates: Partial<AppConfig>): Promise<AppConfig> {
-    this.config = { ...this.config, ...updates };
+    this.config = {
+      ...this.config,
+      ...updates,
+      remoteDaemon: 'remoteDaemon' in updates
+        ? normalizeRemoteDaemonConfig(updates.remoteDaemon)
+        : this.config.remoteDaemon,
+    };
     await this.saveConfig();
 
     // Clear PATH cache if additional paths were updated

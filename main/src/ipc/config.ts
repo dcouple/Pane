@@ -1,10 +1,11 @@
 import { IpcMain } from 'electron';
 import { execFile } from 'child_process';
 import type { AppServices } from './types';
+import type { AppConfig, UpdateConfigRequest } from '../types/config';
 import { ShellDetector } from '../utils/shellDetector';
 
 export function registerConfigHandlers(ipcMain: IpcMain, { configManager, claudeCodeManager, getMainWindow }: AppServices): void {
-  ipcMain.handle('config:get', async () => {
+  ipcMain.handle('config:get', async (): Promise<{ success: boolean; data?: AppConfig; error?: string }> => {
     try {
       // Always reload from disk to pick up external changes (e.g., from setup scripts)
       const config = await configManager.reloadFromDisk();
@@ -15,7 +16,7 @@ export function registerConfigHandlers(ipcMain: IpcMain, { configManager, claude
     }
   });
 
-  ipcMain.handle('config:update', async (_event, updates: import('../types/config').UpdateConfigRequest) => {
+  ipcMain.handle('config:update', async (_event, updates: UpdateConfigRequest) => {
     try {
       // Check if Claude path is being updated
       const oldConfig = configManager.getConfig();

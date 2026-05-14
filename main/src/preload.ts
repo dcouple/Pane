@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { CreateSessionRequest, Session } from './types/session';
 import type { AppConfig, UpdateConfigRequest } from './types/config';
 import type { CreateProjectRequest, UpdateProjectRequest, Project } from '../../frontend/src/types/project';
+import type {
+  RemoteDaemonClientRecord,
+  RemoteDaemonClientSettings,
+  RemoteDaemonConfig,
+  RemoteDaemonHostConfig,
+  RemotePaneConnectionProfile,
+} from '../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../shared/types/panels';
 
 interface LogEntry {
@@ -556,12 +563,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Configuration
   config: {
-    get: (): Promise<IPCResponse> => invokeIpc('config:get'),
+    get: (): Promise<IPCResponse<AppConfig>> => invokeIpc('config:get'),
     update: (updates: UpdateConfigRequest): Promise<IPCResponse> => invokeIpc('config:update', updates),
     getSessionPreferences: (): Promise<IPCResponse> => invokeIpc('config:get-session-preferences'),
     updateSessionPreferences: (preferences: AppConfig['sessionCreationPreferences']): Promise<IPCResponse> => invokeIpc('config:update-session-preferences', preferences),
     getAvailableShells: (): Promise<IPCResponse> => invokeIpc('config:get-available-shells'),
     getMonospaceFonts: (): Promise<IPCResponse> => invokeIpc('config:get-monospace-fonts'),
+  },
+
+  remoteDaemon: {
+    getConfig: (): Promise<IPCResponse<RemoteDaemonConfig>> => invokeIpc('remote-daemon:get-config'),
+    updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>
+      invokeIpc('remote-daemon:update-host-config', updates),
+    upsertClientRecord: (record: RemoteDaemonClientRecord): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>
+      invokeIpc('remote-daemon:upsert-client-record', record),
+    deleteClientRecord: (clientId: string): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>
+      invokeIpc('remote-daemon:delete-client-record', clientId),
+    upsertConnectionProfile: (profile: RemotePaneConnectionProfile): Promise<IPCResponse<RemotePaneConnectionProfile[]>> =>
+      invokeIpc('remote-daemon:upsert-connection-profile', profile),
+    deleteConnectionProfile: (profileId: string): Promise<IPCResponse<RemoteDaemonClientSettings>> =>
+      invokeIpc('remote-daemon:delete-connection-profile', profileId),
+    updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>): Promise<IPCResponse<RemoteDaemonClientSettings>> =>
+      invokeIpc('remote-daemon:update-client-state', updates),
   },
 
   // Prompts

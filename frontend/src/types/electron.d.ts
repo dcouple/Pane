@@ -2,7 +2,15 @@
 import type { Session, SessionOutput, GitStatus, VersionUpdateInfo } from './session';
 import type { Project } from './project';
 import type { Folder } from './folder';
+import type { AppConfig, UpdateConfigRequest } from './config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
+import type {
+  RemoteDaemonClientRecord,
+  RemoteDaemonClientSettings,
+  RemoteDaemonConfig,
+  RemoteDaemonHostConfig,
+  RemotePaneConnectionProfile,
+} from '../../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
@@ -208,12 +216,22 @@ interface ElectronAPI {
 
   // Configuration
   config: {
-    get: () => Promise<IPCResponse>;
-    update: (updates: Record<string, unknown>) => Promise<IPCResponse>;
+    get: () => Promise<IPCResponse<AppConfig>>;
+    update: (updates: UpdateConfigRequest) => Promise<IPCResponse>;
     getSessionPreferences: () => Promise<IPCResponse>;
     updateSessionPreferences: (preferences: SessionCreationPreferences) => Promise<IPCResponse>;
     getAvailableShells: () => Promise<IPCResponse>;
     getMonospaceFonts: () => Promise<IPCResponse>;
+  };
+
+  remoteDaemon: {
+    getConfig: () => Promise<IPCResponse<RemoteDaemonConfig>>;
+    updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
+    upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
+    deleteClientRecord: (clientId: string) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
+    upsertConnectionProfile: (profile: RemotePaneConnectionProfile) => Promise<IPCResponse<RemotePaneConnectionProfile[]>>;
+    deleteConnectionProfile: (profileId: string) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
+    updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
   };
 
   // Prompts

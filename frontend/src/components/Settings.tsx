@@ -3,7 +3,7 @@ import { NotificationSettings } from './NotificationSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
 import { optIn, capture, captureAndOptOut } from '../services/posthog';
-import type { AppConfig, TerminalShortcut } from '../types/config';
+import type { PreferredShell, TerminalShortcut } from '../types/config';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import { useConfigStore } from '../stores/configStore';
@@ -46,8 +46,13 @@ interface SettingsProps {
   initialSection?: string;
 }
 
+type AvailableShell = {
+  id: PreferredShell;
+  name: string;
+  path: string;
+};
+
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
-  const [_config, setConfig] = useState<AppConfig | null>(null);
   const [verbose, setVerbose] = useState(false);
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
@@ -75,8 +80,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'shortcuts'>('general');
   const [analyticsEnabled, setAnalyticsEnabled] = useState(true);
   const [previousAnalyticsEnabled, setPreviousAnalyticsEnabled] = useState(true);
-  const [preferredShell, setPreferredShell] = useState<string>('auto');
-  const [availableShells, setAvailableShells] = useState<Array<{id: string; name: string; path: string}>>([]);
+  const [preferredShell, setPreferredShell] = useState<PreferredShell>('auto');
+  const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
   const [terminalShortcuts, setTerminalShortcuts] = useState<TerminalShortcut[]>([]);
   const [worktreeFileSync, setWorktreeFileSync] = useState<WorktreeFileSyncEntry[]>([]);
   const { updateSettings } = useNotifications();
@@ -138,9 +143,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const fetchConfig = async (currentPlatform?: string) => {
     try {
       const response = await API.config.get();
-      if (!response.success) throw new Error(response.error || 'Failed to fetch config');
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to fetch config');
+      }
       const data = response.data;
-      setConfig(data);
       setVerbose(data.verbose || false);
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
@@ -174,7 +180,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       const platformToCheck = currentPlatform || platform;
       if (platformToCheck === 'win32') {
         const shellsResponse = await API.config.getAvailableShells();
-        if (shellsResponse.success) {
+        if (shellsResponse.success && shellsResponse.data) {
           setAvailableShells(shellsResponse.data);
         }
       }
@@ -185,7 +191,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       // Load worktree file sync entries
       setWorktreeFileSync(data.worktreeFileSync ?? DEFAULT_WORKTREE_FILE_SYNC_ENTRIES);
-    } catch (err) {
+    } catch {
       setError('Failed to load configuration');
     }
   };
