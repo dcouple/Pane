@@ -1,4 +1,4 @@
-import { isDaemonOwnedChannel } from '../../../shared/types/daemon';
+import { isDaemonOwnedChannel } from './daemonChannels';
 
 export type PaneCommandHandler<TArgs extends unknown[] = unknown[], TResult = unknown> = (
   ...args: TArgs

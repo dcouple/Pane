@@ -952,11 +952,6 @@ async function createWindow() {
     resourceMonitorService.handleVisibilityChange(true);
   });
 
-  // Pull-path query so the renderer can get the authoritative focus state on
-  // mount without waiting for the next focus-change event. Default to true
-  // (focused) if mainWindow is somehow null at call time.
-  ipcMain.handle('window:is-focused', () => mainWindow?.isFocused() ?? true);
-
   mainWindow.on('restore', () => {
     // Don't assume restore = focused. The OS will fire 'focus' if/when the user
     // actually focuses the window; that is what restarts git/resource work.
@@ -1211,6 +1206,10 @@ app.whenReady().then(async () => {
   console.log('[Main] App is ready, initializing services...');
   await initializeServices();
   console.log('[Main] Services initialized, creating window...');
+
+  // Register before any renderer loads. useNotifications pulls this on mount
+  // and will race a late registration inside createWindow/loadURL.
+  ipcMain.handle('window:is-focused', () => mainWindow?.isFocused() ?? true);
 
   // Start the ptyHost supervisor before the window opens so the renderer's
   // preload listener for 'ptyHost-port' has a port to receive when the window

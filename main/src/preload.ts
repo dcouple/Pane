@@ -3,7 +3,6 @@ import type { CreateSessionRequest, Session } from './types/session';
 import type { AppConfig, UpdateConfigRequest } from './types/config';
 import type { CreateProjectRequest, UpdateProjectRequest, Project } from '../../frontend/src/types/project';
 import type { ToolPanel } from '../../shared/types/panels';
-import { isDaemonOwnedChannel } from '../../shared/types/daemon';
 
 interface LogEntry {
   timestamp: string;
@@ -86,6 +85,66 @@ interface UpdaterInfo {
   path?: string;
   sha512?: string;
   size?: number;
+}
+
+const DAEMON_OWNED_CHANNEL_PREFIXES = [
+  'folders:',
+  'logs:',
+  'panels:',
+  'projects:',
+  'prompts:',
+  'resource-monitor:',
+  'sessions:',
+  'terminal:',
+] as const;
+
+const DAEMON_OWNED_EXACT_CHANNELS = [
+  'git:cancel-status-for-project',
+  'git:clone-repo',
+  'git:commit',
+  'git:execute-project',
+  'git:file-status',
+  'git:get-github-remote',
+  'git:restore',
+  'git:revert',
+  'file:copy',
+  'file:delete',
+  'file:duplicate',
+  'file:exists',
+  'file:getPath',
+  'file:list',
+  'file:move',
+  'file:read',
+  'file:read-binary',
+  'file:read-project',
+  'file:readAtRevision',
+  'file:rename',
+  'file:resolveAbsolutePath',
+  'file:search',
+  'file:write',
+  'file:write-binary',
+  'file:write-project',
+] as const;
+
+const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
+  'file:showInFolder',
+  'sessions:open-ide',
+  'sessions:set-active-session',
+  'terminal:clipboard-paste-image',
+]);
+
+// Sandboxed Electron preload scripts cannot reliably require local runtime
+// modules, so the daemon-owned channel classifier stays inline here.
+function isDaemonOwnedChannel(channel: string): boolean {
+  if (ELECTRON_ADAPTER_ONLY_CHANNELS.has(channel)) {
+    return false;
+  }
+
+  if (DAEMON_OWNED_EXACT_CHANNELS.includes(channel as (typeof DAEMON_OWNED_EXACT_CHANNELS)[number])) {
+    return true;
+  }
+
+  return DAEMON_OWNED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
 }
 
 // Increase max listeners for ipcRenderer to prevent warnings when many components listen to events

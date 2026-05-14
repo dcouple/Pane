@@ -1,4 +1,4 @@
-import { isDaemonOwnedChannel } from '../../../shared/types/daemon';
+import { isDaemonOwnedChannel } from '../daemon/daemonChannels';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 
 interface IpcMainHandleLike {

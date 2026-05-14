@@ -61,10 +61,13 @@ describe('daemon/client import boundary', () => {
     }
   });
 
-  it('routes daemon-owned preload invokes through the shared bridge helper', () => {
+  it('routes daemon-owned preload invokes through the runtime-safe bridge helper', () => {
     const source = readMainSrcFile('preload.ts');
 
+    expect(source).toContain('function isDaemonOwnedChannel');
     expect(source).toContain('isDaemonOwnedChannel');
+    expect(source).not.toContain("../../shared/types/daemon");
+    expect(source).not.toContain("from './daemon/daemonChannels'");
     expect(source).toContain("ipcRenderer.invoke('daemon:invoke', channel, ...args)");
     expect(source).not.toMatch(
       /ipcRenderer\.invoke\('(sessions:|projects:|folders:|prompts:|resource-monitor:|panels:|terminal:|logs:|git:(cancel-status-for-project|clone-repo|commit|execute-project|file-status|get-github-remote|restore|revert)|file:(copy|delete|duplicate|exists|getPath|list|move|read|read-binary|read-project|readAtRevision|rename|resolveAbsolutePath|search|write|write-binary|write-project))/,

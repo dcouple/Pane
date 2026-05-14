@@ -4,7 +4,6 @@ import {
   PaneDaemonFrameDecoder,
 } from './socketFraming';
 import {
-  isDaemonOwnedChannel,
   isPaneDaemonEventFrame,
   isPaneDaemonFrame,
   isPaneDaemonRequestFrame,
@@ -13,6 +12,7 @@ import {
   type PaneDaemonRequestFrame,
   type PaneDaemonResponseFrame,
 } from '../../../shared/types/daemon';
+import { isDaemonOwnedChannel } from './daemonChannels';
 
 describe('Pane daemon framing', () => {
   it('encodes frames as newline-delimited JSON', () => {
