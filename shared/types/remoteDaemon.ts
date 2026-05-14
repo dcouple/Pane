@@ -80,11 +80,11 @@ export function isRemoteDaemonClientRecord(value: unknown): value is RemoteDaemo
   }
 
   return (
-    typeof value.id === 'string' &&
-    typeof value.label === 'string' &&
-    typeof value.createdAt === 'string' &&
-    typeof value.tokenHash === 'string' &&
-    (value.lastUsedAt === undefined || typeof value.lastUsedAt === 'string')
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.label) &&
+    isNonEmptyString(value.createdAt) &&
+    isNonEmptyString(value.tokenHash) &&
+    (value.lastUsedAt === undefined || isNonEmptyString(value.lastUsedAt))
   );
 }
 
@@ -94,10 +94,10 @@ export function isRemotePaneConnectionProfile(value: unknown): value is RemotePa
   }
 
   return (
-    typeof value.id === 'string' &&
-    typeof value.label === 'string' &&
-    typeof value.baseUrl === 'string' &&
-    typeof value.token === 'string' &&
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.label) &&
+    isNonEmptyString(value.baseUrl) &&
+    isNonEmptyString(value.token) &&
     value.transport === 'http+sse'
   );
 }
@@ -162,4 +162,8 @@ function readPort(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 65535
     ? value
     : fallback;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
 }

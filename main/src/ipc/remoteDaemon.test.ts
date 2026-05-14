@@ -166,4 +166,24 @@ describe('remote daemon IPC', () => {
       data: createDefaultRemoteDaemonConfig(),
     });
   });
+
+  it('rejects connection profiles with empty auth or endpoint fields', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const upsertProfile = ipcMain.handlers.get('remote-daemon:upsert-connection-profile');
+
+    await expect(upsertProfile?.({}, {
+      id: 'profile-1',
+      label: 'Broken profile',
+      baseUrl: '   ',
+      token: '',
+      transport: 'http+sse',
+    })).resolves.toEqual({
+      success: false,
+      error: 'Remote daemon connection profile is invalid',
+    });
+  });
 });
