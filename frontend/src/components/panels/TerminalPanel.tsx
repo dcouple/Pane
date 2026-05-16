@@ -201,6 +201,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const isCliPanel = !!terminalState?.isCliPanel;
   const [isCliReady, setIsCliReady] = useState(!!terminalState?.isCliReady);
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
+  const isCliPanelRef = useRef(isCliPanel);
 
   // ptyId for the current PTY behind this panel, delivered via
   // `terminal:ptyReady` when spawned through the ptyHost UtilityProcess.
@@ -227,6 +228,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Sync isCliReady from panel prop when it changes (e.g. backend persisted isCliReady
   // before this component subscribed to the IPC event, or panel state was updated externally)
+  useEffect(() => {
+    isCliPanelRef.current = isCliPanel;
+  }, [isCliPanel]);
+
   useEffect(() => {
     if (terminalState?.isCliReady && !isCliReady) {
       setIsCliReady(true);
@@ -1069,7 +1074,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // never attach it to the API call (see commit 7b76ee5).
           const pasteText = (text: string) => {
             if (!terminal) return;
-            const shouldProtectMultilinePaste = isCliPanel && !tuiActiveRef.current && /[\r\n]/.test(text);
+            const shouldProtectMultilinePaste = isCliPanelRef.current && !tuiActiveRef.current && /[\r\n]/.test(text);
             if (shouldProtectMultilinePaste) {
               window.electronAPI.invoke(
                 'terminal:input',
