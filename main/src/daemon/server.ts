@@ -46,7 +46,14 @@ function isPaneDaemonEventChannel(channel: string): boolean {
 interface ConnectedPaneDaemonClient {
   socket: net.Socket;
   decoder: PaneDaemonFrameDecoder;
+  pendingFrames: string[];
+  pendingBytes: number;
+  waitingForDrain: boolean;
 }
+
+const UNIX_SOCKET_DIRECTORY_MODE = 0o700;
+const UNIX_SOCKET_FILE_MODE = 0o600;
+const MAX_PENDING_BYTES_PER_CLIENT = 4 * 1024 * 1024;
 
 export class PaneDaemonServer {
   private server: net.Server | null = null;
@@ -66,8 +73,8 @@ export class PaneDaemonServer {
         args,
       });
 
-      for (const [clientId, client] of this.clients) {
-        this.writeFrame(clientId, client.socket, encodedFrame);
+      for (const [clientId] of this.clients) {
+        this.writeFrame(clientId, encodedFrame);
       }
     },
   };
@@ -98,7 +105,9 @@ export class PaneDaemonServer {
     }
 
     if (this.endpoint.transport === 'unix') {
-      fs.mkdirSync(path.dirname(this.endpoint.path), { recursive: true });
+      const socketDirectory = path.dirname(this.endpoint.path);
+      fs.mkdirSync(socketDirectory, { recursive: true, mode: UNIX_SOCKET_DIRECTORY_MODE });
+      fs.chmodSync(socketDirectory, UNIX_SOCKET_DIRECTORY_MODE);
       if (fs.existsSync(this.endpoint.path)) {
         const unixSocketStatus = await probeUnixSocketPath(this.endpoint.path);
         if (unixSocketStatus === 'active') {
@@ -122,6 +131,9 @@ export class PaneDaemonServer {
 
       const handleListening = () => {
         server.removeListener('error', handleError);
+        if (this.endpoint.transport === 'unix') {
+          fs.chmodSync(this.endpoint.path, UNIX_SOCKET_FILE_MODE);
+        }
         resolve();
       };
 
@@ -160,6 +172,9 @@ export class PaneDaemonServer {
     const client: ConnectedPaneDaemonClient = {
       socket,
       decoder: new PaneDaemonFrameDecoder(),
+      pendingFrames: [],
+      pendingBytes: 0,
+      waitingForDrain: false,
     };
 
     this.clients.set(clientId, client);
@@ -173,11 +188,15 @@ export class PaneDaemonServer {
             return;
           }
 
-          void this.handleRequest(socket, frame);
+          void this.handleRequest(clientId, frame);
         }
       } catch (error) {
         socket.destroy(error instanceof Error ? error : new Error(String(error)));
       }
+    });
+
+    socket.on('drain', () => {
+      this.flushPendingFrames(clientId);
     });
 
     socket.on('error', () => {
@@ -201,33 +220,83 @@ export class PaneDaemonServer {
     }
 
     this.clients.delete(clientId);
+    client.pendingFrames.length = 0;
+    client.pendingBytes = 0;
+    client.waitingForDrain = false;
     if (!client.socket.destroyed) {
       client.socket.destroy();
     }
   }
 
-  private async handleRequest(socket: net.Socket, frame: PaneDaemonRequestFrame): Promise<void> {
+  private async handleRequest(clientId: string, frame: PaneDaemonRequestFrame): Promise<void> {
     const response = await this.buildResponseFrame(frame);
+    const client = this.clients.get(clientId);
 
-    if (!socket.destroyed) {
-      const clientId = [...this.clients.entries()].find(([, client]) => client.socket === socket)?.[0];
-      const encodedFrame = encodePaneDaemonFrame(response);
-      if (clientId) {
-        this.writeFrame(clientId, socket, encodedFrame);
-      } else {
-        socket.write(encodedFrame);
-      }
+    if (!client || client.socket.destroyed) {
+      return;
     }
+
+    this.writeFrame(clientId, encodePaneDaemonFrame(response));
   }
 
-  private writeFrame(clientId: string, socket: net.Socket, encodedFrame: string): void {
+  private writeFrame(clientId: string, encodedFrame: string): void {
+    const client = this.clients.get(clientId);
+    if (!client || client.socket.destroyed) {
+      return;
+    }
+
+    if (client.waitingForDrain || client.pendingFrames.length > 0) {
+      this.queuePendingFrame(clientId, encodedFrame);
+      return;
+    }
+
     try {
-      const accepted = socket.write(encodedFrame);
+      const accepted = client.socket.write(encodedFrame);
       if (!accepted) {
-        this.dropClient(clientId);
+        client.waitingForDrain = true;
       }
     } catch {
       this.dropClient(clientId);
+    }
+  }
+
+  private queuePendingFrame(clientId: string, encodedFrame: string): void {
+    const client = this.clients.get(clientId);
+    if (!client) {
+      return;
+    }
+
+    client.pendingFrames.push(encodedFrame);
+    client.pendingBytes += Buffer.byteLength(encodedFrame);
+    if (client.pendingBytes > MAX_PENDING_BYTES_PER_CLIENT) {
+      this.dropClient(clientId);
+    }
+  }
+
+  private flushPendingFrames(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (!client || client.socket.destroyed) {
+      return;
+    }
+
+    client.waitingForDrain = false;
+    while (client.pendingFrames.length > 0) {
+      const nextFrame = client.pendingFrames.shift();
+      if (!nextFrame) {
+        break;
+      }
+
+      client.pendingBytes -= Buffer.byteLength(nextFrame);
+      try {
+        const accepted = client.socket.write(nextFrame);
+        if (!accepted) {
+          client.waitingForDrain = true;
+          return;
+        }
+      } catch {
+        this.dropClient(clientId);
+        return;
+      }
     }
   }
 

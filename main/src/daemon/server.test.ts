@@ -229,23 +229,45 @@ describe('PaneDaemonServer', () => {
     });
   });
 
-  it('drops backpressured daemon event subscribers while continuing to deliver to healthy clients', async () => {
+  it('keeps backpressured daemon event subscribers connected until queued frames drain', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
     const registry = new PaneCommandRegistry();
-    const server = new PaneDaemonServer(registry, createTempAppDirectory());
+    const server = new PaneDaemonServer(registry, createTempAppDirectory(), 'linux');
     activeServers.push(server);
     await server.start();
 
-    await connectClient(server);
+    const stalledClient = await connectClient(server);
     const healthyClient = await connectClient(server);
     const stalledServerSocket = (server as unknown as { clients: Map<string, { socket: net.Socket }> }).clients.get('1')?.socket;
     expect(stalledServerSocket).toBeDefined();
-    const stalledWriteSpy = vi.spyOn(stalledServerSocket as net.Socket, 'write').mockImplementation(() => false);
+    const originalWrite = (stalledServerSocket as net.Socket).write.bind(stalledServerSocket);
+    let shouldBackpressure = true;
+    const stalledWriteSpy = vi.spyOn(stalledServerSocket as net.Socket, 'write').mockImplementation(((...args: Parameters<net.Socket['write']>) => {
+      const result = originalWrite(...args);
+      if (shouldBackpressure) {
+        shouldBackpressure = false;
+        return false;
+      }
+
+      return result;
+    }) as typeof net.Socket.prototype.write);
 
     server.getEventSink().send('terminal:output', {
       panelId: 'panel-1',
       data: 'hello\n',
     });
 
+    await expect(stalledClient.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'terminal:output',
+      args: [{
+        panelId: 'panel-1',
+        data: 'hello\n',
+      }],
+    });
     await expect(healthyClient.nextFrame()).resolves.toEqual({
       type: 'event',
       channel: 'terminal:output',
@@ -268,8 +290,36 @@ describe('PaneDaemonServer', () => {
         data: 'world\n',
       }],
     });
+
     expect(stalledWriteSpy).toHaveBeenCalledTimes(1);
+    stalledServerSocket?.emit('drain');
+    await expect(stalledClient.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'terminal:output',
+      args: [{
+        panelId: 'panel-1',
+        data: 'world\n',
+      }],
+    });
+
+    expect(stalledWriteSpy).toHaveBeenCalledTimes(2);
     expect(server.hasSubscribers()).toBe(true);
+  });
+
+  it('creates the Unix socket directory and socket file with user-only permissions', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const registry = new PaneCommandRegistry();
+    const server = new PaneDaemonServer(registry, createTempAppDirectory(), 'linux');
+    activeServers.push(server);
+    await server.start();
+
+    const socketPath = server.getEndpoint().path;
+    const socketDirectory = path.dirname(socketPath);
+    expect(fs.statSync(socketDirectory).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(socketPath).mode & 0o777).toBe(0o600);
   });
 
   it('cleans up the Unix socket file when stopped', async () => {
