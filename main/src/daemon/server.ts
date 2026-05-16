@@ -67,11 +67,7 @@ export class PaneDaemonServer {
       });
 
       for (const [clientId, client] of this.clients) {
-        try {
-          client.socket.write(encodedFrame);
-        } catch {
-          this.dropClient(clientId);
-        }
+        this.writeFrame(clientId, client.socket, encodedFrame);
       }
     },
   };
@@ -214,7 +210,24 @@ export class PaneDaemonServer {
     const response = await this.buildResponseFrame(frame);
 
     if (!socket.destroyed) {
-      socket.write(encodePaneDaemonFrame(response));
+      const clientId = [...this.clients.entries()].find(([, client]) => client.socket === socket)?.[0];
+      const encodedFrame = encodePaneDaemonFrame(response);
+      if (clientId) {
+        this.writeFrame(clientId, socket, encodedFrame);
+      } else {
+        socket.write(encodedFrame);
+      }
+    }
+  }
+
+  private writeFrame(clientId: string, socket: net.Socket, encodedFrame: string): void {
+    try {
+      const accepted = socket.write(encodedFrame);
+      if (!accepted) {
+        this.dropClient(clientId);
+      }
+    } catch {
+      this.dropClient(clientId);
     }
   }
 

@@ -2,7 +2,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PaneDaemonFrame } from '../../../shared/types/daemon';
 import { PaneCommandRegistry } from './commandRegistry';
 import { encodePaneDaemonFrame, PaneDaemonFrameDecoder } from './socketFraming';
@@ -227,6 +227,49 @@ describe('PaneDaemonServer', () => {
       channel: 'project-script-changed',
       args: [{ projectId: null }],
     });
+  });
+
+  it('drops backpressured daemon event subscribers while continuing to deliver to healthy clients', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneDaemonServer(registry, createTempAppDirectory());
+    activeServers.push(server);
+    await server.start();
+
+    await connectClient(server);
+    const healthyClient = await connectClient(server);
+    const stalledServerSocket = (server as unknown as { clients: Map<string, { socket: net.Socket }> }).clients.get('1')?.socket;
+    expect(stalledServerSocket).toBeDefined();
+    const stalledWriteSpy = vi.spyOn(stalledServerSocket as net.Socket, 'write').mockImplementation(() => false);
+
+    server.getEventSink().send('terminal:output', {
+      panelId: 'panel-1',
+      data: 'hello\n',
+    });
+
+    await expect(healthyClient.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'terminal:output',
+      args: [{
+        panelId: 'panel-1',
+        data: 'hello\n',
+      }],
+    });
+
+    server.getEventSink().send('terminal:output', {
+      panelId: 'panel-1',
+      data: 'world\n',
+    });
+
+    await expect(healthyClient.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'terminal:output',
+      args: [{
+        panelId: 'panel-1',
+        data: 'world\n',
+      }],
+    });
+    expect(stalledWriteSpy).toHaveBeenCalledTimes(1);
+    expect(server.hasSubscribers()).toBe(true);
   });
 
   it('cleans up the Unix socket file when stopped', async () => {
