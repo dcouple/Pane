@@ -1067,6 +1067,21 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // The "[Image] " prefix we used to add actually broke the parser's
           // path-detection — on Windows+WSL it caused Claude to cache the file but
           // never attach it to the API call (see commit 7b76ee5).
+          const pasteText = (text: string) => {
+            if (!terminal) return;
+            const shouldProtectMultilinePaste = isCliPanel && !tuiActiveRef.current && /[\r\n]/.test(text);
+            if (shouldProtectMultilinePaste) {
+              window.electronAPI.invoke(
+                'terminal:input',
+                panel.id,
+                text.replace(/\r\n|\r|\n/g, '\x1b\r'),
+              );
+              return;
+            }
+
+            terminal.paste(text);
+          };
+
           const handlePaste = (e: ClipboardEvent) => {
             // Step 1: Check for images in browser clipboard (works on native Windows/macOS)
             const items = e.clipboardData?.items;
@@ -1150,7 +1165,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
               // No image found — forward the text content xterm would have pasted.
               if (text && !disposed && terminal) {
-                terminal.paste(text);
+                pasteText(text);
               }
             })();
           };
