@@ -46,6 +46,11 @@ export interface PtyHostRuntime {
  */
 export interface PaneRuntime {
   eventSink: PaneEventSink;
+  /**
+   * Non-renderer daemon subscribers, such as the local socket server and the
+   * remote HTTP/SSE transport. This stream is live-only; reconnecting clients
+   * are expected to refetch state instead of relying on server-side replay.
+   */
   daemonEventSink?: PaneEventSink;
   getConfigManager(): ConfigManager;
   getPtyHostRuntime(): PtyHostRuntime | null;

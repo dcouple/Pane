@@ -35,7 +35,7 @@ const DAEMON_EVENT_EXACT_CHANNELS = new Set<string>([
   'script-session-changed',
 ]);
 
-function isPaneDaemonEventChannel(channel: string): boolean {
+export function isPaneDaemonEventChannel(channel: string): boolean {
   if (DAEMON_EVENT_EXACT_CHANNELS.has(channel)) {
     return true;
   }

@@ -20,6 +20,7 @@ import { VersionChecker } from '../services/versionChecker';
 import { TaskQueue } from '../services/taskQueue';
 import { registerIpcHandlers } from '../ipc';
 import { PaneDaemonServer } from './server';
+import { PaneRemoteHttpApiServer } from './httpApiServer';
 import { createFanoutEventSink, noopPaneEventSink, type PaneEventSink } from '../core/eventSink';
 import {
   setPaneRuntime,
@@ -40,6 +41,7 @@ interface PaneDaemonHostOptions {
   rendererEventSink?: PaneEventSink;
   mode?: 'desktop' | 'headless';
   restoreSpotlights?: boolean;
+  startRemoteTransport?: boolean;
 }
 
 export interface PaneDaemonHost {
@@ -47,6 +49,7 @@ export interface PaneDaemonHost {
   daemonServices: DaemonHostServices;
   commandRegistry: PaneCommandRegistry;
   paneDaemonServer: PaneDaemonServer | null;
+  remoteHttpApiServer: PaneRemoteHttpApiServer | null;
   permissionIpcServer: PermissionIpcServer | null;
   shutdown(): Promise<void>;
 }
@@ -83,6 +86,7 @@ function registerPowerMonitorDiagnostics(logger: Logger): void {
 
 export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Promise<PaneDaemonHost> {
   const mode = options.mode ?? 'desktop';
+  const startRemoteTransport = options.startRemoteTransport ?? true;
   const rendererEventSink = options.rendererEventSink ?? noopPaneEventSink;
   const headlessWebviewContextMap = new Map<number, PaneWebviewContext>();
   const getWebviewContextMap = options.getWebviewContextMap ?? (() => headlessWebviewContextMap);
@@ -204,19 +208,39 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const commandRegistry = registerIpcHandlers(services);
 
   let paneDaemonServer: PaneDaemonServer | null = null;
+  let remoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
   try {
     paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
     await paneDaemonServer.start();
-    installPaneRuntime(
-      createFanoutEventSink([rendererEventSink, paneDaemonServer.getEventSink()]),
-      configManager,
-      options.getPtyHostRuntime,
-      getWebviewContextMap,
-      paneDaemonServer.getEventSink(),
-    );
   } catch (error) {
     console.error('[Pane daemon] Failed to start local daemon server; continuing with renderer-only runtime events', error);
   }
+
+  if (startRemoteTransport && configManager.getConfig().remoteDaemon?.host.config.enabled) {
+    try {
+      remoteHttpApiServer = new PaneRemoteHttpApiServer(commandRegistry, configManager);
+      await remoteHttpApiServer.start();
+    } catch (error) {
+      console.error('[Pane remote daemon] Failed to start remote HTTP transport; continuing without remote access', error);
+      remoteHttpApiServer = null;
+    }
+  }
+
+  const daemonSinks: PaneEventSink[] = [];
+  if (paneDaemonServer) {
+    daemonSinks.push(paneDaemonServer.getEventSink());
+  }
+  if (remoteHttpApiServer) {
+    daemonSinks.push(remoteHttpApiServer.getEventSink());
+  }
+
+  installPaneRuntime(
+    createFanoutEventSink([rendererEventSink, ...daemonSinks]),
+    configManager,
+    options.getPtyHostRuntime,
+    getWebviewContextMap,
+    createFanoutEventSink(daemonSinks),
+  );
 
   setupEventListeners(services);
 
@@ -245,6 +269,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     daemonServices,
     commandRegistry,
     paneDaemonServer,
+    remoteHttpApiServer,
     permissionIpcServer,
     async shutdown(): Promise<void> {
       resourceMonitorService.stop();
@@ -256,6 +281,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
       await cliManagerFactory.shutdown();
       await taskQueue.close();
       await permissionIpcServer?.stop();
+      await remoteHttpApiServer?.stop();
       if (paneDaemonServer) {
         await paneDaemonServer.stop();
       }
