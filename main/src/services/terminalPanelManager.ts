@@ -499,7 +499,7 @@ export class TerminalPanelManager {
     if (!isVisible) {
       // Once hidden, renderer ACKs stop. Do not leave a visible-mode pause
       // pending against bytes the renderer may never acknowledge.
-      terminal.outputBuffer = '';
+      this.flushPendingHiddenOutputToDaemon(terminal);
       const wasPaused = terminal.flowControl.isPaused;
       disposeFlowControlRecord(terminal.flowControl);
       if (wasPaused) {

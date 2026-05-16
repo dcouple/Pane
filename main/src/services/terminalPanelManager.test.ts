@@ -188,4 +188,36 @@ describe('TerminalPanelManager hidden output delivery', () => {
     expect(terminal.outputFlushTimer).toBeNull();
     disposeFlowControlRecord(terminal.flowControl);
   });
+
+  it('flushes buffered output to daemon subscribers before hiding a visible panel', () => {
+    const combinedSink = { send: vi.fn() };
+    const daemonSink = { send: vi.fn() };
+    setPaneRuntime({
+      eventSink: combinedSink,
+      daemonEventSink: daemonSink,
+      getConfigManager: () => createConfigManagerStub(),
+      getPtyHostRuntime: () => null,
+      getWebviewContextMap: () => new Map(),
+    });
+
+    const manager = new TerminalPanelManager() as unknown as VisibilityAccess;
+    const terminal = createTerminal({
+      isVisible: true,
+      outputBuffer: 'visible output',
+      outputFlushTimer: setTimeout(() => undefined, 10_000),
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    manager.setVisibility(terminal.panelId, false);
+
+    expect(combinedSink.send).not.toHaveBeenCalled();
+    expect(daemonSink.send).toHaveBeenCalledWith('terminal:output', {
+      sessionId: 'session-1',
+      panelId: 'panel-1',
+      output: 'visible output',
+    });
+    expect(terminal.outputBuffer).toBe('');
+    expect(terminal.outputFlushTimer).toBeNull();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
 });
