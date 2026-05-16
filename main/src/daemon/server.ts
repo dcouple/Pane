@@ -25,6 +25,8 @@ const DAEMON_EVENT_PREFIXES = [
 const DAEMON_EVENT_EXACT_CHANNELS = new Set<string>([
   'git-status-loading',
   'git-status-updated',
+  'logs:output',
+  'process:ended',
   'session-log',
   'session-logs-cleared',
 ]);
@@ -98,6 +100,11 @@ export class PaneDaemonServer {
     if (this.endpoint.transport === 'unix') {
       fs.mkdirSync(path.dirname(this.endpoint.path), { recursive: true });
       if (fs.existsSync(this.endpoint.path)) {
+        const unixSocketStatus = await probeUnixSocketPath(this.endpoint.path);
+        if (unixSocketStatus === 'active') {
+          throw new Error(`Pane daemon server is already listening on ${this.endpoint.path}`);
+        }
+
         fs.unlinkSync(this.endpoint.path);
       }
     }
@@ -235,4 +242,28 @@ export class PaneDaemonServer {
       };
     }
   }
+}
+
+async function probeUnixSocketPath(socketPath: string): Promise<'active' | 'stale'> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+
+    const settle = (result: 'active' | 'stale') => {
+      socket.removeAllListeners();
+      if (!socket.destroyed) {
+        socket.destroy();
+      }
+      resolve(result);
+    };
+
+    socket.once('connect', () => settle('active'));
+    socket.once('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOENT' || error.code === 'ENOTSOCK') {
+        settle('stale');
+        return;
+      }
+
+      reject(error);
+    });
+  });
 }

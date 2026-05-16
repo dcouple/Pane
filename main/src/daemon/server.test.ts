@@ -154,6 +154,44 @@ describe('PaneDaemonServer', () => {
     await expect(client.nextFrame(100)).rejects.toThrow('Timed out waiting for Pane daemon frame');
   });
 
+  it('forwards logs panel runtime events to daemon clients', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneDaemonServer(registry, createTempAppDirectory());
+    activeServers.push(server);
+    await server.start();
+
+    const client = await connectClient(server);
+    server.getEventSink().send('logs:output', {
+      panelId: 'panel-1',
+      content: 'ready\n',
+      type: 'stdout',
+    });
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'logs:output',
+      args: [{
+        panelId: 'panel-1',
+        content: 'ready\n',
+        type: 'stdout',
+      }],
+    });
+
+    server.getEventSink().send('process:ended', {
+      panelId: 'panel-1',
+      exitCode: 0,
+    });
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'process:ended',
+      args: [{
+        panelId: 'panel-1',
+        exitCode: 0,
+      }],
+    });
+  });
+
   it('cleans up the Unix socket file when stopped', async () => {
     if (process.platform === 'win32') {
       return;
@@ -169,5 +207,56 @@ describe('PaneDaemonServer', () => {
     await server.stop();
 
     expect(fs.existsSync(socketPath)).toBe(false);
+  });
+
+  it('rejects replacing an active Unix socket listener at the same path', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const appDirectory = createTempAppDirectory();
+    const firstServer = new PaneDaemonServer(new PaneCommandRegistry(), appDirectory, 'linux');
+    activeServers.push(firstServer);
+    await firstServer.start();
+
+    const secondServer = new PaneDaemonServer(new PaneCommandRegistry(), appDirectory, 'linux');
+    await expect(secondServer.start()).rejects.toThrow(
+      `Pane daemon server is already listening on ${firstServer.getEndpoint().path}`,
+    );
+
+    const client = await connectClient(firstServer);
+    client.socket.write(encodePaneDaemonFrame({
+      type: 'request',
+      id: 9,
+      channel: 'sessions:get-all',
+      args: [],
+    }));
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'response',
+      id: 9,
+      ok: false,
+      error: {
+        message: 'No Pane daemon command registered for channel "sessions:get-all"',
+        code: 'ERR_UNKNOWN_CHANNEL',
+      },
+    });
+  });
+
+  it('replaces stale non-socket files at the Unix socket path', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const appDirectory = createTempAppDirectory();
+    const probeServer = new PaneDaemonServer(new PaneCommandRegistry(), appDirectory, 'linux');
+    const socketPath = probeServer.getEndpoint().path;
+    fs.mkdirSync(path.dirname(socketPath), { recursive: true });
+    fs.writeFileSync(socketPath, 'stale');
+
+    const server = new PaneDaemonServer(new PaneCommandRegistry(), appDirectory, 'linux');
+    activeServers.push(server);
+    await expect(server.start()).resolves.toBeUndefined();
+    expect(fs.existsSync(socketPath)).toBe(true);
   });
 });
