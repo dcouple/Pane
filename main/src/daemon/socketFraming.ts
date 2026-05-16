@@ -1,3 +1,4 @@
+import { StringDecoder } from 'string_decoder';
 import { isPaneDaemonFrame, type PaneDaemonFrame } from '../../../shared/types/daemon';
 
 const FRAME_DELIMITER = '\n';
@@ -8,9 +9,10 @@ export function encodePaneDaemonFrame(frame: PaneDaemonFrame): string {
 
 export class PaneDaemonFrameDecoder {
   private buffer = '';
+  private decoder = new StringDecoder('utf8');
 
   push(chunk: string | Buffer): PaneDaemonFrame[] {
-    this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
 
     const frames: PaneDaemonFrame[] = [];
     let delimiterIndex = this.buffer.indexOf(FRAME_DELIMITER);
@@ -30,11 +32,14 @@ export class PaneDaemonFrameDecoder {
   }
 
   finish(): void {
+    this.buffer += this.decoder.end();
+
     if (this.buffer.trim().length > 0) {
       throw new Error('Incomplete Pane daemon frame at end of stream');
     }
 
     this.buffer = '';
+    this.decoder = new StringDecoder('utf8');
   }
 
   pendingBuffer(): string {

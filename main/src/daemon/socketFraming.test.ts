@@ -41,6 +41,24 @@ describe('Pane daemon framing', () => {
     expect(decoder.pendingBuffer()).toBe('');
   });
 
+  it('preserves multibyte UTF-8 characters split across buffer chunks', () => {
+    const decoder = new PaneDaemonFrameDecoder();
+    const frame: PaneDaemonEventFrame = {
+      type: 'event',
+      channel: 'session:created',
+      args: [{ id: 'session-1', label: 'Pane café 日本語' }],
+    };
+
+    const encodedBuffer = Buffer.from(encodePaneDaemonFrame(frame), 'utf8');
+    const multibyteChar = Buffer.from('é', 'utf8');
+    const splitIndex = encodedBuffer.indexOf(multibyteChar) + 1;
+    expect(splitIndex).toBeGreaterThan(0);
+
+    expect(decoder.push(encodedBuffer.subarray(0, splitIndex))).toEqual([]);
+    expect(decoder.push(encodedBuffer.subarray(splitIndex))).toEqual([frame]);
+    expect(decoder.pendingBuffer()).toBe('');
+  });
+
   it('decodes multiple frames from a single chunk', () => {
     const decoder = new PaneDaemonFrameDecoder();
     const first: PaneDaemonRequestFrame = {
