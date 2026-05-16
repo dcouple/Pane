@@ -192,6 +192,43 @@ describe('PaneDaemonServer', () => {
     });
   });
 
+  it('forwards script state events to daemon clients', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneDaemonServer(registry, createTempAppDirectory());
+    activeServers.push(server);
+    await server.start();
+
+    const client = await connectClient(server);
+    server.getEventSink().send('script-closing', 'session-1');
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'script-closing',
+      args: ['session-1'],
+    });
+
+    server.getEventSink().send('project-script-closing', { projectId: 12 });
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'project-script-closing',
+      args: [{ projectId: 12 }],
+    });
+
+    server.getEventSink().send('script-session-changed', 'session-2');
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'script-session-changed',
+      args: ['session-2'],
+    });
+
+    server.getEventSink().send('project-script-changed', { projectId: null });
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'project-script-changed',
+      args: [{ projectId: null }],
+    });
+  });
+
   it('cleans up the Unix socket file when stopped', async () => {
     if (process.platform === 'win32') {
       return;

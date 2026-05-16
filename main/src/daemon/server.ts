@@ -27,8 +27,12 @@ const DAEMON_EVENT_EXACT_CHANNELS = new Set<string>([
   'git-status-updated',
   'logs:output',
   'process:ended',
+  'project-script-changed',
+  'project-script-closing',
   'session-log',
   'session-logs-cleared',
+  'script-closing',
+  'script-session-changed',
 ]);
 
 function isPaneDaemonEventChannel(channel: string): boolean {
