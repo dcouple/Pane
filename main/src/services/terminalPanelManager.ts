@@ -378,11 +378,7 @@ export class TerminalPanelManager {
       // avoid waking the renderer/xterm/WebGL for every background token.
       // Daemon subscribers still need the live bytes so non-Electron clients
       // are not starved by one hidden desktop panel.
-      this.sendDaemonEvent('terminal:output', {
-        sessionId: terminal.sessionId,
-        panelId: terminal.panelId,
-        output: data,
-      });
+      this.sendHiddenOutputToDaemon(terminal, data);
       return;
     }
 
@@ -411,6 +407,29 @@ export class TerminalPanelManager {
       () => this.pausePty(terminal),
       () => this.resumePty(terminal),
     );
+  }
+
+  private sendHiddenOutputToDaemon(terminal: TerminalProcess, data: string): void {
+    this.sendDaemonEvent('terminal:output', {
+      sessionId: terminal.sessionId,
+      panelId: terminal.panelId,
+      output: data,
+    });
+  }
+
+  private flushPendingHiddenOutputToDaemon(terminal: TerminalProcess): void {
+    if (terminal.outputFlushTimer) {
+      clearTimeout(terminal.outputFlushTimer);
+      terminal.outputFlushTimer = null;
+    }
+
+    if (!terminal.outputBuffer) {
+      return;
+    }
+
+    const data = terminal.outputBuffer;
+    terminal.outputBuffer = '';
+    this.sendHiddenOutputToDaemon(terminal, data);
   }
 
   /**
@@ -487,9 +506,11 @@ export class TerminalPanelManager {
         this.resumePty(terminal);
       }
     } else {
-      // Hidden output is already present in scrollbackBuffer. Drop any stale
-      // hidden batch so the renderer can refresh exactly once from getState.
-      terminal.outputBuffer = '';
+      // Hidden output is already present in scrollbackBuffer. Flush any pending
+      // daemon-only batch first so remote subscribers do not lose the last
+      // hidden chunk during a visibility transition, then let the renderer
+      // refresh exactly once from getState.
+      this.flushPendingHiddenOutputToDaemon(terminal);
     }
   }
 
