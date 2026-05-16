@@ -1,4 +1,5 @@
 import {
+  getRemoteDaemonHostConfigValidationError,
   isRemoteDaemonClientRecord,
   isRemotePaneConnectionProfile,
   normalizeRemoteDaemonConfig,
@@ -41,6 +42,11 @@ export function registerRemoteDaemonHandlers(
           },
         },
       });
+
+      const validationError = getRemoteDaemonHostConfigValidationError(next.host.config);
+      if (validationError) {
+        throw new Error(validationError);
+      }
 
       await configManager.updateConfig({ remoteDaemon: next });
       return { success: true, data: next.host.config };

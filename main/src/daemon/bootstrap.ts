@@ -21,6 +21,7 @@ import { TaskQueue } from '../services/taskQueue';
 import { registerIpcHandlers } from '../ipc';
 import { PaneDaemonServer } from './server';
 import { PaneRemoteHttpApiServer } from './httpApiServer';
+import { PaneRemoteTransportController } from './remoteTransportController';
 import { createFanoutEventSink, noopPaneEventSink, type PaneEventSink } from '../core/eventSink';
 import {
   setPaneRuntime,
@@ -208,7 +209,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const commandRegistry = registerIpcHandlers(services);
 
   let paneDaemonServer: PaneDaemonServer | null = null;
-  let remoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
+  const remoteTransportController = new PaneRemoteTransportController(commandRegistry, configManager);
   try {
     paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
     await paneDaemonServer.start();
@@ -216,13 +217,12 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     console.error('[Pane daemon] Failed to start local daemon server; continuing with renderer-only runtime events', error);
   }
 
-  if (startRemoteTransport && configManager.getConfig().remoteDaemon?.host.config.enabled) {
+  if (startRemoteTransport) {
+    remoteTransportController.startWatchingConfig();
     try {
-      remoteHttpApiServer = new PaneRemoteHttpApiServer(commandRegistry, configManager);
-      await remoteHttpApiServer.start();
+      await remoteTransportController.syncToConfig();
     } catch (error) {
       console.error('[Pane remote daemon] Failed to start remote HTTP transport; continuing without remote access', error);
-      remoteHttpApiServer = null;
     }
   }
 
@@ -230,8 +230,8 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   if (paneDaemonServer) {
     daemonSinks.push(paneDaemonServer.getEventSink());
   }
-  if (remoteHttpApiServer) {
-    daemonSinks.push(remoteHttpApiServer.getEventSink());
+  if (startRemoteTransport) {
+    daemonSinks.push(remoteTransportController.getEventSink());
   }
 
   installPaneRuntime(
@@ -269,7 +269,9 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     daemonServices,
     commandRegistry,
     paneDaemonServer,
-    remoteHttpApiServer,
+    get remoteHttpApiServer() {
+      return remoteTransportController.getServer();
+    },
     permissionIpcServer,
     async shutdown(): Promise<void> {
       resourceMonitorService.stop();
@@ -281,7 +283,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
       await cliManagerFactory.shutdown();
       await taskQueue.close();
       await permissionIpcServer?.stop();
-      await remoteHttpApiServer?.stop();
+      await remoteTransportController.stopWatchingAndShutdown();
       if (paneDaemonServer) {
         await paneDaemonServer.stop();
       }

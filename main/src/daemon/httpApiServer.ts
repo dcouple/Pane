@@ -6,6 +6,7 @@ import { authenticateRemoteDaemonBearerToken } from './auth';
 import { isPaneDaemonEventChannel } from './server';
 import {
   createDefaultRemoteDaemonConfig,
+  getRemoteDaemonHostConfigValidationError,
   type RemoteDaemonConfig,
   type RemoteDaemonEventEnvelope,
   type RemoteInvokeRequest,
@@ -115,8 +116,9 @@ export class PaneRemoteHttpApiServer {
       throw new Error('Remote daemon HTTP API server is disabled in config');
     }
 
-    if (isLoopbackHost(hostConfig.listenHost) && !hostConfig.allowInsecureHttpOnLoopback) {
-      throw new Error('Remote daemon HTTP API loopback transport is disabled by config');
+    const hostConfigError = getRemoteDaemonHostConfigValidationError(hostConfig);
+    if (hostConfigError) {
+      throw new Error(hostConfigError);
     }
 
     const server = http.createServer((request, response) => {
@@ -429,10 +431,6 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
 function writeSseEvent(response: ServerResponse, eventName: string, payload: RemoteReadyEventPayload | RemoteDaemonEventEnvelope): void {
   response.write(`event: ${eventName}\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
-}
-
-function isLoopbackHost(host: string): boolean {
-  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
 }
 
 function isRemoteInvokeRequest(value: unknown): value is RemoteInvokeRequest {

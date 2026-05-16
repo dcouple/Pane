@@ -60,6 +60,27 @@ export const DEFAULT_REMOTE_DAEMON_HOST_CONFIG: RemoteDaemonHostConfig = {
   allowInsecureHttpOnLoopback: true,
 };
 
+export function isLoopbackRemoteDaemonHost(host: string): boolean {
+  const normalizedHost = host.trim().toLowerCase();
+  return normalizedHost === '127.0.0.1' || normalizedHost === '::1' || normalizedHost === 'localhost';
+}
+
+export function getRemoteDaemonHostConfigValidationError(config: RemoteDaemonHostConfig): string | null {
+  if (!config.enabled) {
+    return null;
+  }
+
+  if (!isLoopbackRemoteDaemonHost(config.listenHost)) {
+    return 'Remote daemon direct HTTP only supports loopback listen hosts; keep listenHost on 127.0.0.1, ::1, or localhost and expose it through an SSH tunnel, Tailscale/VPN, or a reverse proxy.';
+  }
+
+  if (!config.allowInsecureHttpOnLoopback) {
+    return 'Remote daemon HTTP API loopback transport is disabled by config';
+  }
+
+  return null;
+}
+
 export function createDefaultRemoteDaemonConfig(): RemoteDaemonConfig {
   return {
     host: {

@@ -338,4 +338,16 @@ describe('PaneRemoteHttpApiServer', () => {
 
     await expect(server.start()).rejects.toThrow('Remote daemon HTTP API loopback transport is disabled by config');
   });
+
+  it('refuses direct HTTP on non-loopback listen hosts', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneRemoteHttpApiServer(
+      registry,
+      createConfigManagerStub(createEnabledRemoteConfig({ listenHost: '0.0.0.0' })) as never,
+    );
+
+    await expect(server.start()).rejects.toThrow(
+      'Remote daemon direct HTTP only supports loopback listen hosts; keep listenHost on 127.0.0.1, ::1, or localhost and expose it through an SSH tunnel, Tailscale/VPN, or a reverse proxy.',
+    );
+  });
 });

@@ -186,4 +186,22 @@ describe('remote daemon IPC', () => {
       error: 'Remote daemon connection profile is invalid',
     });
   });
+
+  it('rejects enabling direct HTTP on a non-loopback listen host', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const updateHostConfig = ipcMain.handlers.get('remote-daemon:update-host-config');
+
+    await expect(updateHostConfig?.({}, {
+      enabled: true,
+      listenHost: '0.0.0.0',
+      listenPort: 42137,
+    })).resolves.toEqual({
+      success: false,
+      error: 'Remote daemon direct HTTP only supports loopback listen hosts; keep listenHost on 127.0.0.1, ::1, or localhost and expose it through an SSH tunnel, Tailscale/VPN, or a reverse proxy.',
+    });
+  });
 });
