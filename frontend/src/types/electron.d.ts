@@ -11,6 +11,11 @@ import type {
   RemoteDaemonHostConfig,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
+import type {
+  PanePermissionRequest,
+  PanePermissionResolvedEvent,
+  PanePermissionResponse,
+} from '../../../shared/types/daemon';
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
@@ -20,11 +25,6 @@ interface LogEntry {
   level: 'info' | 'warn' | 'error' | 'debug';
   message: string;
   source?: string;
-}
-
-interface PermissionResponse {
-  allow: boolean;
-  reason?: string;
 }
 
 interface RendererDiagnosticPayload {
@@ -255,8 +255,8 @@ interface ElectronAPI {
 
   // Permissions
   permissions: {
-    respond: (requestId: string, response: PermissionResponse) => Promise<IPCResponse>;
-    getPending: () => Promise<IPCResponse>;
+    respond: (requestId: string, response: PanePermissionResponse) => Promise<IPCResponse>;
+    getPending: () => Promise<IPCResponse<PanePermissionRequest[]>>;
   };
 
   // Dashboard
@@ -278,6 +278,8 @@ interface ElectronAPI {
 
   // Event listeners for real-time updates
   events: {
+    onPermissionRequest: (callback: (request: PanePermissionRequest) => void) => () => void;
+    onPermissionResolved: (callback: (event: PanePermissionResolvedEvent) => void) => () => void;
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
     onSessionDeleted: (callback: (session: Session) => void) => () => void;

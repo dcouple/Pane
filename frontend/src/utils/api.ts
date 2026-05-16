@@ -9,6 +9,10 @@ import type {
   RemoteDaemonHostConfig,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
+import type {
+  PanePermissionRequest,
+  PanePermissionResponse,
+} from '../../../shared/types/daemon';
 
 // Type for IPC response
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic type parameter default for flexible API responses
@@ -536,14 +540,14 @@ export class API {
 
   // Permissions
   static permissions = {
-    async respond(requestId: string, response: { allow: boolean; reason?: string }) {
+    async respond(requestId: string, response: PanePermissionResponse) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.permissions.respond(requestId, response);
     },
 
     async getPending() {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.permissions.getPending();
+      return window.electronAPI.permissions.getPending() as Promise<IPCResponse<PanePermissionRequest[]>>;
     },
   };
 

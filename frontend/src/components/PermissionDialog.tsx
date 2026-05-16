@@ -1,20 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Shield, AlertTriangle, Code, Edit } from 'lucide-react';
+import type { PanePermissionRequest } from '../../../shared/types/daemon';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Textarea } from './ui/Textarea';
 
-interface PermissionRequest {
-  id: string;
-  sessionId: string;
-  toolName: string;
-  input: Record<string, unknown>;
-  timestamp: number;
-}
-
 interface PermissionDialogProps {
-  request: PermissionRequest | null;
-  onRespond: (requestId: string, behavior: 'allow' | 'deny', updatedInput?: Record<string, unknown>, message?: string) => void;
+  request: PanePermissionRequest | null;
+  onRespond: (
+    requestId: string,
+    behavior: 'allow' | 'deny',
+    updatedInput?: PanePermissionRequest['input'],
+    message?: string,
+  ) => void;
   session?: { name: string };
 }
 

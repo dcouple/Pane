@@ -91,7 +91,7 @@ describe('daemon/client import boundary', () => {
     expect(source).not.toContain("from './daemon/daemonChannels'");
     expect(source).toContain("ipcRenderer.invoke('daemon:invoke', channel, ...args)");
     expect(source).not.toMatch(
-      /ipcRenderer\.invoke\('(sessions:|projects:|folders:|prompts:|resource-monitor:|panels:|terminal:|logs:|git:(cancel-status-for-project|clone-repo|commit|execute-project|file-status|get-github-remote|restore|revert)|file:(copy|delete|duplicate|exists|getPath|list|move|read|read-binary|read-project|readAtRevision|rename|resolveAbsolutePath|search|write|write-binary|write-project))/,
+      /ipcRenderer\.invoke\('(sessions:|projects:|folders:|prompts:|resource-monitor:|panels:|terminal:|logs:|git:(cancel-status-for-project|clone-repo|commit|execute-project|file-status|get-github-remote|restore|revert)|permission:(getPending|respond)|file:(copy|delete|duplicate|exists|getPath|list|move|read|read-binary|read-project|readAtRevision|rename|resolveAbsolutePath|search|write|write-binary|write-project))/,
     );
   });
 

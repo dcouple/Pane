@@ -192,6 +192,66 @@ describe('PaneDaemonServer', () => {
     });
   });
 
+  it('forwards permission lifecycle events to daemon clients', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneDaemonServer(registry, createTempAppDirectory());
+    activeServers.push(server);
+    await server.start();
+
+    const client = await connectClient(server);
+    server.getEventSink().send('permission:request', {
+      id: 'permission-1',
+      sessionId: 'session-1',
+      toolName: 'Bash',
+      input: { command: 'pwd' },
+      timestamp: 1,
+    });
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'permission:request',
+      args: [{
+        id: 'permission-1',
+        sessionId: 'session-1',
+        toolName: 'Bash',
+        input: { command: 'pwd' },
+        timestamp: 1,
+      }],
+    });
+
+    server.getEventSink().send('permission:resolved', {
+      request: {
+        id: 'permission-1',
+        sessionId: 'session-1',
+        toolName: 'Bash',
+        input: { command: 'pwd' },
+        timestamp: 1,
+      },
+      response: {
+        behavior: 'allow',
+        message: 'approved',
+      },
+    });
+
+    await expect(client.nextFrame()).resolves.toEqual({
+      type: 'event',
+      channel: 'permission:resolved',
+      args: [{
+        request: {
+          id: 'permission-1',
+          sessionId: 'session-1',
+          toolName: 'Bash',
+          input: { command: 'pwd' },
+          timestamp: 1,
+        },
+        response: {
+          behavior: 'allow',
+          message: 'approved',
+        },
+      }],
+    });
+  });
+
   it('forwards script state events to daemon clients', async () => {
     const registry = new PaneCommandRegistry();
     const server = new PaneDaemonServer(registry, createTempAppDirectory());

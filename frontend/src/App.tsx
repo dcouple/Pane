@@ -36,10 +36,15 @@ import { CreateSessionDialog } from './components/CreateSessionDialog';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { useNavigationStore } from './stores/navigationStore';
 import { initPostHog, capture, captureUnconditionally, posthog } from './services/posthog';
-import type { VersionUpdateInfo, PermissionInput } from './types/session';
+import type { VersionUpdateInfo } from './types/session';
 import type { AnalyticsIdentity, TerminalShortcut } from './types/config';
 import type { ResumableSession } from '../../shared/types/panels';
 import type { Project } from './types/project';
+import type {
+  PanePermissionRequest,
+  PanePermissionResolvedEvent,
+  PanePermissionInput,
+} from '../../shared/types/daemon';
 import { isMac } from './utils/platformUtils';
 
 // Stable empty array to avoid creating new references in render
@@ -52,14 +57,6 @@ interface IPCResponse<T = unknown> {
   error?: string;
 }
 
-interface PermissionRequest {
-  id: string;
-  sessionId: string;
-  toolName: string;
-  input: PermissionInput;
-  timestamp: number;
-}
-
 function App() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [isAnalyticsConsentOpen, setIsAnalyticsConsentOpen] = useState(false);
@@ -67,7 +64,7 @@ function App() {
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [updateVersionInfo, setUpdateVersionInfo] = useState<VersionUpdateInfo | null>(null);
-  const [currentPermissionRequest, setCurrentPermissionRequest] = useState<PermissionRequest | null>(null);
+  const [currentPermissionRequest, setCurrentPermissionRequest] = useState<PanePermissionRequest | null>(null);
   const [isDiscordOpen, setIsDiscordOpen] = useState(false);
   const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
@@ -511,19 +508,41 @@ function App() {
     checkResumableSessions();
   }, [isLoaded, isAnalyticsConsentOpen]);
 
-  useEffect(() => {
-    // Set up permission request listener
-    const handlePermissionRequest = (...args: unknown[]) => {
-      const request = args[0] as PermissionRequest;
-      setCurrentPermissionRequest(request);
-    };
+  const loadNextPendingPermission = useCallback(async () => {
+    try {
+      const result = await API.permissions.getPending();
+      if (result.success) {
+        setCurrentPermissionRequest(result.data?.[0] ?? null);
+      } else {
+        console.error('Failed to fetch pending permission requests:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to load pending permission requests:', error);
+    }
+  }, []);
 
-    window.electron?.on('permission:request', handlePermissionRequest);
+  useEffect(() => {
+    if (!window.electronAPI?.events) {
+      return;
+    }
+
+    const removePermissionRequest = window.electronAPI.events.onPermissionRequest((request: PanePermissionRequest) => {
+      setCurrentPermissionRequest(request);
+    });
+    const removePermissionResolved = window.electronAPI.events.onPermissionResolved((event: PanePermissionResolvedEvent) => {
+      setCurrentPermissionRequest((currentRequest) => (
+        currentRequest?.id === event.request.id ? null : currentRequest
+      ));
+      void loadNextPendingPermission();
+    });
+
+    void loadNextPendingPermission();
 
     return () => {
-      window.electron?.off('permission:request', handlePermissionRequest);
+      removePermissionRequest();
+      removePermissionResolved();
     };
-  }, []);
+  }, [loadNextPendingPermission]);
 
   useEffect(() => {
     // Set up version update listener
@@ -561,17 +580,26 @@ function App() {
     setIsUpdateDialogOpen(true);
   };
 
-  const handlePermissionResponse = async (requestId: string, behavior: 'allow' | 'deny', _updatedInput?: PermissionInput, message?: string) => {
+  const handlePermissionResponse = useCallback(async (
+    requestId: string,
+    behavior: 'allow' | 'deny',
+    updatedInput?: PanePermissionInput,
+    message?: string,
+  ) => {
     try {
-      await API.permissions.respond(requestId, {
-        allow: behavior === 'allow',
-        reason: message
+      const result = await API.permissions.respond(requestId, {
+        behavior,
+        updatedInput,
+        message,
       });
-      setCurrentPermissionRequest(null);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to respond to permission request');
+      }
+      await loadNextPendingPermission();
     } catch (error) {
       console.error('Failed to respond to permission request:', error);
     }
-  };
+  }, [loadNextPendingPermission]);
 
   return (
     <ContextMenuProvider>

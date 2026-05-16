@@ -30,6 +30,27 @@ export interface PaneDaemonEventFrame {
   args: unknown[];
 }
 
+export type PanePermissionInput = Record<string, unknown>;
+
+export interface PanePermissionRequest {
+  id: string;
+  sessionId: string;
+  toolName: string;
+  input: PanePermissionInput;
+  timestamp: number;
+}
+
+export interface PanePermissionResponse {
+  behavior: 'allow' | 'deny';
+  updatedInput?: PanePermissionInput;
+  message?: string;
+}
+
+export interface PanePermissionResolvedEvent {
+  request: PanePermissionRequest;
+  response: PanePermissionResponse;
+}
+
 export type PaneDaemonResponseFrame =
   | PaneDaemonSuccessResponseFrame
   | PaneDaemonErrorResponseFrame;
@@ -66,6 +87,8 @@ export const DAEMON_OWNED_EXACT_CHANNELS = [
   'git:get-github-remote',
   'git:restore',
   'git:revert',
+  'permission:getPending',
+  'permission:respond',
   'file:copy',
   'file:delete',
   'file:duplicate',

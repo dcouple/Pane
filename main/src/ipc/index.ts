@@ -24,6 +24,7 @@ import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
 import { registerDaemonBridgeHandlers } from './daemon';
+import { registerPermissionHandlers } from './permissions';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 
 
@@ -36,6 +37,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services);
   registerDialogHandlers(ipcMain, services);
+  registerPermissionHandlers(ipcMain, services, commandRegistry);
   registerGitHandlers(ipcMain, services, commandRegistry);
   registerScriptHandlers(ipcMain, services, commandRegistry);
   registerPromptHandlers(ipcMain, services, commandRegistry);

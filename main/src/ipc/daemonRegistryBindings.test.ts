@@ -3,6 +3,7 @@ import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { registerFileHandlers } from './file';
 import { registerGitHandlers } from './git';
 import { registerPanelHandlers } from './panels';
+import { registerPermissionHandlers } from './permissions';
 import { registerProjectHandlers } from './project';
 import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
@@ -55,6 +56,11 @@ const PROMPT_CHANNELS = [
   'sessions:get-prompts',
   'prompts:get-all',
   'prompts:get-by-id',
+] as const;
+
+const PERMISSION_CHANNELS = [
+  'permission:getPending',
+  'permission:respond',
 ] as const;
 
 const FILE_CHANNELS = [
@@ -257,6 +263,16 @@ describe('daemon registry IPC bindings', () => {
 
     expect(registry.listChannels()).toEqual([...PROMPT_CHANNELS].sort());
     expect(ipcMain.boundChannels.sort()).toEqual([...PROMPT_CHANNELS].sort());
+  });
+
+  it('binds daemon-owned permission channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerPermissionHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...PERMISSION_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...PERMISSION_CHANNELS].sort());
   });
 
   it('keeps file manager shell adapters outside the daemon registry surface', () => {
