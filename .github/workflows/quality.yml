@@ -34,10 +34,13 @@ jobs:
     - name: Run linting
       run: pnpm lint
 
+    - name: Run main process test suite
+      run: CI=1 pnpm --filter main exec vitest run
+
     - name: Install Playwright browser dependencies
       run: pnpm exec playwright install --with-deps chromium
 
-    - name: Run minimal functional smoke tests
+    - name: Run maintained functional smoke tests
       run: xvfb-run -a pnpm test:ci:minimal
       env:
         PANE_DIR: ${{ runner.temp }}/pane-ci

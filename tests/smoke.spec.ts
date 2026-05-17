@@ -21,6 +21,39 @@ async function dismissStartupDialogs(page: Page) {
   }
 }
 
+async function clickDomNode(locator: ReturnType<Page['locator']>) {
+  await locator.evaluate((node: HTMLElement) => {
+    node.click();
+  });
+}
+
+async function setInputValue(locator: ReturnType<Page['locator']>, value: string) {
+  await locator.evaluate((node: HTMLElement, nextValue) => {
+    const input = node as HTMLInputElement | HTMLTextAreaElement;
+    const prototype = input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+
+    input.focus();
+    descriptor?.set?.call(input, nextValue);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
+
+async function openSettings(page: Page) {
+  const collapseSidebarButton = page.getByRole('button', { name: 'Collapse sidebar' });
+  await expect(collapseSidebarButton).toBeVisible({ timeout: 5000 });
+  await collapseSidebarButton.click();
+
+  const settingsButton = page.getByRole('button', { name: 'Settings' }).first();
+  await expect(settingsButton).toBeVisible({ timeout: 5000 });
+  await clickDomNode(settingsButton);
+
+  await expect(page.getByText('Pane Settings')).toBeVisible({ timeout: 5000 });
+}
+
 test.describe('Smoke Tests', () => {
   test('Application should start successfully', async ({ page }) => {
     // Navigate to the app
@@ -56,18 +89,44 @@ test.describe('Smoke Tests', () => {
 
     await dismissStartupDialogs(page);
 
-    const sidebarMenuButton = page.getByRole('button', { name: 'Sidebar menu' });
-    await expect(sidebarMenuButton).toBeVisible({ timeout: 5000 });
-
-    await expect(sidebarMenuButton).toBeEnabled();
-    await sidebarMenuButton.click();
-
-    const settingsItem = page.getByRole('button', { name: 'Settings' });
-    await expect(settingsItem).toBeVisible({ timeout: 5000 });
-    await settingsItem.click();
+    await openSettings(page);
 
     // Small wait to ensure no errors are thrown
     await page.waitForTimeout(500);
+  });
+
+  test('Remote daemon settings can create a paired profile and switch modes', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await openSettings(page);
+    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
+    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
+    await clickDomNode(remoteDaemonSectionButton);
+
+    await expect(page.getByText('Local mode')).toBeVisible();
+    await expect(page.getByText(/Status: local/i)).toBeVisible();
+
+    await setInputValue(page.getByLabel('Connection Label'), 'Office Mac mini');
+    await setInputValue(page.getByLabel('Remote Base URL'), 'http://127.0.0.1:42137');
+    await clickDomNode(page.getByRole('button', { name: 'Create Paired Profile' }));
+
+    await expect(page.getByText('Latest generated remote token')).toBeVisible();
+    await expect(page.getByText('Office Mac mini')).toBeVisible();
+
+    await clickDomNode(page.getByRole('button', { name: 'Connect', exact: true }));
+
+    await expect(page.getByText('Remote mode')).toBeVisible();
+    await expect(page.getByText(/Status: connected via Office Mac mini/i)).toBeVisible();
+
+    const useLocalRuntimeButton = page.getByRole('button', { name: 'Use Local Runtime' });
+    await expect(useLocalRuntimeButton).toBeEnabled();
+    await clickDomNode(useLocalRuntimeButton);
+
+    await expect(page.getByText('Local mode')).toBeVisible();
+    await expect(page.getByText(/Status: local/i)).toBeVisible();
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
   test('Permission dialog can approve a daemonized permission request', async ({ page }) => {

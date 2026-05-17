@@ -6,6 +6,36 @@ export async function installElectronApiMock(page: Page) {
     const unsubscribe = () => undefined;
     const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
     const pendingPermissions: Array<Record<string, unknown>> = [];
+    const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+    let nextRemoteConnectionId = 1;
+    const remoteDaemonConfig = {
+      host: {
+        config: {
+          enabled: false,
+          listenHost: '127.0.0.1',
+          listenPort: 42137,
+          pairingRequired: true,
+          allowInsecureHttpOnLoopback: true,
+        },
+        clients: [] as Array<Record<string, unknown>>,
+      },
+      client: {
+        profiles: [] as Array<Record<string, unknown>>,
+        activeProfileId: null as string | null,
+        mode: 'local' as 'local' | 'remote',
+      },
+    };
+    const remoteConnectionState = {
+      mode: 'local' as 'local' | 'remote',
+      status: 'local' as 'local' | 'connecting' | 'connected' | 'reconnecting' | 'error',
+      activeProfileId: null as string | null,
+      activeProfileLabel: null as string | null,
+      activeBaseUrl: null as string | null,
+      lastError: null as string | null,
+    };
+    const configState: Record<string, unknown> = {
+      remoteDaemon: clone(remoteDaemonConfig),
+    };
 
     const subscribe = (channel: string, callback: (...args: unknown[]) => void) => {
       const callbacks = listeners.get(channel) ?? new Set<(...args: unknown[]) => void>();
@@ -28,6 +58,15 @@ export async function installElectronApiMock(page: Page) {
       for (const callback of callbacks) {
         callback(...args);
       }
+    };
+
+    const syncRemoteDaemonConfig = () => {
+      configState.remoteDaemon = clone(remoteDaemonConfig);
+    };
+
+    const setRemoteConnectionState = (updates: Partial<typeof remoteConnectionState>) => {
+      Object.assign(remoteConnectionState, updates);
+      emit('remote-daemon:connection-state-changed', clone(remoteConnectionState));
     };
 
     const namespace = (overrides: Record<string, unknown> = {}) =>
@@ -90,7 +129,11 @@ export async function installElectronApiMock(page: Page) {
         stopPolling: () => success(),
       }),
       config: namespace({
-        get: () => success({}),
+        get: () => success(clone(configState)),
+        update: (updates: Record<string, unknown>) => {
+          Object.assign(configState, updates);
+          return success();
+        },
         getAvailableShells: () => success([]),
         getMonospaceFonts: () => success([]),
         getSessionPreferences: () => success({}),
@@ -141,6 +184,119 @@ export async function installElectronApiMock(page: Page) {
         getAllWithProjects: () => success([]),
         getArchivedWithProjects: () => success([]),
         getResumable: () => success([]),
+      }),
+      remoteDaemon: namespace({
+        getConfig: () => success(clone(remoteDaemonConfig)),
+        getConnectionState: () => success(clone(remoteConnectionState)),
+        createConnectionPair: (input: { label?: string; baseUrl?: string }) => {
+          const id = `remote-${nextRemoteConnectionId++}`;
+          const label = input.label ?? 'Remote host';
+          const baseUrl = input.baseUrl ?? 'http://127.0.0.1:42137';
+          const token = `token-${id}`;
+          const client = {
+            id,
+            label,
+            createdAt: new Date().toISOString(),
+            tokenHash: `hash-${token}`,
+          };
+          const profile = {
+            id,
+            label,
+            baseUrl,
+            token,
+            transport: 'http+sse',
+          };
+          remoteDaemonConfig.host.clients.push(client);
+          remoteDaemonConfig.client.profiles.push(profile);
+          syncRemoteDaemonConfig();
+          return success({ client, profile, token });
+        },
+        updateHostConfig: (updates: Record<string, unknown>) => {
+          remoteDaemonConfig.host.config = {
+            ...remoteDaemonConfig.host.config,
+            ...updates,
+          };
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.host.config));
+        },
+        upsertClientRecord: (record: Record<string, unknown>) => {
+          const existingIndex = remoteDaemonConfig.host.clients.findIndex((client) => client.id === record.id);
+          if (existingIndex >= 0) {
+            remoteDaemonConfig.host.clients[existingIndex] = record;
+          } else {
+            remoteDaemonConfig.host.clients.push(record);
+          }
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.host.clients));
+        },
+        deleteClientRecord: (clientId: string) => {
+          remoteDaemonConfig.host.clients = remoteDaemonConfig.host.clients.filter((client) => client.id !== clientId);
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.host.clients));
+        },
+        upsertConnectionProfile: (profile: Record<string, unknown>) => {
+          const existingIndex = remoteDaemonConfig.client.profiles.findIndex((existing) => existing.id === profile.id);
+          if (existingIndex >= 0) {
+            remoteDaemonConfig.client.profiles[existingIndex] = profile;
+          } else {
+            remoteDaemonConfig.client.profiles.push(profile);
+          }
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.client.profiles));
+        },
+        deleteConnectionProfile: (profileId: string) => {
+          remoteDaemonConfig.client.profiles = remoteDaemonConfig.client.profiles.filter((profile) => profile.id !== profileId);
+          if (remoteDaemonConfig.client.activeProfileId === profileId) {
+            remoteDaemonConfig.client.activeProfileId = null;
+            remoteDaemonConfig.client.mode = 'local';
+            setRemoteConnectionState({
+              mode: 'local',
+              status: 'local',
+              activeProfileId: null,
+              activeProfileLabel: null,
+              activeBaseUrl: null,
+              lastError: null,
+            });
+          }
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.client));
+        },
+        updateClientState: (updates: { activeProfileId?: string | null; mode?: 'local' | 'remote' }) => {
+          if (updates.activeProfileId !== undefined) {
+            remoteDaemonConfig.client.activeProfileId = updates.activeProfileId;
+          }
+          if (updates.mode) {
+            remoteDaemonConfig.client.mode = updates.mode;
+          }
+
+          if (remoteDaemonConfig.client.mode === 'remote' && remoteDaemonConfig.client.activeProfileId) {
+            const activeProfile = remoteDaemonConfig.client.profiles.find(
+              (profile) => profile.id === remoteDaemonConfig.client.activeProfileId
+            );
+            setRemoteConnectionState({
+              mode: 'remote',
+              status: activeProfile ? 'connected' : 'error',
+              activeProfileId: remoteDaemonConfig.client.activeProfileId,
+              activeProfileLabel: activeProfile?.label ?? null,
+              activeBaseUrl: activeProfile?.baseUrl ?? null,
+              lastError: activeProfile ? null : 'Missing remote profile',
+            });
+          } else {
+            setRemoteConnectionState({
+              mode: 'local',
+              status: 'local',
+              activeProfileId: remoteDaemonConfig.client.activeProfileId,
+              activeProfileLabel: null,
+              activeBaseUrl: null,
+              lastError: null,
+            });
+          }
+
+          syncRemoteDaemonConfig();
+          return success(clone(remoteDaemonConfig.client));
+        },
+        onConnectionStateChanged: (callback: (state: unknown) => void) =>
+          subscribe('remote-daemon:connection-state-changed', callback),
       }),
       uiState: namespace({
         getExpanded: () => success([]),
