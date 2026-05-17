@@ -111,6 +111,20 @@ export class CloudVmManager extends EventEmitter {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger?.error(`[CloudVM] Failed to fetch status: ${message}`);
+
+      if (this.hasDaemonHostedWorkspaceState(config)) {
+        this.cachedState = {
+          status: this.mapDaemonStatusToVmStatus(config.daemonStatus ?? 'unknown'),
+          ip: null,
+          noVncUrl: null,
+          ...this.getHostedWorkspaceStateFromConfig(config),
+          lastChecked: new Date().toISOString(),
+          error: null,
+          tunnelStatus: this.tunnelStatus,
+        };
+        return { ...this.cachedState };
+      }
+
       this.cachedState.error = message;
       this.cachedState.status = 'unknown';
     }
@@ -597,7 +611,12 @@ export class CloudVmManager extends EventEmitter {
   }
 
   private canManageVmLifecycle(config: CloudVmConfig): boolean {
-    return config.apiToken.trim().length > 0;
+    return Boolean(
+      config.apiToken.trim().length > 0
+      && config.serverId
+      && config.projectId
+      && config.zone,
+    );
   }
 
   private hasDaemonHostedWorkspaceState(config: CloudVmConfig): boolean {

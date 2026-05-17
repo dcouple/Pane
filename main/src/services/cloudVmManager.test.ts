@@ -102,6 +102,8 @@ describe('CloudVmManager', () => {
       provider: 'gcp',
       apiToken: 'secret-token',
       serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
       vncPassword: 'vnc-password',
       tunnelPort: 8080,
       daemonStatus: 'ready',
@@ -155,6 +157,61 @@ describe('CloudVmManager', () => {
       preferredAccess: 'daemon',
       allowNoVncFallback: true,
       noVncUrl: null,
+      tunnelStatus: 'off',
+      error: null,
+    });
+  });
+
+  it('surfaces daemon-backed hosted workspace state when lifecycle fields are incomplete', async () => {
+    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'stale-token',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    })) as never);
+
+    const fetchVmStatusSpy = vi.spyOn(manager as never, 'fetchVmStatus');
+
+    const state = await manager.getState();
+
+    expect(fetchVmStatusSpy).not.toHaveBeenCalled();
+    expect(state).toMatchObject({
+      status: 'running',
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+      tunnelStatus: 'off',
+      error: null,
+    });
+  });
+
+  it('falls back to daemon-backed hosted workspace state when lifecycle status fetch fails', async () => {
+    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'stale-token',
+      serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    })) as never);
+
+    vi.spyOn(manager as never, 'fetchVmStatus').mockRejectedValue(new Error('401 Unauthorized'));
+
+    const state = await manager.getState();
+
+    expect(state).toMatchObject({
+      status: 'running',
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
       tunnelStatus: 'off',
       error: null,
     });
