@@ -11,6 +11,8 @@ interface TestRemoteServer {
   emitDaemonEvent(payload: unknown): void;
   getLastInvokeAuth(): string | undefined;
   getLastInvokeBody(): string | undefined;
+  getLastInvokePath(): string | undefined;
+  getLastEventsPath(): string | undefined;
   setEventsReady(ready: boolean): void;
 }
 
@@ -105,6 +107,48 @@ describe('RemotePaneClient', () => {
     });
 
     expect(server.getLastInvokeAuth()).toBe('Bearer secret-token');
+  });
+
+  it('preserves reverse-proxy base path prefixes for invoke and event routes', async () => {
+    const server = await createTestRemoteServer('127.0.0.1', '/pane');
+    activeServers.push(server);
+    const receivedEvents: Array<{ channel: string; args: unknown[] }> = [];
+
+    const client = new RemotePaneClient({
+      id: 'profile-subpath',
+      label: 'Reverse proxy',
+      baseUrl: server.baseUrl,
+      token: 'secret-token',
+      transport: 'http+sse',
+    }, {
+      eventSink: {
+        send(channel, ...args) {
+          receivedEvents.push({ channel, args });
+        },
+      },
+    });
+
+    await client.connect();
+    await expect(client.invoke('sessions:get-all', ['session-1'])).resolves.toEqual({
+      channel: 'sessions:get-all',
+      args: ['session-1'],
+    });
+
+    server.emitDaemonEvent({
+      channel: 'session:updated',
+      args: [{ id: 'session-1', status: 'running' }],
+      timestamp: new Date().toISOString(),
+    });
+
+    await waitFor(() => receivedEvents.length === 1);
+    expect(server.getLastInvokePath()).toBe('/pane/invoke');
+    expect(server.getLastEventsPath()).toBe('/pane/events');
+    expect(receivedEvents).toEqual([{
+      channel: 'session:updated',
+      args: [{ id: 'session-1', status: 'running' }],
+    }]);
+
+    await client.disconnect();
   });
 });
 
@@ -227,16 +271,22 @@ describe('RemotePaneClientController', () => {
   });
 });
 
-async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteServer> {
+async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promise<TestRemoteServer> {
   let streamResponse: ServerResponse | null = null;
   let lastInvokeAuth: string | undefined;
   let lastInvokeBody: string | undefined;
+  let lastInvokePath: string | undefined;
+  let lastEventsPath: string | undefined;
   let eventsReady = true;
+  const normalizedBasePath = normalizeTestBasePath(basePath);
+  const invokePath = `${normalizedBasePath}/invoke`;
+  const eventsPath = `${normalizedBasePath}/events`;
 
   const server = http.createServer(async (request: IncomingMessage, response: ServerResponse) => {
-    if (request.url === '/invoke') {
+    if (request.url === invokePath) {
       lastInvokeAuth = request.headers.authorization;
       lastInvokeBody = await readRequestBody(request);
+      lastInvokePath = request.url;
       const parsed = JSON.parse(lastInvokeBody) as { channel: string; args: unknown[] };
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({
@@ -246,7 +296,8 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
       return;
     }
 
-    if (request.url === '/events') {
+    if (request.url === eventsPath) {
+      lastEventsPath = request.url;
       if (!eventsReady) {
         response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({
@@ -289,7 +340,7 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
   }
 
   return {
-    baseUrl: `http://${host.includes(':') ? `[${host}]` : host}:${address.port}`,
+    baseUrl: `http://${host.includes(':') ? `[${host}]` : host}:${address.port}${normalizedBasePath}`,
     emitDaemonEvent(payload: unknown) {
       if (!streamResponse) {
         throw new Error('Remote event stream is not connected');
@@ -304,6 +355,12 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
     getLastInvokeBody() {
       return lastInvokeBody;
     },
+    getLastInvokePath() {
+      return lastInvokePath;
+    },
+    getLastEventsPath() {
+      return lastEventsPath;
+    },
     setEventsReady(nextReady: boolean) {
       eventsReady = nextReady;
     },
@@ -317,6 +374,15 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
       });
     },
   };
+}
+
+function normalizeTestBasePath(basePath: string): string {
+  if (basePath.length === 0 || basePath === '/') {
+    return '';
+  }
+
+  const withLeadingSlash = basePath.startsWith('/') ? basePath : `/${basePath}`;
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash.slice(0, -1) : withLeadingSlash;
 }
 
 function createConfigManagerStub(initialConfig: RemoteDaemonConfig): ConfigManagerStub {

@@ -94,7 +94,7 @@ export class RemotePaneClient {
   }
 
   async invoke(channel: string, args: unknown[]): Promise<unknown> {
-    const endpoint = new URL('/invoke', this.normalizedBaseUrl);
+    const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'invoke');
     const response = await requestJson(endpoint, {
       method: 'POST',
       headers: {
@@ -119,7 +119,7 @@ export class RemotePaneClient {
     this.clearReconnectTimer();
     this.onConnectionStateChange?.(isReconnect ? 'reconnecting' : 'connecting', null);
 
-    const endpoint = new URL('/events', this.normalizedBaseUrl);
+    const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'events');
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -481,6 +481,10 @@ export const remotePaneClientController = new RemotePaneClientController();
 function normalizeBaseUrl(baseUrl: string): URL {
   const normalized = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   return new URL(normalized);
+}
+
+function buildRemoteEndpoint(baseUrl: URL, path: 'invoke' | 'events'): URL {
+  return new URL(path, baseUrl);
 }
 
 function createRequest(
