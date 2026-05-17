@@ -148,6 +148,27 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
+  test('Remote daemon settings seed IPv6 loopback defaults with brackets', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(async () => {
+      await window.electronAPI.remoteDaemon.updateHostConfig({
+        listenHost: '::1',
+        listenPort: 42137,
+      });
+    });
+
+    await openSettings(page);
+    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
+    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
+    await clickDomNode(remoteDaemonSectionButton);
+
+    await expect(page.getByLabel('Existing Remote Base URL')).toHaveValue('http://[::1]:42137');
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
+
   test('Permission dialog can approve a daemonized permission request', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 

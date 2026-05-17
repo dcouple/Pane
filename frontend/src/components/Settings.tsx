@@ -133,7 +133,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       ));
       setRemoteImportedProfileBaseUrl((currentValue) => (
         currentValue === 'http://127.0.0.1:42137'
-          ? `http://${configResponse.data!.host.config.listenHost}:${configResponse.data!.host.config.listenPort}`
+          ? formatRemoteBaseUrl(
+              configResponse.data!.host.config.listenHost,
+              configResponse.data!.host.config.listenPort,
+            )
           : currentValue
       ));
     }
