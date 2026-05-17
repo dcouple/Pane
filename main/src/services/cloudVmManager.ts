@@ -761,7 +761,7 @@ export class CloudVmManager extends EventEmitter {
     }
 
     if (!linkedProfile) {
-      return 'available';
+      return 'error';
     }
 
     const connectionState = remotePaneClientController.getConnectionState();

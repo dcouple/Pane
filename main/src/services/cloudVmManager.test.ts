@@ -377,7 +377,7 @@ describe('CloudVmManager', () => {
     });
   });
 
-  it('keeps a hosted workspace connectable when its linked remote profile is missing', async () => {
+  it('reports an error when a hosted workspace linked remote profile is missing', async () => {
     const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
     remoteDaemonConfig.client.profiles = [];
     vi.spyOn(remotePaneClientController, 'getConnectionState').mockReturnValue({
@@ -404,7 +404,7 @@ describe('CloudVmManager', () => {
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
       linkedRemoteProfileLabel: null,
-      remoteConnectionStatus: 'available',
+      remoteConnectionStatus: 'error',
     });
   });
 
