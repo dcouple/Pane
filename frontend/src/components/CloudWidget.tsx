@@ -135,7 +135,15 @@ export function CloudWidget() {
     || vmState.linkedRemoteProfileId
     || vmState.daemonStatus !== 'unknown',
   );
-  const daemonAccess = isRunning && vmState.preferredAccess === 'daemon' && hasDaemonMetadata;
+  const noVncFallbackReady = vmState.allowNoVncFallback && Boolean(vmState.noVncUrl);
+  const daemonUnavailableWithFallback =
+    noVncFallbackReady &&
+    (vmState.daemonStatus === 'unknown' || vmState.daemonStatus === 'error');
+  const daemonAccess =
+    isRunning &&
+    vmState.preferredAccess === 'daemon' &&
+    hasDaemonMetadata &&
+    !daemonUnavailableWithFallback;
   const daemonBootstrapping = daemonAccess && vmState.daemonStatus === 'bootstrapping';
   const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
   const daemonError = daemonAccess && vmState.daemonStatus === 'error';
