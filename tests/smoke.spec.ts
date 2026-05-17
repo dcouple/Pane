@@ -198,6 +198,35 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
+  test('Remote daemon resync refreshes renderer config', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.waitForTimeout(250);
+
+    const beforeCount = await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: {
+          emitRemoteDaemonResyncRequested: () => void;
+          getConfigReadCount: () => number;
+        };
+      }).__paneTestElectronMock;
+
+      const count = mock?.getConfigReadCount() ?? 0;
+      mock?.emitRemoteDaemonResyncRequested();
+      return count;
+    });
+
+    await expect.poll(async () => page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { getConfigReadCount: () => number };
+      }).__paneTestElectronMock;
+
+      return mock?.getConfigReadCount() ?? 0;
+    })).toBeGreaterThan(beforeCount);
+  });
+
   test('Cloud widget treats connected daemon-backed hosted workspaces as ready, not reconnect-needed', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
@@ -233,6 +262,34 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByRole('button', { name: 'Use Local Runtime' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Reconnect' })).toHaveCount(0);
     await expect(page.locator('button[title="Stop Cloud VM"]')).toHaveCount(0);
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
+
+  test('Cloud widget preserves VM stop control for daemon-ready managed VMs', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'off',
+        daemonStatus: 'ready',
+        daemonBaseUrl: 'https://pane.example.com/daemon/',
+        noVncUrl: 'http://localhost:9000/novnc/vnc.html',
+        linkedRemoteProfileId: null,
+        linkedRemoteProfileLabel: null,
+        remoteConnectionStatus: 'unlinked',
+        preferredAccess: 'daemon',
+      });
+    });
+
+    await expect(page.getByText('Daemon Ready')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('button[title="Stop Cloud VM"]')).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 

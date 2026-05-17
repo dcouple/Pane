@@ -54,6 +54,7 @@ export async function installElectronApiMock(page: Page) {
       remoteDaemon: clone(remoteDaemonConfig),
     };
     let cloudDisconnectError: string | null = null;
+    let configGetCount = 0;
 
     const subscribe = (channel: string, callback: (...args: unknown[]) => void) => {
       const callbacks = listeners.get(channel) ?? new Set<(...args: unknown[]) => void>();
@@ -104,6 +105,9 @@ export async function installElectronApiMock(page: Page) {
         }
         if (prop === 'onPermissionResolved') {
           return (callback: (event: unknown) => void) => subscribe('permission:resolved', callback);
+        }
+        if (prop === 'onRemoteDaemonResyncRequested') {
+          return (callback: () => void) => subscribe('remote-daemon:resync-required', callback);
         }
         return () => unsubscribe;
       },
@@ -193,7 +197,10 @@ export async function installElectronApiMock(page: Page) {
         stopPolling: () => success(),
       }),
       config: namespace({
-        get: () => success(clone(configState)),
+        get: () => {
+          configGetCount += 1;
+          return success(clone(configState));
+        },
         update: (updates: Record<string, unknown>) => {
           Object.assign(configState, updates);
           return success();
@@ -397,6 +404,12 @@ export async function installElectronApiMock(page: Page) {
         },
         setCloudDisconnectError(error: string | null) {
           cloudDisconnectError = error;
+        },
+        emitRemoteDaemonResyncRequested() {
+          emit('remote-daemon:resync-required');
+        },
+        getConfigReadCount() {
+          return configGetCount;
         },
       },
     });

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useErrorStore } from '../stores/errorStore';
 import { usePanelStore } from '../stores/panelStore';
+import { useConfigStore } from '../stores/configStore';
 import { panelApi } from '../services/panelApi';
 import { API } from '../utils/api';
 import type { Session, SessionOutput, GitStatus } from '../types/session';
@@ -374,6 +375,8 @@ export function useIPCEvents() {
     const unsubscribeRemoteResync = window.electronAPI.events.onRemoteDaemonResyncRequested?.(() => {
       void (async () => {
         try {
+          await useConfigStore.getState().fetchConfig();
+
           const sessionsResponse = await API.sessions.getAll();
           if (sessionsResponse.success && sessionsResponse.data) {
             const sessionsWithJsonMessages = sessionsResponse.data.map((session: Session) => ({

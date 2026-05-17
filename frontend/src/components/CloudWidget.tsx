@@ -400,13 +400,24 @@ export function CloudWidget() {
       )}
 
       {daemonReady && !daemonConnectAvailable && !daemonConnected && !daemonConnectionUnavailable && !loading && (
-        <div
-          className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
-          title="Hosted workspace daemon is ready"
-        >
-          <Cloud className="w-4 h-4 text-interactive" />
-          <span className="text-xs text-text-primary">Daemon Ready</span>
-        </div>
+        <>
+          {canManageCloudVmLifecycle && (
+            <button
+              onClick={handleStop}
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+              title="Stop Cloud VM"
+            >
+              <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+            </button>
+          )}
+          <div
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
+            title="Hosted workspace daemon is ready"
+          >
+            <Cloud className="w-4 h-4 text-interactive" />
+            <span className="text-xs text-text-primary">Daemon Ready</span>
+          </div>
+        </>
       )}
     </div>
   );
