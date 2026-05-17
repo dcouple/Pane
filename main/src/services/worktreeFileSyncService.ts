@@ -11,7 +11,7 @@ import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSy
  * execute inside the Linux distro and need forward slashes.
  */
 function envJoin(environment: ProjectEnvironment, ...segments: string[]): string {
-  if (environment === 'wsl') {
+  if (environment !== 'windows') {
     return posixJoin(...segments);
   }
   return path.join(...segments);
@@ -24,7 +24,7 @@ function envJoin(environment: ProjectEnvironment, ...segments: string[]): string
  * use path.posix.relative instead.
  */
 function envRelative(environment: ProjectEnvironment, from: string, to: string): string {
-  if (environment === 'wsl') {
+  if (environment !== 'windows') {
     return path.posix.relative(from, to);
   }
   return path.relative(from, to);
@@ -89,9 +89,9 @@ async function ensureParentDir(
   cwd: string,
   environment: ProjectEnvironment,
 ): Promise<void> {
-  const parentDir = environment === 'wsl'
-    ? posixJoin(...path.dirname(destPath).split(/[\\/]/))
-    : path.dirname(destPath);
+  const parentDir = environment === 'windows'
+    ? path.dirname(destPath)
+    : path.posix.dirname(destPath);
 
   if (environment === 'windows') {
     // Windows: use md to create directory, suppress "already exists" error
