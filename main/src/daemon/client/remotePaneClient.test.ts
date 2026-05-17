@@ -11,6 +11,7 @@ interface TestRemoteServer {
   emitDaemonEvent(payload: unknown): void;
   getLastInvokeAuth(): string | undefined;
   getLastInvokeBody(): string | undefined;
+  setEventsReady(ready: boolean): void;
 }
 
 interface ConfigManagerStub extends EventEmitter {
@@ -141,12 +142,53 @@ describe('RemotePaneClientController', () => {
     expect(controller.shouldForwardLocalRendererEvent('session:created')).toBe(false);
     expect(controller.shouldForwardLocalRendererEvent('window:focus-changed')).toBe(true);
   });
+
+  it('keeps retrying after an initial remote connection failure', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+    server.setEventsReady(false);
+
+    const remoteConfig = createDefaultRemoteDaemonConfig();
+    remoteConfig.client = {
+      profiles: [{
+        id: 'profile-retry',
+        label: 'Remote host',
+        baseUrl: server.baseUrl,
+        token: 'secret-token',
+        transport: 'http+sse',
+      }],
+      activeProfileId: 'profile-retry',
+      mode: 'remote',
+    };
+    const configManager = createConfigManagerStub(remoteConfig);
+
+    const controller = new RemotePaneClientController();
+    controller.initialize({
+      configManager,
+      rendererEventSink: { send() {} },
+    });
+
+    await waitFor(() => {
+      const state = controller.getConnectionState();
+      return state.status === 'error' || state.status === 'reconnecting';
+    });
+
+    server.setEventsReady(true);
+
+    await waitFor(() => controller.getConnectionState().status === 'connected', 3_000);
+    expect(controller.getConnectionState()).toMatchObject({
+      mode: 'remote',
+      status: 'connected',
+      activeProfileId: 'profile-retry',
+    });
+  });
 });
 
 async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteServer> {
   let streamResponse: ServerResponse | null = null;
   let lastInvokeAuth: string | undefined;
   let lastInvokeBody: string | undefined;
+  let eventsReady = true;
 
   const server = http.createServer(async (request: IncomingMessage, response: ServerResponse) => {
     if (request.url === '/invoke') {
@@ -162,6 +204,16 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
     }
 
     if (request.url === '/events') {
+      if (!eventsReady) {
+        response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({
+          error: {
+            message: 'Remote daemon not ready yet',
+          },
+        }));
+        return;
+      }
+
       response.writeHead(200, {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
@@ -208,6 +260,9 @@ async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteSer
     },
     getLastInvokeBody() {
       return lastInvokeBody;
+    },
+    setEventsReady(nextReady: boolean) {
+      eventsReady = nextReady;
     },
     async close() {
       if (streamResponse && !streamResponse.writableEnded) {

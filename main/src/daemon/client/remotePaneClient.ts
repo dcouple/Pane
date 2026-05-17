@@ -400,8 +400,9 @@ export class RemotePaneClientController extends EventEmitter {
         lastError: null,
       });
     } catch (error) {
-      this.activeClient = null;
-      await client.disconnect();
+      if (this.activeClient !== client) {
+        await client.disconnect();
+      }
       this.setConnectionState({
         mode: 'remote',
         status: 'error',
