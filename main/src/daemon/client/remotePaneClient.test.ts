@@ -14,6 +14,7 @@ interface TestRemoteServer {
   getLastInvokeBody(): string | undefined;
   getLastInvokePath(): string | undefined;
   getLastEventsPath(): string | undefined;
+  setEmitReadyEvent(emitReadyEvent: boolean): void;
   setEventsReady(ready: boolean): void;
 }
 
@@ -148,6 +149,34 @@ describe('RemotePaneClient', () => {
       channel: 'session:updated',
       args: [{ id: 'session-1', status: 'running' }],
     }]);
+
+    await client.disconnect();
+  });
+
+  it('times out event streams that never emit the initial ready event', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+    server.setEmitReadyEvent(false);
+    const connectionStates: string[] = [];
+
+    const client = new RemotePaneClient({
+      id: 'profile-timeout',
+      label: 'Buffered proxy',
+      baseUrl: server.baseUrl,
+      token: 'secret-token',
+      transport: 'http+sse',
+    }, {
+      initialHandshakeTimeoutMs: 25,
+      onConnectionStateChange(status) {
+        connectionStates.push(status);
+      },
+    });
+
+    await expect(client.connect({ retryOnInitialFailure: false })).rejects.toThrow(
+      'Timed out waiting for remote daemon ready event after 25ms',
+    );
+    expect(connectionStates).toContain('connecting');
+    expect(connectionStates).toContain('error');
 
     await client.disconnect();
   });
@@ -366,6 +395,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
   let lastInvokePath: string | undefined;
   let lastEventsPath: string | undefined;
   let eventsReady = true;
+  let emitReadyEvent = true;
   const normalizedBasePath = normalizeTestBasePath(basePath);
   const invokePath = `${normalizedBasePath}/invoke`;
   const eventsPath = `${normalizedBasePath}/events`;
@@ -402,9 +432,11 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
         'Content-Type': 'text/event-stream; charset=utf-8',
       });
       response.flushHeaders();
-      response.write('event: ready\n');
-      response.write(`data: ${JSON.stringify({ replay: 'none', resync: 'refetch-state-after-reconnect', timestamp: new Date().toISOString() })}\n\n`);
       streamResponse = response;
+      if (emitReadyEvent) {
+        response.write('event: ready\n');
+        response.write(`data: ${JSON.stringify({ replay: 'none', resync: 'refetch-state-after-reconnect', timestamp: new Date().toISOString() })}\n\n`);
+      }
       request.on('close', () => {
         if (streamResponse === response) {
           streamResponse = null;
@@ -453,6 +485,9 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     },
     getLastEventsPath() {
       return lastEventsPath;
+    },
+    setEmitReadyEvent(nextEmitReadyEvent: boolean) {
+      emitReadyEvent = nextEmitReadyEvent;
     },
     setEventsReady(nextReady: boolean) {
       eventsReady = nextReady;
