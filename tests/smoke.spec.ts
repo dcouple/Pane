@@ -197,4 +197,28 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Permission Required')).toHaveCount(0);
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
+
+  test('Cloud widget treats daemon-backed hosted workspaces as ready, not reconnect-needed', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'off',
+        daemonStatus: 'ready',
+        daemonBaseUrl: 'https://pane.example.com/daemon/',
+        preferredAccess: 'daemon',
+      });
+    });
+
+    await expect(page.getByText('Daemon Ready')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: 'Reconnect' })).toHaveCount(0);
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
 });

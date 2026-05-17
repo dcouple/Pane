@@ -139,7 +139,7 @@ export async function installElectronApiMock(page: Page) {
       }),
       cloud: namespace({
         getState: () => success(clone(cloudState)),
-        onStateChanged: subscribe,
+        onStateChanged: (callback: (state: unknown) => void) => subscribe('cloud:state-changed', callback),
         startPolling: () => success(),
         stopPolling: () => success(),
       }),
@@ -341,6 +341,10 @@ export async function installElectronApiMock(page: Page) {
         emitPermissionRequest(request: Record<string, unknown>) {
           pendingPermissions.push(request);
           emit('permission:request', request);
+        },
+        setCloudState(updates: Record<string, unknown>) {
+          Object.assign(cloudState, updates);
+          emit('cloud:state-changed', clone(cloudState));
         },
       },
     });

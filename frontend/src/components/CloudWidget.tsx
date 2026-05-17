@@ -130,18 +130,23 @@ export function CloudWidget() {
   const isRunning = vmState.status === 'running';
   const isOff = vmState.status === 'off';
   const isUnknown = vmState.status === 'unknown'; // Usually means auth failed
-  const tunnelConnecting = isRunning && vmState.tunnelStatus === 'starting';
-  const tunnelReady = isRunning && vmState.tunnelStatus === 'running';
-  const tunnelError = isRunning && vmState.tunnelStatus === 'error';
-  const tunnelDisconnected = isRunning && vmState.tunnelStatus === 'off';
+  const daemonAccess = isRunning && vmState.preferredAccess === 'daemon';
+  const daemonBootstrapping = daemonAccess && vmState.daemonStatus === 'bootstrapping';
+  const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
+  const daemonError = daemonAccess && vmState.daemonStatus === 'error';
+  const tunnelConnecting = isRunning && !daemonAccess && vmState.tunnelStatus === 'starting';
+  const tunnelReady = isRunning && !daemonAccess && vmState.tunnelStatus === 'running';
+  const tunnelError = isRunning && !daemonAccess && vmState.tunnelStatus === 'error';
+  const tunnelDisconnected = isRunning && !daemonAccess && vmState.tunnelStatus === 'off';
 
   // Show reconnect button for: tunnel issues OR unknown status (auth failed)
-  const needsReconnect = (tunnelError || tunnelDisconnected || isUnknown) && !loading && activeSessionId;
+  const needsReconnect = (daemonError || tunnelError || tunnelDisconnected || isUnknown) && !loading && activeSessionId;
 
   // Compute transitioning label
   const getTransitionLabel = () => {
     if (vmState.status === 'stopping') return 'Stopping...';
     if (vmState.status === 'starting' || vmState.status === 'initializing') return 'Starting VM...';
+    if (daemonBootstrapping) return 'Starting workspace daemon...';
     if (tunnelConnecting) return 'Connecting tunnel...';
     return 'Loading...';
   };
@@ -159,7 +164,7 @@ export function CloudWidget() {
       )}
 
       {/* Transitioning state (VM starting/stopping or tunnel connecting) */}
-      {(isTransitioning || tunnelConnecting || loading) && (
+      {(isTransitioning || daemonBootstrapping || tunnelConnecting || loading) && (
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg">
           <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />
           <span className="text-xs text-text-secondary">
@@ -242,6 +247,25 @@ export function CloudWidget() {
               </>
             )}
           </button>
+        </>
+      )}
+
+      {daemonReady && !loading && (
+        <>
+          <button
+            onClick={handleStop}
+            className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+            title="Stop Cloud VM"
+          >
+            <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+          </button>
+          <div
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
+            title="Hosted workspace daemon is ready"
+          >
+            <Cloud className="w-4 h-4 text-interactive" />
+            <span className="text-xs text-text-primary">Daemon Ready</span>
+          </div>
         </>
       )}
     </div>
