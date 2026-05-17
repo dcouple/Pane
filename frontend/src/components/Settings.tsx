@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { NotificationSettings } from './NotificationSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
@@ -6,6 +6,13 @@ import { optIn, capture, captureAndOptOut } from '../services/posthog';
 import type { PreferredShell, TerminalShortcut } from '../types/config';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
+import {
+  createDefaultRemoteDaemonConfig,
+  createDefaultRemotePaneConnectionState,
+  type RemoteDaemonConfig,
+  type RemoteDaemonHostConfig,
+  type RemotePaneConnectionState,
+} from '../../../shared/types/remoteDaemon';
 import { useConfigStore } from '../stores/configStore';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import {
@@ -84,63 +91,39 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
   const [terminalShortcuts, setTerminalShortcuts] = useState<TerminalShortcut[]>([]);
   const [worktreeFileSync, setWorktreeFileSync] = useState<WorktreeFileSyncEntry[]>([]);
+  const [remoteDaemonConfig, setRemoteDaemonConfig] = useState<RemoteDaemonConfig>(createDefaultRemoteDaemonConfig());
+  const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
+  const [remoteHostConfigDraft, setRemoteHostConfigDraft] = useState<RemoteDaemonHostConfig>(createDefaultRemoteDaemonConfig().host.config);
+  const [remotePairLabel, setRemotePairLabel] = useState('');
+  const [remotePairBaseUrl, setRemotePairBaseUrl] = useState('http://127.0.0.1:42137');
+  const [remoteCreatedToken, setRemoteCreatedToken] = useState<string | null>(null);
+  const [remoteBusy, setRemoteBusy] = useState(false);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
   const { fetchConfig: refreshConfigStore } = useConfigStore();
 
-  useEffect(() => {
-    if (isOpen) {
-      // Get platform first, then fetch config (needed for Windows shell detection)
-      window.electronAPI.getPlatform().then((p) => {
-        setPlatform(p);
-        fetchConfig(p);
-      });
+  const refreshRemoteDaemonSettings = useCallback(async () => {
+    const [configResponse, connectionStateResponse] = await Promise.all([
+      API.remoteDaemon.getConfig(),
+      API.remoteDaemon.getConnectionState(),
+    ]);
 
-      // Load system monospace fonts for the font picker
-      window.electronAPI.config.getMonospaceFonts().then((result) => {
-        if (result?.data && Array.isArray(result.data)) {
-          setSystemMonoFonts(result.data as string[]);
-        }
-      }).catch(() => { /* fc-list not available — dropdown will be empty */ });
-
-      const loadAutoRename = async () => {
-        try {
-          const result = await window.electron?.invoke('preferences:get', 'auto_rename_sessions_to_pr') as IPCResponse<string>;
-          if (result?.data !== undefined && result?.data !== null) {
-            setAutoRenameToPR(result.data !== 'false');
-          }
-        } catch (error) {
-          console.error('Failed to load auto-rename preference:', error);
-        }
-      };
-      loadAutoRename();
-
-      // Load @terminal preferences
-      const loadAtTerminalPrefs = async () => {
-        try {
-          const [modeResult, lineResult] = await Promise.all([
-            window.electron?.invoke('preferences:get', 'at_terminal_paste_mode') as Promise<IPCResponse<string>>,
-            window.electron?.invoke('preferences:get', 'at_terminal_line_count') as Promise<IPCResponse<string>>,
-          ]);
-          if (modeResult?.data === 'raw' || modeResult?.data === 'embed') {
-            setAtPasteMode(modeResult.data);
-          }
-          if (lineResult?.data) {
-            const val = parseInt(lineResult.data, 10);
-            if ([100, 300, 500, -1].includes(val)) setAtLineCount(val);
-          }
-        } catch { /* ignore */ }
-      };
-      loadAtTerminalPrefs();
-
-      // Navigate to shortcuts tab when opened via Ctrl+Alt+/
-      if (initialSection === 'terminal-shortcuts') {
-        setActiveTab('shortcuts');
-      }
+    if (configResponse.success && configResponse.data) {
+      setRemoteDaemonConfig(configResponse.data);
+      setRemoteHostConfigDraft(configResponse.data.host.config);
+      setRemotePairBaseUrl((currentValue) => (
+        currentValue === 'http://127.0.0.1:42137'
+          ? `http://${configResponse.data!.host.config.listenHost}:${configResponse.data!.host.config.listenPort}`
+          : currentValue
+      ));
     }
-  }, [isOpen, initialSection]);
 
-  const fetchConfig = async (currentPlatform?: string) => {
+    if (connectionStateResponse.success && connectionStateResponse.data) {
+      setRemoteConnectionState(connectionStateResponse.data);
+    }
+  }, []);
+
+  const fetchConfig = useCallback(async (currentPlatform?: string) => {
     try {
       const response = await API.config.get();
       if (!response.success || !response.data) {
@@ -191,9 +174,143 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       // Load worktree file sync entries
       setWorktreeFileSync(data.worktreeFileSync ?? DEFAULT_WORKTREE_FILE_SYNC_ENTRIES);
+
+      await refreshRemoteDaemonSettings();
     } catch {
       setError('Failed to load configuration');
     }
+  }, [platform, refreshRemoteDaemonSettings, updateSettings]);
+
+  useEffect(() => {
+    if (isOpen) {
+      // Get platform first, then fetch config (needed for Windows shell detection)
+      window.electronAPI.getPlatform().then((p) => {
+        setPlatform(p);
+        fetchConfig(p);
+      });
+
+      const unsubscribeRemoteConnectionState = window.electronAPI.remoteDaemon.onConnectionStateChanged((state) => {
+        setRemoteConnectionState(state);
+      });
+
+      // Load system monospace fonts for the font picker
+      window.electronAPI.config.getMonospaceFonts().then((result) => {
+        if (result?.data && Array.isArray(result.data)) {
+          setSystemMonoFonts(result.data as string[]);
+        }
+      }).catch(() => { /* fc-list not available — dropdown will be empty */ });
+
+      const loadAutoRename = async () => {
+        try {
+          const result = await window.electron?.invoke('preferences:get', 'auto_rename_sessions_to_pr') as IPCResponse<string>;
+          if (result?.data !== undefined && result?.data !== null) {
+            setAutoRenameToPR(result.data !== 'false');
+          }
+        } catch (error) {
+          console.error('Failed to load auto-rename preference:', error);
+        }
+      };
+      loadAutoRename();
+
+      // Load @terminal preferences
+      const loadAtTerminalPrefs = async () => {
+        try {
+          const [modeResult, lineResult] = await Promise.all([
+            window.electron?.invoke('preferences:get', 'at_terminal_paste_mode') as Promise<IPCResponse<string>>,
+            window.electron?.invoke('preferences:get', 'at_terminal_line_count') as Promise<IPCResponse<string>>,
+          ]);
+          if (modeResult?.data === 'raw' || modeResult?.data === 'embed') {
+            setAtPasteMode(modeResult.data);
+          }
+          if (lineResult?.data) {
+            const val = parseInt(lineResult.data, 10);
+            if ([100, 300, 500, -1].includes(val)) setAtLineCount(val);
+          }
+        } catch { /* ignore */ }
+      };
+      loadAtTerminalPrefs();
+
+      // Navigate to shortcuts tab when opened via Ctrl+Alt+/
+      if (initialSection === 'terminal-shortcuts') {
+        setActiveTab('shortcuts');
+      }
+
+      return () => {
+        unsubscribeRemoteConnectionState();
+      };
+    }
+  }, [fetchConfig, initialSection, isOpen]);
+
+  const runRemoteDaemonAction = async (action: () => Promise<void>) => {
+    setRemoteBusy(true);
+    setError(null);
+    try {
+      await action();
+      await Promise.all([
+        refreshRemoteDaemonSettings(),
+        refreshConfigStore(),
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Remote daemon action failed');
+    } finally {
+      setRemoteBusy(false);
+    }
+  };
+
+  const handleSaveRemoteHostConfig = async () => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.updateHostConfig(remoteHostConfigDraft);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to save remote daemon host config');
+      }
+    });
+  };
+
+  const handleCreateRemoteConnectionPair = async () => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.createConnectionPair({
+        label: remotePairLabel,
+        baseUrl: remotePairBaseUrl,
+      });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to create remote daemon connection pair');
+      }
+
+      setRemotePairLabel('');
+      setRemoteCreatedToken(response.data?.token ?? null);
+    });
+  };
+
+  const handleUseRemoteProfile = async (profileId: string) => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.updateClientState({
+        activeProfileId: profileId,
+        mode: 'remote',
+      });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to connect to remote daemon profile');
+      }
+    });
+  };
+
+  const handleSwitchToLocalMode = async () => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.updateClientState({
+        mode: 'local',
+      });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to return to local mode');
+      }
+    });
+  };
+
+  const handleDeleteRemoteProfile = async (profileId: string) => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.deleteConnectionProfile(profileId);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to delete remote daemon connection profile');
+      }
+    });
   };
 
   const handleAutoRenameToggle = async (checked: boolean) => {
@@ -813,6 +930,207 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   Uses fast copy (hard links on Linux, APFS clones on macOS) when possible.
                   Package manager install runs automatically in the background terminal.
                 </p>
+              </SettingsSection>
+            </CollapsibleCard>
+
+            <CollapsibleCard
+              title="Self-Hosted Remote Daemon"
+              subtitle="Run Pane remotely on your own machine and connect this desktop app to it"
+              icon={<Terminal className="w-5 h-5" />}
+              defaultExpanded={false}
+            >
+              <SettingsSection
+                title="Client Mode"
+                description="Choose whether this Pane desktop app should talk to the local runtime or a remote self-hosted daemon"
+                icon={<Terminal className="w-4 h-4" />}
+              >
+                <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-surface-secondary border border-border-secondary">
+                  <div>
+                    <p className="text-sm font-medium text-text-primary">
+                      {remoteConnectionState.mode === 'remote' ? 'Remote mode' : 'Local mode'}
+                    </p>
+                    <p className="text-xs text-text-tertiary mt-1">
+                      Status: {remoteConnectionState.status}
+                      {remoteConnectionState.activeProfileLabel ? ` via ${remoteConnectionState.activeProfileLabel}` : ''}
+                    </p>
+                    {remoteConnectionState.lastError && (
+                      <p className="text-xs text-status-error mt-2">{remoteConnectionState.lastError}</p>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleSwitchToLocalMode}
+                    disabled={remoteBusy || remoteConnectionState.mode === 'local'}
+                  >
+                    Use Local Runtime
+                  </Button>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Remote Host"
+                description="Controls the loopback HTTP/SSE listener for a self-hosted Pane daemon. Expose it through SSH, Tailscale, VPN, or a reverse proxy."
+                icon={<Eye className="w-4 h-4" />}
+              >
+                <div className="space-y-3">
+                  <Checkbox
+                    label="Enable remote daemon listener"
+                    checked={remoteHostConfigDraft.enabled}
+                    onChange={(e) => setRemoteHostConfigDraft({
+                      ...remoteHostConfigDraft,
+                      enabled: e.target.checked,
+                    })}
+                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <Input
+                      label="Listen Host"
+                      value={remoteHostConfigDraft.listenHost}
+                      onChange={(e) => setRemoteHostConfigDraft({
+                        ...remoteHostConfigDraft,
+                        listenHost: e.target.value,
+                      })}
+                      placeholder="127.0.0.1"
+                      fullWidth
+                    />
+                    <Input
+                      label="Listen Port"
+                      type="number"
+                      value={String(remoteHostConfigDraft.listenPort)}
+                      onChange={(e) => setRemoteHostConfigDraft({
+                        ...remoteHostConfigDraft,
+                        listenPort: Number.parseInt(e.target.value, 10) || 42137,
+                      })}
+                      placeholder="42137"
+                      fullWidth
+                    />
+                  </div>
+                  <Checkbox
+                    label="Require pairing / saved bearer tokens"
+                    checked={remoteHostConfigDraft.pairingRequired}
+                    onChange={(e) => setRemoteHostConfigDraft({
+                      ...remoteHostConfigDraft,
+                      pairingRequired: e.target.checked,
+                    })}
+                  />
+                  <Checkbox
+                    label="Allow direct HTTP on loopback"
+                    checked={remoteHostConfigDraft.allowInsecureHttpOnLoopback}
+                    onChange={(e) => setRemoteHostConfigDraft({
+                      ...remoteHostConfigDraft,
+                      allowInsecureHttpOnLoopback: e.target.checked,
+                    })}
+                  />
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-xs text-text-tertiary">
+                      Paired remote clients on this machine: {remoteDaemonConfig.host.clients.length}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleSaveRemoteHostConfig}
+                      disabled={remoteBusy}
+                    >
+                      Save Host Settings
+                    </Button>
+                  </div>
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Create Paired Connection"
+                description="Mint a remote token and save a matching client profile in one step"
+                icon={<Plus className="w-4 h-4" />}
+              >
+                <div className="space-y-3">
+                  <Input
+                    label="Connection Label"
+                    value={remotePairLabel}
+                    onChange={(e) => setRemotePairLabel(e.target.value)}
+                    placeholder="Mac mini in office"
+                    fullWidth
+                  />
+                  <Input
+                    label="Remote Base URL"
+                    value={remotePairBaseUrl}
+                    onChange={(e) => setRemotePairBaseUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:42137"
+                    fullWidth
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleCreateRemoteConnectionPair}
+                      disabled={remoteBusy || remotePairLabel.trim().length === 0 || remotePairBaseUrl.trim().length === 0}
+                    >
+                      Create Paired Profile
+                    </Button>
+                  </div>
+                  {remoteCreatedToken && (
+                    <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-2">
+                      <p className="text-sm font-medium text-text-primary">Latest generated remote token</p>
+                      <Textarea
+                        value={remoteCreatedToken}
+                        onChange={() => {}}
+                        rows={2}
+                        readOnly
+                        fullWidth
+                      />
+                      <p className="text-xs text-text-tertiary">
+                        Use this token when creating a matching remote profile on another client machine.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Saved Remote Profiles"
+                description="Connect this desktop app to a paired self-hosted Pane daemon"
+                icon={<FileText className="w-4 h-4" />}
+              >
+                <div className="space-y-2">
+                  {remoteDaemonConfig.client.profiles.length === 0 && (
+                    <p className="text-sm text-text-tertiary italic">No remote profiles saved yet.</p>
+                  )}
+
+                  {remoteDaemonConfig.client.profiles.map((profile) => {
+                    const isActive = remoteDaemonConfig.client.activeProfileId === profile.id;
+                    return (
+                      <div
+                        key={profile.id}
+                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surface-secondary border border-border-secondary"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-text-primary">
+                            {profile.label}
+                            {isActive && <span className="ml-2 text-xs text-interactive">active</span>}
+                          </p>
+                          <p className="text-xs text-text-tertiary truncate">{profile.baseUrl}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleUseRemoteProfile(profile.id)}
+                            disabled={remoteBusy}
+                          >
+                            Connect
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => handleDeleteRemoteProfile(profile.id)}
+                            disabled={remoteBusy}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </SettingsSection>
             </CollapsibleCard>
 

@@ -26,6 +26,7 @@ interface SessionContextValue {
   onSetTracking?: () => void;
   trackingBranch?: string | null;
   configuredIDECommand?: string | null;
+  isRemoteMode?: boolean;
 }
 
 export const SessionContext = createContext<SessionContextValue | undefined>(undefined);
@@ -52,7 +53,8 @@ export const SessionProvider: React.FC<{
   onSetTracking?: () => void;
   trackingBranch?: string | null;
   configuredIDECommand?: string | null;
-}> = ({ children, session, projectName, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onConfigureIDE, onSetTracking, trackingBranch, configuredIDECommand }) => {
+  isRemoteMode?: boolean;
+}> = ({ children, session, projectName, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onConfigureIDE, onSetTracking, trackingBranch, configuredIDECommand, isRemoteMode }) => {
   // FIX: Don't render children without a valid session
   // This prevents components that require session from rendering
   if (!session) {
@@ -76,7 +78,8 @@ export const SessionProvider: React.FC<{
     onConfigureIDE,
     onSetTracking,
     trackingBranch,
-    configuredIDECommand
+    configuredIDECommand,
+    isRemoteMode,
   };
 
   return (

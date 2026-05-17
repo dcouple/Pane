@@ -46,6 +46,7 @@ import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
+import { remotePaneClientController } from './daemon/client/remotePaneClient';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -895,6 +896,10 @@ async function createWindow() {
 async function initializeServices() {
   const electronPaneEventSink = {
     send(channel: string, ...args: unknown[]) {
+      if (!remotePaneClientController.shouldForwardLocalRendererEvent(channel)) {
+        return;
+      }
+
       const window = mainWindow;
       if (!window || window.isDestroyed()) {
         return;

@@ -3,11 +3,15 @@ import {
   isRemoteDaemonClientRecord,
   isRemotePaneConnectionProfile,
   normalizeRemoteDaemonConfig,
+  type RemoteDaemonConnectionPair,
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
   type RemoteDaemonConfig,
 } from '../../../shared/types/remoteDaemon';
 import type { AppServices } from './types';
+import { createRemoteDaemonToken, hashRemoteDaemonToken } from '../daemon/auth';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
+import { randomUUID } from 'crypto';
 
 interface IpcMainHandleLike {
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
@@ -22,6 +26,76 @@ export function registerRemoteDaemonHandlers(
       return { success: true, data: getRemoteDaemonConfig(configManager.getConfig().remoteDaemon) };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon config') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:get-connection-state', async () => {
+    try {
+      return { success: true, data: remotePaneClientController.getConnectionState() };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon connection state') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:create-connection-pair', async (_event, input: unknown) => {
+    try {
+      if (!isRecord(input)) {
+        throw new Error('Remote daemon connection pair request must be an object');
+      }
+
+      const label = typeof input.label === 'string' ? input.label.trim() : '';
+      const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl.trim() : '';
+      if (label.length === 0) {
+        throw new Error('Remote daemon connection pair label is required');
+      }
+      if (baseUrl.length === 0) {
+        throw new Error('Remote daemon connection pair base URL is required');
+      }
+
+      const token = createRemoteDaemonToken();
+      const id = randomUUID();
+      const client = {
+        id,
+        label,
+        createdAt: new Date().toISOString(),
+        tokenHash: hashRemoteDaemonToken(token),
+      };
+      const profile = {
+        id,
+        label,
+        baseUrl,
+        token,
+        transport: 'http+sse' as const,
+      };
+
+      if (!isRemotePaneConnectionProfile(profile)) {
+        throw new Error('Generated remote daemon connection profile is invalid');
+      }
+
+      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+      const next = normalizeRemoteDaemonConfig({
+        ...current,
+        host: {
+          ...current.host,
+          clients: upsertById(current.host.clients, client),
+        },
+        client: {
+          ...current.client,
+          profiles: upsertById(current.client.profiles, profile),
+        },
+      });
+
+      await configManager.updateConfig({ remoteDaemon: next });
+      return {
+        success: true,
+        data: {
+          client,
+          profile,
+          token,
+        } satisfies RemoteDaemonConnectionPair,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to create remote daemon connection pair') };
     }
   });
 
@@ -144,6 +218,10 @@ export function registerRemoteDaemonHandlers(
         },
       });
 
+      if (current.client.mode === 'remote' && current.client.activeProfileId === profileId) {
+        await remotePaneClientController.switchToLocalMode();
+      }
+
       await configManager.updateConfig({ remoteDaemon: next });
       return { success: true, data: next.client };
     } catch (error) {
@@ -166,6 +244,17 @@ export function registerRemoteDaemonHandlers(
           ...nextState,
         },
       });
+
+      if (next.client.mode === 'remote') {
+        const activeProfile = next.client.profiles.find((profile) => profile.id === next.client.activeProfileId);
+        if (!activeProfile) {
+          throw new Error(`Remote daemon connection profile "${next.client.activeProfileId}" does not exist`);
+        }
+
+        await remotePaneClientController.activateProfile(activeProfile);
+      } else {
+        await remotePaneClientController.switchToLocalMode();
+      }
 
       await configManager.updateConfig({ remoteDaemon: next });
       return { success: true, data: next.client };

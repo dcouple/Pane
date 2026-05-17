@@ -53,6 +53,7 @@ export const SessionView = memo(() => {
     () => (config?.customCommands ?? []).filter(cmd => cmd?.name && cmd?.command),
     [config?.customCommands]
   );
+  const isRemoteMode = config?.remoteDaemon?.client.mode === 'remote';
   const deleteCustomCommand = useCallback((index: number) => {
     const existing = config?.customCommands ?? [];
     updateConfig({ customCommands: existing.filter((_, i) => i !== index) }).catch(() => {});
@@ -598,6 +599,13 @@ export const SessionView = memo(() => {
 
   const handleOpenIDEWithCommand = useCallback(async (ideKey?: string) => {
     if (!activeSession) return;
+    if (isRemoteMode) {
+      useErrorStore.getState().showError({
+        title: 'Open IDE unavailable',
+        error: 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.',
+      });
+      return;
+    }
     try {
       const response = await API.sessions.openIDE(activeSession.id, ideKey);
       if (!response.success) {
@@ -612,7 +620,7 @@ export const SessionView = memo(() => {
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
-  }, [activeSession]);
+  }, [activeSession, isRemoteMode]);
 
   // Detail panel state
   const [detailVisible, setDetailVisible] = useState(() => {
@@ -963,7 +971,7 @@ export const SessionView = memo(() => {
   return (
     <div className="pane-session-shell flex-1 flex flex-col overflow-hidden bg-bg-primary">
       {/* SINGLE SessionProvider wraps everything */}
-      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command}>
+      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command} isRemoteMode={isRemoteMode}>
 
         {/* Tab bar at top */}
         <PanelTabBar

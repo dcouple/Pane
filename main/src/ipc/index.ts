@@ -23,13 +23,29 @@ import { registerRemoteDaemonHandlers } from './remoteDaemon';
 import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
-import { registerDaemonBridgeHandlers } from './daemon';
+import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 import { registerPermissionHandlers } from './permissions';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 
 
 export function registerIpcHandlers(services: AppServices): PaneCommandRegistry {
   const commandRegistry = new PaneCommandRegistry();
+  const rendererEventSink = {
+    send(channel: string, ...args: unknown[]) {
+      const window = services.getMainWindow();
+      if (!window || window.isDestroyed()) {
+        return;
+      }
+
+      window.webContents.send(channel, ...args);
+    },
+  };
+  remotePaneClientController.initialize({
+    configManager: services.configManager,
+    rendererEventSink,
+  });
+  const bridgeRouter = createDaemonBridgeRouter(commandRegistry);
 
   registerAppHandlers(ipcMain, services);
   registerUpdaterHandlers(ipcMain, services);
@@ -55,7 +71,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerClipboardHandlers(ipcMain, services);
   registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);
-  registerDaemonBridgeHandlers(ipcMain, commandRegistry);
+  registerDaemonBridgeHandlers(ipcMain, bridgeRouter);
 
   return commandRegistry;
 } 

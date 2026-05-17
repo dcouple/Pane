@@ -1,5 +1,6 @@
 export type RemoteDaemonTransport = 'http+sse';
 export type RemoteDaemonClientMode = 'local' | 'remote';
+export type RemotePaneConnectionStatus = 'local' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export interface RemoteDaemonHostConfig {
   enabled: boolean;
@@ -39,6 +40,21 @@ export interface RemoteDaemonClientSettings {
 export interface RemoteDaemonConfig {
   host: RemoteDaemonHostSettings;
   client: RemoteDaemonClientSettings;
+}
+
+export interface RemoteDaemonConnectionPair {
+  client: RemoteDaemonClientRecord;
+  profile: RemotePaneConnectionProfile;
+  token: string;
+}
+
+export interface RemotePaneConnectionState {
+  mode: RemoteDaemonClientMode;
+  status: RemotePaneConnectionStatus;
+  activeProfileId: string | null;
+  activeProfileLabel: string | null;
+  activeBaseUrl: string | null;
+  lastError: string | null;
 }
 
 export interface RemoteInvokeRequest {
@@ -92,6 +108,17 @@ export function createDefaultRemoteDaemonConfig(): RemoteDaemonConfig {
       activeProfileId: null,
       mode: 'local',
     },
+  };
+}
+
+export function createDefaultRemotePaneConnectionState(): RemotePaneConnectionState {
+  return {
+    mode: 'local',
+    status: 'local',
+    activeProfileId: null,
+    activeProfileLabel: null,
+    activeBaseUrl: null,
+    lastError: null,
   };
 }
 

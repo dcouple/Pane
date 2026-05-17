@@ -24,6 +24,7 @@ import { createAtTerminalHandler } from '../../services/terminalInterceptor/hand
 import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
 import { InterceptorToast } from '../terminal/InterceptorToast';
 import { usePanelStore } from '../../stores/panelStore';
+import { useConfigStore } from '../../stores/configStore';
 import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
@@ -59,6 +60,10 @@ function buildTerminalFontFamily(userFont: string): string {
   return `"${userFont}", "Symbols Nerd Font Mono", monospace`;
 }
 
+function isClipboardImagePlaceholderText(text: string): boolean {
+  return text.trim() === '[Image]';
+}
+
 export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
   renderLog('[TerminalPanel] Component rendering, panel:', panel.id, 'isActive:', isActive);
   
@@ -88,6 +93,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
   const isCliPanel = !!terminalState?.isCliPanel;
   const [isCliReady, setIsCliReady] = useState(!!terminalState?.isCliReady);
+  const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
 
   // ptyId for the current PTY behind this panel, delivered via
   // `terminal:ptyReady` when spawned through the ptyHost UtilityProcess.
@@ -844,6 +850,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             const text = textVal;
             e.stopPropagation();
             e.preventDefault();
+
+            if (isRemoteMode) {
+              if (text && !isClipboardImagePlaceholderText(text) && !disposed && terminal) {
+                terminal.paste(text);
+              } else {
+                setToastMessage('Native image clipboard paste is unavailable in remote mode. Use drag and drop or browser image paste instead.');
+                setTimeout(() => setToastMessage(null), 2500);
+              }
+              return;
+            }
 
             (async () => {
               if (disposed || !terminal) return;

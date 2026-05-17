@@ -5,8 +5,10 @@ import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import type {
   RemoteDaemonClientRecord,
+  RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
+  RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
 import type {
@@ -481,6 +483,20 @@ export class API {
       return window.electronAPI.remoteDaemon.getConfig();
     },
 
+    async getConnectionState() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.getConnectionState();
+    },
+
+    async createConnectionPair(input: { label: string; baseUrl: string }) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.createConnectionPair(input) as Promise<{
+        success: boolean;
+        data?: RemoteDaemonConnectionPair;
+        error?: string;
+      }>;
+    },
+
     async updateHostConfig(updates: Partial<RemoteDaemonHostConfig>) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.updateHostConfig(updates);
@@ -509,6 +525,11 @@ export class API {
     async updateClientState(updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.updateClientState(updates);
+    },
+
+    onConnectionStateChanged(callback: (state: RemotePaneConnectionState) => void) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.onConnectionStateChanged(callback);
     },
   };
 

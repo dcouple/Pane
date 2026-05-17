@@ -78,6 +78,7 @@ function actionTooltip(action: { description?: string; disabled?: boolean; disab
 export function DetailPanel({ isVisible, width, height, onResize, mergeError, projectGitActions, orientation, isCollapsed, onToggleCollapse, onSwapLayout, terminalShortcuts, onCommitClick }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
+  const remoteIdeTooltip = 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.';
 
   // Build IDE dropdown items, sending safe IDE keys (resolved to commands server-side)
   const ideItems = useMemo(() => {
@@ -98,7 +99,7 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
 
   if (!sessionContext) return null;
 
-  const { session, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onConfigureIDE, onSetTracking, trackingBranch } = sessionContext;
+  const { session, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onConfigureIDE, onSetTracking, trackingBranch, isRemoteMode } = sessionContext;
   const gitStatus = session.gitStatus;
   const isProject = !!session.isMainRepo;
   // Treat git as unavailable only when status has loaded but indicates failure.
@@ -186,25 +187,35 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
 
           {/* IDE button */}
           {onOpenIDEWithCommand && (
-            <Dropdown
-              trigger={
-                <Tooltip content="Open in IDE" side="top">
-                  <Button variant="ghost" size="sm" className="!px-1.5 !py-0.5 text-xs h-6 flex-shrink-0">
+            isRemoteMode ? (
+              <Tooltip content={remoteIdeTooltip} side="top">
+                <span>
+                  <Button variant="ghost" size="sm" className="!px-1.5 !py-0.5 text-xs h-6 flex-shrink-0" disabled>
                     <Code2 className="w-3 h-3" />
                   </Button>
-                </Tooltip>
-              }
-              items={ideItems}
-              footer={
-                <DropdownMenuItem
-                  icon={Settings}
-                  label="Configure..."
-                  onClick={onConfigureIDE}
-                />
-              }
-              position="auto"
-              width="sm"
-            />
+                </span>
+              </Tooltip>
+            ) : (
+              <Dropdown
+                trigger={
+                  <Tooltip content="Open in IDE" side="top">
+                    <Button variant="ghost" size="sm" className="!px-1.5 !py-0.5 text-xs h-6 flex-shrink-0">
+                      <Code2 className="w-3 h-3" />
+                    </Button>
+                  </Tooltip>
+                }
+                items={ideItems}
+                footer={
+                  <DropdownMenuItem
+                    icon={Settings}
+                    label="Configure..."
+                    onClick={onConfigureIDE}
+                  />
+                }
+                position="auto"
+                width="sm"
+              />
+            )
           )}
 
           {/* Terminal shortcut pills — inline with git actions */}
@@ -333,24 +344,35 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
                 </Tooltip>
               )}
               {onOpenIDEWithCommand && (
-                <Dropdown
-                  trigger={
-                    <Button variant="ghost" size="sm" className={sidebarBtn}>
-                      <Code2 className="w-4 h-4 mr-2 flex-shrink-0" />
-                      <span className="truncate">Open in IDE</span>
-                    </Button>
-                  }
-                  items={ideItems}
-                  footer={
-                    <DropdownMenuItem
-                      icon={Settings}
-                      label="Configure..."
-                      onClick={onConfigureIDE}
-                    />
-                  }
-                  position="auto"
-                  width="sm"
-                />
+                isRemoteMode ? (
+                  <Tooltip content={remoteIdeTooltip} side="left">
+                    <span>
+                      <Button variant="ghost" size="sm" className={sidebarBtn} disabled>
+                        <Code2 className="w-4 h-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">Open in IDE</span>
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <Dropdown
+                    trigger={
+                      <Button variant="ghost" size="sm" className={sidebarBtn}>
+                        <Code2 className="w-4 h-4 mr-2 flex-shrink-0" />
+                        <span className="truncate">Open in IDE</span>
+                      </Button>
+                    }
+                    items={ideItems}
+                    footer={
+                      <DropdownMenuItem
+                        icon={Settings}
+                        label="Configure..."
+                        onClick={onConfigureIDE}
+                      />
+                    }
+                    position="auto"
+                    width="sm"
+                  />
+                )
               )}
             </div>
           </DetailSection>

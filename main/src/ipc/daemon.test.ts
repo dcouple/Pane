@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
-import { registerDaemonBridgeHandlers } from './daemon';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
+import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 
 interface IpcMainStub {
   handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
@@ -19,13 +20,17 @@ function createIpcMainStub(): IpcMainStub {
 }
 
 describe('daemon IPC bridge', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('forwards daemon-owned channels into the shared command registry', async () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
     const handler = vi.fn(async (sessionId: string) => ({ success: true, data: sessionId }));
 
     registry.register('sessions:get', handler);
-    registerDaemonBridgeHandlers(ipcMain, registry);
+    registerDaemonBridgeHandlers(ipcMain, createDaemonBridgeRouter(registry));
 
     const bridge = ipcMain.handlers.get('daemon:invoke');
     expect(bridge).toBeDefined();
@@ -41,7 +46,7 @@ describe('daemon IPC bridge', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
 
-    registerDaemonBridgeHandlers(ipcMain, registry);
+    registerDaemonBridgeHandlers(ipcMain, createDaemonBridgeRouter(registry));
 
     const bridge = ipcMain.handlers.get('daemon:invoke');
     await expect(bridge?.({}, 'sessions:open-ide', 'session-1')).rejects.toThrow(
@@ -53,9 +58,26 @@ describe('daemon IPC bridge', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
 
-    registerDaemonBridgeHandlers(ipcMain, registry);
+    registerDaemonBridgeHandlers(ipcMain, createDaemonBridgeRouter(registry));
 
     const bridge = ipcMain.handlers.get('daemon:invoke');
     await expect(bridge?.({}, 123)).rejects.toThrow('Pane daemon bridge requires a string channel');
+  });
+
+  it('routes daemon-owned invokes through the remote client controller when remote mode is active', async () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    vi.spyOn(remotePaneClientController, 'invoke').mockResolvedValue({ source: 'remote' });
+    vi.spyOn(remotePaneClientController, 'isRemoteModeActive').mockReturnValue(true);
+    registerDaemonBridgeHandlers(ipcMain, createDaemonBridgeRouter(registry));
+
+    const bridge = ipcMain.handlers.get('daemon:invoke');
+    await expect(bridge?.({}, 'sessions:get', 'session-9')).resolves.toEqual({ source: 'remote' });
+    expect(remotePaneClientController.invoke).toHaveBeenCalledWith(
+      'sessions:get',
+      ['session-9'],
+      expect.any(Function),
+    );
   });
 });

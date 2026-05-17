@@ -15,6 +15,7 @@ import { ExplorerPanelState } from '../../../../../shared/types/panels';
 import { isMac, isWindows } from '../../../utils/platformUtils';
 import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
 import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
+import { useConfigStore } from '../../../stores/configStore';
 
 interface FileItem {
   name: string;
@@ -86,6 +87,7 @@ function HeadlessFileTree({
 
   // Platform-adaptive label
   const revealLabel = isMac() ? 'Reveal in Finder' : isWindows() ? 'Show in Explorer' : 'Show in File Manager';
+  const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
 
   // Initialize expanded state from persisted state or default to root expanded.
   // Normalize legacy '' root to ROOT_ID so saved state from the old FileTree still works.
@@ -301,6 +303,11 @@ function HeadlessFileTree({
 
   const handleRevealInFileManager = useCallback(async () => {
     if (!contextMenu?.file) return;
+    if (isRemoteMode) {
+      setError('Show in file manager is only available in local mode. Switch this client back to the local runtime to reveal workspace files in your OS file manager.');
+      setContextMenu(null);
+      return;
+    }
     try {
       await window.electronAPI.invoke('file:showInFolder', {
         sessionId,
@@ -310,7 +317,7 @@ function HeadlessFileTree({
       console.error('Failed to reveal in file manager:', err);
     }
     setContextMenu(null);
-  }, [contextMenu, sessionId]);
+  }, [contextMenu, isRemoteMode, sessionId]);
 
   // Delete handler
   const handleDelete = useCallback(async (file: FileItem) => {
@@ -1130,10 +1137,15 @@ function HeadlessFileTree({
                 Copy Absolute Path
               </span>
             </PopoverButton>
-            <PopoverButton onClick={handleRevealInFileManager}>
+            <PopoverButton
+              onClick={handleRevealInFileManager}
+              disabled={isRemoteMode}
+              title={isRemoteMode ? 'Only available in local mode' : undefined}
+            >
               <span className="flex items-center gap-2">
                 <FolderOpen className="w-4 h-4" />
                 {revealLabel}
+                {isRemoteMode ? ' (local only)' : ''}
               </span>
             </PopoverButton>
             <div className="my-1 border-t border-border-primary" />

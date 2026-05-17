@@ -4,9 +4,11 @@ import type { AppConfig, UpdateConfigRequest } from './types/config';
 import type { CreateProjectRequest, UpdateProjectRequest, Project } from '../../frontend/src/types/project';
 import type {
   RemoteDaemonClientRecord,
+  RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../shared/types/panels';
@@ -594,6 +596,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   remoteDaemon: {
     getConfig: (): Promise<IPCResponse<RemoteDaemonConfig>> => invokeIpc('remote-daemon:get-config'),
+    getConnectionState: (): Promise<IPCResponse<RemotePaneConnectionState>> => invokeIpc('remote-daemon:get-connection-state'),
+    createConnectionPair: (input: { label: string; baseUrl: string }): Promise<IPCResponse<RemoteDaemonConnectionPair>> =>
+      invokeIpc('remote-daemon:create-connection-pair', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>
       invokeIpc('remote-daemon:update-host-config', updates),
     upsertClientRecord: (record: RemoteDaemonClientRecord): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>
@@ -606,6 +611,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:delete-connection-profile', profileId),
     updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>): Promise<IPCResponse<RemoteDaemonClientSettings>> =>
       invokeIpc('remote-daemon:update-client-state', updates),
+    onConnectionStateChanged: (callback: (state: RemotePaneConnectionState) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, state: RemotePaneConnectionState) => callback(state);
+      ipcRenderer.on('remote-daemon:connection-state-changed', wrappedCallback);
+      return () => ipcRenderer.removeListener('remote-daemon:connection-state-changed', wrappedCallback);
+    },
   },
 
   // Prompts

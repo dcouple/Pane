@@ -9,6 +9,7 @@ import { Session, GitCommands, GitErrorDetails, AttachedImage, AttachedText } fr
 import { getScriptTerminalTheme } from '../utils/terminalTheme';
 import { createVisibilityAwareInterval } from '../utils/performanceUtils';
 import { useHotkey } from './useHotkey';
+import { useConfigStore } from '../stores/configStore';
 
 interface PromptMarker {
   id: number;
@@ -27,6 +28,7 @@ export const useSessionView = (
 ) => {
   const { theme } = useTheme();
   const activeSessionId = activeSession?.id;
+  const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
 
   // Terminal instances
   const scriptTerminalInstance = useRef<Terminal | null>(null);
@@ -1364,6 +1366,14 @@ export const useSessionView = (
 
   const handleOpenIDE = async () => {
     if (!activeSession) return;
+    if (isRemoteMode) {
+      const { showError } = useErrorStore.getState();
+      showError({
+        title: 'Open IDE unavailable',
+        error: 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.',
+      });
+      return;
+    }
     
     setIsOpeningIDE(true);
     

@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import type { RemoteDaemonClientRecord } from '../../../shared/types/remoteDaemon';
 
 interface RemoteDaemonAuthSuccess {
@@ -16,6 +16,10 @@ interface RemoteDaemonAuthFailure {
 }
 
 export type RemoteDaemonAuthResult = RemoteDaemonAuthSuccess | RemoteDaemonAuthFailure;
+
+export function createRemoteDaemonToken(): string {
+  return randomBytes(24).toString('hex');
+}
 
 export function hashRemoteDaemonToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');

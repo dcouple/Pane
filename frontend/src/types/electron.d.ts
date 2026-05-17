@@ -6,9 +6,11 @@ import type { AppConfig, UpdateConfigRequest } from './config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import type {
   RemoteDaemonClientRecord,
+  RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
 import type {
@@ -226,12 +228,15 @@ interface ElectronAPI {
 
   remoteDaemon: {
     getConfig: () => Promise<IPCResponse<RemoteDaemonConfig>>;
+    getConnectionState: () => Promise<IPCResponse<RemotePaneConnectionState>>;
+    createConnectionPair: (input: { label: string; baseUrl: string }) => Promise<IPCResponse<RemoteDaemonConnectionPair>>;
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     deleteClientRecord: (clientId: string) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     upsertConnectionProfile: (profile: RemotePaneConnectionProfile) => Promise<IPCResponse<RemotePaneConnectionProfile[]>>;
     deleteConnectionProfile: (profileId: string) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
     updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
+    onConnectionStateChanged: (callback: (state: RemotePaneConnectionState) => void) => () => void;
   };
 
   // Prompts
