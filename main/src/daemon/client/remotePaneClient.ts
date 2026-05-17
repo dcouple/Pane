@@ -162,10 +162,7 @@ export class RemotePaneClient {
               readyReceived = true;
               this.onConnectionStateChange?.('connected', null);
               const readyPayload = parseRemoteReadyEventPayload(event.data);
-              if (
-                isReconnect &&
-                readyPayload?.resync === 'refetch-state-after-reconnect'
-              ) {
+              if (readyPayload?.resync === 'refetch-state-after-reconnect') {
                 this.onResyncRequired?.();
               }
               if (!settled) {

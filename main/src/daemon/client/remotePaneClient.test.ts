@@ -258,17 +258,60 @@ describe('RemotePaneClientController', () => {
     });
 
     await waitFor(() => controller.getConnectionState().status === 'connected');
+    await waitFor(() => {
+      return rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required').length === 1;
+    });
     server.closeEventStream();
 
     await waitFor(() => {
-      return rendererEvents.some((event) => event.channel === 'remote-daemon:resync-required');
+      return rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required').length === 2;
     }, 3_000);
 
-    expect(rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required')).toHaveLength(1);
+    expect(rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required')).toHaveLength(2);
     expect(controller.getConnectionState()).toMatchObject({
       mode: 'remote',
       status: 'connected',
       activeProfileId: 'profile-resync',
+    });
+  });
+
+  it('requests a renderer state resync on the first successful remote event stream connection', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+
+    const rendererEvents: Array<{ channel: string; args: unknown[] }> = [];
+    const remoteConfig = createDefaultRemoteDaemonConfig();
+    remoteConfig.client = {
+      profiles: [{
+        id: 'profile-initial-resync',
+        label: 'Remote host',
+        baseUrl: server.baseUrl,
+        token: 'secret-token',
+        transport: 'http+sse',
+      }],
+      activeProfileId: 'profile-initial-resync',
+      mode: 'remote',
+    };
+    const configManager = createConfigManagerStub(remoteConfig);
+
+    const controller = new RemotePaneClientController();
+    controller.initialize({
+      configManager,
+      rendererEventSink: {
+        send(channel, ...args) {
+          rendererEvents.push({ channel, args });
+        },
+      },
+    });
+
+    await waitFor(() => {
+      return rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required').length === 1;
+    });
+
+    expect(controller.getConnectionState()).toMatchObject({
+      mode: 'remote',
+      status: 'connected',
+      activeProfileId: 'profile-initial-resync',
     });
   });
 
