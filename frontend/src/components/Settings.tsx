@@ -499,6 +499,142 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
         {activeTab === 'general' && (
           <form id="settings-form" onSubmit={handleSubmit} className="space-y-6">
+            <CollapsibleCard
+              title="Remote Pane"
+              subtitle="Connect this desktop app to a VM or another machine"
+              icon={<Terminal className="w-5 h-5" />}
+              defaultExpanded={true}
+            >
+              <SettingsSection
+                title="Connection"
+                description="Paste the pane-remote:// code from the VM setup command to save and connect in one step."
+                icon={<Power className="w-4 h-4" />}
+                spacing="sm"
+              >
+                <div className={`flex items-center justify-between gap-4 p-4 rounded-lg border ${
+                  remoteConnectionState.status === 'connected'
+                    ? 'bg-status-success/10 border-status-success/35'
+                    : remoteConnectionState.status === 'error'
+                      ? 'bg-status-error/10 border-status-error/35'
+                      : 'bg-surface-secondary border-border-secondary'
+                }`}>
+                  <div className="flex items-start gap-3 min-w-0">
+                    {remoteConnectionState.status === 'connected' ? (
+                      <CheckCircle2 className="w-5 h-5 text-status-success mt-0.5 flex-shrink-0" />
+                    ) : remoteConnectionState.status === 'error' ? (
+                      <AlertCircle className="w-5 h-5 text-status-error mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Terminal className="w-5 h-5 text-text-tertiary mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-text-primary">
+                        {remoteConnectionState.status === 'connected'
+                          ? `Connected to ${remoteConnectionState.activeProfileLabel ?? 'remote Pane'}`
+                          : remoteConnectionState.mode === 'remote'
+                            ? `Remote mode: ${remoteConnectionState.status}`
+                            : 'Using local runtime'}
+                      </p>
+                      <p className="text-xs text-text-tertiary mt-1 truncate">
+                        {remoteConnectionState.activeBaseUrl ?? 'Paste a connection code below to use a VM or another machine.'}
+                      </p>
+                      {remoteConnectionState.status === 'connected' && (
+                        <p className="text-xs text-text-tertiary mt-2">
+                          Worktrees, terminals, and AI tool commands run on the remote host. Install Codex or Claude there to use those panels.
+                        </p>
+                      )}
+                      {remoteConnectionState.lastError && (
+                        <p className="text-xs text-status-error mt-2">{remoteConnectionState.lastError}</p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleSwitchToLocalMode}
+                    disabled={remoteBusy || remoteConnectionState.mode === 'local'}
+                  >
+                    Use Local Runtime
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
+                  <Textarea
+                    label="Connection Code"
+                    value={remoteConnectionCode}
+                    onChange={(e) => setRemoteConnectionCode(e.target.value)}
+                    placeholder="pane-remote://..."
+                    rows={2}
+                    fullWidth
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleImportRemoteConnectionCode}
+                    disabled={remoteBusy || remoteConnectionCode.trim().length === 0}
+                    loading={remoteBusy && remoteConnectionCode.trim().length > 0}
+                    loadingText="Connecting"
+                    className="lg:mb-0.5"
+                  >
+                    Import & Connect
+                  </Button>
+                </div>
+
+                {remoteImportResult && (
+                  <p className={`text-xs ${
+                    remoteImportResult.includes('failed') ? 'text-status-error' : 'text-status-success'
+                  }`}>
+                    {remoteImportResult}
+                  </p>
+                )}
+
+                {remoteDaemonConfig.client.profiles.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-text-secondary">Saved profiles</p>
+                    {remoteDaemonConfig.client.profiles.map((profile) => {
+                      const isActive = remoteDaemonConfig.client.activeProfileId === profile.id;
+                      return (
+                        <div
+                          key={profile.id}
+                          className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                            isActive ? 'bg-status-success/10 border-status-success/35' : 'bg-surface-secondary border-border-secondary'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-text-primary">
+                              {profile.label}
+                              {isActive && <span className="ml-2 text-xs text-status-success">connected</span>}
+                            </p>
+                            <p className="text-xs text-text-tertiary truncate">{profile.baseUrl}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant={isActive ? 'secondary' : 'primary'}
+                              size="sm"
+                              onClick={() => handleUseRemoteProfile(profile.id)}
+                              disabled={remoteBusy || isActive}
+                            >
+                              {isActive ? 'Connected' : 'Connect'}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteRemoteProfile(profile.id)}
+                              disabled={remoteBusy}
+                            >
+                              Delete
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </SettingsSection>
+            </CollapsibleCard>
+
             {/* Appearance */}
             <CollapsibleCard
               title="Appearance & Theme"
@@ -1003,10 +1139,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
             </CollapsibleCard>
 
             <CollapsibleCard
-              title="Self-Hosted Remote Daemon"
-              subtitle="Paste a VM setup code to connect this desktop app to a remote Pane runtime"
+              title="Advanced Remote Pane"
+              subtitle="Host listener settings and manual daemon profile tools"
               icon={<Terminal className="w-5 h-5" />}
-              defaultExpanded={remoteConnectionState.mode === 'remote'}
+              defaultExpanded={false}
             >
               <SettingsSection
                 title="Connect To Remote Pane"

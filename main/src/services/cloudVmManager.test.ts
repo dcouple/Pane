@@ -304,7 +304,10 @@ describe('CloudVmManager', () => {
 
     const configManager = new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
+      apiToken: 'secret-token',
       serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
@@ -439,7 +442,10 @@ describe('CloudVmManager', () => {
 
     const configManager = new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
+      apiToken: 'secret-token',
       serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
@@ -457,6 +463,63 @@ describe('CloudVmManager', () => {
       linkedRemoteProfileId: 'remote-profile-1',
       linkedRemoteProfileLabel: 'Pane Cloud Workspace',
       remoteConnectionStatus: 'available',
+    });
+  });
+
+  it('switches back to local runtime before stopping a connected hosted workspace VM', async () => {
+    const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
+    remoteDaemonConfig.client.profiles = [{
+      id: 'remote-profile-1',
+      label: 'Pane Cloud Workspace',
+      baseUrl: 'https://pane.example.com/daemon/',
+      token: 'secret-token',
+      transport: 'http+sse',
+    }];
+    remoteDaemonConfig.client.activeProfileId = 'remote-profile-1';
+    remoteDaemonConfig.client.mode = 'remote';
+
+    vi.spyOn(remotePaneClientController, 'switchToLocalMode').mockResolvedValue({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+    vi.spyOn(remotePaneClientController, 'getConnectionState').mockReturnValue({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+
+    const configManager = new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'secret-token',
+      serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    }), remoteDaemonConfig);
+    const manager = new CloudVmManager(configManager as never);
+    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
+    vi.spyOn(manager as never, 'gcpAction').mockResolvedValue(undefined);
+    vi.spyOn(manager as never, 'waitForStatus').mockResolvedValue({
+      ...createDefaultCloudVmState(),
+      status: 'off',
+    });
+
+    await manager.stopVm();
+
+    expect(remotePaneClientController.switchToLocalMode).toHaveBeenCalledOnce();
+    expect(configManager.getConfig().remoteDaemon?.client).toMatchObject({
+      activeProfileId: null,
+      mode: 'local',
     });
   });
 });

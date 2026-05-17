@@ -211,6 +211,12 @@ export class CloudVmManager extends EventEmitter {
 
       this.logger?.info(`[CloudVM] Stopping VM ${config.serverId} on ${config.provider}`);
 
+      try {
+        await this.disconnectWorkspace();
+      } catch (err) {
+        this.logger?.error('[CloudVM] Failed to switch back to local runtime before stopping VM', err instanceof Error ? err : new Error(String(err)));
+      }
+
       // Stop tunnel before stopping VM
       this.stopTunnel();
 
