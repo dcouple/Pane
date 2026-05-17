@@ -2,14 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { getPaneDaemonEndpoint, getPaneDaemonSocketDirectory } from './socketPath';
 
 describe('Pane daemon socket path', () => {
-  it('uses a sockets subdirectory and stable socket file on Unix-like platforms', () => {
+  it('uses a short hashed temp directory and stable socket file on Unix-like platforms', () => {
     const endpoint = getPaneDaemonEndpoint('/Users/parsa/.pane', 'darwin');
+    const socketDirectory = getPaneDaemonSocketDirectory('/Users/parsa/.pane', 'darwin');
 
-    expect(endpoint).toEqual({
-      transport: 'unix',
-      path: '/Users/parsa/.pane/sockets/daemon.sock',
-    });
-    expect(getPaneDaemonSocketDirectory('/Users/parsa/.pane', 'darwin')).toBe('/Users/parsa/.pane/sockets');
+    expect(endpoint.transport).toBe('unix');
+    expect(endpoint.path).toBe(`${socketDirectory}/daemon.sock`);
+    expect(socketDirectory).toMatch(/^\/tmp\/pane-daemon(?:-\d+)?-[0-9a-f]{16}$/);
   });
 
   it('uses a stable named pipe on Windows', () => {
@@ -31,6 +30,15 @@ describe('Pane daemon socket path', () => {
     const endpoint = getPaneDaemonEndpoint('.pane-test', 'linux');
 
     expect(endpoint.transport).toBe('unix');
-    expect(endpoint.path.endsWith('/sockets/daemon.sock')).toBe(true);
+    expect(endpoint.path.startsWith('/tmp/pane-daemon')).toBe(true);
+    expect(endpoint.path.endsWith('/daemon.sock')).toBe(true);
+  });
+
+  it('keeps Unix socket paths short even for deeply nested app directories', () => {
+    const deepPath = `/Users/parsa/${'very-nested-directory/'.repeat(20)}.pane`;
+    const endpoint = getPaneDaemonEndpoint(deepPath, 'linux');
+
+    expect(endpoint.transport).toBe('unix');
+    expect(Buffer.byteLength(endpoint.path)).toBeLessThan(100);
   });
 });

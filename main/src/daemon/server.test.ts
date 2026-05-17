@@ -389,4 +389,18 @@ describe('PaneDaemonServer', () => {
     await expect(server.start()).resolves.toBeUndefined();
     expect(fs.existsSync(socketPath)).toBe(true);
   });
+
+  it('starts successfully for deeply nested app directories on Unix', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const appDirectory = path.posix.join('/tmp', 'pane-root', 'nested'.repeat(40), '.pane');
+    const server = new PaneDaemonServer(new PaneCommandRegistry(), appDirectory, 'linux');
+    activeServers.push(server);
+
+    await expect(server.start()).resolves.toBeUndefined();
+    expect(Buffer.byteLength(server.getEndpoint().path)).toBeLessThan(100);
+    expect(fs.existsSync(server.getEndpoint().path)).toBe(true);
+  });
 });

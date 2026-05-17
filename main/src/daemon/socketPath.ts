@@ -6,7 +6,7 @@ export interface PaneDaemonEndpoint {
   path: string;
 }
 
-const DAEMON_SOCKET_DIRECTORY = 'sockets';
+const UNIX_SOCKET_BASE_DIRECTORY = '/tmp';
 const DAEMON_SOCKET_FILENAME = 'daemon.sock';
 
 function resolveAppDirectory(appDirectory: string, platform: NodeJS.Platform): string {
@@ -26,13 +26,26 @@ function getWindowsPipeName(appDirectory: string): string {
   return `\\\\.\\pipe\\pane-daemon-${hash}`;
 }
 
+function getUnixSocketDirectoryName(appDirectory: string): string {
+  const hash = createHash('sha256')
+    .update(appDirectory)
+    .digest('hex')
+    .slice(0, 16);
+  const uidSuffix = typeof process.getuid === 'function' ? `-${process.getuid()}` : '';
+
+  return `pane-daemon${uidSuffix}-${hash}`;
+}
+
 export function getPaneDaemonSocketDirectory(appDirectory: string, platform: NodeJS.Platform = process.platform): string | null {
   const resolvedAppDirectory = resolveAppDirectory(appDirectory, platform);
   if (platform === 'win32') {
     return null;
   }
 
-  return path.posix.join(resolvedAppDirectory, DAEMON_SOCKET_DIRECTORY);
+  return path.posix.join(
+    UNIX_SOCKET_BASE_DIRECTORY,
+    getUnixSocketDirectoryName(resolvedAppDirectory),
+  );
 }
 
 export function getPaneDaemonEndpoint(appDirectory: string, platform: NodeJS.Platform = process.platform): PaneDaemonEndpoint {
