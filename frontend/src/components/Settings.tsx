@@ -32,7 +32,9 @@ import {
   Plus,
   Power,
   PowerOff,
-  FolderSync
+  FolderSync,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -1002,227 +1004,86 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
             <CollapsibleCard
               title="Self-Hosted Remote Daemon"
-              subtitle="Run Pane remotely on your own machine and connect this desktop app to it"
+              subtitle="Paste a VM setup code to connect this desktop app to a remote Pane runtime"
               icon={<Terminal className="w-5 h-5" />}
-              defaultExpanded={false}
+              defaultExpanded={remoteConnectionState.mode === 'remote'}
             >
               <SettingsSection
-                title="Client Mode"
-                description="Choose whether this Pane desktop app should talk to the local runtime or a remote self-hosted daemon"
-                icon={<Terminal className="w-4 h-4" />}
+                title="Connect To Remote Pane"
+                description="Paste the pane-remote:// code from the VM setup command. Pane saves the profile and switches to it automatically."
+                icon={<Power className="w-4 h-4" />}
+                spacing="sm"
               >
-                <div className="flex items-center justify-between gap-4 p-3 rounded-lg bg-surface-secondary border border-border-secondary">
-                  <div>
-                    <p className="text-sm font-medium text-text-primary">
-                      {remoteConnectionState.mode === 'remote' ? 'Remote mode' : 'Local mode'}
-                    </p>
-                    <p className="text-xs text-text-tertiary mt-1">
-                      Status: {remoteConnectionState.status}
-                      {remoteConnectionState.activeProfileLabel ? ` via ${remoteConnectionState.activeProfileLabel}` : ''}
-                    </p>
-                    {remoteConnectionState.lastError && (
-                      <p className="text-xs text-status-error mt-2">{remoteConnectionState.lastError}</p>
+                <div className={`flex items-center justify-between gap-4 p-4 rounded-lg border ${
+                  remoteConnectionState.status === 'connected'
+                    ? 'bg-status-success/10 border-status-success/35'
+                    : remoteConnectionState.status === 'error'
+                      ? 'bg-status-error/10 border-status-error/35'
+                      : 'bg-surface-secondary border-border-secondary'
+                }`}>
+                  <div className="flex items-start gap-3 min-w-0">
+                    {remoteConnectionState.status === 'connected' ? (
+                      <CheckCircle2 className="w-5 h-5 text-status-success mt-0.5 flex-shrink-0" />
+                    ) : remoteConnectionState.status === 'error' ? (
+                      <AlertCircle className="w-5 h-5 text-status-error mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <Terminal className="w-5 h-5 text-text-tertiary mt-0.5 flex-shrink-0" />
                     )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-text-primary">
+                        {remoteConnectionState.status === 'connected'
+                          ? `Connected to ${remoteConnectionState.activeProfileLabel ?? 'remote Pane'}`
+                          : remoteConnectionState.mode === 'remote'
+                            ? `Remote mode: ${remoteConnectionState.status}`
+                            : 'Using local runtime'}
+                      </p>
+                      <p className="text-xs text-text-tertiary mt-1 truncate">
+                        {remoteConnectionState.activeBaseUrl ?? 'Paste a connection code below to use a VM or another machine.'}
+                      </p>
+                      {remoteConnectionState.lastError && (
+                        <p className="text-xs text-status-error mt-2">{remoteConnectionState.lastError}</p>
+                      )}
+                    </div>
                   </div>
                   <Button
                     type="button"
-                    variant="ghost"
+                    variant="secondary"
+                    size="sm"
                     onClick={handleSwitchToLocalMode}
                     disabled={remoteBusy || remoteConnectionState.mode === 'local'}
                   >
                     Use Local Runtime
                   </Button>
                 </div>
-              </SettingsSection>
 
-              <SettingsSection
-                title="Remote Host"
-                description="Controls the loopback HTTP/SSE listener for a self-hosted Pane daemon. Expose it through SSH, Tailscale, VPN, or a reverse proxy."
-                icon={<Eye className="w-4 h-4" />}
-              >
-                <div className="space-y-3">
-                  <Checkbox
-                    label="Enable remote daemon listener"
-                    checked={remoteHostConfigDraft.enabled}
-                    onChange={(e) => setRemoteHostConfigDraft({
-                      ...remoteHostConfigDraft,
-                      enabled: e.target.checked,
-                    })}
-                  />
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <Input
-                      label="Listen Host"
-                      value={remoteHostConfigDraft.listenHost}
-                      onChange={(e) => setRemoteHostConfigDraft({
-                        ...remoteHostConfigDraft,
-                        listenHost: e.target.value,
-                      })}
-                      placeholder="127.0.0.1"
-                      fullWidth
-                    />
-                    <Input
-                      label="Listen Port"
-                      type="number"
-                      value={String(remoteHostConfigDraft.listenPort)}
-                      onChange={(e) => setRemoteHostConfigDraft({
-                        ...remoteHostConfigDraft,
-                        listenPort: Number.parseInt(e.target.value, 10) || 42137,
-                      })}
-                      placeholder="42137"
-                      fullWidth
-                    />
-                  </div>
-                  <Checkbox
-                    label="Require pairing / saved bearer tokens"
-                    checked={remoteHostConfigDraft.pairingRequired}
-                    onChange={(e) => setRemoteHostConfigDraft({
-                      ...remoteHostConfigDraft,
-                      pairingRequired: e.target.checked,
-                    })}
-                  />
-                  <Checkbox
-                    label="Allow direct HTTP on loopback"
-                    checked={remoteHostConfigDraft.allowInsecureHttpOnLoopback}
-                    onChange={(e) => setRemoteHostConfigDraft({
-                      ...remoteHostConfigDraft,
-                      allowInsecureHttpOnLoopback: e.target.checked,
-                    })}
-                  />
-                  <div className="flex items-center justify-between gap-4">
-                    <p className="text-xs text-text-tertiary">
-                      Paired remote clients on this machine: {remoteDaemonConfig.host.clients.length}
-                    </p>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleSaveRemoteHostConfig}
-                      disabled={remoteBusy}
-                    >
-                      Save Host Settings
-                    </Button>
-                  </div>
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Create Paired Connection"
-                description="Mint a remote token and save a matching client profile in one step"
-                icon={<Plus className="w-4 h-4" />}
-              >
-                <div className="space-y-3">
-                  <Input
-                    label="Connection Label"
-                    value={remotePairLabel}
-                    onChange={(e) => setRemotePairLabel(e.target.value)}
-                    placeholder="Mac mini in office"
-                    fullWidth
-                  />
-                  <Input
-                    label="Remote Base URL"
-                    value={remotePairBaseUrl}
-                    onChange={(e) => setRemotePairBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:42137"
-                    fullWidth
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleCreateRemoteConnectionPair}
-                      disabled={remoteBusy || remotePairLabel.trim().length === 0 || remotePairBaseUrl.trim().length === 0}
-                    >
-                      Create Paired Profile
-                    </Button>
-                  </div>
-                  {remoteCreatedToken && (
-                    <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-2">
-                      <p className="text-sm font-medium text-text-primary">Latest generated remote token</p>
-                      <Textarea
-                        value={remoteCreatedToken}
-                        onChange={() => {}}
-                        rows={2}
-                        readOnly
-                        fullWidth
-                      />
-                      <p className="text-xs text-text-tertiary">
-                        Use this token when creating a matching remote profile on another client machine.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Import Remote Connection"
-                description="Paste a pane-remote:// code from the VM setup command to save and connect in one step"
-                icon={<Power className="w-4 h-4" />}
-              >
                 <div className="space-y-3">
                   <Textarea
                     label="Connection Code"
                     value={remoteConnectionCode}
                     onChange={(e) => setRemoteConnectionCode(e.target.value)}
                     placeholder="pane-remote://..."
-                    rows={4}
+                    rows={3}
                     fullWidth
                   />
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      {remoteImportResult && (
+                        <p className={`text-xs ${
+                          remoteImportResult.includes('failed') ? 'text-status-error' : 'text-status-success'
+                        }`}>
+                          {remoteImportResult}
+                        </p>
+                      )}
+                    </div>
                     <Button
                       type="button"
-                      variant="secondary"
+                      variant="primary"
                       onClick={handleImportRemoteConnectionCode}
                       disabled={remoteBusy || remoteConnectionCode.trim().length === 0}
+                      loading={remoteBusy && remoteConnectionCode.trim().length > 0}
+                      loadingText="Connecting"
                     >
                       Import & Connect
-                    </Button>
-                  </div>
-                  {remoteImportResult && (
-                    <p className="text-xs text-text-tertiary">{remoteImportResult}</p>
-                  )}
-                </div>
-              </SettingsSection>
-
-              <SettingsSection
-                title="Save Existing Remote Profile"
-                description="Save a token minted on the host so this desktop client can connect from another machine"
-                icon={<Plus className="w-4 h-4" />}
-              >
-                <div className="space-y-3">
-                  <Input
-                    label="Existing Profile Label"
-                    value={remoteImportedProfileLabel}
-                    onChange={(e) => setRemoteImportedProfileLabel(e.target.value)}
-                    placeholder="Office Mac mini tunnel"
-                    fullWidth
-                  />
-                  <Input
-                    label="Existing Remote Base URL"
-                    value={remoteImportedProfileBaseUrl}
-                    onChange={(e) => setRemoteImportedProfileBaseUrl(e.target.value)}
-                    placeholder="http://127.0.0.1:42137"
-                    fullWidth
-                  />
-                  <Textarea
-                    label="Existing Remote Token"
-                    value={remoteImportedProfileToken}
-                    onChange={(e) => setRemoteImportedProfileToken(e.target.value)}
-                    placeholder="Paste the token generated on the host machine"
-                    rows={2}
-                    fullWidth
-                  />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={handleSaveRemoteProfile}
-                      disabled={
-                        remoteBusy ||
-                        remoteImportedProfileLabel.trim().length === 0 ||
-                        remoteImportedProfileBaseUrl.trim().length === 0 ||
-                        remoteImportedProfileToken.trim().length === 0
-                      }
-                    >
-                      Save Remote Profile
                     </Button>
                   </div>
                 </div>
@@ -1230,40 +1091,48 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
               <SettingsSection
                 title="Saved Remote Profiles"
-                description="Connect this desktop app to a paired self-hosted Pane daemon"
+                description="Reconnect to a saved remote daemon or remove old profiles"
                 icon={<FileText className="w-4 h-4" />}
+                spacing="sm"
               >
                 <div className="space-y-2">
                   {remoteDaemonConfig.client.profiles.length === 0 && (
                     <p className="text-sm text-text-tertiary italic">No remote profiles saved yet.</p>
                   )}
 
+
                   {remoteDaemonConfig.client.profiles.map((profile) => {
                     const isActive = remoteDaemonConfig.client.activeProfileId === profile.id;
                     return (
                       <div
                         key={profile.id}
-                        className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surface-secondary border border-border-secondary"
+                        className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                          isActive ? 'bg-status-success/10 border-status-success/35' : 'bg-surface-secondary border-border-secondary'
+                        }`}
                       >
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-text-primary">
                             {profile.label}
-                            {isActive && <span className="ml-2 text-xs text-interactive">active</span>}
+                            {isActive && (
+                              <span className="ml-2 text-xs text-status-success">connected</span>
+                            )}
                           </p>
                           <p className="text-xs text-text-tertiary truncate">{profile.baseUrl}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant={isActive ? 'secondary' : 'primary'}
+                            size="sm"
                             onClick={() => handleUseRemoteProfile(profile.id)}
-                            disabled={remoteBusy}
+                            disabled={remoteBusy || isActive}
                           >
-                            Connect
+                            {isActive ? 'Connected' : 'Connect'}
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
+                            size="sm"
                             onClick={() => handleDeleteRemoteProfile(profile.id)}
                             disabled={remoteBusy}
                           >
@@ -1275,6 +1144,176 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   })}
                 </div>
               </SettingsSection>
+
+              <CollapsibleCard
+                title="Advanced Remote Setup"
+                subtitle="Host listener settings, manual token entry, and local pairing tools"
+                icon={<Eye className="w-5 h-5" />}
+                defaultExpanded={false}
+              >
+                <SettingsSection
+                  title="Remote Host"
+                  description="Controls the loopback HTTP/SSE listener for this machine when it acts as a daemon"
+                  icon={<Eye className="w-4 h-4" />}
+                >
+                  <div className="space-y-3">
+                    <Checkbox
+                      label="Enable remote daemon listener"
+                      checked={remoteHostConfigDraft.enabled}
+                      onChange={(e) => setRemoteHostConfigDraft({
+                        ...remoteHostConfigDraft,
+                        enabled: e.target.checked,
+                      })}
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <Input
+                        label="Listen Host"
+                        value={remoteHostConfigDraft.listenHost}
+                        onChange={(e) => setRemoteHostConfigDraft({
+                          ...remoteHostConfigDraft,
+                          listenHost: e.target.value,
+                        })}
+                        placeholder="127.0.0.1"
+                        fullWidth
+                      />
+                      <Input
+                        label="Listen Port"
+                        type="number"
+                        value={String(remoteHostConfigDraft.listenPort)}
+                        onChange={(e) => setRemoteHostConfigDraft({
+                          ...remoteHostConfigDraft,
+                          listenPort: Number.parseInt(e.target.value, 10) || 42137,
+                        })}
+                        placeholder="42137"
+                        fullWidth
+                      />
+                    </div>
+                    <Checkbox
+                      label="Require pairing / saved bearer tokens"
+                      checked={remoteHostConfigDraft.pairingRequired}
+                      onChange={(e) => setRemoteHostConfigDraft({
+                        ...remoteHostConfigDraft,
+                        pairingRequired: e.target.checked,
+                      })}
+                    />
+                    <Checkbox
+                      label="Allow direct HTTP on loopback"
+                      checked={remoteHostConfigDraft.allowInsecureHttpOnLoopback}
+                      onChange={(e) => setRemoteHostConfigDraft({
+                        ...remoteHostConfigDraft,
+                        allowInsecureHttpOnLoopback: e.target.checked,
+                      })}
+                    />
+                    <div className="flex items-center justify-between gap-4">
+                      <p className="text-xs text-text-tertiary">
+                        Paired remote clients on this machine: {remoteDaemonConfig.host.clients.length}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleSaveRemoteHostConfig}
+                        disabled={remoteBusy}
+                      >
+                        Save Host Settings
+                      </Button>
+                    </div>
+                  </div>
+                </SettingsSection>
+
+                <SettingsSection
+                  title="Create Paired Connection"
+                  description="Mint a remote token and save a matching client profile in one step"
+                  icon={<Plus className="w-4 h-4" />}
+                >
+                  <div className="space-y-3">
+                    <Input
+                      label="Connection Label"
+                      value={remotePairLabel}
+                      onChange={(e) => setRemotePairLabel(e.target.value)}
+                      placeholder="Mac mini in office"
+                      fullWidth
+                    />
+                    <Input
+                      label="Remote Base URL"
+                      value={remotePairBaseUrl}
+                      onChange={(e) => setRemotePairBaseUrl(e.target.value)}
+                      placeholder="http://127.0.0.1:42137"
+                      fullWidth
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleCreateRemoteConnectionPair}
+                        disabled={remoteBusy || remotePairLabel.trim().length === 0 || remotePairBaseUrl.trim().length === 0}
+                      >
+                        Create Paired Profile
+                      </Button>
+                    </div>
+                    {remoteCreatedToken && (
+                      <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-2">
+                        <p className="text-sm font-medium text-text-primary">Latest generated remote token</p>
+                        <Textarea
+                          value={remoteCreatedToken}
+                          onChange={() => {}}
+                          rows={2}
+                          readOnly
+                          fullWidth
+                        />
+                        <p className="text-xs text-text-tertiary">
+                          Use this token when creating a matching remote profile on another client machine.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </SettingsSection>
+
+                <SettingsSection
+                  title="Save Existing Remote Profile"
+                  description="Save a token minted on the host so this desktop client can connect from another machine"
+                  icon={<Plus className="w-4 h-4" />}
+                >
+                  <div className="space-y-3">
+                    <Input
+                      label="Existing Profile Label"
+                      value={remoteImportedProfileLabel}
+                      onChange={(e) => setRemoteImportedProfileLabel(e.target.value)}
+                      placeholder="Office Mac mini tunnel"
+                      fullWidth
+                    />
+                    <Input
+                      label="Existing Remote Base URL"
+                      value={remoteImportedProfileBaseUrl}
+                      onChange={(e) => setRemoteImportedProfileBaseUrl(e.target.value)}
+                      placeholder="http://127.0.0.1:42137"
+                      fullWidth
+                    />
+                    <Textarea
+                      label="Existing Remote Token"
+                      value={remoteImportedProfileToken}
+                      onChange={(e) => setRemoteImportedProfileToken(e.target.value)}
+                      placeholder="Paste the token generated on the host machine"
+                      rows={2}
+                      fullWidth
+                    />
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={handleSaveRemoteProfile}
+                        disabled={
+                          remoteBusy ||
+                          remoteImportedProfileLabel.trim().length === 0 ||
+                          remoteImportedProfileBaseUrl.trim().length === 0 ||
+                          remoteImportedProfileToken.trim().length === 0
+                        }
+                      >
+                        Save Remote Profile
+                      </Button>
+                    </div>
+                  </div>
+                </SettingsSection>
+              </CollapsibleCard>
             </CollapsibleCard>
 
             {/* TODO: Cloud VM - revisit when implementation is complete
