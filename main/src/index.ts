@@ -1009,7 +1009,7 @@ async function initializeServices() {
 }
 
 if (launchRemoteSetup) {
-  void runRemoteSetupCli(process.argv.slice(2)).then((exitCode) => {
+  void runRemoteSetupCli(process.argv).then((exitCode) => {
     app.exit(exitCode);
   });
 } else if (launchHeadlessDaemon) {

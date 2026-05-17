@@ -8,10 +8,10 @@ const REMOTE_SETUP_ARGS = new Set([
   '--setup-remote',
 ]);
 
-export function hasHeadlessDaemonLaunchArg(args = process.argv.slice(2)): boolean {
+export function hasHeadlessDaemonLaunchArg(args = process.argv): boolean {
   return args.some((arg) => HEADLESS_DAEMON_ARGS.has(arg));
 }
 
-export function hasRemoteSetupLaunchArg(args = process.argv.slice(2)): boolean {
+export function hasRemoteSetupLaunchArg(args = process.argv): boolean {
   return args.some((arg) => REMOTE_SETUP_ARGS.has(arg));
 }
