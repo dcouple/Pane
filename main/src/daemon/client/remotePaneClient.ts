@@ -17,6 +17,7 @@ import { PaneSseParser } from './sseParser';
 interface RemotePaneClientOptions {
   eventSink?: PaneEventSink;
   onConnectionStateChange?: (status: RemotePaneConnectionStatus, errorMessage?: string | null) => void;
+  onResyncRequired?: () => void;
 }
 
 interface RemotePaneClientConnectOptions {
@@ -43,12 +44,19 @@ interface JsonResponse {
   body: string;
 }
 
+interface RemoteReadyEventPayload {
+  replay: 'none';
+  resync: 'refetch-state-after-reconnect';
+  timestamp: string;
+}
+
 const REMOTE_DAEMON_RECONNECT_DELAY_MS = 1_000;
 
 export class RemotePaneClient {
   private readonly normalizedBaseUrl: URL;
   private readonly eventSink: PaneEventSink;
   private readonly onConnectionStateChange?: (status: RemotePaneConnectionStatus, errorMessage?: string | null) => void;
+  private readonly onResyncRequired?: () => void;
   private eventParser = new PaneSseParser();
   private eventRequest: http.ClientRequest | null = null;
   private eventResponse: IncomingMessage | null = null;
@@ -62,6 +70,7 @@ export class RemotePaneClient {
     this.normalizedBaseUrl = normalizeBaseUrl(profile.baseUrl);
     this.eventSink = options.eventSink ?? noopPaneEventSink;
     this.onConnectionStateChange = options.onConnectionStateChange;
+    this.onResyncRequired = options.onResyncRequired;
   }
 
   isSameProfile(profile: RemotePaneConnectionProfile): boolean {
@@ -152,6 +161,13 @@ export class RemotePaneClient {
             if (event.event === 'ready') {
               readyReceived = true;
               this.onConnectionStateChange?.('connected', null);
+              const readyPayload = parseRemoteReadyEventPayload(event.data);
+              if (
+                isReconnect &&
+                readyPayload?.resync === 'refetch-state-after-reconnect'
+              ) {
+                this.onResyncRequired?.();
+              }
               if (!settled) {
                 settled = true;
                 resolve();
@@ -427,6 +443,9 @@ export class RemotePaneClientController extends EventEmitter {
           lastError: errorMessage ?? null,
         });
       },
+      onResyncRequired: () => {
+        this.rendererEventSink.send('remote-daemon:resync-required');
+      },
     });
 
     this.activeClient = client;
@@ -553,6 +572,27 @@ function extractRemoteErrorMessage(body: string): string | null {
   } catch {
     return body;
   }
+}
+
+function parseRemoteReadyEventPayload(data: string): RemoteReadyEventPayload | null {
+  if (data.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(data) as Partial<RemoteReadyEventPayload>;
+    if (
+      parsed.replay === 'none' &&
+      parsed.resync === 'refetch-state-after-reconnect' &&
+      typeof parsed.timestamp === 'string'
+    ) {
+      return parsed as RemoteReadyEventPayload;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function isRemoteDaemonEventEnvelope(value: unknown): value is RemoteDaemonEventEnvelope {

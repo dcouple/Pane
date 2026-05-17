@@ -8,6 +8,7 @@ import { RemotePaneClient, RemotePaneClientController } from './remotePaneClient
 interface TestRemoteServer {
   baseUrl: string;
   close(): Promise<void>;
+  closeEventStream(): void;
   emitDaemonEvent(payload: unknown): void;
   getLastInvokeAuth(): string | undefined;
   getLastInvokeBody(): string | undefined;
@@ -227,6 +228,50 @@ describe('RemotePaneClientController', () => {
     });
   });
 
+  it('requests a renderer state resync after reconnecting the remote event stream', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+
+    const rendererEvents: Array<{ channel: string; args: unknown[] }> = [];
+    const remoteConfig = createDefaultRemoteDaemonConfig();
+    remoteConfig.client = {
+      profiles: [{
+        id: 'profile-resync',
+        label: 'Remote host',
+        baseUrl: server.baseUrl,
+        token: 'secret-token',
+        transport: 'http+sse',
+      }],
+      activeProfileId: 'profile-resync',
+      mode: 'remote',
+    };
+    const configManager = createConfigManagerStub(remoteConfig);
+
+    const controller = new RemotePaneClientController();
+    controller.initialize({
+      configManager,
+      rendererEventSink: {
+        send(channel, ...args) {
+          rendererEvents.push({ channel, args });
+        },
+      },
+    });
+
+    await waitFor(() => controller.getConnectionState().status === 'connected');
+    server.closeEventStream();
+
+    await waitFor(() => {
+      return rendererEvents.some((event) => event.channel === 'remote-daemon:resync-required');
+    }, 3_000);
+
+    expect(rendererEvents.filter((event) => event.channel === 'remote-daemon:resync-required')).toHaveLength(1);
+    expect(controller.getConnectionState()).toMatchObject({
+      mode: 'remote',
+      status: 'connected',
+      activeProfileId: 'profile-resync',
+    });
+  });
+
   it('restores the saved local state when a manual activation fails', async () => {
     const server = await createTestRemoteServer();
     activeServers.push(server);
@@ -341,6 +386,11 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
 
   return {
     baseUrl: `http://${host.includes(':') ? `[${host}]` : host}:${address.port}${normalizedBasePath}`,
+    closeEventStream() {
+      if (streamResponse && !streamResponse.destroyed) {
+        streamResponse.destroy();
+      }
+    },
     emitDaemonEvent(payload: unknown) {
       if (!streamResponse) {
         throw new Error('Remote event stream is not connected');

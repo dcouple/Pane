@@ -933,6 +933,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('window:focus-changed', wrappedCallback);
       return () => ipcRenderer.removeListener('window:focus-changed', wrappedCallback);
     },
+    onRemoteDaemonResyncRequested: (callback: () => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent) => callback();
+      ipcRenderer.on('remote-daemon:resync-required', wrappedCallback);
+      return () => ipcRenderer.removeListener('remote-daemon:resync-required', wrappedCallback);
+    },
   },
 
   // Panels API for Claude panels and other panel types

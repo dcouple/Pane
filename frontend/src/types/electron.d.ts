@@ -341,6 +341,7 @@ interface ElectronAPI {
 
     // Window focus state from BrowserWindow (more reliable than document.hasFocus())
     onWindowFocusChanged: (callback: (focused: boolean) => void) => () => void;
+    onRemoteDaemonResyncRequested: (callback: () => void) => () => void;
 
     // Spotlight events
     onSpotlightStatusChanged?: (callback: (data: { sessionId: string; projectId: number; active: boolean }) => void) => () => void;

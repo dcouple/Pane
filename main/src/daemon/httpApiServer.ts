@@ -20,8 +20,8 @@ interface RemoteHttpAddress {
 interface ConnectedRemoteEventClient {
   id: string;
   response: ServerResponse;
-  remoteClientId: string;
-  remoteClientTokenHash: string;
+  remoteClientId: string | null;
+  remoteClientTokenHash: string | null;
 }
 
 interface RemoteInvokeSuccessPayload {
@@ -42,6 +42,23 @@ interface RemoteReadyEventPayload {
   resync: 'refetch-state-after-reconnect';
   timestamp: string;
 }
+
+type RemoteRequestAuthResult =
+  | {
+    ok: true;
+    client: {
+      id: string;
+      tokenHash: string;
+    } | null;
+  }
+  | {
+    ok: false;
+    statusCode: number;
+    error: {
+      message: string;
+      code: string;
+    };
+  };
 
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
@@ -292,8 +309,8 @@ export class PaneRemoteHttpApiServer {
     this.eventClients.set(clientConnectionId, {
       id: clientConnectionId,
       response,
-      remoteClientId: auth.client.id,
-      remoteClientTokenHash: auth.client.tokenHash,
+      remoteClientId: auth.client?.id ?? null,
+      remoteClientTokenHash: auth.client?.tokenHash ?? null,
     });
 
     const cleanup = () => {
@@ -304,7 +321,7 @@ export class PaneRemoteHttpApiServer {
     response.on('close', cleanup);
   }
 
-  private authenticateRequest(request: IncomingMessage) {
+  private authenticateRequest(request: IncomingMessage): RemoteRequestAuthResult {
     const remoteConfig = this.getRemoteConfig();
     if (!remoteConfig.host.config.enabled) {
       return {
@@ -314,6 +331,13 @@ export class PaneRemoteHttpApiServer {
           message: 'Remote daemon HTTP API is disabled',
           code: 'ERR_REMOTE_DAEMON_HTTP_DISABLED',
         },
+      };
+    }
+
+    if (!remoteConfig.host.config.pairingRequired) {
+      return {
+        ok: true,
+        client: null,
       };
     }
 
@@ -377,9 +401,17 @@ export class PaneRemoteHttpApiServer {
     }));
   }
 
-  private shouldKeepEventClient(remoteClientId: string, remoteClientTokenHash: string): boolean {
+  private shouldKeepEventClient(remoteClientId: string | null, remoteClientTokenHash: string | null): boolean {
     const remoteConfig = this.getRemoteConfig();
     if (!remoteConfig.host.config.enabled) {
+      return false;
+    }
+
+    if (!remoteConfig.host.config.pairingRequired) {
+      return true;
+    }
+
+    if (!remoteClientId || !remoteClientTokenHash) {
       return false;
     }
 

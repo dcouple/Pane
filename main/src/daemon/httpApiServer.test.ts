@@ -101,7 +101,7 @@ async function requestJson(
   });
 }
 
-async function openEventStream(server: PaneRemoteHttpApiServer, token: string): Promise<TestEventStream> {
+async function openEventStream(server: PaneRemoteHttpApiServer, token?: string): Promise<TestEventStream> {
   const address = server.getAddress();
   if (!address) {
     throw new Error('Remote HTTP API server is not listening');
@@ -113,9 +113,9 @@ async function openEventStream(server: PaneRemoteHttpApiServer, token: string): 
       port: address.port,
       path: '/events',
       method: 'GET',
-      headers: {
+      headers: token ? {
         Authorization: `Bearer ${token}`,
-      },
+      } : undefined,
     });
 
     activeRequests.add(request);
@@ -240,6 +240,35 @@ describe('PaneRemoteHttpApiServer', () => {
         },
       },
     });
+  });
+
+  it('allows unauthenticated remote requests when pairing is disabled', async () => {
+    const registry = new PaneCommandRegistry();
+    registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);
+
+    const server = new PaneRemoteHttpApiServer(
+      registry,
+      createConfigManagerStub(createEnabledRemoteConfig({ pairingRequired: false })) as never,
+    );
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestJson(server, 'POST', '/invoke', {
+      channel: 'sessions:get-all',
+      args: [],
+    })).resolves.toEqual({
+      statusCode: 200,
+      body: {
+        ok: true,
+        result: [{ id: 'session-1' }],
+      },
+    });
+
+    const stream = await openEventStream(server);
+    const readyEvent = await stream.nextEvent();
+    expect(readyEvent.event).toBe('ready');
+
+    stream.close();
   });
 
   it('rejects oversized invoke request bodies with a client error', async () => {

@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useErrorStore } from '../stores/errorStore';
+import { usePanelStore } from '../stores/panelStore';
+import { panelApi } from '../services/panelApi';
 import { API } from '../utils/api';
 import type { Session, SessionOutput, GitStatus } from '../types/session';
 
@@ -367,6 +369,40 @@ export function useIPCEvents() {
     });
     if (unsubscribeSpotlightTamper) {
       unsubscribeFunctions.push(unsubscribeSpotlightTamper);
+    }
+
+    const unsubscribeRemoteResync = window.electronAPI.events.onRemoteDaemonResyncRequested?.(() => {
+      void (async () => {
+        try {
+          const sessionsResponse = await API.sessions.getAll();
+          if (sessionsResponse.success && sessionsResponse.data) {
+            const sessionsWithJsonMessages = sessionsResponse.data.map((session: Session) => ({
+              ...session,
+              jsonMessages: session.jsonMessages || [],
+            }));
+            loadSessions(sessionsWithJsonMessages);
+          }
+
+          const activeSessionId = useSessionStore.getState().activeSessionId;
+          if (activeSessionId) {
+            const panels = await panelApi.loadPanelsForSession(activeSessionId);
+            usePanelStore.getState().setPanels(activeSessionId, panels);
+
+            const activePanel = panels.find((panel) => panel.state.isActive);
+            if (activePanel) {
+              usePanelStore.getState().setActivePanel(activeSessionId, activePanel.id);
+            }
+          }
+
+          window.dispatchEvent(new Event('project-changed'));
+          window.dispatchEvent(new Event('project-sessions-refresh'));
+        } catch (error) {
+          console.error('[useIPCEvents] Failed to resync renderer state after remote reconnect:', error);
+        }
+      })();
+    });
+    if (unsubscribeRemoteResync) {
+      unsubscribeFunctions.push(unsubscribeRemoteResync);
     }
 
     // Load initial sessions
