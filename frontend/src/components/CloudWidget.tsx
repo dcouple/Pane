@@ -93,7 +93,13 @@ export function CloudWidget() {
       const result = await window.electronAPI.cloud.connectWorkspace();
       if (result.success && result.data) {
         setVmState(result.data);
+        return;
       }
+
+      setVmState({
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
+        error: result.error ?? 'Failed to connect to hosted workspace',
+      });
     } catch (err) {
       setVmState({
         ...(vmState ?? DEFAULT_CLOUD_STATE),

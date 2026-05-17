@@ -329,4 +329,56 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByRole('button', { name: 'Use Local Runtime' })).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
+
+  test('Cloud widget preserves tunnel controls for legacy noVNC workspaces', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'running',
+        daemonStatus: 'unknown',
+        noVncUrl: 'http://localhost:9000/novnc/vnc.html',
+        preferredAccess: 'daemon',
+      });
+    });
+
+    await expect(page.getByRole('button', { name: 'Cloud', exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('button[title="Stop Cloud VM"]')).toBeVisible();
+    await expect(page.getByText('Daemon Ready')).toHaveCount(0);
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
+
+  test('Cloud widget surfaces hosted workspace connection failures', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'off',
+        daemonStatus: 'ready',
+        daemonBaseUrl: 'https://pane.example.com/daemon/',
+        linkedRemoteProfileId: 'missing-profile',
+        remoteConnectionStatus: 'available',
+        preferredAccess: 'daemon',
+      });
+    });
+
+    await clickDomNode(page.getByRole('button', { name: 'Connect Cloud' }));
+
+    await expect(page.getByText(/does not exist/i)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
 });
