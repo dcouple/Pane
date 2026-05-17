@@ -108,8 +108,8 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Local mode')).toBeVisible();
     await expect(page.getByText(/Status: local/i)).toBeVisible();
 
-    await setInputValue(page.getByLabel('Connection Label'), 'Office Mac mini');
-    await setInputValue(page.getByLabel('Remote Base URL'), 'http://127.0.0.1:42137');
+    await setInputValue(page.getByLabel('Connection Label', { exact: true }), 'Office Mac mini');
+    await setInputValue(page.getByLabel('Remote Base URL', { exact: true }), 'http://127.0.0.1:42137');
     await clickDomNode(page.getByRole('button', { name: 'Create Paired Profile' }));
 
     await expect(page.getByText('Latest generated remote token')).toBeVisible();
@@ -126,6 +126,25 @@ test.describe('Smoke Tests', () => {
 
     await expect(page.getByText('Local mode')).toBeVisible();
     await expect(page.getByText(/Status: local/i)).toBeVisible();
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
+
+  test('Remote daemon settings can save an existing remote profile', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await openSettings(page);
+    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
+    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
+    await clickDomNode(remoteDaemonSectionButton);
+
+    await setInputValue(page.getByLabel('Existing Profile Label'), 'Tunnel from laptop');
+    await setInputValue(page.getByLabel('Existing Remote Base URL'), 'http://127.0.0.1:42137');
+    await setInputValue(page.getByLabel('Existing Remote Token'), 'shared-host-token');
+    await clickDomNode(page.getByRole('button', { name: 'Save Remote Profile' }));
+
+    await expect(page.getByText('Tunnel from laptop')).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 

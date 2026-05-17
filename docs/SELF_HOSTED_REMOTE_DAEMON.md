@@ -67,7 +67,7 @@ This writes the listener config into `config.json` under your chosen `PANE_DIR`.
 
 ## 3. Create a Paired Connection
 
-From the same settings section, create a paired connection:
+From the same settings section on the host machine, create a paired connection:
 
 1. Enter a label such as `Office Mac mini`
 2. Enter the base URL the client will use after tunneling, for example `http://127.0.0.1:42137`
@@ -76,10 +76,12 @@ From the same settings section, create a paired connection:
 Pane will:
 
 - add a host-side allowed client record
-- add a matching saved client profile
+- add a matching saved client profile on that same host-side Pane config
 - show the generated bearer token once
 
 Treat that token like a secret.
+
+If you are connecting from another machine, copy that generated token and keep it available for Step 6.
 
 ## 4. Start the Headless Daemon Host
 
@@ -123,12 +125,13 @@ Use a tunnel/proxy product that can reach the loopback listener on the host mach
 
 On the client machine, open Pane and go to `Settings > Self-Hosted Remote Daemon`.
 
-If you already created the paired profile on that machine, click `Connect`.
+Under `Save Existing Remote Profile`, save a matching client profile with:
 
-If not, create or save a matching profile with:
-
+- a label for this remote host
 - the same base URL the tunnel exposes locally on the client machine
 - the token generated when the host-side pair was created
+
+Then click `Connect` on that saved profile.
 
 When connected successfully, the client mode should show:
 

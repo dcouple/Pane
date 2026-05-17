@@ -11,6 +11,7 @@ import {
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
   type RemoteDaemonHostConfig,
+  type RemotePaneConnectionProfile,
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
 import { useConfigStore } from '../stores/configStore';
@@ -105,6 +106,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remotePairLabel, setRemotePairLabel] = useState('');
   const [remotePairBaseUrl, setRemotePairBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteCreatedToken, setRemoteCreatedToken] = useState<string | null>(null);
+  const [remoteImportedProfileLabel, setRemoteImportedProfileLabel] = useState('');
+  const [remoteImportedProfileBaseUrl, setRemoteImportedProfileBaseUrl] = useState('http://127.0.0.1:42137');
+  const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
   const [remoteBusy, setRemoteBusy] = useState(false);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
@@ -125,6 +129,11 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
               configResponse.data!.host.config.listenHost,
               configResponse.data!.host.config.listenPort,
             )
+          : currentValue
+      ));
+      setRemoteImportedProfileBaseUrl((currentValue) => (
+        currentValue === 'http://127.0.0.1:42137'
+          ? `http://${configResponse.data!.host.config.listenHost}:${configResponse.data!.host.config.listenPort}`
           : currentValue
       ));
     }
@@ -321,6 +330,26 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       if (!response.success) {
         throw new Error(response.error || 'Failed to delete remote daemon connection profile');
       }
+    });
+  };
+
+  const handleSaveRemoteProfile = async () => {
+    await runRemoteDaemonAction(async () => {
+      const profile: RemotePaneConnectionProfile = {
+        id: crypto.randomUUID(),
+        label: remoteImportedProfileLabel.trim(),
+        baseUrl: remoteImportedProfileBaseUrl.trim(),
+        token: remoteImportedProfileToken.trim(),
+        transport: 'http+sse',
+      };
+
+      const response = await API.remoteDaemon.upsertConnectionProfile(profile);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to save remote daemon connection profile');
+      }
+
+      setRemoteImportedProfileLabel('');
+      setRemoteImportedProfileToken('');
     });
   };
 
@@ -1093,6 +1122,52 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       </p>
                     </div>
                   )}
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Save Existing Remote Profile"
+                description="Save a token minted on the host so this desktop client can connect from another machine"
+                icon={<Plus className="w-4 h-4" />}
+              >
+                <div className="space-y-3">
+                  <Input
+                    label="Existing Profile Label"
+                    value={remoteImportedProfileLabel}
+                    onChange={(e) => setRemoteImportedProfileLabel(e.target.value)}
+                    placeholder="Office Mac mini tunnel"
+                    fullWidth
+                  />
+                  <Input
+                    label="Existing Remote Base URL"
+                    value={remoteImportedProfileBaseUrl}
+                    onChange={(e) => setRemoteImportedProfileBaseUrl(e.target.value)}
+                    placeholder="http://127.0.0.1:42137"
+                    fullWidth
+                  />
+                  <Textarea
+                    label="Existing Remote Token"
+                    value={remoteImportedProfileToken}
+                    onChange={(e) => setRemoteImportedProfileToken(e.target.value)}
+                    placeholder="Paste the token generated on the host machine"
+                    rows={2}
+                    fullWidth
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleSaveRemoteProfile}
+                      disabled={
+                        remoteBusy ||
+                        remoteImportedProfileLabel.trim().length === 0 ||
+                        remoteImportedProfileBaseUrl.trim().length === 0 ||
+                        remoteImportedProfileToken.trim().length === 0
+                      }
+                    >
+                      Save Remote Profile
+                    </Button>
+                  </div>
                 </div>
               </SettingsSection>
 
