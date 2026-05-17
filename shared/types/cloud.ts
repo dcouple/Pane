@@ -118,6 +118,16 @@ function readOptionalString(value: unknown): string | undefined {
 }
 
 function readPort(value: unknown, fallback: number): number {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10);
+      if (parsed > 0 && parsed <= 65535) {
+        return parsed;
+      }
+    }
+  }
+
   return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 65535
     ? value
     : fallback;

@@ -130,7 +130,12 @@ export function CloudWidget() {
   const isRunning = vmState.status === 'running';
   const isOff = vmState.status === 'off';
   const isUnknown = vmState.status === 'unknown'; // Usually means auth failed
-  const daemonAccess = isRunning && vmState.preferredAccess === 'daemon';
+  const hasDaemonMetadata = Boolean(
+    vmState.daemonBaseUrl
+    || vmState.linkedRemoteProfileId
+    || vmState.daemonStatus !== 'unknown',
+  );
+  const daemonAccess = isRunning && vmState.preferredAccess === 'daemon' && hasDaemonMetadata;
   const daemonBootstrapping = daemonAccess && vmState.daemonStatus === 'bootstrapping';
   const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
   const daemonError = daemonAccess && vmState.daemonStatus === 'error';

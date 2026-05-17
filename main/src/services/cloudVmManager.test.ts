@@ -76,6 +76,14 @@ describe('normalizeCloudVmConfig', () => {
       zone: undefined,
     });
   });
+
+  it('accepts numeric string tunnel ports written by shell tooling', () => {
+    expect(normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'legacy-token',
+      tunnelPort: '9000',
+    }).tunnelPort).toBe(9000);
+  });
 });
 
 describe('CloudVmManager', () => {
