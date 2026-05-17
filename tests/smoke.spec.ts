@@ -69,4 +69,33 @@ test.describe('Smoke Tests', () => {
     // Small wait to ensure no errors are thrown
     await page.waitForTimeout(500);
   });
+
+  test('Permission dialog can approve a daemonized permission request', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { emitPermissionRequest: (request: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.emitPermissionRequest({
+        id: 'permission-1',
+        sessionId: 'session-1',
+        toolName: 'Bash',
+        input: { command: 'pwd' },
+        timestamp: Date.now(),
+      });
+    });
+
+    await expect(page.getByText('Permission Required')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Execute shell commands')).toBeVisible();
+    await expect(page.getByText('Bash')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Allow' }).click();
+
+    await expect(page.getByText('Permission Required')).toHaveCount(0);
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
 });
