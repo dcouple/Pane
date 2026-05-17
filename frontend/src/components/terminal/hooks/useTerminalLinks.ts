@@ -4,6 +4,7 @@ import type { LinkProviderConfig } from '../linkProviders/types';
 import { registerAllLinkProviders } from '../linkProviders';
 import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
+import { useConfigStore } from '../../../stores/configStore';
 
 export interface UseTerminalLinksConfig {
   workingDirectory: string;
@@ -58,6 +59,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
   });
 
   const [githubRemoteUrl, setGithubRemoteUrl] = useState<string | null>(null);
+  const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
   const mousePositionRef = useRef({ x: 0, y: 0 });
 
   // Track mouse position for selection popover
@@ -168,6 +170,12 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
   const handleShowInExplorer = useCallback(async () => {
     const { path } = filePopover;
 
+    if (isRemoteMode) {
+      console.warn('Show in Explorer is only available in local mode.');
+      setFilePopover((prev) => ({ ...prev, visible: false }));
+      return;
+    }
+
     try {
       await window.electronAPI.invoke('app:showItemInFolder', path);
     } catch (error) {
@@ -175,7 +183,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
     }
 
     setFilePopover((prev) => ({ ...prev, visible: false }));
-  }, [filePopover]);
+  }, [filePopover, isRemoteMode]);
 
   const closeTooltip = useCallback(() => {
     setTooltip((prev) => ({ ...prev, visible: false }));
@@ -193,6 +201,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
     onMouseMove,
     tooltip,
     filePopover,
+    isRemoteMode,
     selectionPopover,
     handleOpenInEditor,
     handleShowInExplorer,

@@ -10,6 +10,7 @@ export interface SelectionPopoverProps {
   text: string;
   workingDirectory?: string;
   sessionId?: string;
+  isRemoteMode?: boolean;
   onClose: () => void;
 }
 
@@ -57,6 +58,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   text,
   workingDirectory,
   sessionId,
+  isRemoteMode = false,
   onClose,
 }) => {
   // Early return when not visible to avoid unnecessary computation
@@ -96,6 +98,12 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
 
   const handleShowInExplorer = async () => {
     if (isFile) {
+      if (isRemoteMode) {
+        console.warn('Show in Explorer is only available in local mode.');
+        onClose();
+        return;
+      }
+
       const resolvedPath = resolveFilePath(trimmedText, workingDirectory);
       try {
         await window.electronAPI.invoke('app:showItemInFolder', resolvedPath);
@@ -131,10 +139,14 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
         </PopoverButton>
       )}
       {isFile && (
-        <PopoverButton onClick={handleShowInExplorer}>
+        <PopoverButton
+          onClick={handleShowInExplorer}
+          disabled={isRemoteMode}
+          title={isRemoteMode ? 'Only available in local mode' : undefined}
+        >
           <span className="flex items-center gap-2">
             <FolderOpen className="w-4 h-4" />
-            Show in Explorer
+            Show in Explorer{isRemoteMode ? ' (local only)' : ''}
           </span>
         </PopoverButton>
       )}
