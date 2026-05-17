@@ -59,6 +59,14 @@ type AvailableShell = {
   path: string;
 };
 
+function formatRemoteBaseUrl(host: string, port: number): string {
+  const trimmedHost = host.trim();
+  const normalizedHost = trimmedHost.includes(':') && !trimmedHost.startsWith('[') && !trimmedHost.endsWith(']')
+    ? `[${trimmedHost}]`
+    : trimmedHost;
+  return `http://${normalizedHost}:${port}`;
+}
+
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [verbose, setVerbose] = useState(false);
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
@@ -113,7 +121,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setRemoteHostConfigDraft(configResponse.data.host.config);
       setRemotePairBaseUrl((currentValue) => (
         currentValue === 'http://127.0.0.1:42137'
-          ? `http://${configResponse.data!.host.config.listenHost}:${configResponse.data!.host.config.listenPort}`
+          ? formatRemoteBaseUrl(
+              configResponse.data!.host.config.listenHost,
+              configResponse.data!.host.config.listenPort,
+            )
           : currentValue
       ));
     }
