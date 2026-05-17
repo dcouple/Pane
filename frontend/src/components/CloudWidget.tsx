@@ -116,7 +116,13 @@ export function CloudWidget() {
       const result = await window.electronAPI.cloud.disconnectWorkspace();
       if (result.success && result.data) {
         setVmState(result.data);
+        return;
       }
+
+      setVmState({
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
+        error: result.error ?? 'Failed to switch back to local runtime',
+      });
     } catch (err) {
       setVmState({
         ...(vmState ?? DEFAULT_CLOUD_STATE),

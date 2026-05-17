@@ -356,4 +356,36 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText(/does not exist/i)).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
+
+  test('Cloud widget surfaces hosted workspace disconnect failures', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: {
+          setCloudState: (updates: Record<string, unknown>) => void;
+          setCloudDisconnectError: (error: string | null) => void;
+        };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'off',
+        daemonStatus: 'ready',
+        daemonBaseUrl: 'https://pane.example.com/daemon/',
+        linkedRemoteProfileId: 'remote-cloud-1',
+        linkedRemoteProfileLabel: 'Pane Cloud Workspace',
+        remoteConnectionStatus: 'connected',
+        preferredAccess: 'daemon',
+      });
+      mock?.setCloudDisconnectError('Unable to switch back to local runtime');
+    });
+
+    await clickDomNode(page.getByRole('button', { name: 'Use Local Runtime' }));
+
+    await expect(page.getByText('Unable to switch back to local runtime')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
 });

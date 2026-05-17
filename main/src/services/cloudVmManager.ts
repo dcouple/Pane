@@ -761,9 +761,11 @@ export class CloudVmManager extends EventEmitter {
     }
 
     const connectionState = remotePaneClientController.getConnectionState();
+    const expectedBaseUrl = config.daemonBaseUrl ?? linkedProfile.baseUrl;
     if (
       connectionState.mode === 'remote' &&
-      connectionState.activeProfileId === linkedProfile.id
+      connectionState.activeProfileId === linkedProfile.id &&
+      connectionState.activeBaseUrl === expectedBaseUrl
     ) {
       return connectionState.status;
     }

@@ -53,6 +53,7 @@ export async function installElectronApiMock(page: Page) {
     const configState: Record<string, unknown> = {
       remoteDaemon: clone(remoteDaemonConfig),
     };
+    let cloudDisconnectError: string | null = null;
 
     const subscribe = (channel: string, callback: (...args: unknown[]) => void) => {
       const callbacks = listeners.get(channel) ?? new Set<(...args: unknown[]) => void>();
@@ -169,6 +170,10 @@ export async function installElectronApiMock(page: Page) {
           return success(clone(cloudState));
         },
         disconnectWorkspace: () => {
+          if (cloudDisconnectError) {
+            return Promise.resolve({ success: false, error: cloudDisconnectError });
+          }
+
           remoteDaemonConfig.client.activeProfileId = null;
           remoteDaemonConfig.client.mode = 'local';
           syncRemoteDaemonConfig();
@@ -389,6 +394,9 @@ export async function installElectronApiMock(page: Page) {
         setCloudState(updates: Record<string, unknown>) {
           Object.assign(cloudState, updates);
           emit('cloud:state-changed', clone(cloudState));
+        },
+        setCloudDisconnectError(error: string | null) {
+          cloudDisconnectError = error;
         },
       },
     });

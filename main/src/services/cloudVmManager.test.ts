@@ -338,6 +338,45 @@ describe('CloudVmManager', () => {
     });
   });
 
+  it('requires the active hosted remote profile to match the current daemon endpoint', async () => {
+    const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
+    remoteDaemonConfig.client.profiles = [{
+      id: 'remote-profile-1',
+      label: 'Pane Cloud Workspace',
+      baseUrl: 'https://old.example.com/daemon/',
+      token: 'secret-token',
+      transport: 'http+sse',
+    }];
+    remoteDaemonConfig.client.activeProfileId = 'remote-profile-1';
+    remoteDaemonConfig.client.mode = 'remote';
+
+    vi.spyOn(remotePaneClientController, 'getConnectionState').mockReturnValue({
+      mode: 'remote',
+      status: 'connected',
+      activeProfileId: 'remote-profile-1',
+      activeProfileLabel: 'Pane Cloud Workspace',
+      activeBaseUrl: 'https://old.example.com/daemon/',
+      lastError: null,
+    });
+
+    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://new.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    }), remoteDaemonConfig) as never);
+
+    const state = await manager.getState();
+
+    expect(state).toMatchObject({
+      daemonBaseUrl: 'https://new.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+      linkedRemoteProfileLabel: 'Pane Cloud Workspace',
+      remoteConnectionStatus: 'available',
+    });
+  });
+
   it('disconnects the hosted workspace when its linked remote profile is active', async () => {
     const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
     remoteDaemonConfig.client.profiles = [{
