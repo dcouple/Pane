@@ -15,6 +15,13 @@ export function getCloudVmManager(): CloudVmManager | null {
 export function registerCloudHandlers(ipcMain: IpcMain, services: AppServices): void {
   const { configManager, logger, getMainWindow } = services;
 
+  function requestRendererRemoteResync(): void {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send('remote-daemon:resync-required');
+    }
+  }
+
   // Lazy-initialize the CloudVmManager
   function getManager(): CloudVmManager {
     if (!cloudVmManager) {
@@ -109,6 +116,7 @@ export function registerCloudHandlers(ipcMain: IpcMain, services: AppServices): 
       logger?.info('[Cloud IPC] cloud:connect-workspace requested');
       const manager = getManager();
       const state = await manager.connectWorkspace();
+      requestRendererRemoteResync();
       return { success: true, data: state };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -123,6 +131,7 @@ export function registerCloudHandlers(ipcMain: IpcMain, services: AppServices): 
       logger?.info('[Cloud IPC] cloud:disconnect-workspace requested');
       const manager = getManager();
       const state = await manager.disconnectWorkspace();
+      requestRendererRemoteResync();
       return { success: true, data: state };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
