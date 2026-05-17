@@ -4,8 +4,13 @@
 #
 # Usage:
 #   terraform init
-#   terraform plan -var="project_id=YOUR_PROJECT" -var="user_id=user123"
-#   terraform apply -var="project_id=YOUR_PROJECT" -var="user_id=user123"
+#   terraform plan \
+#     -var="project_id=YOUR_PROJECT" \
+#     -var="user_id=user123" \
+#     -var="vnc_password=RECOVERY_PASSWORD" \
+#     -var="remote_client_id=cloud-user123" \
+#     -var="remote_client_label=Pane Cloud Workspace" \
+#     -var="remote_client_token=GENERATED_TOKEN"
 
 terraform {
   required_version = ">= 1.5"
@@ -68,6 +73,34 @@ variable "vnc_password" {
   description = "Pre-generated VNC password (passed to VM startup script)"
   type        = string
   sensitive   = true
+}
+
+variable "remote_client_id" {
+  description = "Stable remote profile/client ID for the hosted workspace daemon"
+  type        = string
+}
+
+variable "remote_client_label" {
+  description = "Human-readable label for the hosted workspace daemon client"
+  type        = string
+}
+
+variable "remote_client_token" {
+  description = "Bearer token the hosted workspace daemon will accept from the linked client profile"
+  type        = string
+  sensitive   = true
+}
+
+variable "remote_daemon_port" {
+  description = "Loopback port the hosted Pane daemon listens on inside the VM"
+  type        = number
+  default     = 42137
+}
+
+variable "enable_novnc_fallback" {
+  description = "Whether to keep the legacy noVNC desktop stack available for fallback/debug access"
+  type        = bool
+  default     = false
 }
 
 variable "snapshot_start_time" {
@@ -197,9 +230,14 @@ resource "google_compute_instance" "pane" {
     # VM is only reachable via IAP tunnel
   }
 
-  # Pass VNC password via instance metadata so we have it immediately
+  # Pass hosted workspace bootstrap settings via instance metadata.
   metadata = {
-    vnc-password = var.vnc_password
+    vnc-password          = var.vnc_password
+    remote-client-id      = var.remote_client_id
+    remote-client-label   = var.remote_client_label
+    remote-client-token   = var.remote_client_token
+    remote-daemon-port    = tostring(var.remote_daemon_port)
+    enable-novnc-fallback = tostring(var.enable_novnc_fallback)
   }
 
   metadata_startup_script = file("${path.module}/../../scripts/setup-vm.sh")
@@ -280,13 +318,49 @@ output "ssh_command" {
 }
 
 output "novnc_tunnel_command" {
-  description = "Start IAP tunnel to access noVNC on localhost:8080"
+  description = "Legacy/fallback tunnel command; the same tunnel carries daemon and optional noVNC traffic"
   value       = "gcloud compute start-iap-tunnel pane-${var.user_id} 80 --local-host-port=localhost:8080 --zone=${var.zone} --project=${var.project_id}"
 }
 
+output "daemon_tunnel_command" {
+  description = "Start the IAP tunnel used by the hosted workspace daemon and optional noVNC fallback"
+  value       = "gcloud compute start-iap-tunnel pane-${var.user_id} 80 --local-host-port=localhost:8080 --zone=${var.zone} --project=${var.project_id}"
+}
+
+output "daemon_base_url" {
+  description = "Base URL the local Pane client should use while the IAP tunnel is running"
+  value       = "http://127.0.0.1:8080/daemon/"
+}
+
+output "remote_client_id" {
+  description = "Stable hosted workspace remote profile/client ID"
+  value       = var.remote_client_id
+}
+
+output "remote_client_label" {
+  description = "Human-readable hosted workspace remote profile/client label"
+  value       = var.remote_client_label
+}
+
+output "remote_client_token" {
+  description = "Bearer token the hosted workspace daemon accepts from the linked client"
+  value       = var.remote_client_token
+  sensitive   = true
+}
+
+output "remote_daemon_port" {
+  description = "Loopback port the hosted Pane daemon listens on inside the VM"
+  value       = var.remote_daemon_port
+}
+
 output "novnc_url" {
-  description = "Open this in browser AFTER starting the IAP tunnel"
-  value       = "http://localhost:8080/novnc/vnc.html?autoconnect=true&resize=scale"
+  description = "Open this in browser AFTER starting the IAP tunnel when noVNC fallback is enabled"
+  value       = var.enable_novnc_fallback ? "http://localhost:8080/novnc/vnc.html?autoconnect=true&resize=scale" : ""
+}
+
+output "novnc_fallback_enabled" {
+  description = "Whether the hosted VM keeps the legacy noVNC desktop stack enabled"
+  value       = var.enable_novnc_fallback
 }
 
 output "setup_log_command" {

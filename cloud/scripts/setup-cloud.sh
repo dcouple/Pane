@@ -64,6 +64,19 @@ prompt_yes_no() {
   [[ "$yn" =~ ^[Yy] ]]
 }
 
+normalize_bool() {
+  local value
+  value="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on)
+      echo "true"
+      ;;
+    *)
+      echo "false"
+      ;;
+  esac
+}
+
 # ============================================================
 # Resolve script directory (works from any cwd)
 # ============================================================
@@ -113,6 +126,27 @@ get_pane_config_dir() {
 # Set config path early so it's available throughout the script
 PANE_CONFIG=$(get_pane_config_path)
 PANE_CONFIG_DIR=$(get_pane_config_dir)
+HOSTED_TUNNEL_PORT=8080
+HOSTED_DAEMON_BASE_URL="http://127.0.0.1:${HOSTED_TUNNEL_PORT}/daemon/"
+HOSTED_DAEMON_PORT=42137
+HOSTED_REMOTE_PROFILE_ID=""
+HOSTED_REMOTE_PROFILE_LABEL="Pane Cloud Workspace"
+HOSTED_REMOTE_PROFILE_TOKEN=""
+HOSTED_DAEMON_STATUS="unknown"
+HOSTED_ALLOW_NOVNC_FALLBACK="false"
+CURRENT_GCP_TOKEN=""
+
+read_existing_remote_profile_token() {
+  local profile_id="$1"
+
+  if [ ! -f "$PANE_CONFIG" ] || ! command -v jq &>/dev/null || [ -z "$profile_id" ]; then
+    return
+  fi
+
+  jq -r --arg profileId "$profile_id" '
+    .remoteDaemon.client.profiles[]? | select(.id == $profileId) | .token
+  ' "$PANE_CONFIG" 2>/dev/null | head -1
+}
 
 # ============================================================
 # Incremental config save function
@@ -145,6 +179,28 @@ save_cloud_config() {
     region=$(echo "$zone" | sed 's/-[a-z]$//')
   fi
 
+  local allow_novnc_json="false"
+  if [ "$HOSTED_ALLOW_NOVNC_FALLBACK" = "true" ]; then
+    allow_novnc_json="true"
+  fi
+
+  local remote_profile_json='null'
+  if [ -n "$HOSTED_REMOTE_PROFILE_ID" ] && [ -n "$HOSTED_REMOTE_PROFILE_TOKEN" ] && [ -n "$HOSTED_DAEMON_BASE_URL" ]; then
+    remote_profile_json="$(jq -cn \
+      --arg id "$HOSTED_REMOTE_PROFILE_ID" \
+      --arg label "$HOSTED_REMOTE_PROFILE_LABEL" \
+      --arg baseUrl "$HOSTED_DAEMON_BASE_URL" \
+      --arg token "$HOSTED_REMOTE_PROFILE_TOKEN" \
+      '{
+        id: $id,
+        label: $label,
+        baseUrl: $baseUrl,
+        token: $token,
+        transport: "http+sse"
+      }'
+    )"
+  fi
+
   # Update config with current values (only non-empty ones)
   # Use canonical key names (projectId, zone) to match what the app reads
   local tmp_config="${PANE_CONFIG}.tmp"
@@ -154,15 +210,44 @@ save_cloud_config() {
      --arg region "$region" \
      --arg serverId "$server_id" \
      --arg vncPassword "$vnc_password" \
-     --arg tunnelPort "$tunnel_port" \
-     '.cloud = (.cloud // {}) | .cloud.provider = $provider
+     --arg daemonBaseUrl "$HOSTED_DAEMON_BASE_URL" \
+     --arg linkedRemoteProfileId "$HOSTED_REMOTE_PROFILE_ID" \
+     --arg daemonStatus "$HOSTED_DAEMON_STATUS" \
+     --arg apiToken "$CURRENT_GCP_TOKEN" \
+     --argjson tunnelPort "${tunnel_port:-8080}" \
+     --argjson allowNoVncFallback "$allow_novnc_json" \
+     --argjson remoteProfile "$remote_profile_json" \
+     '
+      .cloud = (.cloud // {}) | .cloud.provider = $provider
       | if $projectId != "" then .cloud.projectId = $projectId else . end
       | if $zone != "" then .cloud.zone = $zone else . end
       | if $region != "" then .cloud.region = $region else . end
       | if $serverId != "" then .cloud.serverId = $serverId else . end
       | if $vncPassword != "" then .cloud.vncPassword = $vncPassword else . end
+      | if $apiToken != "" then .cloud.apiToken = $apiToken else . end
+      | if $daemonBaseUrl != "" then .cloud.daemonBaseUrl = $daemonBaseUrl else . end
+      | if $linkedRemoteProfileId != "" then .cloud.linkedRemoteProfileId = $linkedRemoteProfileId else . end
+      | if $daemonStatus != "" then .cloud.daemonStatus = $daemonStatus else . end
+      | .cloud.preferredAccess = "daemon"
+      | .cloud.allowNoVncFallback = $allowNoVncFallback
       | .cloud.tunnelPort = $tunnelPort
-      | .cloud.serverIp = ""' \
+      | .cloud.serverIp = ""
+      | .remoteDaemon = (.remoteDaemon // {})
+      | .remoteDaemon.client = (.remoteDaemon.client // {
+          profiles: [],
+          activeProfileId: null,
+          mode: "local"
+        })
+      | if $remoteProfile != null
+          then .remoteDaemon.client.profiles = (
+            [((.remoteDaemon.client.profiles // [])[] | select(.id != $remoteProfile.id))]
+            + [$remoteProfile]
+          )
+          else .
+        end
+      | .remoteDaemon.client.activeProfileId = (.remoteDaemon.client.activeProfileId // null)
+      | .remoteDaemon.client.mode = (.remoteDaemon.client.mode // "local")
+      ' \
      "$PANE_CONFIG" > "$tmp_config" && mv "$tmp_config" "$PANE_CONFIG"
 }
 
@@ -358,6 +443,17 @@ if [ "$DESTROY_MODE" = true ]; then
 
   # Get project ID from state for cleanup
   PROJECT_ID=$(terraform -chdir="$TERRAFORM_DIR" output -raw project_id 2>/dev/null || echo "")
+  INSTANCE_NAME=$(terraform -chdir="$TERRAFORM_DIR" output -raw instance_name 2>/dev/null || echo "")
+  STATE_USER_ID="${INSTANCE_NAME#pane-}"
+  if [ -z "$STATE_USER_ID" ] || [ "$STATE_USER_ID" = "$INSTANCE_NAME" ]; then
+    STATE_USER_ID="${PROJECT_ID#pane-cloud-}"
+  fi
+  VNC_PASSWORD=$(terraform -chdir="$TERRAFORM_DIR" output -raw vnc_password 2>/dev/null || echo "destroy-placeholder")
+  HOSTED_REMOTE_PROFILE_ID=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_id 2>/dev/null || echo "cloud-${STATE_USER_ID}")
+  HOSTED_REMOTE_PROFILE_LABEL=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_label 2>/dev/null || echo "Pane Cloud Workspace")
+  HOSTED_REMOTE_PROFILE_TOKEN=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_token 2>/dev/null || echo "destroy-placeholder")
+  HOSTED_DAEMON_PORT=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_daemon_port 2>/dev/null || echo "42137")
+  HOSTED_ALLOW_NOVNC_FALLBACK=$(normalize_bool "$(terraform -chdir="$TERRAFORM_DIR" output -raw novnc_fallback_enabled 2>/dev/null || echo "false")")
 
   if ! prompt_yes_no "Are you sure you want to destroy the cloud infrastructure?" "n"; then
     info "Aborted."
@@ -367,7 +463,16 @@ if [ "$DESTROY_MODE" = true ]; then
   info "Running terraform destroy..."
   cd "$TERRAFORM_DIR"
   terraform init -input=false >/dev/null 2>&1
-  terraform destroy -auto-approve
+  terraform destroy \
+    -var="project_id=${PROJECT_ID}" \
+    -var="user_id=${STATE_USER_ID}" \
+    -var="vnc_password=${VNC_PASSWORD}" \
+    -var="remote_client_id=${HOSTED_REMOTE_PROFILE_ID}" \
+    -var="remote_client_label=${HOSTED_REMOTE_PROFILE_LABEL}" \
+    -var="remote_client_token=${HOSTED_REMOTE_PROFILE_TOKEN}" \
+    -var="remote_daemon_port=${HOSTED_DAEMON_PORT}" \
+    -var="enable_novnc_fallback=${HOSTED_ALLOW_NOVNC_FALLBACK}" \
+    -auto-approve
 
   success "Infrastructure destroyed."
 
@@ -462,7 +567,21 @@ if [ -f "${TERRAFORM_DIR}/terraform.tfstate" ]; then
     # Read remaining terraform outputs
     PROJECT_ID=$(terraform -chdir="$TERRAFORM_DIR" output -raw project_id 2>/dev/null || echo "")
     GCP_ZONE=$(terraform -chdir="$TERRAFORM_DIR" output -raw zone 2>/dev/null || echo "")
-    TUNNEL_PORT=8080
+    HOSTED_DAEMON_PORT=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_daemon_port 2>/dev/null || echo "42137")
+    HOSTED_REMOTE_PROFILE_ID=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_id 2>/dev/null || echo "")
+    HOSTED_REMOTE_PROFILE_LABEL=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_label 2>/dev/null || echo "Pane Cloud Workspace")
+    HOSTED_REMOTE_PROFILE_TOKEN=$(terraform -chdir="$TERRAFORM_DIR" output -raw remote_client_token 2>/dev/null || echo "")
+    HOSTED_ALLOW_NOVNC_FALLBACK=$(normalize_bool "$(terraform -chdir="$TERRAFORM_DIR" output -raw novnc_fallback_enabled 2>/dev/null || echo "false")")
+    TUNNEL_PORT=$HOSTED_TUNNEL_PORT
+    HOSTED_DAEMON_BASE_URL="$(terraform -chdir="$TERRAFORM_DIR" output -raw daemon_base_url 2>/dev/null || echo "http://127.0.0.1:${TUNNEL_PORT}/daemon/")"
+
+    if [ -z "$HOSTED_REMOTE_PROFILE_ID" ]; then
+      HOSTED_REMOTE_PROFILE_ID="cloud-${INSTANCE_NAME#pane-}"
+    fi
+
+    if [ -z "$HOSTED_REMOTE_PROFILE_TOKEN" ]; then
+      HOSTED_REMOTE_PROFILE_TOKEN="$(read_existing_remote_profile_token "$HOSTED_REMOTE_PROFILE_ID")"
+    fi
 
     # If project_id output doesn't exist (older state), extract from tunnel command
     if [ -z "$PROJECT_ID" ]; then
@@ -546,7 +665,18 @@ if [ -f "${TERRAFORM_DIR}/terraform.tfstate" ]; then
     fi
     echo ""
 
-    # Step 4: Get VNC password (from terraform state first, then VM as fallback)
+    # Step 4: Check hosted daemon readiness from inside the VM before opening the tunnel
+    info "Checking hosted daemon health..."
+    HOSTED_DAEMON_STATUS=$(gcloud compute ssh "$INSTANCE_NAME" \
+      --zone="$GCP_ZONE" \
+      --project="$PROJECT_ID" \
+      --tunnel-through-iap \
+      --command="curl -fsS http://127.0.0.1/health >/dev/null 2>&1 && echo 'ready' || echo 'bootstrapping'" \
+      2>/dev/null || echo "unknown")
+    success "Hosted daemon status: ${HOSTED_DAEMON_STATUS}"
+    echo ""
+
+    # Step 5: Get VNC password (from terraform state first, then VM as fallback)
     info "Retrieving VNC password..."
 
     # Try terraform state first (we now store it there)
@@ -584,51 +714,24 @@ if [ -f "${TERRAFORM_DIR}/terraform.tfstate" ]; then
     fi
     echo ""
 
-    # Step 5: Update Pane config
+    # Step 6: Update Pane config
     info "Updating Pane config..."
     mkdir -p "$PANE_CONFIG_DIR"
+    CURRENT_GCP_TOKEN="$GCP_TOKEN"
 
     if command -v jq &>/dev/null; then
-      # Read existing config or start with empty object
-      EXISTING_CONFIG='{}'
-      if [ -f "$PANE_CONFIG" ]; then
-        EXISTING_CONFIG=$(cat "$PANE_CONFIG" 2>/dev/null || echo '{}')
-      fi
-
-      # Update config using jq and capture to variable (avoids Windows path issues with temp files)
-      NEW_CONFIG=$(echo "$EXISTING_CONFIG" | jq --arg provider "gcp" \
-         --arg token "$GCP_TOKEN" \
-         --arg serverId "$INSTANCE_NAME" \
-         --arg vncPw "$VNC_PASSWORD" \
-         --arg projectId "$PROJECT_ID" \
-         --arg zone "$GCP_ZONE" \
-         --argjson port "$TUNNEL_PORT" \
-         '.cloud = {
-            provider: $provider,
-            apiToken: $token,
-            serverId: $serverId,
-            vncPassword: $vncPw,
-            projectId: $projectId,
-            zone: $zone,
-            tunnelPort: $port
-          }')
-
-      if [ -n "$NEW_CONFIG" ] && [ "$NEW_CONFIG" != "null" ]; then
-        printf '%s\n' "$NEW_CONFIG" > "$PANE_CONFIG"
-        success "Config updated: ${PANE_CONFIG}"
-      else
-        warn "jq produced empty output — config not updated."
-      fi
+      save_cloud_config "$PROJECT_ID" "$GCP_ZONE" "$INSTANCE_NAME" "$VNC_PASSWORD" "$TUNNEL_PORT"
+      success "Config updated: ${PANE_CONFIG}"
     else
       warn "jq not found — skipping config update."
     fi
     echo ""
 
-    # Step 6: Start IAP tunnel
+    # Step 7: Start IAP tunnel
     header "Starting IAP Tunnel"
 
     echo -e "The tunnel will connect your local port ${BOLD}${TUNNEL_PORT}${NC} to the VM."
-    echo -e "Once connected, open Pane and click the ${BOLD}Cloud${NC} button to view your VM."
+    echo -e "Once connected, open Pane and click ${BOLD}Connect Cloud Runtime${NC}."
     echo ""
     echo -e "${YELLOW}Press Ctrl+C to disconnect the tunnel.${NC}"
     echo ""
@@ -687,6 +790,8 @@ if ! gcloud auth application-default print-access-token &>/dev/null 2>&1; then
   gcloud auth application-default login
 fi
 
+CURRENT_GCP_TOKEN=$(gcloud auth print-access-token 2>/dev/null || echo "")
+
 # ============================================================
 # Step 2: Choose or create a GCP project
 # ============================================================
@@ -704,6 +809,11 @@ done
 # Sanitize: lowercase, alphanumeric + hyphens only, strip carriage returns (WSL fix)
 USER_ID=$(echo "$USER_ID" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g')
 PROJECT_ID="pane-cloud-${USER_ID}"
+HOSTED_REMOTE_PROFILE_ID="cloud-${USER_ID}"
+HOSTED_REMOTE_PROFILE_TOKEN="$(read_existing_remote_profile_token "$HOSTED_REMOTE_PROFILE_ID")"
+if [ -z "$HOSTED_REMOTE_PROFILE_TOKEN" ]; then
+  HOSTED_REMOTE_PROFILE_TOKEN="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
+fi
 
 info "Project ID will be: ${BOLD}${PROJECT_ID}${NC}"
 
@@ -781,6 +891,11 @@ GCP_REGION=$(echo "$GCP_ZONE" | sed 's/-[a-z]$//')
 
 prompt_input MACHINE_TYPE "Machine type" "e2-highmem-2"
 prompt_input DISK_SIZE "Boot disk size (GB)" "128"
+if prompt_yes_no "Enable noVNC fallback/debug desktop access?" "n"; then
+  HOSTED_ALLOW_NOVNC_FALLBACK="true"
+else
+  HOSTED_ALLOW_NOVNC_FALLBACK="false"
+fi
 
 echo ""
 info "Configuration summary:"
@@ -791,6 +906,8 @@ echo "  Region:       ${GCP_REGION}"
 echo "  Machine:      ${MACHINE_TYPE}"
 echo "  Disk:         ${DISK_SIZE} GB"
 echo "  Security:     IAP-only (no public IP)"
+echo "  Runtime:      Headless Pane daemon"
+echo "  noVNC debug:  ${HOSTED_ALLOW_NOVNC_FALLBACK}"
 echo ""
 
 if ! prompt_yes_no "Proceed with Terraform apply?"; then
@@ -817,7 +934,11 @@ else
   success "VNC password generated."
 fi
 echo -e "\n  ${BOLD}VNC Password: ${YELLOW}${VNC_PASSWORD}${NC}\n"
-echo -e "  ${CYAN}Save this password — you'll need it to connect to the noVNC display.${NC}\n"
+if [ "$HOSTED_ALLOW_NOVNC_FALLBACK" = "true" ]; then
+  echo -e "  ${CYAN}Save this password — you'll need it for optional noVNC fallback access.${NC}\n"
+else
+  echo -e "  ${CYAN}noVNC fallback is disabled by default; this password is retained only for future recovery use.${NC}\n"
+fi
 
 # Save progress: zone and VNC password now known
 save_cloud_config "$PROJECT_ID" "$GCP_ZONE" "" "$VNC_PASSWORD"
@@ -848,6 +969,11 @@ terraform apply \
   -var="machine_type=${MACHINE_TYPE}" \
   -var="disk_size_gb=${DISK_SIZE}" \
   -var="vnc_password=${VNC_PASSWORD}" \
+  -var="remote_client_id=${HOSTED_REMOTE_PROFILE_ID}" \
+  -var="remote_client_label=${HOSTED_REMOTE_PROFILE_LABEL}" \
+  -var="remote_client_token=${HOSTED_REMOTE_PROFILE_TOKEN}" \
+  -var="remote_daemon_port=${HOSTED_DAEMON_PORT}" \
+  -var="enable_novnc_fallback=${HOSTED_ALLOW_NOVNC_FALLBACK}" \
   -auto-approve
 
 success "Infrastructure provisioned!"
@@ -855,8 +981,15 @@ success "Infrastructure provisioned!"
 # Capture outputs
 INSTANCE_NAME=$(terraform output -raw instance_name 2>/dev/null)
 SSH_CMD=$(terraform output -raw ssh_command 2>/dev/null)
-TUNNEL_CMD=$(terraform output -raw novnc_tunnel_command 2>/dev/null)
+TUNNEL_CMD=$(terraform output -raw daemon_tunnel_command 2>/dev/null)
 NOVNC_URL=$(terraform output -raw novnc_url 2>/dev/null)
+HOSTED_DAEMON_PORT=$(terraform output -raw remote_daemon_port 2>/dev/null || echo "$HOSTED_DAEMON_PORT")
+HOSTED_REMOTE_PROFILE_ID=$(terraform output -raw remote_client_id 2>/dev/null || echo "$HOSTED_REMOTE_PROFILE_ID")
+HOSTED_REMOTE_PROFILE_LABEL=$(terraform output -raw remote_client_label 2>/dev/null || echo "$HOSTED_REMOTE_PROFILE_LABEL")
+HOSTED_REMOTE_PROFILE_TOKEN=$(terraform output -raw remote_client_token 2>/dev/null || echo "$HOSTED_REMOTE_PROFILE_TOKEN")
+HOSTED_ALLOW_NOVNC_FALLBACK=$(normalize_bool "$(terraform output -raw novnc_fallback_enabled 2>/dev/null || echo "$HOSTED_ALLOW_NOVNC_FALLBACK")")
+HOSTED_DAEMON_BASE_URL=$(terraform output -raw daemon_base_url 2>/dev/null || echo "$HOSTED_DAEMON_BASE_URL")
+HOSTED_DAEMON_STATUS="bootstrapping"
 
 # Save progress: instance name now known - this is the critical save!
 save_cloud_config "$PROJECT_ID" "$GCP_ZONE" "$INSTANCE_NAME" "$VNC_PASSWORD"
@@ -870,7 +1003,7 @@ header "Step 7: Waiting for VM Setup"
 info "The VM is running the setup script (installs packages, Node.js, Pane, etc.)"
 info "This typically takes 3-5 minutes on a fresh VM.\n"
 
-# Poll for setup completion by checking if supervisor is running
+# Poll for setup completion by checking the daemon health endpoint through SSH
 MAX_WAIT=600  # 10 minutes max
 ELAPSED=0
 INTERVAL=15
@@ -878,17 +1011,19 @@ INTERVAL=15
 while [ $ELAPSED -lt $MAX_WAIT ]; do
   echo -ne "\r  Waiting... (${ELAPSED}s / ${MAX_WAIT}s)"
 
-  # Try to SSH in and check if setup is done (supervisor running = setup complete)
+  # Try to SSH in and check if setup is done (daemon health endpoint ready)
   SETUP_DONE=$(gcloud compute ssh "$INSTANCE_NAME" \
     --zone="$GCP_ZONE" \
     --project="$PROJECT_ID" \
     --tunnel-through-iap \
-    --command="systemctl is-active supervisor 2>/dev/null || echo 'not-ready'" \
+    --command="curl -fsS http://127.0.0.1/health >/dev/null 2>&1 && echo 'ready' || echo 'not-ready'" \
     2>/dev/null || echo "ssh-failed")
 
-  if [ "$SETUP_DONE" = "active" ]; then
+  if [ "$SETUP_DONE" = "ready" ]; then
     echo ""
-    success "VM setup complete! All services are running."
+    HOSTED_DAEMON_STATUS="ready"
+    save_cloud_config "$PROJECT_ID" "$GCP_ZONE" "$INSTANCE_NAME" "$VNC_PASSWORD"
+    success "VM setup complete! Hosted daemon health check passed."
     break
   fi
 
@@ -912,47 +1047,11 @@ mkdir -p "$PANE_CONFIG_DIR"
 
 # Get GCP access token for API calls
 GCP_TOKEN=$(gcloud auth print-access-token 2>/dev/null || echo "")
-TUNNEL_PORT=8080
+CURRENT_GCP_TOKEN="$GCP_TOKEN"
+TUNNEL_PORT="$HOSTED_TUNNEL_PORT"
 
 if command -v jq &>/dev/null; then
-  if [ -f "$PANE_CONFIG" ]; then
-    # Merge cloud settings into existing config
-    jq --arg provider "gcp" \
-       --arg token "$GCP_TOKEN" \
-       --arg serverId "$INSTANCE_NAME" \
-       --arg vncPw "$VNC_PASSWORD" \
-       --arg projectId "$PROJECT_ID" \
-       --arg zone "$GCP_ZONE" \
-       --argjson port "$TUNNEL_PORT" \
-       '.cloud = {
-          provider: $provider,
-          apiToken: $token,
-          serverId: $serverId,
-          vncPassword: $vncPw,
-          projectId: $projectId,
-          zone: $zone,
-          tunnelPort: $port
-        }' "$PANE_CONFIG" > "${PANE_CONFIG}.tmp" \
-      && mv "${PANE_CONFIG}.tmp" "$PANE_CONFIG"
-  else
-    # Create new config with cloud settings
-    echo '{}' | jq --arg provider "gcp" \
-       --arg token "$GCP_TOKEN" \
-       --arg serverId "$INSTANCE_NAME" \
-       --arg vncPw "$VNC_PASSWORD" \
-       --arg projectId "$PROJECT_ID" \
-       --arg zone "$GCP_ZONE" \
-       --argjson port "$TUNNEL_PORT" \
-       '.cloud = {
-          provider: $provider,
-          apiToken: $token,
-          serverId: $serverId,
-          vncPassword: $vncPw,
-          projectId: $projectId,
-          zone: $zone,
-          tunnelPort: $port
-        }' > "$PANE_CONFIG"
-  fi
+  save_cloud_config "$PROJECT_ID" "$GCP_ZONE" "$INSTANCE_NAME" "$VNC_PASSWORD" "$TUNNEL_PORT"
   success "Pane configured with cloud settings."
   info "Settings written to ${PANE_CONFIG}"
   info "Note: The GCP access token expires in ~1 hour. Pane auto-refreshes it via gcloud."
@@ -968,16 +1067,25 @@ header "Setup Complete!"
 
 echo -e "${GREEN}${BOLD}Your Pane Cloud VM is ready!${NC}\n"
 
-echo -e "${BOLD}Connect to your VM:${NC}"
+echo -e "${BOLD}Connect to your hosted workspace:${NC}"
 echo ""
-echo -e "  ${CYAN}1. Start the IAP tunnel (run in a separate terminal):${NC}"
+echo -e "  ${CYAN}1. Start the daemon IAP tunnel (run in a separate terminal):${NC}"
 echo -e "     ${BOLD}${TUNNEL_CMD}${NC}"
 echo ""
-echo -e "  ${CYAN}2. Open noVNC in your browser:${NC}"
-echo -e "     ${BOLD}${NOVNC_URL}${NC}"
+echo -e "  ${CYAN}2. Open Pane locally and click ${BOLD}Connect Cloud Runtime${NC}${CYAN}.${NC}"
 echo ""
-echo -e "  ${CYAN}3. Enter the VNC password when prompted${NC}"
+echo -e "  ${CYAN}3. Pane will connect to:${NC} ${BOLD}${HOSTED_DAEMON_BASE_URL}${NC}"
 echo ""
+
+if [ "$HOSTED_ALLOW_NOVNC_FALLBACK" = "true" ] && [ -n "$NOVNC_URL" ]; then
+  echo -e "${BOLD}Optional noVNC fallback/debug access:${NC}"
+  echo -e "  ${BOLD}${NOVNC_URL}${NC}"
+  echo -e "  Password: ${BOLD}${VNC_PASSWORD}${NC}"
+  echo -e "  Desktop fallback is manual so it does not compete with the hosted daemon:"
+  echo -e "    ${BOLD}sudo supervisorctl stop pane-cloud:pane-daemon${NC}"
+  echo -e "    ${BOLD}sudo supervisorctl start pane-cloud:PaneDesktop${NC}"
+  echo ""
+fi
 
 echo -e "${BOLD}SSH access:${NC}"
 echo -e "  ${BOLD}${SSH_CMD}${NC}"
@@ -992,11 +1100,12 @@ echo ""
 echo -e "${BOLD}Cost management:${NC}"
 echo -e "  Stop VM:   gcloud compute instances stop ${INSTANCE_NAME} --zone=${GCP_ZONE} --project=${PROJECT_ID}"
 echo -e "  Start VM:  gcloud compute instances start ${INSTANCE_NAME} --zone=${GCP_ZONE} --project=${PROJECT_ID}"
-echo -e "  Delete VM: cd ${TERRAFORM_DIR} && terraform destroy -var=\"project_id=${PROJECT_ID}\" -var=\"user_id=${USER_ID}\""
+echo -e "  Delete VM: bash cloud/scripts/setup-cloud.sh --destroy"
 echo ""
 
 echo -e "${BOLD}Security:${NC}"
 echo -e "  - No public IP — VM is only accessible via GCP IAP tunnel"
 echo -e "  - All traffic authenticated through your Google account"
+echo -e "  - Pane daemon requests require the generated bearer token in your linked local profile"
 echo -e "  - Daily snapshots with 7-day retention for backups"
 echo ""

@@ -47,6 +47,8 @@ import { worktreePoolManager } from './services/worktreePoolManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
 import { remotePaneClientController } from './daemon/client/remotePaneClient';
+import { startHeadlessPaneProcess } from './daemon/startHeadless';
+import { hasHeadlessDaemonLaunchArg } from './utils/runtimeMode';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -170,9 +172,10 @@ const originalWarn: typeof console.warn = console.warn;
 const originalInfo: typeof console.info = console.info;
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && !app.isPackaged;
+const launchHeadlessDaemon = hasHeadlessDaemonLaunchArg();
 
 // Reset debug log files at startup in development mode
-if (isDevelopment) {
+if (!launchHeadlessDaemon && isDevelopment) {
   const frontendLogPath = path.join(process.cwd(), 'frontend-debug.log');
   const backendLogPath = path.join(process.cwd(), 'backend-debug.log');
 
@@ -186,15 +189,19 @@ if (isDevelopment) {
 }
 
 // Set up console wrapper to reduce logging in production
-setupConsoleWrapper();
-
-const overrideDir = applyAppDirectoryOverrideFromArgs();
-if (overrideDir) {
-  console.log(`[Main] Using custom Pane directory: ${overrideDir}`);
+if (!launchHeadlessDaemon) {
+  setupConsoleWrapper();
 }
 
-// Migrate data directory from ~/.foozol to ~/.pane (one-time migration for existing users)
-migrateDataDirectory();
+if (!launchHeadlessDaemon) {
+  const overrideDir = applyAppDirectoryOverrideFromArgs();
+  if (overrideDir) {
+    console.log(`[Main] Using custom Pane directory: ${overrideDir}`);
+  }
+
+  // Migrate data directory from ~/.foozol to ~/.pane (one-time migration for existing users)
+  migrateDataDirectory();
+}
 
 // Install Devtron in development
 if (isDevelopment) {
@@ -989,12 +996,15 @@ async function initializeServices() {
   });
 }
 
-app.whenReady().then(async () => {
-  appStartTime = Date.now();
+if (launchHeadlessDaemon) {
+  startHeadlessPaneProcess();
+} else {
+  app.whenReady().then(async () => {
+    appStartTime = Date.now();
 
-  console.log('[Main] App is ready, initializing services...');
-  await initializeServices();
-  console.log('[Main] Services initialized, creating window...');
+    console.log('[Main] App is ready, initializing services...');
+    await initializeServices();
+    console.log('[Main] Services initialized, creating window...');
 
   // Register before any renderer loads. useNotifications pulls this on mount
   // and will race a late registration inside createWindow/loadURL.
@@ -1151,21 +1161,21 @@ app.whenReady().then(async () => {
     }
   }, 5000); // Delay to not slow down app startup
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      console.log('[Main] Activating app, creating new window...');
-      createWindow();
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        console.log('[Main] Activating app, creating new window...');
+        createWindow();
+      }
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') {
+      app.quit();
     }
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
-});
-
-app.on('before-quit', async (event) => {
+  app.on('before-quit', async (event) => {
   // Write directly to debug log to ensure shutdown is visible even if console override fails
   const debugLogPath = path.join(process.cwd(), 'backend-debug.log');
   const logToFile = (msg: string) => {
@@ -1386,7 +1396,8 @@ app.on('before-quit', async (event) => {
     // Exit the app
     app.exit(0);
   }
-});
+  });
+}
 
 // Export getter function for mainWindow
 export function getMainWindow(): BrowserWindow | null {

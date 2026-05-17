@@ -43,6 +43,12 @@ interface RemoteReadyEventPayload {
   timestamp: string;
 }
 
+interface RemoteHealthPayload {
+  ok: true;
+  status: 'ready';
+  transport: 'http+sse';
+}
+
 type RemoteRequestAuthResult =
   | {
     ok: true;
@@ -212,6 +218,11 @@ export class PaneRemoteHttpApiServer {
       return;
     }
 
+    if (url.pathname === '/health') {
+      this.handleHealthRequest(request, response);
+      return;
+    }
+
     if (url.pathname === '/events') {
       this.handleEventStreamRequest(request, response);
       return;
@@ -277,6 +288,19 @@ export class PaneRemoteHttpApiServer {
         },
       } satisfies RemoteInvokeErrorPayload);
     }
+  }
+
+  private handleHealthRequest(request: IncomingMessage, response: ServerResponse): void {
+    if (request.method !== 'GET') {
+      this.writeMethodNotAllowed(response, 'GET');
+      return;
+    }
+
+    this.writeJson(response, 200, {
+      ok: true,
+      status: 'ready',
+      transport: 'http+sse',
+    } satisfies RemoteHealthPayload);
   }
 
   private handleEventStreamRequest(request: IncomingMessage, response: ServerResponse): void {

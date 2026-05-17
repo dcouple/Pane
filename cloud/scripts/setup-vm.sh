@@ -1,6 +1,7 @@
 #!/bin/bash
 # Pane Cloud VM Setup Script
-# Installs all dependencies and configures the noVNC display stack
+# Installs all dependencies and configures a daemon-first hosted workspace
+# with optional noVNC fallback/debug access.
 # Run on a fresh Ubuntu 24.04 VM as root
 #
 # Usage: sudo bash setup-vm.sh [--pane-version VERSION]
@@ -26,7 +27,7 @@ echo ""
 # ============================================================
 # 1. System packages
 # ============================================================
-echo "[1/8] Installing system packages..."
+echo "[1/10] Installing system packages..."
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update -qq
@@ -77,15 +78,56 @@ echo "  Done."
 hash -r
 
 # ============================================================
-# 2. Node.js 20 LTS
+# 2. Read instance metadata for hosted workspace bootstrap
 # ============================================================
-echo "[2/8] Installing Node.js 20 LTS..."
+metadata_value() {
+  local key="$1"
+  curl -sf -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/${key}" 2>/dev/null || true
+}
 
-# Always ensure we have Node 20+ (Ubuntu 24.04 ships with Node 18)
+normalize_bool() {
+  local value
+  value="$(echo "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on)
+      echo "true"
+      ;;
+    *)
+      echo "false"
+      ;;
+  esac
+}
+
+REMOTE_CLIENT_ID="$(metadata_value remote-client-id)"
+REMOTE_CLIENT_LABEL="$(metadata_value remote-client-label)"
+REMOTE_CLIENT_TOKEN="$(metadata_value remote-client-token)"
+REMOTE_DAEMON_PORT="$(metadata_value remote-daemon-port)"
+ENABLE_NOVNC_FALLBACK="$(normalize_bool "$(metadata_value enable-novnc-fallback)")"
+
+if ! [[ "$REMOTE_DAEMON_PORT" =~ ^[0-9]+$ ]] || [ "$REMOTE_DAEMON_PORT" -lt 1 ] || [ "$REMOTE_DAEMON_PORT" -gt 65535 ]; then
+  REMOTE_DAEMON_PORT=42137
+fi
+
+if [ -z "$REMOTE_CLIENT_LABEL" ]; then
+  REMOTE_CLIENT_LABEL="Pane Cloud Workspace"
+fi
+
+echo "[2/10] Hosted workspace metadata"
+echo "  Daemon port: ${REMOTE_DAEMON_PORT}"
+echo "  Remote client id: ${REMOTE_CLIENT_ID:-<missing>}"
+echo "  noVNC fallback enabled: ${ENABLE_NOVNC_FALLBACK}"
+
+# ============================================================
+# 3. Node.js 22 LTS
+# ============================================================
+echo "[3/10] Installing Node.js 22 LTS..."
+
+# Always ensure we have Node 22+ (the repo requires >= 22.14)
 NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "0")
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  echo "  Current Node version: $(node --version 2>/dev/null || echo 'none'). Upgrading to Node 20..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+if [ "$NODE_MAJOR" -lt 22 ]; then
+  echo "  Current Node version: $(node --version 2>/dev/null || echo 'none'). Upgrading to Node 22..."
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y -qq nodejs > /dev/null
 fi
 
@@ -101,9 +143,9 @@ fi
 echo "  Node $(node --version), pnpm $(pnpm --version 2>/dev/null || echo 'not installed')"
 
 # ============================================================
-# 3. GitHub CLI
+# 4. GitHub CLI
 # ============================================================
-echo "[3/8] Installing GitHub CLI..."
+echo "[4/10] Installing GitHub CLI..."
 if ! command -v gh &> /dev/null; then
   (type -p wget >/dev/null || apt-get install wget -y -qq) \
     && mkdir -p -m 755 /etc/apt/keyrings \
@@ -118,9 +160,9 @@ fi
 echo "  Done."
 
 # ============================================================
-# 4. Claude Code CLI
+# 5. Claude Code CLI
 # ============================================================
-echo "[4/8] Installing Claude Code CLI..."
+echo "[5/10] Installing Claude Code CLI..."
 if ! command -v claude &> /dev/null; then
   # Install latest Claude Code (intentionally unpinned — VM should have newest version)
   npm install -g @anthropic-ai/claude-code > /dev/null 2>&1 || true
@@ -128,9 +170,9 @@ fi
 echo "  Done."
 
 # ============================================================
-# 5. Install Pane
+# 6. Install Pane
 # ============================================================
-echo "[5/9] Installing Pane..."
+echo "[6/10] Installing Pane..."
 ARCH=$(dpkg --print-architecture)
 if [ ! -f /usr/bin/Pane ]; then
   # Download the latest Pane AppImage from GitHub Releases
@@ -168,9 +210,9 @@ if [ ! -f /usr/bin/Pane ] && ! command -v Pane &>/dev/null; then
 fi
 
 # ============================================================
-# 6. Create Pane user
+# 7. Create Pane user
 # ============================================================
-echo "[6/9] Setting up Pane user..."
+echo "[7/10] Setting up Pane user..."
 if ! id "${PANE_USER}" &>/dev/null; then
   useradd -m -s /bin/bash "${PANE_USER}"
 fi
@@ -220,9 +262,9 @@ chown "${PANE_USER}:${PANE_USER}" "${FLUXBOX_DIR}/init"
 echo "  Fluxbox configured (no title bar, no toolbar)"
 
 # ============================================================
-# 7. Get or generate VNC password
+# 8. Get or generate optional VNC password
 # ============================================================
-echo "[7/9] Setting up VNC password..."
+echo "[8/10] Setting up optional VNC password..."
 VNC_PASSWORD_FILE="/home/${PANE_USER}/.vnc_password"
 
 # Try to get VNC password from instance metadata (set by Terraform)
@@ -243,17 +285,78 @@ chown "${PANE_USER}:${PANE_USER}" "${VNC_PASSWORD_FILE}"
 echo "  VNC password saved to ${VNC_PASSWORD_FILE}"
 
 # ============================================================
-# 8. Configure supervisord
+# 9. Prepare Pane daemon config and supervisord
 # ============================================================
-echo "[8/9] Configuring supervisord..."
+echo "[9/10] Preparing Pane daemon config..."
 
 # Get Pane user's UID for XDG_RUNTIME_DIR
 PANE_UID=$(id -u "${PANE_USER}")
+PANE_CONFIG_FILE="/home/${PANE_USER}/.pane/config.json"
+REMOTE_CLIENT_TOKEN_HASH=""
+
+if [ -n "$REMOTE_CLIENT_TOKEN" ]; then
+  REMOTE_CLIENT_TOKEN_HASH="$(printf '%s' "$REMOTE_CLIENT_TOKEN" | sha256sum | awk '{print $1}')"
+fi
+
+HOST_CLIENTS_JSON='[]'
+if [ -n "$REMOTE_CLIENT_ID" ] && [ -n "$REMOTE_CLIENT_TOKEN_HASH" ]; then
+  HOST_CLIENTS_JSON="$(jq -cn \
+    --arg id "$REMOTE_CLIENT_ID" \
+    --arg label "$REMOTE_CLIENT_LABEL" \
+    --arg createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg tokenHash "$REMOTE_CLIENT_TOKEN_HASH" \
+    '[{
+      id: $id,
+      label: $label,
+      createdAt: $createdAt,
+      tokenHash: $tokenHash
+    }]')"
+else
+  echo "  WARNING: remote client metadata is incomplete; hosted daemon auth will rely on any existing local config."
+fi
+
+EXISTING_PANE_CONFIG='{}'
+if [ -f "$PANE_CONFIG_FILE" ]; then
+  EXISTING_PANE_CONFIG="$(cat "$PANE_CONFIG_FILE" 2>/dev/null || echo '{}')"
+fi
+
+UPDATED_PANE_CONFIG="$(
+  printf '%s' "$EXISTING_PANE_CONFIG" | jq \
+    --argjson daemonPort "$REMOTE_DAEMON_PORT" \
+    --argjson hostClients "$HOST_CLIENTS_JSON" \
+    '
+      .remoteDaemon = (.remoteDaemon // {})
+      | .remoteDaemon.host = (.remoteDaemon.host // {})
+      | .remoteDaemon.host.config = {
+          enabled: true,
+          listenHost: "127.0.0.1",
+          listenPort: $daemonPort,
+          pairingRequired: true,
+          allowInsecureHttpOnLoopback: true
+        }
+      | if ($hostClients | length) > 0
+          then .remoteDaemon.host.clients = $hostClients
+          else .remoteDaemon.host.clients = (.remoteDaemon.host.clients // [])
+        end
+      | .remoteDaemon.client = (.remoteDaemon.client // {
+          profiles: [],
+          activeProfileId: null,
+          mode: "local"
+        })
+    '
+)"
+
+printf '%s\n' "$UPDATED_PANE_CONFIG" > "$PANE_CONFIG_FILE"
+chown "${PANE_USER}:${PANE_USER}" "$PANE_CONFIG_FILE"
+chmod 600 "$PANE_CONFIG_FILE"
+
+echo "  Pane daemon config written to ${PANE_CONFIG_FILE}"
+echo "  Configuring supervisord..."
 
 cat > /etc/supervisor/conf.d/pane-stack.conf << SUPERVISOR_EOF
-; =============================================================
-; Pane Cloud Display Stack
-; =============================================================
+; ============================================================
+; Pane Cloud Hosted Workspace Stack
+; ============================================================
 
 [program:xvfb]
 command=/usr/bin/Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset
@@ -262,70 +365,111 @@ autorestart=true
 stdout_logfile=/var/log/supervisor/xvfb.log
 stderr_logfile=/var/log/supervisor/xvfb-error.log
 
-[program:fluxbox]
-command=/usr/bin/fluxbox
+[program:pane-daemon]
+command=/usr/bin/Pane --no-sandbox --daemon-headless --pane-dir /home/${PANE_USER}/.pane
 priority=20
 autorestart=true
+environment=DISPLAY=":99",HOME="/home/${PANE_USER}",XDG_RUNTIME_DIR="/run/user/${PANE_UID}"
+user=${PANE_USER}
+directory=/home/${PANE_USER}
+stdout_logfile=/var/log/supervisor/pane-daemon.log
+stderr_logfile=/var/log/supervisor/pane-daemon-error.log
+startsecs=5
+startretries=5
+SUPERVISOR_EOF
+
+SUPERVISOR_GROUP_PROGRAMS="xvfb,pane-daemon"
+
+if [ "$ENABLE_NOVNC_FALLBACK" = "true" ]; then
+  cat >> /etc/supervisor/conf.d/pane-stack.conf << SUPERVISOR_FALLBACK_EOF
+
+[program:fluxbox]
+command=/usr/bin/fluxbox
+priority=30
+autorestart=true
 environment=DISPLAY=":99"
-user=Pane
+user=${PANE_USER}
 stdout_logfile=/var/log/supervisor/fluxbox.log
 stderr_logfile=/var/log/supervisor/fluxbox-error.log
 
-[program:Pane]
-command=/usr/bin/Pane --no-sandbox --start-fullscreen
-priority=30
-autorestart=true
-environment=DISPLAY=":99",HOME="/home/Pane",XDG_RUNTIME_DIR="/run/user/${PANE_UID}"
-user=Pane
-directory=/home/Pane
+[program:PaneDesktop]
+command=/usr/bin/Pane --no-sandbox --start-fullscreen --pane-dir /home/${PANE_USER}/.pane
+priority=40
+autostart=false
+autorestart=false
+environment=DISPLAY=":99",HOME="/home/${PANE_USER}",XDG_RUNTIME_DIR="/run/user/${PANE_UID}"
+user=${PANE_USER}
+directory=/home/${PANE_USER}
 stdout_logfile=/var/log/supervisor/Pane.log
 stderr_logfile=/var/log/supervisor/pane-error.log
-; Give Pane time to start before considering it failed
 startsecs=5
-; Restart up to 5 times if it crashes
 startretries=5
 
 [program:x11vnc]
 command=/usr/bin/x11vnc -display :99 -passwd ${VNC_PASSWORD} -forever -rfbport 5900 -localhost -noxdamage -cursor arrow -noxfixes
-priority=40
+priority=50
 autorestart=true
-user=Pane
+user=${PANE_USER}
 stdout_logfile=/var/log/supervisor/x11vnc.log
 stderr_logfile=/var/log/supervisor/x11vnc-error.log
 
 [program:websockify]
 command=/usr/bin/websockify --web=/usr/share/novnc 6080 localhost:5900
-priority=50
+priority=60
 autorestart=true
 stdout_logfile=/var/log/supervisor/websockify.log
 stderr_logfile=/var/log/supervisor/websockify-error.log
+SUPERVISOR_FALLBACK_EOF
+
+  SUPERVISOR_GROUP_PROGRAMS="xvfb,pane-daemon,fluxbox,PaneDesktop,x11vnc,websockify"
+fi
+
+cat >> /etc/supervisor/conf.d/pane-stack.conf << SUPERVISOR_GROUP_EOF
 
 [group:pane-cloud]
-programs=xvfb,fluxbox,Pane,x11vnc,websockify
+programs=${SUPERVISOR_GROUP_PROGRAMS}
 priority=999
-SUPERVISOR_EOF
+SUPERVISOR_GROUP_EOF
 
 echo "  Done."
 
 # ============================================================
-# 9. Configure NGINX
+# 10. Configure NGINX
 # ============================================================
-echo "[9/9] Configuring NGINX..."
+echo "[10/10] Configuring NGINX..."
 
-cat > /etc/nginx/sites-available/pane-cloud << 'NGINX_EOF'
-# Pane Cloud - NGINX reverse proxy for noVNC
-# TLS will be configured by certbot after domain is set up
+cat > /etc/nginx/sites-available/pane-cloud << NGINX_EOF
+# Pane Cloud - NGINX reverse proxy for the hosted workspace daemon
+# noVNC stays optional and is only exposed when fallback is enabled.
 
 server {
     listen 80 default_server;
     server_name _;
 
-    # Health check endpoint
-    location /health {
+    location = /health {
         access_log off;
-        return 200 'ok';
-        add_header Content-Type text/plain;
+        proxy_pass http://127.0.0.1:${REMOTE_DAEMON_PORT}/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_buffering off;
     }
+
+    location /daemon/ {
+        proxy_pass http://127.0.0.1:${REMOTE_DAEMON_PORT}/;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+NGINX_EOF
+
+if [ "$ENABLE_NOVNC_FALLBACK" = "true" ]; then
+  cat >> /etc/nginx/sites-available/pane-cloud << 'NGINX_FALLBACK_EOF'
 
     # noVNC static files
     location /novnc/ {
@@ -346,12 +490,22 @@ server {
         proxy_buffering off;
     }
 
-    # Default: redirect to noVNC
     location / {
         return 301 /novnc/vnc.html?autoconnect=true&resize=scale&reconnect=true&reconnect_delay=1000;
     }
 }
-NGINX_EOF
+NGINX_FALLBACK_EOF
+else
+  cat >> /etc/nginx/sites-available/pane-cloud << 'NGINX_DAEMON_ONLY_EOF'
+
+    location / {
+        access_log off;
+        default_type text/plain;
+        return 200 'Pane hosted daemon ready. Use /daemon/ through your authenticated tunnel.';
+    }
+}
+NGINX_DAEMON_ONLY_EOF
+fi
 
 # Enable the site
 ln -sf /etc/nginx/sites-available/pane-cloud /etc/nginx/sites-enabled/pane-cloud
@@ -379,14 +533,26 @@ systemctl restart nginx
 echo ""
 echo "=== Setup Complete ==="
 echo ""
-echo "VNC password: ${VNC_PASSWORD}"
+echo "Hosted daemon loopback port: ${REMOTE_DAEMON_PORT}"
+echo "Hosted daemon health endpoint: http://127.0.0.1/health"
+echo "Hosted daemon reverse-proxy path: http://127.0.0.1/daemon/"
 echo ""
 echo "Access via IAP tunnel:"
 echo "  gcloud compute start-iap-tunnel <INSTANCE> 80 --local-host-port=localhost:8080 --zone=<ZONE> --project=<PROJECT>"
-echo "  Then open: http://localhost:8080/novnc/vnc.html?autoconnect=true&resize=scale"
+echo "  Then connect your local Pane client to: http://127.0.0.1:8080/daemon/"
 echo ""
-echo "First-run auth (do this in the noVNC session):"
-echo "  1. gh auth login    (GitHub)"
-echo "  2. claude login     (Claude Code)"
+if [ "$ENABLE_NOVNC_FALLBACK" = "true" ]; then
+  echo "noVNC fallback is enabled."
+  echo "  The desktop app is not auto-started so it does not compete with the headless daemon."
+  echo "  To debug the desktop app:"
+  echo "    sudo supervisorctl stop pane-cloud:pane-daemon"
+  echo "    sudo supervisorctl start pane-cloud:PaneDesktop"
+  echo "  VNC password: ${VNC_PASSWORD}"
+  echo "  Browser URL: http://localhost:8080/novnc/vnc.html?autoconnect=true&resize=scale"
+  echo ""
+fi
+echo "First-run auth (SSH in via IAP, or use the optional noVNC fallback if enabled):"
+echo "  1. gh auth login     (GitHub)"
+echo "  2. claude login      (Claude Code)"
 echo "  3. Set API keys in Pane Settings"
 echo ""

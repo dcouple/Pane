@@ -271,6 +271,22 @@ describe('PaneRemoteHttpApiServer', () => {
     stream.close();
   });
 
+  it('exposes an unauthenticated health endpoint for hosted readiness checks', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestJson(server, 'GET', '/health')).resolves.toEqual({
+      statusCode: 200,
+      body: {
+        ok: true,
+        status: 'ready',
+        transport: 'http+sse',
+      },
+    });
+  });
+
   it('rejects oversized invoke request bodies with a client error', async () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => []);
