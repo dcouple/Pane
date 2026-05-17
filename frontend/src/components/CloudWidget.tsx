@@ -194,6 +194,11 @@ export function CloudWidget() {
   const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
   const daemonConnected = daemonReady && vmState.remoteConnectionStatus === 'connected';
   const daemonConnectAvailable = daemonReady && vmState.remoteConnectionStatus === 'available';
+  const daemonConnectionReconnecting =
+    daemonReady &&
+    (vmState.remoteConnectionStatus === 'connecting' || vmState.remoteConnectionStatus === 'reconnecting');
+  const daemonConnectionError = daemonReady && vmState.remoteConnectionStatus === 'error';
+  const daemonConnectionUnavailable = daemonConnectionReconnecting || daemonConnectionError;
   const daemonError = daemonAccess && vmState.daemonStatus === 'error';
   const canManageCloudVmLifecycle = isRunning && vmState.noVncUrl !== null;
   const tunnelConnecting = isRunning && !daemonAccess && vmState.tunnelStatus === 'starting';
@@ -209,6 +214,11 @@ export function CloudWidget() {
     if (vmState.status === 'stopping') return 'Stopping...';
     if (vmState.status === 'starting' || vmState.status === 'initializing') return 'Starting VM...';
     if (daemonBootstrapping) return 'Starting workspace daemon...';
+    if (daemonConnectionReconnecting) {
+      return vmState.remoteConnectionStatus === 'connecting'
+        ? 'Connecting cloud runtime...'
+        : 'Reconnecting cloud runtime...';
+    }
     if (tunnelConnecting) return 'Connecting tunnel...';
     return 'Loading...';
   };
@@ -226,7 +236,7 @@ export function CloudWidget() {
       )}
 
       {/* Transitioning state (VM starting/stopping or tunnel connecting) */}
-      {(isTransitioning || daemonBootstrapping || tunnelConnecting || loading) && (
+      {(isTransitioning || daemonBootstrapping || daemonConnectionReconnecting || tunnelConnecting || loading) && (
         <div className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg">
           <Loader2 className="w-4 h-4 animate-spin text-yellow-400" />
           <span className="text-xs text-text-secondary">
@@ -363,7 +373,33 @@ export function CloudWidget() {
         </>
       )}
 
-      {daemonReady && !daemonConnectAvailable && !daemonConnected && !loading && (
+      {daemonConnectionUnavailable && !loading && (
+        <>
+          <button
+            onClick={handleDisconnectWorkspace}
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+            title="Switch back to local runtime"
+          >
+            <Monitor className="w-4 h-4 text-text-primary" />
+            <span className="text-xs text-text-primary">Use Local Runtime</span>
+          </button>
+          <div
+            className={`flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border rounded-xl shadow-lg ${
+              daemonConnectionError ? 'border-red-500/30' : 'border-yellow-500/30'
+            }`}
+            title={daemonConnectionError
+              ? 'Hosted workspace daemon connection failed'
+              : 'Hosted workspace daemon is reconnecting'}
+          >
+            <Cloud className={`w-4 h-4 ${daemonConnectionError ? 'text-red-400' : 'text-yellow-400'}`} />
+            <span className="text-xs text-text-primary">
+              {daemonConnectionError ? 'Cloud Connection Error' : 'Cloud Reconnecting'}
+            </span>
+          </div>
+        </>
+      )}
+
+      {daemonReady && !daemonConnectAvailable && !daemonConnected && !daemonConnectionUnavailable && !loading && (
         <div
           className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
           title="Hosted workspace daemon is ready"

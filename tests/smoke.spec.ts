@@ -236,6 +236,38 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
+  test('Cloud widget keeps local runtime switch available when hosted daemon connection fails', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+      }).__paneTestElectronMock;
+
+      mock?.setCloudState({
+        status: 'running',
+        tunnelStatus: 'off',
+        daemonStatus: 'ready',
+        daemonBaseUrl: 'https://pane.example.com/daemon/',
+        linkedRemoteProfileId: 'remote-cloud-1',
+        linkedRemoteProfileLabel: 'Pane Cloud Workspace',
+        remoteConnectionStatus: 'error',
+        preferredAccess: 'daemon',
+      });
+    });
+
+    await expect(page.getByText('Cloud Connection Error')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('button', { name: 'Use Local Runtime' })).toBeVisible();
+    await expect(page.getByText('Daemon Ready')).toHaveCount(0);
+
+    await clickDomNode(page.getByRole('button', { name: 'Use Local Runtime' }));
+
+    await expect(page.getByRole('button', { name: 'Connect Cloud' })).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  });
+
   test('Cloud widget preserves tunnel controls for legacy noVNC workspaces', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
