@@ -87,6 +87,40 @@ export function CloudWidget() {
     }
   }, [setLoading, setShowCloudView, setVmState, vmState]);
 
+  const handleConnectWorkspace = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await window.electronAPI.cloud.connectWorkspace();
+      if (result.success && result.data) {
+        setVmState(result.data);
+      }
+    } catch (err) {
+      setVmState({
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
+        error: err instanceof Error ? err.message : 'Failed to connect to hosted workspace',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, setVmState, vmState]);
+
+  const handleDisconnectWorkspace = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await window.electronAPI.cloud.disconnectWorkspace();
+      if (result.success && result.data) {
+        setVmState(result.data);
+      }
+    } catch (err) {
+      setVmState({
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
+        error: err instanceof Error ? err.message : 'Failed to switch back to local runtime',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [setLoading, setVmState, vmState]);
+
   const handleOpenSetupTerminal = useCallback(async () => {
     if (!activeSessionId) {
       setVmState({
@@ -146,6 +180,8 @@ export function CloudWidget() {
     !daemonUnavailableWithFallback;
   const daemonBootstrapping = daemonAccess && vmState.daemonStatus === 'bootstrapping';
   const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
+  const daemonConnected = daemonReady && vmState.remoteConnectionStatus === 'connected';
+  const daemonConnectAvailable = daemonReady && vmState.remoteConnectionStatus === 'available';
   const daemonError = daemonAccess && vmState.daemonStatus === 'error';
   const canManageCloudVmLifecycle = isRunning && vmState.noVncUrl !== null;
   const tunnelConnecting = isRunning && !daemonAccess && vmState.tunnelStatus === 'starting';
@@ -264,7 +300,7 @@ export function CloudWidget() {
         </>
       )}
 
-      {daemonReady && !loading && (
+      {daemonConnectAvailable && !loading && (
         <>
           {canManageCloudVmLifecycle && (
             <button
@@ -275,14 +311,54 @@ export function CloudWidget() {
               <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
             </button>
           )}
-          <div
-            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
-            title="Hosted workspace daemon is ready"
+          <button
+            onClick={handleConnectWorkspace}
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+            title="Connect to hosted workspace daemon"
           >
             <Cloud className="w-4 h-4 text-interactive" />
-            <span className="text-xs text-text-primary">Daemon Ready</span>
+            <span className="text-xs text-text-primary">Connect Cloud</span>
+          </button>
+        </>
+      )}
+
+      {daemonConnected && !loading && (
+        <>
+          {canManageCloudVmLifecycle && (
+            <button
+              onClick={handleStop}
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+              title="Stop Cloud VM"
+            >
+              <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+            </button>
+          )}
+          <button
+            onClick={handleDisconnectWorkspace}
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+            title="Switch back to local runtime"
+          >
+            <Monitor className="w-4 h-4 text-text-primary" />
+            <span className="text-xs text-text-primary">Use Local Runtime</span>
+          </button>
+          <div
+            className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
+            title="Hosted workspace daemon is connected"
+          >
+            <Cloud className="w-4 h-4 text-interactive" />
+            <span className="text-xs text-text-primary">Cloud Connected</span>
           </div>
         </>
+      )}
+
+      {daemonReady && !daemonConnectAvailable && !daemonConnected && !loading && (
+        <div
+          className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
+          title="Hosted workspace daemon is ready"
+        >
+          <Cloud className="w-4 h-4 text-interactive" />
+          <span className="text-xs text-text-primary">Daemon Ready</span>
+        </div>
       )}
     </div>
   );
