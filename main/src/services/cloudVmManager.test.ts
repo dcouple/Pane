@@ -122,4 +122,33 @@ describe('CloudVmManager', () => {
     });
     expect(state.noVncUrl).toContain('http://localhost:8080/novnc/vnc.html');
   });
+
+  it('surfaces daemon-backed hosted workspace state without requiring a local cloud API token', async () => {
+    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    })) as never);
+
+    const fetchVmStatusSpy = vi.spyOn(manager as never, 'fetchVmStatus');
+
+    const state = await manager.getState();
+
+    expect(fetchVmStatusSpy).not.toHaveBeenCalled();
+    expect(state).toMatchObject({
+      status: 'running',
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+      preferredAccess: 'daemon',
+      allowNoVncFallback: true,
+      noVncUrl: null,
+      tunnelStatus: 'off',
+      error: null,
+    });
+  });
 });

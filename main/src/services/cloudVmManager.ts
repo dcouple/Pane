@@ -58,9 +58,27 @@ export class CloudVmManager extends EventEmitter {
    * Get the current cloud VM state
    */
   async getState(): Promise<CloudVmState> {
-    const config = this.getCloudConfig();
+    const config = this.getCloudStateConfig();
     if (!config) {
       this.cachedState = createDefaultCloudVmState();
+      return { ...this.cachedState };
+    }
+
+    if (!this.canManageVmLifecycle(config)) {
+      if (!this.hasDaemonHostedWorkspaceState(config)) {
+        this.cachedState = createDefaultCloudVmState();
+        return { ...this.cachedState };
+      }
+
+      this.cachedState = {
+        status: this.mapDaemonStatusToVmStatus(config.daemonStatus ?? 'unknown'),
+        ip: null,
+        noVncUrl: null,
+        ...this.getHostedWorkspaceStateFromConfig(config),
+        lastChecked: new Date().toISOString(),
+        error: null,
+        tunnelStatus: 'off',
+      };
       return { ...this.cachedState };
     }
 
@@ -569,6 +587,28 @@ export class CloudVmManager extends EventEmitter {
     return config.cloud;
   }
 
+  private getCloudStateConfig(): CloudVmConfig | null {
+    const config = this.configManager.getConfig();
+    if (!config.cloud?.provider) {
+      return null;
+    }
+
+    return config.cloud;
+  }
+
+  private canManageVmLifecycle(config: CloudVmConfig): boolean {
+    return config.apiToken.trim().length > 0;
+  }
+
+  private hasDaemonHostedWorkspaceState(config: CloudVmConfig): boolean {
+    return Boolean(
+      config.serverId
+      || config.daemonBaseUrl
+      || config.linkedRemoteProfileId
+      || (config.daemonStatus && config.daemonStatus !== 'unknown'),
+    );
+  }
+
   private getHostedWorkspaceStateFromConfig(config: CloudVmConfig): {
     provider: CloudProvider;
     serverId: string | null;
@@ -587,6 +627,19 @@ export class CloudVmManager extends EventEmitter {
       preferredAccess: config.preferredAccess ?? 'daemon',
       allowNoVncFallback: config.allowNoVncFallback ?? true,
     };
+  }
+
+  private mapDaemonStatusToVmStatus(daemonStatus: CloudDaemonStatus): VmStatus {
+    switch (daemonStatus) {
+      case 'ready':
+        return 'running';
+      case 'bootstrapping':
+        return 'initializing';
+      case 'error':
+      case 'unknown':
+      default:
+        return 'unknown';
+    }
   }
 
   /**
