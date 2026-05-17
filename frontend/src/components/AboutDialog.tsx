@@ -7,6 +7,7 @@ interface VersionInfo {
   latest: string;
   hasUpdate: boolean;
   releaseUrl?: string;
+  downloadUrl?: string;
   releaseNotes?: string;
   publishedAt?: string;
   workingDirectory?: string;

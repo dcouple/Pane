@@ -1,11 +1,14 @@
-import { IpcMain } from 'electron';
+import { clipboard, IpcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import type { AppServices } from './types';
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
 import { commandExecutor } from '../utils/commandExecutor';
 import { getCurrentWorktreeName } from '../utils/worktreeUtils';
 import { getAppDirectory } from '../utils/appDirectory';
+
+const MAC_UPDATE_COMMAND = 'curl -fsSL https://runpane.com/install.sh | sh';
 
 export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker }: AppServices): void {
   // Version checking handlers
@@ -153,6 +156,37 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
     }
   });
 
+  ipcMain.handle('updater:copy-update-command', () => {
+    try {
+      clipboard.writeText(MAC_UPDATE_COMMAND);
+      return { success: true, data: { command: MAC_UPDATE_COMMAND } };
+    } catch (error) {
+      console.error('Failed to copy update command:', error);
+      return { success: false, error: 'Failed to copy update command' };
+    }
+  });
+
+  ipcMain.handle('updater:open-terminal-with-command', async () => {
+    try {
+      if (process.platform !== 'darwin') {
+        return { success: false, error: 'Opening Terminal is only available on macOS' };
+      }
+
+      clipboard.writeText(MAC_UPDATE_COMMAND);
+      await new Promise<void>((resolve, reject) => {
+        execFile('open', ['-a', 'Terminal'], (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
+      });
+
+      return { success: true, data: { command: MAC_UPDATE_COMMAND } };
+    } catch (error) {
+      console.error('Failed to open Terminal with update command:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to open Terminal' };
+    }
+  });
+
   /**
    * Temporary workaround pending Apple code signing:
    * `quitAndInstall()` does not work on unsigned macOS builds because Gatekeeper
@@ -177,4 +211,4 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
       return { success: false, error: 'Failed to install update' };
     }
   });
-} 
+}

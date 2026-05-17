@@ -55,6 +55,8 @@ interface TerminalRestoreState {
 
 const DEFAULT_TERMINAL_FONT_FAMILY = 'Geist Mono';
 const DEFAULT_TERMINAL_FONT_SIZE = 14;
+const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
+const REFOCUS_DELAYED_REFRESH_MS = 300;
 
 function buildTerminalFontFamily(userFont: string): string {
   return `"${userFont}", "Symbols Nerd Font Mono", monospace`;
@@ -87,7 +89,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const [windowFocused, setWindowFocused] = useState(true);
   const interceptorRef = useRef<TerminalInterceptor | null>(null);
   const skipNextInterceptRef = useRef(false); // set by AltGr @ detection
-  const effectiveVisible = isActive && windowFocused;
+  const panelVisible = isActive;
+  const effectiveVisible = panelVisible && windowFocused;
+  const [webglAllowed, setWebglAllowed] = useState(panelVisible);
+  const blurDetachTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Read CLI state from persisted panel state (handles remount case)
   const terminalState = panel.state?.customState as TerminalPanelState | undefined;
@@ -177,8 +182,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Keep isActiveRef in sync with isActive prop
   useEffect(() => {
-    isActiveRef.current = effectiveVisible;
-  }, [effectiveVisible]);
+    isActiveRef.current = panelVisible;
+  }, [panelVisible]);
 
   useEffect(() => {
     let disposed = false;
@@ -200,7 +205,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     };
   }, []);
 
-  const forwardToMainLog = (level: 'info' | 'warn', message: string) => {
+  const forwardToMainLog = useCallback((level: 'info' | 'warn', message: string) => {
     try {
       window.electronAPI.invoke('console:log', {
         level,
@@ -212,9 +217,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     } catch {
       // IPC failure shouldn't break terminal lifecycle work.
     }
-  };
+  }, []);
 
-  const loadWebglRenderer = async (terminal: Terminal, isDisposed: () => boolean) => {
+  const loadWebglRenderer = useCallback(async (terminal: Terminal, isDisposed: () => boolean, reason = 'visible') => {
     if (webglAddonRef.current) return;
     try {
       const { WebglAddon: WebglAddonImpl } = await import('@xterm/addon-webgl');
@@ -229,29 +234,29 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       terminal.loadAddon(addon);
       webglAddonRef.current = addon;
       console.log('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
-      forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id}`);
+      forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id} reason=${reason}`);
     } catch (e) {
       console.warn('[TerminalPanel] WebGL renderer failed for panel', panel.id, ', using DOM renderer:', e);
       forwardToMainLog('warn', `[TerminalPanel] WebGL renderer failed for panel ${panel.id}, using DOM renderer: ${e instanceof Error ? e.message : String(e)}`);
       webglAddonRef.current = null;
     }
-  };
+  }, [forwardToMainLog, panel.id]);
 
-  const disposeWebglRenderer = () => {
+  const disposeWebglRenderer = useCallback((reason = 'hidden') => {
     if (!webglAddonRef.current) return;
     try { webglAddonRef.current.dispose(); } catch { /* ignore */ }
     webglAddonRef.current = null;
-    forwardToMainLog('info', `[TerminalPanel] WebGL renderer detached for hidden panel ${panel.id}`);
-  };
+    forwardToMainLog('info', `[TerminalPanel] WebGL renderer detached for panel ${panel.id} reason=${reason}`);
+  }, [forwardToMainLog, panel.id]);
 
   // Replaces the old 30 s snapshot interval: fire once on active-to-inactive
   // transitions (tab switches / panel hides). The dispose-time snapshot in the
   // terminal init effect stays as a backstop for full unmount.
-  const wasActiveRef = useRef(effectiveVisible);
+  const wasActiveRef = useRef(panelVisible);
   useEffect(() => {
     const wasActive = wasActiveRef.current;
-    wasActiveRef.current = effectiveVisible;
-    if (wasActive && !effectiveVisible && serializeAddonRef.current) {
+    wasActiveRef.current = panelVisible;
+    if (wasActive && !panelVisible && serializeAddonRef.current) {
       try {
         const serialized = serializeAddonRef.current.serialize();
         window.electronAPI.invoke('terminal:saveSnapshot', panel.id, serialized);
@@ -259,7 +264,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         // xterm buffer in a bad state — not worth surfacing
       }
     }
-  }, [effectiveVisible, panel.id]);
+  }, [panelVisible, panel.id]);
 
   // Tell main when this panel's visibility changes so PTY output cadence
   // can drop to 250 ms while hidden and snap back to 32 ms when shown.
@@ -272,19 +277,53 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     window.electronAPI.invoke('terminal:setVisibility', panel.id, effectiveVisible);
   }, [effectiveVisible, panel.id, isInitialized]);
 
+  // WebGL policy: detach immediately when the panel hides, keep it attached
+  // through short app blurs, and detach only after a sustained app blur.
+  useEffect(() => {
+    if (blurDetachTimerRef.current) {
+      clearTimeout(blurDetachTimerRef.current);
+      blurDetachTimerRef.current = null;
+    }
+
+    if (!panelVisible) {
+      setWebglAllowed(false);
+      disposeWebglRenderer('panel-hidden');
+      return;
+    }
+
+    if (windowFocused) {
+      setWebglAllowed(true);
+      return;
+    }
+
+    setWebglAllowed(true);
+    blurDetachTimerRef.current = setTimeout(() => {
+      blurDetachTimerRef.current = null;
+      setWebglAllowed(false);
+      disposeWebglRenderer('app-blur-timeout');
+    }, WEBGL_APP_BLUR_DETACH_DELAY_MS);
+
+    return () => {
+      if (blurDetachTimerRef.current) {
+        clearTimeout(blurDetachTimerRef.current);
+        blurDetachTimerRef.current = null;
+      }
+    };
+  }, [panelVisible, windowFocused, disposeWebglRenderer]);
+
   useEffect(() => {
     if (!isInitialized || !xtermRef.current) return;
-    if (!effectiveVisible) {
-      disposeWebglRenderer();
+    if (!webglAllowed || !panelVisible) {
+      disposeWebglRenderer(panelVisible ? 'webgl-not-allowed' : 'panel-hidden');
       return;
     }
 
     let disposed = false;
-    void loadWebglRenderer(xtermRef.current, () => disposed);
+    void loadWebglRenderer(xtermRef.current, () => disposed, windowFocused ? 'visible' : 'short-app-blur');
     return () => {
       disposed = true;
     };
-  }, [effectiveVisible, isInitialized, panel.id]);
+  }, [webglAllowed, panelVisible, windowFocused, isInitialized, disposeWebglRenderer, loadWebglRenderer]);
 
   // Terminal link handling hook
   const {
@@ -610,12 +649,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           fitAddon.fit();
           console.log('[TerminalPanel] FitAddon fitted');
           terminal.options.theme = getTerminalTheme();
-
-          // Try loading WebGL renderer for GPU-accelerated rendering. The
-          // visibility effect detaches it while hidden and reloads it on show.
-          if (effectiveVisible) {
-            await loadWebglRenderer(terminal, () => disposed);
-          }
 
           // Load WebLinksAddon for clickable URLs
           try {
@@ -1314,8 +1347,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     let retries = 0;
     const MAX_RETRIES = 10;
 
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let delayedRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let hideOverlayTimer: ReturnType<typeof setTimeout> | null = null;
+
     const fitAndRefresh = async () => {
-      if (!fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
+      if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
 
       const containerWidth = terminalRef.current.clientWidth;
 
@@ -1323,7 +1361,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       if ((containerWidth === 0 || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
         lastWidth = containerWidth;
         retries++;
-        setTimeout(fitAndRefresh, 50);
+        retryTimer = setTimeout(fitAndRefresh, 50);
         return;
       }
 
@@ -1331,16 +1369,36 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       // This is what the manual "Refresh terminal" button does and makes TUI apps repaint correctly
       await handleRefreshTerminal();
 
+      if (cancelled) return;
+
       if (autoFocus) {
         xtermRef.current?.focus();
       }
 
+      delayedRefreshTimer = setTimeout(() => {
+        if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
+        forwardToMainLog('info', `[TerminalPanel] Delayed refocus refresh for panel ${panel.id}`);
+        void handleRefreshTerminal();
+      }, REFOCUS_DELAYED_REFRESH_MS);
+
       // Hide overlay 100ms after refresh resolves to ensure content is painted
-      setTimeout(() => setIsRefreshing(false), 100);
+      hideOverlayTimer = setTimeout(() => {
+        if (!cancelled) {
+          setIsRefreshing(false);
+        }
+      }, 100);
     };
 
-    requestAnimationFrame(fitAndRefresh);
-  }, [effectiveVisible, panel.id, isInitialized, autoFocus, handleRefreshTerminal]);
+    const animationFrame = requestAnimationFrame(fitAndRefresh);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(animationFrame);
+      if (retryTimer) clearTimeout(retryTimer);
+      if (delayedRefreshTimer) clearTimeout(delayedRefreshTimer);
+      if (hideOverlayTimer) clearTimeout(hideOverlayTimer);
+    };
+  }, [effectiveVisible, panel.id, isInitialized, autoFocus, handleRefreshTerminal, forwardToMainLog]);
 
   useEffect(() => {
     if (!xtermRef.current) {

@@ -571,7 +571,7 @@ function App() {
     };
   }, [showNotification]);
 
-  const handleAboutUpdate = (versionInfo: { current: string; latest: string; hasUpdate: boolean; releaseUrl?: string; releaseNotes?: string }) => {
+  const handleAboutUpdate = (versionInfo: { current: string; latest: string; hasUpdate: boolean; releaseUrl?: string; downloadUrl?: string; releaseNotes?: string }) => {
     setUpdateVersionInfo({
       ...versionInfo,
       version: versionInfo.latest,

@@ -7,8 +7,14 @@ export interface VersionInfo {
   latest: string;
   hasUpdate: boolean;
   releaseUrl?: string;
+  downloadUrl?: string;
   releaseNotes?: string;
   publishedAt?: string;
+}
+
+export interface GitHubReleaseAsset {
+  name: string;
+  browser_download_url: string;
 }
 
 export interface GitHubRelease {
@@ -19,6 +25,7 @@ export interface GitHubRelease {
   published_at: string;
   prerelease: boolean;
   draft: boolean;
+  assets?: GitHubReleaseAsset[];
 }
 
 export class VersionChecker {
@@ -62,6 +69,7 @@ export class VersionChecker {
         latest: latestVersion,
         hasUpdate,
         releaseUrl: release.html_url,
+        downloadUrl: this.findMacDmgDownloadUrl(release),
         releaseNotes: release.body,
         publishedAt: release.published_at
       };
@@ -135,6 +143,13 @@ export class VersionChecker {
   private normalizeVersion(version: string): string {
     // Remove 'v' prefix and any pre-release suffix (e.g., -canary.abc123)
     return version.replace(/^v/, '').replace(/-.*$/, '');
+  }
+
+  private findMacDmgDownloadUrl(release: GitHubRelease): string | undefined {
+    return release.assets?.find(asset => {
+      const name = asset.name.toLowerCase();
+      return name.endsWith('.dmg') && !name.includes('blockmap');
+    })?.browser_download_url;
   }
 
   private isNewerVersion(latest: string, current: string): boolean {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clipboard, Download, ExternalLink, Loader2, Terminal } from 'lucide-react';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import ReactMarkdown from 'react-markdown';
@@ -14,6 +14,7 @@ interface UpdateDialogProps {
     latest: string;
     hasUpdate: boolean;
     releaseUrl?: string;
+    downloadUrl?: string;
     releaseNotes?: string;
   };
 }
@@ -31,6 +32,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   const [updateState, setUpdateState] = useState<UpdateState>('idle');
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [isPackaged, setIsPackaged] = useState(false);
 
   // Reset internal state whenever the dialog opens so stale error/progress state
@@ -40,6 +42,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       setUpdateState('idle');
       setDownloadProgress(null);
       setError(null);
+      setMessage(null);
     }
   }, [isOpen]);
 
@@ -115,6 +118,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     }
     try {
       setError(null);
+      setMessage(null);
       await window.electronAPI.updater.checkAndDownload();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to check for updates');
@@ -129,6 +133,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     }
     try {
       setError(null);
+      setMessage(null);
       await window.electronAPI.updater.downloadUpdate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to download update');
@@ -150,6 +155,58 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     }
   };
 
+  const handleCopyUpdateCommand = async () => {
+    if (!window.electronAPI?.updater) {
+      setError('Update functionality not available');
+      return;
+    }
+
+    try {
+      const response = await window.electronAPI.updater.copyUpdateCommand();
+      if (response.success) {
+        setError(null);
+        setMessage('Update command copied. Paste it into Terminal and press Return.');
+      } else {
+        setMessage(null);
+        setError(response.error || 'Failed to copy update command');
+        setUpdateState('error');
+      }
+    } catch (err: unknown) {
+      setMessage(null);
+      setError(err instanceof Error ? err.message : 'Failed to copy update command');
+      setUpdateState('error');
+    }
+  };
+
+  const handleOpenTerminalWithCommand = async () => {
+    if (!window.electronAPI?.updater) {
+      setError('Update functionality not available');
+      return;
+    }
+
+    try {
+      const response = await window.electronAPI.updater.openTerminalWithCommand();
+      if (response.success) {
+        setError(null);
+        setMessage('Terminal opened and the update command was copied. Paste it and press Return.');
+      } else {
+        setMessage(null);
+        setError(response.error || 'Failed to open Terminal');
+        setUpdateState('error');
+      }
+    } catch (err: unknown) {
+      setMessage(null);
+      setError(err instanceof Error ? err.message : 'Failed to open Terminal');
+      setUpdateState('error');
+    }
+  };
+
+  const openDmgDownload = () => {
+    if (versionInfo?.downloadUrl) {
+      window.electronAPI.openExternal(versionInfo.downloadUrl);
+    }
+  };
+
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -161,6 +218,65 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   const formatSpeed = (bytesPerSecond: number) => {
     return formatBytes(bytesPerSecond) + '/s';
   };
+
+  const renderMacUpdateActions = () => (
+    <div className="space-y-4">
+      <div className="space-y-3">
+        <Button
+          onClick={handleOpenTerminalWithCommand}
+          variant="primary"
+          size="lg"
+          fullWidth
+          icon={<Terminal className="w-4 h-4" />}
+        >
+          Copy command and open Terminal
+        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={handleCopyUpdateCommand}
+            variant="secondary"
+            size="sm"
+            icon={<Clipboard className="w-4 h-4" />}
+          >
+            Copy command
+          </Button>
+          <Button
+            onClick={openDmgDownload}
+            variant="secondary"
+            size="sm"
+            icon={<Download className="w-4 h-4" />}
+            disabled={!versionInfo?.downloadUrl}
+          >
+            Download DMG
+          </Button>
+          {versionInfo?.releaseUrl && (
+            <Button
+              onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+              variant="secondary"
+              size="sm"
+              icon={<ExternalLink className="w-4 h-4" />}
+            >
+              View on GitHub
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="space-y-3 text-sm">
+        <p className="text-text-secondary">
+          This opens Terminal and copies the Pane update command.
+          Paste it, press Return, and the latest Pane DMG will download and open.
+        </p>
+        <p className="text-text-secondary">
+          After the DMG opens: close Pane, drag Pane.app into Applications, and choose Replace.
+          Your settings and sessions are preserved.
+        </p>
+        <code className="block bg-surface-primary border border-border-primary rounded px-3 py-2 text-xs text-text-primary font-mono break-all">
+          curl -fsSL https://runpane.com/install.sh | sh
+        </code>
+      </div>
+    </div>
+  );
 
   if (!isOpen) return null;
 
@@ -194,7 +310,11 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 <h3 className="text-lg font-medium text-text-primary mb-2">Update Available</h3>
                 <p className="text-text-secondary mb-4">
                   A new version of Pane is available.
-                  {isPackaged ? ' Click below to download and install the update.' : ' Auto-update is only available in the packaged app.'}
+                  {isPackaged && isMac()
+                    ? ' Use the terminal-assisted update path below.'
+                    : isPackaged
+                      ? ' Click below to download and install the update.'
+                      : ' Auto-update is only available in the packaged app.'}
                 </p>
 
                 {/*
@@ -205,29 +325,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                  * manually download and drag-install from GitHub instead.
                  */}
                 {isPackaged && isMac() ? (
-                  <div className="space-y-4">
-                    <Button
-                      onClick={() => versionInfo.releaseUrl && window.electronAPI.openExternal(versionInfo.releaseUrl)}
-                      variant="primary"
-                      icon={<Download className="w-4 h-4" />}
-                    >
-                      Download from GitHub
-                    </Button>
-                    <div className="space-y-2">
-                      <p className="text-sm text-text-tertiary">To install the update:</p>
-                      <ol className="text-sm text-text-secondary list-decimal list-inside ml-2 space-y-2">
-                        <li>Click "Download from GitHub" above</li>
-                        <li>Download the .dmg file from the release page</li>
-                        <li>Close Pane</li>
-                        <li>Open the downloaded .dmg file</li>
-                        <li>Drag Pane to your Applications folder</li>
-                        <li>Launch the new version of Pane</li>
-                      </ol>
-                      <p className="text-sm text-text-tertiary mt-2">
-                        Your settings and sessions will be preserved during the update.
-                      </p>
-                    </div>
-                  </div>
+                  renderMacUpdateActions()
                 ) : isPackaged ? (
                   <Button
                     onClick={handleCheckForUpdates}
@@ -309,29 +407,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                         <p className="text-text-secondary">
                           Please install the update manually to ensure it works correctly on macOS.
                         </p>
-                        {versionInfo?.releaseUrl && (
-                          <Button
-                            onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
-                            variant="primary"
-                            icon={<Download className="w-4 h-4" />}
-                          >
-                            Download from GitHub
-                          </Button>
-                        )}
-                        <div className="space-y-2">
-                          <p className="text-sm text-text-tertiary">To install the update:</p>
-                          <ol className="text-sm text-text-secondary list-decimal list-inside ml-2 space-y-2">
-                            <li>Click "Download from GitHub" above</li>
-                            <li>Download the .dmg file from the release page</li>
-                            <li>Close Pane</li>
-                            <li>Open the downloaded .dmg file</li>
-                            <li>Drag Pane to your Applications folder</li>
-                            <li>Launch the new version of Pane</li>
-                          </ol>
-                          <p className="text-sm text-text-tertiary mt-2">
-                            Your settings and sessions will be preserved during the update.
-                          </p>
-                        </div>
+                        {renderMacUpdateActions()}
                       </div>
                     ) : (
                       <>
@@ -355,7 +431,12 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
             {updateState === 'error' && error && (
               <div className="space-y-4">
                 {/* Manual Download Box */}
-                {versionInfo?.releaseUrl && (
+                {isMac() ? (
+                  <div className="bg-interactive/10 border border-interactive/30 rounded-lg p-4">
+                    <h3 className="text-lg font-medium text-interactive mb-3">Manual Update Available</h3>
+                    {renderMacUpdateActions()}
+                  </div>
+                ) : versionInfo?.releaseUrl && (
                   <div className="bg-interactive/10 border border-interactive/30 rounded-lg p-4">
                     <div className="flex items-center justify-between">
                       <div>
@@ -383,17 +464,25 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                       <h3 className="text-lg font-medium text-status-error mb-2">Update Error</h3>
                       <p className="text-text-secondary mb-2">{error}</p>
                       <div className="space-y-3">
-                        <p className="text-sm text-text-tertiary">
-                          To update manually:
-                        </p>
-                        <ol className="text-sm text-text-secondary list-decimal list-inside ml-2 space-y-2">
-                          <li>Click "Download from GitHub" above</li>
-                          <li>Download the .dmg file from the release page</li>
-                          <li>Close Pane</li>
-                          <li>Open the downloaded .dmg file</li>
-                          <li>Drag Pane to your Applications folder</li>
-                          <li>Launch the new version of Pane</li>
-                        </ol>
+                        {isMac() ? (
+                          <p className="text-sm text-text-secondary">
+                            Use the update command above, or download the DMG directly. After the DMG opens,
+                            close Pane, drag Pane.app into Applications, and choose Replace.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="text-sm text-text-tertiary">
+                              To update manually:
+                            </p>
+                            <ol className="text-sm text-text-secondary list-decimal list-inside ml-2 space-y-2">
+                              <li>Click "Download from GitHub" above</li>
+                              <li>Download the installer from the release page</li>
+                              <li>Close Pane</li>
+                              <li>Open the downloaded installer</li>
+                              <li>Launch the new version of Pane</li>
+                            </ol>
+                          </>
+                        )}
                         <p className="text-sm text-text-tertiary mt-3">
                           Your settings and sessions will be preserved during the update.
                         </p>
@@ -415,6 +504,12 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {message && (
+              <div className="bg-status-success/10 border border-status-success/30 rounded-lg p-3 text-sm text-status-success">
+                {message}
               </div>
             )}
 

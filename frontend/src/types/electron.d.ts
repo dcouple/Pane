@@ -69,6 +69,8 @@ interface ElectronAPI {
     checkAndDownload: () => Promise<IPCResponse>;
     downloadUpdate: () => Promise<IPCResponse>;
     installUpdate: () => Promise<IPCResponse>;
+    copyUpdateCommand: () => Promise<IPCResponse<{ command: string }>>;
+    openTerminalWithCommand: () => Promise<IPCResponse<{ command: string }>>;
   };
 
   // System utilities
