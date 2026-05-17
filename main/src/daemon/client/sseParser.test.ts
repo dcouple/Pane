@@ -43,6 +43,16 @@ describe('PaneSseParser', () => {
     }]);
   });
 
+  it('preserves CRLF line endings split across chunk boundaries', () => {
+    const parser = new PaneSseParser();
+
+    expect(parser.push('event: daemon-event\r')).toEqual([]);
+    expect(parser.push('\ndata: {"channel":"session:updated"}\r\n\r\n')).toEqual([{
+      event: 'daemon-event',
+      data: '{"channel":"session:updated"}',
+    }]);
+  });
+
   it('ignores comments and blank events', () => {
     const parser = new PaneSseParser();
 

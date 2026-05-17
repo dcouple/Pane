@@ -8,10 +8,21 @@ export interface ParsedSseEvent {
 export class PaneSseParser {
   private buffer = '';
   private decoder = new StringDecoder('utf8');
+  private pendingCarriageReturn = false;
 
   push(chunk: Buffer | string): ParsedSseEvent[] {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
-    this.buffer = this.buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    let decodedChunk = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    if (this.pendingCarriageReturn) {
+      decodedChunk = `\r${decodedChunk}`;
+      this.pendingCarriageReturn = false;
+    }
+
+    if (decodedChunk.endsWith('\r')) {
+      decodedChunk = decodedChunk.slice(0, -1);
+      this.pendingCarriageReturn = true;
+    }
+
+    this.buffer += decodedChunk.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     const events: ParsedSseEvent[] = [];
     let boundaryIndex = this.buffer.indexOf('\n\n');
@@ -33,6 +44,7 @@ export class PaneSseParser {
   reset(): void {
     this.buffer = '';
     this.decoder = new StringDecoder('utf8');
+    this.pendingCarriageReturn = false;
   }
 }
 
