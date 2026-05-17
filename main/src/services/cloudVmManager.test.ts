@@ -377,6 +377,37 @@ describe('CloudVmManager', () => {
     });
   });
 
+  it('keeps a hosted workspace connectable when its linked remote profile is missing', async () => {
+    const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
+    remoteDaemonConfig.client.profiles = [];
+    vi.spyOn(remotePaneClientController, 'getConnectionState').mockReturnValue({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+
+    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      serverId: 'pane-user123',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    }), remoteDaemonConfig) as never);
+
+    const state = await manager.getState();
+
+    expect(state).toMatchObject({
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+      linkedRemoteProfileLabel: null,
+      remoteConnectionStatus: 'available',
+    });
+  });
+
   it('disconnects the hosted workspace when its linked remote profile is active', async () => {
     const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
     remoteDaemonConfig.client.profiles = [{

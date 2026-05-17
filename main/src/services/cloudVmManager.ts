@@ -756,8 +756,12 @@ export class CloudVmManager extends EventEmitter {
     config: CloudVmConfig,
     linkedProfile: RemotePaneConnectionProfile | null,
   ): CloudRemoteConnectionStatus {
-    if (!config.linkedRemoteProfileId || !linkedProfile) {
+    if (!config.linkedRemoteProfileId) {
       return 'unlinked';
+    }
+
+    if (!linkedProfile) {
+      return 'available';
     }
 
     const connectionState = remotePaneClientController.getConnectionState();
