@@ -45,6 +45,8 @@ export async function installElectronApiMock(page: Page) {
       daemonStatus: 'unknown' as const,
       daemonBaseUrl: null as string | null,
       linkedRemoteProfileId: null as string | null,
+      linkedRemoteProfileLabel: null as string | null,
+      remoteConnectionStatus: 'unlinked' as const,
       preferredAccess: 'daemon' as const,
       allowNoVncFallback: true,
     };
@@ -140,6 +142,48 @@ export async function installElectronApiMock(page: Page) {
       cloud: namespace({
         getState: () => success(clone(cloudState)),
         onStateChanged: (callback: (state: unknown) => void) => subscribe('cloud:state-changed', callback),
+        connectWorkspace: () => {
+          if (!cloudState.linkedRemoteProfileId) {
+            return Promise.resolve({ success: false, error: 'Hosted cloud workspace does not have a linked remote profile' });
+          }
+          const profile = remoteDaemonConfig.client.profiles.find(
+            (candidate) => candidate.id === cloudState.linkedRemoteProfileId,
+          );
+          if (!profile) {
+            return Promise.resolve({ success: false, error: `Hosted cloud workspace linked profile "${cloudState.linkedRemoteProfileId}" does not exist` });
+          }
+          remoteDaemonConfig.client.activeProfileId = profile.id;
+          remoteDaemonConfig.client.mode = 'remote';
+          syncRemoteDaemonConfig();
+          cloudState.linkedRemoteProfileLabel = String(profile.label);
+          cloudState.remoteConnectionStatus = 'connected';
+          setRemoteConnectionState({
+            mode: 'remote',
+            status: 'connected',
+            activeProfileId: String(profile.id),
+            activeProfileLabel: String(profile.label),
+            activeBaseUrl: String(profile.baseUrl),
+            lastError: null,
+          });
+          emit('cloud:state-changed', clone(cloudState));
+          return success(clone(cloudState));
+        },
+        disconnectWorkspace: () => {
+          remoteDaemonConfig.client.activeProfileId = null;
+          remoteDaemonConfig.client.mode = 'local';
+          syncRemoteDaemonConfig();
+          cloudState.remoteConnectionStatus = cloudState.linkedRemoteProfileId ? 'available' : 'unlinked';
+          setRemoteConnectionState({
+            mode: 'local',
+            status: 'local',
+            activeProfileId: null,
+            activeProfileLabel: null,
+            activeBaseUrl: null,
+            lastError: null,
+          });
+          emit('cloud:state-changed', clone(cloudState));
+          return success(clone(cloudState));
+        },
         startPolling: () => success(),
         stopPolling: () => success(),
       }),

@@ -103,6 +103,34 @@ export function registerCloudHandlers(ipcMain: IpcMain, services: AppServices): 
     }
   });
 
+  // Connect the desktop app through the linked hosted workspace remote profile
+  ipcMain.handle('cloud:connect-workspace', async () => {
+    try {
+      logger?.info('[Cloud IPC] cloud:connect-workspace requested');
+      const manager = getManager();
+      const state = await manager.connectWorkspace();
+      return { success: true, data: state };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger?.error('[Cloud IPC] cloud:connect-workspace failed:', err instanceof Error ? err : new Error(message));
+      return { success: false, error: message };
+    }
+  });
+
+  // Disconnect the desktop app from the linked hosted workspace remote profile
+  ipcMain.handle('cloud:disconnect-workspace', async () => {
+    try {
+      logger?.info('[Cloud IPC] cloud:disconnect-workspace requested');
+      const manager = getManager();
+      const state = await manager.disconnectWorkspace();
+      return { success: true, data: state };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger?.error('[Cloud IPC] cloud:disconnect-workspace failed:', err instanceof Error ? err : new Error(message));
+      return { success: false, error: message };
+    }
+  });
+
   // Start polling VM status
   ipcMain.handle('cloud:start-polling', async () => {
     try {

@@ -5,6 +5,7 @@ import http from 'http';
 import type { ConfigManager } from './configManager';
 import type { Logger } from '../utils/logger';
 import {
+  type CloudRemoteConnectionStatus,
   createDefaultCloudVmState,
   type CloudProvider,
   type CloudDaemonStatus,
@@ -13,6 +14,13 @@ import {
   type TunnelStatus,
   type VmStatus,
 } from '../../../shared/types/cloud';
+import {
+  createDefaultRemoteDaemonConfig,
+  normalizeRemoteDaemonConfig,
+  type RemoteDaemonConfig,
+  type RemotePaneConnectionProfile,
+} from '../../../shared/types/remoteDaemon';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 
 export type { CloudProvider, VmStatus, TunnelStatus, CloudVmConfig, CloudVmState };
 
@@ -225,6 +233,80 @@ export class CloudVmManager extends EventEmitter {
     } finally {
       this.operationInProgress = false;
     }
+  }
+
+  async connectWorkspace(): Promise<CloudVmState> {
+    const cloudConfig = this.getCloudStateConfig();
+    if (!cloudConfig) {
+      throw new Error('Hosted cloud workspace is not configured');
+    }
+
+    if (!cloudConfig.linkedRemoteProfileId) {
+      throw new Error('Hosted cloud workspace does not have a linked remote profile');
+    }
+
+    const remoteConfig = this.getRemoteDaemonConfig();
+    const profile = remoteConfig.client.profiles.find((candidate) => candidate.id === cloudConfig.linkedRemoteProfileId);
+    if (!profile) {
+      throw new Error(`Hosted cloud workspace linked profile "${cloudConfig.linkedRemoteProfileId}" does not exist`);
+    }
+
+    const nextProfile = cloudConfig.daemonBaseUrl && profile.baseUrl !== cloudConfig.daemonBaseUrl
+      ? { ...profile, baseUrl: cloudConfig.daemonBaseUrl }
+      : profile;
+
+    const nextRemoteConfig = normalizeRemoteDaemonConfig({
+      ...remoteConfig,
+      client: {
+        ...remoteConfig.client,
+        profiles: upsertById(remoteConfig.client.profiles, nextProfile),
+        activeProfileId: nextProfile.id,
+        mode: 'remote',
+      },
+    });
+
+    await remotePaneClientController.activateProfile(nextProfile);
+    await this.configManager.updateConfig({ remoteDaemon: nextRemoteConfig });
+
+    const state = await this.getState();
+    this.emit('state-changed', state);
+    return state;
+  }
+
+  async disconnectWorkspace(): Promise<CloudVmState> {
+    const cloudConfig = this.getCloudStateConfig();
+    if (!cloudConfig?.linkedRemoteProfileId) {
+      const state = await this.getState();
+      this.emit('state-changed', state);
+      return state;
+    }
+
+    const remoteConfig = this.getRemoteDaemonConfig();
+    const linkedProfileIsActive =
+      remoteConfig.client.mode === 'remote' &&
+      remoteConfig.client.activeProfileId === cloudConfig.linkedRemoteProfileId;
+
+    if (!linkedProfileIsActive) {
+      const state = await this.getState();
+      this.emit('state-changed', state);
+      return state;
+    }
+
+    const nextRemoteConfig = normalizeRemoteDaemonConfig({
+      ...remoteConfig,
+      client: {
+        ...remoteConfig.client,
+        activeProfileId: null,
+        mode: 'local',
+      },
+    });
+
+    await remotePaneClientController.switchToLocalMode();
+    await this.configManager.updateConfig({ remoteDaemon: nextRemoteConfig });
+
+    const state = await this.getState();
+    this.emit('state-changed', state);
+    return state;
   }
 
   /**
@@ -619,6 +701,10 @@ export class CloudVmManager extends EventEmitter {
     );
   }
 
+  private getRemoteDaemonConfig(): RemoteDaemonConfig {
+    return normalizeRemoteDaemonConfig(this.configManager.getConfig().remoteDaemon ?? createDefaultRemoteDaemonConfig());
+  }
+
   private hasDaemonHostedWorkspaceState(config: CloudVmConfig): boolean {
     return Boolean(
       config.serverId
@@ -634,18 +720,55 @@ export class CloudVmManager extends EventEmitter {
     daemonStatus: CloudDaemonStatus;
     daemonBaseUrl: string | null;
     linkedRemoteProfileId: string | null;
+    linkedRemoteProfileLabel: string | null;
+    remoteConnectionStatus: CloudRemoteConnectionStatus;
     preferredAccess: CloudVmState['preferredAccess'];
     allowNoVncFallback: boolean;
   } {
+    const remoteConfig = this.getRemoteDaemonConfig();
+    const linkedProfile = this.getLinkedRemoteProfile(config, remoteConfig);
+
     return {
       provider: config.provider,
       serverId: config.serverId ?? null,
       daemonStatus: config.daemonStatus ?? 'unknown',
       daemonBaseUrl: config.daemonBaseUrl ?? null,
       linkedRemoteProfileId: config.linkedRemoteProfileId ?? null,
+      linkedRemoteProfileLabel: linkedProfile?.label ?? null,
+      remoteConnectionStatus: this.getHostedWorkspaceRemoteConnectionStatus(config, linkedProfile),
       preferredAccess: config.preferredAccess ?? 'daemon',
       allowNoVncFallback: config.allowNoVncFallback ?? true,
     };
+  }
+
+  private getLinkedRemoteProfile(
+    config: CloudVmConfig,
+    remoteConfig: RemoteDaemonConfig,
+  ): RemotePaneConnectionProfile | null {
+    if (!config.linkedRemoteProfileId) {
+      return null;
+    }
+
+    return remoteConfig.client.profiles.find((profile) => profile.id === config.linkedRemoteProfileId) ?? null;
+  }
+
+  private getHostedWorkspaceRemoteConnectionStatus(
+    config: CloudVmConfig,
+    linkedProfile: RemotePaneConnectionProfile | null,
+  ): CloudRemoteConnectionStatus {
+    if (!config.linkedRemoteProfileId || !linkedProfile) {
+      return 'unlinked';
+    }
+
+    const connectionState = remotePaneClientController.getConnectionState();
+    if (
+      connectionState.mode === 'remote' &&
+      connectionState.activeProfileId === linkedProfile.id
+    ) {
+      return connectionState.status;
+    }
+
+    return 'available';
   }
 
   private mapDaemonStatusToVmStatus(daemonStatus: CloudDaemonStatus): VmStatus {
@@ -752,4 +875,13 @@ export class CloudVmManager extends EventEmitter {
       req.end();
     });
   }
+}
+
+function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
+  const existingIndex = items.findIndex((item) => item.id === nextItem.id);
+  if (existingIndex === -1) {
+    return [...items, nextItem];
+  }
+
+  return items.map((item, index) => (index === existingIndex ? nextItem : item));
 }

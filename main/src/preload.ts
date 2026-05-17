@@ -1009,6 +1009,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stopVm: (): Promise<IPCResponse> => invokeIpc('cloud:stop-vm'),
     startTunnel: (): Promise<IPCResponse> => invokeIpc('cloud:start-tunnel'),
     stopTunnel: (): Promise<IPCResponse> => invokeIpc('cloud:stop-tunnel'),
+    connectWorkspace: (): Promise<IPCResponse> => invokeIpc('cloud:connect-workspace'),
+    disconnectWorkspace: (): Promise<IPCResponse> => invokeIpc('cloud:disconnect-workspace'),
     startPolling: (): Promise<IPCResponse> => invokeIpc('cloud:start-polling'),
     stopPolling: (): Promise<IPCResponse> => invokeIpc('cloud:stop-polling'),
     onStateChanged: (callback: (state: unknown) => void): (() => void) => {

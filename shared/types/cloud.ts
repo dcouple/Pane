@@ -1,9 +1,12 @@
+import type { RemotePaneConnectionStatus } from './remoteDaemon';
+
 // Cloud VM types — shared between main process and frontend
 export type CloudProvider = 'gcp';
 export type VmStatus = 'off' | 'starting' | 'running' | 'stopping' | 'unknown' | 'initializing' | 'not_provisioned';
 export type TunnelStatus = 'off' | 'starting' | 'running' | 'error';
 export type CloudWorkspaceAccessMode = 'daemon' | 'novnc';
 export type CloudDaemonStatus = 'unknown' | 'bootstrapping' | 'ready' | 'error';
+export type CloudRemoteConnectionStatus = RemotePaneConnectionStatus | 'available' | 'unlinked';
 
 export interface CloudVmConfig {
   provider: CloudProvider;
@@ -35,6 +38,8 @@ export interface CloudVmState {
   daemonStatus: CloudDaemonStatus;
   daemonBaseUrl: string | null;
   linkedRemoteProfileId: string | null;
+  linkedRemoteProfileLabel: string | null;
+  remoteConnectionStatus: CloudRemoteConnectionStatus;
   preferredAccess: CloudWorkspaceAccessMode;
   allowNoVncFallback: boolean;
 }
@@ -66,6 +71,8 @@ export function createDefaultCloudVmState(): CloudVmState {
     daemonStatus: DEFAULT_CLOUD_VM_CONFIG.daemonStatus!,
     daemonBaseUrl: null,
     linkedRemoteProfileId: null,
+    linkedRemoteProfileLabel: null,
+    remoteConnectionStatus: 'unlinked',
     preferredAccess: DEFAULT_CLOUD_VM_CONFIG.preferredAccess!,
     allowNoVncFallback: DEFAULT_CLOUD_VM_CONFIG.allowNoVncFallback!,
   };
