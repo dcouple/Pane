@@ -1,17 +1,19 @@
 import {
+  decodePaneRemoteConnection,
   getRemoteDaemonHostConfigValidationError,
   isRemoteDaemonClientRecord,
   isRemotePaneConnectionProfile,
   normalizeRemoteDaemonConfig,
+  remoteImportPayloadToProfile,
   type RemoteDaemonConnectionPair,
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
   type RemoteDaemonConfig,
+  type RemoteDaemonImportResult,
 } from '../../../shared/types/remoteDaemon';
 import type { AppServices } from './types';
-import { createRemoteDaemonToken, hashRemoteDaemonToken } from '../daemon/auth';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
-import { randomUUID } from 'crypto';
+import { createRemoteDaemonConnectionPair } from '../daemon/remotePairing';
 
 interface IpcMainHandleLike {
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
@@ -52,50 +54,83 @@ export function registerRemoteDaemonHandlers(
         throw new Error('Remote daemon connection pair base URL is required');
       }
 
-      const token = createRemoteDaemonToken();
-      const id = randomUUID();
-      const client = {
-        id,
-        label,
-        createdAt: new Date().toISOString(),
-        tokenHash: hashRemoteDaemonToken(token),
-      };
-      const profile = {
-        id,
+      const pair = createRemoteDaemonConnectionPair({
         label,
         baseUrl,
-        token,
-        transport: 'http+sse' as const,
-      };
-
-      if (!isRemotePaneConnectionProfile(profile)) {
-        throw new Error('Generated remote daemon connection profile is invalid');
-      }
+      });
 
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
       const next = normalizeRemoteDaemonConfig({
         ...current,
         host: {
           ...current.host,
-          clients: upsertById(current.host.clients, client),
+          clients: upsertById(current.host.clients, pair.client),
         },
         client: {
           ...current.client,
-          profiles: upsertById(current.client.profiles, profile),
+          profiles: upsertById(current.client.profiles, pair.profile),
         },
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
       return {
         success: true,
-        data: {
-          client,
-          profile,
-          token,
-        } satisfies RemoteDaemonConnectionPair,
+        data: pair satisfies RemoteDaemonConnectionPair,
       };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to create remote daemon connection pair') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:import-connection-code', async (_event, input: unknown) => {
+    try {
+      if (!isRecord(input)) {
+        throw new Error('Remote daemon import request must be an object');
+      }
+
+      const code = typeof input.code === 'string' ? input.code.trim() : '';
+      if (code.length === 0) {
+        throw new Error('Remote daemon import code is required');
+      }
+
+      const connect = input.connect !== false;
+      const payload = decodePaneRemoteConnection(code);
+      const profile = remoteImportPayloadToProfile(payload);
+      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+
+      let connected = false;
+      let connectionError: string | undefined;
+      if (connect) {
+        try {
+          await remotePaneClientController.activateProfile(profile);
+          connected = true;
+        } catch (error) {
+          connectionError = getErrorMessage(error, 'Failed to connect to imported remote daemon profile');
+        }
+      }
+
+      const next = normalizeRemoteDaemonConfig({
+        ...current,
+        client: {
+          ...current.client,
+          profiles: upsertById(current.client.profiles, profile),
+          activeProfileId: connected ? profile.id : current.client.activeProfileId,
+          mode: connected ? 'remote' : current.client.mode,
+        },
+      });
+
+      await configManager.updateConfig({ remoteDaemon: next });
+
+      return {
+        success: true,
+        data: {
+          profile,
+          connected,
+          ...(connectionError ? { connectionError } : {}),
+        } satisfies RemoteDaemonImportResult,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to import remote daemon connection code') };
     }
   });
 

@@ -26,6 +26,26 @@ export interface RemotePaneConnectionProfile {
   transport: RemoteDaemonTransport;
 }
 
+export interface PaneRemoteConnectionImportPayload {
+  v: 1;
+  label: string;
+  baseUrl: string;
+  token: string;
+  transport: RemoteDaemonTransport;
+  tunnel?: {
+    kind: 'ssh' | 'tailscale' | 'manual';
+    command?: string;
+    note?: string;
+    selected: boolean;
+  };
+}
+
+export interface RemoteDaemonImportResult {
+  profile: RemotePaneConnectionProfile;
+  connected: boolean;
+  connectionError?: string;
+}
+
 export interface RemoteDaemonHostSettings {
   config: RemoteDaemonHostConfig;
   clients: RemoteDaemonClientRecord[];
@@ -150,6 +170,85 @@ export function isRemotePaneConnectionProfile(value: unknown): value is RemotePa
   );
 }
 
+export function encodePaneRemoteConnection(payload: PaneRemoteConnectionImportPayload): string {
+  const normalizedPayload = normalizePaneRemoteConnectionImportPayload(payload);
+  return `pane-remote://${base64UrlEncode(JSON.stringify(normalizedPayload))}`;
+}
+
+export function decodePaneRemoteConnection(input: string): PaneRemoteConnectionImportPayload {
+  const trimmedInput = input.trim();
+  if (!trimmedInput.startsWith('pane-remote://')) {
+    throw new Error('Expected a pane-remote:// connection code');
+  }
+
+  const encodedPayload = trimmedInput.slice('pane-remote://'.length);
+  if (encodedPayload.length === 0) {
+    throw new Error('Remote connection code payload is empty');
+  }
+
+  let parsedPayload: unknown;
+  try {
+    parsedPayload = JSON.parse(base64UrlDecode(encodedPayload));
+  } catch (error) {
+    throw new Error(`Remote connection code is not valid JSON: ${getErrorMessage(error)}`);
+  }
+
+  return normalizePaneRemoteConnectionImportPayload(parsedPayload);
+}
+
+export function remoteImportPayloadToProfile(
+  payload: PaneRemoteConnectionImportPayload,
+  profileId = createRemoteProfileId(),
+): RemotePaneConnectionProfile {
+  const normalizedPayload = normalizePaneRemoteConnectionImportPayload(payload);
+  const profile = {
+    id: profileId,
+    label: normalizedPayload.label,
+    baseUrl: normalizedPayload.baseUrl,
+    token: normalizedPayload.token,
+    transport: normalizedPayload.transport,
+  };
+
+  if (!isRemotePaneConnectionProfile(profile)) {
+    throw new Error('Remote connection code did not produce a valid profile');
+  }
+
+  return profile;
+}
+
+export function normalizePaneRemoteConnectionImportPayload(
+  value: unknown,
+): PaneRemoteConnectionImportPayload {
+  if (!isRecord(value)) {
+    throw new Error('Remote connection code payload must be an object');
+  }
+
+  if (value.v !== 1) {
+    throw new Error('Remote connection code version is not supported');
+  }
+
+  const label = readRequiredString(value.label, 'Remote connection label');
+  const baseUrl = normalizeRemoteImportBaseUrl(readRequiredString(value.baseUrl, 'Remote base URL'));
+  const token = readRequiredString(value.token, 'Remote bearer token');
+  const transport = value.transport;
+  if (transport !== 'http+sse') {
+    throw new Error('Remote connection transport is not supported');
+  }
+
+  const tunnel = value.tunnel === undefined
+    ? undefined
+    : normalizeRemoteImportTunnel(value.tunnel);
+
+  return {
+    v: 1,
+    label,
+    baseUrl,
+    token,
+    transport,
+    ...(tunnel ? { tunnel } : {}),
+  };
+}
+
 export function normalizeRemoteDaemonConfig(value: unknown): RemoteDaemonConfig {
   const defaults = createDefaultRemoteDaemonConfig();
   if (!isRecord(value)) {
@@ -198,6 +297,72 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function normalizeRemoteImportTunnel(
+  value: unknown,
+): PaneRemoteConnectionImportPayload['tunnel'] {
+  if (!isRecord(value)) {
+    throw new Error('Remote connection tunnel metadata must be an object');
+  }
+
+  if (value.kind !== 'ssh' && value.kind !== 'tailscale' && value.kind !== 'manual') {
+    throw new Error('Remote connection tunnel kind is not supported');
+  }
+
+  if (typeof value.selected !== 'boolean') {
+    throw new Error('Remote connection tunnel selected flag is required');
+  }
+
+  const command = value.command === undefined
+    ? undefined
+    : readRequiredString(value.command, 'Remote tunnel command');
+  const note = value.note === undefined
+    ? undefined
+    : readRequiredString(value.note, 'Remote tunnel note');
+
+  return {
+    kind: value.kind,
+    selected: value.selected,
+    ...(command ? { command } : {}),
+    ...(note ? { note } : {}),
+  };
+}
+
+function normalizeRemoteImportBaseUrl(value: string): string {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('Remote base URL must be a valid URL');
+  }
+
+  if (url.username || url.password) {
+    throw new Error('Remote base URL must not contain credentials');
+  }
+
+  if (url.search || url.hash) {
+    throw new Error('Remote base URL must not contain query strings or fragments');
+  }
+
+  if (url.protocol === 'http:') {
+    const normalizedHostname = url.hostname.replace(/^\[(.*)\]$/, '$1');
+    if (!isLoopbackRemoteDaemonHost(normalizedHostname)) {
+      throw new Error('HTTP remote base URLs must use a loopback host; use HTTPS for Tailscale or reverse-proxy endpoints');
+    }
+  } else if (url.protocol !== 'https:') {
+    throw new Error('Remote base URL must use http or https');
+  }
+
+  return url.href.endsWith('/') ? url.href.slice(0, -1) : url.href;
+}
+
+function readRequiredString(value: unknown, fieldName: string): string {
+  if (!isNonEmptyString(value)) {
+    throw new Error(`${fieldName} is required`);
+  }
+
+  return value.trim();
+}
+
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
@@ -214,4 +379,41 @@ function readPort(value: unknown, fallback: number): number {
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function base64UrlEncode(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function base64UrlDecode(input: string): string {
+  const normalizedInput = input.replace(/-/g, '+').replace(/_/g, '/');
+  const paddingLength = (4 - (normalizedInput.length % 4)) % 4;
+  const binary = atob(`${normalizedInput}${'='.repeat(paddingLength)}`);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return new TextDecoder().decode(bytes);
+}
+
+function createRemoteProfileId(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `remote-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }

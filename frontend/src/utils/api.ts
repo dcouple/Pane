@@ -8,6 +8,7 @@ import type {
   RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
+  RemoteDaemonImportResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
@@ -515,6 +516,11 @@ export class API {
     async upsertConnectionProfile(profile: RemotePaneConnectionProfile) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.upsertConnectionProfile(profile);
+    },
+
+    async importConnectionCode(code: string, options?: { connect?: boolean }) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.importConnectionCode(code, options) as Promise<IPCResponse<RemoteDaemonImportResult>>;
     },
 
     async deleteConnectionProfile(profileId: string) {

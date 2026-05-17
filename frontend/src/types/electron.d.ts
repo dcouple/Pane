@@ -10,6 +10,7 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemoteDaemonImportResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
@@ -237,6 +238,7 @@ interface ElectronAPI {
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     deleteClientRecord: (clientId: string) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     upsertConnectionProfile: (profile: RemotePaneConnectionProfile) => Promise<IPCResponse<RemotePaneConnectionProfile[]>>;
+    importConnectionCode: (code: string, options?: { connect?: boolean }) => Promise<IPCResponse<RemoteDaemonImportResult>>;
     deleteConnectionProfile: (profileId: string) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
     updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
     onConnectionStateChanged: (callback: (state: RemotePaneConnectionState) => void) => () => void;

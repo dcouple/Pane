@@ -8,6 +8,7 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemoteDaemonImportResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../shared/types/remoteDaemon';
@@ -611,6 +612,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:delete-client-record', clientId),
     upsertConnectionProfile: (profile: RemotePaneConnectionProfile): Promise<IPCResponse<RemotePaneConnectionProfile[]>> =>
       invokeIpc('remote-daemon:upsert-connection-profile', profile),
+    importConnectionCode: (code: string, options?: { connect?: boolean }): Promise<IPCResponse<RemoteDaemonImportResult>> =>
+      invokeIpc('remote-daemon:import-connection-code', {
+        code,
+        connect: options?.connect,
+      }),
     deleteConnectionProfile: (profileId: string): Promise<IPCResponse<RemoteDaemonClientSettings>> =>
       invokeIpc('remote-daemon:delete-connection-profile', profileId),
     updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>): Promise<IPCResponse<RemoteDaemonClientSettings>> =>

@@ -48,7 +48,8 @@ import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
 import { remotePaneClientController } from './daemon/client/remotePaneClient';
 import { startHeadlessPaneProcess } from './daemon/startHeadless';
-import { hasHeadlessDaemonLaunchArg } from './utils/runtimeMode';
+import { runRemoteSetupCli } from './daemon/setupRemoteHostCli';
+import { hasHeadlessDaemonLaunchArg, hasRemoteSetupLaunchArg } from './utils/runtimeMode';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -173,9 +174,10 @@ const originalInfo: typeof console.info = console.info;
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 const launchHeadlessDaemon = hasHeadlessDaemonLaunchArg();
+const launchRemoteSetup = hasRemoteSetupLaunchArg();
 
 // Reset debug log files at startup in development mode
-if (!launchHeadlessDaemon && isDevelopment) {
+if (!launchHeadlessDaemon && !launchRemoteSetup && isDevelopment) {
   const frontendLogPath = path.join(process.cwd(), 'frontend-debug.log');
   const backendLogPath = path.join(process.cwd(), 'backend-debug.log');
 
@@ -189,11 +191,11 @@ if (!launchHeadlessDaemon && isDevelopment) {
 }
 
 // Set up console wrapper to reduce logging in production
-if (!launchHeadlessDaemon) {
+if (!launchHeadlessDaemon && !launchRemoteSetup) {
   setupConsoleWrapper();
 }
 
-if (!launchHeadlessDaemon) {
+if (!launchHeadlessDaemon && !launchRemoteSetup) {
   const overrideDir = applyAppDirectoryOverrideFromArgs();
   if (overrideDir) {
     console.log(`[Main] Using custom Pane directory: ${overrideDir}`);
@@ -996,7 +998,11 @@ async function initializeServices() {
   });
 }
 
-if (launchHeadlessDaemon) {
+if (launchRemoteSetup) {
+  void runRemoteSetupCli(process.argv.slice(2)).then((exitCode) => {
+    app.exit(exitCode);
+  });
+} else if (launchHeadlessDaemon) {
   startHeadlessPaneProcess();
 } else {
   app.whenReady().then(async () => {

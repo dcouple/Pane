@@ -106,6 +106,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remotePairLabel, setRemotePairLabel] = useState('');
   const [remotePairBaseUrl, setRemotePairBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteCreatedToken, setRemoteCreatedToken] = useState<string | null>(null);
+  const [remoteConnectionCode, setRemoteConnectionCode] = useState('');
+  const [remoteImportResult, setRemoteImportResult] = useState<string | null>(null);
   const [remoteImportedProfileLabel, setRemoteImportedProfileLabel] = useState('');
   const [remoteImportedProfileBaseUrl, setRemoteImportedProfileBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
@@ -353,6 +355,28 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       setRemoteImportedProfileLabel('');
       setRemoteImportedProfileToken('');
+    });
+  };
+
+  const handleImportRemoteConnectionCode = async () => {
+    await runRemoteDaemonAction(async () => {
+      setRemoteImportResult(null);
+      const response = await API.remoteDaemon.importConnectionCode(remoteConnectionCode, {
+        connect: true,
+      });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to import remote daemon connection code');
+      }
+
+      const result = response.data;
+      setRemoteConnectionCode('');
+      if (result?.connected) {
+        setRemoteImportResult(`Connected to ${result.profile.label}.`);
+      } else if (result?.connectionError) {
+        setRemoteImportResult(`Saved ${result.profile.label}, but connection failed: ${result.connectionError}`);
+      } else if (result?.profile) {
+        setRemoteImportResult(`Saved ${result.profile.label}.`);
+      }
     });
   };
 
@@ -1124,6 +1148,36 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         Use this token when creating a matching remote profile on another client machine.
                       </p>
                     </div>
+                  )}
+                </div>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Import Remote Connection"
+                description="Paste a pane-remote:// code from the VM setup command to save and connect in one step"
+                icon={<Power className="w-4 h-4" />}
+              >
+                <div className="space-y-3">
+                  <Textarea
+                    label="Connection Code"
+                    value={remoteConnectionCode}
+                    onChange={(e) => setRemoteConnectionCode(e.target.value)}
+                    placeholder="pane-remote://..."
+                    rows={4}
+                    fullWidth
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleImportRemoteConnectionCode}
+                      disabled={remoteBusy || remoteConnectionCode.trim().length === 0}
+                    >
+                      Import & Connect
+                    </Button>
+                  </div>
+                  {remoteImportResult && (
+                    <p className="text-xs text-text-tertiary">{remoteImportResult}</p>
                   )}
                 </div>
               </SettingsSection>
