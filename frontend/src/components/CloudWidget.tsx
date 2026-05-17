@@ -134,6 +134,7 @@ export function CloudWidget() {
   const daemonBootstrapping = daemonAccess && vmState.daemonStatus === 'bootstrapping';
   const daemonReady = daemonAccess && vmState.daemonStatus === 'ready';
   const daemonError = daemonAccess && vmState.daemonStatus === 'error';
+  const canManageCloudVmLifecycle = isRunning && vmState.noVncUrl !== null;
   const tunnelConnecting = isRunning && !daemonAccess && vmState.tunnelStatus === 'starting';
   const tunnelReady = isRunning && !daemonAccess && vmState.tunnelStatus === 'running';
   const tunnelError = isRunning && !daemonAccess && vmState.tunnelStatus === 'error';
@@ -189,7 +190,7 @@ export function CloudWidget() {
       {needsReconnect && (
         <>
           {/* Only show stop button if VM is confirmed running */}
-          {isRunning && (
+          {canManageCloudVmLifecycle && (
             <button
               onClick={handleStop}
               className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
@@ -252,13 +253,15 @@ export function CloudWidget() {
 
       {daemonReady && !loading && (
         <>
-          <button
-            onClick={handleStop}
-            className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
-            title="Stop Cloud VM"
-          >
-            <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
-          </button>
+          {canManageCloudVmLifecycle && (
+            <button
+              onClick={handleStop}
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg hover:bg-bg-tertiary transition-colors"
+              title="Stop Cloud VM"
+            >
+              <Square className="w-3.5 h-3.5 text-red-400 fill-red-400" />
+            </button>
+          )}
           <div
             className="flex items-center gap-2 px-3 py-2 bg-bg-secondary/95 backdrop-blur-sm border border-border-primary rounded-xl shadow-lg"
             title="Hosted workspace daemon is ready"

@@ -219,6 +219,7 @@ test.describe('Smoke Tests', () => {
 
     await expect(page.getByText('Daemon Ready')).toBeVisible({ timeout: 5000 });
     await expect(page.getByRole('button', { name: 'Reconnect' })).toHaveCount(0);
+    await expect(page.locator('button[title="Stop Cloud VM"]')).toHaveCount(0);
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 });
