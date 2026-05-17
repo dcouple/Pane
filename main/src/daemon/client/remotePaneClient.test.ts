@@ -182,6 +182,49 @@ describe('RemotePaneClientController', () => {
       activeProfileId: 'profile-retry',
     });
   });
+
+  it('restores the saved local state when a manual activation fails', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+    server.setEventsReady(false);
+
+    const configManager = createConfigManagerStub(createDefaultRemoteDaemonConfig());
+    const controller = new RemotePaneClientController();
+    controller.initialize({
+      configManager,
+      rendererEventSink: { send() {} },
+    });
+
+    await expect(controller.activateProfile({
+      id: 'profile-manual-failure',
+      label: 'Tunnel host',
+      baseUrl: server.baseUrl,
+      token: 'secret-token',
+      transport: 'http+sse',
+    })).rejects.toThrow('Remote daemon not ready yet');
+
+    expect(controller.getConnectionState()).toMatchObject({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+    expect(controller.shouldForwardLocalRendererEvent('session:created')).toBe(true);
+
+    server.setEventsReady(true);
+    await sleep(1_250);
+
+    expect(controller.getConnectionState()).toMatchObject({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+  });
 });
 
 async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteServer> {
@@ -311,4 +354,8 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<voi
 
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+async function sleep(timeoutMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, timeoutMs));
 }

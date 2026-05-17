@@ -19,6 +19,10 @@ interface RemotePaneClientOptions {
   onConnectionStateChange?: (status: RemotePaneConnectionStatus, errorMessage?: string | null) => void;
 }
 
+interface RemotePaneClientConnectOptions {
+  retryOnInitialFailure?: boolean;
+}
+
 interface RemoteInvokeSuccessPayload {
   ok: true;
   result?: unknown;
@@ -68,9 +72,9 @@ export class RemotePaneClient {
     );
   }
 
-  async connect(): Promise<void> {
+  async connect(options: RemotePaneClientConnectOptions = {}): Promise<void> {
     this.closedByClient = false;
-    await this.openEventStream(false);
+    await this.openEventStream(false, options.retryOnInitialFailure ?? true);
   }
 
   async disconnect(): Promise<void> {
@@ -111,7 +115,7 @@ export class RemotePaneClient {
     return payload.result;
   }
 
-  private async openEventStream(isReconnect: boolean): Promise<void> {
+  private async openEventStream(isReconnect: boolean, retryOnInitialFailure: boolean): Promise<void> {
     this.clearReconnectTimer();
     this.onConnectionStateChange?.(isReconnect ? 'reconnecting' : 'connecting', null);
 
@@ -119,6 +123,7 @@ export class RemotePaneClient {
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let readyReceived = false;
       const request = createRequest(endpoint, {
         method: 'GET',
         headers: {
@@ -130,8 +135,7 @@ export class RemotePaneClient {
           const body = await readResponseBody(response);
           const message = extractRemoteErrorMessage(body)
             ?? `Remote daemon event stream failed with status ${response.statusCode ?? 'unknown'}`;
-          this.onConnectionStateChange?.('error', message);
-          this.scheduleReconnect(message);
+          this.handleInitialConnectionFailure(message, retryOnInitialFailure);
           if (!settled) {
             settled = true;
             reject(new Error(message));
@@ -146,6 +150,7 @@ export class RemotePaneClient {
           const events = this.eventParser.push(chunk);
           for (const event of events) {
             if (event.event === 'ready') {
+              readyReceived = true;
               this.onConnectionStateChange?.('connected', null);
               if (!settled) {
                 settled = true;
@@ -173,7 +178,11 @@ export class RemotePaneClient {
 
         response.on('error', (error) => {
           const message = getErrorMessage(error, 'Remote daemon event stream errored');
-          this.handleUnexpectedDisconnect(message);
+          if (readyReceived) {
+            this.handleUnexpectedDisconnect(message);
+          } else {
+            this.handleInitialConnectionFailure(message, retryOnInitialFailure);
+          }
           if (!settled) {
             settled = true;
             reject(new Error(message));
@@ -182,7 +191,11 @@ export class RemotePaneClient {
 
         response.on('end', () => {
           const message = 'Remote daemon event stream ended';
-          this.handleUnexpectedDisconnect(message);
+          if (readyReceived) {
+            this.handleUnexpectedDisconnect(message);
+          } else {
+            this.handleInitialConnectionFailure(message, retryOnInitialFailure);
+          }
           if (!settled) {
             settled = true;
             reject(new Error(message));
@@ -191,7 +204,11 @@ export class RemotePaneClient {
 
         response.on('close', () => {
           const message = 'Remote daemon event stream closed';
-          this.handleUnexpectedDisconnect(message);
+          if (readyReceived) {
+            this.handleUnexpectedDisconnect(message);
+          } else {
+            this.handleInitialConnectionFailure(message, retryOnInitialFailure);
+          }
           if (!settled) {
             settled = true;
             reject(new Error(message));
@@ -203,8 +220,7 @@ export class RemotePaneClient {
 
       request.on('error', (error) => {
         const message = getErrorMessage(error, 'Failed to connect to remote daemon event stream');
-        this.onConnectionStateChange?.('error', message);
-        this.scheduleReconnect(message);
+        this.handleInitialConnectionFailure(message, retryOnInitialFailure);
         if (!settled) {
           settled = true;
           reject(new Error(message));
@@ -213,6 +229,21 @@ export class RemotePaneClient {
 
       request.end();
     });
+  }
+
+  private handleInitialConnectionFailure(message: string, retryOnInitialFailure: boolean): void {
+    this.eventResponse = null;
+    this.eventRequest = null;
+    this.eventParser.reset();
+
+    if (this.closedByClient) {
+      return;
+    }
+
+    this.onConnectionStateChange?.('error', message);
+    if (retryOnInitialFailure) {
+      this.scheduleReconnect(message);
+    }
   }
 
   private handleUnexpectedDisconnect(message: string): void {
@@ -235,7 +266,7 @@ export class RemotePaneClient {
     this.onConnectionStateChange?.('reconnecting', message);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      void this.openEventStream(true).catch((error) => {
+      void this.openEventStream(true, true).catch((error) => {
         const nextMessage = getErrorMessage(error, 'Failed to reconnect to remote daemon event stream');
         this.onConnectionStateChange?.('error', nextMessage);
         this.scheduleReconnect(nextMessage);
@@ -320,8 +351,15 @@ export class RemotePaneClientController extends EventEmitter {
   }
 
   async activateProfile(profile: RemotePaneConnectionProfile): Promise<RemotePaneConnectionState> {
-    await this.connectProfile(profile);
-    return this.getConnectionState();
+    try {
+      await this.connectProfile(profile, { retryOnInitialFailure: false });
+      return this.getConnectionState();
+    } catch (error) {
+      await this.syncToConfig().catch((syncError) => {
+        console.error('[Pane remote daemon] Failed to restore saved client state after activation error', syncError);
+      });
+      throw error;
+    }
   }
 
   async switchToLocalMode(): Promise<RemotePaneConnectionState> {
@@ -368,10 +406,13 @@ export class RemotePaneClientController extends EventEmitter {
       return;
     }
 
-    await this.connectProfile(activeProfile);
+    await this.connectProfile(activeProfile, { retryOnInitialFailure: true });
   }
 
-  private async connectProfile(profile: RemotePaneConnectionProfile): Promise<void> {
+  private async connectProfile(
+    profile: RemotePaneConnectionProfile,
+    options: RemotePaneClientConnectOptions,
+  ): Promise<void> {
     await this.disconnectActiveClient();
 
     const client = new RemotePaneClient(profile, {
@@ -390,7 +431,9 @@ export class RemotePaneClientController extends EventEmitter {
 
     this.activeClient = client;
     try {
-      await client.connect();
+      await client.connect({
+        retryOnInitialFailure: options.retryOnInitialFailure,
+      });
       this.setConnectionState({
         mode: 'remote',
         status: 'connected',
@@ -400,7 +443,10 @@ export class RemotePaneClientController extends EventEmitter {
         lastError: null,
       });
     } catch (error) {
-      if (this.activeClient !== client) {
+      if (!options.retryOnInitialFailure || this.activeClient !== client) {
+        if (this.activeClient === client) {
+          this.activeClient = null;
+        }
         await client.disconnect();
       }
       this.setConnectionState({

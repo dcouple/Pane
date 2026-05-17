@@ -254,6 +254,56 @@ describe('remote daemon IPC', () => {
     });
   });
 
+  it('keeps the saved client mode local when remote activation fails', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const upsertProfile = ipcMain.handlers.get('remote-daemon:upsert-connection-profile');
+    const updateClientState = ipcMain.handlers.get('remote-daemon:update-client-state');
+    const getConfig = ipcMain.handlers.get('remote-daemon:get-config');
+
+    vi.spyOn(remotePaneClientController, 'activateProfile').mockRejectedValue(new Error('Remote daemon not ready yet'));
+
+    await upsertProfile?.({}, {
+      id: 'profile-1',
+      label: 'Mac mini',
+      baseUrl: 'http://127.0.0.1:42137',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(updateClientState?.({}, {
+      activeProfileId: 'profile-1',
+      mode: 'remote',
+    })).resolves.toEqual({
+      success: false,
+      error: 'Remote daemon not ready yet',
+    });
+
+    await expect(getConfig?.({})).resolves.toEqual({
+      success: true,
+      data: {
+        host: {
+          config: createDefaultRemoteDaemonConfig().host.config,
+          clients: [],
+        },
+        client: {
+          profiles: [{
+            id: 'profile-1',
+            label: 'Mac mini',
+            baseUrl: 'http://127.0.0.1:42137',
+            token: 'secret-token',
+            transport: 'http+sse',
+          }],
+          activeProfileId: null,
+          mode: 'local',
+        },
+      },
+    });
+  });
+
   it('rejects enabling direct HTTP on a non-loopback listen host', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
