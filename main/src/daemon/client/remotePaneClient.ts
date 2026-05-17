@@ -442,13 +442,7 @@ function createRequest(
   onResponse: (response: IncomingMessage) => void,
 ): http.ClientRequest {
   const transport = url.protocol === 'https:' ? https : http;
-  return transport.request({
-    ...options,
-    protocol: url.protocol,
-    hostname: url.hostname,
-    port: url.port ? Number(url.port) : undefined,
-    path: `${url.pathname}${url.search}`,
-  }, onResponse);
+  return transport.request(url, options, onResponse);
 }
 
 async function requestJson(

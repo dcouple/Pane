@@ -1,3 +1,5 @@
+import { StringDecoder } from 'string_decoder';
+
 export interface ParsedSseEvent {
   event: string;
   data: string;
@@ -5,9 +7,10 @@ export interface ParsedSseEvent {
 
 export class PaneSseParser {
   private buffer = '';
+  private decoder = new StringDecoder('utf8');
 
   push(chunk: Buffer | string): ParsedSseEvent[] {
-    this.buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
     this.buffer = this.buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
     const events: ParsedSseEvent[] = [];
@@ -29,6 +32,7 @@ export class PaneSseParser {
 
   reset(): void {
     this.buffer = '';
+    this.decoder = new StringDecoder('utf8');
   }
 }
 

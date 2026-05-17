@@ -30,6 +30,19 @@ describe('PaneSseParser', () => {
     }]);
   });
 
+  it('preserves UTF-8 characters split across buffer boundaries', () => {
+    const parser = new PaneSseParser();
+    const message = 'hello 🙂';
+    const encoded = Buffer.from(`event: ready\ndata: ${message}\n\n`, 'utf8');
+    const splitIndex = encoded.indexOf(Buffer.from('🙂')) + 2;
+
+    expect(parser.push(encoded.subarray(0, splitIndex))).toEqual([]);
+    expect(parser.push(encoded.subarray(splitIndex))).toEqual([{
+      event: 'ready',
+      data: message,
+    }]);
+  });
+
   it('ignores comments and blank events', () => {
     const parser = new PaneSseParser();
 

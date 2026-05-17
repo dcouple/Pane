@@ -85,6 +85,26 @@ describe('RemotePaneClient', () => {
 
     await client.disconnect();
   });
+
+  it('supports IPv6 loopback connection profiles', async () => {
+    const server = await createTestRemoteServer('::1');
+    activeServers.push(server);
+
+    const client = new RemotePaneClient({
+      id: 'profile-ipv6',
+      label: 'IPv6 host',
+      baseUrl: server.baseUrl,
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(client.invoke('sessions:get-all', ['session-1'])).resolves.toEqual({
+      channel: 'sessions:get-all',
+      args: ['session-1'],
+    });
+
+    expect(server.getLastInvokeAuth()).toBe('Bearer secret-token');
+  });
 });
 
 describe('RemotePaneClientController', () => {
@@ -123,7 +143,7 @@ describe('RemotePaneClientController', () => {
   });
 });
 
-async function createTestRemoteServer(): Promise<TestRemoteServer> {
+async function createTestRemoteServer(host = '127.0.0.1'): Promise<TestRemoteServer> {
   let streamResponse: ServerResponse | null = null;
   let lastInvokeAuth: string | undefined;
   let lastInvokeBody: string | undefined;
@@ -164,7 +184,7 @@ async function createTestRemoteServer(): Promise<TestRemoteServer> {
   });
 
   await new Promise<void>((resolve, reject) => {
-    server.listen(0, '127.0.0.1', () => resolve());
+    server.listen(0, host, () => resolve());
     server.once('error', reject);
   });
 
@@ -174,7 +194,7 @@ async function createTestRemoteServer(): Promise<TestRemoteServer> {
   }
 
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: `http://${host.includes(':') ? `[${host}]` : host}:${address.port}`,
     emitDaemonEvent(payload: unknown) {
       if (!streamResponse) {
         throw new Error('Remote event stream is not connected');
