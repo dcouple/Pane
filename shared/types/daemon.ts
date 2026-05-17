@@ -111,7 +111,6 @@ export const DAEMON_OWNED_EXACT_CHANNELS = [
 export const ELECTRON_ADAPTER_ONLY_CHANNELS = [
   'file:showInFolder',
   'sessions:open-ide',
-  'sessions:set-active-session',
   'terminal:clipboard-paste-image',
 ] as const;
 

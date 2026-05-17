@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { registerFileHandlers } from './file';
 import { registerGitHandlers } from './git';
 import { registerPanelHandlers } from './panels';
@@ -211,21 +212,25 @@ const GIT_CHANNELS = [
 
 interface IpcMainStub {
   boundChannels: string[];
+  listeners: Map<string, (_event: unknown, ...args: unknown[]) => unknown>;
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown): void;
 }
 
 function createIpcMainStub(): IpcMainStub {
   const boundChannels: string[] = [];
+  const listeners = new Map<string, (_event: unknown, ...args: unknown[]) => unknown>();
 
   return {
     boundChannels,
-    handle(channel: string) {
+    listeners,
+    handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown) {
       boundChannels.push(channel);
+      listeners.set(channel, listener);
     },
   };
 }
 
-function createServicesStub(): AppServices {
+function createServicesStub(overrides: Partial<AppServices> = {}): AppServices {
   return {
     sessionManager: {},
     gitStatusManager: {},
@@ -241,6 +246,7 @@ function createServicesStub(): AppServices {
     archiveProgressManager: {},
     spotlightManager: {},
     runCommandManager: {},
+    ...overrides,
   } as AppServices;
 }
 
@@ -320,13 +326,32 @@ describe('daemon registry IPC bindings', () => {
     expect(registry.has('sessions:open-ide')).toBe(false);
   });
 
-  it('keeps active-session polling hints outside the daemon registry surface', () => {
+  it('routes active-session polling hints through the remote daemon bridge when active', async () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
+    const setActiveSession = vi.fn();
+    const remoteInvoke = vi
+      .spyOn(remotePaneClientController, 'invoke')
+      .mockImplementation((_channel, _args, invokeLocal) => invokeLocal());
 
-    registerSessionHandlers(ipcMain, createServicesStub(), registry);
+    registerSessionHandlers(
+      ipcMain,
+      createServicesStub({ gitStatusManager: { setActiveSession } } as Partial<AppServices>),
+      registry,
+    );
 
-    expect(registry.listChannels()).toEqual([...SESSION_CHANNELS].sort());
+    const listener = ipcMain.listeners.get('sessions:set-active-session');
+    expect(listener).toBeDefined();
+    await listener?.({}, 'session-1');
+
+    expect(remoteInvoke).toHaveBeenCalledWith(
+      'sessions:set-active-session',
+      ['session-1'],
+      expect.any(Function),
+    );
+    expect(setActiveSession).toHaveBeenCalledWith('session-1');
+
+    expect(registry.listChannels()).toEqual([...SESSION_CHANNELS, 'sessions:set-active-session'].sort());
     expect(ipcMain.boundChannels).toContain('sessions:set-active-session');
     expect(ipcMain.boundChannels).toContain('debug:get-table-structure');
     expect(ipcMain.boundChannels).toContain('archive:get-progress');
@@ -338,7 +363,7 @@ describe('daemon registry IPC bindings', () => {
           channel !== 'archive:get-progress',
       ).sort(),
     ).toEqual([...SESSION_CHANNELS].sort());
-    expect(registry.has('sessions:set-active-session')).toBe(false);
+    expect(registry.has('sessions:set-active-session')).toBe(true);
   });
 
   it('routes all daemon-owned git handlers through the shared registry', () => {

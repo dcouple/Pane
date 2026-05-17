@@ -16,6 +16,7 @@ import { convertDbFolderToRendererFolder } from '../services/folderEvents';
 import { sessionImageCounters } from './panels';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
+import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import {
   validateSessionExists,
   validatePanelSessionOwnership,
@@ -57,6 +58,8 @@ const DAEMON_SESSION_CHANNELS = [
   'sessions:resume-interrupted',
   'sessions:dismiss-interrupted',
 ] as const;
+
+const ACTIVE_SESSION_HINT_CHANNEL = 'sessions:set-active-session';
 
 const DAEMON_SESSION_PANEL_CHANNELS = [
   'panels:get-output',
@@ -1599,9 +1602,7 @@ export function registerSessionHandlers(
     }
   });
 
-  // Set active session for smart git status polling.
-  // This is a client-local visibility hint, not shared runtime state.
-  ipcMain.handle('sessions:set-active-session', async (_event, sessionId: string | null) => {
+  commandRegistry.register(ACTIVE_SESSION_HINT_CHANNEL, async (sessionId: string | null) => {
     try {
       // Notify GitStatusManager about the active session change
       gitStatusManager.setActiveSession(sessionId);
@@ -1610,6 +1611,16 @@ export function registerSessionHandlers(
       console.error('Failed to set active session:', error);
       return { success: false, error: 'Failed to set active session' };
     }
+  });
+
+  // Set active session for smart git status polling. In remote mode the daemon
+  // needs this same visibility hint so it can prioritize the visible session.
+  ipcMain.handle(ACTIVE_SESSION_HINT_CHANNEL, async (_event, sessionId: string | null) => {
+    return remotePaneClientController.invoke(
+      ACTIVE_SESSION_HINT_CHANNEL,
+      [sessionId],
+      () => commandRegistry.invoke(ACTIVE_SESSION_HINT_CHANNEL, [sessionId]),
+    );
   });
 
   // Resume session handlers
