@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import type { AnalyticsIdentity, AppConfig } from '../types/config';
+import { normalizeCloudVmConfig } from '../../../shared/types/cloud';
 import { createDefaultRemoteDaemonConfig, normalizeRemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
@@ -135,6 +136,9 @@ export class ConfigManager extends EventEmitter {
           ...this.config.analytics,
           ...loadedConfig.analytics
         },
+        cloud: loadedConfig.cloud !== undefined
+          ? normalizeCloudVmConfig(loadedConfig.cloud)
+          : this.config.cloud,
         remoteDaemon: normalizeRemoteDaemonConfig(loadedConfig.remoteDaemon),
         // Use !== undefined to distinguish "user cleared all entries" (empty array → preserve)
         // from "field absent in config file" (→ use defaults)
@@ -262,6 +266,9 @@ export class ConfigManager extends EventEmitter {
     this.config = {
       ...this.config,
       ...updates,
+      cloud: 'cloud' in updates
+        ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
+        : this.config.cloud,
       remoteDaemon: 'remoteDaemon' in updates
         ? normalizeRemoteDaemonConfig(updates.remoteDaemon)
         : this.config.remoteDaemon,

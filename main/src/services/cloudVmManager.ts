@@ -4,7 +4,15 @@ import https from 'https';
 import http from 'http';
 import type { ConfigManager } from './configManager';
 import type { Logger } from '../utils/logger';
-import type { CloudProvider, VmStatus, TunnelStatus, CloudVmConfig, CloudVmState } from '../../../shared/types/cloud';
+import {
+  createDefaultCloudVmState,
+  type CloudProvider,
+  type CloudDaemonStatus,
+  type CloudVmConfig,
+  type CloudVmState,
+  type TunnelStatus,
+  type VmStatus,
+} from '../../../shared/types/cloud';
 
 export type { CloudProvider, VmStatus, TunnelStatus, CloudVmConfig, CloudVmState };
 
@@ -16,16 +24,7 @@ export class CloudVmManager extends EventEmitter {
   private pollInterval: ReturnType<typeof setTimeout> | null = null;
   private tunnelProcess: ChildProcess | null = null;
   private tunnelStatus: TunnelStatus = 'off';
-  private cachedState: CloudVmState = {
-    status: 'unknown',
-    ip: null,
-    noVncUrl: null,
-    provider: null,
-    serverId: null,
-    lastChecked: null,
-    error: null,
-    tunnelStatus: 'off',
-  };
+  private cachedState: CloudVmState = createDefaultCloudVmState();
   private operationInProgress = false;
   private isRefreshingToken = false;
   private consecutiveErrors = 0;
@@ -61,7 +60,8 @@ export class CloudVmManager extends EventEmitter {
   async getState(): Promise<CloudVmState> {
     const config = this.getCloudConfig();
     if (!config) {
-      return { ...this.cachedState, status: 'not_provisioned' };
+      this.cachedState = createDefaultCloudVmState();
+      return { ...this.cachedState };
     }
 
     try {
@@ -85,8 +85,7 @@ export class CloudVmManager extends EventEmitter {
         status,
         ip: null,
         noVncUrl: this.buildNoVncUrl(tunnelPort, config.vncPassword),
-        provider: config.provider,
-        serverId: config.serverId || null,
+        ...this.getHostedWorkspaceStateFromConfig(config),
         lastChecked: new Date().toISOString(),
         error: null,
         tunnelStatus: effectiveTunnelStatus,
@@ -570,6 +569,26 @@ export class CloudVmManager extends EventEmitter {
     return config.cloud;
   }
 
+  private getHostedWorkspaceStateFromConfig(config: CloudVmConfig): {
+    provider: CloudProvider;
+    serverId: string | null;
+    daemonStatus: CloudDaemonStatus;
+    daemonBaseUrl: string | null;
+    linkedRemoteProfileId: string | null;
+    preferredAccess: CloudVmState['preferredAccess'];
+    allowNoVncFallback: boolean;
+  } {
+    return {
+      provider: config.provider,
+      serverId: config.serverId ?? null,
+      daemonStatus: config.daemonStatus ?? 'unknown',
+      daemonBaseUrl: config.daemonBaseUrl ?? null,
+      linkedRemoteProfileId: config.linkedRemoteProfileId ?? null,
+      preferredAccess: config.preferredAccess ?? 'daemon',
+      allowNoVncFallback: config.allowNoVncFallback ?? true,
+    };
+  }
+
   /**
    * Build noVNC URL with password pre-filled if available
    */
@@ -604,8 +623,7 @@ export class CloudVmManager extends EventEmitter {
         noVncUrl: status === 'running'
           ? this.buildNoVncUrl(tunnelPort, config.vncPassword)
           : null,
-        provider: config.provider,
-        serverId: config.serverId || null,
+        ...this.getHostedWorkspaceStateFromConfig(config),
         lastChecked: new Date().toISOString(),
         error: null,
         tunnelStatus: this.tunnelStatus,

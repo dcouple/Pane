@@ -33,6 +33,21 @@ export async function installElectronApiMock(page: Page) {
       activeBaseUrl: null as string | null,
       lastError: null as string | null,
     };
+    const cloudState = {
+      status: 'not_provisioned' as const,
+      ip: null as string | null,
+      noVncUrl: null as string | null,
+      provider: null as 'gcp' | null,
+      serverId: null as string | null,
+      lastChecked: null as string | null,
+      error: null as string | null,
+      tunnelStatus: 'off' as const,
+      daemonStatus: 'unknown' as const,
+      daemonBaseUrl: null as string | null,
+      linkedRemoteProfileId: null as string | null,
+      preferredAccess: 'daemon' as const,
+      allowNoVncFallback: true,
+    };
     const configState: Record<string, unknown> = {
       remoteDaemon: clone(remoteDaemonConfig),
     };
@@ -123,7 +138,7 @@ export async function installElectronApiMock(page: Page) {
         syncDistinctId: () => undefined,
       }),
       cloud: namespace({
-        getState: () => success({ status: 'idle' }),
+        getState: () => success(clone(cloudState)),
         onStateChanged: subscribe,
         startPolling: () => success(),
         stopPolling: () => success(),

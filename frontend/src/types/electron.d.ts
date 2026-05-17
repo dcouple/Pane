@@ -21,6 +21,7 @@ import type {
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
+import type { CloudVmState } from '../../../shared/types/cloud';
 
 interface LogEntry {
   timestamp: string;
@@ -471,17 +472,6 @@ interface ElectronAPI {
     /** Write `data` over the port without round-tripping through IPC invoke. */
     write: (ptyId: string, data: string) => void;
   };
-}
-
-interface CloudVmState {
-  status: 'off' | 'starting' | 'running' | 'stopping' | 'unknown' | 'initializing' | 'not_provisioned';
-  ip: string | null;
-  noVncUrl: string | null;
-  provider: 'gcp' | null;
-  serverId: string | null;
-  lastChecked: string | null;
-  error: string | null;
-  tunnelStatus: 'off' | 'starting' | 'running' | 'error';
 }
 
 // Additional electron interface for IPC event listeners

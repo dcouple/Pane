@@ -1,8 +1,11 @@
 import { useEffect, useCallback, useState } from 'react';
 import { Play, Square, Loader2, Cloud, Monitor, Terminal } from 'lucide-react';
+import { createDefaultCloudVmState } from '../../../shared/types/cloud';
 import { useCloudStore } from '../stores/cloudStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { panelApi } from '../services/panelApi';
+
+const DEFAULT_CLOUD_STATE = createDefaultCloudVmState();
 
 export function CloudWidget() {
   const { vmState, showCloudView, loading, setVmState, setLoading, setShowCloudView, toggleCloudView } = useCloudStore();
@@ -56,7 +59,7 @@ export function CloudWidget() {
       }
     } catch (err) {
       setVmState({
-        ...(vmState ?? { status: 'unknown', ip: null, noVncUrl: null, provider: null, serverId: null, lastChecked: null, tunnelStatus: 'off' as const }),
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
         error: err instanceof Error ? err.message : 'Failed to start VM',
         status: 'unknown',
       });
@@ -75,7 +78,7 @@ export function CloudWidget() {
       }
     } catch (err) {
       setVmState({
-        ...(vmState ?? { status: 'unknown', ip: null, noVncUrl: null, provider: null, serverId: null, lastChecked: null, tunnelStatus: 'off' as const }),
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
         error: err instanceof Error ? err.message : 'Failed to stop VM',
         status: 'unknown',
       });
@@ -87,7 +90,7 @@ export function CloudWidget() {
   const handleOpenSetupTerminal = useCallback(async () => {
     if (!activeSessionId) {
       setVmState({
-        ...(vmState ?? { status: 'unknown', ip: null, noVncUrl: null, provider: null, serverId: null, lastChecked: null, tunnelStatus: 'off' as const }),
+        ...(vmState ?? DEFAULT_CLOUD_STATE),
         error: 'Select a session first to open the setup terminal',
       });
       return;
