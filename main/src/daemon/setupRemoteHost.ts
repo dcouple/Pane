@@ -462,14 +462,22 @@ function buildHeadlessDaemonCommand(paneDir: string): string {
     if (process.platform === 'win32') {
       return `cd /d ${quoteForWindows(sourceRoot)} && set "PANE_DIR=${paneDir}" && pnpm daemon:headless -- --pane-dir ${quoteForWindows(paneDir)}`;
     }
-    return `cd ${quoteForPosix(sourceRoot)} && PANE_DIR=${quoteForPosix(paneDir)} pnpm daemon:headless -- --pane-dir ${quoteForPosix(paneDir)}`;
+    return `cd ${quoteForPosix(sourceRoot)} && ${buildPosixHeadlessEnvironment(paneDir)} pnpm daemon:headless -- --pane-dir ${quoteForPosix(paneDir)}`;
   }
 
   if (process.platform === 'win32') {
     return `${quoteForWindows(process.execPath)} --daemon-headless --pane-dir ${quoteForWindows(paneDir)}`;
   }
 
-  return `${quoteForPosix(process.execPath)} --daemon-headless --pane-dir ${quoteForPosix(paneDir)}`;
+  return `${buildPosixHeadlessEnvironment(paneDir)} ${quoteForPosix(process.execPath)} --daemon-headless --pane-dir ${quoteForPosix(paneDir)}`;
+}
+
+function buildPosixHeadlessEnvironment(paneDir: string): string {
+  const entries = [`PANE_DIR=${quoteForPosix(paneDir)}`];
+  if (process.platform === 'linux') {
+    entries.push('ELECTRON_OZONE_PLATFORM_HINT=headless');
+  }
+  return entries.join(' ');
 }
 
 function findSourceRoot(startDir: string): string | null {

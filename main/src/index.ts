@@ -1,11 +1,24 @@
 // Load ReadableStream polyfill before any other imports
 import './polyfills/readablestream';
 
+import { hasHeadlessDaemonLaunchArg, hasRemoteSetupLaunchArg } from './utils/runtimeMode';
+
+const launchHeadlessDaemon = hasHeadlessDaemonLaunchArg();
+const launchRemoteSetup = hasRemoteSetupLaunchArg();
+
 // Fix GTK 2/3 and GTK 4 conflict on Linux (Electron 36 issue)
 // This MUST be done before importing electron
 import { app } from 'electron';
+
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('gtk-version', '3');
+
+  if (launchHeadlessDaemon || launchRemoteSetup) {
+    // Best-effort fallback. Packaged no-display Linux launches need
+    // ELECTRON_OZONE_PLATFORM_HINT=headless in the parent environment.
+    app.commandLine.appendSwitch('ozone-platform', 'headless');
+    app.commandLine.appendSwitch('disable-gpu');
+  }
 }
 
 // Force integrated GPU for better battery life on dual-GPU systems
@@ -49,7 +62,6 @@ import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
 import { remotePaneClientController } from './daemon/client/remotePaneClient';
 import { startHeadlessPaneProcess } from './daemon/startHeadless';
 import { runRemoteSetupCli } from './daemon/setupRemoteHostCli';
-import { hasHeadlessDaemonLaunchArg, hasRemoteSetupLaunchArg } from './utils/runtimeMode';
 
 export let mainWindow: BrowserWindow | null = null;
 
@@ -173,8 +185,6 @@ const originalWarn: typeof console.warn = console.warn;
 const originalInfo: typeof console.info = console.info;
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && !app.isPackaged;
-const launchHeadlessDaemon = hasHeadlessDaemonLaunchArg();
-const launchRemoteSetup = hasRemoteSetupLaunchArg();
 
 // Reset debug log files at startup in development mode
 if (!launchHeadlessDaemon && !launchRemoteSetup && isDevelopment) {
