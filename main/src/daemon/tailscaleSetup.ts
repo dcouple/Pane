@@ -1,5 +1,5 @@
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readSync } from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -104,6 +104,38 @@ export function runTailscaleUpInteractive(command: ResolvedCommand): void {
   }
 }
 
+export function runTailscaleServeInteractive(command: ResolvedCommand, port: number): CommandResult {
+  const target = `http://127.0.0.1:${port}`;
+  let serve = runCommand(command, ['serve', '--bg', target]);
+  if (serve.ok) {
+    return serve;
+  }
+
+  let output = firstNonEmpty(serve.stderr, serve.stdout, 'unknown error');
+  if (isTailscaleServeDisabled(output) && waitForTailscaleServeEnablement(output)) {
+    serve = runCommand(command, ['serve', '--bg', target]);
+    if (serve.ok) {
+      return serve;
+    }
+    output = firstNonEmpty(serve.stderr, serve.stdout, 'unknown error');
+  }
+
+  if (process.platform === 'linux' && isTailscaleServePermissionDenied(output)) {
+    console.log('Pane remote setup: Tailscale Serve needs elevated permission; running sudo tailscale serve...');
+    const sudoServe = runCommandInteractive('sudo', [command.command, 'serve', '--bg', target], { timeoutMs: 300000 });
+    if (sudoServe.ok) {
+      return sudoServe;
+    }
+    return {
+      ok: false,
+      stdout: sudoServe.stdout,
+      stderr: firstNonEmpty(sudoServe.stderr, output),
+    };
+  }
+
+  return serve;
+}
+
 export function runCommand(
   command: string | ResolvedCommand,
   args: string[],
@@ -188,6 +220,23 @@ export function getTailscaleSetupInstructions(): string {
     default:
       return 'Install Tailscale from https://tailscale.com/download, sign in, then run setup again.';
   }
+}
+
+export function getTailscaleServeSetupInstructions(port?: number): string {
+  const target = port ? ` http://127.0.0.1:${port}` : '';
+  if (process.platform === 'linux') {
+    return [
+      'Tailscale is installed and authenticated, but Pane could not configure Tailscale Serve.',
+      `If Serve is disabled, enable it from the Tailscale URL above and run setup again.`,
+      `If Serve needs elevated permission, run "sudo tailscale serve --bg${target}".`,
+      'To avoid sudo for future Serve changes, run "sudo tailscale set --operator=$USER" once.',
+    ].join(' ');
+  }
+
+  return [
+    'Tailscale is installed and authenticated, but Pane could not configure Tailscale Serve.',
+    'If Serve is disabled, enable it from the Tailscale URL above and run setup again.',
+  ].join(' ');
 }
 
 function resolveMacTailscaleAppCommand(): ResolvedCommand | null {
@@ -390,6 +439,38 @@ function buildTailscaleInstallError(installAttempt: InstallAttempt): string {
   lines.push('');
   lines.push(getTailscaleSetupInstructions());
   return lines.join('\n');
+}
+
+function isTailscaleServeDisabled(output: string): boolean {
+  return output.toLowerCase().includes('serve is not enabled on your tailnet');
+}
+
+function isTailscaleServePermissionDenied(output: string): boolean {
+  const normalized = output.toLowerCase();
+  return normalized.includes('serve config denied')
+    || normalized.includes('access denied');
+}
+
+function waitForTailscaleServeEnablement(output: string): boolean {
+  console.error(`Tailscale Serve setup needs one-time tailnet enablement:\n${output.trim()}`);
+  if (!process.stdin.isTTY) {
+    return false;
+  }
+
+  process.stdout.write('\nEnable Tailscale Serve in the opened page, then press Enter to continue...');
+  const buffer = Buffer.alloc(1);
+  while (true) {
+    try {
+      const bytesRead = readSync(0, buffer, 0, 1, null);
+      if (bytesRead === 0 || buffer[0] === 10 || buffer[0] === 13) {
+        process.stdout.write('\n');
+        return true;
+      }
+    } catch {
+      process.stdout.write('\n');
+      return false;
+    }
+  }
 }
 
 function commandExists(command: string): boolean {

@@ -20,15 +20,18 @@ import {
 } from './remotePairing';
 import {
   buildTailscaleServeCommand,
+  getTailscaleServeSetupInstructions,
   getTailscaleSetupInstructions,
   installTailscaleCommandOrThrow,
   resolveTailscaleCommand,
   runCommand as runTailscaleCommand,
+  runTailscaleServeInteractive,
   type ResolvedCommand,
 } from './tailscaleSetup';
 
 export interface SetupRemoteHostOptions extends Omit<RemoteHostSetupRequest, 'dataDirectoryMode'> {
   printOnly?: boolean;
+  interactiveTailscaleSetup?: boolean;
   existingConfig?: unknown;
   writeConfig?: (config: Record<string, unknown>) => Promise<void>;
 }
@@ -66,6 +69,7 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
     preferTunnel: options.preferTunnel ?? DEFAULT_TUNNEL_PREFERENCE,
     exposeTailscale: options.exposeTailscale !== false,
     printOnly: options.printOnly === true,
+    interactiveTailscaleSetup: options.interactiveTailscaleSetup === true,
     manualBaseUrl: options.baseUrl,
   });
   const pair = createRemoteDaemonConnectionPair({
@@ -224,6 +228,7 @@ function selectTunnel(options: {
   preferTunnel: RemoteSetupTunnelPreference;
   exposeTailscale: boolean;
   printOnly: boolean;
+  interactiveTailscaleSetup: boolean;
   manualBaseUrl?: string;
 }): TunnelSelection {
   const sshCommand = buildSshForwardCommand(options.listenPort);
@@ -266,6 +271,7 @@ function selectTunnel(options: {
       listenPort: options.listenPort,
       exposeTailscale: options.exposeTailscale,
       printOnly: options.printOnly,
+      interactiveTailscaleSetup: options.interactiveTailscaleSetup,
       tailscaleCli: initialTailscaleCli,
       tailscaleCommand,
       fallbackCommands: [sshCommand, tailscaleCommand],
@@ -279,6 +285,7 @@ function selectTailscaleTunnel(options: {
   listenPort: number;
   exposeTailscale: boolean;
   printOnly: boolean;
+  interactiveTailscaleSetup: boolean;
   tailscaleCli: ResolvedCommand | null;
   tailscaleCommand: string;
   fallbackCommands: string[];
@@ -294,9 +301,14 @@ function selectTailscaleTunnel(options: {
   const tailscaleCli = options.tailscaleCli ?? installTailscaleCommandOrThrow();
   const tailscaleCommand = buildTailscaleServeCommand(tailscaleCli, options.listenPort);
 
-  const tailscaleServe = runTailscaleCommand(tailscaleCli, ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
+  const tailscaleServe = options.interactiveTailscaleSetup
+    ? runTailscaleServeInteractive(tailscaleCli, options.listenPort)
+    : runTailscaleCommand(tailscaleCli, ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
   if (!tailscaleServe.ok) {
-    throw new Error(`Tailscale Serve setup failed: ${firstNonEmpty(tailscaleServe.stderr, tailscaleServe.stdout, 'unknown error')}\n\n${getTailscaleSetupInstructions()}`);
+    const instructions = options.interactiveTailscaleSetup
+      ? getTailscaleServeSetupInstructions(options.listenPort)
+      : getTailscaleSetupInstructions();
+    throw new Error(`Tailscale Serve setup failed: ${firstNonEmpty(tailscaleServe.stderr, tailscaleServe.stdout, 'unknown error')}\n\n${instructions}`);
   }
 
   const serveStatus = runTailscaleCommand(tailscaleCli, ['serve', 'status']);

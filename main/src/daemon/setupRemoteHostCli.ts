@@ -30,7 +30,10 @@ export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<n
       console.log('Pane remote setup: configuring Pane remote daemon...');
     }
 
-    const result = await setupRemoteHost(options);
+    const result = await setupRemoteHost({
+      ...options,
+      interactiveTailscaleSetup,
+    });
     console.log(formatSetupRemoteHostResult(result));
     return 0;
   } catch (error) {

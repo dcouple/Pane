@@ -107,6 +107,59 @@ describe('setupRemoteHost', () => {
     }
   });
 
+  it('uses sudo for Tailscale Serve permission errors during interactive Linux setup', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-tailscale-sudo-'));
+    try {
+      spawnSyncMock.mockImplementation((command: string, args: string[]) => {
+        if (command === 'tailscale' && args[0] === 'version') {
+          return commandResult({ status: 0, stdout: '1.80.0\n' });
+        }
+        if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
+          return commandResult({
+            status: 1,
+            stderr: [
+              'sending serve config: Access denied: serve config denied',
+              '',
+              'Use \'sudo tailscale serve --bg http://127.0.0.1:42137\'.',
+              'To not require root, use \'sudo tailscale set --operator=$USER\' once.',
+            ].join('\n'),
+          });
+        }
+        if (command === 'sudo' && args[0] === 'tailscale' && args[1] === 'serve' && args[2] === '--bg') {
+          return commandResult({ status: 0 });
+        }
+        if (command === 'tailscale' && args[0] === 'serve' && args[1] === 'status') {
+          return commandResult({
+            status: 0,
+            stdout: 'https://wsl-host.tailnet.ts.net proxy http://127.0.0.1:42137\n',
+          });
+        }
+
+        return missingCommandResult(command);
+      });
+
+      const result = await setupRemoteHost({
+        paneDir,
+        label: 'WSL',
+        installService: false,
+        interactiveTailscaleSetup: true,
+      });
+
+      expect(result.tunnel?.kind).toBe('tailscale');
+      expect(spawnSyncMock).toHaveBeenCalledWith('sudo', [
+        'tailscale',
+        'serve',
+        '--bg',
+        'http://127.0.0.1:42137',
+      ], expect.objectContaining({
+        stdio: 'inherit',
+      }));
+    } finally {
+      await fs.rm(paneDir, { recursive: true, force: true });
+    }
+  });
+
   it('installs Tailscale with Homebrew on macOS before configuring Serve', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-brew-tailscale-'));

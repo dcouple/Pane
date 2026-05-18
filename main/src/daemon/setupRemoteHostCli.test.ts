@@ -79,6 +79,7 @@ describe('runRemoteSetupCli', () => {
       listenPort: 42139,
       preferTunnel: 'tailscale',
       installService: false,
+      interactiveTailscaleSetup: true,
     }));
     expect(formatSetupRemoteHostResult).toHaveBeenCalledOnce();
   });
