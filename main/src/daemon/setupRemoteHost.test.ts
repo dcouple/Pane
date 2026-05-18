@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -230,6 +231,43 @@ describe('setupRemoteHost', () => {
     expect(payload.tunnel?.kind).toBe('ssh');
     expect(payload.tunnel?.command).toContain('ssh -N -L 42137:127.0.0.1:42137');
     expect(spawnSyncMock).not.toHaveBeenCalled();
+  });
+
+  it('selects the next available loopback port when requested', async () => {
+    const server = net.createServer();
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected test server to listen on a TCP port');
+    }
+
+    try {
+      const result = await setupRemoteHost({
+        printOnly: true,
+        preferTunnel: 'ssh',
+        installService: false,
+        listenPort: address.port,
+        autoSelectListenPort: true,
+      });
+
+      expect(result.listenPort).toBeGreaterThan(address.port);
+      expect(result.tunnel?.command).toContain(`${result.listenPort}:127.0.0.1:${result.listenPort}`);
+      expect(result.connectionCode).toContain('pane-remote://');
+      expect(spawnSyncMock).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      });
+    }
   });
 
   it('requires a manual HTTPS base URL when manual mode is selected', async () => {

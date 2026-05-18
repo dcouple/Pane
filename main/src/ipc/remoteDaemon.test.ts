@@ -262,6 +262,7 @@ describe('remote daemon IPC', () => {
       },
     });
     expect(response.data?.command).toContain('--interactive-tailscale-setup');
+    expect(response.data?.command).toContain('--auto-listen-port');
     expect(response.data?.command).toContain('--prefer-tunnel');
     expect(response.data?.command).toContain('--pane-dir');
     expect(response.data?.command).toContain('--label');

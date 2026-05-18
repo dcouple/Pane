@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import fs from 'fs/promises';
+import net from 'net';
 import os from 'os';
 import path from 'path';
 import {
@@ -32,6 +33,7 @@ import {
 export interface SetupRemoteHostOptions extends Omit<RemoteHostSetupRequest, 'dataDirectoryMode'> {
   printOnly?: boolean;
   interactiveTailscaleSetup?: boolean;
+  autoSelectListenPort?: boolean;
   existingConfig?: unknown;
   writeConfig?: (config: Record<string, unknown>) => Promise<void>;
 }
@@ -60,7 +62,10 @@ const DEFAULT_TUNNEL_PREFERENCE: RemoteSetupTunnelPreference = 'tailscale';
 export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Promise<SetupRemoteHostResult> {
   const paneDir = path.resolve(options.paneDir ?? process.env.PANE_DIR ?? path.join(os.homedir(), DEFAULT_REMOTE_PANE_DIR));
   const configPath = path.join(paneDir, 'config.json');
-  const listenPort = normalizePort(options.listenPort ?? DEFAULT_REMOTE_DAEMON_HOST_CONFIG.listenPort);
+  const preferredListenPort = normalizePort(options.listenPort ?? DEFAULT_REMOTE_DAEMON_HOST_CONFIG.listenPort);
+  const listenPort = options.autoSelectListenPort === true
+    ? await findAvailableLoopbackPort(preferredListenPort)
+    : preferredListenPort;
   const label = normalizeLabel(options.label);
   const channel = options.channel ?? 'stable';
   const manualDaemonCommand = buildHeadlessDaemonCommand(paneDir);
@@ -586,6 +591,60 @@ function normalizePort(value: number): number {
     throw new Error('Remote daemon listen port must be between 1 and 65535');
   }
   return value;
+}
+
+async function findAvailableLoopbackPort(preferredPort: number): Promise<number> {
+  const maxAttempts = 100;
+  for (let offset = 0; offset < maxAttempts; offset += 1) {
+    const port = preferredPort + offset;
+    if (port > 65535) {
+      break;
+    }
+    if (await isLoopbackPortAvailable(port)) {
+      return port;
+    }
+  }
+
+  throw new Error(`Could not find an available remote daemon port starting at ${preferredPort}`);
+}
+
+function isLoopbackPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    let settled = false;
+
+    const cleanup = () => {
+      server.removeAllListeners();
+    };
+    const resolveOnce = (value: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    server.once('error', (error) => {
+      if (isNodeErrorWithCode(error, 'EADDRINUSE') || isNodeErrorWithCode(error, 'EACCES')) {
+        resolveOnce(false);
+        return;
+      }
+      cleanup();
+      reject(error);
+    });
+    server.once('listening', () => {
+      server.close((error) => {
+        if (error) {
+          cleanup();
+          reject(error);
+          return;
+        }
+        resolveOnce(true);
+      });
+    });
+    server.listen(port, '127.0.0.1');
+  });
 }
 
 function runCommand(

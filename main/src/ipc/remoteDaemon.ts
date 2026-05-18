@@ -497,6 +497,7 @@ function buildInteractiveSetupCommand(
   const useCurrentDataDirectory = dataDirectoryMode === 'current';
   const args = [
     '--interactive-tailscale-setup',
+    '--auto-listen-port',
     '--prefer-tunnel',
     request.preferTunnel ?? 'tailscale',
   ];
