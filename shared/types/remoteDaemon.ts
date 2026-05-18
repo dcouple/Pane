@@ -86,6 +86,10 @@ export interface RemoteHostSetupResult {
   wroteConfig: boolean;
 }
 
+export interface RemoteHostSetupTerminalCommandResult {
+  command: string;
+}
+
 export interface RemoteDaemonImportResult {
   profile: RemotePaneConnectionProfile;
   connected: boolean;

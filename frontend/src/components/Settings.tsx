@@ -11,6 +11,7 @@ import {
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
   type RemoteDaemonHostConfig,
+  type RemoteHostSetupRequest,
   type RemoteHostSetupResult,
   type RemoteSetupDataDirectoryMode,
   type RemoteSetupTunnelPreference,
@@ -18,7 +19,10 @@ import {
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
 import { useConfigStore } from '../stores/configStore';
+import { useNavigationStore } from '../stores/navigationStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
+import { panelApi } from '../services/panelApi';
 import {
   Settings as SettingsIcon,
   Palette,
@@ -120,6 +124,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteImportedProfileBaseUrl, setRemoteImportedProfileBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
   const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteSetupTerminalBusy, setRemoteSetupTerminalBusy] = useState(false);
   const [remoteSetupDataMode, setRemoteSetupDataMode] = useState<RemoteSetupDataDirectoryMode>('current');
   const [remoteSetupLabel, setRemoteSetupLabel] = useState('');
   const [remoteSetupListenPort, setRemoteSetupListenPort] = useState(42137);
@@ -134,6 +139,14 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
   const { fetchConfig: refreshConfigStore } = useConfigStore();
+  const activeProjectId = useNavigationStore((state) => state.activeProjectId);
+  const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
+  const activeSessionProjectId = useSessionStore((state) => {
+    const activeSession = state.sessions.find((session) => session.id === state.activeSessionId)
+      ?? state.activeMainRepoSession;
+    return activeSession?.projectId ?? null;
+  });
+  const setActiveSession = useSessionStore((state) => state.setActiveSession);
 
   const refreshRemoteDaemonSettings = useCallback(async () => {
     const [configResponse, connectionStateResponse] = await Promise.all([
@@ -341,24 +354,26 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     });
   };
 
+  const buildRemoteHostSetupRequest = (): RemoteHostSetupRequest => ({
+    dataDirectoryMode: remoteSetupDataMode,
+    label: remoteSetupLabel,
+    listenPort: remoteSetupListenPort,
+    paneDir: remoteSetupDataMode === 'isolated' && remoteSetupPaneDir.trim().length > 0
+      ? remoteSetupPaneDir
+      : undefined,
+    preferTunnel: remoteSetupTunnelPreference,
+    baseUrl: remoteSetupTunnelPreference === 'manual' && remoteSetupManualBaseUrl.trim().length > 0
+      ? remoteSetupManualBaseUrl
+      : undefined,
+    installService: remoteSetupDataMode === 'isolated' ? remoteSetupInstallService : false,
+  });
+
   const handleSetupRemoteHost = async () => {
     await runRemoteDaemonAction(async () => {
       setRemoteSetupResult(null);
       setRemoteSetupCopyResult(null);
       setRemoteSetupError(null);
-      const response = await API.remoteDaemon.setupHost({
-        dataDirectoryMode: remoteSetupDataMode,
-        label: remoteSetupLabel,
-        listenPort: remoteSetupListenPort,
-        paneDir: remoteSetupDataMode === 'isolated' && remoteSetupPaneDir.trim().length > 0
-          ? remoteSetupPaneDir
-          : undefined,
-        preferTunnel: remoteSetupTunnelPreference,
-        baseUrl: remoteSetupTunnelPreference === 'manual' && remoteSetupManualBaseUrl.trim().length > 0
-          ? remoteSetupManualBaseUrl
-          : undefined,
-        installService: remoteSetupDataMode === 'isolated' ? remoteSetupInstallService : false,
-      });
+      const response = await API.remoteDaemon.setupHost(buildRemoteHostSetupRequest());
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to set up this machine as a remote');
       }
@@ -369,6 +384,52 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       onError: setRemoteSetupError,
       mirrorErrorToGlobal: false,
     });
+  };
+
+  const handleOpenRemoteSetupTerminal = async () => {
+    const projectId = activeProjectId ?? activeSessionProjectId;
+    if (!projectId) {
+      setRemoteSetupError('Select a project before opening a setup terminal.');
+      return;
+    }
+
+    setRemoteSetupTerminalBusy(true);
+    setRemoteSetupError(null);
+    setRemoteSetupResult(null);
+    setRemoteSetupCopyResult(null);
+
+    try {
+      const commandResponse = await API.remoteDaemon.getInteractiveSetupCommand(buildRemoteHostSetupRequest());
+      if (!commandResponse.success || !commandResponse.data?.command) {
+        throw new Error(commandResponse.error || 'Failed to prepare the remote setup command');
+      }
+
+      const sessionResponse = await API.sessions.getOrCreateMainRepoSession(projectId);
+      if (!sessionResponse.success || !sessionResponse.data?.id) {
+        throw new Error(sessionResponse.error || 'Failed to open a project terminal');
+      }
+
+      const sessionId = sessionResponse.data.id as string;
+      const panel = await panelApi.createPanel({
+        sessionId,
+        type: 'terminal',
+        title: 'Tailscale Setup',
+        initialState: {
+          customState: {
+            initialCommand: commandResponse.data.command,
+          },
+        },
+      });
+
+      await panelApi.setActivePanel(sessionId, panel.id);
+      await setActiveSession(sessionId);
+      navigateToSessions();
+      onClose();
+    } catch (err) {
+      setRemoteSetupError(err instanceof Error ? err.message : 'Failed to open setup terminal');
+    } finally {
+      setRemoteSetupTerminalBusy(false);
+    }
   };
 
   const handleCopyRemoteSetupConnectionCode = async () => {
@@ -702,7 +763,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 {remoteSetupTunnelPreference === 'tailscale' && (
                   <p className="text-xs text-text-tertiary">
-                    Pane will install Tailscale with the platform package manager if needed, then configure Tailscale Serve for this daemon.
+                    Pane can install Tailscale, open the login flow in a terminal, and then configure Tailscale Serve for this daemon.
                   </p>
                 )}
 
@@ -746,15 +807,29 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       <p className="text-sm whitespace-pre-line">{remoteSetupError}</p>
                     </div>
                     {remoteSetupError.toLowerCase().includes('tailscale') && (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        icon={<ExternalLink className="w-4 h-4" />}
-                        onClick={() => window.electronAPI.openExternal('https://tailscale.com/download')}
-                      >
-                        Open Tailscale Download
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          icon={<Terminal className="w-4 h-4" />}
+                          onClick={handleOpenRemoteSetupTerminal}
+                          disabled={remoteSetupTerminalBusy}
+                          loading={remoteSetupTerminalBusy}
+                          loadingText="Opening"
+                        >
+                          Open in Pane Terminal and Run Setup
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          icon={<ExternalLink className="w-4 h-4" />}
+                          onClick={() => window.electronAPI.openExternal('https://tailscale.com/download')}
+                        >
+                          Open Tailscale Download
+                        </Button>
+                      </div>
                     )}
                   </div>
                 )}

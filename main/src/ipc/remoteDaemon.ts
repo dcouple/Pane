@@ -13,23 +13,33 @@ import {
   type RemoteDaemonImportResult,
   type RemoteHostSetupRequest,
   type RemoteHostSetupResult,
+  type RemoteHostSetupTerminalCommandResult,
   type RemoteSetupChannel,
   type RemoteSetupDataDirectoryMode,
   type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
+import path from 'path';
 import type { AppServices } from './types';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { createRemoteDaemonConnectionPair } from '../daemon/remotePairing';
 import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { getAppDirectory } from '../utils/appDirectory';
+import { ShellDetector } from '../utils/shellDetector';
 
 interface IpcMainHandleLike {
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
 }
 
+interface RemoteDaemonHandlerServices {
+  app?: Pick<AppServices['app'], 'isPackaged'>;
+  configManager: Pick<AppServices['configManager'], 'getConfig' | 'updateConfig'> & {
+    getPreferredShell?: () => string;
+  };
+}
+
 export function registerRemoteDaemonHandlers(
   ipcMain: IpcMainHandleLike,
-  { configManager }: Pick<AppServices, 'configManager'>,
+  { configManager, app }: RemoteDaemonHandlerServices,
 ): void {
   ipcMain.handle('remote-daemon:get-config', async () => {
     try {
@@ -44,6 +54,22 @@ export function registerRemoteDaemonHandlers(
       return { success: true, data: remotePaneClientController.getConnectionState() };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon connection state') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:get-interactive-setup-command', async (_event, input: unknown) => {
+    try {
+      const request = parseRemoteHostSetupRequest(input);
+      const shellName = process.platform === 'win32'
+        ? ShellDetector.getDefaultShell(configManager.getPreferredShell?.()).name
+        : undefined;
+      const command = buildInteractiveSetupCommand(request, app?.isPackaged === true, shellName);
+      return {
+        success: true,
+        data: { command } satisfies RemoteHostSetupTerminalCommandResult,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to build remote setup command') };
     }
   });
 
@@ -444,6 +470,56 @@ function parseRemoteHostSetupRequest(input: unknown): RemoteHostSetupRequest {
   return request;
 }
 
+function buildInteractiveSetupCommand(
+  request: RemoteHostSetupRequest,
+  isPackaged: boolean,
+  shellName?: string,
+): string {
+  const dataDirectoryMode = request.dataDirectoryMode ?? 'current';
+  const useCurrentDataDirectory = dataDirectoryMode === 'current';
+  const args = [
+    '--interactive-tailscale-setup',
+    '--prefer-tunnel',
+    request.preferTunnel ?? 'tailscale',
+  ];
+
+  const paneDir = useCurrentDataDirectory ? getAppDirectory() : request.paneDir;
+  if (paneDir) {
+    args.push('--pane-dir', paneDir);
+  }
+  if (request.label) {
+    args.push('--label', request.label);
+  }
+  if (request.listenPort !== undefined) {
+    args.push('--listen-port', String(request.listenPort));
+  }
+  if (request.channel) {
+    args.push('--channel', request.channel);
+  }
+  if (request.repoRef) {
+    args.push('--repo-ref', request.repoRef);
+  }
+  if (request.baseUrl) {
+    args.push('--base-url', request.baseUrl);
+  }
+  if (request.exposeTailscale === false) {
+    args.push('--no-tailscale-serve');
+  }
+  if (useCurrentDataDirectory || request.installService === false) {
+    args.push('--no-install-service');
+  }
+
+  const quotedArgs = args.map((arg) => quoteTerminalArg(arg, shellName)).join(' ');
+  if (isPackaged) {
+    const executable = quoteTerminalArg(process.execPath, shellName);
+    const invokePrefix = shellName === 'powershell' || shellName === 'pwsh' ? '& ' : '';
+    return `${invokePrefix}${executable} --remote-setup ${quotedArgs}`;
+  }
+
+  const setupScript = path.resolve(process.cwd(), 'scripts', 'pane-remote-setup.js');
+  return `node ${quoteTerminalArg(setupScript, shellName)} ${quotedArgs}`;
+}
+
 function readOptionalTrimmedString(value: unknown): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
@@ -453,6 +529,14 @@ function readOptionalTrimmedString(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function quoteTerminalArg(value: string, shellName?: string): string {
+  if (process.platform === 'win32' && shellName !== 'gitbash') {
+    return `"${value.replace(/"/g, '\\"')}"`;
+  }
+
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function readOptionalPort(value: unknown): number | undefined {

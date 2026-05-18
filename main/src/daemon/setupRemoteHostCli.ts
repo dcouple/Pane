@@ -3,6 +3,10 @@ import {
   setupRemoteHost,
   type SetupRemoteHostOptions,
 } from './setupRemoteHost';
+import {
+  ensureTailscaleInstalledInteractive,
+  runTailscaleUpInteractive,
+} from './tailscaleSetup';
 import type {
   RemoteSetupChannel,
   RemoteSetupTunnelPreference,
@@ -15,7 +19,17 @@ export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<n
       return 0;
     }
 
+    const interactiveTailscaleSetup = hasFlag(args, '--interactive-tailscale-setup');
     const options = parseSetupRemoteHostArgs(args);
+
+    if (interactiveTailscaleSetup) {
+      console.log('Pane remote setup: preparing Tailscale...');
+      const tailscaleCommand = ensureTailscaleInstalledInteractive();
+      console.log('Pane remote setup: opening Tailscale login if needed...');
+      runTailscaleUpInteractive(tailscaleCommand);
+      console.log('Pane remote setup: configuring Pane remote daemon...');
+    }
+
     const result = await setupRemoteHost(options);
     console.log(formatSetupRemoteHostResult(result));
     return 0;
@@ -36,6 +50,7 @@ function parseSetupRemoteHostArgs(args: string[]): SetupRemoteHostOptions {
     listenPort: listenPortValue ? Number.parseInt(listenPortValue, 10) : undefined,
     channel,
     repoRef: readArgValue(args, '--repo-ref'),
+    baseUrl: readArgValue(args, '--base-url'),
     printOnly: hasFlag(args, '--print-only'),
     installService: !hasFlag(args, '--no-install-service'),
     exposeTailscale: !hasFlag(args, '--no-tailscale-serve'),
@@ -99,7 +114,9 @@ function getUsageText(): string {
     '  --listen-port <port>          Loopback daemon port (default: 42137)',
     '  --channel <stable|nightly>    Release channel metadata for website bootstrap validation',
     '  --repo-ref <ref>              Source ref metadata for validation builds',
+    '  --base-url <url>              Manual HTTPS base URL when using --prefer-tunnel manual',
     '  --prefer-tunnel <mode>        tailscale, ssh, manual, or legacy auto (default: tailscale)',
+    '  --interactive-tailscale-setup Install Tailscale if needed, run tailscale up interactively, then finish setup',
     '  --no-install-service          Write config and print manual daemon command without installing startup service',
     '  --no-tailscale-serve          Do not attempt to install or configure Tailscale Serve',
     '  --print-only                  Validate output without writing config, installing service, or configuring tunnels; incompatible with default Tailscale setup',

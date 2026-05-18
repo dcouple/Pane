@@ -236,6 +236,34 @@ describe('remote daemon IPC', () => {
     expect(configManager.getConfig().remoteDaemon).toEqual(createDefaultRemoteDaemonConfig());
   });
 
+  it('builds an interactive Tailscale setup command for the current Pane data directory', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager, app: { isPackaged: false } });
+
+    const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-setup-command');
+    const response = await getCommand?.({}, {
+      label: 'Windows WSL Smoke',
+      listenPort: 42139,
+      preferTunnel: 'tailscale',
+    }) as { success?: boolean; data?: { command?: string } };
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        command: expect.stringContaining('scripts/pane-remote-setup.js'),
+      },
+    });
+    expect(response.data?.command).toContain('--interactive-tailscale-setup');
+    expect(response.data?.command).toContain('--prefer-tunnel');
+    expect(response.data?.command).toContain('--pane-dir');
+    expect(response.data?.command).toContain('--label');
+    expect(response.data?.command).toContain('--listen-port');
+    expect(response.data?.command).toContain('--no-install-service');
+    expect(response.data?.command).toContain('Windows WSL Smoke');
+  });
+
   it('allows isolated remote host setup with service install enabled', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();

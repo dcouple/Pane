@@ -310,6 +310,9 @@ export async function installElectronApiMock(page: Page) {
             wroteConfig: true,
           });
         },
+        getInteractiveSetupCommand: () => success({
+          command: 'node scripts/pane-remote-setup.js --interactive-tailscale-setup',
+        }),
         createConnectionPair: (input: { label?: string; baseUrl?: string }) => {
           const id = `remote-${nextRemoteConnectionId++}`;
           const label = input.label ?? 'Remote host';
