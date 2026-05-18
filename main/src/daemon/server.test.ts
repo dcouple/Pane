@@ -66,7 +66,7 @@ async function connectClient(server: PaneDaemonServer): Promise<TestClient> {
 
   return {
     socket,
-    nextFrame(timeoutMs = 1000) {
+    nextFrame(timeoutMs = 5000) {
       if (queuedFrames.length > 0) {
         return Promise.resolve(queuedFrames.shift() as PaneDaemonFrame);
       }

@@ -54,6 +54,18 @@ async function openSettings(page: Page) {
   await expect(page.getByText('Pane Settings')).toBeVisible({ timeout: 5000 });
 }
 
+async function openRemotePaneSettings(page: Page) {
+  const remotePaneSectionButton = page.getByRole('button', { name: /Advanced Remote Pane/i });
+  await expect(remotePaneSectionButton).toBeVisible({ timeout: 5000 });
+  await clickDomNode(remotePaneSectionButton);
+}
+
+async function openAdvancedRemoteSetup(page: Page) {
+  const advancedRemoteSetupButton = page.getByRole('button', { name: /Advanced Remote Setup/i });
+  await expect(advancedRemoteSetupButton).toBeVisible({ timeout: 5000 });
+  await clickDomNode(advancedRemoteSetupButton);
+}
+
 test.describe('Smoke Tests', () => {
   test('Application should start successfully', async ({ page }) => {
     // Navigate to the app
@@ -101,31 +113,27 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await openSettings(page);
-    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
-    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
-    await clickDomNode(remoteDaemonSectionButton);
+    await openRemotePaneSettings(page);
+    await openAdvancedRemoteSetup(page);
 
-    await expect(page.getByText('Local mode')).toBeVisible();
-    await expect(page.getByText(/Status: local/i)).toBeVisible();
+    await expect(page.getByText('Using local runtime').first()).toBeVisible();
 
     await setInputValue(page.getByLabel('Connection Label', { exact: true }), 'Office Mac mini');
     await setInputValue(page.getByLabel('Remote Base URL', { exact: true }), 'http://127.0.0.1:42137');
     await clickDomNode(page.getByRole('button', { name: 'Create Paired Profile' }));
 
     await expect(page.getByText('Latest generated remote token')).toBeVisible();
-    await expect(page.getByText('Office Mac mini')).toBeVisible();
+    await expect(page.getByText('Office Mac mini').first()).toBeVisible();
 
-    await clickDomNode(page.getByRole('button', { name: 'Connect', exact: true }));
+    await clickDomNode(page.getByRole('button', { name: 'Connect', exact: true }).first());
 
-    await expect(page.getByText('Remote mode')).toBeVisible();
-    await expect(page.getByText(/Status: connected via Office Mac mini/i)).toBeVisible();
+    await expect(page.getByText('Connected to Office Mac mini').first()).toBeVisible();
 
-    const useLocalRuntimeButton = page.getByRole('button', { name: 'Use Local Runtime' });
+    const useLocalRuntimeButton = page.getByRole('button', { name: 'Use Local Runtime' }).first();
     await expect(useLocalRuntimeButton).toBeEnabled();
     await clickDomNode(useLocalRuntimeButton);
 
-    await expect(page.getByText('Local mode')).toBeVisible();
-    await expect(page.getByText(/Status: local/i)).toBeVisible();
+    await expect(page.getByText('Using local runtime').first()).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
@@ -135,16 +143,15 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await openSettings(page);
-    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
-    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
-    await clickDomNode(remoteDaemonSectionButton);
+    await openRemotePaneSettings(page);
+    await openAdvancedRemoteSetup(page);
 
     await setInputValue(page.getByLabel('Existing Profile Label'), 'Tunnel from laptop');
     await setInputValue(page.getByLabel('Existing Remote Base URL'), 'http://127.0.0.1:42137');
     await setInputValue(page.getByLabel('Existing Remote Token'), 'shared-host-token');
     await clickDomNode(page.getByRole('button', { name: 'Save Remote Profile' }));
 
-    await expect(page.getByText('Tunnel from laptop')).toBeVisible();
+    await expect(page.getByText('Tunnel from laptop').first()).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
@@ -161,9 +168,8 @@ test.describe('Smoke Tests', () => {
     });
 
     await openSettings(page);
-    const remoteDaemonSectionButton = page.getByRole('button', { name: /Self-Hosted Remote Daemon/i });
-    await expect(remoteDaemonSectionButton).toBeVisible({ timeout: 5000 });
-    await clickDomNode(remoteDaemonSectionButton);
+    await openRemotePaneSettings(page);
+    await openAdvancedRemoteSetup(page);
 
     await expect(page.getByLabel('Existing Remote Base URL')).toHaveValue('http://[::1]:42137');
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
