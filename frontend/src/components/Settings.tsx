@@ -129,6 +129,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteSetupInstallService, setRemoteSetupInstallService] = useState(true);
   const [remoteSetupResult, setRemoteSetupResult] = useState<RemoteHostSetupResult | null>(null);
   const [remoteSetupCopyResult, setRemoteSetupCopyResult] = useState<string | null>(null);
+  const [remoteSetupError, setRemoteSetupError] = useState<string | null>(null);
   const fontsLoadedForOpenRef = useRef(false);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
@@ -305,7 +306,13 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     };
   }, [isOpen]);
 
-  const runRemoteDaemonAction = async (action: () => Promise<void>) => {
+  const runRemoteDaemonAction = async (
+    action: () => Promise<void>,
+    options: {
+      onError?: (message: string) => void;
+      mirrorErrorToGlobal?: boolean;
+    } = {},
+  ) => {
     setRemoteBusy(true);
     setError(null);
     try {
@@ -315,7 +322,11 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         refreshConfigStore(),
       ]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Remote daemon action failed');
+      const message = err instanceof Error ? err.message : 'Remote daemon action failed';
+      options.onError?.(message);
+      if (options.mirrorErrorToGlobal !== false) {
+        setError(message);
+      }
     } finally {
       setRemoteBusy(false);
     }
@@ -334,6 +345,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     await runRemoteDaemonAction(async () => {
       setRemoteSetupResult(null);
       setRemoteSetupCopyResult(null);
+      setRemoteSetupError(null);
       const response = await API.remoteDaemon.setupHost({
         dataDirectoryMode: remoteSetupDataMode,
         label: remoteSetupLabel,
@@ -353,6 +365,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       setRemoteSetupResult(response.data);
       setRemoteSetupLabel('');
+    }, {
+      onError: setRemoteSetupError,
+      mirrorErrorToGlobal: false,
     });
   };
 
@@ -687,7 +702,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 {remoteSetupTunnelPreference === 'tailscale' && (
                   <p className="text-xs text-text-tertiary">
-                    Pane will configure Tailscale Serve for the local daemon. If Tailscale is not installed or logged in, setup will stop with install instructions.
+                    Pane will install Tailscale with the platform package manager if needed, then configure Tailscale Serve for this daemon.
                   </p>
                 )}
 
@@ -723,6 +738,26 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     {remoteSetupTunnelPreference === 'tailscale' ? 'Set Up Tailscale & Create Code' : 'Create Advanced Code'}
                   </Button>
                 </div>
+
+                {remoteSetupError && (
+                  <div className="p-3 rounded-lg bg-status-error/10 border border-status-error/30 text-status-error space-y-3">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm whitespace-pre-line">{remoteSetupError}</p>
+                    </div>
+                    {remoteSetupError.toLowerCase().includes('tailscale') && (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<ExternalLink className="w-4 h-4" />}
+                        onClick={() => window.electronAPI.openExternal('https://tailscale.com/download')}
+                      >
+                        Open Tailscale Download
+                      </Button>
+                    )}
+                  </div>
+                )}
 
                 {remoteSetupResult && (
                   <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-3">

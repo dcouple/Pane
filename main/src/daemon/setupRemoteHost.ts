@@ -41,6 +41,20 @@ interface CommandResult {
   stderr: string;
 }
 
+interface ResolvedCommand {
+  command: string;
+  displayCommand: string;
+  env?: NodeJS.ProcessEnv;
+}
+
+interface InstallAttempt {
+  attempted: boolean;
+  command: string;
+  stdout: string;
+  stderr: string;
+  reason?: string;
+}
+
 const DEFAULT_REMOTE_PANE_DIR = '.pane_remote';
 const SERVICE_NAME = 'com.dcouple.pane.remote-daemon';
 const WINDOWS_TASK_NAME = 'PaneRemoteDaemon';
@@ -219,8 +233,7 @@ function selectTunnel(options: {
   manualBaseUrl?: string;
 }): TunnelSelection {
   const sshCommand = buildSshForwardCommand(options.listenPort);
-  const tailscaleCommand = `tailscale serve --bg http://127.0.0.1:${options.listenPort}`;
-  const fallbackCommands = [sshCommand, tailscaleCommand];
+  const fallbackCommands = [sshCommand, buildTailscaleServeCommand(null, options.listenPort)];
   const manualBaseUrl = options.manualBaseUrl?.trim();
 
   if (manualBaseUrl) {
@@ -253,12 +266,15 @@ function selectTunnel(options: {
   }
 
   if (options.preferTunnel === 'tailscale' || options.preferTunnel === 'auto') {
+    const initialTailscaleCli = resolveTailscaleCommand();
+    const tailscaleCommand = buildTailscaleServeCommand(initialTailscaleCli, options.listenPort);
     return selectTailscaleTunnel({
       listenPort: options.listenPort,
       exposeTailscale: options.exposeTailscale,
       printOnly: options.printOnly,
+      tailscaleCli: initialTailscaleCli,
       tailscaleCommand,
-      fallbackCommands,
+      fallbackCommands: [sshCommand, tailscaleCommand],
     });
   }
 
@@ -269,6 +285,7 @@ function selectTailscaleTunnel(options: {
   listenPort: number;
   exposeTailscale: boolean;
   printOnly: boolean;
+  tailscaleCli: ResolvedCommand | null;
   tailscaleCommand: string;
   fallbackCommands: string[];
 }): TunnelSelection {
@@ -276,20 +293,19 @@ function selectTailscaleTunnel(options: {
     throw new Error(`Tailscale is required for cross-device remote setup. Remove --no-tailscale-serve or choose SSH Tunnel under advanced options.\n\n${getTailscaleSetupInstructions()}`);
   }
 
-  if (!commandExists('tailscale')) {
-    throw new Error(`Tailscale is required for cross-device remote setup, but the tailscale CLI was not found.\n\n${getTailscaleSetupInstructions()}`);
-  }
-
   if (options.printOnly) {
     throw new Error('Tailscale setup cannot run in print-only mode because Pane must configure Tailscale Serve before it can create a cross-device connection code.');
   }
 
-  const tailscaleServe = runCommand('tailscale', ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
+  const tailscaleCli = options.tailscaleCli ?? installTailscaleCommandOrThrow();
+  const tailscaleCommand = buildTailscaleServeCommand(tailscaleCli, options.listenPort);
+
+  const tailscaleServe = runCommand(tailscaleCli, ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
   if (!tailscaleServe.ok) {
     throw new Error(`Tailscale Serve setup failed: ${firstNonEmpty(tailscaleServe.stderr, tailscaleServe.stdout, 'unknown error')}\n\n${getTailscaleSetupInstructions()}`);
   }
 
-  const serveStatus = runCommand('tailscale', ['serve', 'status']);
+  const serveStatus = runCommand(tailscaleCli, ['serve', 'status']);
   const serveUrl = extractFirstHttpsUrl([
     tailscaleServe.stdout,
     tailscaleServe.stderr,
@@ -298,16 +314,18 @@ function selectTailscaleTunnel(options: {
   ].join('\n'));
 
   if (!serveUrl) {
-    throw new Error(`Tailscale Serve was configured, but Pane could not find an HTTPS Tailscale URL in the command output. Run "${options.tailscaleCommand}" manually and confirm Tailscale is logged in.\n\n${getTailscaleSetupInstructions()}`);
+    throw new Error(`Tailscale Serve was configured, but Pane could not find an HTTPS Tailscale URL in the command output. Run "${tailscaleCommand}" manually and confirm Tailscale is logged in.\n\n${getTailscaleSetupInstructions()}`);
   }
 
   return {
     baseUrl: serveUrl,
-    fallbackCommands: options.fallbackCommands,
+    fallbackCommands: options.fallbackCommands.includes(tailscaleCommand)
+      ? options.fallbackCommands
+      : [options.fallbackCommands[0], tailscaleCommand],
     tunnel: {
       kind: 'tailscale',
       selected: true,
-      command: options.tailscaleCommand,
+      command: tailscaleCommand,
       note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode.',
     },
   };
@@ -561,18 +579,278 @@ function normalizePort(value: number): number {
   return value;
 }
 
+function buildTailscaleServeCommand(command: ResolvedCommand | null, port: number): string {
+  return `${command?.displayCommand ?? 'tailscale'} serve --bg http://127.0.0.1:${port}`;
+}
+
+function installTailscaleCommandOrThrow(): ResolvedCommand {
+  const installAttempt = installTailscaleForPlatform();
+  const resolvedCommand = resolveTailscaleCommand();
+  if (resolvedCommand) {
+    return resolvedCommand;
+  }
+
+  throw new Error(buildTailscaleInstallError(installAttempt));
+}
+
+function resolveTailscaleCommand(): ResolvedCommand | null {
+  if (commandExistsWithArgs('tailscale', ['version'])) {
+    return {
+      command: 'tailscale',
+      displayCommand: 'tailscale',
+    };
+  }
+
+  if (process.platform === 'darwin') {
+    const macAppCommand = resolveMacTailscaleAppCommand();
+    if (macAppCommand) {
+      return macAppCommand;
+    }
+  }
+
+  if (process.platform === 'win32') {
+    const windowsCommand = resolveWindowsTailscaleCommand();
+    if (windowsCommand) {
+      return windowsCommand;
+    }
+  }
+
+  return null;
+}
+
+function resolveMacTailscaleAppCommand(): ResolvedCommand | null {
+  const candidates = [
+    '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+    path.join(os.homedir(), 'Applications', 'Tailscale.app', 'Contents', 'MacOS', 'Tailscale'),
+  ];
+
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+
+    const command = {
+      command: candidate,
+      displayCommand: `TAILSCALE_BE_CLI=1 ${quoteForPosix(candidate)}`,
+      env: {
+        ...process.env,
+        TAILSCALE_BE_CLI: '1',
+      },
+    };
+    if (commandExistsWithArgs(command, ['version'])) {
+      return command;
+    }
+  }
+
+  return null;
+}
+
+function resolveWindowsTailscaleCommand(): ResolvedCommand | null {
+  const candidates = [
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Tailscale', 'tailscale.exe') : null,
+    process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Tailscale', 'tailscale.exe') : null,
+    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Tailscale', 'tailscale.exe') : null,
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+
+    const command = {
+      command: candidate,
+      displayCommand: quoteForWindows(candidate),
+    };
+    if (commandExistsWithArgs(command, ['version'])) {
+      return command;
+    }
+  }
+
+  return null;
+}
+
+function installTailscaleForPlatform(): InstallAttempt {
+  if (process.platform === 'darwin') {
+    return installTailscaleWithBrew();
+  }
+
+  if (process.platform === 'win32') {
+    return installTailscaleWithWinget();
+  }
+
+  if (process.platform === 'linux') {
+    return installTailscaleWithOfficialScript();
+  }
+
+  return {
+    attempted: false,
+    command: '',
+    stdout: '',
+    stderr: '',
+    reason: `Automatic Tailscale installation is not configured for ${process.platform}.`,
+  };
+}
+
+function installTailscaleWithBrew(): InstallAttempt {
+  const brewCommand = resolveBrewCommand();
+  const command = `${brewCommand?.displayCommand ?? 'brew'} install --cask tailscale`;
+  if (!brewCommand) {
+    return {
+      attempted: false,
+      command,
+      stdout: '',
+      stderr: '',
+      reason: 'Homebrew was not found.',
+    };
+  }
+
+  const install = runCommand(brewCommand, ['install', '--cask', 'tailscale'], { timeoutMs: 300000 });
+  if (install.ok) {
+    runCommand('open', ['-a', 'Tailscale'], { timeoutMs: 30000 });
+  }
+
+  return {
+    attempted: true,
+    command,
+    stdout: install.stdout,
+    stderr: install.stderr,
+  };
+}
+
+function resolveBrewCommand(): ResolvedCommand | null {
+  if (commandExists('brew')) {
+    return {
+      command: 'brew',
+      displayCommand: 'brew',
+    };
+  }
+
+  for (const candidate of ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+
+    const command = {
+      command: candidate,
+      displayCommand: quoteForPosix(candidate),
+    };
+    if (commandExistsWithArgs(command, ['--version'])) {
+      return command;
+    }
+  }
+
+  return null;
+}
+
+function installTailscaleWithWinget(): InstallAttempt {
+  const command = 'winget install --id Tailscale.Tailscale --exact --accept-package-agreements --accept-source-agreements';
+  if (!commandExists('winget')) {
+    return {
+      attempted: false,
+      command,
+      stdout: '',
+      stderr: '',
+      reason: 'winget was not found.',
+    };
+  }
+
+  const install = runCommand('winget', [
+    'install',
+    '--id',
+    'Tailscale.Tailscale',
+    '--exact',
+    '--accept-package-agreements',
+    '--accept-source-agreements',
+  ], { timeoutMs: 300000 });
+
+  return {
+    attempted: true,
+    command,
+    stdout: install.stdout,
+    stderr: install.stderr,
+  };
+}
+
+function installTailscaleWithOfficialScript(): InstallAttempt {
+  const command = 'curl -fsSL https://tailscale.com/install.sh | sh';
+  if (!commandExists('curl')) {
+    return {
+      attempted: false,
+      command,
+      stdout: '',
+      stderr: '',
+      reason: 'curl was not found.',
+    };
+  }
+
+  const install = runShellCommand(command, { timeoutMs: 300000 });
+  return {
+    attempted: true,
+    command,
+    stdout: install.stdout,
+    stderr: install.stderr,
+  };
+}
+
+function buildTailscaleInstallError(installAttempt: InstallAttempt): string {
+  const lines = [
+    'Tailscale is required for cross-device remote setup, but Pane could not find the tailscale CLI after attempting setup.',
+    '',
+  ];
+
+  if (installAttempt.command) {
+    lines.push(installAttempt.attempted ? 'Pane attempted:' : 'Pane wanted to run:');
+    lines.push(installAttempt.command);
+    lines.push('');
+  }
+
+  if (installAttempt.reason) {
+    lines.push(installAttempt.reason);
+    lines.push('');
+  }
+
+  const output = firstNonEmpty(installAttempt.stderr, installAttempt.stdout);
+  if (output) {
+    lines.push(output);
+    lines.push('');
+  }
+
+  lines.push(getTailscaleSetupInstructions());
+  return lines.join('\n');
+}
+
 function commandExists(command: string): boolean {
-  const result = spawnSync(command, ['--version'], {
+  return commandExistsWithArgs(command, ['--version']);
+}
+
+function commandExistsWithArgs(command: string | ResolvedCommand, args: string[]): boolean {
+  const resolvedCommand = typeof command === 'string'
+    ? { command, env: undefined }
+    : command;
+  const result = spawnSync(resolvedCommand.command, args, {
     encoding: 'utf8',
     stdio: 'pipe',
+    env: resolvedCommand.env,
   });
+  if (!result) {
+    return false;
+  }
   return result.status === 0 || result.error === undefined && typeof result.status === 'number';
 }
 
-function runCommand(command: string, args: string[]): CommandResult {
-  const result = spawnSync(command, args, {
+function runCommand(
+  command: string | ResolvedCommand,
+  args: string[],
+  options: { timeoutMs?: number } = {},
+): CommandResult {
+  const resolvedCommand = typeof command === 'string'
+    ? { command, env: undefined }
+    : command;
+  const result = spawnSync(resolvedCommand.command, args, {
     encoding: 'utf8',
     stdio: 'pipe',
+    env: resolvedCommand.env,
+    timeout: options.timeoutMs,
   });
 
   return {
@@ -580,6 +858,14 @@ function runCommand(command: string, args: string[]): CommandResult {
     stdout: commandOutputToString(result.stdout),
     stderr: commandOutputToString(result.stderr) || (result.error ? result.error.message : ''),
   };
+}
+
+function runShellCommand(command: string, options: { timeoutMs?: number } = {}): CommandResult {
+  if (process.platform === 'win32') {
+    return runCommand('cmd.exe', ['/d', '/s', '/c', command], options);
+  }
+
+  return runCommand('/bin/sh', ['-lc', command], options);
 }
 
 function commandOutputToString(value: string | Buffer | null): string {
@@ -602,14 +888,21 @@ function extractFirstHttpsUrl(output: string): string | null {
 function getTailscaleSetupInstructions(): string {
   switch (process.platform) {
     case 'darwin':
-      return 'Install Tailscale for macOS from https://tailscale.com/download, sign in, then run setup again.';
+      return 'Pane installs Tailscale on macOS with "brew install --cask tailscale" when Homebrew is available. Open Tailscale, sign in, then run setup again.';
     case 'win32':
-      return 'Install Tailscale for Windows from https://tailscale.com/download, sign in, then run setup again.';
+      return 'Pane installs Tailscale on Windows with "winget install --id Tailscale.Tailscale --exact". Open Tailscale, sign in, then run setup again.';
     case 'linux':
-      return 'Install Tailscale from https://tailscale.com/download/linux, run "sudo tailscale up", then run setup again.';
+      if (isWsl()) {
+        return 'Pane installs Tailscale inside WSL with the official install script when curl is available. Run "sudo tailscale up" in the distro, then run setup again.';
+      }
+      return 'Pane installs Tailscale on Linux with "curl -fsSL https://tailscale.com/install.sh | sh" when curl is available. Run "sudo tailscale up", then run setup again.';
     default:
       return 'Install Tailscale from https://tailscale.com/download, sign in, then run setup again.';
   }
+}
+
+function isWsl(): boolean {
+  return Boolean(process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP);
 }
 
 function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {

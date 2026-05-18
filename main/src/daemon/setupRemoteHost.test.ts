@@ -8,6 +8,7 @@ import { setupRemoteHost } from './setupRemoteHost';
 const { spawnSyncMock } = vi.hoisted(() => ({
   spawnSyncMock: vi.fn(),
 }));
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 
 vi.mock('child_process', () => ({
   spawnSync: spawnSyncMock,
@@ -35,24 +36,27 @@ function missingCommandResult(command: string) {
 describe('setupRemoteHost', () => {
   afterEach(() => {
     spawnSyncMock.mockReset();
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, 'platform', originalPlatformDescriptor);
+    }
   });
 
-  it('requires Tailscale by default for cross-device setup', async () => {
+  it('attempts Tailscale setup before rejecting the default cross-device setup', async () => {
     spawnSyncMock.mockReturnValue(missingCommandResult('tailscale'));
 
     await expect(setupRemoteHost({
       paneDir: path.join(os.tmpdir(), 'pane-remote-missing-tailscale'),
       installService: false,
-    })).rejects.toThrow('Tailscale is required for cross-device remote setup, but the tailscale CLI was not found.');
+    })).rejects.toThrow('Tailscale is required for cross-device remote setup, but Pane could not find the tailscale CLI after attempting setup.');
 
-    expect(spawnSyncMock).toHaveBeenCalledWith('tailscale', ['--version'], expect.any(Object));
+    expect(spawnSyncMock).toHaveBeenCalledWith('tailscale', ['version'], expect.any(Object));
   });
 
   it('uses a Tailscale Serve HTTPS URL for the generated connection code', async () => {
     const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-tailscale-'));
     try {
       spawnSyncMock.mockImplementation((command: string, args: string[]) => {
-        if (command === 'tailscale' && args[0] === '--version') {
+        if (command === 'tailscale' && args[0] === 'version') {
           return commandResult({ status: 0, stdout: '1.80.0\n' });
         }
         if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
@@ -98,6 +102,56 @@ describe('setupRemoteHost', () => {
         listenHost: '127.0.0.1',
         listenPort: 42137,
       });
+    } finally {
+      await fs.rm(paneDir, { recursive: true, force: true });
+    }
+  });
+
+  it('installs Tailscale with Homebrew on macOS before configuring Serve', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-brew-tailscale-'));
+    let tailscaleVersionCalls = 0;
+    try {
+      spawnSyncMock.mockImplementation((command: string, args: string[]) => {
+        if (command === 'tailscale' && args[0] === 'version') {
+          tailscaleVersionCalls += 1;
+          return tailscaleVersionCalls === 1
+            ? missingCommandResult(command)
+            : commandResult({ status: 0, stdout: '1.80.0\n' });
+        }
+        if (command === 'brew' && args[0] === '--version') {
+          return commandResult({ status: 0, stdout: 'Homebrew 4.0.0\n' });
+        }
+        if (command === 'brew' && args[0] === 'install') {
+          return commandResult({ status: 0, stdout: 'Installed tailscale\n' });
+        }
+        if (command === 'open') {
+          return commandResult({ status: 0 });
+        }
+        if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
+          return commandResult({
+            status: 0,
+            stdout: 'Available within your tailnet:\nhttps://office-mac.tailnet.ts.net\n',
+          });
+        }
+        if (command === 'tailscale' && args[0] === 'serve' && args[1] === 'status') {
+          return commandResult({
+            status: 0,
+            stdout: 'https://office-mac.tailnet.ts.net proxy http://127.0.0.1:42137\n',
+          });
+        }
+
+        return missingCommandResult(command);
+      });
+
+      const result = await setupRemoteHost({
+        paneDir,
+        installService: false,
+      });
+
+      expect(result.tunnel?.kind).toBe('tailscale');
+      expect(spawnSyncMock).toHaveBeenCalledWith('brew', ['install', '--cask', 'tailscale'], expect.any(Object));
+      expect(spawnSyncMock).toHaveBeenCalledWith('open', ['-a', 'Tailscale'], expect.any(Object));
     } finally {
       await fs.rm(paneDir, { recursive: true, force: true });
     }
