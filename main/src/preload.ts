@@ -9,6 +9,8 @@ import type {
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
   RemoteDaemonImportResult,
+  RemoteHostSetupRequest,
+  RemoteHostSetupResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../shared/types/remoteDaemon';
@@ -602,6 +604,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   remoteDaemon: {
     getConfig: (): Promise<IPCResponse<RemoteDaemonConfig>> => invokeIpc('remote-daemon:get-config'),
     getConnectionState: (): Promise<IPCResponse<RemotePaneConnectionState>> => invokeIpc('remote-daemon:get-connection-state'),
+    setupHost: (input: RemoteHostSetupRequest): Promise<IPCResponse<RemoteHostSetupResult>> =>
+      invokeIpc('remote-daemon:setup-host', input),
     createConnectionPair: (input: { label: string; baseUrl: string }): Promise<IPCResponse<RemoteDaemonConnectionPair>> =>
       invokeIpc('remote-daemon:create-connection-pair', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>

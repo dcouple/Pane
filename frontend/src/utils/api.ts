@@ -9,6 +9,8 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
   RemoteDaemonImportResult,
+  RemoteHostSetupRequest,
+  RemoteHostSetupResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
@@ -487,6 +489,11 @@ export class API {
     async getConnectionState() {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.getConnectionState();
+    },
+
+    async setupHost(input: RemoteHostSetupRequest) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.setupHost(input) as Promise<IPCResponse<RemoteHostSetupResult>>;
     },
 
     async createConnectionPair(input: { label: string; baseUrl: string }) {

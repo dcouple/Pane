@@ -1,10 +1,12 @@
 import {
   formatSetupRemoteHostResult,
   setupRemoteHost,
-  type RemoteSetupChannel,
-  type RemoteSetupTunnelPreference,
   type SetupRemoteHostOptions,
 } from './setupRemoteHost';
+import type {
+  RemoteSetupChannel,
+  RemoteSetupTunnelPreference,
+} from '../../../shared/types/remoteDaemon';
 
 export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<number> {
   try {

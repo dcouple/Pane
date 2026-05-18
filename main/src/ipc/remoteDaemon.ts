@@ -3,6 +3,7 @@ import {
   getRemoteDaemonHostConfigValidationError,
   isRemoteDaemonClientRecord,
   isRemotePaneConnectionProfile,
+  normalizePaneRemoteConnectionImportPayload,
   normalizeRemoteDaemonConfig,
   remoteImportPayloadToProfile,
   type RemoteDaemonConnectionPair,
@@ -10,10 +11,17 @@ import {
   type RemoteDaemonClientSettings,
   type RemoteDaemonConfig,
   type RemoteDaemonImportResult,
+  type RemoteHostSetupRequest,
+  type RemoteHostSetupResult,
+  type RemoteSetupChannel,
+  type RemoteSetupDataDirectoryMode,
+  type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
 import type { AppServices } from './types';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { createRemoteDaemonConnectionPair } from '../daemon/remotePairing';
+import { setupRemoteHost } from '../daemon/setupRemoteHost';
+import { getAppDirectory } from '../utils/appDirectory';
 
 interface IpcMainHandleLike {
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
@@ -36,6 +44,43 @@ export function registerRemoteDaemonHandlers(
       return { success: true, data: remotePaneClientController.getConnectionState() };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon connection state') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:setup-host', async (_event, input: unknown) => {
+    try {
+      const request = parseRemoteHostSetupRequest(input);
+      const dataDirectoryMode = request.dataDirectoryMode ?? 'current';
+      const useCurrentDataDirectory = dataDirectoryMode === 'current';
+      const result = await setupRemoteHost({
+        paneDir: useCurrentDataDirectory ? getAppDirectory() : request.paneDir,
+        label: request.label,
+        listenPort: request.listenPort,
+        channel: request.channel,
+        repoRef: request.repoRef,
+        installService: useCurrentDataDirectory ? false : request.installService !== false,
+        exposeTailscale: request.exposeTailscale,
+        preferTunnel: request.preferTunnel,
+        baseUrl: request.baseUrl,
+        existingConfig: useCurrentDataDirectory ? configManager.getConfig() : undefined,
+        writeConfig: useCurrentDataDirectory
+          ? async (nextConfig) => {
+              await configManager.updateConfig({
+                remoteDaemon: normalizeRemoteDaemonConfig(nextConfig.remoteDaemon),
+              });
+            }
+          : undefined,
+      });
+
+      return {
+        success: true,
+        data: {
+          ...result,
+          dataDirectoryMode,
+        } satisfies RemoteHostSetupResult,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to set up remote daemon host') };
     }
   });
 
@@ -331,6 +376,128 @@ function buildNextClientState(
     mode: nextActiveProfileId ? nextMode : 'local',
     activeProfileId: nextActiveProfileId,
   };
+}
+
+function parseRemoteHostSetupRequest(input: unknown): RemoteHostSetupRequest {
+  if (input === undefined || input === null) {
+    return {};
+  }
+  if (!isRecord(input)) {
+    throw new Error('Remote daemon host setup request must be an object');
+  }
+
+  const request: RemoteHostSetupRequest = {};
+  const dataDirectoryMode = readOptionalDataDirectoryMode(input.dataDirectoryMode);
+  if (dataDirectoryMode) {
+    request.dataDirectoryMode = dataDirectoryMode;
+  }
+
+  const paneDir = readOptionalTrimmedString(input.paneDir);
+  if (paneDir) {
+    request.paneDir = paneDir;
+  }
+
+  const label = readOptionalTrimmedString(input.label);
+  if (label) {
+    request.label = label;
+  }
+
+  const listenPort = readOptionalPort(input.listenPort);
+  if (listenPort !== undefined) {
+    request.listenPort = listenPort;
+  }
+
+  const channel = readOptionalChannel(input.channel);
+  if (channel) {
+    request.channel = channel;
+  }
+
+  const repoRef = readOptionalTrimmedString(input.repoRef);
+  if (repoRef) {
+    request.repoRef = repoRef;
+  }
+
+  if (typeof input.installService === 'boolean') {
+    request.installService = input.installService;
+  }
+  if (typeof input.exposeTailscale === 'boolean') {
+    request.exposeTailscale = input.exposeTailscale;
+  }
+
+  const preferTunnel = readOptionalTunnelPreference(input.preferTunnel);
+  if (preferTunnel) {
+    request.preferTunnel = preferTunnel;
+  }
+
+  const baseUrl = readOptionalTrimmedString(input.baseUrl);
+  if (baseUrl) {
+    normalizePaneRemoteConnectionImportPayload({
+      v: 1,
+      label: 'Remote setup validation',
+      baseUrl,
+      token: 'remote-setup-validation-token',
+      transport: 'http+sse',
+    });
+    request.baseUrl = baseUrl;
+  }
+
+  return request;
+}
+
+function readOptionalTrimmedString(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error('Remote daemon host setup string fields must be strings');
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readOptionalPort(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const port = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error('Remote daemon listen port must be between 1 and 65535');
+  }
+  return port;
+}
+
+function readOptionalDataDirectoryMode(value: unknown): RemoteSetupDataDirectoryMode | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (value === 'current' || value === 'isolated') {
+    return value;
+  }
+  throw new Error('Remote daemon data directory mode must be "current" or "isolated"');
+}
+
+function readOptionalChannel(value: unknown): RemoteSetupChannel | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (value === 'stable' || value === 'nightly') {
+    return value;
+  }
+  throw new Error('Remote daemon setup channel must be "stable" or "nightly"');
+}
+
+function readOptionalTunnelPreference(value: unknown): RemoteSetupTunnelPreference | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  if (value === 'auto' || value === 'tailscale' || value === 'ssh' || value === 'manual') {
+    return value;
+  }
+  throw new Error('Remote daemon tunnel preference must be "auto", "tailscale", "ssh", or "manual"');
 }
 
 function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {

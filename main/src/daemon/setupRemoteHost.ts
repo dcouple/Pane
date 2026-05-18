@@ -8,49 +8,27 @@ import {
   encodePaneRemoteConnection,
   normalizeRemoteDaemonConfig,
   type PaneRemoteConnectionImportPayload,
+  type RemoteHostSetupRequest,
+  type RemoteHostSetupServiceResult,
+  type RemoteHostSetupResult,
   type RemoteDaemonConfig,
+  type RemoteSetupChannel,
+  type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
 import {
   createPaneRemoteConnectionImportPayload,
   createRemoteDaemonConnectionPair,
 } from './remotePairing';
 
-export type RemoteSetupChannel = 'stable' | 'nightly';
-export type RemoteSetupTunnelPreference = 'auto' | 'tailscale' | 'ssh' | 'manual';
-
-export interface SetupRemoteHostOptions {
-  paneDir?: string;
-  label?: string;
-  listenPort?: number;
-  channel?: RemoteSetupChannel;
-  repoRef?: string;
+export interface SetupRemoteHostOptions extends Omit<RemoteHostSetupRequest, 'dataDirectoryMode'> {
   printOnly?: boolean;
-  installService?: boolean;
-  exposeTailscale?: boolean;
-  preferTunnel?: RemoteSetupTunnelPreference;
+  existingConfig?: unknown;
+  writeConfig?: (config: Record<string, unknown>) => Promise<void>;
 }
 
-export interface SetupRemoteHostResult {
-  paneDir: string;
-  configPath: string;
-  label: string;
-  listenPort: number;
-  channel: RemoteSetupChannel;
-  repoRef?: string;
-  connectionCode: string;
-  tunnel: PaneRemoteConnectionImportPayload['tunnel'];
-  fallbackTunnelCommands: string[];
-  service: ServiceSetupResult;
-  manualDaemonCommand: string;
-  wroteConfig: boolean;
-}
+export type SetupRemoteHostResult = Omit<RemoteHostSetupResult, 'dataDirectoryMode'>;
 
-interface ServiceSetupResult {
-  strategy: 'systemd-user' | 'launch-agent' | 'scheduled-task' | 'manual' | 'skipped';
-  installed: boolean;
-  started: boolean;
-  message: string;
-}
+type ServiceSetupResult = RemoteHostSetupServiceResult;
 
 interface TunnelSelection {
   baseUrl: string;
@@ -80,6 +58,7 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
     preferTunnel: options.preferTunnel ?? 'auto',
     exposeTailscale: options.exposeTailscale !== false,
     printOnly: options.printOnly === true,
+    manualBaseUrl: options.baseUrl,
   });
   const pair = createRemoteDaemonConnectionPair({
     label,
@@ -90,12 +69,19 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
 
   let wroteConfig = false;
   if (!options.printOnly) {
-    const existingConfig = await readConfigFile(configPath);
+    const existingConfig = isRecord(options.existingConfig)
+      ? options.existingConfig
+      : await readConfigFile(configPath);
     const nextRemoteDaemon = buildNextRemoteDaemonConfig(existingConfig.remoteDaemon, pair.client, listenPort);
-    await writeConfigFileAtomically(paneDir, configPath, {
+    const nextConfig = {
       ...existingConfig,
       remoteDaemon: nextRemoteDaemon,
-    });
+    };
+    if (options.writeConfig) {
+      await options.writeConfig(nextConfig);
+    } else {
+      await writeConfigFileAtomically(paneDir, configPath, nextConfig);
+    }
     wroteConfig = true;
   }
 
@@ -230,14 +216,29 @@ function selectTunnel(options: {
   preferTunnel: RemoteSetupTunnelPreference;
   exposeTailscale: boolean;
   printOnly: boolean;
+  manualBaseUrl?: string;
 }): TunnelSelection {
   const sshCommand = buildSshForwardCommand(options.listenPort);
   const tailscaleCommand = `tailscale serve --bg http://127.0.0.1:${options.listenPort}`;
   const fallbackCommands = [sshCommand, tailscaleCommand];
+  const manualBaseUrl = options.manualBaseUrl?.trim();
+
+  if (manualBaseUrl) {
+    return {
+      baseUrl: manualBaseUrl,
+      fallbackCommands,
+      tunnel: {
+        kind: 'manual',
+        selected: true,
+        note: 'Use the configured HTTPS tunnel or reverse proxy before connecting.',
+      },
+    };
+  }
 
   if (
     options.exposeTailscale &&
     options.preferTunnel !== 'ssh' &&
+    options.preferTunnel !== 'manual' &&
     commandExists('tailscale')
   ) {
     const tailscaleServe = options.printOnly

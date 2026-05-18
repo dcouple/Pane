@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
+import {
+  createDefaultRemoteDaemonConfig,
+  type RemoteDaemonConfig,
+  type RemoteHostSetupResult,
+} from '../../../shared/types/remoteDaemon';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
+import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { registerRemoteDaemonHandlers } from './remoteDaemon';
+
+vi.mock('../daemon/setupRemoteHost', () => ({
+  setupRemoteHost: vi.fn(),
+}));
 
 interface IpcMainStub {
   handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
@@ -40,8 +49,35 @@ function createConfigManagerStub(initialConfig?: RemoteDaemonConfig): ConfigMana
 
 describe('remote daemon IPC', () => {
   afterEach(() => {
+    vi.mocked(setupRemoteHost).mockReset();
     vi.restoreAllMocks();
   });
+
+  function createSetupResult(overrides: Partial<RemoteHostSetupResult> = {}): Omit<RemoteHostSetupResult, 'dataDirectoryMode'> {
+    return {
+      paneDir: '/tmp/pane',
+      configPath: '/tmp/pane/config.json',
+      label: 'Office Mac mini',
+      listenPort: 42137,
+      channel: 'stable',
+      connectionCode: 'pane-remote://encoded',
+      tunnel: {
+        kind: 'manual',
+        selected: true,
+        note: 'Use your tunnel before connecting.',
+      },
+      fallbackTunnelCommands: [],
+      service: {
+        strategy: 'manual',
+        installed: false,
+        started: false,
+        message: 'Service installation disabled',
+      },
+      manualDaemonCommand: 'pane --daemon-headless',
+      wroteConfig: true,
+      ...overrides,
+    };
+  }
 
   it('returns normalized remote daemon defaults when config is missing', async () => {
     const ipcMain = createIpcMainStub();
@@ -155,6 +191,109 @@ describe('remote daemon IPC', () => {
         lastError: null,
       },
     });
+  });
+
+  it('sets up a remote host with the current Pane data directory by default', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    vi.mocked(setupRemoteHost).mockImplementation(async (options) => {
+      await options.writeConfig?.({
+        remoteDaemon: createDefaultRemoteDaemonConfig(),
+      });
+      return createSetupResult({
+        paneDir: options.paneDir ?? '/tmp/pane',
+        label: options.label ?? 'Office Mac mini',
+        listenPort: options.listenPort ?? 42137,
+      });
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const setupHost = ipcMain.handlers.get('remote-daemon:setup-host');
+    const response = await setupHost?.({}, {
+      label: 'Office Mac mini',
+      listenPort: 42137,
+      preferTunnel: 'ssh',
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        dataDirectoryMode: 'current',
+        label: 'Office Mac mini',
+        listenPort: 42137,
+        connectionCode: 'pane-remote://encoded',
+      },
+    });
+    expect(setupRemoteHost).toHaveBeenCalledWith(expect.objectContaining({
+      label: 'Office Mac mini',
+      listenPort: 42137,
+      preferTunnel: 'ssh',
+      installService: false,
+      existingConfig: expect.any(Object),
+      writeConfig: expect.any(Function),
+    }));
+    expect(configManager.getConfig().remoteDaemon).toEqual(createDefaultRemoteDaemonConfig());
+  });
+
+  it('allows isolated remote host setup with service install enabled', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    vi.mocked(setupRemoteHost).mockResolvedValue(createSetupResult({
+      paneDir: '/tmp/pane-remote',
+      service: {
+        strategy: 'launch-agent',
+        installed: true,
+        started: true,
+        message: 'Installed and started a LaunchAgent.',
+      },
+    }));
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const setupHost = ipcMain.handlers.get('remote-daemon:setup-host');
+    const response = await setupHost?.({}, {
+      dataDirectoryMode: 'isolated',
+      paneDir: '/tmp/pane-remote',
+      installService: true,
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        dataDirectoryMode: 'isolated',
+        paneDir: '/tmp/pane-remote',
+        service: {
+          strategy: 'launch-agent',
+          installed: true,
+          started: true,
+        },
+      },
+    });
+    expect(setupRemoteHost).toHaveBeenCalledWith(expect.objectContaining({
+      paneDir: '/tmp/pane-remote',
+      installService: true,
+      existingConfig: undefined,
+      writeConfig: undefined,
+    }));
+  });
+
+  it('rejects non-loopback HTTP manual setup URLs', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const setupHost = ipcMain.handlers.get('remote-daemon:setup-host');
+
+    await expect(setupHost?.({}, {
+      preferTunnel: 'manual',
+      baseUrl: 'http://192.168.1.50:42137',
+    })).resolves.toEqual({
+      success: false,
+      error: 'HTTP remote base URLs must use a loopback host; use HTTPS for Tailscale or reverse-proxy endpoints',
+    });
+    expect(setupRemoteHost).not.toHaveBeenCalled();
   });
 
   it('falls back to local mode when deleting the active connection profile', async () => {

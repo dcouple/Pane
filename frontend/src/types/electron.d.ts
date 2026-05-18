@@ -11,6 +11,8 @@ import type {
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
   RemoteDaemonImportResult,
+  RemoteHostSetupRequest,
+  RemoteHostSetupResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
@@ -233,6 +235,7 @@ interface ElectronAPI {
   remoteDaemon: {
     getConfig: () => Promise<IPCResponse<RemoteDaemonConfig>>;
     getConnectionState: () => Promise<IPCResponse<RemotePaneConnectionState>>;
+    setupHost: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupResult>>;
     createConnectionPair: (input: { label: string; baseUrl: string }) => Promise<IPCResponse<RemoteDaemonConnectionPair>>;
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;

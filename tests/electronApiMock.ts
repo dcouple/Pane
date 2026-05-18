@@ -259,6 +259,53 @@ export async function installElectronApiMock(page: Page) {
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),
         getConnectionState: () => success(clone(remoteConnectionState)),
+        setupHost: (input: {
+          dataDirectoryMode?: 'current' | 'isolated';
+          paneDir?: string;
+          label?: string;
+          listenPort?: number;
+        } = {}) => {
+          const id = `remote-${nextRemoteConnectionId++}`;
+          const label = input.label ?? 'Remote host';
+          const listenPort = input.listenPort ?? 42137;
+          const token = `token-${id}`;
+          const client = {
+            id,
+            label,
+            createdAt: new Date().toISOString(),
+            tokenHash: `hash-${token}`,
+          };
+          remoteDaemonConfig.host.config = {
+            ...remoteDaemonConfig.host.config,
+            enabled: true,
+            listenPort,
+          };
+          remoteDaemonConfig.host.clients.push(client);
+          syncRemoteDaemonConfig();
+          return success({
+            dataDirectoryMode: input.dataDirectoryMode ?? 'current',
+            paneDir: input.paneDir ?? '~/.pane',
+            configPath: `${input.paneDir ?? '~/.pane'}/config.json`,
+            label,
+            listenPort,
+            channel: 'stable',
+            connectionCode: 'pane-remote://mock-remote-code',
+            tunnel: {
+              kind: 'manual',
+              selected: true,
+              note: 'Mock remote setup',
+            },
+            fallbackTunnelCommands: [],
+            service: {
+              strategy: 'manual',
+              installed: false,
+              started: false,
+              message: 'Mock setup',
+            },
+            manualDaemonCommand: 'pane --daemon-headless',
+            wroteConfig: true,
+          });
+        },
         createConnectionPair: (input: { label?: string; baseUrl?: string }) => {
           const id = `remote-${nextRemoteConnectionId++}`;
           const label = input.label ?? 'Remote host';

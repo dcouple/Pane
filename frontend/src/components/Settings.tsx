@@ -11,6 +11,9 @@ import {
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
   type RemoteDaemonHostConfig,
+  type RemoteHostSetupResult,
+  type RemoteSetupDataDirectoryMode,
+  type RemoteSetupTunnelPreference,
   type RemotePaneConnectionProfile,
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
@@ -34,7 +37,9 @@ import {
   PowerOff,
   FolderSync,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  Server
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -114,6 +119,15 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteImportedProfileBaseUrl, setRemoteImportedProfileBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
   const [remoteBusy, setRemoteBusy] = useState(false);
+  const [remoteSetupDataMode, setRemoteSetupDataMode] = useState<RemoteSetupDataDirectoryMode>('current');
+  const [remoteSetupLabel, setRemoteSetupLabel] = useState('');
+  const [remoteSetupListenPort, setRemoteSetupListenPort] = useState(42137);
+  const [remoteSetupPaneDir, setRemoteSetupPaneDir] = useState('');
+  const [remoteSetupTunnelPreference, setRemoteSetupTunnelPreference] = useState<RemoteSetupTunnelPreference>('auto');
+  const [remoteSetupManualBaseUrl, setRemoteSetupManualBaseUrl] = useState('');
+  const [remoteSetupInstallService, setRemoteSetupInstallService] = useState(true);
+  const [remoteSetupResult, setRemoteSetupResult] = useState<RemoteHostSetupResult | null>(null);
+  const [remoteSetupCopyResult, setRemoteSetupCopyResult] = useState<string | null>(null);
   const fontsLoadedForOpenRef = useRef(false);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
@@ -128,6 +142,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     if (configResponse.success && configResponse.data) {
       setRemoteDaemonConfig(configResponse.data);
       setRemoteHostConfigDraft(configResponse.data.host.config);
+      setRemoteSetupListenPort((currentValue) => (
+        currentValue === 42137 ? configResponse.data!.host.config.listenPort : currentValue
+      ));
       setRemotePairBaseUrl((currentValue) => (
         currentValue === 'http://127.0.0.1:42137'
           ? formatRemoteBaseUrl(
@@ -312,6 +329,44 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     });
   };
 
+  const handleSetupRemoteHost = async () => {
+    await runRemoteDaemonAction(async () => {
+      setRemoteSetupResult(null);
+      setRemoteSetupCopyResult(null);
+      const response = await API.remoteDaemon.setupHost({
+        dataDirectoryMode: remoteSetupDataMode,
+        label: remoteSetupLabel,
+        listenPort: remoteSetupListenPort,
+        paneDir: remoteSetupDataMode === 'isolated' && remoteSetupPaneDir.trim().length > 0
+          ? remoteSetupPaneDir
+          : undefined,
+        preferTunnel: remoteSetupTunnelPreference,
+        baseUrl: remoteSetupTunnelPreference === 'manual' && remoteSetupManualBaseUrl.trim().length > 0
+          ? remoteSetupManualBaseUrl
+          : undefined,
+        installService: remoteSetupDataMode === 'isolated' ? remoteSetupInstallService : false,
+      });
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to set up this machine as a remote');
+      }
+
+      setRemoteSetupResult(response.data);
+      setRemoteSetupLabel('');
+    });
+  };
+
+  const handleCopyRemoteSetupConnectionCode = async () => {
+    if (!remoteSetupResult) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(remoteSetupResult.connectionCode);
+      setRemoteSetupCopyResult('Copied connection code.');
+    } catch {
+      setError('Failed to copy connection code');
+    }
+  };
+
   const handleCreateRemoteConnectionPair = async () => {
     await runRemoteDaemonAction(async () => {
       const response = await API.remoteDaemon.createConnectionPair({
@@ -473,6 +528,14 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     }
   };
 
+  const remoteSetupRequiresManualBaseUrl =
+    remoteSetupTunnelPreference === 'manual' && remoteSetupManualBaseUrl.trim().length === 0;
+  const remoteSetupPortIsValid =
+    Number.isInteger(remoteSetupListenPort) && remoteSetupListenPort > 0 && remoteSetupListenPort <= 65535;
+  const remoteSetupFallbackCommands = remoteSetupResult
+    ? remoteSetupResult.fallbackTunnelCommands.filter((command) => command !== remoteSetupResult.tunnel?.command)
+    : [];
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" showCloseButton={false}>
       <ModalHeader
@@ -524,6 +587,209 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
               icon={<Terminal className="w-5 h-5" />}
               defaultExpanded={true}
             >
+              <SettingsSection
+                title="Set Up This Machine"
+                description="Create a connection code from this Pane install."
+                icon={<Server className="w-4 h-4" />}
+                spacing="sm"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRemoteSetupDataMode('current')}
+                    className={`p-3 text-left rounded-lg border transition-colors ${
+                      remoteSetupDataMode === 'current'
+                        ? 'bg-interactive/10 border-interactive/40 text-text-primary'
+                        : 'bg-surface-secondary border-border-secondary text-text-secondary hover:bg-surface-hover'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Current Pane Data</span>
+                    <span className="block text-xs text-text-tertiary mt-1">
+                      Use this app's projects and settings.
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoteSetupDataMode('isolated')}
+                    className={`p-3 text-left rounded-lg border transition-colors ${
+                      remoteSetupDataMode === 'isolated'
+                        ? 'bg-interactive/10 border-interactive/40 text-text-primary'
+                        : 'bg-surface-secondary border-border-secondary text-text-secondary hover:bg-surface-hover'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">Isolated Daemon Data</span>
+                    <span className="block text-xs text-text-tertiary mt-1">
+                      Use a separate remote daemon directory.
+                    </span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    label="Connection Label"
+                    value={remoteSetupLabel}
+                    onChange={(e) => setRemoteSetupLabel(e.target.value)}
+                    placeholder="Office Mac mini"
+                    fullWidth
+                  />
+                  <Input
+                    label="Listen Port"
+                    type="number"
+                    value={String(remoteSetupListenPort)}
+                    onChange={(e) => setRemoteSetupListenPort(Number.parseInt(e.target.value, 10) || 42137)}
+                    error={remoteSetupPortIsValid ? undefined : 'Port must be between 1 and 65535'}
+                    fullWidth
+                  />
+                </div>
+
+                {remoteSetupDataMode === 'isolated' && (
+                  <div className="space-y-3">
+                    <Input
+                      label="Daemon Data Directory"
+                      value={remoteSetupPaneDir}
+                      onChange={(e) => setRemoteSetupPaneDir(e.target.value)}
+                      placeholder="Default: ~/.pane_remote"
+                      fullWidth
+                    />
+                    <Checkbox
+                      label="Install background service"
+                      checked={remoteSetupInstallService}
+                      onChange={(e) => setRemoteSetupInstallService(e.target.checked)}
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-text-secondary">Access Mode</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    {[
+                      ['auto', 'Auto', 'Use Tailscale when available.'],
+                      ['ssh', 'SSH Tunnel', 'Generate an SSH forward command.'],
+                      ['manual', 'Manual HTTPS', 'Use your own tunnel URL.'],
+                    ].map(([id, label, description]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => setRemoteSetupTunnelPreference(id as RemoteSetupTunnelPreference)}
+                        className={`p-3 text-left rounded-lg border transition-colors ${
+                          remoteSetupTunnelPreference === id
+                            ? 'bg-interactive/10 border-interactive/40 text-text-primary'
+                            : 'bg-surface-secondary border-border-secondary text-text-secondary hover:bg-surface-hover'
+                        }`}
+                      >
+                        <span className="block text-sm font-medium">{label}</span>
+                        <span className="block text-xs text-text-tertiary mt-1">{description}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {remoteSetupTunnelPreference === 'manual' && (
+                  <Input
+                    label="Manual HTTPS Base URL"
+                    value={remoteSetupManualBaseUrl}
+                    onChange={(e) => setRemoteSetupManualBaseUrl(e.target.value)}
+                    placeholder="https://pane-remote.example.com"
+                    error={remoteSetupRequiresManualBaseUrl ? 'HTTPS base URL is required for manual mode' : undefined}
+                    fullWidth
+                  />
+                )}
+
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-text-tertiary">
+                    Current mode serves from this running Pane app. Isolated mode can install a service.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleSetupRemoteHost}
+                    disabled={remoteBusy || !remoteSetupPortIsValid || remoteSetupRequiresManualBaseUrl}
+                    loading={remoteBusy}
+                    loadingText="Setting up"
+                  >
+                    Set Up & Create Code
+                  </Button>
+                </div>
+
+                {remoteSetupResult && (
+                  <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-text-primary">Connection code ready</p>
+                        <p className="text-xs text-text-tertiary mt-1 truncate">
+                          {remoteSetupResult.label} · {remoteSetupResult.paneDir}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        icon={<Copy className="w-4 h-4" />}
+                        onClick={handleCopyRemoteSetupConnectionCode}
+                      >
+                        Copy Code
+                      </Button>
+                    </div>
+                    <Textarea
+                      label="Connection Code"
+                      value={remoteSetupResult.connectionCode}
+                      onChange={() => {}}
+                      rows={3}
+                      readOnly
+                      fullWidth
+                    />
+                    {remoteSetupCopyResult && (
+                      <p className="text-xs text-status-success">{remoteSetupCopyResult}</p>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-text-tertiary">
+                      <p className="break-all">Data directory: {remoteSetupResult.paneDir}</p>
+                      <p className="break-all">Config: {remoteSetupResult.configPath}</p>
+                      <p>Port: {remoteSetupResult.listenPort}</p>
+                      <p>Service: {remoteSetupResult.service.strategy}</p>
+                    </div>
+                    <p className={`text-xs ${
+                      remoteSetupResult.service.installed || remoteSetupResult.dataDirectoryMode === 'current'
+                        ? 'text-text-tertiary'
+                        : 'text-status-warning'
+                    }`}>
+                      {remoteSetupResult.dataDirectoryMode === 'current'
+                        ? 'This running Pane app is serving the remote listener after setup.'
+                        : remoteSetupResult.service.message}
+                    </p>
+                    {remoteSetupResult.tunnel?.command && (
+                      <Textarea
+                        label="Connection/Tunnel Command"
+                        value={remoteSetupResult.tunnel.command}
+                        onChange={() => {}}
+                        rows={2}
+                        readOnly
+                        fullWidth
+                      />
+                    )}
+                    {remoteSetupFallbackCommands.length > 0 && (
+                      <Textarea
+                        label="Fallback Tunnel Commands"
+                        value={remoteSetupFallbackCommands.join('\n')}
+                        onChange={() => {}}
+                        rows={Math.min(3, remoteSetupFallbackCommands.length)}
+                        readOnly
+                        fullWidth
+                      />
+                    )}
+                    {remoteSetupResult.dataDirectoryMode === 'isolated' && !remoteSetupResult.service.started && (
+                      <Textarea
+                        label="Manual Daemon Command"
+                        value={remoteSetupResult.manualDaemonCommand}
+                        onChange={() => {}}
+                        rows={2}
+                        readOnly
+                        fullWidth
+                      />
+                    )}
+                  </div>
+                )}
+              </SettingsSection>
+
               <SettingsSection
                 title="Connection"
                 description="Paste the pane-remote:// code from the VM setup command to save and connect in one step."

@@ -1,6 +1,9 @@
 export type RemoteDaemonTransport = 'http+sse';
 export type RemoteDaemonClientMode = 'local' | 'remote';
 export type RemotePaneConnectionStatus = 'local' | 'connecting' | 'connected' | 'reconnecting' | 'error';
+export type RemoteSetupChannel = 'stable' | 'nightly';
+export type RemoteSetupTunnelPreference = 'auto' | 'tailscale' | 'ssh' | 'manual';
+export type RemoteSetupDataDirectoryMode = 'current' | 'isolated';
 
 export interface RemoteDaemonHostConfig {
   enabled: boolean;
@@ -38,6 +41,49 @@ export interface PaneRemoteConnectionImportPayload {
     note?: string;
     selected: boolean;
   };
+}
+
+export interface RemoteHostSetupRequest {
+  dataDirectoryMode?: RemoteSetupDataDirectoryMode;
+  paneDir?: string;
+  label?: string;
+  listenPort?: number;
+  channel?: RemoteSetupChannel;
+  repoRef?: string;
+  installService?: boolean;
+  exposeTailscale?: boolean;
+  preferTunnel?: RemoteSetupTunnelPreference;
+  baseUrl?: string;
+}
+
+export type RemoteHostSetupServiceStrategy =
+  | 'systemd-user'
+  | 'launch-agent'
+  | 'scheduled-task'
+  | 'manual'
+  | 'skipped';
+
+export interface RemoteHostSetupServiceResult {
+  strategy: RemoteHostSetupServiceStrategy;
+  installed: boolean;
+  started: boolean;
+  message: string;
+}
+
+export interface RemoteHostSetupResult {
+  dataDirectoryMode: RemoteSetupDataDirectoryMode;
+  paneDir: string;
+  configPath: string;
+  label: string;
+  listenPort: number;
+  channel: RemoteSetupChannel;
+  repoRef?: string;
+  connectionCode: string;
+  tunnel: PaneRemoteConnectionImportPayload['tunnel'];
+  fallbackTunnelCommands: string[];
+  service: RemoteHostSetupServiceResult;
+  manualDaemonCommand: string;
+  wroteConfig: boolean;
 }
 
 export interface RemoteDaemonImportResult {
