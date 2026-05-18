@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { NotificationSettings } from './NotificationSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
@@ -114,6 +114,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteImportedProfileBaseUrl, setRemoteImportedProfileBaseUrl] = useState('http://127.0.0.1:42137');
   const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
   const [remoteBusy, setRemoteBusy] = useState(false);
+  const fontsLoadedForOpenRef = useRef(false);
   const { updateSettings } = useNotifications();
   const { theme, setTheme } = useTheme();
   const { fetchConfig: refreshConfigStore } = useConfigStore();
@@ -220,13 +221,6 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         setRemoteConnectionState(state);
       });
 
-      // Load system monospace fonts for the font picker
-      window.electronAPI.config.getMonospaceFonts().then((result) => {
-        if (result?.data && Array.isArray(result.data)) {
-          setSystemMonoFonts(result.data as string[]);
-        }
-      }).catch(() => { /* fc-list not available — dropdown will be empty */ });
-
       const loadAutoRename = async () => {
         try {
           const result = await window.electron?.invoke('preferences:get', 'auto_rename_sessions_to_pr') as IPCResponse<string>;
@@ -267,6 +261,31 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       };
     }
   }, [fetchConfig, initialSection, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      fontsLoadedForOpenRef.current = false;
+      return;
+    }
+
+    if (fontsLoadedForOpenRef.current) {
+      return;
+    }
+    fontsLoadedForOpenRef.current = true;
+
+    // macOS font enumeration can be expensive; keep it out of the broad
+    // settings refresh effect so state sync cannot repeatedly spawn it.
+    let cancelled = false;
+    window.electronAPI.config.getMonospaceFonts().then((result) => {
+      if (!cancelled && result?.data && Array.isArray(result.data)) {
+        setSystemMonoFonts(result.data as string[]);
+      }
+    }).catch(() => { /* fc-list not available — dropdown will be empty */ });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   const runRemoteDaemonAction = async (action: () => Promise<void>) => {
     setRemoteBusy(true);

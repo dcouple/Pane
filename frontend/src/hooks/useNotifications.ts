@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
@@ -90,7 +90,7 @@ export function useNotifications() {
     return () => window.removeEventListener('project-changed', loadProjects);
   }, []);
 
-  const requestPermission = async (): Promise<boolean> => {
+  const requestPermission = useCallback(async (): Promise<boolean> => {
     if (!('Notification' in window)) {
       console.warn('This browser does not support notifications');
       return false;
@@ -106,9 +106,9 @@ export function useNotifications() {
 
     const permission = await Notification.requestPermission();
     return permission === 'granted';
-  };
+  }, []);
 
-  const playNotificationSound = () => {
+  const playNotificationSound = useCallback(() => {
     if (!settingsRef.current.playSound) return;
 
     try {
@@ -136,12 +136,12 @@ export function useNotifications() {
     } catch (error) {
       console.warn('Could not play notification sound:', error);
     }
-  };
+  }, []);
 
   // showNotification fires unconditionally so that the two direct callers in
   // App.tsx (unclean-shutdown and version-update) always work. Activity gating
   // lives only inside maybeNotifyPanelIdle.
-  const showNotification = (
+  const showNotification = useCallback((
     title: string,
     body: string,
     icon?: string,
@@ -161,7 +161,7 @@ export function useNotifications() {
         playNotificationSound();
       }
     });
-  };
+  }, [playNotificationSound, requestPermission]);
 
   function maybeNotifyPanelIdle(panelId: string, scheduledLastActivityAt?: string) {
     const currentSettings = settingsRef.current;
@@ -293,13 +293,15 @@ export function useNotifications() {
 
       requestPermission();
     }
+  }, [requestPermission]);
+
+  const updateSettings = useCallback((newSettings: Partial<NotificationSettings>) => {
+    setSettings((prev) => ({ ...prev, ...newSettings }));
   }, []);
 
   return {
     settings,
-    updateSettings: (newSettings: Partial<NotificationSettings>) => {
-      setSettings((prev) => ({ ...prev, ...newSettings }));
-    },
+    updateSettings,
     requestPermission,
     showNotification,
   };
