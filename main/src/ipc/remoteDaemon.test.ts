@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultRemoteDaemonConfig,
+  encodePaneRemoteConnection,
   type RemoteDaemonConfig,
   type RemoteHostSetupResult,
 } from '../../../shared/types/remoteDaemon';
@@ -11,6 +12,8 @@ import { registerRemoteDaemonHandlers } from './remoteDaemon';
 vi.mock('../daemon/setupRemoteHost', () => ({
   setupRemoteHost: vi.fn(),
 }));
+
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 
 interface IpcMainStub {
   handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
@@ -51,6 +54,9 @@ describe('remote daemon IPC', () => {
   afterEach(() => {
     vi.mocked(setupRemoteHost).mockReset();
     vi.restoreAllMocks();
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, 'platform', originalPlatformDescriptor);
+    }
   });
 
   function createSetupResult(overrides: Partial<RemoteHostSetupResult> = {}): Omit<RemoteHostSetupResult, 'dataDirectoryMode'> {
@@ -262,6 +268,73 @@ describe('remote daemon IPC', () => {
     expect(response.data?.command).toContain('--listen-port');
     expect(response.data?.command).toContain('--no-install-service');
     expect(response.data?.command).toContain('Windows WSL Smoke');
+  });
+
+  it('builds an interactive Tailscale client setup command', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-client-setup-command');
+    const response = await getCommand?.({}) as { success?: boolean; data?: { command?: string } };
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        command: expect.stringContaining('sudo tailscale up'),
+      },
+    });
+    expect(response.data?.command).toContain('tailscale.com/install.sh');
+    expect(response.data?.command).not.toContain('serve --bg');
+  });
+
+  it('preserves Tailscale tunnel metadata when importing a connection code', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    const connectionCode = encodePaneRemoteConnection({
+      v: 1,
+      label: 'WSL',
+      baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+      token: 'secret-token',
+      transport: 'http+sse',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42137',
+      },
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const importCode = ipcMain.handlers.get('remote-daemon:import-connection-code');
+    const response = await importCode?.({}, {
+      code: connectionCode,
+      connect: false,
+    });
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        profile: {
+          label: 'WSL',
+          baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+          tunnel: {
+            kind: 'tailscale',
+            selected: true,
+          },
+        },
+        connected: false,
+      },
+    });
+    expect(configManager.getConfig().remoteDaemon?.client.profiles[0]).toMatchObject({
+      label: 'WSL',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+      },
+    });
   });
 
   it('allows isolated remote host setup with service install enabled', async () => {

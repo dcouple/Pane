@@ -73,6 +73,22 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
+  ipcMain.handle('remote-daemon:get-interactive-client-setup-command', async () => {
+    try {
+      const shellName = process.platform === 'win32'
+        ? ShellDetector.getDefaultShell(configManager.getPreferredShell?.()).name
+        : undefined;
+      return {
+        success: true,
+        data: {
+          command: buildInteractiveClientSetupCommand(shellName),
+        } satisfies RemoteHostSetupTerminalCommandResult,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to build Tailscale client setup command') };
+    }
+  });
+
   ipcMain.handle('remote-daemon:setup-host', async (_event, input: unknown) => {
     try {
       const request = parseRemoteHostSetupRequest(input);
@@ -518,6 +534,32 @@ function buildInteractiveSetupCommand(
 
   const setupScript = path.resolve(process.cwd(), 'scripts', 'pane-remote-setup.js');
   return `node ${quoteTerminalArg(setupScript, shellName)} ${quotedArgs}`;
+}
+
+function buildInteractiveClientSetupCommand(shellName?: string): string {
+  if (process.platform === 'win32') {
+    const powershellCommand = [
+      "$ErrorActionPreference = 'Stop'",
+      'if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) { winget install --id Tailscale.Tailscale --exact --accept-package-agreements --accept-source-agreements }',
+      'tailscale up',
+    ].join('; ');
+
+    if (shellName === 'powershell' || shellName === 'pwsh') {
+      return powershellCommand;
+    }
+
+    return `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ${quoteTerminalArg(powershellCommand, shellName)}`;
+  }
+
+  if (process.platform === 'darwin') {
+    return '(command -v tailscale >/dev/null 2>&1 || brew install --cask tailscale) && tailscale up';
+  }
+
+  if (process.platform === 'linux') {
+    return '(command -v tailscale >/dev/null 2>&1 || curl -fsSL https://tailscale.com/install.sh | sh) && sudo tailscale up';
+  }
+
+  return 'echo "Install Tailscale from https://tailscale.com/download, sign in, then retry the Pane remote connection."';
 }
 
 function readOptionalTrimmedString(value: unknown): string | undefined {

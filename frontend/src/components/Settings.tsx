@@ -80,6 +80,30 @@ function formatRemoteBaseUrl(host: string, port: number): string {
   return `http://${normalizedHost}:${port}`;
 }
 
+function getRemoteProfileHostname(profile: RemotePaneConnectionProfile): string | null {
+  try {
+    return new URL(profile.baseUrl).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+function isTailscaleRemoteProfile(profile: RemotePaneConnectionProfile): boolean {
+  return profile.tunnel?.kind === 'tailscale' || getRemoteProfileHostname(profile)?.endsWith('.ts.net') === true;
+}
+
+function isTailscaleDnsConnectionFailure(profile: RemotePaneConnectionProfile | null | undefined, errorMessage: string | null | undefined): boolean {
+  if (!profile || !errorMessage || !isTailscaleRemoteProfile(profile)) {
+    return false;
+  }
+
+  const normalizedError = errorMessage.toLowerCase();
+  return normalizedError.includes('enotfound')
+    || normalizedError.includes('getaddrinfo')
+    || normalizedError.includes('eai_again')
+    || normalizedError.includes('enodata');
+}
+
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [verbose, setVerbose] = useState(false);
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
@@ -125,6 +149,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteImportedProfileToken, setRemoteImportedProfileToken] = useState('');
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteSetupTerminalBusy, setRemoteSetupTerminalBusy] = useState(false);
+  const [remoteClientSetupTerminalBusy, setRemoteClientSetupTerminalBusy] = useState(false);
+  const [remoteImportRecoveryProfileId, setRemoteImportRecoveryProfileId] = useState<string | null>(null);
+  const [remoteImportRecoveryError, setRemoteImportRecoveryError] = useState<string | null>(null);
   const [remoteSetupDataMode, setRemoteSetupDataMode] = useState<RemoteSetupDataDirectoryMode>('current');
   const [remoteSetupLabel, setRemoteSetupLabel] = useState('');
   const [remoteSetupListenPort, setRemoteSetupListenPort] = useState(42137);
@@ -432,6 +459,60 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     }
   };
 
+  const handleOpenTailscaleClientSetupTerminal = async () => {
+    const projectId = activeProjectId ?? activeSessionProjectId;
+    if (!projectId) {
+      setError('Select a project before opening a Tailscale setup terminal.');
+      return;
+    }
+
+    setRemoteClientSetupTerminalBusy(true);
+    setError(null);
+
+    try {
+      const commandResponse = await API.remoteDaemon.getInteractiveClientSetupCommand();
+      if (!commandResponse.success || !commandResponse.data?.command) {
+        throw new Error(commandResponse.error || 'Failed to prepare the Tailscale setup command');
+      }
+
+      if (remoteConnectionState.mode === 'remote') {
+        const localResponse = await API.remoteDaemon.updateClientState({
+          activeProfileId: null,
+          mode: 'local',
+        });
+        if (!localResponse.success) {
+          throw new Error(localResponse.error || 'Failed to switch to local runtime before opening Tailscale setup');
+        }
+      }
+
+      const sessionResponse = await API.sessions.getOrCreateMainRepoSession(projectId);
+      if (!sessionResponse.success || !sessionResponse.data?.id) {
+        throw new Error(sessionResponse.error || 'Failed to open a project terminal');
+      }
+
+      const sessionId = sessionResponse.data.id as string;
+      const panel = await panelApi.createPanel({
+        sessionId,
+        type: 'terminal',
+        title: 'Tailscale Client Setup',
+        initialState: {
+          customState: {
+            initialCommand: commandResponse.data.command,
+          },
+        },
+      });
+
+      await panelApi.setActivePanel(sessionId, panel.id);
+      await setActiveSession(sessionId);
+      navigateToSessions();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open Tailscale setup terminal');
+    } finally {
+      setRemoteClientSetupTerminalBusy(false);
+    }
+  };
+
   const handleCopyRemoteSetupConnectionCode = async () => {
     if (!remoteSetupResult) {
       return;
@@ -461,6 +542,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
   const handleUseRemoteProfile = async (profileId: string) => {
     await runRemoteDaemonAction(async () => {
+      setRemoteImportRecoveryProfileId(null);
+      setRemoteImportRecoveryError(null);
       const response = await API.remoteDaemon.updateClientState({
         activeProfileId: profileId,
         mode: 'remote',
@@ -514,6 +597,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const handleImportRemoteConnectionCode = async () => {
     await runRemoteDaemonAction(async () => {
       setRemoteImportResult(null);
+      setRemoteImportRecoveryProfileId(null);
+      setRemoteImportRecoveryError(null);
       const response = await API.remoteDaemon.importConnectionCode(remoteConnectionCode, {
         connect: true,
       });
@@ -527,6 +612,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         setRemoteImportResult(`Connected to ${result.profile.label}.`);
       } else if (result?.connectionError) {
         setRemoteImportResult(`Saved ${result.profile.label}, but connection failed: ${result.connectionError}`);
+        if (isTailscaleDnsConnectionFailure(result.profile, result.connectionError)) {
+          setRemoteImportRecoveryProfileId(result.profile.id);
+          setRemoteImportRecoveryError(result.connectionError);
+        }
       } else if (result?.profile) {
         setRemoteImportResult(`Saved ${result.profile.label}.`);
       }
@@ -612,6 +701,71 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const remoteSetupFallbackCommands = remoteSetupResult
     ? remoteSetupResult.fallbackTunnelCommands.filter((command) => command !== remoteSetupResult.tunnel?.command)
     : [];
+  const activeRemoteProfile = remoteConnectionState.activeProfileId
+    ? remoteDaemonConfig.client.profiles.find((profile) => profile.id === remoteConnectionState.activeProfileId)
+    : undefined;
+  const importRecoveryProfile = remoteImportRecoveryProfileId
+    ? remoteDaemonConfig.client.profiles.find((profile) => profile.id === remoteImportRecoveryProfileId)
+    : undefined;
+  const activeTailscaleDnsFailure = isTailscaleDnsConnectionFailure(activeRemoteProfile, remoteConnectionState.lastError);
+  const importTailscaleDnsFailure = isTailscaleDnsConnectionFailure(importRecoveryProfile, remoteImportRecoveryError);
+  const renderTailscaleClientRecovery = (
+    profile: RemotePaneConnectionProfile | undefined,
+    errorMessage: string | null,
+  ) => {
+    if (!profile || !errorMessage) {
+      return null;
+    }
+
+    return (
+      <div className="p-3 rounded-lg bg-status-warning/10 border border-status-warning/30 space-y-3">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-status-warning" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium text-text-primary">Set up Tailscale on this device</p>
+            <p className="text-xs text-text-secondary">
+              This profile uses Tailscale, but Pane cannot resolve {getRemoteProfileHostname(profile) ?? 'the remote host'}.
+              Install Tailscale and sign in to the same account on this device, then retry the connection.
+            </p>
+            <p className="text-xs text-status-error">{errorMessage}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="primary"
+            size="sm"
+            icon={<Terminal className="w-4 h-4" />}
+            onClick={handleOpenTailscaleClientSetupTerminal}
+            disabled={remoteClientSetupTerminalBusy}
+            loading={remoteClientSetupTerminalBusy}
+            loadingText="Opening"
+          >
+            Open in Pane Terminal and Run Setup
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<RefreshCw className="w-4 h-4" />}
+            onClick={() => handleUseRemoteProfile(profile.id)}
+            disabled={remoteBusy}
+          >
+            Retry Connection
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            icon={<ExternalLink className="w-4 h-4" />}
+            onClick={() => window.electronAPI.openExternal('https://tailscale.com/download')}
+          >
+            Open Tailscale Download
+          </Button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" showCloseButton={false}>
@@ -1003,6 +1157,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   </Button>
                 </div>
 
+                {activeTailscaleDnsFailure && renderTailscaleClientRecovery(activeRemoteProfile, remoteConnectionState.lastError)}
+
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
                   <Textarea
                     label="Connection Code"
@@ -1032,6 +1188,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     {remoteImportResult}
                   </p>
                 )}
+
+                {importTailscaleDnsFailure && renderTailscaleClientRecovery(importRecoveryProfile, remoteImportRecoveryError)}
 
                 {remoteDaemonConfig.client.profiles.length > 0 && (
                   <div className="space-y-2">
@@ -1637,6 +1795,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   </Button>
                 </div>
 
+                {activeTailscaleDnsFailure && renderTailscaleClientRecovery(activeRemoteProfile, remoteConnectionState.lastError)}
+
                 <div className="space-y-3">
                   <Textarea
                     label="Connection Code"
@@ -1667,6 +1827,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       Import & Connect
                     </Button>
                   </div>
+                  {importTailscaleDnsFailure && renderTailscaleClientRecovery(importRecoveryProfile, remoteImportRecoveryError)}
                 </div>
               </SettingsSection>
 

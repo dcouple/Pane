@@ -502,6 +502,11 @@ export class API {
       return window.electronAPI.remoteDaemon.getInteractiveSetupCommand(input) as Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     },
 
+    async getInteractiveClientSetupCommand() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.getInteractiveClientSetupCommand() as Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
+    },
+
     async createConnectionPair(input: { label: string; baseUrl: string }) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.createConnectionPair(input) as Promise<{

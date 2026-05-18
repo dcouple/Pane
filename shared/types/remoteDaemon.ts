@@ -27,6 +27,7 @@ export interface RemotePaneConnectionProfile {
   baseUrl: string;
   token: string;
   transport: RemoteDaemonTransport;
+  tunnel?: PaneRemoteConnectionImportPayload['tunnel'];
 }
 
 export interface PaneRemoteConnectionImportPayload {
@@ -216,7 +217,8 @@ export function isRemotePaneConnectionProfile(value: unknown): value is RemotePa
     isNonEmptyString(value.label) &&
     isNonEmptyString(value.baseUrl) &&
     isNonEmptyString(value.token) &&
-    value.transport === 'http+sse'
+    value.transport === 'http+sse' &&
+    (value.tunnel === undefined || isRemoteImportTunnel(value.tunnel))
   );
 }
 
@@ -257,6 +259,7 @@ export function remoteImportPayloadToProfile(
     baseUrl: normalizedPayload.baseUrl,
     token: normalizedPayload.token,
     transport: normalizedPayload.transport,
+    ...(normalizedPayload.tunnel ? { tunnel: normalizedPayload.tunnel } : {}),
   };
 
   if (!isRemotePaneConnectionProfile(profile)) {
@@ -375,6 +378,19 @@ function normalizeRemoteImportTunnel(
     ...(command ? { command } : {}),
     ...(note ? { note } : {}),
   };
+}
+
+function isRemoteImportTunnel(value: unknown): value is NonNullable<PaneRemoteConnectionImportPayload['tunnel']> {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.kind === 'ssh' || value.kind === 'tailscale' || value.kind === 'manual') &&
+    typeof value.selected === 'boolean' &&
+    (value.command === undefined || isNonEmptyString(value.command)) &&
+    (value.note === undefined || isNonEmptyString(value.note))
+  );
 }
 
 function normalizeRemoteImportBaseUrl(value: string): string {

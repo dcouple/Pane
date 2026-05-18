@@ -609,6 +609,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:setup-host', input),
     getInteractiveSetupCommand: (input: RemoteHostSetupRequest): Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>> =>
       invokeIpc('remote-daemon:get-interactive-setup-command', input),
+    getInteractiveClientSetupCommand: (): Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>> =>
+      invokeIpc('remote-daemon:get-interactive-client-setup-command'),
     createConnectionPair: (input: { label: string; baseUrl: string }): Promise<IPCResponse<RemoteDaemonConnectionPair>> =>
       invokeIpc('remote-daemon:create-connection-pair', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>

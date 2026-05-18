@@ -238,6 +238,7 @@ interface ElectronAPI {
     getConnectionState: () => Promise<IPCResponse<RemotePaneConnectionState>>;
     setupHost: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupResult>>;
     getInteractiveSetupCommand: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
+    getInteractiveClientSetupCommand: () => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     createConnectionPair: (input: { label: string; baseUrl: string }) => Promise<IPCResponse<RemoteDaemonConnectionPair>>;
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
