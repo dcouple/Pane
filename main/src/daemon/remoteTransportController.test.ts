@@ -271,4 +271,27 @@ describe('PaneRemoteTransportController', () => {
     });
     expect(remoteHostRuntimeStateStore.getState().lastError).toContain('loopback');
   });
+
+  it('disconnects active remote clients without stopping the listener', async () => {
+    const registry = new PaneCommandRegistry();
+    const configManager = new ConfigManagerStub(createEnabledRemoteConfig());
+    const controller = new PaneRemoteTransportController(registry, configManager as never);
+    activeControllers.push(controller);
+
+    await controller.syncToConfig();
+    const server = controller.getServer();
+    if (!server) {
+      throw new Error('Remote HTTP API server did not start');
+    }
+
+    const stream = await openEventStream(server, 'secret-token');
+    await stream.nextEvent();
+    await waitFor(() => remoteHostRuntimeStateStore.getState().connectedClients.length === 1);
+
+    expect(controller.disconnectClients()).toBe(1);
+    await waitFor(() => remoteHostRuntimeStateStore.getState().connectedClients.length === 0);
+    expect(controller.getServer()).toBe(server);
+
+    stream.close();
+  });
 });

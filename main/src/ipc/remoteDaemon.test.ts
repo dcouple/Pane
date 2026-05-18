@@ -7,11 +7,16 @@ import {
 } from '../../../shared/types/remoteDaemon';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
+import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
 import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { registerRemoteDaemonHandlers } from './remoteDaemon';
 
 vi.mock('../daemon/setupRemoteHost', () => ({
   setupRemoteHost: vi.fn(),
+}));
+
+vi.mock('../daemon/remoteTransportController', () => ({
+  disconnectActiveRemoteHostClients: vi.fn(() => 0),
 }));
 
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
@@ -54,6 +59,8 @@ function createConfigManagerStub(initialConfig?: RemoteDaemonConfig): ConfigMana
 describe('remote daemon IPC', () => {
   afterEach(() => {
     vi.mocked(setupRemoteHost).mockReset();
+    vi.mocked(disconnectActiveRemoteHostClients).mockReset();
+    vi.mocked(disconnectActiveRemoteHostClients).mockReturnValue(0);
     vi.restoreAllMocks();
     remoteHostRuntimeStateStore.resetForTests();
     if (originalPlatformDescriptor) {
@@ -663,5 +670,39 @@ describe('remote daemon IPC', () => {
       success: false,
       error: 'Remote daemon direct HTTP only supports loopback listen hosts; keep listenHost on 127.0.0.1, ::1, or localhost and expose it through an SSH tunnel, Tailscale/VPN, or a reverse proxy.',
     });
+  });
+
+  it('disconnects live remote host clients through IPC', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    vi.mocked(disconnectActiveRemoteHostClients).mockReturnValue(2);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    await expect(ipcMain.handlers.get('remote-daemon:disconnect-host-clients')?.({}, ['client-1'])).resolves.toEqual({
+      success: true,
+      data: { disconnectedCount: 2 },
+    });
+    expect(disconnectActiveRemoteHostClients).toHaveBeenCalledWith(['client-1']);
+  });
+
+  it('drops a live remote host client when access is revoked', async () => {
+    const config = createDefaultRemoteDaemonConfig();
+    config.host.clients = [{
+      id: 'client-1',
+      label: 'Mac mini',
+      createdAt: '2026-05-18T00:00:00.000Z',
+      tokenHash: 'hashed-token',
+    }];
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(config);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    await expect(ipcMain.handlers.get('remote-daemon:delete-client-record')?.({}, 'client-1')).resolves.toEqual({
+      success: true,
+      data: [],
+    });
+    expect(disconnectActiveRemoteHostClients).toHaveBeenCalledWith(['client-1']);
   });
 });

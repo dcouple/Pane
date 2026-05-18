@@ -154,6 +154,19 @@ export class PaneRemoteHttpApiServer {
     return this.getConnectedClientSnapshots();
   }
 
+  disconnectClients(clientIds?: string[]): number {
+    const clientIdSet = clientIds ? new Set(clientIds) : null;
+    const clientConnectionIds = [...this.eventClients.entries()]
+      .filter(([, client]) => !clientIdSet || (client.remoteClientId !== null && clientIdSet.has(client.remoteClientId)))
+      .map(([clientConnectionId]) => clientConnectionId);
+
+    for (const clientConnectionId of clientConnectionIds) {
+      this.dropEventClient(clientConnectionId);
+    }
+
+    return clientConnectionIds.length;
+  }
+
   async start(): Promise<void> {
     if (this.server) {
       throw new Error('Remote daemon HTTP API server is already running');

@@ -617,6 +617,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:create-connection-pair', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>
       invokeIpc('remote-daemon:update-host-config', updates),
+    disconnectHostClients: (clientIds?: string[]): Promise<IPCResponse<{ disconnectedCount: number }>> =>
+      invokeIpc('remote-daemon:disconnect-host-clients', clientIds),
     upsertClientRecord: (record: RemoteDaemonClientRecord): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>
       invokeIpc('remote-daemon:upsert-client-record', record),
     deleteClientRecord: (clientId: string): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>

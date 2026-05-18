@@ -6,6 +6,12 @@ import type { PaneCommandRegistry } from './commandRegistry';
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 
+let activeRemoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
+
+export function disconnectActiveRemoteHostClients(clientIds?: string[]): number {
+  return activeRemoteHttpApiServer?.disconnectClients(clientIds) ?? 0;
+}
+
 export class PaneRemoteTransportController {
   private remoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
   private activeBindingKey: string | null = null;
@@ -35,6 +41,10 @@ export class PaneRemoteTransportController {
 
   getServer(): PaneRemoteHttpApiServer | null {
     return this.remoteHttpApiServer;
+  }
+
+  disconnectClients(clientIds?: string[]): number {
+    return this.remoteHttpApiServer?.disconnectClients(clientIds) ?? 0;
   }
 
   startWatchingConfig(): void {
@@ -87,6 +97,7 @@ export class PaneRemoteTransportController {
         await remoteHttpApiServer.start();
         this.remoteHttpApiServer = remoteHttpApiServer;
         this.activeBindingKey = nextBindingKey;
+        activeRemoteHttpApiServer = remoteHttpApiServer;
         remoteHostRuntimeStateStore.setLive(hostConfig, remoteHttpApiServer.getAddress());
       } catch (error) {
         await remoteHttpApiServer.stop();
@@ -103,6 +114,10 @@ export class PaneRemoteTransportController {
 
     if (remoteHttpApiServer) {
       await remoteHttpApiServer.stop();
+    }
+
+    if (activeRemoteHttpApiServer === remoteHttpApiServer) {
+      activeRemoteHttpApiServer = null;
     }
   }
 

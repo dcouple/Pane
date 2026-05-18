@@ -28,6 +28,7 @@ import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { getAppDirectory } from '../utils/appDirectory';
 import { ShellDetector } from '../utils/shellDetector';
+import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
 
 interface IpcMainHandleLike {
   handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
@@ -271,6 +272,16 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
+  ipcMain.handle('remote-daemon:disconnect-host-clients', async (_event, clientIds: unknown) => {
+    try {
+      const parsedClientIds = parseOptionalClientIds(clientIds);
+      const disconnectedCount = disconnectActiveRemoteHostClients(parsedClientIds);
+      return { success: true, data: { disconnectedCount } };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to disconnect remote daemon clients') };
+    }
+  });
+
   ipcMain.handle('remote-daemon:upsert-client-record', async (_event, record: unknown) => {
     try {
       if (!isRemoteDaemonClientRecord(record)) {
@@ -310,6 +321,7 @@ export function registerRemoteDaemonHandlers(
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
+      disconnectActiveRemoteHostClients([clientId]);
       return { success: true, data: next.host.clients };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to delete remote daemon client record') };
@@ -404,6 +416,26 @@ export function registerRemoteDaemonHandlers(
       return { success: false, error: getErrorMessage(error, 'Failed to update remote daemon client state') };
     }
   });
+}
+
+function parseOptionalClientIds(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(value)) {
+    throw new Error('Remote daemon client ids must be an array');
+  }
+
+  const clientIds = value.map((clientId) => {
+    if (typeof clientId !== 'string' || clientId.trim().length === 0) {
+      throw new Error('Remote daemon client id must be a non-empty string');
+    }
+
+    return clientId.trim();
+  });
+
+  return clientIds.length > 0 ? clientIds : undefined;
 }
 
 function getRemoteDaemonConfig(value: unknown): RemoteDaemonConfig {

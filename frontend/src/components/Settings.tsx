@@ -478,6 +478,38 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     });
   };
 
+  const handleStopRemoteHost = async () => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.updateHostConfig({ enabled: false });
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to stop remote host');
+      }
+
+      setRemoteHostConfigDraft((current) => ({
+        ...current,
+        enabled: false,
+      }));
+    });
+  };
+
+  const handleDisconnectRemoteClients = async (clientIds?: string[]) => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.disconnectHostClients(clientIds);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to disconnect remote clients');
+      }
+    });
+  };
+
+  const handleRevokeRemoteClient = async (clientId: string) => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.deleteClientRecord(clientId);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to revoke remote client access');
+      }
+    });
+  };
+
   const buildRemoteHostSetupRequest = (): RemoteHostSetupRequest => ({
     dataDirectoryMode: remoteSetupDataMode,
     label: remoteSetupLabel,
@@ -799,6 +831,11 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const remoteSetupPortIsValid =
     Number.isInteger(remoteSetupListenPort) && remoteSetupListenPort > 0 && remoteSetupListenPort <= 65535;
   const remoteHostRuntimePresentation = getRemoteHostRuntimePresentation(remoteHostState);
+  const liveRemoteClientIds = new Set(
+    remoteHostState.connectedClients
+      .map((client) => client.clientId)
+      .filter((clientId): clientId is string => Boolean(clientId)),
+  );
   const remoteSetupFallbackCommands = remoteSetupResult
     ? remoteSetupResult.fallbackTunnelCommands.filter((command) => command !== remoteSetupResult.tunnel?.command)
     : [];
@@ -962,12 +999,90 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   </button>
                 </div>
 
-                <div className={`flex items-start gap-2 rounded-lg border p-3 ${remoteHostRuntimePresentation.borderClassName}`}>
-                  <span className={`mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ${remoteHostRuntimePresentation.dotClassName}`} />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-text-primary">{remoteHostRuntimePresentation.title}</p>
-                    <p className="text-xs text-text-tertiary mt-1">{remoteHostRuntimePresentation.description}</p>
+                <div className={`rounded-lg border p-3 space-y-3 ${remoteHostRuntimePresentation.borderClassName}`}>
+                  <div className="flex items-start gap-2">
+                    <span className={`mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ${remoteHostRuntimePresentation.dotClassName}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-text-primary">{remoteHostRuntimePresentation.title}</p>
+                      <p className="text-xs text-text-tertiary mt-1">{remoteHostRuntimePresentation.description}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {remoteHostState.status === 'live' && remoteHostState.connectedClients.length > 0 && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleDisconnectRemoteClients()}
+                          disabled={remoteBusy}
+                        >
+                          Disconnect Clients
+                        </Button>
+                      )}
+                      {(remoteHostState.status === 'live' || remoteDaemonConfig.host.config.enabled) && (
+                        <Button
+                          type="button"
+                          variant="danger"
+                          size="sm"
+                          onClick={handleStopRemoteHost}
+                          disabled={remoteBusy}
+                        >
+                          Stop Remote Host
+                        </Button>
+                      )}
+                    </div>
                   </div>
+                  {remoteDaemonConfig.host.clients.length > 0 && (
+                    <div className="space-y-2 border-t border-border-secondary/70 pt-3">
+                      <p className="text-xs font-medium text-text-secondary">Paired clients</p>
+                      <div className="space-y-2">
+                        {remoteDaemonConfig.host.clients.map((client) => {
+                          const isLive = liveRemoteClientIds.has(client.id);
+                          return (
+                            <div
+                              key={client.id}
+                              className="flex items-center justify-between gap-3 rounded-md bg-surface-primary border border-border-secondary px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-text-primary truncate">
+                                  {client.label}
+                                  {isLive && <span className="ml-2 text-status-success">connected</span>}
+                                </p>
+                                <p className="text-[11px] text-text-tertiary">
+                                  {client.lastUsedAt ? formatRemoteLastSeen(client.lastUsedAt) : 'Never used.'}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {isLive && (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => handleDisconnectRemoteClients([client.id])}
+                                    disabled={remoteBusy}
+                                  >
+                                    Disconnect
+                                  </Button>
+                                )}
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  icon={<Trash2 className="w-4 h-4" />}
+                                  onClick={() => handleRevokeRemoteClient(client.id)}
+                                  disabled={remoteBusy}
+                                >
+                                  Revoke
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-text-tertiary">
+                        Disconnect drops live clients now. Revoke removes access so the client cannot reconnect with that saved token.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

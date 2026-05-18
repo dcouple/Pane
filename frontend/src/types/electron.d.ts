@@ -243,6 +243,7 @@ interface ElectronAPI {
     getInteractiveClientSetupCommand: () => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     createConnectionPair: (input: { label: string; baseUrl: string }) => Promise<IPCResponse<RemoteDaemonConnectionPair>>;
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
+    disconnectHostClients: (clientIds?: string[]) => Promise<IPCResponse<{ disconnectedCount: number }>>;
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     deleteClientRecord: (clientId: string) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;
     upsertConnectionProfile: (profile: RemotePaneConnectionProfile) => Promise<IPCResponse<RemotePaneConnectionProfile[]>>;

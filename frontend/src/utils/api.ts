@@ -527,6 +527,11 @@ export class API {
       return window.electronAPI.remoteDaemon.updateHostConfig(updates);
     },
 
+    async disconnectHostClients(clientIds?: string[]) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.disconnectHostClients(clientIds);
+    },
+
     async upsertClientRecord(record: RemoteDaemonClientRecord) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.upsertClientRecord(record);
