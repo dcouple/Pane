@@ -150,6 +150,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteBusy, setRemoteBusy] = useState(false);
   const [remoteSetupTerminalBusy, setRemoteSetupTerminalBusy] = useState(false);
   const [remoteClientSetupTerminalBusy, setRemoteClientSetupTerminalBusy] = useState(false);
+  const [remoteClientSetupError, setRemoteClientSetupError] = useState<string | null>(null);
   const [remoteImportRecoveryProfileId, setRemoteImportRecoveryProfileId] = useState<string | null>(null);
   const [remoteImportRecoveryError, setRemoteImportRecoveryError] = useState<string | null>(null);
   const [remoteSetupDataMode, setRemoteSetupDataMode] = useState<RemoteSetupDataDirectoryMode>('current');
@@ -462,11 +463,12 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const handleOpenTailscaleClientSetupTerminal = async () => {
     const projectId = activeProjectId ?? activeSessionProjectId;
     if (!projectId) {
-      setError('Select a project before opening a Tailscale setup terminal.');
+      setRemoteClientSetupError('Select a project before opening a Tailscale setup terminal.');
       return;
     }
 
     setRemoteClientSetupTerminalBusy(true);
+    setRemoteClientSetupError(null);
     setError(null);
 
     try {
@@ -507,7 +509,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       navigateToSessions();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to open Tailscale setup terminal');
+      setRemoteClientSetupError(err instanceof Error ? err.message : 'Failed to open Tailscale setup terminal');
     } finally {
       setRemoteClientSetupTerminalBusy(false);
     }
@@ -544,6 +546,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     await runRemoteDaemonAction(async () => {
       setRemoteImportRecoveryProfileId(null);
       setRemoteImportRecoveryError(null);
+      setRemoteClientSetupError(null);
       const response = await API.remoteDaemon.updateClientState({
         activeProfileId: profileId,
         mode: 'remote',
@@ -599,6 +602,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setRemoteImportResult(null);
       setRemoteImportRecoveryProfileId(null);
       setRemoteImportRecoveryError(null);
+      setRemoteClientSetupError(null);
       const response = await API.remoteDaemon.importConnectionCode(remoteConnectionCode, {
         connect: true,
       });
@@ -730,6 +734,11 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
             <p className="text-xs text-status-error">{errorMessage}</p>
           </div>
         </div>
+        {remoteClientSetupError && (
+          <div className="text-xs text-status-error bg-status-error/10 border border-status-error/30 rounded-md px-3 py-2">
+            {remoteClientSetupError}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"

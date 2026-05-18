@@ -290,6 +290,27 @@ describe('remote daemon IPC', () => {
     expect(response.data?.command).not.toContain('serve --bg');
   });
 
+  it('uses the bundled macOS Tailscale app CLI when the launcher is not on PATH', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-client-setup-command');
+    const response = await getCommand?.({}) as { success?: boolean; data?: { command?: string } };
+
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        command: expect.stringContaining('brew install --cask tailscale'),
+      },
+    });
+    expect(response.data?.command).toContain('/Applications/Tailscale.app/Contents/MacOS/Tailscale');
+    expect(response.data?.command).toContain('TAILSCALE_BE_CLI=1');
+    expect(response.data?.command).not.toContain('serve --bg');
+  });
+
   it('preserves Tailscale tunnel metadata when importing a connection code', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();

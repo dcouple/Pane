@@ -552,7 +552,13 @@ function buildInteractiveClientSetupCommand(shellName?: string): string {
   }
 
   if (process.platform === 'darwin') {
-    return '(command -v tailscale >/dev/null 2>&1 || brew install --cask tailscale) && tailscale up';
+    return [
+      '(command -v tailscale >/dev/null 2>&1 || brew install --cask tailscale)',
+      'TAILSCALE_CLI="$(command -v tailscale || true)"',
+      'if [ -z "$TAILSCALE_CLI" ] && [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then TAILSCALE_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"; fi',
+      'if [ -z "$TAILSCALE_CLI" ]; then echo "Tailscale is installed, but the CLI launcher is not available. Open Tailscale, enable CLI integration, then retry."; open -a Tailscale; exit 1; fi',
+      'TAILSCALE_BE_CLI=1 "$TAILSCALE_CLI" up',
+    ].join(' && ');
   }
 
   if (process.platform === 'linux') {
