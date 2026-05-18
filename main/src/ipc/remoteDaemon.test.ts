@@ -290,7 +290,7 @@ describe('remote daemon IPC', () => {
     expect(response.data?.command).not.toContain('serve --bg');
   });
 
-  it('uses the bundled macOS Tailscale app CLI when the launcher is not on PATH', async () => {
+  it('uses the macOS Tailscale CLI or installs the Homebrew formula when needed', async () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
@@ -303,11 +303,13 @@ describe('remote daemon IPC', () => {
     expect(response).toMatchObject({
       success: true,
       data: {
-        command: expect.stringContaining('brew install --cask tailscale'),
+        command: expect.stringContaining('brew install tailscale'),
       },
     });
     expect(response.data?.command).toContain('/Applications/Tailscale.app/Contents/MacOS/Tailscale');
+    expect(response.data?.command).toContain('brew services start tailscale');
     expect(response.data?.command).toContain('TAILSCALE_BE_CLI=1');
+    expect(response.data?.command).not.toContain('brew install --cask tailscale');
     expect(response.data?.command).not.toContain('serve --bg');
   });
 

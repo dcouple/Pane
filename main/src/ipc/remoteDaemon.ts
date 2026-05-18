@@ -553,11 +553,12 @@ function buildInteractiveClientSetupCommand(shellName?: string): string {
 
   if (process.platform === 'darwin') {
     return [
-      '(command -v tailscale >/dev/null 2>&1 || brew install --cask tailscale)',
       'TAILSCALE_CLI="$(command -v tailscale || true)"',
       'if [ -z "$TAILSCALE_CLI" ] && [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then TAILSCALE_CLI="/Applications/Tailscale.app/Contents/MacOS/Tailscale"; fi',
-      'if [ -z "$TAILSCALE_CLI" ]; then echo "Tailscale is installed, but the CLI launcher is not available. Open Tailscale, enable CLI integration, then retry."; open -a Tailscale; exit 1; fi',
-      'TAILSCALE_BE_CLI=1 "$TAILSCALE_CLI" up',
+      'if [ -z "$TAILSCALE_CLI" ] && command -v brew >/dev/null 2>&1; then brew install tailscale && TAILSCALE_CLI="$(command -v tailscale || true)"; fi',
+      'if [ -z "$TAILSCALE_CLI" ]; then echo "Tailscale CLI is not available. Install Tailscale from https://tailscale.com/download, enable CLI integration in the Tailscale app, then retry."; exit 1; fi',
+      'if command -v brew >/dev/null 2>&1 && brew list --formula tailscale >/dev/null 2>&1; then sudo brew services start tailscale || brew services start tailscale || true; fi',
+      'TAILSCALE_BE_CLI=1 "$TAILSCALE_CLI" up || sudo env TAILSCALE_BE_CLI=1 "$TAILSCALE_CLI" up',
     ].join(' && ');
   }
 
