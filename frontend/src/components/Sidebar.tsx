@@ -23,6 +23,7 @@ import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkey
 import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
+  type RemoteDaemonConnectedClient,
   type RemoteDaemonHostRuntimeState,
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
@@ -94,12 +95,22 @@ function formatRemoteHostClients(hostState: RemoteDaemonHostRuntimeState): strin
   }
 
   const clientLabels = hostState.connectedClients
-    .map((client) => client.label ?? client.remoteAddress ?? 'remote client')
-    .slice(0, 3)
-    .join(', ');
-  const remainingCount = hostState.connectedClients.length - 3;
+    .map(getRemoteClientDisplayLabel)
+    .filter((label): label is string => Boolean(label))
+    .slice(0, 3);
+  const clientNoun = hostState.connectedClients.length === 1 ? 'client is' : 'clients are';
+  if (clientLabels.length === 0) {
+    return `${hostState.connectedClients.length} remote ${clientNoun} connected.`;
+  }
+
+  const labels = clientLabels.join(', ');
+  const remainingCount = hostState.connectedClients.length - clientLabels.length;
   const suffix = remainingCount > 0 ? `, +${remainingCount} more` : '';
-  return `${hostState.connectedClients.length} remote ${hostState.connectedClients.length === 1 ? 'client is' : 'clients are'} connected: ${clientLabels}${suffix}.`;
+  return `${hostState.connectedClients.length} remote ${clientNoun} connected: ${labels}${suffix}.`;
+}
+
+function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
+  return client.deviceLabel ?? client.remoteAddress;
 }
 
 function getRemoteFooterStatus(

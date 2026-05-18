@@ -101,7 +101,11 @@ async function requestJson(
   });
 }
 
-async function openEventStream(server: PaneRemoteHttpApiServer, token?: string): Promise<TestEventStream> {
+async function openEventStream(
+  server: PaneRemoteHttpApiServer,
+  token?: string,
+  headers?: Record<string, string>,
+): Promise<TestEventStream> {
   const address = server.getAddress();
   if (!address) {
     throw new Error('Remote HTTP API server is not listening');
@@ -113,9 +117,10 @@ async function openEventStream(server: PaneRemoteHttpApiServer, token?: string):
       port: address.port,
       path: '/events',
       method: 'GET',
-      headers: token ? {
-        Authorization: `Bearer ${token}`,
-      } : undefined,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
     });
 
     activeRequests.add(request);
@@ -328,7 +333,9 @@ describe('PaneRemoteHttpApiServer', () => {
     activeServers.push(server);
     await server.start();
 
-    const stream = await openEventStream(server, 'secret-token');
+    const stream = await openEventStream(server, 'secret-token', {
+      'X-Pane-Client-Device-Label': 'Parsas MacBook Air',
+    });
     const readyEvent = await stream.nextEvent();
     expect(readyEvent.event).toBe('ready');
     expect(JSON.parse(readyEvent.data.join('\n'))).toMatchObject({
@@ -344,6 +351,7 @@ describe('PaneRemoteHttpApiServer', () => {
     expect(server.getConnectedClients()).toMatchObject([{
       clientId: 'client-1',
       label: 'Mac mini',
+      deviceLabel: 'Parsas MacBook Air',
       remoteAddress: expect.any(String),
       connectedAt: expect.any(String),
       lastSeenAt: expect.any(String),

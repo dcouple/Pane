@@ -1,5 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from 'http';
 import { EventEmitter } from 'events';
+import { hostname as getOsHostname } from 'os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../../shared/types/remoteDaemon';
 import type { PaneEventSink } from '../../core/eventSink';
@@ -15,6 +16,7 @@ interface TestRemoteServer {
   getLastInvokeHost(): string | undefined;
   getLastInvokePath(): string | undefined;
   getLastEventsPath(): string | undefined;
+  getLastEventsClientDeviceLabel(): string | undefined;
   getEventRequestCount(): number;
   setEmitReadyEvent(emitReadyEvent: boolean): void;
   setEventsReady(ready: boolean): void;
@@ -117,6 +119,7 @@ describe('RemotePaneClient', () => {
       channel: 'session:created',
       args: [{ id: 'session-1' }],
     }]);
+    expect(server.getLastEventsClientDeviceLabel()).toBe(getOsHostname().slice(0, 80));
 
     await client.disconnect();
   });
@@ -461,6 +464,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
   let lastInvokeHost: string | undefined;
   let lastInvokePath: string | undefined;
   let lastEventsPath: string | undefined;
+  let lastEventsClientDeviceLabel: string | undefined;
   let eventRequestCount = 0;
   let eventsReady = true;
   let emitReadyEvent = true;
@@ -486,6 +490,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     if (request.url === eventsPath) {
       eventRequestCount += 1;
       lastEventsPath = request.url;
+      lastEventsClientDeviceLabel = getSingleHeaderValue(request.headers['x-pane-client-device-label']);
       if (!eventsReady) {
         response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
         response.end(JSON.stringify({
@@ -559,6 +564,9 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     getLastEventsPath() {
       return lastEventsPath;
     },
+    getLastEventsClientDeviceLabel() {
+      return lastEventsClientDeviceLabel;
+    },
     getEventRequestCount() {
       return eventRequestCount;
     },
@@ -613,6 +621,10 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
   }
 
   return Buffer.concat(chunks).toString('utf8');
+}
+
+function getSingleHeaderValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {

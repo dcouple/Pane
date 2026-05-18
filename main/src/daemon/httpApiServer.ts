@@ -26,6 +26,7 @@ interface ConnectedRemoteEventClient {
   remoteClientId: string | null;
   remoteClientTokenHash: string | null;
   label: string | null;
+  deviceLabel: string | null;
   remoteAddress: string | null;
   connectedAt: string;
   lastSeenAt: string;
@@ -361,6 +362,7 @@ export class PaneRemoteHttpApiServer {
       remoteClientId: auth.client?.id ?? null,
       remoteClientTokenHash: auth.client?.tokenHash ?? null,
       label: auth.client?.label ?? getClientLabelFromHeaders(request),
+      deviceLabel: getClientDeviceLabelFromHeaders(request),
       remoteAddress: getRemoteAddress(request),
       connectedAt,
       lastSeenAt: connectedAt,
@@ -518,6 +520,7 @@ export class PaneRemoteHttpApiServer {
       id: client.id,
       clientId: client.remoteClientId,
       label: client.label,
+      deviceLabel: client.deviceLabel,
       remoteAddress: client.remoteAddress,
       connectedAt: client.connectedAt,
       lastSeenAt: client.lastSeenAt,
@@ -562,6 +565,10 @@ function writeSseEvent(
 
 function getClientLabelFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-client-label']);
+}
+
+function getClientDeviceLabelFromHeaders(request: IncomingMessage): string | null {
+  return getSingleHeaderValue(request.headers['x-pane-client-device-label']);
 }
 
 function getRemoteAddress(request: IncomingMessage): string | null {

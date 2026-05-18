@@ -3,6 +3,7 @@ import { lookup as defaultLookup, Resolver } from 'dns';
 import http, { type IncomingMessage, type RequestOptions } from 'http';
 import https from 'https';
 import { isIP, type LookupFunction } from 'net';
+import { hostname as getOsHostname } from 'os';
 import { noopPaneEventSink, type PaneEventSink } from '../../core/eventSink';
 import type { ConfigManager } from '../../services/configManager';
 import { isPaneDaemonEventChannel } from '../server';
@@ -247,6 +248,7 @@ export class RemotePaneClient {
           Authorization: `Bearer ${this.profile.token}`,
           Accept: 'text/event-stream',
           'X-Pane-Client-Label': this.profile.label,
+          'X-Pane-Client-Device-Label': getRemoteClientDeviceLabel(),
         },
       }), async (response) => {
         if (response.statusCode !== 200) {
@@ -840,6 +842,24 @@ function extractRemoteErrorMessage(body: string): string | null {
     return parsed.error?.message ?? null;
   } catch {
     return body;
+  }
+}
+
+function getRemoteClientDeviceLabel(): string {
+  const localHostname = getOsHostname().trim();
+  if (localHostname) {
+    return localHostname.slice(0, 80);
+  }
+
+  switch (process.platform) {
+    case 'darwin':
+      return 'macOS device';
+    case 'win32':
+      return 'Windows device';
+    case 'linux':
+      return 'Linux device';
+    default:
+      return 'remote client';
   }
 }
 

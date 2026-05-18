@@ -11,6 +11,7 @@ import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
+  type RemoteDaemonConnectedClient,
   type RemoteDaemonHostConfig,
   type RemoteDaemonHostRuntimeState,
   type RemoteHostSetupRequest,
@@ -137,12 +138,22 @@ function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): string {
     return 'No remote clients are connected.';
   }
 
-  const labels = state.connectedClients
-    .map((client) => client.label ?? client.remoteAddress ?? 'remote client')
-    .slice(0, 3)
-    .join(', ');
-  const remaining = state.connectedClients.length - 3;
-  return `${state.connectedClients.length} remote ${state.connectedClients.length === 1 ? 'client is' : 'clients are'} connected: ${labels}${remaining > 0 ? `, +${remaining} more` : ''}.`;
+  const displayLabels = state.connectedClients
+    .map(getRemoteClientDisplayLabel)
+    .filter((label): label is string => Boolean(label))
+    .slice(0, 3);
+  const clientNoun = state.connectedClients.length === 1 ? 'client is' : 'clients are';
+  if (displayLabels.length === 0) {
+    return `${state.connectedClients.length} remote ${clientNoun} connected.`;
+  }
+
+  const labels = displayLabels.join(', ');
+  const remaining = state.connectedClients.length - displayLabels.length;
+  return `${state.connectedClients.length} remote ${clientNoun} connected: ${labels}${remaining > 0 ? `, +${remaining} more` : ''}.`;
+}
+
+function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
+  return client.deviceLabel ?? client.remoteAddress;
 }
 
 function getRemoteHostRuntimePresentation(state: RemoteDaemonHostRuntimeState): {

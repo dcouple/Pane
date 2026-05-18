@@ -19,6 +19,7 @@ export interface RemoteDaemonConnectedClient {
   id: string;
   clientId: string | null;
   label: string | null;
+  deviceLabel: string | null;
   remoteAddress: string | null;
   connectedAt: string;
   lastSeenAt: string;
