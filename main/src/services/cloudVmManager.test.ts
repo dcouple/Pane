@@ -524,4 +524,49 @@ describe('CloudVmManager', () => {
       mode: 'local',
     });
   });
+
+  it('does not stop the hosted VM when switching back to local runtime fails', async () => {
+    const remoteDaemonConfig = createDefaultRemoteDaemonConfig();
+    remoteDaemonConfig.client.profiles = [{
+      id: 'remote-profile-1',
+      label: 'Pane Cloud Workspace',
+      baseUrl: 'https://pane.example.com/daemon/',
+      token: 'secret-token',
+      transport: 'http+sse',
+    }];
+    remoteDaemonConfig.client.activeProfileId = 'remote-profile-1';
+    remoteDaemonConfig.client.mode = 'remote';
+
+    vi.spyOn(remotePaneClientController, 'switchToLocalMode')
+      .mockRejectedValue(new Error('config write failed'));
+    vi.spyOn(remotePaneClientController, 'getConnectionState').mockReturnValue({
+      mode: 'remote',
+      status: 'connected',
+      activeProfileId: 'remote-profile-1',
+      activeProfileLabel: 'Pane Cloud Workspace',
+      activeBaseUrl: 'https://pane.example.com/daemon/',
+      lastError: null,
+    });
+
+    const configManager = new ConfigManagerStub(normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'secret-token',
+      serverId: 'pane-user123',
+      projectId: 'pane-project',
+      zone: 'us-central1-a',
+      daemonStatus: 'ready',
+      daemonBaseUrl: 'https://pane.example.com/daemon/',
+      linkedRemoteProfileId: 'remote-profile-1',
+    }), remoteDaemonConfig);
+    const manager = new CloudVmManager(configManager as never);
+    const gcpAction = vi.spyOn(manager as never, 'gcpAction').mockResolvedValue(undefined);
+
+    await expect(manager.stopVm()).rejects.toThrow('config write failed');
+
+    expect(gcpAction).not.toHaveBeenCalled();
+    expect(configManager.getConfig().remoteDaemon?.client).toMatchObject({
+      activeProfileId: 'remote-profile-1',
+      mode: 'remote',
+    });
+  });
 });
