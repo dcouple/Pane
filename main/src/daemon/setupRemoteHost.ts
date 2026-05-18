@@ -12,7 +12,6 @@ import {
   type RemoteHostSetupServiceResult,
   type RemoteHostSetupResult,
   type RemoteDaemonConfig,
-  type RemoteSetupChannel,
   type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
 import {
@@ -45,6 +44,7 @@ interface CommandResult {
 const DEFAULT_REMOTE_PANE_DIR = '.pane_remote';
 const SERVICE_NAME = 'com.dcouple.pane.remote-daemon';
 const WINDOWS_TASK_NAME = 'PaneRemoteDaemon';
+const DEFAULT_TUNNEL_PREFERENCE: RemoteSetupTunnelPreference = 'tailscale';
 
 export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Promise<SetupRemoteHostResult> {
   const paneDir = path.resolve(options.paneDir ?? process.env.PANE_DIR ?? path.join(os.homedir(), DEFAULT_REMOTE_PANE_DIR));
@@ -55,7 +55,7 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
   const manualDaemonCommand = buildHeadlessDaemonCommand(paneDir);
   const tunnelSelection = selectTunnel({
     listenPort,
-    preferTunnel: options.preferTunnel ?? 'auto',
+    preferTunnel: options.preferTunnel ?? DEFAULT_TUNNEL_PREFERENCE,
     exposeTailscale: options.exposeTailscale !== false,
     printOnly: options.printOnly === true,
     manualBaseUrl: options.baseUrl,
@@ -235,55 +235,86 @@ function selectTunnel(options: {
     };
   }
 
-  if (
-    options.exposeTailscale &&
-    options.preferTunnel !== 'ssh' &&
-    options.preferTunnel !== 'manual' &&
-    commandExists('tailscale')
-  ) {
-    const tailscaleServe = options.printOnly
-      ? { ok: false, stdout: '', stderr: 'print-only mode' }
-      : runCommand('tailscale', ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
-    const serveUrl = tailscaleServe.ok
-      ? extractFirstUrl(`${tailscaleServe.stdout}\n${tailscaleServe.stderr}`)
-      : null;
-
-    if (serveUrl) {
-      return {
-        baseUrl: serveUrl,
-        fallbackCommands,
-        tunnel: {
-          kind: 'tailscale',
-          selected: true,
-          command: tailscaleCommand,
-          note: 'Tailscale Serve is configured for this tailnet. Keep the Pane daemon running on this host.',
-        },
-      };
-    }
+  if (options.preferTunnel === 'manual') {
+    throw new Error('Manual HTTPS remote setup requires a base URL. Use an HTTPS tunnel or choose SSH Tunnel for local forwarding.');
   }
 
-  if (options.preferTunnel === 'manual') {
+  if (options.preferTunnel === 'ssh') {
     return {
       baseUrl: `http://127.0.0.1:${options.listenPort}`,
       fallbackCommands,
       tunnel: {
-        kind: 'manual',
+        kind: 'ssh',
         selected: true,
-        note: `Expose local daemon port ${options.listenPort} through your own loopback-safe tunnel before connecting.`,
+        command: sshCommand,
+        note: 'Run this SSH tunnel command on the client machine before connecting. SSH tunnel mode is intended for advanced local forwarding, not zero-config cross-device setup.',
       },
     };
   }
 
+  if (options.preferTunnel === 'tailscale' || options.preferTunnel === 'auto') {
+    return selectTailscaleTunnel({
+      listenPort: options.listenPort,
+      exposeTailscale: options.exposeTailscale,
+      printOnly: options.printOnly,
+      tailscaleCommand,
+      fallbackCommands,
+    });
+  }
+
+  return assertNeverTunnelPreference(options.preferTunnel);
+}
+
+function selectTailscaleTunnel(options: {
+  listenPort: number;
+  exposeTailscale: boolean;
+  printOnly: boolean;
+  tailscaleCommand: string;
+  fallbackCommands: string[];
+}): TunnelSelection {
+  if (!options.exposeTailscale) {
+    throw new Error(`Tailscale is required for cross-device remote setup. Remove --no-tailscale-serve or choose SSH Tunnel under advanced options.\n\n${getTailscaleSetupInstructions()}`);
+  }
+
+  if (!commandExists('tailscale')) {
+    throw new Error(`Tailscale is required for cross-device remote setup, but the tailscale CLI was not found.\n\n${getTailscaleSetupInstructions()}`);
+  }
+
+  if (options.printOnly) {
+    throw new Error('Tailscale setup cannot run in print-only mode because Pane must configure Tailscale Serve before it can create a cross-device connection code.');
+  }
+
+  const tailscaleServe = runCommand('tailscale', ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
+  if (!tailscaleServe.ok) {
+    throw new Error(`Tailscale Serve setup failed: ${firstNonEmpty(tailscaleServe.stderr, tailscaleServe.stdout, 'unknown error')}\n\n${getTailscaleSetupInstructions()}`);
+  }
+
+  const serveStatus = runCommand('tailscale', ['serve', 'status']);
+  const serveUrl = extractFirstHttpsUrl([
+    tailscaleServe.stdout,
+    tailscaleServe.stderr,
+    serveStatus.ok ? serveStatus.stdout : '',
+    serveStatus.ok ? serveStatus.stderr : '',
+  ].join('\n'));
+
+  if (!serveUrl) {
+    throw new Error(`Tailscale Serve was configured, but Pane could not find an HTTPS Tailscale URL in the command output. Run "${options.tailscaleCommand}" manually and confirm Tailscale is logged in.\n\n${getTailscaleSetupInstructions()}`);
+  }
+
   return {
-    baseUrl: `http://127.0.0.1:${options.listenPort}`,
-    fallbackCommands,
+    baseUrl: serveUrl,
+    fallbackCommands: options.fallbackCommands,
     tunnel: {
-      kind: 'ssh',
+      kind: 'tailscale',
       selected: true,
-      command: sshCommand,
-      note: 'Run this SSH tunnel command on your local machine before connecting, unless you configure Tailscale Serve or another HTTPS reverse proxy.',
+      command: options.tailscaleCommand,
+      note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode.',
     },
   };
+}
+
+function assertNeverTunnelPreference(value: never): never {
+  throw new Error(`Unsupported remote setup tunnel preference: ${String(value)}`);
 }
 
 async function installBestAvailableService(options: {
@@ -559,13 +590,26 @@ function commandOutputToString(value: string | Buffer | null): string {
   return value ? value.toString('utf8') : '';
 }
 
-function extractFirstUrl(output: string): string | null {
-  const match = output.match(/https?:\/\/[^\s|]+/);
+function extractFirstHttpsUrl(output: string): string | null {
+  const match = output.match(/https:\/\/[^\s|"'<>]+/);
   if (!match) {
     return null;
   }
 
   return match[0].replace(/[),.]+$/g, '');
+}
+
+function getTailscaleSetupInstructions(): string {
+  switch (process.platform) {
+    case 'darwin':
+      return 'Install Tailscale for macOS from https://tailscale.com/download, sign in, then run setup again.';
+    case 'win32':
+      return 'Install Tailscale for Windows from https://tailscale.com/download, sign in, then run setup again.';
+    case 'linux':
+      return 'Install Tailscale from https://tailscale.com/download/linux, run "sudo tailscale up", then run setup again.';
+    default:
+      return 'Install Tailscale from https://tailscale.com/download, sign in, then run setup again.';
+  }
 }
 
 function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {

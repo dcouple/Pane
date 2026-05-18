@@ -99,10 +99,10 @@ function getUsageText(): string {
     '  --listen-port <port>          Loopback daemon port (default: 42137)',
     '  --channel <stable|nightly>    Release channel metadata for website bootstrap validation',
     '  --repo-ref <ref>              Source ref metadata for validation builds',
-    '  --prefer-tunnel <mode>        auto, tailscale, ssh, or manual (default: auto)',
+    '  --prefer-tunnel <mode>        tailscale, ssh, manual, or legacy auto (default: tailscale)',
     '  --no-install-service          Write config and print manual daemon command without installing startup service',
     '  --no-tailscale-serve          Do not attempt to configure Tailscale Serve',
-    '  --print-only                  Generate output without writing config, installing service, or configuring tunnels',
+    '  --print-only                  Validate output without writing config, installing service, or configuring tunnels; incompatible with default Tailscale setup',
     '',
   ].join('\n');
 }

@@ -124,7 +124,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteSetupLabel, setRemoteSetupLabel] = useState('');
   const [remoteSetupListenPort, setRemoteSetupListenPort] = useState(42137);
   const [remoteSetupPaneDir, setRemoteSetupPaneDir] = useState('');
-  const [remoteSetupTunnelPreference, setRemoteSetupTunnelPreference] = useState<RemoteSetupTunnelPreference>('auto');
+  const [remoteSetupTunnelPreference, setRemoteSetupTunnelPreference] = useState<RemoteSetupTunnelPreference>('tailscale');
   const [remoteSetupManualBaseUrl, setRemoteSetupManualBaseUrl] = useState('');
   const [remoteSetupInstallService, setRemoteSetupInstallService] = useState(true);
   const [remoteSetupResult, setRemoteSetupResult] = useState<RemoteHostSetupResult | null>(null);
@@ -590,7 +590,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
             >
               <SettingsSection
                 title="Set Up This Machine"
-                description="Create a connection code from this Pane install."
+                description="Create a cross-device connection code from this Pane install."
                 icon={<Server className="w-4 h-4" />}
                 spacing="sm"
               >
@@ -664,9 +664,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   <p className="text-xs font-medium text-text-secondary">Access Mode</p>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                     {[
-                      ['auto', 'Auto', 'Use Tailscale when available.'],
-                      ['ssh', 'SSH Tunnel', 'Generate an SSH forward command.'],
-                      ['manual', 'Manual HTTPS', 'Use your own tunnel URL.'],
+                      ['tailscale', 'Tailscale', 'Recommended for another device or network.'],
+                      ['ssh', 'SSH Tunnel', 'Advanced local forwarding.'],
+                      ['manual', 'Manual HTTPS', 'Advanced custom tunnel URL.'],
                     ].map(([id, label, description]) => (
                       <button
                         key={id}
@@ -685,6 +685,18 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   </div>
                 </div>
 
+                {remoteSetupTunnelPreference === 'tailscale' && (
+                  <p className="text-xs text-text-tertiary">
+                    Pane will configure Tailscale Serve for the local daemon. If Tailscale is not installed or logged in, setup will stop with install instructions.
+                  </p>
+                )}
+
+                {remoteSetupTunnelPreference === 'ssh' && (
+                  <p className="text-xs text-status-warning">
+                    SSH tunnel mode creates a localhost connection code and requires running the generated SSH command on the client machine before connecting.
+                  </p>
+                )}
+
                 {remoteSetupTunnelPreference === 'manual' && (
                   <Input
                     label="Manual HTTPS Base URL"
@@ -698,7 +710,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-text-tertiary">
-                    Current mode serves from this running Pane app. Isolated mode can install a service.
+                    Recommended setup requires Tailscale so another device can connect. Current mode serves from this running Pane app.
                   </p>
                   <Button
                     type="button"
@@ -708,7 +720,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     loading={remoteBusy}
                     loadingText="Setting up"
                   >
-                    Set Up & Create Code
+                    {remoteSetupTunnelPreference === 'tailscale' ? 'Set Up Tailscale & Create Code' : 'Create Advanced Code'}
                   </Button>
                 </div>
 

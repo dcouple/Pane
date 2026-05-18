@@ -264,10 +264,14 @@ export async function installElectronApiMock(page: Page) {
           paneDir?: string;
           label?: string;
           listenPort?: number;
+          preferTunnel?: 'tailscale' | 'ssh' | 'manual' | 'auto';
         } = {}) => {
           const id = `remote-${nextRemoteConnectionId++}`;
           const label = input.label ?? 'Remote host';
           const listenPort = input.listenPort ?? 42137;
+          const tunnelKind = input.preferTunnel === 'ssh' || input.preferTunnel === 'manual'
+            ? input.preferTunnel
+            : 'tailscale';
           const token = `token-${id}`;
           const client = {
             id,
@@ -291,7 +295,7 @@ export async function installElectronApiMock(page: Page) {
             channel: 'stable',
             connectionCode: 'pane-remote://mock-remote-code',
             tunnel: {
-              kind: 'manual',
+              kind: tunnelKind,
               selected: true,
               note: 'Mock remote setup',
             },
