@@ -39,7 +39,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Copy,
-  Server
+  Server,
+  ExternalLink
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -792,10 +793,47 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
               <SettingsSection
                 title="Connection"
-                description="Paste the pane-remote:// code from the VM setup command to save and connect in one step."
+                description="Run remote setup on the machine that should host your worktrees and terminals, then paste the printed pane-remote:// code here."
                 icon={<Power className="w-4 h-4" />}
                 spacing="sm"
               >
+                <div className="space-y-3 p-4 rounded-lg bg-surface-secondary border border-border-secondary">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium text-text-primary">Set up the remote host</p>
+                      <p className="text-xs text-text-tertiary">
+                        Pane runs a small headless daemon on the remote machine. This desktop app connects to it, so agents use that machine's repos, shell, Git config, and CLI credentials.
+                      </p>
+                    </div>
+                    <a
+                      href="https://runpane.com/docs/remote-daemon"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs text-interactive hover:text-interactive-hover transition-colors whitespace-nowrap"
+                    >
+                      Remote VM Setup
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-text-secondary">macOS / Linux</p>
+                      <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        curl -fsSL https://runpane.com/install-remote.sh | sh
+                      </code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-text-secondary">Windows PowerShell</p>
+                      <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        irm https://runpane.com/install-remote.ps1 | iex
+                      </code>
+                    </div>
+                  </div>
+                  <p className="text-xs text-text-tertiary">
+                    Install Codex, Claude Code, or your preferred CLI agent on the remote host before starting agent panels.
+                  </p>
+                </div>
+
                 <div className={`flex items-center justify-between gap-4 p-4 rounded-lg border ${
                   remoteConnectionState.status === 'connected'
                     ? 'bg-status-success/10 border-status-success/35'
@@ -1431,7 +1469,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
             >
               <SettingsSection
                 title="Connect To Remote Pane"
-                description="Paste the pane-remote:// code from the VM setup command. Pane saves the profile and switches to it automatically."
+                description="Paste a pane-remote:// code from remote setup. Pane saves the profile and switches to it automatically."
                 icon={<Power className="w-4 h-4" />}
                 spacing="sm"
               >
