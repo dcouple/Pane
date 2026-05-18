@@ -12,6 +12,7 @@ interface TestRemoteServer {
   emitDaemonEvent(payload: unknown): void;
   getLastInvokeAuth(): string | undefined;
   getLastInvokeBody(): string | undefined;
+  getLastInvokeHost(): string | undefined;
   getLastInvokePath(): string | undefined;
   getLastEventsPath(): string | undefined;
   setEmitReadyEvent(emitReadyEvent: boolean): void;
@@ -54,6 +55,34 @@ describe('RemotePaneClient', () => {
       channel: 'sessions:get-all',
       args: ['session-1'],
     }));
+  });
+
+  it('falls back to a stored Tailscale IP when macOS cannot resolve a ts.net host', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+    const serverUrl = new URL(server.baseUrl);
+    const tailscaleHost = 'pane-unresolvable-for-test.invalid.ts.net';
+
+    const client = new RemotePaneClient({
+      id: 'profile-tailscale-fallback',
+      label: 'WSL',
+      baseUrl: `http://${tailscaleHost}:${serverUrl.port}`,
+      token: 'secret-token',
+      transport: 'http+sse',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        tailscaleIp: '127.0.0.1',
+      },
+    });
+
+    await expect(client.invoke('sessions:get-all', ['session-1'])).resolves.toEqual({
+      channel: 'sessions:get-all',
+      args: ['session-1'],
+    });
+
+    expect(server.getLastInvokeAuth()).toBe('Bearer secret-token');
+    expect(server.getLastInvokeHost()).toBe(`${tailscaleHost}:${serverUrl.port}`);
   });
 
   it('forwards remote daemon SSE events through the provided renderer sink', async () => {
@@ -392,6 +421,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
   let streamResponse: ServerResponse | null = null;
   let lastInvokeAuth: string | undefined;
   let lastInvokeBody: string | undefined;
+  let lastInvokeHost: string | undefined;
   let lastInvokePath: string | undefined;
   let lastEventsPath: string | undefined;
   let eventsReady = true;
@@ -404,6 +434,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     if (request.url === invokePath) {
       lastInvokeAuth = request.headers.authorization;
       lastInvokeBody = await readRequestBody(request);
+      lastInvokeHost = request.headers.host;
       lastInvokePath = request.url;
       const parsed = JSON.parse(lastInvokeBody) as { channel: string; args: unknown[] };
       response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -479,6 +510,9 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     },
     getLastInvokeBody() {
       return lastInvokeBody;
+    },
+    getLastInvokeHost() {
+      return lastInvokeHost;
     },
     getLastInvokePath() {
       return lastInvokePath;

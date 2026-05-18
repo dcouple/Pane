@@ -323,6 +323,8 @@ function selectTailscaleTunnel(options: {
     throw new Error(`Tailscale Serve was configured, but Pane could not find an HTTPS Tailscale URL in the command output. Run "${tailscaleCommand}" manually and confirm Tailscale is logged in.\n\n${getTailscaleSetupInstructions()}`);
   }
 
+  const tailscaleIp = readTailscaleIpv4(tailscaleCli);
+
   return {
     baseUrl: serveUrl,
     fallbackCommands: options.fallbackCommands.includes(tailscaleCommand)
@@ -333,6 +335,7 @@ function selectTailscaleTunnel(options: {
       selected: true,
       command: tailscaleCommand,
       note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode.',
+      ...(tailscaleIp ? { tailscaleIp } : {}),
     },
   };
 }
@@ -622,6 +625,31 @@ function extractFirstHttpsUrl(output: string): string | null {
   }
 
   return match[0].replace(/[),.]+$/g, '');
+}
+
+function readTailscaleIpv4(tailscaleCli: ResolvedCommand): string | null {
+  const result = runTailscaleCommand(tailscaleCli, ['ip', '-4']);
+  if (!result.ok) {
+    return null;
+  }
+
+  return result.stdout
+    .split(/\s+/)
+    .map((value) => value.trim())
+    .find(isIpv4Address)
+    ?? null;
+}
+
+function isIpv4Address(value: string): boolean {
+  const parts = value.split('.');
+  return parts.length === 4 && parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) {
+      return false;
+    }
+
+    const numericPart = Number(part);
+    return numericPart >= 0 && numericPart <= 255;
+  });
 }
 
 function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {

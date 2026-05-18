@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
+import { lookup as defaultLookup, Resolver } from 'dns';
 import http, { type IncomingMessage, type RequestOptions } from 'http';
 import https from 'https';
+import { isIP, type LookupFunction } from 'net';
 import { noopPaneEventSink, type PaneEventSink } from '../../core/eventSink';
 import type { ConfigManager } from '../../services/configManager';
 import { isPaneDaemonEventChannel } from '../server';
@@ -53,6 +55,11 @@ interface RemoteReadyEventPayload {
 
 const REMOTE_DAEMON_RECONNECT_DELAY_MS = 1_000;
 const REMOTE_DAEMON_INITIAL_HANDSHAKE_TIMEOUT_MS = 10_000;
+const TAILSCALE_MAGIC_DNS_SERVER = '100.100.100.100';
+
+type RemoteRequestOptions = RequestOptions & {
+  servername?: string;
+};
 
 export class RemotePaneClient {
   private readonly normalizedBaseUrl: URL;
@@ -109,13 +116,13 @@ export class RemotePaneClient {
 
   async invoke(channel: string, args: unknown[]): Promise<unknown> {
     const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'invoke');
-    const response = await requestJson(endpoint, {
+    const response = await requestJson(endpoint, this.buildRequestOptions(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.profile.token}`,
         'Content-Type': 'application/json; charset=utf-8',
       },
-    }, JSON.stringify({ channel, args }));
+    }), JSON.stringify({ channel, args }));
 
     const payload = parseJsonResponse<RemoteInvokeResponsePayload>(
       response,
@@ -179,13 +186,13 @@ export class RemotePaneClient {
         );
       }, this.initialHandshakeTimeoutMs);
 
-      request = createRequest(endpoint, {
+      request = createRequest(endpoint, this.buildRequestOptions(endpoint, {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${this.profile.token}`,
           Accept: 'text/event-stream',
         },
-      }, async (response) => {
+      }), async (response) => {
         if (response.statusCode !== 200) {
           const body = await readResponseBody(response);
           const message = extractRemoteErrorMessage(body)
@@ -272,6 +279,15 @@ export class RemotePaneClient {
 
       request.end();
     });
+  }
+
+  private buildRequestOptions(endpoint: URL, options: RequestOptions): RemoteRequestOptions {
+    const lookup = createTailscaleFallbackLookup(this.profile, endpoint);
+    return {
+      ...options,
+      ...(lookup ? { lookup } : {}),
+      ...(endpoint.protocol === 'https:' ? { servername: endpoint.hostname } : {}),
+    };
   }
 
   private handleInitialConnectionFailure(message: string, retryOnInitialFailure: boolean): void {
@@ -533,9 +549,104 @@ function buildRemoteEndpoint(baseUrl: URL, path: 'invoke' | 'events'): URL {
   return new URL(path, baseUrl);
 }
 
+function createTailscaleFallbackLookup(
+  profile: RemotePaneConnectionProfile,
+  endpoint: URL,
+): LookupFunction | undefined {
+  const hostname = normalizeLookupHostname(endpoint.hostname);
+  if (isIP(hostname) !== 0) {
+    return undefined;
+  }
+
+  const staticTailscaleIp = profile.tunnel?.kind === 'tailscale'
+    ? normalizeFallbackIp(profile.tunnel.tailscaleIp)
+    : null;
+  const isTailscaleHostname = hostname.toLowerCase().endsWith('.ts.net');
+  if (!staticTailscaleIp && !isTailscaleHostname) {
+    return undefined;
+  }
+
+  return (lookupHostname, options, callback) => {
+    defaultLookup(lookupHostname, options, (error, address, family) => {
+      if (!error) {
+        callback(null, address, family);
+        return;
+      }
+
+      void resolveTailscaleFallbackAddress(
+        normalizeLookupHostname(lookupHostname),
+        staticTailscaleIp,
+        isTailscaleHostname,
+      ).then((fallbackAddress) => {
+        if (!fallbackAddress) {
+          callback(error, '', 0);
+          return;
+        }
+
+        const fallbackFamily = isIP(fallbackAddress);
+        if (options.all === true) {
+          callback(null, [{ address: fallbackAddress, family: fallbackFamily }]);
+          return;
+        }
+
+        callback(null, fallbackAddress, fallbackFamily);
+      }).catch(() => {
+        callback(error, '', 0);
+      });
+    });
+  };
+}
+
+async function resolveTailscaleFallbackAddress(
+  hostname: string,
+  staticTailscaleIp: string | null,
+  isTailscaleHostname: boolean,
+): Promise<string | null> {
+  if (staticTailscaleIp) {
+    return staticTailscaleIp;
+  }
+
+  if (!isTailscaleHostname) {
+    return null;
+  }
+
+  return resolveTailscaleMagicDnsIpv4(hostname);
+}
+
+async function resolveTailscaleMagicDnsIpv4(hostname: string): Promise<string | null> {
+  const resolver = new Resolver();
+  resolver.setServers([TAILSCALE_MAGIC_DNS_SERVER]);
+
+  const addresses = await new Promise<string[]>((resolve, reject) => {
+    resolver.resolve4(hostname, (error, result) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(result);
+    });
+  });
+
+  return addresses.find((address) => isIP(address) === 4) ?? null;
+}
+
+function normalizeFallbackIp(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return isIP(normalizedValue) !== 0 ? normalizedValue : null;
+}
+
+function normalizeLookupHostname(hostname: string): string {
+  return hostname.replace(/^\[(.*)]$/, '$1');
+}
+
 function createRequest(
   url: URL,
-  options: RequestOptions,
+  options: RemoteRequestOptions,
   onResponse: (response: IncomingMessage) => void,
 ): http.ClientRequest {
   const transport = url.protocol === 'https:' ? https : http;
@@ -544,7 +655,7 @@ function createRequest(
 
 async function requestJson(
   url: URL,
-  options: RequestOptions,
+  options: RemoteRequestOptions,
   body: string,
 ): Promise<JsonResponse> {
   return await new Promise<JsonResponse>((resolve, reject) => {

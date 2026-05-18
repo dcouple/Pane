@@ -6,6 +6,7 @@ import {
   normalizePaneRemoteConnectionImportPayload,
   normalizeRemoteDaemonConfig,
   remoteImportPayloadToProfile,
+  type PaneRemoteConnectionImportPayload,
   type RemoteDaemonConnectionPair,
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
@@ -182,8 +183,9 @@ export function registerRemoteDaemonHandlers(
 
       const connect = input.connect !== false;
       const payload = decodePaneRemoteConnection(code);
-      const profile = remoteImportPayloadToProfile(payload);
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+      const existingProfile = findMatchingConnectionProfile(current.client.profiles, payload);
+      const profile = remoteImportPayloadToProfile(payload, existingProfile?.id);
 
       let connected = false;
       let connectionError: string | undefined;
@@ -640,6 +642,17 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
   }
 
   return items.map((item, index) => (index === existingIndex ? nextItem : item));
+}
+
+function findMatchingConnectionProfile(
+  profiles: RemoteDaemonClientSettings['profiles'],
+  payload: PaneRemoteConnectionImportPayload,
+): RemoteDaemonClientSettings['profiles'][number] | undefined {
+  return profiles.find((profile) => (
+    profile.baseUrl === payload.baseUrl &&
+    profile.token === payload.token &&
+    profile.transport === payload.transport
+  ));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -41,6 +41,7 @@ export interface PaneRemoteConnectionImportPayload {
     command?: string;
     note?: string;
     selected: boolean;
+    tailscaleIp?: string;
   };
 }
 
@@ -371,12 +372,16 @@ function normalizeRemoteImportTunnel(
   const note = value.note === undefined
     ? undefined
     : readRequiredString(value.note, 'Remote tunnel note');
+  const tailscaleIp = value.tailscaleIp === undefined
+    ? undefined
+    : readRemoteTunnelIp(value.tailscaleIp);
 
   return {
     kind: value.kind,
     selected: value.selected,
     ...(command ? { command } : {}),
     ...(note ? { note } : {}),
+    ...(tailscaleIp ? { tailscaleIp } : {}),
   };
 }
 
@@ -389,8 +394,51 @@ function isRemoteImportTunnel(value: unknown): value is NonNullable<PaneRemoteCo
     (value.kind === 'ssh' || value.kind === 'tailscale' || value.kind === 'manual') &&
     typeof value.selected === 'boolean' &&
     (value.command === undefined || isNonEmptyString(value.command)) &&
-    (value.note === undefined || isNonEmptyString(value.note))
+    (value.note === undefined || isNonEmptyString(value.note)) &&
+    (value.tailscaleIp === undefined || isRemoteTunnelIp(value.tailscaleIp))
   );
+}
+
+function readRemoteTunnelIp(value: unknown): string {
+  if (!isRemoteTunnelIp(value)) {
+    throw new Error('Remote tunnel Tailscale IP must be a valid IP address');
+  }
+
+  return value.trim();
+}
+
+function isRemoteTunnelIp(value: unknown): value is string {
+  if (!isNonEmptyString(value)) {
+    return false;
+  }
+
+  const normalizedValue = value.trim();
+  return isValidIpv4Address(normalizedValue) || isValidIpv6Address(normalizedValue);
+}
+
+function isValidIpv4Address(value: string): boolean {
+  const parts = value.split('.');
+  return parts.length === 4 && parts.every((part) => {
+    if (!/^\d{1,3}$/.test(part)) {
+      return false;
+    }
+
+    const numericPart = Number(part);
+    return numericPart >= 0 && numericPart <= 255;
+  });
+}
+
+function isValidIpv6Address(value: string): boolean {
+  if (!value.includes(':')) {
+    return false;
+  }
+
+  try {
+    new URL(`http://[${value}]/`);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeRemoteImportBaseUrl(value: string): string {

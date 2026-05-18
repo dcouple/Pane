@@ -326,6 +326,7 @@ describe('remote daemon IPC', () => {
         kind: 'tailscale',
         selected: true,
         command: 'tailscale serve --bg http://127.0.0.1:42137',
+        tailscaleIp: '100.127.116.52',
       },
     });
 
@@ -346,6 +347,7 @@ describe('remote daemon IPC', () => {
           tunnel: {
             kind: 'tailscale',
             selected: true,
+            tailscaleIp: '100.127.116.52',
           },
         },
         connected: false,
@@ -356,6 +358,53 @@ describe('remote daemon IPC', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
+        tailscaleIp: '100.127.116.52',
+      },
+    });
+  });
+
+  it('updates an existing imported profile instead of duplicating the same connection code', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    const connectionCode = encodePaneRemoteConnection({
+      v: 1,
+      label: 'PARSA-SL7 Pane daemon',
+      baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+      token: 'secret-token',
+      transport: 'http+sse',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        tailscaleIp: '100.127.116.52',
+      },
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const importCode = ipcMain.handlers.get('remote-daemon:import-connection-code');
+    const firstResponse = await importCode?.({}, {
+      code: connectionCode,
+      connect: false,
+    }) as { success?: boolean; data?: { profile?: { id?: string } } };
+    const secondResponse = await importCode?.({}, {
+      code: connectionCode,
+      connect: false,
+    }) as { success?: boolean; data?: { profile?: { id?: string } } };
+
+    expect(firstResponse.success).toBe(true);
+    expect(secondResponse.success).toBe(true);
+    expect(secondResponse.data?.profile?.id).toBe(firstResponse.data?.profile?.id);
+    expect(configManager.getConfig().remoteDaemon?.client.profiles).toHaveLength(1);
+    expect(configManager.getConfig().remoteDaemon?.client.profiles[0]).toMatchObject({
+      id: firstResponse.data?.profile?.id,
+      label: 'PARSA-SL7 Pane daemon',
+      baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+      token: 'secret-token',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        tailscaleIp: '100.127.116.52',
       },
     });
   });

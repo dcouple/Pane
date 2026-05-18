@@ -71,6 +71,12 @@ describe('setupRemoteHost', () => {
             stdout: 'https://office-mac.tailnet.ts.net proxy http://127.0.0.1:42137\n',
           });
         }
+        if (command === 'tailscale' && args[0] === 'ip' && args[1] === '-4') {
+          return commandResult({
+            status: 0,
+            stdout: '100.127.116.52\n',
+          });
+        }
 
         return missingCommandResult(command);
       });
@@ -95,8 +101,10 @@ describe('setupRemoteHost', () => {
 
       expect(result.tunnel?.kind).toBe('tailscale');
       expect(result.tunnel?.command).toBe('tailscale serve --bg http://127.0.0.1:42137');
+      expect(result.tunnel?.tailscaleIp).toBe('100.127.116.52');
       expect(payload.baseUrl).toBe('https://office-mac.tailnet.ts.net');
       expect(payload.tunnel?.kind).toBe('tailscale');
+      expect(payload.tunnel?.tailscaleIp).toBe('100.127.116.52');
       expect(config.remoteDaemon.host.config).toMatchObject({
         enabled: true,
         listenHost: '127.0.0.1',
