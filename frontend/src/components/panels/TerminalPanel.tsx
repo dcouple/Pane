@@ -57,6 +57,23 @@ const DEFAULT_TERMINAL_FONT_FAMILY = 'Geist Mono';
 const DEFAULT_TERMINAL_FONT_SIZE = 14;
 const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
 const REFOCUS_DELAYED_REFRESH_MS = 300;
+const TERMINAL_VISIBILITY_REFRESH_MS = 60_000;
+const TERMINAL_VISIBILITY_VIEWER_ID = getTerminalVisibilityViewerId();
+
+function getTerminalVisibilityViewerId(): string {
+  const storageKey = 'pane-terminal-visibility-viewer-id';
+  try {
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+
+    const next = globalThis.crypto?.randomUUID?.()
+      ?? `viewer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    window.sessionStorage.setItem(storageKey, next);
+    return next;
+  } catch {
+    return `viewer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  }
+}
 
 function buildTerminalFontFamily(userFont: string): string {
   return `"${userFont}", "Symbols Nerd Font Mono", monospace`;
@@ -274,7 +291,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   // current isActive the moment the PTY exists.
   useEffect(() => {
     if (!isInitialized) return;
-    window.electronAPI.invoke('terminal:setVisibility', panel.id, effectiveVisible);
+    window.electronAPI.invoke('terminal:setVisibility', panel.id, effectiveVisible, TERMINAL_VISIBILITY_VIEWER_ID);
+
+    if (!effectiveVisible) return;
+    const refreshTimer = setInterval(() => {
+      window.electronAPI.invoke('terminal:setVisibility', panel.id, true, TERMINAL_VISIBILITY_VIEWER_ID);
+    }, TERMINAL_VISIBILITY_REFRESH_MS);
+
+    return () => clearInterval(refreshTimer);
   }, [effectiveVisible, panel.id, isInitialized]);
 
   // WebGL policy: detach immediately when the panel hides, keep it attached
@@ -1272,7 +1296,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       // and unmount-during-init both reliably reach main. The inner cleanup
       // below is deferred via cleanupPromise.then(...) and may never run if
       // unmount happens before init resolves.
-      window.electronAPI.invoke('terminal:setVisibility', panel.id, false);
+      window.electronAPI.invoke('terminal:setVisibility', panel.id, false, TERMINAL_VISIBILITY_VIEWER_ID);
 
       // Clean up async initialization
       cleanupPromise.then(cleanupFn => cleanupFn?.());

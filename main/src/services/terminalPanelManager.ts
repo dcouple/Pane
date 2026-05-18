@@ -157,6 +157,7 @@ interface TerminalProcess {
 export class TerminalPanelManager {
   private terminals = new Map<string, TerminalProcess>();
   private serializedBuffers = new Map<string, string>();
+  private readonly visibleViewersByPanel = new Map<string, Map<string, number>>();
   private readonly MAX_SCROLLBACK_LINES = 10000;
   private analyticsManager: AnalyticsManager | null = null;
 
@@ -489,9 +490,79 @@ export class TerminalPanelManager {
     }
   }
 
-  setVisibility(panelId: string, isVisible: boolean): void {
+  setVisibility(panelId: string, isVisible: boolean, viewerId = 'local:legacy'): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return;
+    const normalizedViewerId = this.normalizeVisibilityViewerId(viewerId);
+    let visibleViewers = this.visibleViewersByPanel.get(panelId);
+
+    if (isVisible) {
+      if (!visibleViewers) {
+        visibleViewers = new Map();
+        this.visibleViewersByPanel.set(panelId, visibleViewers);
+      }
+      visibleViewers.set(normalizedViewerId, Date.now());
+    } else if (visibleViewers) {
+      visibleViewers.delete(normalizedViewerId);
+      if (visibleViewers.size === 0) {
+        this.visibleViewersByPanel.delete(panelId);
+        visibleViewers = undefined;
+      }
+    }
+
+    this.applyVisibilityState(terminal, (visibleViewers?.size ?? 0) > 0);
+  }
+
+  clearVisibilityViewer(viewerId: string): void {
+    this.clearVisibilityViewers((candidate) => candidate === this.normalizeVisibilityViewerId(viewerId));
+  }
+
+  clearVisibilityViewersByPrefix(prefix: string): void {
+    this.clearVisibilityViewers((candidate) => this.visibilityViewerMatchesPrefix(candidate, prefix));
+  }
+
+  pruneVisibilityViewersByPrefix(prefix: string, staleAfterMs: number): void {
+    const cutoff = Date.now() - staleAfterMs;
+    this.clearVisibilityViewers((candidate, lastSeenAt) => (
+      this.visibilityViewerMatchesPrefix(candidate, prefix) && lastSeenAt < cutoff
+    ));
+  }
+
+  private clearVisibilityViewers(shouldClear: (viewerId: string, lastSeenAt: number) => boolean): void {
+    for (const [panelId, visibleViewers] of [...this.visibleViewersByPanel]) {
+      let changed = false;
+      for (const [viewerId, lastSeenAt] of [...visibleViewers]) {
+        if (shouldClear(viewerId, lastSeenAt)) {
+          visibleViewers.delete(viewerId);
+          changed = true;
+        }
+      }
+
+      if (!changed) {
+        continue;
+      }
+
+      if (visibleViewers.size === 0) {
+        this.visibleViewersByPanel.delete(panelId);
+      }
+
+      const terminal = this.terminals.get(panelId);
+      if (terminal) {
+        this.applyVisibilityState(terminal, visibleViewers.size > 0);
+      }
+    }
+  }
+
+  private normalizeVisibilityViewerId(viewerId: string): string {
+    const trimmed = viewerId.trim();
+    return trimmed.length > 0 ? trimmed : 'local:legacy';
+  }
+
+  private visibilityViewerMatchesPrefix(viewerId: string, prefix: string): boolean {
+    return viewerId === prefix || viewerId.startsWith(`${prefix}:`);
+  }
+
+  private applyVisibilityState(terminal: TerminalProcess, isVisible: boolean): void {
     const wasVisible = terminal.isVisible;
     terminal.isVisible = isVisible;
     if (wasVisible === isVisible) return;
@@ -1003,6 +1074,7 @@ export class TerminalPanelManager {
 
       // Clean up
       this.terminals.delete(terminal.panelId);
+      this.visibleViewersByPanel.delete(terminal.panelId);
 
       // Notify frontend (include signal for crash detection)
       this.sendRendererEvent('terminal:exited', {
@@ -1057,6 +1129,7 @@ export class TerminalPanelManager {
       // PTY may have exited between the map lookup and the write call
       console.warn(`[TerminalPanelManager] Failed to write to terminal ${panelId}:`, err);
       this.terminals.delete(panelId);
+      this.visibleViewersByPanel.delete(panelId);
       return;
     }
     terminal.lastActivity = new Date();
@@ -1081,6 +1154,7 @@ export class TerminalPanelManager {
       // PTY may have exited between the map lookup and the resize call
       console.warn(`[TerminalPanelManager] Failed to resize terminal ${panelId}:`, err);
       this.terminals.delete(panelId);
+      this.visibleViewersByPanel.delete(panelId);
       return;
     }
     
@@ -1289,6 +1363,7 @@ export class TerminalPanelManager {
 
     // Remove from maps
     this.terminals.delete(panelId);
+    this.visibleViewersByPanel.delete(panelId);
     this.serializedBuffers.delete(panelId);
   }
 
@@ -1369,6 +1444,7 @@ export class TerminalPanelManager {
       if (!panel) {
         console.warn(`[ptyHost] respawnAll: panel ${panelId} no longer exists, skipping`);
         this.terminals.delete(panelId);
+        this.visibleViewersByPanel.delete(panelId);
         continue;
       }
 
@@ -1404,6 +1480,7 @@ export class TerminalPanelManager {
         terminal.idleTimer = null;
       }
       this.terminals.delete(panelId);
+      this.visibleViewersByPanel.delete(panelId);
     }
 
     if (snapshots.length === 0) {
@@ -1518,6 +1595,7 @@ export class TerminalPanelManager {
     }
 
     this.terminals.clear();
+    this.visibleViewersByPanel.clear();
     this.serializedBuffers.clear();
   }
 

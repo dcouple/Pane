@@ -73,6 +73,7 @@ const REMOTE_DAEMON_RECONNECT_ERROR_THRESHOLD = 5;
 const REMOTE_DAEMON_HEARTBEAT_STALE_TIMEOUT_MS = 20_000;
 const REMOTE_DAEMON_INITIAL_HANDSHAKE_TIMEOUT_MS = 10_000;
 const TAILSCALE_MAGIC_DNS_SERVER = '100.100.100.100';
+const REMOTE_RUNTIME_ID = createRemoteRuntimeId();
 
 type RemoteRequestOptions = RequestOptions & {
   servername?: string;
@@ -170,6 +171,7 @@ export class RemotePaneClient {
         headers: {
           Authorization: `Bearer ${this.profile.token}`,
           'Content-Type': 'application/json; charset=utf-8',
+          'X-Pane-Remote-Runtime-Id': REMOTE_RUNTIME_ID,
         },
       }), JSON.stringify({ channel, args }));
     } catch (error) {
@@ -249,6 +251,7 @@ export class RemotePaneClient {
           Accept: 'text/event-stream',
           'X-Pane-Client-Label': this.profile.label,
           'X-Pane-Client-Device-Label': getRemoteClientDeviceLabel(),
+          'X-Pane-Remote-Runtime-Id': REMOTE_RUNTIME_ID,
         },
       }), async (response) => {
         if (response.statusCode !== 200) {
@@ -861,6 +864,11 @@ function getRemoteClientDeviceLabel(): string {
     default:
       return 'remote client';
   }
+}
+
+function createRemoteRuntimeId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `remote-runtime-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 function parseRemoteReadyEventPayload(data: string): RemoteReadyEventPayload | null {

@@ -1,10 +1,18 @@
 import http from 'http';
 import { EventEmitter } from 'events';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { hashRemoteDaemonToken } from './auth';
 import { PaneCommandRegistry } from './commandRegistry';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
+
+vi.mock('../services/terminalPanelManager', () => ({
+  terminalPanelManager: {
+    clearVisibilityViewersByPrefix: vi.fn(),
+    pruneVisibilityViewersByPrefix: vi.fn(),
+  },
+}));
+
 import { PaneRemoteTransportController } from './remoteTransportController';
 
 interface TestEventStream {

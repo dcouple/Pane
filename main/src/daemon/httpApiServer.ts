@@ -1,6 +1,7 @@
 import http, { type IncomingMessage, type ServerResponse } from 'http';
 import { createFanoutEventSink, noopPaneEventSink, type PaneEventSink } from '../core/eventSink';
 import type { ConfigManager } from '../services/configManager';
+import { terminalPanelManager } from '../services/terminalPanelManager';
 import type { PaneCommandRegistry } from './commandRegistry';
 import { authenticateRemoteDaemonBearerToken } from './auth';
 import { isPaneDaemonEventChannel } from './server';
@@ -27,6 +28,7 @@ interface ConnectedRemoteEventClient {
   remoteClientTokenHash: string | null;
   label: string | null;
   deviceLabel: string | null;
+  remoteRuntimeId: string | null;
   remoteAddress: string | null;
   connectedAt: string;
   lastSeenAt: string;
@@ -78,6 +80,7 @@ type RemoteRequestAuthResult =
 
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS = 5_000;
+const REMOTE_VISIBILITY_VIEWER_STALE_MS = 15 * 60 * 1000;
 
 interface PaneRemoteHttpApiServerOptions {
   heartbeatIntervalMs?: number;
@@ -290,7 +293,10 @@ export class PaneRemoteHttpApiServer {
     }
 
     try {
-      const result = await this.commandRegistry.invoke(invokeRequest.channel, invokeRequest.args);
+      const result = await this.commandRegistry.invoke(
+        invokeRequest.channel,
+        this.getInvokeArgsForRequest(invokeRequest, auth, request),
+      );
       this.writeJson(response, 200, {
         ok: true,
         result,
@@ -363,6 +369,7 @@ export class PaneRemoteHttpApiServer {
       remoteClientTokenHash: auth.client?.tokenHash ?? null,
       label: auth.client?.label ?? getClientLabelFromHeaders(request),
       deviceLabel: getClientDeviceLabelFromHeaders(request),
+      remoteRuntimeId: getRemoteRuntimeIdFromHeaders(request),
       remoteAddress: getRemoteAddress(request),
       connectedAt,
       lastSeenAt: connectedAt,
@@ -486,6 +493,9 @@ export class PaneRemoteHttpApiServer {
     }
 
     clearInterval(client.heartbeatTimer);
+    terminalPanelManager.clearVisibilityViewersByPrefix(
+      this.getRemoteVisibilityViewerPrefix(client.remoteClientId, client.remoteClientTokenHash, client.remoteRuntimeId),
+    );
     this.eventClients.delete(clientConnectionId);
     if (!client.response.writableEnded) {
       client.response.end();
@@ -505,6 +515,10 @@ export class PaneRemoteHttpApiServer {
         timestamp,
       } satisfies RemoteDaemonHeartbeatPayload);
       client.lastSeenAt = timestamp;
+      terminalPanelManager.pruneVisibilityViewersByPrefix(
+        this.getRemoteVisibilityViewerPrefix(client.remoteClientId, client.remoteClientTokenHash, client.remoteRuntimeId),
+        REMOTE_VISIBILITY_VIEWER_STALE_MS,
+      );
       this.publishConnectedClients();
     } catch {
       this.dropEventClient(clientConnectionId);
@@ -525,6 +539,37 @@ export class PaneRemoteHttpApiServer {
       connectedAt: client.connectedAt,
       lastSeenAt: client.lastSeenAt,
     }));
+  }
+
+  private getInvokeArgsForRequest(
+    invokeRequest: RemoteInvokeRequest,
+    auth: Extract<RemoteRequestAuthResult, { ok: true }>,
+    request: IncomingMessage,
+  ): unknown[] {
+    const args = [...invokeRequest.args];
+    if (invokeRequest.channel !== 'terminal:setVisibility') {
+      return args;
+    }
+
+    const rawViewerId = typeof args[2] === 'string' && args[2].trim().length > 0
+      ? args[2]
+      : 'default';
+    args[2] = `${this.getRemoteVisibilityViewerPrefix(
+      auth.client?.id ?? null,
+      auth.client?.tokenHash ?? null,
+      getRemoteRuntimeIdFromHeaders(request),
+    )}:viewer:${sanitizeVisibilityViewerPart(rawViewerId)}`;
+    return args;
+  }
+
+  private getRemoteVisibilityViewerPrefix(
+    remoteClientId: string | null,
+    remoteClientTokenHash: string | null,
+    remoteRuntimeId: string | null,
+  ): string {
+    const clientPart = remoteClientId ?? remoteClientTokenHash ?? 'anonymous';
+    const runtimePart = remoteRuntimeId ?? 'legacy-runtime';
+    return `remote:${sanitizeVisibilityViewerPart(clientPart)}:${sanitizeVisibilityViewerPart(runtimePart)}`;
   }
 
   private getRemoteConfig(): RemoteDaemonConfig {
@@ -569,6 +614,15 @@ function getClientLabelFromHeaders(request: IncomingMessage): string | null {
 
 function getClientDeviceLabelFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-client-device-label']);
+}
+
+function getRemoteRuntimeIdFromHeaders(request: IncomingMessage): string | null {
+  return getSingleHeaderValue(request.headers['x-pane-remote-runtime-id']);
+}
+
+function sanitizeVisibilityViewerPart(value: string): string {
+  const sanitized = value.trim().replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+  return sanitized || 'unknown';
 }
 
 function getRemoteAddress(request: IncomingMessage): string | null {

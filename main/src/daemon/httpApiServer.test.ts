@@ -1,8 +1,16 @@
 import http from 'http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { PaneCommandRegistry } from './commandRegistry';
 import { hashRemoteDaemonToken } from './auth';
+
+vi.mock('../services/terminalPanelManager', () => ({
+  terminalPanelManager: {
+    clearVisibilityViewersByPrefix: vi.fn(),
+    pruneVisibilityViewersByPrefix: vi.fn(),
+  },
+}));
+
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 
 interface ConfigManagerStub {
@@ -62,6 +70,7 @@ async function requestJson(
   path: string,
   body?: unknown,
   token?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<{ statusCode: number; body: unknown }> {
   const address = server.getAddress();
   if (!address) {
@@ -77,6 +86,7 @@ async function requestJson(
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...extraHeaders,
       },
     }, (response) => {
       const chunks: Buffer[] = [];
@@ -232,6 +242,32 @@ describe('PaneRemoteHttpApiServer', () => {
         result: [{ id: 'session-1' }],
       },
     });
+  });
+
+  it('scopes terminal visibility invokes to the authenticated remote runtime', async () => {
+    const registry = new PaneCommandRegistry();
+    const handler = vi.fn(async () => ({ ok: true }));
+    registry.register('terminal:setVisibility', handler);
+
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestJson(server, 'POST', '/invoke', {
+      channel: 'terminal:setVisibility',
+      args: ['panel-1', true, 'renderer-viewer-1'],
+    }, 'secret-token', {
+      'X-Pane-Remote-Runtime-Id': 'runtime-1',
+    })).resolves.toMatchObject({
+      statusCode: 200,
+      body: { ok: true },
+    });
+
+    expect(handler).toHaveBeenCalledWith(
+      'panel-1',
+      true,
+      'remote:client-1:runtime-1:viewer:renderer-viewer-1',
+    );
   });
 
   it('rejects invoke requests without bearer auth', async () => {

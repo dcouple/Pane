@@ -65,7 +65,9 @@ type FlushOutputBufferAccess = {
 
 type VisibilityAccess = {
   terminals: Map<string, TerminalUnderTest>;
-  setVisibility(panelId: string, isVisible: boolean): void;
+  setVisibility(panelId: string, isVisible: boolean, viewerId?: string): void;
+  clearVisibilityViewersByPrefix(prefix: string): void;
+  pruneVisibilityViewersByPrefix(prefix: string, staleAfterMs: number): void;
 };
 
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
@@ -218,6 +220,56 @@ describe('TerminalPanelManager hidden output delivery', () => {
     });
     expect(terminal.outputBuffer).toBe('');
     expect(terminal.outputFlushTimer).toBeNull();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('keeps terminal visible until the last visible viewer hides', () => {
+    const combinedSink = { send: vi.fn() };
+    const daemonSink = { send: vi.fn() };
+    setPaneRuntime({
+      eventSink: combinedSink,
+      daemonEventSink: daemonSink,
+      getConfigManager: () => createConfigManagerStub(),
+      getPtyHostRuntime: () => null,
+      getWebviewContextMap: () => new Map(),
+    });
+
+    const manager = new TerminalPanelManager() as unknown as VisibilityAccess;
+    const terminal = createTerminal({
+      isVisible: false,
+      outputBuffer: '',
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    manager.setVisibility(terminal.panelId, true, 'local:host');
+    manager.setVisibility(terminal.panelId, true, 'remote:mac');
+    manager.setVisibility(terminal.panelId, false, 'remote:mac');
+
+    expect(terminal.isVisible).toBe(true);
+
+    manager.setVisibility(terminal.panelId, false, 'local:host');
+
+    expect(terminal.isVisible).toBe(false);
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('clears remote viewer visibility by prefix on disconnect', () => {
+    const manager = new TerminalPanelManager() as unknown as VisibilityAccess;
+    const terminal = createTerminal({
+      isVisible: false,
+      outputBuffer: '',
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    manager.setVisibility(terminal.panelId, true, 'local:host');
+    manager.setVisibility(terminal.panelId, true, 'remote:client-1:runtime-1:viewer:a');
+    manager.clearVisibilityViewersByPrefix('remote:client-1:runtime-1');
+
+    expect(terminal.isVisible).toBe(true);
+
+    manager.setVisibility(terminal.panelId, false, 'local:host');
+
+    expect(terminal.isVisible).toBe(false);
     disposeFlowControlRecord(terminal.flowControl);
   });
 });

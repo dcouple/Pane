@@ -548,8 +548,13 @@ export function registerPanelHandlers(
   // Renderer tells main when a terminal panel becomes (in)visible so PTY
   // output cadence can drop to OUTPUT_BATCH_INTERVAL_HIDDEN while hidden.
   // No-op when the panel's PTY isn't in the map (pre-init / post-destroy).
-  commandRegistry.register('terminal:setVisibility', async (panelId: string, isVisible: boolean) => {
-    terminalPanelManager.setVisibility(panelId, !!isVisible);
+  commandRegistry.register('terminal:setVisibility', async (panelId: string, isVisible: boolean, viewerId?: string) => {
+    const scopedViewerId = typeof viewerId === 'string' && viewerId.includes(':')
+      ? viewerId
+      : typeof viewerId === 'string'
+        ? `local:${viewerId}`
+        : undefined;
+    terminalPanelManager.setVisibility(panelId, !!isVisible, scopedViewerId);
   });
 
   commandRegistry.register('terminal:ack', async (panelId: string, bytesConsumed: number) => {
