@@ -235,6 +235,7 @@ describe('remote daemon IPC', () => {
       label: 'Office Mac mini',
       listenPort: 42137,
       preferTunnel: 'ssh',
+      autoSelectListenPort: true,
       installService: false,
       existingConfig: expect.any(Object),
       writeConfig: expect.any(Function),

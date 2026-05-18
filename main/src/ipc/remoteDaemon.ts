@@ -105,6 +105,7 @@ export function registerRemoteDaemonHandlers(
         exposeTailscale: request.exposeTailscale,
         preferTunnel: request.preferTunnel,
         baseUrl: request.baseUrl,
+        autoSelectListenPort: true,
         existingConfig: useCurrentDataDirectory ? configManager.getConfig() : undefined,
         writeConfig: useCurrentDataDirectory
           ? async (nextConfig) => {
