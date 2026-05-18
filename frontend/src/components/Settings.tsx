@@ -627,7 +627,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <Input
-                    label="Connection Label"
+                    label="This Machine Label"
                     value={remoteSetupLabel}
                     onChange={(e) => setRemoteSetupLabel(e.target.value)}
                     placeholder="Office Mac mini"
