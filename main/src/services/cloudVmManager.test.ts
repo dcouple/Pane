@@ -453,6 +453,8 @@ describe('CloudVmManager', () => {
       linkedRemoteProfileId: 'remote-profile-1',
     }), remoteDaemonConfig);
     const manager = new CloudVmManager(configManager as never);
+    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
 
     const state = await manager.disconnectWorkspace();
 

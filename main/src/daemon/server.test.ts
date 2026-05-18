@@ -41,12 +41,14 @@ function createTempAppDirectory(): string {
 
 async function connectClient(server: PaneDaemonServer): Promise<TestClient> {
   const endpoint = server.getEndpoint();
+  const expectedSubscriberCount = getSubscriberCount(server) + 1;
   const socket = await new Promise<net.Socket>((resolve, reject) => {
     const client = net.createConnection(endpoint.path, () => resolve(client));
     client.once('error', reject);
   });
 
   activeSockets.push(socket);
+  await waitForSubscriberCount(server, expectedSubscriberCount);
 
   const decoder = new PaneDaemonFrameDecoder();
   const queuedFrames: PaneDaemonFrame[] = [];
@@ -83,6 +85,20 @@ async function connectClient(server: PaneDaemonServer): Promise<TestClient> {
       });
     },
   };
+}
+
+function getSubscriberCount(server: PaneDaemonServer): number {
+  return (server as unknown as { clients: Map<string, unknown> }).clients.size;
+}
+
+async function waitForSubscriberCount(server: PaneDaemonServer, expectedCount: number): Promise<void> {
+  const deadline = Date.now() + 1000;
+  while (getSubscriberCount(server) < expectedCount) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for ${expectedCount} Pane daemon subscriber(s)`);
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 describe('PaneDaemonServer', () => {
