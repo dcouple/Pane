@@ -339,7 +339,7 @@ function selectTailscaleTunnel(options: {
       kind: 'tailscale',
       selected: true,
       command: tailscaleCommand,
-      note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode.',
+      note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode. If another device cannot connect immediately, wait a few minutes for Tailscale Serve to finish provisioning, then retry.',
       ...(tailscaleIp ? { tailscaleIp } : {}),
     },
   };
