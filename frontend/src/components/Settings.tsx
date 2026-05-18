@@ -8,9 +8,11 @@ import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSy
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
 import {
   createDefaultRemoteDaemonConfig,
+  createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
   type RemoteDaemonHostConfig,
+  type RemoteDaemonHostRuntimeState,
   type RemoteHostSetupRequest,
   type RemoteHostSetupResult,
   type RemoteSetupDataDirectoryMode,
@@ -104,6 +106,79 @@ function isTailscaleDnsConnectionFailure(profile: RemotePaneConnectionProfile | 
     || normalizedError.includes('enodata');
 }
 
+function formatRemoteLastSeen(lastSeenAt: string | null): string | null {
+  if (!lastSeenAt) {
+    return null;
+  }
+
+  const seenAtMs = Date.parse(lastSeenAt);
+  if (Number.isNaN(seenAtMs)) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - seenAtMs) / 1000));
+  if (ageSeconds < 10) {
+    return 'Last seen just now.';
+  }
+  if (ageSeconds < 60) {
+    return `Last seen ${ageSeconds}s ago.`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `Last seen ${ageMinutes}m ago.`;
+  }
+
+  return `Last seen ${new Date(seenAtMs).toLocaleString()}.`;
+}
+
+function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): string {
+  if (state.connectedClients.length === 0) {
+    return 'No remote clients are connected.';
+  }
+
+  const labels = state.connectedClients
+    .map((client) => client.label ?? client.remoteAddress ?? 'remote client')
+    .slice(0, 3)
+    .join(', ');
+  const remaining = state.connectedClients.length - 3;
+  return `${state.connectedClients.length} remote ${state.connectedClients.length === 1 ? 'client is' : 'clients are'} connected: ${labels}${remaining > 0 ? `, +${remaining} more` : ''}.`;
+}
+
+function getRemoteHostRuntimePresentation(state: RemoteDaemonHostRuntimeState): {
+  dotClassName: string;
+  borderClassName: string;
+  title: string;
+  description: string;
+} {
+  if (state.status === 'live') {
+    return {
+      dotClassName: 'bg-status-success',
+      borderClassName: 'bg-status-success/10 border-status-success/30',
+      title: 'Remote host live',
+      description: state.listenHost && state.listenPort
+        ? `This Pane app is accepting remote connections on ${state.listenHost}:${state.listenPort}. ${formatRemoteHostClients(state)} Keep Pane open for Current Pane Data connections.`
+        : `This Pane app is accepting remote connections. ${formatRemoteHostClients(state)} Keep Pane open for Current Pane Data connections.`,
+    };
+  }
+
+  if (state.status === 'error') {
+    return {
+      dotClassName: 'bg-status-error',
+      borderClassName: 'bg-status-error/10 border-status-error/30',
+      title: 'Remote host offline',
+      description: state.lastError ?? 'Pane could not start the remote listener on this machine.',
+    };
+  }
+
+  return {
+    dotClassName: 'bg-text-tertiary',
+    borderClassName: 'bg-surface-secondary border-border-secondary',
+    title: state.enabled ? 'Remote host configured, not live' : 'Remote host inactive',
+    description: 'Run setup or reopen Pane on this machine to make existing remote profiles connect.',
+  };
+}
+
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [verbose, setVerbose] = useState(false);
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
@@ -138,6 +213,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [worktreeFileSync, setWorktreeFileSync] = useState<WorktreeFileSyncEntry[]>([]);
   const [remoteDaemonConfig, setRemoteDaemonConfig] = useState<RemoteDaemonConfig>(createDefaultRemoteDaemonConfig());
   const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
+  const [remoteHostState, setRemoteHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
   const [remoteHostConfigDraft, setRemoteHostConfigDraft] = useState<RemoteDaemonHostConfig>(createDefaultRemoteDaemonConfig().host.config);
   const [remotePairLabel, setRemotePairLabel] = useState('');
   const [remotePairBaseUrl, setRemotePairBaseUrl] = useState('http://127.0.0.1:42137');
@@ -177,9 +253,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
 
   const refreshRemoteDaemonSettings = useCallback(async () => {
-    const [configResponse, connectionStateResponse] = await Promise.all([
+    const [configResponse, connectionStateResponse, hostStateResponse] = await Promise.all([
       API.remoteDaemon.getConfig(),
       API.remoteDaemon.getConnectionState(),
+      API.remoteDaemon.getHostState(),
     ]);
 
     if (configResponse.success && configResponse.data) {
@@ -208,6 +285,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
     if (connectionStateResponse.success && connectionStateResponse.data) {
       setRemoteConnectionState(connectionStateResponse.data);
+    }
+
+    if (hostStateResponse.success && hostStateResponse.data) {
+      setRemoteHostState(hostStateResponse.data);
     }
   }, []);
 
@@ -280,6 +361,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       const unsubscribeRemoteConnectionState = window.electronAPI.remoteDaemon.onConnectionStateChanged((state) => {
         setRemoteConnectionState(state);
       });
+      const unsubscribeRemoteHostState = window.electronAPI.remoteDaemon.onHostStateChanged((state) => {
+        setRemoteHostState(state);
+      });
 
       const loadAutoRename = async () => {
         try {
@@ -318,6 +402,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       return () => {
         unsubscribeRemoteConnectionState();
+        unsubscribeRemoteHostState();
       };
     }
   }, [fetchConfig, initialSection, isOpen]);
@@ -702,6 +787,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     remoteSetupTunnelPreference === 'manual' && remoteSetupManualBaseUrl.trim().length === 0;
   const remoteSetupPortIsValid =
     Number.isInteger(remoteSetupListenPort) && remoteSetupListenPort > 0 && remoteSetupListenPort <= 65535;
+  const remoteHostRuntimePresentation = getRemoteHostRuntimePresentation(remoteHostState);
   const remoteSetupFallbackCommands = remoteSetupResult
     ? remoteSetupResult.fallbackTunnelCommands.filter((command) => command !== remoteSetupResult.tunnel?.command)
     : [];
@@ -713,6 +799,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     : undefined;
   const activeTailscaleDnsFailure = isTailscaleDnsConnectionFailure(activeRemoteProfile, remoteConnectionState.lastError);
   const importTailscaleDnsFailure = isTailscaleDnsConnectionFailure(importRecoveryProfile, remoteImportRecoveryError);
+  const remoteLastSeenText = formatRemoteLastSeen(remoteConnectionState.lastSeenAt);
   const renderTailscaleClientRecovery = (
     profile: RemotePaneConnectionProfile | undefined,
     errorMessage: string | null,
@@ -845,7 +932,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   >
                     <span className="block text-sm font-medium">Current Pane Data</span>
                     <span className="block text-xs text-text-tertiary mt-1">
-                      Use this app's projects and settings.
+                      Use this app's projects; live while Pane is open.
                     </span>
                   </button>
                   <button
@@ -859,9 +946,17 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   >
                     <span className="block text-sm font-medium">Isolated Daemon Data</span>
                     <span className="block text-xs text-text-tertiary mt-1">
-                      Use a separate remote daemon directory.
+                      Use separate daemon data and an optional background service.
                     </span>
                   </button>
+                </div>
+
+                <div className={`flex items-start gap-2 rounded-lg border p-3 ${remoteHostRuntimePresentation.borderClassName}`}>
+                  <span className={`mt-1 h-2.5 w-2.5 rounded-full flex-shrink-0 ${remoteHostRuntimePresentation.dotClassName}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text-primary">{remoteHostRuntimePresentation.title}</p>
+                    <p className="text-xs text-text-tertiary mt-1">{remoteHostRuntimePresentation.description}</p>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -926,7 +1021,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 {remoteSetupTunnelPreference === 'tailscale' && (
                   <p className="text-xs text-text-tertiary">
-                    Pane can install Tailscale, open the login flow in a terminal, and then configure Tailscale Serve for this daemon.
+                    Pane can open a terminal that installs Tailscale if needed, walks through login, and configures Tailscale Serve for this daemon.
                   </p>
                 )}
 
@@ -949,7 +1044,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs text-text-tertiary">
-                    Recommended setup requires Tailscale so another device can connect. Current mode serves from this running Pane app.
+                    Tailscale is recommended for another device or network. Current Pane Data keeps this host live while Pane is open; Isolated Daemon Data can install a service.
                   </p>
                   <Button
                     type="button"
@@ -1039,7 +1134,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         : 'text-status-warning'
                     }`}>
                       {remoteSetupResult.dataDirectoryMode === 'current'
-                        ? 'This running Pane app is serving the remote listener after setup.'
+                        ? 'This Pane app is serving the remote listener. Reopen Pane on this machine when you want existing remote profiles to connect again.'
                         : remoteSetupResult.service.message}
                     </p>
                     {remoteSetupResult.tunnel?.command && (
@@ -1149,6 +1244,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         <p className="text-xs text-text-tertiary mt-2">
                           Worktrees, terminals, and AI tool commands run on the remote host. Install Codex or Claude there to use those panels.
                         </p>
+                      )}
+                      {remoteConnectionState.mode === 'remote' && remoteLastSeenText && (
+                        <p className="text-xs text-text-tertiary mt-2">{remoteLastSeenText}</p>
                       )}
                       {remoteConnectionState.lastError && (
                         <p className="text-xs text-status-error mt-2">{remoteConnectionState.lastError}</p>

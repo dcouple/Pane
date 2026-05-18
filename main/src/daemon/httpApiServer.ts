@@ -7,10 +7,13 @@ import { isPaneDaemonEventChannel } from './server';
 import {
   createDefaultRemoteDaemonConfig,
   getRemoteDaemonHostConfigValidationError,
+  type RemoteDaemonConnectedClient,
   type RemoteDaemonConfig,
   type RemoteDaemonEventEnvelope,
+  type RemoteDaemonHeartbeatPayload,
   type RemoteInvokeRequest,
 } from '../../../shared/types/remoteDaemon';
+import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 
 interface RemoteHttpAddress {
   host: string;
@@ -22,6 +25,11 @@ interface ConnectedRemoteEventClient {
   response: ServerResponse;
   remoteClientId: string | null;
   remoteClientTokenHash: string | null;
+  label: string | null;
+  remoteAddress: string | null;
+  connectedAt: string;
+  lastSeenAt: string;
+  heartbeatTimer: NodeJS.Timeout;
 }
 
 interface RemoteInvokeSuccessPayload {
@@ -55,6 +63,7 @@ type RemoteRequestAuthResult =
     client: {
       id: string;
       tokenHash: string;
+      label: string;
     } | null;
   }
   | {
@@ -67,6 +76,11 @@ type RemoteRequestAuthResult =
   };
 
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS = 5_000;
+
+interface PaneRemoteHttpApiServerOptions {
+  heartbeatIntervalMs?: number;
+}
 
 class RemoteDaemonBadRequestError extends Error {
   constructor(
@@ -85,11 +99,14 @@ export class PaneRemoteHttpApiServer {
   private readonly daemonEventSink: PaneEventSink;
   private address: RemoteHttpAddress | null = null;
   private nextClientConnectionId = 1;
+  private readonly heartbeatIntervalMs: number;
 
   constructor(
     private readonly commandRegistry: PaneCommandRegistry,
     private readonly configManager: ConfigManager,
+    options: PaneRemoteHttpApiServerOptions = {},
   ) {
+    this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS;
     this.daemonEventSink = createFanoutEventSink([
       {
         send: (channel, ...args) => {
@@ -127,6 +144,10 @@ export class PaneRemoteHttpApiServer {
 
   getEventSink(): PaneEventSink {
     return this.daemonEventSink;
+  }
+
+  getConnectedClients(): RemoteDaemonConnectedClient[] {
+    return this.getConnectedClientSnapshots();
   }
 
   async start(): Promise<void> {
@@ -330,15 +351,26 @@ export class PaneRemoteHttpApiServer {
     } satisfies RemoteReadyEventPayload);
 
     const clientConnectionId = String(this.nextClientConnectionId++);
+    const connectedAt = new Date().toISOString();
+    const heartbeatTimer = setInterval(() => {
+      this.sendHeartbeat(clientConnectionId);
+    }, this.heartbeatIntervalMs);
     this.eventClients.set(clientConnectionId, {
       id: clientConnectionId,
       response,
       remoteClientId: auth.client?.id ?? null,
       remoteClientTokenHash: auth.client?.tokenHash ?? null,
+      label: auth.client?.label ?? getClientLabelFromHeaders(request),
+      remoteAddress: getRemoteAddress(request),
+      connectedAt,
+      lastSeenAt: connectedAt,
+      heartbeatTimer,
     });
+    this.publishConnectedClients();
+    this.sendHeartbeat(clientConnectionId);
 
     const cleanup = () => {
-      this.eventClients.delete(clientConnectionId);
+      this.dropEventClient(clientConnectionId);
     };
 
     request.on('close', cleanup);
@@ -451,10 +483,45 @@ export class PaneRemoteHttpApiServer {
       return;
     }
 
+    clearInterval(client.heartbeatTimer);
     this.eventClients.delete(clientConnectionId);
     if (!client.response.writableEnded) {
       client.response.end();
     }
+    this.publishConnectedClients();
+  }
+
+  private sendHeartbeat(clientConnectionId: string): void {
+    const client = this.eventClients.get(clientConnectionId);
+    if (!client) {
+      return;
+    }
+
+    const timestamp = new Date().toISOString();
+    try {
+      writeSseEvent(client.response, 'heartbeat', {
+        timestamp,
+      } satisfies RemoteDaemonHeartbeatPayload);
+      client.lastSeenAt = timestamp;
+      this.publishConnectedClients();
+    } catch {
+      this.dropEventClient(clientConnectionId);
+    }
+  }
+
+  private publishConnectedClients(): void {
+    remoteHostRuntimeStateStore.setConnectedClients(this.getConnectedClientSnapshots());
+  }
+
+  private getConnectedClientSnapshots(): RemoteDaemonConnectedClient[] {
+    return [...this.eventClients.values()].map((client) => ({
+      id: client.id,
+      clientId: client.remoteClientId,
+      label: client.label,
+      remoteAddress: client.remoteAddress,
+      connectedAt: client.connectedAt,
+      lastSeenAt: client.lastSeenAt,
+    }));
   }
 
   private getRemoteConfig(): RemoteDaemonConfig {
@@ -484,9 +551,36 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function writeSseEvent(response: ServerResponse, eventName: string, payload: RemoteReadyEventPayload | RemoteDaemonEventEnvelope): void {
+function writeSseEvent(
+  response: ServerResponse,
+  eventName: string,
+  payload: RemoteReadyEventPayload | RemoteDaemonEventEnvelope | RemoteDaemonHeartbeatPayload,
+): void {
   response.write(`event: ${eventName}\n`);
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function getClientLabelFromHeaders(request: IncomingMessage): string | null {
+  return getSingleHeaderValue(request.headers['x-pane-client-label']);
+}
+
+function getRemoteAddress(request: IncomingMessage): string | null {
+  const forwardedFor = getSingleHeaderValue(request.headers['x-forwarded-for']);
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0]?.trim() || null;
+  }
+
+  return request.socket.remoteAddress ?? null;
+}
+
+function getSingleHeaderValue(value: string | string[] | undefined): string | null {
+  const headerValue = Array.isArray(value) ? value[0] : value;
+  if (!headerValue) {
+    return null;
+  }
+
+  const trimmed = headerValue.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function isRemoteInvokeRequest(value: unknown): value is RemoteInvokeRequest {

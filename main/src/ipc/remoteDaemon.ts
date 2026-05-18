@@ -11,6 +11,7 @@ import {
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
   type RemoteDaemonConfig,
+  type RemoteDaemonHostRuntimeState,
   type RemoteDaemonImportResult,
   type RemoteHostSetupRequest,
   type RemoteHostSetupResult,
@@ -23,6 +24,7 @@ import path from 'path';
 import type { AppServices } from './types';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { createRemoteDaemonConnectionPair } from '../daemon/remotePairing';
+import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { getAppDirectory } from '../utils/appDirectory';
 import { ShellDetector } from '../utils/shellDetector';
@@ -33,15 +35,22 @@ interface IpcMainHandleLike {
 
 interface RemoteDaemonHandlerServices {
   app?: Pick<AppServices['app'], 'isPackaged'>;
+  getMainWindow?: AppServices['getMainWindow'];
   configManager: Pick<AppServices['configManager'], 'getConfig' | 'updateConfig'> & {
     getPreferredShell?: () => string;
   };
 }
 
+let remoteHostStateForwarder:
+  | ((state: RemoteDaemonHostRuntimeState) => void)
+  | null = null;
+
 export function registerRemoteDaemonHandlers(
   ipcMain: IpcMainHandleLike,
-  { configManager, app }: RemoteDaemonHandlerServices,
+  { configManager, app, getMainWindow }: RemoteDaemonHandlerServices,
 ): void {
+  attachRemoteHostStateForwarder(getMainWindow);
+
   ipcMain.handle('remote-daemon:get-config', async () => {
     try {
       return { success: true, data: getRemoteDaemonConfig(configManager.getConfig().remoteDaemon) };
@@ -55,6 +64,14 @@ export function registerRemoteDaemonHandlers(
       return { success: true, data: remotePaneClientController.getConnectionState() };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon connection state') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:get-host-state', async () => {
+    try {
+      return { success: true, data: remoteHostRuntimeStateStore.getState() };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to get remote daemon host state') };
     }
   });
 
@@ -421,6 +438,27 @@ function buildNextClientState(
     mode: nextActiveProfileId ? nextMode : 'local',
     activeProfileId: nextActiveProfileId,
   };
+}
+
+function attachRemoteHostStateForwarder(getMainWindow?: AppServices['getMainWindow']): void {
+  if (!getMainWindow) {
+    return;
+  }
+
+  if (remoteHostStateForwarder) {
+    remoteHostRuntimeStateStore.off('state-changed', remoteHostStateForwarder);
+  }
+
+  remoteHostStateForwarder = (state: RemoteDaemonHostRuntimeState) => {
+    const window = getMainWindow();
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    window.webContents.send('remote-daemon:host-state-changed', state);
+  };
+
+  remoteHostRuntimeStateStore.on('state-changed', remoteHostStateForwarder);
 }
 
 function parseRemoteHostSetupRequest(input: unknown): RemoteHostSetupRequest {

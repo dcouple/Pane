@@ -8,6 +8,7 @@ import type {
   RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
+  RemoteDaemonHostRuntimeState,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -492,6 +493,11 @@ export class API {
       return window.electronAPI.remoteDaemon.getConnectionState();
     },
 
+    async getHostState() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.getHostState() as Promise<IPCResponse<RemoteDaemonHostRuntimeState>>;
+    },
+
     async setupHost(input: RemoteHostSetupRequest) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.setupHost(input) as Promise<IPCResponse<RemoteHostSetupResult>>;
@@ -554,6 +560,11 @@ export class API {
     onConnectionStateChanged(callback: (state: RemotePaneConnectionState) => void) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.remoteDaemon.onConnectionStateChanged(callback);
+    },
+
+    onHostStateChanged(callback: (state: RemoteDaemonHostRuntimeState) => void) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.onHostStateChanged(callback);
     },
   };
 

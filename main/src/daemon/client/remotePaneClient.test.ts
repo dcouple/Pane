@@ -15,6 +15,7 @@ interface TestRemoteServer {
   getLastInvokeHost(): string | undefined;
   getLastInvokePath(): string | undefined;
   getLastEventsPath(): string | undefined;
+  getEventRequestCount(): number;
   setEmitReadyEvent(emitReadyEvent: boolean): void;
   setEventsReady(ready: boolean): void;
 }
@@ -206,6 +207,42 @@ describe('RemotePaneClient', () => {
     );
     expect(connectionStates).toContain('connecting');
     expect(connectionStates).toContain('error');
+
+    await client.disconnect();
+  });
+
+  it('retries stale remote event streams five times before surfacing a hard error', async () => {
+    const server = await createTestRemoteServer();
+    activeServers.push(server);
+    const connectionStates: Array<{ status: string; errorMessage: string | null | undefined }> = [];
+
+    const client = new RemotePaneClient({
+      id: 'profile-reconnect-threshold',
+      label: 'Remote host',
+      baseUrl: server.baseUrl,
+      token: 'secret-token',
+      transport: 'http+sse',
+    }, {
+      heartbeatStaleTimeoutMs: 20,
+      reconnectInitialDelayMs: 5,
+      reconnectMaxDelayMs: 20,
+      reconnectErrorThreshold: 5,
+      onConnectionStateChange(status, errorMessage) {
+        connectionStates.push({ status, errorMessage });
+      },
+    });
+
+    await client.connect({ retryOnInitialFailure: false });
+    server.setEventsReady(false);
+
+    await waitFor(() => connectionStates.some((state) => state.status === 'error'), 1_500);
+
+    const firstErrorIndex = connectionStates.findIndex((state) => state.status === 'error');
+    expect(firstErrorIndex).toBeGreaterThan(-1);
+    expect(server.getEventRequestCount()).toBe(6);
+    expect(connectionStates.slice(0, firstErrorIndex).filter((state) => state.status === 'reconnecting').length)
+      .toBeGreaterThanOrEqual(5);
+    expect(connectionStates[firstErrorIndex].errorMessage).toBe('Remote daemon not ready yet');
 
     await client.disconnect();
   });
@@ -424,6 +461,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
   let lastInvokeHost: string | undefined;
   let lastInvokePath: string | undefined;
   let lastEventsPath: string | undefined;
+  let eventRequestCount = 0;
   let eventsReady = true;
   let emitReadyEvent = true;
   const normalizedBasePath = normalizeTestBasePath(basePath);
@@ -446,6 +484,7 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     }
 
     if (request.url === eventsPath) {
+      eventRequestCount += 1;
       lastEventsPath = request.url;
       if (!eventsReady) {
         response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -519,6 +558,9 @@ async function createTestRemoteServer(host = '127.0.0.1', basePath = ''): Promis
     },
     getLastEventsPath() {
       return lastEventsPath;
+    },
+    getEventRequestCount() {
+      return eventRequestCount;
     },
     setEmitReadyEvent(nextEmitReadyEvent: boolean) {
       emitReadyEvent = nextEmitReadyEvent;

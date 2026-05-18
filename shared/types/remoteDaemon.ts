@@ -13,6 +13,27 @@ export interface RemoteDaemonHostConfig {
   allowInsecureHttpOnLoopback: boolean;
 }
 
+export type RemoteDaemonHostRuntimeStatus = 'inactive' | 'live' | 'error';
+
+export interface RemoteDaemonConnectedClient {
+  id: string;
+  clientId: string | null;
+  label: string | null;
+  remoteAddress: string | null;
+  connectedAt: string;
+  lastSeenAt: string;
+}
+
+export interface RemoteDaemonHostRuntimeState {
+  enabled: boolean;
+  status: RemoteDaemonHostRuntimeStatus;
+  listenHost: string | null;
+  listenPort: number | null;
+  lastError: string | null;
+  connectedClients: RemoteDaemonConnectedClient[];
+  updatedAt: string;
+}
+
 export interface RemoteDaemonClientRecord {
   id: string;
   label: string;
@@ -127,11 +148,16 @@ export interface RemotePaneConnectionState {
   activeProfileLabel: string | null;
   activeBaseUrl: string | null;
   lastError: string | null;
+  lastSeenAt: string | null;
 }
 
 export interface RemoteInvokeRequest {
   channel: string;
   args: unknown[];
+}
+
+export interface RemoteDaemonHeartbeatPayload {
+  timestamp: string;
 }
 
 export interface RemoteDaemonEventEnvelope {
@@ -191,6 +217,19 @@ export function createDefaultRemotePaneConnectionState(): RemotePaneConnectionSt
     activeProfileLabel: null,
     activeBaseUrl: null,
     lastError: null,
+    lastSeenAt: null,
+  };
+}
+
+export function createDefaultRemoteDaemonHostRuntimeState(): RemoteDaemonHostRuntimeState {
+  return {
+    enabled: false,
+    status: 'inactive',
+    listenHost: null,
+    listenPort: null,
+    lastError: null,
+    connectedClients: [],
+    updatedAt: '1970-01-01T00:00:00.000Z',
   };
 }
 

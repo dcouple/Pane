@@ -4,6 +4,7 @@ import { getRemoteDaemonHostConfigValidationError } from '../../../shared/types/
 import type { RemoteDaemonHostConfig } from '../../../shared/types/remoteDaemon';
 import type { PaneCommandRegistry } from './commandRegistry';
 import { PaneRemoteHttpApiServer } from './httpApiServer';
+import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 
 export class PaneRemoteTransportController {
   private remoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
@@ -53,6 +54,7 @@ export class PaneRemoteTransportController {
 
     await this.enqueueSync(async () => {
       await this.stopRemoteHttpServer();
+      remoteHostRuntimeStateStore.setInactive();
     });
   }
 
@@ -61,26 +63,36 @@ export class PaneRemoteTransportController {
       const hostConfig = this.configManager.getConfig().remoteDaemon?.host.config;
       if (!hostConfig?.enabled) {
         await this.stopRemoteHttpServer();
+        remoteHostRuntimeStateStore.setInactive(hostConfig);
         return;
       }
 
       const validationError = getRemoteDaemonHostConfigValidationError(hostConfig);
       if (validationError) {
         await this.stopRemoteHttpServer();
+        remoteHostRuntimeStateStore.setError(hostConfig, new Error(validationError));
         throw new Error(validationError);
       }
 
       const nextBindingKey = this.getBindingKey(hostConfig);
       if (this.remoteHttpApiServer && this.activeBindingKey === nextBindingKey) {
+        remoteHostRuntimeStateStore.setLive(hostConfig, this.remoteHttpApiServer.getAddress());
         return;
       }
 
       await this.stopRemoteHttpServer();
 
       const remoteHttpApiServer = new PaneRemoteHttpApiServer(this.commandRegistry, this.configManager);
-      await remoteHttpApiServer.start();
-      this.remoteHttpApiServer = remoteHttpApiServer;
-      this.activeBindingKey = nextBindingKey;
+      try {
+        await remoteHttpApiServer.start();
+        this.remoteHttpApiServer = remoteHttpApiServer;
+        this.activeBindingKey = nextBindingKey;
+        remoteHostRuntimeStateStore.setLive(hostConfig, remoteHttpApiServer.getAddress());
+      } catch (error) {
+        await remoteHttpApiServer.stop();
+        remoteHostRuntimeStateStore.setError(hostConfig, error);
+        throw error;
+      }
     });
   }
 

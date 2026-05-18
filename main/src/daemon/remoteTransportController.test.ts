@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { hashRemoteDaemonToken } from './auth';
 import { PaneCommandRegistry } from './commandRegistry';
+import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 import { PaneRemoteTransportController } from './remoteTransportController';
 
 interface TestEventStream {
@@ -41,6 +42,8 @@ afterEach(async () => {
   for (const controller of activeControllers.splice(0)) {
     await controller.stopWatchingAndShutdown();
   }
+
+  remoteHostRuntimeStateStore.resetForTests();
 });
 
 function createEnabledRemoteConfig(overrides?: Partial<RemoteDaemonConfig['host']['config']>): RemoteDaemonConfig {
@@ -179,6 +182,13 @@ describe('PaneRemoteTransportController', () => {
     const daemonEventSink = controller.getEventSink();
     await controller.syncToConfig();
     expect(controller.getServer()).toBeNull();
+    expect(remoteHostRuntimeStateStore.getState()).toMatchObject({
+      enabled: false,
+      status: 'inactive',
+      listenHost: '127.0.0.1',
+      listenPort: 42137,
+      lastError: null,
+    });
 
     await configManager.updateRemoteDaemonConfig(createEnabledRemoteConfig());
     await waitFor(() => controller.getServer() !== null);
@@ -187,9 +197,26 @@ describe('PaneRemoteTransportController', () => {
     if (!server) {
       throw new Error('Remote HTTP API server did not start');
     }
+    expect(remoteHostRuntimeStateStore.getState()).toMatchObject({
+      enabled: true,
+      status: 'live',
+      listenHost: '127.0.0.1',
+      listenPort: server.getAddress()?.port,
+      lastError: null,
+    });
 
     const stream = await openEventStream(server, 'secret-token');
     await stream.nextEvent();
+    const heartbeatEvent = await stream.nextEvent();
+    expect(heartbeatEvent.event).toBe('heartbeat');
+    await waitFor(() => remoteHostRuntimeStateStore.getState().connectedClients.length === 1);
+    expect(remoteHostRuntimeStateStore.getState().connectedClients).toMatchObject([{
+      clientId: 'client-1',
+      label: 'Mac mini',
+      remoteAddress: expect.any(String),
+      connectedAt: expect.any(String),
+      lastSeenAt: expect.any(String),
+    }]);
 
     daemonEventSink.send('session:created', { id: 'session-1' });
 
@@ -202,8 +229,17 @@ describe('PaneRemoteTransportController', () => {
     });
 
     stream.close();
+    await waitFor(() => remoteHostRuntimeStateStore.getState().connectedClients.length === 0);
     await configManager.updateRemoteDaemonConfig(createDefaultRemoteDaemonConfig());
     await waitFor(() => controller.getServer() === null);
+    await waitFor(() => remoteHostRuntimeStateStore.getState().status === 'inactive');
+    expect(remoteHostRuntimeStateStore.getState()).toMatchObject({
+      enabled: false,
+      status: 'inactive',
+      listenHost: '127.0.0.1',
+      listenPort: 42137,
+      lastError: null,
+    });
   });
 
   it('stops the active remote HTTP transport when config changes to an invalid non-loopback bind', async () => {
@@ -218,5 +254,13 @@ describe('PaneRemoteTransportController', () => {
 
     await configManager.updateRemoteDaemonConfig(createEnabledRemoteConfig({ listenHost: '0.0.0.0' }));
     await waitFor(() => controller.getServer() === null);
+    await waitFor(() => remoteHostRuntimeStateStore.getState().status === 'error');
+    expect(remoteHostRuntimeStateStore.getState()).toMatchObject({
+      enabled: true,
+      status: 'error',
+      listenHost: '0.0.0.0',
+      listenPort: 0,
+    });
+    expect(remoteHostRuntimeStateStore.getState().lastError).toContain('loopback');
   });
 });

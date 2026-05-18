@@ -20,6 +20,12 @@ import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
+import {
+  createDefaultRemoteDaemonHostRuntimeState,
+  createDefaultRemotePaneConnectionState,
+  type RemoteDaemonHostRuntimeState,
+  type RemotePaneConnectionState,
+} from '../../../shared/types/remoteDaemon';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -49,6 +55,122 @@ interface SidebarProps {
   onDocsClick: () => void;
 }
 
+interface RemoteFooterStatus {
+  dotClassName: string;
+  title: string;
+  description: string;
+  ariaLabel: string;
+}
+
+function formatRemoteLastSeen(lastSeenAt: string | null): string | null {
+  if (!lastSeenAt) {
+    return null;
+  }
+
+  const seenAtMs = Date.parse(lastSeenAt);
+  if (Number.isNaN(seenAtMs)) {
+    return null;
+  }
+
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - seenAtMs) / 1000));
+  if (ageSeconds < 10) {
+    return 'last seen just now';
+  }
+  if (ageSeconds < 60) {
+    return `last seen ${ageSeconds}s ago`;
+  }
+
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) {
+    return `last seen ${ageMinutes}m ago`;
+  }
+
+  return `last seen ${new Date(seenAtMs).toLocaleString()}`;
+}
+
+function formatRemoteHostClients(hostState: RemoteDaemonHostRuntimeState): string {
+  if (hostState.connectedClients.length === 0) {
+    return 'No remote clients are connected.';
+  }
+
+  const clientLabels = hostState.connectedClients
+    .map((client) => client.label ?? client.remoteAddress ?? 'remote client')
+    .slice(0, 3)
+    .join(', ');
+  const remainingCount = hostState.connectedClients.length - 3;
+  const suffix = remainingCount > 0 ? `, +${remainingCount} more` : '';
+  return `${hostState.connectedClients.length} remote ${hostState.connectedClients.length === 1 ? 'client is' : 'clients are'} connected: ${clientLabels}${suffix}.`;
+}
+
+function getRemoteFooterStatus(
+  connectionState: RemotePaneConnectionState,
+  hostState: RemoteDaemonHostRuntimeState,
+): RemoteFooterStatus {
+  const lastSeenText = formatRemoteLastSeen(connectionState.lastSeenAt);
+
+  if (connectionState.mode === 'remote') {
+    if (connectionState.status === 'error') {
+      return {
+        dotClassName: 'bg-status-error',
+        title: 'Remote connection failed',
+        description: [
+          connectionState.lastError ?? 'Pane could not connect to the selected remote profile.',
+          lastSeenText ? `Remote was ${lastSeenText}.` : null,
+        ].filter(Boolean).join(' '),
+        ariaLabel: 'Remote connection failed',
+      };
+    }
+
+    if (connectionState.status === 'connected') {
+      return {
+        dotClassName: 'bg-interactive',
+        title: `Connected to ${connectionState.activeProfileLabel ?? 'remote runtime'}`,
+        description: connectionState.activeBaseUrl
+          ? `Worktrees and terminals run on ${connectionState.activeBaseUrl}.${lastSeenText ? ` ${lastSeenText}.` : ''}`
+          : `Worktrees and terminals run on the selected remote host.${lastSeenText ? ` ${lastSeenText}.` : ''}`,
+        ariaLabel: 'Connected to remote runtime',
+      };
+    }
+
+    return {
+      dotClassName: 'bg-interactive animate-pulse',
+      title: 'Connecting to remote runtime',
+      description: [
+        connectionState.activeBaseUrl ?? 'Pane is trying to connect to the selected remote profile.',
+        lastSeenText ? `Remote was ${lastSeenText}.` : null,
+      ].filter(Boolean).join(' '),
+      ariaLabel: 'Connecting to remote runtime',
+    };
+  }
+
+  if (hostState.status === 'live') {
+    return {
+      dotClassName: 'bg-status-success',
+      title: 'Remote host live',
+      description: hostState.listenHost && hostState.listenPort
+        ? `This Pane app is serving remote connections on ${hostState.listenHost}:${hostState.listenPort}. ${formatRemoteHostClients(hostState)}`
+        : `This Pane app is serving remote connections. ${formatRemoteHostClients(hostState)}`,
+      ariaLabel: 'Remote host live',
+    };
+  }
+
+  if (hostState.status === 'error') {
+    return {
+      dotClassName: 'bg-status-error',
+      title: 'Remote host offline',
+      description: hostState.lastError ?? 'Pane could not start the remote listener on this machine.',
+      ariaLabel: 'Remote host offline',
+    };
+  }
+
+  return {
+    dotClassName: 'bg-text-tertiary',
+    title: 'Remote inactive',
+    description: 'Remote hosting is not active on this Pane app.',
+    ariaLabel: 'Remote inactive',
+  };
+}
+
 const HelpCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -66,6 +188,8 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
   const [gitCommit, setGitCommit] = useState<string>('');
   const [worktreeName, setWorktreeName] = useState<string>('');
   const [sessionSortAscending, setSessionSortAscending] = useState<boolean>(true); // Default to ascending (newest at bottom)
+  const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
+  const [remoteHostState, setRemoteHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
 
   useEffect(() => {
     // Fetch version info and UI state on component mount
@@ -111,6 +235,38 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
     loadUIState();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchRemoteState = async () => {
+      try {
+        const [connectionResponse, hostResponse] = await Promise.all([
+          API.remoteDaemon.getConnectionState(),
+          API.remoteDaemon.getHostState(),
+        ]);
+
+        if (!cancelled && connectionResponse.success && connectionResponse.data) {
+          setRemoteConnectionState(connectionResponse.data);
+        }
+        if (!cancelled && hostResponse.success && hostResponse.data) {
+          setRemoteHostState(hostResponse.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch remote runtime state:', error);
+      }
+    };
+
+    const unsubscribeConnectionState = API.remoteDaemon.onConnectionStateChanged(setRemoteConnectionState);
+    const unsubscribeHostState = API.remoteDaemon.onHostStateChanged(setRemoteHostState);
+    void fetchRemoteState();
+
+    return () => {
+      cancelled = true;
+      unsubscribeConnectionState();
+      unsubscribeHostState();
+    };
+  }, []);
+
   const toggleSessionSortOrder = async () => {
     const newValue = !sessionSortAscending;
     setSessionSortAscending(newValue);
@@ -128,6 +284,16 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
   const setActiveSession = useSessionStore((state) => state.setActiveSession);
   const activityStatus = usePanelStore(s => s.activityStatus);
   const panelsBySession = usePanelStore(s => s.panels);
+  const remoteFooterStatus = useMemo(
+    () => getRemoteFooterStatus(remoteConnectionState, remoteHostState),
+    [remoteConnectionState, remoteHostState],
+  );
+  const remoteFooterTooltip = (
+    <div className="max-w-[260px] space-y-1">
+      <p className="text-[11px] font-medium text-text-primary">{remoteFooterStatus.title}</p>
+      <p className="text-[10px] text-text-tertiary">{remoteFooterStatus.description}</p>
+    </div>
+  );
 
   // State for collapsed sidebar
   const [projects, setProjects] = useState<Project[]>([]);
@@ -255,6 +421,16 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
 
           {/* Bottom actions */}
           <div className="flex-shrink-0 flex flex-col items-center gap-1 py-2 border-t border-border-primary">
+            <Tooltip content={remoteFooterTooltip} side="right" interactive delay={250}>
+              <button
+                type="button"
+                onClick={onSettingsClick}
+                aria-label={remoteFooterStatus.ariaLabel}
+                className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover transition-colors"
+              >
+                <span className={`h-2.5 w-2.5 rounded-full ${remoteFooterStatus.dotClassName}`} />
+              </button>
+            </Tooltip>
             <Tooltip content={hotkeyDisplay('open-settings') ? <Kbd>{hotkeyDisplay('open-settings')}</Kbd> : undefined} side="right">
               <IconButton
                 onClick={onSettingsClick}
@@ -388,8 +564,19 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
           <ArchiveProgress />
 
           {/* Version display at bottom */}
-          {version && (
-            <div className="px-3 py-2 border-t border-border-primary">
+          <div className="px-3 py-2 border-t border-border-primary space-y-1.5">
+            <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250} className="block">
+              <button
+                type="button"
+                onClick={onSettingsClick}
+                aria-label={remoteFooterStatus.ariaLabel}
+                className="flex w-full items-center justify-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors truncate"
+              >
+                <span className={`h-2 w-2 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
+                <span className="font-medium">Remote</span>
+              </button>
+            </Tooltip>
+            {version && (
               <div className="flex items-center justify-center gap-1.5 text-xs text-text-tertiary truncate">
                 <span
                   className="cursor-pointer hover:text-text-secondary transition-colors"
@@ -407,8 +594,8 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                   Docs
                 </span>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
     </div>
 

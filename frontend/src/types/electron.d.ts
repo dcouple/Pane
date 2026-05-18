@@ -10,6 +10,7 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemoteDaemonHostRuntimeState,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -236,6 +237,7 @@ interface ElectronAPI {
   remoteDaemon: {
     getConfig: () => Promise<IPCResponse<RemoteDaemonConfig>>;
     getConnectionState: () => Promise<IPCResponse<RemotePaneConnectionState>>;
+    getHostState: () => Promise<IPCResponse<RemoteDaemonHostRuntimeState>>;
     setupHost: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupResult>>;
     getInteractiveSetupCommand: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     getInteractiveClientSetupCommand: () => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
@@ -248,6 +250,7 @@ interface ElectronAPI {
     deleteConnectionProfile: (profileId: string) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
     updateClientState: (updates: Partial<Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'>>) => Promise<IPCResponse<RemoteDaemonClientSettings>>;
     onConnectionStateChanged: (callback: (state: RemotePaneConnectionState) => void) => () => void;
+    onHostStateChanged: (callback: (state: RemoteDaemonHostRuntimeState) => void) => () => void;
   };
 
   // Prompts

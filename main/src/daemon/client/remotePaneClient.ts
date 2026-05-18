@@ -9,6 +9,7 @@ import { isPaneDaemonEventChannel } from '../server';
 import {
   createDefaultRemotePaneConnectionState,
   normalizeRemoteDaemonConfig,
+  type RemoteDaemonHeartbeatPayload,
   type RemotePaneConnectionProfile,
   type RemotePaneConnectionState,
   type RemotePaneConnectionStatus,
@@ -16,10 +17,22 @@ import {
 import type { RemoteDaemonEventEnvelope } from '../../../../shared/types/remoteDaemon';
 import { PaneSseParser } from './sseParser';
 
+interface RemoteConnectionStateMetadata {
+  lastSeenAt?: string | null;
+}
+
 interface RemotePaneClientOptions {
   eventSink?: PaneEventSink;
   initialHandshakeTimeoutMs?: number;
-  onConnectionStateChange?: (status: RemotePaneConnectionStatus, errorMessage?: string | null) => void;
+  heartbeatStaleTimeoutMs?: number;
+  reconnectInitialDelayMs?: number;
+  reconnectMaxDelayMs?: number;
+  reconnectErrorThreshold?: number;
+  onConnectionStateChange?: (
+    status: RemotePaneConnectionStatus,
+    errorMessage?: string | null,
+    metadata?: RemoteConnectionStateMetadata,
+  ) => void;
   onResyncRequired?: () => void;
 }
 
@@ -53,7 +66,10 @@ interface RemoteReadyEventPayload {
   timestamp: string;
 }
 
-const REMOTE_DAEMON_RECONNECT_DELAY_MS = 1_000;
+const REMOTE_DAEMON_RECONNECT_INITIAL_DELAY_MS = 1_000;
+const REMOTE_DAEMON_RECONNECT_MAX_DELAY_MS = 15_000;
+const REMOTE_DAEMON_RECONNECT_ERROR_THRESHOLD = 5;
+const REMOTE_DAEMON_HEARTBEAT_STALE_TIMEOUT_MS = 20_000;
 const REMOTE_DAEMON_INITIAL_HANDSHAKE_TIMEOUT_MS = 10_000;
 const TAILSCALE_MAGIC_DNS_SERVER = '100.100.100.100';
 
@@ -65,12 +81,23 @@ export class RemotePaneClient {
   private readonly normalizedBaseUrl: URL;
   private readonly eventSink: PaneEventSink;
   private readonly initialHandshakeTimeoutMs: number;
-  private readonly onConnectionStateChange?: (status: RemotePaneConnectionStatus, errorMessage?: string | null) => void;
+  private readonly heartbeatStaleTimeoutMs: number;
+  private readonly reconnectInitialDelayMs: number;
+  private readonly reconnectMaxDelayMs: number;
+  private readonly reconnectErrorThreshold: number;
+  private readonly onConnectionStateChange?: (
+    status: RemotePaneConnectionStatus,
+    errorMessage?: string | null,
+    metadata?: RemoteConnectionStateMetadata,
+  ) => void;
   private readonly onResyncRequired?: () => void;
   private eventParser = new PaneSseParser();
   private eventRequest: http.ClientRequest | null = null;
   private eventResponse: IncomingMessage | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private heartbeatStaleTimer: NodeJS.Timeout | null = null;
+  private consecutiveReconnectFailures = 0;
+  private lastSeenAt: string | null = null;
   private closedByClient = false;
 
   constructor(
@@ -81,6 +108,14 @@ export class RemotePaneClient {
     this.eventSink = options.eventSink ?? noopPaneEventSink;
     this.initialHandshakeTimeoutMs = options.initialHandshakeTimeoutMs
       ?? REMOTE_DAEMON_INITIAL_HANDSHAKE_TIMEOUT_MS;
+    this.heartbeatStaleTimeoutMs = options.heartbeatStaleTimeoutMs
+      ?? REMOTE_DAEMON_HEARTBEAT_STALE_TIMEOUT_MS;
+    this.reconnectInitialDelayMs = options.reconnectInitialDelayMs
+      ?? REMOTE_DAEMON_RECONNECT_INITIAL_DELAY_MS;
+    this.reconnectMaxDelayMs = options.reconnectMaxDelayMs
+      ?? REMOTE_DAEMON_RECONNECT_MAX_DELAY_MS;
+    this.reconnectErrorThreshold = options.reconnectErrorThreshold
+      ?? REMOTE_DAEMON_RECONNECT_ERROR_THRESHOLD;
     this.onConnectionStateChange = options.onConnectionStateChange;
     this.onResyncRequired = options.onResyncRequired;
   }
@@ -95,12 +130,23 @@ export class RemotePaneClient {
 
   async connect(options: RemotePaneClientConnectOptions = {}): Promise<void> {
     this.closedByClient = false;
-    await this.openEventStream(false, options.retryOnInitialFailure ?? true);
+    try {
+      await this.openEventStream(false);
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to connect to remote daemon event stream');
+      if (options.retryOnInitialFailure ?? true) {
+        this.scheduleReconnect(message);
+      } else {
+        this.onConnectionStateChange?.('error', message, { lastSeenAt: this.lastSeenAt });
+      }
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
     this.closedByClient = true;
     this.clearReconnectTimer();
+    this.clearHeartbeatStaleTimer();
     this.eventParser.reset();
 
     if (this.eventResponse && !this.eventResponse.destroyed) {
@@ -116,13 +162,20 @@ export class RemotePaneClient {
 
   async invoke(channel: string, args: unknown[]): Promise<unknown> {
     const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'invoke');
-    const response = await requestJson(endpoint, this.buildRequestOptions(endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${this.profile.token}`,
-        'Content-Type': 'application/json; charset=utf-8',
-      },
-    }), JSON.stringify({ channel, args }));
+    let response: JsonResponse;
+    try {
+      response = await requestJson(endpoint, this.buildRequestOptions(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.profile.token}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      }), JSON.stringify({ channel, args }));
+    } catch (error) {
+      const message = getErrorMessage(error, 'Failed to invoke remote daemon');
+      this.handleUnexpectedDisconnect(message, true);
+      throw error;
+    }
 
     const payload = parseJsonResponse<RemoteInvokeResponsePayload>(
       response,
@@ -136,9 +189,11 @@ export class RemotePaneClient {
     return payload.result;
   }
 
-  private async openEventStream(isReconnect: boolean, retryOnInitialFailure: boolean): Promise<void> {
+  private async openEventStream(isReconnect: boolean): Promise<void> {
     this.clearReconnectTimer();
-    this.onConnectionStateChange?.(isReconnect ? 'reconnecting' : 'connecting', null);
+    this.onConnectionStateChange?.(isReconnect ? 'reconnecting' : 'connecting', null, {
+      lastSeenAt: this.lastSeenAt,
+    });
 
     const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'events');
 
@@ -164,7 +219,7 @@ export class RemotePaneClient {
         clearHandshakeTimer();
         const activeResponse = this.eventResponse;
         const activeRequest = this.eventRequest ?? request;
-        this.handleInitialConnectionFailure(message, retryOnInitialFailure);
+        this.handleInitialConnectionFailure();
 
         if (destroyStream) {
           if (activeResponse && !activeResponse.destroyed) {
@@ -191,6 +246,7 @@ export class RemotePaneClient {
         headers: {
           Authorization: `Bearer ${this.profile.token}`,
           Accept: 'text/event-stream',
+          'X-Pane-Client-Label': this.profile.label,
         },
       }), async (response) => {
         if (response.statusCode !== 200) {
@@ -210,15 +266,23 @@ export class RemotePaneClient {
             if (event.event === 'ready') {
               readyReceived = true;
               clearHandshakeTimer();
-              this.onConnectionStateChange?.('connected', null);
+              const lastSeenAt = this.markRemoteSeen();
+              this.consecutiveReconnectFailures = 0;
               const readyPayload = parseRemoteReadyEventPayload(event.data);
               if (readyPayload?.resync === 'refetch-state-after-reconnect') {
                 this.onResyncRequired?.();
               }
+              this.onConnectionStateChange?.('connected', null, { lastSeenAt });
               if (!settled) {
                 settled = true;
                 resolve();
               }
+              continue;
+            }
+
+            if (event.event === 'heartbeat') {
+              const heartbeatPayload = parseRemoteHeartbeatPayload(event.data);
+              this.markRemoteSeen(heartbeatPayload?.timestamp);
               continue;
             }
 
@@ -232,6 +296,7 @@ export class RemotePaneClient {
                 continue;
               }
 
+              this.markRemoteSeen(envelope.timestamp);
               this.eventSink.send(envelope.channel, ...envelope.args);
             } catch (error) {
               console.error('[Pane remote daemon] Failed to parse daemon event payload', error);
@@ -242,7 +307,7 @@ export class RemotePaneClient {
         response.on('error', (error) => {
           const message = getErrorMessage(error, 'Remote daemon event stream errored');
           if (readyReceived) {
-            this.handleUnexpectedDisconnect(message);
+            this.handleUnexpectedDisconnect(message, false);
             return;
           }
 
@@ -252,7 +317,7 @@ export class RemotePaneClient {
         response.on('end', () => {
           const message = 'Remote daemon event stream ended';
           if (readyReceived) {
-            this.handleUnexpectedDisconnect(message);
+            this.handleUnexpectedDisconnect(message, false);
             return;
           }
 
@@ -262,7 +327,7 @@ export class RemotePaneClient {
         response.on('close', () => {
           const message = 'Remote daemon event stream closed';
           if (readyReceived) {
-            this.handleUnexpectedDisconnect(message);
+            this.handleUnexpectedDisconnect(message, false);
             return;
           }
 
@@ -290,25 +355,31 @@ export class RemotePaneClient {
     };
   }
 
-  private handleInitialConnectionFailure(message: string, retryOnInitialFailure: boolean): void {
+  private handleInitialConnectionFailure(): void {
     this.eventResponse = null;
     this.eventRequest = null;
     this.eventParser.reset();
-
-    if (this.closedByClient) {
-      return;
-    }
-
-    this.onConnectionStateChange?.('error', message);
-    if (retryOnInitialFailure) {
-      this.scheduleReconnect(message);
-    }
+    this.clearHeartbeatStaleTimer();
   }
 
-  private handleUnexpectedDisconnect(message: string): void {
+  private handleUnexpectedDisconnect(message: string, destroyStream: boolean): void {
+    const activeResponse = this.eventResponse;
+    const activeRequest = this.eventRequest;
+
     this.eventResponse = null;
     this.eventRequest = null;
     this.eventParser.reset();
+    this.clearHeartbeatStaleTimer();
+
+    if (destroyStream) {
+      if (activeResponse && !activeResponse.destroyed) {
+        activeResponse.destroy(new Error(message));
+      }
+
+      if (activeRequest && !activeRequest.destroyed) {
+        activeRequest.destroy(new Error(message));
+      }
+    }
 
     if (this.closedByClient) {
       return;
@@ -322,21 +393,52 @@ export class RemotePaneClient {
       return;
     }
 
-    this.onConnectionStateChange?.('reconnecting', message);
+    if (this.consecutiveReconnectFailures >= this.reconnectErrorThreshold) {
+      this.onConnectionStateChange?.('error', message, { lastSeenAt: this.lastSeenAt });
+      return;
+    }
+
+    this.onConnectionStateChange?.('reconnecting', message, { lastSeenAt: this.lastSeenAt });
+    const attempt = this.consecutiveReconnectFailures;
+    const reconnectDelayMs = Math.min(
+      this.reconnectInitialDelayMs * (2 ** attempt),
+      this.reconnectMaxDelayMs,
+    );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      void this.openEventStream(true, true).catch((error) => {
+      void this.openEventStream(true).catch((error) => {
         const nextMessage = getErrorMessage(error, 'Failed to reconnect to remote daemon event stream');
-        this.onConnectionStateChange?.('error', nextMessage);
+        this.consecutiveReconnectFailures += 1;
         this.scheduleReconnect(nextMessage);
       });
-    }, REMOTE_DAEMON_RECONNECT_DELAY_MS);
+    }, reconnectDelayMs);
   }
 
   private clearReconnectTimer(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private markRemoteSeen(timestamp = new Date().toISOString()): string {
+    this.lastSeenAt = timestamp;
+    this.clearHeartbeatStaleTimer();
+    if (!this.closedByClient) {
+      this.heartbeatStaleTimer = setTimeout(() => {
+        this.handleUnexpectedDisconnect(
+          `Remote daemon heartbeat timed out after ${this.heartbeatStaleTimeoutMs}ms`,
+          true,
+        );
+      }, this.heartbeatStaleTimeoutMs);
+    }
+    return timestamp;
+  }
+
+  private clearHeartbeatStaleTimer(): void {
+    if (this.heartbeatStaleTimer) {
+      clearTimeout(this.heartbeatStaleTimer);
+      this.heartbeatStaleTimer = null;
     }
   }
 }
@@ -450,6 +552,7 @@ export class RemotePaneClientController extends EventEmitter {
         activeProfileLabel: null,
         activeBaseUrl: null,
         lastError: `Remote daemon connection profile "${activeProfileId}" does not exist`,
+        lastSeenAt: null,
       });
       return;
     }
@@ -476,7 +579,7 @@ export class RemotePaneClientController extends EventEmitter {
 
     const client = new RemotePaneClient(profile, {
       eventSink: this.rendererEventSink,
-      onConnectionStateChange: (status, errorMessage) => {
+      onConnectionStateChange: (status, errorMessage, metadata) => {
         this.setConnectionState({
           mode: 'remote',
           status,
@@ -484,6 +587,7 @@ export class RemotePaneClientController extends EventEmitter {
           activeProfileLabel: profile.label,
           activeBaseUrl: profile.baseUrl,
           lastError: errorMessage ?? null,
+          lastSeenAt: metadata?.lastSeenAt ?? this.getLastSeenAtForProfile(profile.id, status),
         });
       },
       onResyncRequired: () => {
@@ -503,8 +607,22 @@ export class RemotePaneClientController extends EventEmitter {
         activeProfileLabel: profile.label,
         activeBaseUrl: profile.baseUrl,
         lastError: null,
+        lastSeenAt: this.getLastSeenAtForProfile(profile.id, 'connected'),
       });
     } catch (error) {
+      if (options.retryOnInitialFailure && this.activeClient === client) {
+        this.setConnectionState({
+          mode: 'remote',
+          status: 'reconnecting',
+          activeProfileId: profile.id,
+          activeProfileLabel: profile.label,
+          activeBaseUrl: profile.baseUrl,
+          lastError: getErrorMessage(error, `Failed to connect to remote daemon profile "${profile.label}"`),
+          lastSeenAt: null,
+        });
+        return;
+      }
+
       if (!options.retryOnInitialFailure || this.activeClient !== client) {
         if (this.activeClient === client) {
           this.activeClient = null;
@@ -518,6 +636,7 @@ export class RemotePaneClientController extends EventEmitter {
         activeProfileLabel: profile.label,
         activeBaseUrl: profile.baseUrl,
         lastError: getErrorMessage(error, `Failed to connect to remote daemon profile "${profile.label}"`),
+        lastSeenAt: null,
       });
       throw error;
     }
@@ -529,6 +648,18 @@ export class RemotePaneClientController extends EventEmitter {
     if (client) {
       await client.disconnect();
     }
+  }
+
+  private getLastSeenAtForProfile(profileId: string, status: RemotePaneConnectionStatus): string | null {
+    if (this.state.activeProfileId !== profileId) {
+      return null;
+    }
+
+    if (status === 'connecting') {
+      return null;
+    }
+
+    return this.state.lastSeenAt;
   }
 
   private setConnectionState(nextState: RemotePaneConnectionState): void {
@@ -725,6 +856,23 @@ function parseRemoteReadyEventPayload(data: string): RemoteReadyEventPayload | n
       typeof parsed.timestamp === 'string'
     ) {
       return parsed as RemoteReadyEventPayload;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseRemoteHeartbeatPayload(data: string): RemoteDaemonHeartbeatPayload | null {
+  if (data.length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(data) as Partial<RemoteDaemonHeartbeatPayload>;
+    if (typeof parsed.timestamp === 'string' && parsed.timestamp.length > 0) {
+      return parsed as RemoteDaemonHeartbeatPayload;
     }
   } catch {
     return null;

@@ -8,6 +8,7 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
+  RemoteDaemonHostRuntimeState,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -605,6 +606,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   remoteDaemon: {
     getConfig: (): Promise<IPCResponse<RemoteDaemonConfig>> => invokeIpc('remote-daemon:get-config'),
     getConnectionState: (): Promise<IPCResponse<RemotePaneConnectionState>> => invokeIpc('remote-daemon:get-connection-state'),
+    getHostState: (): Promise<IPCResponse<RemoteDaemonHostRuntimeState>> => invokeIpc('remote-daemon:get-host-state'),
     setupHost: (input: RemoteHostSetupRequest): Promise<IPCResponse<RemoteHostSetupResult>> =>
       invokeIpc('remote-daemon:setup-host', input),
     getInteractiveSetupCommand: (input: RemoteHostSetupRequest): Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>> =>
@@ -634,6 +636,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, state: RemotePaneConnectionState) => callback(state);
       ipcRenderer.on('remote-daemon:connection-state-changed', wrappedCallback);
       return () => ipcRenderer.removeListener('remote-daemon:connection-state-changed', wrappedCallback);
+    },
+    onHostStateChanged: (callback: (state: RemoteDaemonHostRuntimeState) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, state: RemoteDaemonHostRuntimeState) => callback(state);
+      ipcRenderer.on('remote-daemon:host-state-changed', wrappedCallback);
+      return () => ipcRenderer.removeListener('remote-daemon:host-state-changed', wrappedCallback);
     },
   },
 

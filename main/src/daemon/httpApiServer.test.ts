@@ -197,6 +197,17 @@ function parseSseEvent(rawEvent: string): { event: string | null; data: string[]
   return { event, data };
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1500): Promise<void> {
+  const startedAt = Date.now();
+  while (!predicate()) {
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for condition');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 describe('PaneRemoteHttpApiServer', () => {
   it('invokes daemon-owned commands over authenticated HTTP', async () => {
     const registry = new PaneCommandRegistry();
@@ -325,6 +336,19 @@ describe('PaneRemoteHttpApiServer', () => {
       resync: 'refetch-state-after-reconnect',
     });
 
+    const heartbeatEvent = await stream.nextEvent();
+    expect(heartbeatEvent.event).toBe('heartbeat');
+    expect(JSON.parse(heartbeatEvent.data.join('\n'))).toEqual({
+      timestamp: expect.any(String),
+    });
+    expect(server.getConnectedClients()).toMatchObject([{
+      clientId: 'client-1',
+      label: 'Mac mini',
+      remoteAddress: expect.any(String),
+      connectedAt: expect.any(String),
+      lastSeenAt: expect.any(String),
+    }]);
+
     server.getEventSink().send('session:created', { id: 'session-1' });
 
     const daemonEvent = await stream.nextEvent();
@@ -336,6 +360,7 @@ describe('PaneRemoteHttpApiServer', () => {
     });
 
     stream.close();
+    await waitFor(() => server.getConnectedClients().length === 0);
   });
 
   it('filters non-daemon events from the remote SSE stream', async () => {
@@ -345,6 +370,7 @@ describe('PaneRemoteHttpApiServer', () => {
     await server.start();
 
     const stream = await openEventStream(server, 'secret-token');
+    await stream.nextEvent();
     await stream.nextEvent();
 
     server.getEventSink().send('version:update-available', { version: '1.2.3' });
@@ -361,6 +387,7 @@ describe('PaneRemoteHttpApiServer', () => {
     await server.start();
 
     const stream = await openEventStream(server, 'secret-token');
+    await stream.nextEvent();
     await stream.nextEvent();
 
     remoteConfig.host.clients = [{

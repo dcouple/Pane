@@ -6,6 +6,7 @@ import {
   type RemoteHostSetupResult,
 } from '../../../shared/types/remoteDaemon';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
+import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { setupRemoteHost } from '../daemon/setupRemoteHost';
 import { registerRemoteDaemonHandlers } from './remoteDaemon';
 
@@ -54,6 +55,7 @@ describe('remote daemon IPC', () => {
   afterEach(() => {
     vi.mocked(setupRemoteHost).mockReset();
     vi.restoreAllMocks();
+    remoteHostRuntimeStateStore.resetForTests();
     if (originalPlatformDescriptor) {
       Object.defineProperty(process, 'platform', originalPlatformDescriptor);
     }
@@ -194,6 +196,33 @@ describe('remote daemon IPC', () => {
         activeProfileId: null,
         activeProfileLabel: null,
         activeBaseUrl: null,
+        lastError: null,
+      },
+    });
+  });
+
+  it('returns the current remote daemon host runtime state', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    const hostConfig = {
+      ...createDefaultRemoteDaemonConfig().host.config,
+      enabled: true,
+      listenPort: 42138,
+    };
+    remoteHostRuntimeStateStore.setLive(hostConfig, {
+      host: '127.0.0.1',
+      port: 42138,
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    await expect(ipcMain.handlers.get('remote-daemon:get-host-state')?.({})).resolves.toMatchObject({
+      success: true,
+      data: {
+        enabled: true,
+        status: 'live',
+        listenHost: '127.0.0.1',
+        listenPort: 42138,
         lastError: null,
       },
     });
