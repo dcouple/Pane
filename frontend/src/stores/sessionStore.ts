@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import type { Session, SessionOutput, GitStatus, ClaudeJsonMessage } from '../types/session';
 import { API } from '../utils/api';
+import { normalizeSession, normalizeSessionOutput, normalizeSessions } from '../utils/sessionNormalization';
 
 interface CreateSessionRequest {
   prompt: string;
@@ -85,32 +86,34 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   activeSpotlights: new Map(),
   
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) => set({ sessions: normalizeSessions(sessions) }),
   
-  loadSessions: (sessions) => set({ sessions, isLoaded: true }),
+  loadSessions: (sessions) => set({ sessions: normalizeSessions(sessions), isLoaded: true }),
   
   addSession: (session) => set((state) => {
+    const normalizedSession = normalizeSession(session);
     
     // Initialize arrays if they don't exist
     const sessionWithArrays = {
-      ...session,
-      output: session.output || [],
-      jsonMessages: session.jsonMessages || []
+      ...normalizedSession,
+      output: normalizedSession.output || [],
+      jsonMessages: normalizedSession.jsonMessages || []
     };
     
     return {
       sessions: [sessionWithArrays, ...state.sessions],  // Add new sessions at the top
-      activeSessionId: session.id  // Automatically set as active
+      activeSessionId: normalizedSession.id  // Automatically set as active
     };
   }),
   
   updateSession: (updatedSession) => set((state) => {
+    const normalizedUpdatedSession = normalizeSession(updatedSession);
     
     // If this is the active main repo session, update it
-    if (state.activeMainRepoSession && state.activeMainRepoSession.id === updatedSession.id) {
+    if (state.activeMainRepoSession && state.activeMainRepoSession.id === normalizedUpdatedSession.id) {
       const newActiveSession = {
         ...state.activeMainRepoSession,
-        ...updatedSession,
+        ...normalizedUpdatedSession,
         output: state.activeMainRepoSession.output,
         jsonMessages: state.activeMainRepoSession.jsonMessages
       };
@@ -124,11 +127,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     // Performance: Only clone array if session exists
     let newSessions = state.sessions;
     for (let i = 0; i < state.sessions.length; i++) {
-      if (state.sessions[i].id === updatedSession.id) {
+      if (state.sessions[i].id === normalizedUpdatedSession.id) {
         newSessions = state.sessions.slice();
         const updatedSessionWithOutput = {
           ...state.sessions[i],
-          ...updatedSession,
+          ...normalizedUpdatedSession,
           output: state.sessions[i].output,
           jsonMessages: state.sessions[i].jsonMessages
         };
@@ -221,7 +224,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const response = await API.sessions.get(sessionId);
       
       if (response.success && response.data) {
-        const session = response.data;
+        const session = normalizeSession(response.data);
         
         // Add the session to local store if not already there
         const currentSessions = get().sessions;
@@ -266,9 +269,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   },
   
   addSessionOutput: (output) => set((state) => {
+    const normalizedOutput = normalizeSessionOutput(output);
     
     // Find session in sessions array
-    const sessionIndex = state.sessions.findIndex(s => s.id === output.sessionId);
+    const sessionIndex = state.sessions.findIndex(s => s.id === normalizedOutput.sessionId);
     if (sessionIndex === -1) {
       return state;
     }
@@ -281,10 +285,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     const MAX_OUTPUTS = 300; // Drastically reduced from 1000
     const MAX_MESSAGES = 100; // Drastically reduced from 500
     
-    if (output.type === 'json') {
+    if (normalizedOutput.type === 'json') {
       // Update jsonMessages array with limit
       const currentMessages = session.jsonMessages || [];
-      const newMessage = { ...(output.data as ClaudeJsonMessage), timestamp: output.timestamp };
+      const newMessage = { ...(normalizedOutput.data as ClaudeJsonMessage), timestamp: normalizedOutput.timestamp };
       const newJsonMessages = currentMessages.length >= MAX_MESSAGES
         ? [...currentMessages.slice(1), newMessage] // Remove oldest when at limit
         : [...currentMessages, newMessage];
@@ -293,17 +297,17 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       // Add stdout/stderr to output array with limit
       const currentOutput = session.output || [];
       const newOutput = currentOutput.length >= MAX_OUTPUTS
-        ? [...currentOutput.slice(1), output.data as string] // Remove oldest when at limit
-        : [...currentOutput, output.data as string];
+        ? [...currentOutput.slice(1), normalizedOutput.data as string] // Remove oldest when at limit
+        : [...currentOutput, normalizedOutput.data as string];
       sessions[sessionIndex] = { ...session, output: newOutput };
     }
     
     // Also update activeMainRepoSession if it matches
     let updatedActiveMainRepoSession = state.activeMainRepoSession;
-    if (state.activeMainRepoSession && state.activeMainRepoSession.id === output.sessionId) {
-      if (output.type === 'json') {
+    if (state.activeMainRepoSession && state.activeMainRepoSession.id === normalizedOutput.sessionId) {
+      if (normalizedOutput.type === 'json') {
         const currentMessages = state.activeMainRepoSession.jsonMessages || [];
-        const newMessage = { ...(output.data as ClaudeJsonMessage), timestamp: output.timestamp };
+        const newMessage = { ...(normalizedOutput.data as ClaudeJsonMessage), timestamp: normalizedOutput.timestamp };
         const newJsonMessages = currentMessages.length >= MAX_MESSAGES
           ? [...currentMessages.slice(1), newMessage]
           : [...currentMessages, newMessage];
@@ -311,8 +315,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       } else {
         const currentOutput = state.activeMainRepoSession.output || [];
         const newOutput = currentOutput.length >= MAX_OUTPUTS
-          ? [...currentOutput.slice(1), output.data as string]
-          : [...currentOutput, output.data as string];
+          ? [...currentOutput.slice(1), normalizedOutput.data as string]
+          : [...currentOutput, normalizedOutput.data as string];
         updatedActiveMainRepoSession = { ...state.activeMainRepoSession, output: newOutput };
       }
     }
@@ -360,7 +364,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       const batchEnd = Math.min(batch + BATCH_SIZE, outputs.length);
       
       for (let i = batch; i < batchEnd; i++) {
-        const output = outputs[i];
+        const output = normalizeSessionOutput(outputs[i]);
         if (output.type === 'json') {
           jsonMessages.push({ ...(output.data as ClaudeJsonMessage), timestamp: output.timestamp });
         } else if (output.type === 'stdout' || output.type === 'stderr') {

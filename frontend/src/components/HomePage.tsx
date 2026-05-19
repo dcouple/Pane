@@ -9,7 +9,7 @@ import { Dropdown } from './ui/Dropdown';
 import { Badge } from './ui/Badge';
 import { AddProjectDialog } from './AddProjectDialog';
 import { CloneFromGitHubDialog } from './CloneFromGitHubDialog';
-import { formatDistanceToNow } from '../utils/timestampUtils';
+import { formatDistanceToNow, isValidTimestamp } from '../utils/timestampUtils';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 
@@ -224,7 +224,7 @@ export function HomePage() {
 
   const recentSessions = useMemo(() => {
     return sessions
-      .filter((s): s is Session & { lastActivity: string } => !s.archived && typeof s.lastActivity === 'string')
+      .filter((s): s is Session & { lastActivity: string } => !s.archived && isValidTimestamp(s.lastActivity))
       .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime())
       .slice(0, 8);
   }, [sessions]);
@@ -417,9 +417,11 @@ export function HomePage() {
                       )}
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
-                      <Badge variant={getStatusVariant(session.status)} size="sm">
-                        {getStatusLabel(session.status)}
-                      </Badge>
+                      {session.status !== 'stopped' && session.status !== 'ready' && (
+                        <Badge variant={getStatusVariant(session.status)} size="sm">
+                          {getStatusLabel(session.status)}
+                        </Badge>
+                      )}
                       <span className="whitespace-nowrap text-xs text-text-tertiary">
                         {formatDistanceToNow(session.lastActivity)}
                       </span>

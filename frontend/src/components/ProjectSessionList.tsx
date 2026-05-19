@@ -345,11 +345,11 @@ export function ProjectSessionList({
         </button>
 
         {showRemoteDesktopLink && onRemoteDesktopClick && (
-          <Tooltip content={remoteDesktopTooltip} side="right">
+          <Tooltip content={remoteDesktopTooltip} side="right" className="block w-full">
             <button
               type="button"
               onClick={onRemoteDesktopClick}
-              className="flex items-center gap-2.5 px-4 py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
+              className="flex w-full items-center gap-2.5 px-4 py-2 text-left text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
             >
               <Monitor className="w-4 h-4" />
               <span>Remote Desktop</span>
