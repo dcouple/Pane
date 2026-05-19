@@ -9,6 +9,7 @@ import type {
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
   RemoteDaemonHostRuntimeState,
+  RemoteHostConnectionCodeResult,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -520,6 +521,11 @@ export class API {
         data?: RemoteDaemonConnectionPair;
         error?: string;
       }>;
+    },
+
+    async createHostConnectionCode(input?: { label?: string }) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.remoteDaemon.createHostConnectionCode(input) as Promise<IPCResponse<RemoteHostConnectionCodeResult>>;
     },
 
     async updateHostConfig(updates: Partial<RemoteDaemonHostConfig>) {

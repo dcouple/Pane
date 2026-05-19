@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { registerFileHandlers } from './file';
+import { registerConfigHandlers } from './config';
 import { registerGitHandlers } from './git';
 import { registerPanelHandlers } from './panels';
 import { registerPermissionHandlers } from './permissions';
@@ -51,6 +52,10 @@ const PROJECT_CHANNELS = [
   'projects:detect-config',
   'projects:resolve-run-script',
   'projects:run-script',
+] as const;
+
+const CONFIG_CHANNELS = [
+  'remote:pwa-affordances',
 ] as const;
 
 const PROMPT_CHANNELS = [
@@ -259,6 +264,43 @@ describe('daemon registry IPC bindings', () => {
 
     expect(registry.listChannels()).toEqual([...PROJECT_CHANNELS].sort());
     expect(ipcMain.boundChannels.sort()).toEqual([...PROJECT_CHANNELS].sort());
+  });
+
+  it('binds remote-safe config affordances through the shared registry', async () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerConfigHandlers(ipcMain, createServicesStub({
+      configManager: {
+        getConfig: () => ({
+          anthropicApiKey: 'secret-api-key',
+          terminalShortcuts: [{
+            id: 'shortcut-1',
+            label: 'Review',
+            key: 'r',
+            text: 'review this',
+            enabled: true,
+          }],
+          customCommands: [{ name: 'Codex Fast', command: 'codex --yolo' }],
+        }),
+      },
+    } as Partial<AppServices>), registry);
+
+    expect(registry.listChannels()).toEqual([...CONFIG_CHANNELS].sort());
+    expect(ipcMain.boundChannels).toContain('config:get');
+    expect(ipcMain.boundChannels.filter(channel => channel !== 'config:get' && !channel.startsWith('config:')).sort()).toEqual(
+      [...CONFIG_CHANNELS].sort(),
+    );
+    await expect(registry.invoke('remote:pwa-affordances')).resolves.toEqual({
+      terminalShortcuts: [{
+        id: 'shortcut-1',
+        label: 'Review',
+        key: 'r',
+        text: 'review this',
+        enabled: true,
+      }],
+      customCommands: [{ name: 'Codex Fast', command: 'codex --yolo' }],
+    });
   });
 
   it('binds daemon-owned prompt channels through the shared registry', () => {

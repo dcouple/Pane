@@ -2,9 +2,35 @@ import { IpcMain } from 'electron';
 import { execFile } from 'child_process';
 import type { AppServices } from './types';
 import type { AppConfig, UpdateConfigRequest } from '../types/config';
+import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { RemotePwaAffordances } from '../../../shared/types/remoteDaemon';
 import { ShellDetector } from '../utils/shellDetector';
 
-export function registerConfigHandlers(ipcMain: IpcMain, { configManager, claudeCodeManager, getMainWindow }: AppServices): void {
+export function registerConfigHandlers(
+  ipcMain: IpcMain,
+  { configManager, claudeCodeManager, getMainWindow }: AppServices,
+  commandRegistry?: PaneCommandRegistry,
+): void {
+  if (commandRegistry) {
+    commandRegistry.register('remote:pwa-affordances', (): RemotePwaAffordances => {
+      const config = configManager.getConfig();
+      return {
+        terminalShortcuts: (config.terminalShortcuts ?? []).map(shortcut => ({
+          id: shortcut.id,
+          label: shortcut.label,
+          key: shortcut.key,
+          text: shortcut.text,
+          enabled: shortcut.enabled !== false,
+        })),
+        customCommands: (config.customCommands ?? []).map(command => ({
+          name: command.name,
+          command: command.command,
+        })),
+      };
+    });
+    commandRegistry.bindChannel(ipcMain, 'remote:pwa-affordances');
+  }
+
   ipcMain.handle('config:get', async (): Promise<{ success: boolean; data?: AppConfig; error?: string }> => {
     try {
       // Always reload from disk to pick up external changes (e.g., from setup scripts)

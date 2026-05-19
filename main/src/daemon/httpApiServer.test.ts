@@ -111,6 +111,44 @@ async function requestJson(
   });
 }
 
+async function requestRaw(
+  server: PaneRemoteHttpApiServer,
+  method: 'GET' | 'POST' | 'OPTIONS',
+  path: string,
+  headers?: Record<string, string>,
+): Promise<{ statusCode: number; headers: http.IncomingHttpHeaders; body: string }> {
+  const address = server.getAddress();
+  if (!address) {
+    throw new Error('Remote HTTP API server is not listening');
+  }
+
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      host: address.host,
+      port: address.port,
+      path,
+      method,
+      headers,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk) => {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      });
+      response.on('end', () => {
+        resolve({
+          statusCode: response.statusCode ?? 0,
+          headers: response.headers,
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+      });
+    });
+
+    activeRequests.add(request);
+    request.once('error', reject);
+    request.end();
+  });
+}
+
 async function openEventStream(
   server: PaneRemoteHttpApiServer,
   token?: string,
@@ -335,6 +373,36 @@ describe('PaneRemoteHttpApiServer', () => {
         ok: true,
         status: 'ready',
         transport: 'http+sse',
+      },
+    });
+  });
+
+  it('supports browser CORS preflights for PWA remote clients', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestRaw(server, 'OPTIONS', '/invoke', {
+      Origin: 'http://localhost:5757',
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'authorization,content-type,x-pane-remote-runtime-id,x-pane-remote-client-label',
+    })).resolves.toMatchObject({
+      statusCode: 204,
+      headers: {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET, POST, OPTIONS',
+        'access-control-allow-headers': expect.stringContaining('Authorization'),
+      },
+      body: '',
+    });
+
+    await expect(requestRaw(server, 'GET', '/health', {
+      Origin: 'http://localhost:5757',
+    })).resolves.toMatchObject({
+      statusCode: 200,
+      headers: {
+        'access-control-allow-origin': '*',
       },
     });
   });

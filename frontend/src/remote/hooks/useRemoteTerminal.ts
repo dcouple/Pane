@@ -1,0 +1,195 @@
+import { useEffect, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import type { ToolPanel } from '../../../../shared/types/panels';
+import type { RemotePaneConnectionStatus } from '../../../../shared/types/remoteDaemon';
+import type { SessionOutput } from '../../types/session';
+import type { RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
+
+interface UseRemoteTerminalOptions {
+  adapter: RemoteRuntimeAdapter;
+  panel: ToolPanel;
+  sessionId: string;
+  connectionStatus: RemotePaneConnectionStatus;
+}
+
+interface TerminalOutputPayload {
+  panelId?: string;
+  output?: string;
+}
+
+const VISIBILITY_REFRESH_MS = 60_000;
+const TERMINAL_VIEWER_ID = getTerminalViewerId();
+
+export function useRemoteTerminal({
+  adapter,
+  panel,
+  sessionId,
+  connectionStatus,
+}: UseRemoteTerminalOptions) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const terminalRef = useRef<Terminal | null>(null);
+  const fitAddonRef = useRef<FitAddon | null>(null);
+  const [statusText, setStatusText] = useState('Starting terminal...');
+
+  const focusTerminal = () => {
+    terminalRef.current?.focus();
+  };
+
+  const resetTerminal = () => {
+    terminalRef.current?.clear();
+    terminalRef.current?.focus();
+    void adapter.clearTerminalScrollback(panel.id).catch(error => {
+      setStatusText(error instanceof Error ? error.message : 'Failed to reset terminal');
+    });
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const terminal = new Terminal({
+      allowProposedApi: true,
+      convertEol: true,
+      cursorBlink: true,
+      fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+      fontSize: 13,
+      scrollback: 10_000,
+      theme: {
+        background: '#010409',
+        foreground: '#e6edf3',
+        cursor: '#58a6ff',
+        selectionBackground: '#264f78',
+      },
+    });
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.open(container);
+    fitAddon.fit();
+
+    terminalRef.current = terminal;
+    fitAddonRef.current = fitAddon;
+    setStatusText('Connecting to terminal...');
+
+    const fitTerminal = () => {
+      if (!container.isConnected || container.clientWidth <= 0 || container.clientHeight <= 0) {
+        return;
+      }
+      fitAddon.fit();
+      void adapter.resizeTerminal(panel.id, terminal.cols, terminal.rows).catch(() => {});
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      window.requestAnimationFrame(fitTerminal);
+    });
+    resizeObserver.observe(container);
+
+    const visualViewport = window.visualViewport;
+    const handleViewportChange = () => {
+      window.requestAnimationFrame(fitTerminal);
+    };
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('orientationchange', handleViewportChange);
+    visualViewport?.addEventListener('resize', handleViewportChange);
+    visualViewport?.addEventListener('scroll', handleViewportChange);
+
+    const inputDisposable = terminal.onData(data => {
+      void adapter.sendTerminalInput(panel.id, data).catch(error => {
+        setStatusText(error instanceof Error ? error.message : 'Failed to send input');
+      });
+    });
+
+    const unsubscribe = adapter.onEvent(event => {
+      if (event.channel !== 'terminal:output') return;
+      const payload = event.args[0] as TerminalOutputPayload | undefined;
+      if (!payload || payload.panelId !== panel.id || typeof payload.output !== 'string') return;
+      terminal.write(payload.output);
+      void adapter.ackTerminalOutput(panel.id, byteLength(payload.output)).catch(() => {});
+    });
+
+    let disposed = false;
+    const visibilityTimer = window.setInterval(() => {
+      void adapter.setTerminalVisibility(panel.id, true, TERMINAL_VIEWER_ID).catch(() => {});
+    }, VISIBILITY_REFRESH_MS);
+
+    const initialize = async () => {
+      try {
+        const initialized = await adapter.checkPanelInitialized(panel.id);
+        if (!initialized) {
+          await adapter.initializePanel(panel.id, {
+            sessionId,
+            cols: terminal.cols,
+            rows: terminal.rows,
+          });
+        }
+        await hydrateTerminal(adapter, panel.id, terminal);
+        fitTerminal();
+        await adapter.setTerminalVisibility(panel.id, true, TERMINAL_VIEWER_ID);
+        if (!disposed) {
+          setStatusText('Connected');
+        }
+      } catch (error) {
+        if (!disposed) {
+          setStatusText(error instanceof Error ? error.message : 'Terminal failed to initialize');
+        }
+      }
+    };
+
+    void initialize();
+
+    return () => {
+      disposed = true;
+      window.clearInterval(visibilityTimer);
+      unsubscribe();
+      inputDisposable.dispose();
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('orientationchange', handleViewportChange);
+      visualViewport?.removeEventListener('resize', handleViewportChange);
+      visualViewport?.removeEventListener('scroll', handleViewportChange);
+      void adapter.setTerminalVisibility(panel.id, false, TERMINAL_VIEWER_ID).catch(() => {});
+      terminal.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+    };
+  }, [adapter, panel.id, sessionId]);
+
+  useEffect(() => {
+    if (connectionStatus !== 'connected' || !terminalRef.current) return;
+    void hydrateTerminal(adapter, panel.id, terminalRef.current).catch(() => {});
+    void adapter.setTerminalVisibility(panel.id, true, TERMINAL_VIEWER_ID).catch(() => {});
+  }, [adapter, connectionStatus, panel.id]);
+
+  return { containerRef, statusText, focusTerminal, resetTerminal };
+}
+
+async function hydrateTerminal(adapter: RemoteRuntimeAdapter, panelId: string, terminal: Terminal): Promise<void> {
+  const outputs = await adapter.getPanelOutput(panelId);
+  terminal.clear();
+  for (const output of outputs) {
+    terminal.write(formatSessionOutput(output));
+  }
+}
+
+function formatSessionOutput(output: SessionOutput): string {
+  if (typeof output.data === 'string') {
+    return output.data;
+  }
+  return `${JSON.stringify(output.data)}\r\n`;
+}
+
+function byteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function getTerminalViewerId(): string {
+  const storageKey = 'pane.remotePwa.terminalViewerId';
+  const existing = window.sessionStorage.getItem(storageKey);
+  if (existing) {
+    return existing;
+  }
+
+  const id = window.crypto?.randomUUID?.() ?? `remote-pwa-terminal-${Date.now().toString(36)}`;
+  window.sessionStorage.setItem(storageKey, id);
+  return id;
+}

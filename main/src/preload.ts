@@ -9,6 +9,7 @@ import type {
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
   RemoteDaemonHostRuntimeState,
+  RemoteHostConnectionCodeResult,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -140,6 +141,7 @@ const DAEMON_OWNED_EXACT_CHANNELS = [
   'git:execute-project',
   'git:file-status',
   'git:get-github-remote',
+  'remote:pwa-affordances',
   'git:restore',
   'git:revert',
   'permission:getPending',
@@ -615,6 +617,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:get-interactive-client-setup-command'),
     createConnectionPair: (input: { label: string; baseUrl: string }): Promise<IPCResponse<RemoteDaemonConnectionPair>> =>
       invokeIpc('remote-daemon:create-connection-pair', input),
+    createHostConnectionCode: (input?: { label?: string }): Promise<IPCResponse<RemoteHostConnectionCodeResult>> =>
+      invokeIpc('remote-daemon:create-host-connection-code', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>
       invokeIpc('remote-daemon:update-host-config', updates),
     disconnectHostClients: (clientIds?: string[]): Promise<IPCResponse<{ disconnectedCount: number }>> =>

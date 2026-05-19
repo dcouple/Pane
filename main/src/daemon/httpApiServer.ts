@@ -15,6 +15,7 @@ import {
   type RemoteInvokeRequest,
 } from '../../../shared/types/remoteDaemon';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
+import { getRemotePwaAssetResponse } from './pwaStaticAssets';
 
 interface RemoteHttpAddress {
   host: string;
@@ -81,6 +82,19 @@ type RemoteRequestAuthResult =
 const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS = 5_000;
 const REMOTE_VISIBILITY_VIEWER_STALE_MS = 15 * 60 * 1000;
+const REMOTE_DAEMON_CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': [
+    'Authorization',
+    'Content-Type',
+    'X-Pane-Remote-Runtime-Id',
+    'X-Pane-Remote-Client-Label',
+    'X-Pane-Client-Label',
+    'X-Pane-Client-Device-Label',
+  ].join(', '),
+  'Access-Control-Max-Age': '86400',
+};
 
 interface PaneRemoteHttpApiServerOptions {
   heartbeatIntervalMs?: number;
@@ -251,6 +265,12 @@ export class PaneRemoteHttpApiServer {
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
 
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204, withCorsHeaders());
+      response.end();
+      return;
+    }
+
     if (url.pathname === '/invoke') {
       await this.handleInvokeRequest(request, response);
       return;
@@ -263,6 +283,13 @@ export class PaneRemoteHttpApiServer {
 
     if (url.pathname === '/events') {
       this.handleEventStreamRequest(request, response);
+      return;
+    }
+
+    const remotePwaResponse = await getRemotePwaAssetResponse(url.pathname);
+    if (remotePwaResponse.handled) {
+      response.writeHead(remotePwaResponse.statusCode ?? 200, withCorsHeaders(remotePwaResponse.headers ?? {}));
+      response.end(remotePwaResponse.body ?? '');
       return;
     }
 
@@ -357,6 +384,7 @@ export class PaneRemoteHttpApiServer {
     }
 
     response.writeHead(200, {
+      ...REMOTE_DAEMON_CORS_HEADERS,
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -459,17 +487,17 @@ export class PaneRemoteHttpApiServer {
   }
 
   private writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
-    response.writeHead(statusCode, {
+    response.writeHead(statusCode, withCorsHeaders({
       'Content-Type': 'application/json; charset=utf-8',
-    });
+    }));
     response.end(JSON.stringify(payload));
   }
 
   private writeMethodNotAllowed(response: ServerResponse, method: 'GET' | 'POST'): void {
-    response.writeHead(405, {
+    response.writeHead(405, withCorsHeaders({
       Allow: method,
       'Content-Type': 'application/json; charset=utf-8',
-    });
+    }));
     response.end(JSON.stringify({
       ok: false,
       error: {
@@ -610,6 +638,13 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
   }
 
   return Buffer.concat(chunks).toString('utf8');
+}
+
+function withCorsHeaders(headers: http.OutgoingHttpHeaders = {}): http.OutgoingHttpHeaders {
+  return {
+    ...REMOTE_DAEMON_CORS_HEADERS,
+    ...headers,
+  };
 }
 
 function writeSseEvent(

@@ -96,6 +96,14 @@ describe('setupRemoteHost', () => {
               listenHost: string;
               listenPort: number;
             };
+            access?: {
+              baseUrl: string;
+              tunnel?: {
+                kind: string;
+                tailscaleIp?: string;
+              };
+              updatedAt: string;
+            };
           };
         };
       };
@@ -111,6 +119,14 @@ describe('setupRemoteHost', () => {
         listenHost: '127.0.0.1',
         listenPort: 42137,
       });
+      expect(config.remoteDaemon.host.access).toMatchObject({
+        baseUrl: 'https://office-mac.tailnet.ts.net',
+        tunnel: {
+          kind: 'tailscale',
+          tailscaleIp: '100.127.116.52',
+        },
+      });
+      expect(config.remoteDaemon.host.access?.updatedAt).toEqual(expect.any(String));
     } finally {
       await fs.rm(paneDir, { recursive: true, force: true });
     }

@@ -1,0 +1,11 @@
+{
+  "name": "Remote Pane",
+  "short_name": "Remote Pane",
+  "description": "Connect to a remote Pane host from a browser.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#f7fafc",
+  "theme_color": "#f7fafc",
+  "orientation": "any"
+}

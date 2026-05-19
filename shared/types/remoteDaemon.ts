@@ -52,6 +52,12 @@ export interface RemotePaneConnectionProfile {
   tunnel?: PaneRemoteConnectionImportPayload['tunnel'];
 }
 
+export interface RemoteDaemonHostAccess {
+  baseUrl: string;
+  tunnel?: PaneRemoteConnectionImportPayload['tunnel'];
+  updatedAt: string;
+}
+
 export interface PaneRemoteConnectionImportPayload {
   v: 1;
   label: string;
@@ -114,6 +120,12 @@ export interface RemoteHostSetupTerminalCommandResult {
   command: string;
 }
 
+export interface RemoteHostConnectionCodeResult {
+  connectionCode: string;
+  client: RemoteDaemonClientRecord;
+  access: RemoteDaemonHostAccess;
+}
+
 export interface RemoteDaemonImportResult {
   profile: RemotePaneConnectionProfile;
   connected: boolean;
@@ -123,6 +135,7 @@ export interface RemoteDaemonImportResult {
 export interface RemoteDaemonHostSettings {
   config: RemoteDaemonHostConfig;
   clients: RemoteDaemonClientRecord[];
+  access?: RemoteDaemonHostAccess;
 }
 
 export interface RemoteDaemonClientSettings {
@@ -140,6 +153,24 @@ export interface RemoteDaemonConnectionPair {
   client: RemoteDaemonClientRecord;
   profile: RemotePaneConnectionProfile;
   token: string;
+}
+
+export interface RemotePwaTerminalShortcut {
+  id: string;
+  label: string;
+  key: string;
+  text: string;
+  enabled: boolean;
+}
+
+export interface RemotePwaCustomCommand {
+  name: string;
+  command: string;
+}
+
+export interface RemotePwaAffordances {
+  terminalShortcuts: RemotePwaTerminalShortcut[];
+  customCommands: RemotePwaCustomCommand[];
 }
 
 export interface RemotePaneConnectionState {
@@ -354,6 +385,7 @@ export function normalizeRemoteDaemonConfig(value: unknown): RemoteDaemonConfig 
   const clients = Array.isArray(host.clients)
     ? host.clients.filter(isRemoteDaemonClientRecord)
     : [];
+  const access = normalizeRemoteDaemonHostAccess(host.access);
 
   const client = isRecord(value.client) ? value.client : {};
   const profiles = Array.isArray(client.profiles)
@@ -378,6 +410,7 @@ export function normalizeRemoteDaemonConfig(value: unknown): RemoteDaemonConfig 
         ),
       },
       clients: [...clients],
+      ...(access ? { access } : {}),
     },
     client: {
       profiles: [...profiles],
@@ -385,6 +418,28 @@ export function normalizeRemoteDaemonConfig(value: unknown): RemoteDaemonConfig 
       mode: activeProfileId && client.mode === 'remote' ? 'remote' : 'local',
     },
   };
+}
+
+function normalizeRemoteDaemonHostAccess(value: unknown): RemoteDaemonHostAccess | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  try {
+    const baseUrl = normalizeRemoteImportBaseUrl(readRequiredString(value.baseUrl, 'Remote host access URL'));
+    const tunnel = value.tunnel === undefined
+      ? undefined
+      : normalizeRemoteImportTunnel(value.tunnel);
+    const updatedAt = readRequiredString(value.updatedAt, 'Remote host access timestamp');
+
+    return {
+      baseUrl,
+      ...(tunnel ? { tunnel } : {}),
+      updatedAt,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
 export default defineConfig({
     plugins: [react()],
     server: {
@@ -20,6 +21,12 @@ export default defineConfig({
         // Ensure assets are copied and paths are relative
         assetsDir: 'assets',
         // Copy public files to dist
-        copyPublicDir: true
+        copyPublicDir: true,
+        rollupOptions: {
+            input: {
+                main: resolve(__dirname, 'index.html'),
+                remote: resolve(__dirname, 'remote.html'),
+            },
+        },
     }
 });

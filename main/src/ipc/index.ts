@@ -51,7 +51,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerUpdaterHandlers(ipcMain, services);
   registerSessionHandlers(ipcMain, services, commandRegistry);
   registerProjectHandlers(ipcMain, services, commandRegistry);
-  registerConfigHandlers(ipcMain, services);
+  registerConfigHandlers(ipcMain, services, commandRegistry);
   registerDialogHandlers(ipcMain, services);
   registerPermissionHandlers(ipcMain, services, commandRegistry);
   registerGitHandlers(ipcMain, services, commandRegistry);

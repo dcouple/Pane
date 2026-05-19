@@ -1,5 +1,6 @@
 import {
   decodePaneRemoteConnection,
+  encodePaneRemoteConnection,
   getRemoteDaemonHostConfigValidationError,
   isRemoteDaemonClientRecord,
   isRemotePaneConnectionProfile,
@@ -11,7 +12,9 @@ import {
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
   type RemoteDaemonConfig,
+  type RemoteDaemonHostAccess,
   type RemoteDaemonHostRuntimeState,
+  type RemoteHostConnectionCodeResult,
   type RemoteDaemonImportResult,
   type RemoteHostSetupRequest,
   type RemoteHostSetupResult,
@@ -20,12 +23,16 @@ import {
   type RemoteSetupDataDirectoryMode,
   type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
+import os from 'os';
 import path from 'path';
 import type { AppServices } from './types';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
-import { createRemoteDaemonConnectionPair } from '../daemon/remotePairing';
+import {
+  createPaneRemoteConnectionImportPayload,
+  createRemoteDaemonConnectionPair,
+} from '../daemon/remotePairing';
 import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
-import { setupRemoteHost } from '../daemon/setupRemoteHost';
+import { readConfiguredTailscaleServeAccess, setupRemoteHost } from '../daemon/setupRemoteHost';
 import { getAppDirectory } from '../utils/appDirectory';
 import { ShellDetector } from '../utils/shellDetector';
 import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
@@ -214,6 +221,41 @@ export function registerRemoteDaemonHandlers(
       };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to create remote daemon connection pair') };
+    }
+  });
+
+  ipcMain.handle('remote-daemon:create-host-connection-code', async (_event, input: unknown) => {
+    try {
+      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+      const label = readOptionalConnectionCodeLabel(input) ?? `${os.hostname()} Pane daemon`;
+      const access = resolveCurrentHostAccess(current);
+      const pair = createRemoteDaemonConnectionPair({
+        label,
+        baseUrl: access.baseUrl,
+      });
+      const connectionCode = encodePaneRemoteConnection(
+        createPaneRemoteConnectionImportPayload(pair, access.tunnel),
+      );
+      const next = normalizeRemoteDaemonConfig({
+        ...current,
+        host: {
+          ...current.host,
+          access,
+          clients: upsertById(current.host.clients, pair.client),
+        },
+      });
+
+      await configManager.updateConfig({ remoteDaemon: next });
+      return {
+        success: true,
+        data: {
+          connectionCode,
+          client: pair.client,
+          access,
+        } satisfies RemoteHostConnectionCodeResult,
+      };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to create remote connection code') };
     }
   });
 
@@ -480,6 +522,39 @@ function parseOptionalClientIds(value: unknown): string[] | undefined {
 
 function getRemoteDaemonConfig(value: unknown): RemoteDaemonConfig {
   return normalizeRemoteDaemonConfig(value);
+}
+
+function readOptionalConnectionCodeLabel(input: unknown): string | undefined {
+  if (input === undefined || input === null) {
+    return undefined;
+  }
+  if (!isRecord(input)) {
+    throw new Error('Remote connection code request must be an object');
+  }
+  if (input.label === undefined || input.label === null) {
+    return undefined;
+  }
+  if (typeof input.label !== 'string') {
+    throw new Error('Remote connection code label must be a string');
+  }
+
+  const label = input.label.trim();
+  return label.length > 0 ? label : undefined;
+}
+
+function resolveCurrentHostAccess(current: RemoteDaemonConfig): RemoteDaemonHostAccess {
+  if (current.host.access) {
+    return current.host.access;
+  }
+
+  const discoveredTailscaleAccess = readConfiguredTailscaleServeAccess(current.host.config.listenPort);
+  if (discoveredTailscaleAccess) {
+    return discoveredTailscaleAccess;
+  }
+
+  throw new Error(
+    'Pane does not have the remote host access URL for this setup yet. Run the remote setup terminal once to configure Tailscale Serve, then create a connection code again.',
+  );
 }
 
 function buildNextClientState(

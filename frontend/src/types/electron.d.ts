@@ -11,6 +11,7 @@ import type {
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
   RemoteDaemonHostRuntimeState,
+  RemoteHostConnectionCodeResult,
   RemoteDaemonImportResult,
   RemoteHostSetupRequest,
   RemoteHostSetupResult,
@@ -242,6 +243,7 @@ interface ElectronAPI {
     getInteractiveSetupCommand: (input: RemoteHostSetupRequest) => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     getInteractiveClientSetupCommand: () => Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
     createConnectionPair: (input: { label: string; baseUrl: string }) => Promise<IPCResponse<RemoteDaemonConnectionPair>>;
+    createHostConnectionCode: (input?: { label?: string }) => Promise<IPCResponse<RemoteHostConnectionCodeResult>>;
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>) => Promise<IPCResponse<RemoteDaemonHostConfig>>;
     disconnectHostClients: (clientIds?: string[]) => Promise<IPCResponse<{ disconnectedCount: number }>>;
     upsertClientRecord: (record: RemoteDaemonClientRecord) => Promise<IPCResponse<RemoteDaemonClientRecord[]>>;

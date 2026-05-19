@@ -72,6 +72,15 @@ interface SettingsProps {
   initialSection?: string;
 }
 
+function formatRemoteConnectionCodePreview(code: string): string {
+  const trimmed = code.trim();
+  if (trimmed.length <= 72) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, 36)}...${trimmed.slice(-24)}`;
+}
+
 type AvailableShell = {
   id: PreferredShell;
   name: string;
@@ -170,6 +179,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [remoteSetupManualBaseUrl, setRemoteSetupManualBaseUrl] = useState('');
   const [remoteSetupInstallService, setRemoteSetupInstallService] = useState(true);
   const [remoteSetupResult, setRemoteSetupResult] = useState<RemoteHostSetupResult | null>(null);
+  const [remoteHostConnectionCode, setRemoteHostConnectionCode] = useState<string | null>(null);
   const [remoteSetupCopyResult, setRemoteSetupCopyResult] = useState<string | null>(null);
   const [remoteSetupError, setRemoteSetupError] = useState<string | null>(null);
   const fontsLoadedForOpenRef = useRef(false);
@@ -457,6 +467,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       }
 
       setRemoteSetupResult(response.data);
+      setRemoteHostConnectionCode(response.data.connectionCode);
       setRemoteSetupLabel('');
     }, {
       onError: setRemoteSetupError,
@@ -474,6 +485,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     setRemoteSetupTerminalBusy(true);
     setRemoteSetupError(null);
     setRemoteSetupResult(null);
+    setRemoteHostConnectionCode(null);
     setRemoteSetupCopyResult(null);
 
     try {
@@ -575,6 +587,43 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     } catch {
       setError('Failed to copy connection code');
     }
+  };
+
+  const handleCopyRemoteHostConnectionCode = async () => {
+    const connectionCode = remoteHostConnectionCode ?? remoteSetupResult?.connectionCode;
+    if (!connectionCode) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(connectionCode);
+      setRemoteSetupCopyResult('Copied connection code.');
+    } catch {
+      setError('Failed to copy connection code');
+    }
+  };
+
+  const handleCreateAndCopyRemoteHostCode = async () => {
+    await runRemoteDaemonAction(async () => {
+      setRemoteSetupCopyResult(null);
+      setRemoteSetupError(null);
+      const response = await API.remoteDaemon.createHostConnectionCode({
+        label: remoteSetupLabel,
+      });
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Failed to create remote connection code');
+      }
+
+      setRemoteHostConnectionCode(response.data.connectionCode);
+      try {
+        await navigator.clipboard.writeText(response.data.connectionCode);
+        setRemoteSetupCopyResult('Created and copied connection code.');
+      } catch {
+        setRemoteSetupCopyResult('Connection code ready. Click the code to copy it.');
+      }
+    }, {
+      onError: setRemoteSetupError,
+      mirrorErrorToGlobal: false,
+    });
   };
 
   const handleCreateRemoteConnectionPair = async () => {
@@ -761,6 +810,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const remoteSetupFallbackCommands = remoteSetupResult
     ? remoteSetupResult.fallbackTunnelCommands.filter((command) => command !== remoteSetupResult.tunnel?.command)
     : [];
+  const activeRemoteHostConnectionCode = remoteHostConnectionCode ?? remoteSetupResult?.connectionCode ?? null;
   const activeRemoteProfile = remoteConnectionState.activeProfileId
     ? remoteDaemonConfig.client.profiles.find((profile) => profile.id === remoteConnectionState.activeProfileId)
     : undefined;
@@ -929,6 +979,18 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       <p className="text-xs text-text-tertiary mt-1">{remoteHostRuntimePresentation.description}</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-2">
+                      {(remoteHostState.status === 'live' || remoteDaemonConfig.host.config.enabled) && (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Copy className="w-4 h-4" />}
+                          onClick={handleCreateAndCopyRemoteHostCode}
+                          disabled={remoteBusy}
+                        >
+                          Create & Copy Code
+                        </Button>
+                      )}
                       {remoteHostState.status === 'live' && remoteHostState.connectedClients.length > 0 && (
                         <Button
                           type="button"
@@ -953,6 +1015,30 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       )}
                     </div>
                   </div>
+                  {activeRemoteHostConnectionCode && (
+                    <button
+                      type="button"
+                      onClick={handleCopyRemoteHostConnectionCode}
+                      className="flex w-full min-w-0 items-center justify-between gap-3 rounded-md border border-border-secondary bg-surface-primary px-3 py-2 text-left hover:bg-surface-hover"
+                      title="Copy full connection code"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-text-secondary">Connection code</p>
+                        <p className="mt-1 truncate font-mono text-[11px] text-text-tertiary">
+                          {formatRemoteConnectionCodePreview(activeRemoteHostConnectionCode)}
+                        </p>
+                      </div>
+                      <Copy className="h-4 w-4 flex-shrink-0 text-text-tertiary" />
+                    </button>
+                  )}
+                  {remoteSetupCopyResult && (
+                    <p className="text-xs text-status-success">{remoteSetupCopyResult}</p>
+                  )}
+                  {remoteSetupError && (
+                    <p className="rounded-md border border-status-error/30 bg-status-error/10 px-3 py-2 text-xs text-status-error">
+                      {remoteSetupError}
+                    </p>
+                  )}
                   {remoteDaemonConfig.host.clients.length > 0 && (
                     <div className="space-y-2 border-t border-border-secondary/70 pt-3">
                       <p className="text-xs font-medium text-text-secondary">Paired clients</p>

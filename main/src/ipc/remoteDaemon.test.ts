@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createDefaultRemoteDaemonConfig,
+  decodePaneRemoteConnection,
   encodePaneRemoteConnection,
   type RemoteDaemonConfig,
   type RemoteHostSetupResult,
@@ -8,10 +9,11 @@ import {
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
-import { setupRemoteHost } from '../daemon/setupRemoteHost';
+import { readConfiguredTailscaleServeAccess, setupRemoteHost } from '../daemon/setupRemoteHost';
 import { registerRemoteDaemonHandlers } from './remoteDaemon';
 
 vi.mock('../daemon/setupRemoteHost', () => ({
+  readConfiguredTailscaleServeAccess: vi.fn(),
   setupRemoteHost: vi.fn(),
 }));
 
@@ -59,6 +61,7 @@ function createConfigManagerStub(initialConfig?: RemoteDaemonConfig): ConfigMana
 describe('remote daemon IPC', () => {
   afterEach(() => {
     vi.mocked(setupRemoteHost).mockReset();
+    vi.mocked(readConfiguredTailscaleServeAccess).mockReset();
     vi.mocked(disconnectActiveRemoteHostClients).mockReset();
     vi.mocked(disconnectActiveRemoteHostClients).mockReturnValue(0);
     vi.restoreAllMocks();
@@ -740,6 +743,80 @@ describe('remote daemon IPC', () => {
     expect(response?.data?.profile.label).toBe('Office Mac mini');
     expect(response?.data?.profile.baseUrl).toBe('http://127.0.0.1:42137');
     expect(response?.data?.token).toMatch(/^[0-9a-f]{48}$/);
+  });
+
+  it('creates a host connection code from cached host access without running setup', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config.enabled = true;
+    initialConfig.host.access = {
+      baseUrl: 'https://office-mac.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        tailscaleIp: '100.127.116.52',
+      },
+      updatedAt: '2026-05-18T20:00:00.000Z',
+    };
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    const response = await createCode?.({}, { label: 'Office Mac mini' }) as {
+      success?: boolean;
+      data?: { connectionCode?: string };
+    };
+
+    expect(response.success).toBe(true);
+    expect(setupRemoteHost).not.toHaveBeenCalled();
+    expect(readConfiguredTailscaleServeAccess).not.toHaveBeenCalled();
+    expect(response.data?.connectionCode).toContain('pane-remote://');
+
+    const payload = decodePaneRemoteConnection(response.data?.connectionCode ?? '');
+    expect(payload).toMatchObject({
+      label: 'Office Mac mini',
+      baseUrl: 'https://office-mac.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        tailscaleIp: '100.127.116.52',
+      },
+    });
+    expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+    expect(configManager.getConfig().remoteDaemon?.client.profiles).toHaveLength(0);
+  });
+
+  it('discovers existing Tailscale Serve access when cached host access is missing', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config.enabled = true;
+    initialConfig.host.config.listenPort = 42138;
+    vi.mocked(readConfiguredTailscaleServeAccess).mockReturnValue({
+      baseUrl: 'https://wsl.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42138',
+        tailscaleIp: '100.75.154.34',
+      },
+      updatedAt: '2026-05-18T20:01:00.000Z',
+    });
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    const response = await createCode?.({}, {}) as {
+      success?: boolean;
+      data?: { connectionCode?: string };
+    };
+
+    expect(response.success).toBe(true);
+    expect(readConfiguredTailscaleServeAccess).toHaveBeenCalledWith(42138);
+    const payload = decodePaneRemoteConnection(response.data?.connectionCode ?? '');
+    expect(payload.baseUrl).toBe('https://wsl.tailnet.ts.net');
+    expect(configManager.getConfig().remoteDaemon?.host.access?.baseUrl).toBe('https://wsl.tailnet.ts.net');
   });
 
   it('normalizes stale remote mode back to local when no active profile remains', async () => {
