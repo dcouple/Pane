@@ -62,8 +62,10 @@ export async function installElectronApiMock(page: Page) {
     const configState: Record<string, unknown> = {
       remoteDaemon: clone(remoteDaemonConfig),
     };
+    let mockSessions: Array<Record<string, unknown>> = [];
     let cloudDisconnectError: string | null = null;
     let configGetCount = 0;
+    let sessionsGetCount = 0;
 
     const subscribe = (channel: string, callback: (...args: unknown[]) => void) => {
       const callbacks = listeners.get(channel) ?? new Set<(...args: unknown[]) => void>();
@@ -265,8 +267,11 @@ export async function installElectronApiMock(page: Page) {
         stopActive: () => success(),
       }),
       sessions: namespace({
-        getAll: () => success([]),
-        getAllWithProjects: () => success([]),
+        getAll: () => {
+          sessionsGetCount += 1;
+          return success(clone(mockSessions));
+        },
+        getAllWithProjects: () => success(clone(mockSessions)),
         getArchivedWithProjects: () => success([]),
         getResumable: () => success([]),
       }),
@@ -496,6 +501,12 @@ export async function installElectronApiMock(page: Page) {
         },
         getConfigReadCount() {
           return configGetCount;
+        },
+        setSessions(sessions: Array<Record<string, unknown>>) {
+          mockSessions = clone(sessions);
+        },
+        getSessionsReadCount() {
+          return sessionsGetCount;
         },
       },
     });

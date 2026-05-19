@@ -233,6 +233,52 @@ test.describe('Smoke Tests', () => {
     })).toBeGreaterThan(beforeCount);
   });
 
+  test('Remote daemon resync replaces stale renderer sessions', async ({ page }) => {
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    await dismissStartupDialogs(page);
+
+    const staleSessionName = 'Remote stale pane';
+
+    await page.evaluate((sessionName) => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: {
+          emitRemoteDaemonResyncRequested: () => void;
+          setSessions: (sessions: Array<Record<string, unknown>>) => void;
+        };
+      }).__paneTestElectronMock;
+
+      mock?.setSessions([{
+        id: 'remote-stale-session',
+        name: sessionName,
+        worktreePath: '/tmp/remote-stale-session',
+        prompt: 'remote stale session',
+        status: 'stopped',
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+        output: [],
+        jsonMessages: [],
+      }]);
+      mock?.emitRemoteDaemonResyncRequested();
+    }, staleSessionName);
+
+    await expect(page.getByText(staleSessionName)).toBeVisible({ timeout: 5000 });
+
+    await page.evaluate(() => {
+      const mock = (window as typeof window & {
+        __paneTestElectronMock?: {
+          emitRemoteDaemonResyncRequested: () => void;
+          setSessions: (sessions: Array<Record<string, unknown>>) => void;
+        };
+      }).__paneTestElectronMock;
+
+      mock?.setSessions([]);
+      mock?.emitRemoteDaemonResyncRequested();
+    });
+
+    await expect(page.getByText(staleSessionName)).toHaveCount(0);
+  });
+
   test('Cloud widget treats connected daemon-backed hosted workspaces as ready, not reconnect-needed', async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 

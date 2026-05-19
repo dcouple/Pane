@@ -23,10 +23,10 @@ import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkey
 import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
-  type RemoteDaemonConnectedClient,
   type RemoteDaemonHostRuntimeState,
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
+import { getRemoteFooterStatus } from '../utils/remoteRuntimePresentation';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -56,134 +56,8 @@ interface SidebarProps {
   onDocsClick: () => void;
 }
 
-interface RemoteFooterStatus {
-  dotClassName: string;
-  title: string;
-  description: string;
-  ariaLabel: string;
-}
-
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 const REMOTE_DESKTOP_TOOLTIP = 'Use Remote Desktop to access the host device for Electron apps, native windows, and UI running on the remote machine.';
-
-function formatRemoteLastSeen(lastSeenAt: string | null): string | null {
-  if (!lastSeenAt) {
-    return null;
-  }
-
-  const seenAtMs = Date.parse(lastSeenAt);
-  if (Number.isNaN(seenAtMs)) {
-    return null;
-  }
-
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - seenAtMs) / 1000));
-  if (ageSeconds < 10) {
-    return 'last seen just now';
-  }
-  if (ageSeconds < 60) {
-    return `last seen ${ageSeconds}s ago`;
-  }
-
-  const ageMinutes = Math.floor(ageSeconds / 60);
-  if (ageMinutes < 60) {
-    return `last seen ${ageMinutes}m ago`;
-  }
-
-  return `last seen ${new Date(seenAtMs).toLocaleString()}`;
-}
-
-function formatRemoteHostClients(hostState: RemoteDaemonHostRuntimeState): string {
-  if (hostState.connectedClients.length === 0) {
-    return 'No remote clients are connected.';
-  }
-
-  const clientLabels = hostState.connectedClients
-    .map(getRemoteClientDisplayLabel)
-    .filter((label): label is string => Boolean(label))
-    .slice(0, 3);
-  const clientNoun = hostState.connectedClients.length === 1 ? 'client is' : 'clients are';
-  if (clientLabels.length === 0) {
-    return `${hostState.connectedClients.length} remote ${clientNoun} connected.`;
-  }
-
-  const labels = clientLabels.join(', ');
-  const remainingCount = hostState.connectedClients.length - clientLabels.length;
-  const suffix = remainingCount > 0 ? `, +${remainingCount} more` : '';
-  return `${hostState.connectedClients.length} remote ${clientNoun} connected: ${labels}${suffix}.`;
-}
-
-function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
-  return client.deviceLabel ?? client.remoteAddress;
-}
-
-function getRemoteFooterStatus(
-  connectionState: RemotePaneConnectionState,
-  hostState: RemoteDaemonHostRuntimeState,
-): RemoteFooterStatus {
-  const lastSeenText = formatRemoteLastSeen(connectionState.lastSeenAt);
-
-  if (connectionState.mode === 'remote') {
-    if (connectionState.status === 'error') {
-      return {
-        dotClassName: 'bg-status-error',
-        title: 'Remote connection failed',
-        description: [
-          connectionState.lastError ?? 'Pane could not connect to the selected remote profile.',
-          lastSeenText ? `Remote was ${lastSeenText}.` : null,
-        ].filter(Boolean).join(' '),
-        ariaLabel: 'Remote connection failed',
-      };
-    }
-
-    if (connectionState.status === 'connected') {
-      return {
-        dotClassName: 'bg-interactive',
-        title: `Connected to ${connectionState.activeProfileLabel ?? 'remote runtime'}`,
-        description: connectionState.activeBaseUrl
-          ? `Worktrees and terminals run on ${connectionState.activeBaseUrl}.${lastSeenText ? ` ${lastSeenText}.` : ''}`
-          : `Worktrees and terminals run on the selected remote host.${lastSeenText ? ` ${lastSeenText}.` : ''}`,
-        ariaLabel: 'Connected to remote runtime',
-      };
-    }
-
-    return {
-      dotClassName: 'bg-interactive animate-pulse',
-      title: 'Connecting to remote runtime',
-      description: [
-        connectionState.activeBaseUrl ?? 'Pane is trying to connect to the selected remote profile.',
-        lastSeenText ? `Remote was ${lastSeenText}.` : null,
-      ].filter(Boolean).join(' '),
-      ariaLabel: 'Connecting to remote runtime',
-    };
-  }
-
-  if (hostState.status === 'live') {
-    return {
-      dotClassName: 'bg-status-success',
-      title: 'Remote host live',
-      description: hostState.listenHost && hostState.listenPort
-        ? `This Pane app is serving remote connections on ${hostState.listenHost}:${hostState.listenPort}. ${formatRemoteHostClients(hostState)}`
-        : `This Pane app is serving remote connections. ${formatRemoteHostClients(hostState)}`,
-      ariaLabel: 'Remote host live',
-    };
-  }
-
-  if (hostState.status === 'error') {
-    return {
-      dotClassName: 'bg-status-error',
-      title: 'Remote host offline',
-      description: hostState.lastError ?? 'Pane could not start the remote listener on this machine.',
-      ariaLabel: 'Remote host offline',
-    };
-  }
-
-  return {
-    dotClassName: 'bg-text-tertiary',
-    title: 'Remote inactive',
-    description: 'Remote hosting is not active on this Pane app.',
-    ariaLabel: 'Remote inactive',
-  };
-}
 
 const HelpCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">

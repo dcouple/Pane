@@ -11,7 +11,6 @@ import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
   type RemoteDaemonConfig,
-  type RemoteDaemonConnectedClient,
   type RemoteDaemonHostConfig,
   type RemoteDaemonHostRuntimeState,
   type RemoteHostSetupRequest,
@@ -25,6 +24,10 @@ import { useConfigStore } from '../stores/configStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
+import {
+  formatRemoteLastSeen,
+  getRemoteHostRuntimePresentation,
+} from '../utils/remoteRuntimePresentation';
 import { panelApi } from '../services/panelApi';
 import {
   Settings as SettingsIcon,
@@ -107,89 +110,6 @@ function isTailscaleDnsConnectionFailure(profile: RemotePaneConnectionProfile | 
     || normalizedError.includes('getaddrinfo')
     || normalizedError.includes('eai_again')
     || normalizedError.includes('enodata');
-}
-
-function formatRemoteLastSeen(lastSeenAt: string | null): string | null {
-  if (!lastSeenAt) {
-    return null;
-  }
-
-  const seenAtMs = Date.parse(lastSeenAt);
-  if (Number.isNaN(seenAtMs)) {
-    return null;
-  }
-
-  const ageSeconds = Math.max(0, Math.floor((Date.now() - seenAtMs) / 1000));
-  if (ageSeconds < 10) {
-    return 'Last seen just now.';
-  }
-  if (ageSeconds < 60) {
-    return `Last seen ${ageSeconds}s ago.`;
-  }
-
-  const ageMinutes = Math.floor(ageSeconds / 60);
-  if (ageMinutes < 60) {
-    return `Last seen ${ageMinutes}m ago.`;
-  }
-
-  return `Last seen ${new Date(seenAtMs).toLocaleString()}.`;
-}
-
-function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): string {
-  if (state.connectedClients.length === 0) {
-    return 'No remote clients are connected.';
-  }
-
-  const displayLabels = state.connectedClients
-    .map(getRemoteClientDisplayLabel)
-    .filter((label): label is string => Boolean(label))
-    .slice(0, 3);
-  const clientNoun = state.connectedClients.length === 1 ? 'client is' : 'clients are';
-  if (displayLabels.length === 0) {
-    return `${state.connectedClients.length} remote ${clientNoun} connected.`;
-  }
-
-  const labels = displayLabels.join(', ');
-  const remaining = state.connectedClients.length - displayLabels.length;
-  return `${state.connectedClients.length} remote ${clientNoun} connected: ${labels}${remaining > 0 ? `, +${remaining} more` : ''}.`;
-}
-
-function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
-  return client.deviceLabel ?? client.remoteAddress;
-}
-
-function getRemoteHostRuntimePresentation(state: RemoteDaemonHostRuntimeState): {
-  dotClassName: string;
-  borderClassName: string;
-  title: string;
-  description: string;
-} {
-  if (state.status === 'live') {
-    return {
-      dotClassName: 'bg-status-success',
-      borderClassName: 'bg-status-success/10 border-status-success/30',
-      title: 'Remote host live',
-      description: state.listenHost && state.listenPort
-        ? `This Pane app is accepting remote connections on ${state.listenHost}:${state.listenPort}. ${formatRemoteHostClients(state)} Keep Pane open for Current Pane Data connections.`
-        : `This Pane app is accepting remote connections. ${formatRemoteHostClients(state)} Keep Pane open for Current Pane Data connections.`,
-    };
-  }
-
-  if (state.status === 'error') {
-    return {
-      dotClassName: 'bg-status-error',
-      borderClassName: 'bg-status-error/10 border-status-error/30',
-      title: 'Remote host offline',
-      description: state.lastError ?? 'Pane could not start the remote listener on this machine.',
-    };
-  }
-
-  return {
-    dotClassName: 'bg-text-tertiary',
-    borderClassName: 'bg-surface-secondary border-border-secondary',
-    title: state.enabled ? 'Remote host configured, not live' : 'Remote host inactive',
-    description: 'Run setup or reopen Pane on this machine to make existing remote profiles connect.',
-  };
 }
 
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {

@@ -19,6 +19,39 @@ interface SessionDeletedEventData {
   sessionId?: string;
 }
 
+async function resyncRemoteRuntimeState(loadSessions: (sessions: Session[]) => void): Promise<void> {
+  await useConfigStore.getState().fetchConfig();
+
+  const sessionsResponse = await API.sessions.getAll();
+  if (sessionsResponse.success && sessionsResponse.data) {
+    const sessionsWithJsonMessages = sessionsResponse.data.map((session: Session) => ({
+      ...session,
+      jsonMessages: session.jsonMessages || [],
+    }));
+    loadSessions(sessionsWithJsonMessages);
+
+    const activeSessionId = useSessionStore.getState().activeSessionId;
+    if (activeSessionId && !sessionsWithJsonMessages.some((session: Session) => session.id === activeSessionId)) {
+      await useSessionStore.getState().setActiveSession(null);
+      usePanelStore.getState().setPanels(activeSessionId, []);
+    }
+  }
+
+  const activeSessionId = useSessionStore.getState().activeSessionId;
+  if (activeSessionId) {
+    const panels = await panelApi.loadPanelsForSession(activeSessionId);
+    usePanelStore.getState().setPanels(activeSessionId, panels);
+
+    const activePanel = panels.find((panel) => panel.state.isActive);
+    if (activePanel) {
+      usePanelStore.getState().setActivePanel(activeSessionId, activePanel.id);
+    }
+  }
+
+  window.dispatchEvent(new Event('project-changed'));
+  window.dispatchEvent(new Event('project-sessions-refresh'));
+}
+
 // Frontend validation helpers
 function validateEventSession(eventData: ValidatedEventData, activeSessionId?: string): boolean {
   if (!eventData || !eventData.sessionId) {
@@ -375,36 +408,7 @@ export function useIPCEvents() {
     const unsubscribeRemoteResync = window.electronAPI.events.onRemoteDaemonResyncRequested?.(() => {
       void (async () => {
         try {
-          await useConfigStore.getState().fetchConfig();
-
-          const sessionsResponse = await API.sessions.getAll();
-          if (sessionsResponse.success && sessionsResponse.data) {
-            const sessionsWithJsonMessages = sessionsResponse.data.map((session: Session) => ({
-              ...session,
-              jsonMessages: session.jsonMessages || [],
-            }));
-            loadSessions(sessionsWithJsonMessages);
-
-            const activeSessionId = useSessionStore.getState().activeSessionId;
-            if (activeSessionId && !sessionsWithJsonMessages.some((session: Session) => session.id === activeSessionId)) {
-              await useSessionStore.getState().setActiveSession(null);
-              usePanelStore.getState().setPanels(activeSessionId, []);
-            }
-          }
-
-          const activeSessionId = useSessionStore.getState().activeSessionId;
-          if (activeSessionId) {
-            const panels = await panelApi.loadPanelsForSession(activeSessionId);
-            usePanelStore.getState().setPanels(activeSessionId, panels);
-
-            const activePanel = panels.find((panel) => panel.state.isActive);
-            if (activePanel) {
-              usePanelStore.getState().setActivePanel(activeSessionId, activePanel.id);
-            }
-          }
-
-          window.dispatchEvent(new Event('project-changed'));
-          window.dispatchEvent(new Event('project-sessions-refresh'));
+          await resyncRemoteRuntimeState(loadSessions);
         } catch (error) {
           console.error('[useIPCEvents] Failed to resync renderer state after remote reconnect:', error);
         }

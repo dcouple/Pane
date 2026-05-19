@@ -406,6 +406,58 @@ describe('remote daemon IPC', () => {
     });
   });
 
+  it('saves an imported profile without switching runtime when import connection activation fails', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    const send = vi.fn();
+    const connectionCode = encodePaneRemoteConnection({
+      v: 1,
+      label: 'WSL',
+      baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+      token: 'secret-token',
+      transport: 'http+sse',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        tailscaleIp: '100.127.116.52',
+      },
+    });
+    vi.spyOn(remotePaneClientController, 'activateProfile').mockRejectedValue(new Error('Remote daemon not ready yet'));
+
+    registerRemoteDaemonHandlers(ipcMain, {
+      configManager,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
+    });
+
+    const importCode = ipcMain.handlers.get('remote-daemon:import-connection-code');
+
+    await expect(importCode?.({}, {
+      code: connectionCode,
+      connect: true,
+    })).resolves.toMatchObject({
+      success: true,
+      data: {
+        profile: {
+          label: 'WSL',
+          baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+        },
+        connected: false,
+        connectionError: 'Remote daemon not ready yet',
+      },
+    });
+
+    expect(send).not.toHaveBeenCalledWith('remote-daemon:resync-required');
+    expect(configManager.getConfig().remoteDaemon?.client).toMatchObject({
+      activeProfileId: null,
+      mode: 'local',
+      profiles: [{
+        label: 'WSL',
+        baseUrl: 'https://parsa-sl7.taila5e94c.ts.net',
+      }],
+    });
+  });
+
   it('updates an existing imported profile instead of duplicating the same connection code', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
@@ -556,6 +608,121 @@ describe('remote daemon IPC', () => {
     expect(send).toHaveBeenCalledWith('remote-daemon:resync-required');
   });
 
+  it('does not resync or switch runtime when deleting an inactive connection profile', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.client = {
+      profiles: [{
+        id: 'profile-1',
+        label: 'Workstation',
+        baseUrl: 'http://127.0.0.1:42137',
+        token: 'secret-token',
+        transport: 'http+sse',
+      }, {
+        id: 'profile-2',
+        label: 'Old workstation',
+        baseUrl: 'http://127.0.0.1:42138',
+        token: 'old-token',
+        transport: 'http+sse',
+      }],
+      activeProfileId: 'profile-1',
+      mode: 'remote',
+    };
+
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+    const send = vi.fn();
+    const switchToLocalMode = vi.spyOn(remotePaneClientController, 'switchToLocalMode').mockResolvedValue({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, {
+      configManager,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
+    });
+
+    const deleteProfile = ipcMain.handlers.get('remote-daemon:delete-connection-profile');
+
+    await expect(deleteProfile?.({}, 'profile-2')).resolves.toEqual({
+      success: true,
+      data: {
+        profiles: [{
+          id: 'profile-1',
+          label: 'Workstation',
+          baseUrl: 'http://127.0.0.1:42137',
+          token: 'secret-token',
+          transport: 'http+sse',
+        }],
+        activeProfileId: 'profile-1',
+        mode: 'remote',
+      },
+    });
+    expect(switchToLocalMode).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalledWith('remote-daemon:resync-required');
+  });
+
+  it('switches to local runtime through client state update and resyncs the renderer', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.client = {
+      profiles: [{
+        id: 'profile-1',
+        label: 'Workstation',
+        baseUrl: 'http://127.0.0.1:42137',
+        token: 'secret-token',
+        transport: 'http+sse',
+      }],
+      activeProfileId: 'profile-1',
+      mode: 'remote',
+    };
+
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+    const send = vi.fn();
+    const switchToLocalMode = vi.spyOn(remotePaneClientController, 'switchToLocalMode').mockResolvedValue({
+      mode: 'local',
+      status: 'local',
+      activeProfileId: null,
+      activeProfileLabel: null,
+      activeBaseUrl: null,
+      lastError: null,
+    });
+
+    registerRemoteDaemonHandlers(ipcMain, {
+      configManager,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
+    });
+
+    const updateClientState = ipcMain.handlers.get('remote-daemon:update-client-state');
+
+    await expect(updateClientState?.({}, {
+      activeProfileId: null,
+      mode: 'local',
+    })).resolves.toEqual({
+      success: true,
+      data: {
+        profiles: [{
+          id: 'profile-1',
+          label: 'Workstation',
+          baseUrl: 'http://127.0.0.1:42137',
+          token: 'secret-token',
+          transport: 'http+sse',
+        }],
+        activeProfileId: null,
+        mode: 'local',
+      },
+    });
+    expect(switchToLocalMode).toHaveBeenCalled();
+    expect(send).toHaveBeenCalledWith('remote-daemon:resync-required');
+    expect(configManager.getConfig().remoteDaemon?.client).toMatchObject({
+      activeProfileId: null,
+      mode: 'local',
+    });
+  });
+
   it('creates a paired host client record and saved connection profile together', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
@@ -679,6 +846,35 @@ describe('remote daemon IPC', () => {
     })).resolves.toEqual({
       success: false,
       error: 'Remote daemon direct HTTP only supports loopback listen hosts; keep listenHost on 127.0.0.1, ::1, or localhost and expose it through an SSH tunnel, Tailscale/VPN, or a reverse proxy.',
+    });
+  });
+
+  it('persists disabled host config when stopping the remote host', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config = {
+      ...initialConfig.host.config,
+      enabled: true,
+      listenPort: 42138,
+    };
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const updateHostConfig = ipcMain.handlers.get('remote-daemon:update-host-config');
+
+    await expect(updateHostConfig?.({}, {
+      enabled: false,
+    })).resolves.toEqual({
+      success: true,
+      data: {
+        ...initialConfig.host.config,
+        enabled: false,
+      },
+    });
+    expect(configManager.getConfig().remoteDaemon?.host.config).toMatchObject({
+      enabled: false,
+      listenPort: 42138,
     });
   });
 

@@ -59,6 +59,27 @@ export function registerRemoteDaemonHandlers(
     }
   }
 
+  async function applyRemoteClientTransition(
+    transition: (current: RemoteDaemonConfig) => Promise<{
+      next: RemoteDaemonConfig;
+      resyncRenderer: boolean;
+    }> | {
+      next: RemoteDaemonConfig;
+      resyncRenderer: boolean;
+    },
+  ): Promise<RemoteDaemonConfig> {
+    const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+    const result = await transition(current);
+    const next = normalizeRemoteDaemonConfig(result.next);
+
+    await configManager.updateConfig({ remoteDaemon: next });
+    if (result.resyncRenderer) {
+      requestRendererRemoteResync();
+    }
+
+    return next;
+  }
+
   ipcMain.handle('remote-daemon:get-config', async () => {
     try {
       return { success: true, data: getRemoteDaemonConfig(configManager.getConfig().remoteDaemon) };
@@ -209,35 +230,36 @@ export function registerRemoteDaemonHandlers(
 
       const connect = input.connect !== false;
       const payload = decodePaneRemoteConnection(code);
-      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
-      const existingProfile = findMatchingConnectionProfile(current.client.profiles, payload);
-      const profile = remoteImportPayloadToProfile(payload, existingProfile?.id);
+      let profile = remoteImportPayloadToProfile(payload);
 
       let connected = false;
       let connectionError: string | undefined;
-      if (connect) {
-        try {
-          await remotePaneClientController.activateProfile(profile);
-          connected = true;
-        } catch (error) {
-          connectionError = getErrorMessage(error, 'Failed to connect to imported remote daemon profile');
+      await applyRemoteClientTransition(async (current) => {
+        const existingProfile = findMatchingConnectionProfile(current.client.profiles, payload);
+        profile = remoteImportPayloadToProfile(payload, existingProfile?.id);
+
+        if (connect) {
+          try {
+            await remotePaneClientController.activateProfile(profile);
+            connected = true;
+          } catch (error) {
+            connectionError = getErrorMessage(error, 'Failed to connect to imported remote daemon profile');
+          }
         }
-      }
 
-      const next = normalizeRemoteDaemonConfig({
-        ...current,
-        client: {
-          ...current.client,
-          profiles: upsertById(current.client.profiles, profile),
-          activeProfileId: connected ? profile.id : current.client.activeProfileId,
-          mode: connected ? 'remote' : current.client.mode,
-        },
+        return {
+          next: {
+            ...current,
+            client: {
+              ...current.client,
+              profiles: upsertById(current.client.profiles, profile),
+              activeProfileId: connected ? profile.id : current.client.activeProfileId,
+              mode: connected ? 'remote' : current.client.mode,
+            },
+          },
+          resyncRenderer: connected,
+        };
       });
-
-      await configManager.updateConfig({ remoteDaemon: next });
-      if (connected) {
-        requestRendererRemoteResync();
-      }
 
       return {
         success: true,
@@ -367,29 +389,30 @@ export function registerRemoteDaemonHandlers(
         throw new Error('Remote daemon connection profile id must be a non-empty string');
       }
 
-      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
-      const activeProfileId = current.client.activeProfileId === profileId
-        ? null
-        : current.client.activeProfileId;
-      const mode = activeProfileId ? current.client.mode : 'local';
-      const next = normalizeRemoteDaemonConfig({
-        ...current,
-        client: {
-          ...current.client,
-          profiles: current.client.profiles.filter((profile) => profile.id !== profileId),
-          activeProfileId,
-          mode,
-        },
+      const next = await applyRemoteClientTransition(async (current) => {
+        const isActiveRemoteProfile = current.client.mode === 'remote' && current.client.activeProfileId === profileId;
+        const activeProfileId = current.client.activeProfileId === profileId
+          ? null
+          : current.client.activeProfileId;
+        const mode = activeProfileId ? current.client.mode : 'local';
+
+        if (isActiveRemoteProfile) {
+          await remotePaneClientController.switchToLocalMode();
+        }
+
+        return {
+          next: {
+            ...current,
+            client: {
+              ...current.client,
+              profiles: current.client.profiles.filter((profile) => profile.id !== profileId),
+              activeProfileId,
+              mode,
+            },
+          },
+          resyncRenderer: isActiveRemoteProfile,
+        };
       });
-
-      if (current.client.mode === 'remote' && current.client.activeProfileId === profileId) {
-        await remotePaneClientController.switchToLocalMode();
-      }
-
-      await configManager.updateConfig({ remoteDaemon: next });
-      if (current.client.mode === 'remote' && current.client.activeProfileId === profileId) {
-        requestRendererRemoteResync();
-      }
       return { success: true, data: next.client };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to delete remote daemon connection profile') };
@@ -402,29 +425,32 @@ export function registerRemoteDaemonHandlers(
         throw new Error('Remote daemon client state update must be an object');
       }
 
-      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
-      const nextState = buildNextClientState(current.client, updates);
-      const next = normalizeRemoteDaemonConfig({
-        ...current,
-        client: {
-          ...current.client,
-          ...nextState,
-        },
-      });
+      const next = await applyRemoteClientTransition(async (current) => {
+        const nextState = buildNextClientState(current.client, updates);
+        const candidate = normalizeRemoteDaemonConfig({
+          ...current,
+          client: {
+            ...current.client,
+            ...nextState,
+          },
+        });
 
-      if (next.client.mode === 'remote') {
-        const activeProfile = next.client.profiles.find((profile) => profile.id === next.client.activeProfileId);
-        if (!activeProfile) {
-          throw new Error(`Remote daemon connection profile "${next.client.activeProfileId}" does not exist`);
+        if (candidate.client.mode === 'remote') {
+          const activeProfile = candidate.client.profiles.find((profile) => profile.id === candidate.client.activeProfileId);
+          if (!activeProfile) {
+            throw new Error(`Remote daemon connection profile "${candidate.client.activeProfileId}" does not exist`);
+          }
+
+          await remotePaneClientController.activateProfile(activeProfile);
+        } else {
+          await remotePaneClientController.switchToLocalMode();
         }
 
-        await remotePaneClientController.activateProfile(activeProfile);
-      } else {
-        await remotePaneClientController.switchToLocalMode();
-      }
-
-      await configManager.updateConfig({ remoteDaemon: next });
-      requestRendererRemoteResync();
+        return {
+          next: candidate,
+          resyncRenderer: true,
+        };
+      });
       return { success: true, data: next.client };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to update remote daemon client state') };
