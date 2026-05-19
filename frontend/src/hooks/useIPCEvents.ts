@@ -384,6 +384,12 @@ export function useIPCEvents() {
               jsonMessages: session.jsonMessages || [],
             }));
             loadSessions(sessionsWithJsonMessages);
+
+            const activeSessionId = useSessionStore.getState().activeSessionId;
+            if (activeSessionId && !sessionsWithJsonMessages.some((session: Session) => session.id === activeSessionId)) {
+              await useSessionStore.getState().setActiveSession(null);
+              usePanelStore.getState().setPanels(activeSessionId, []);
+            }
           }
 
           const activeSessionId = useSessionStore.getState().activeSessionId;

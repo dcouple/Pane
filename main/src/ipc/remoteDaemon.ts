@@ -52,6 +52,13 @@ export function registerRemoteDaemonHandlers(
 ): void {
   attachRemoteHostStateForwarder(getMainWindow);
 
+  function requestRendererRemoteResync(): void {
+    const mainWindow = getMainWindow?.();
+    if (mainWindow) {
+      mainWindow.webContents.send('remote-daemon:resync-required');
+    }
+  }
+
   ipcMain.handle('remote-daemon:get-config', async () => {
     try {
       return { success: true, data: getRemoteDaemonConfig(configManager.getConfig().remoteDaemon) };
@@ -228,6 +235,9 @@ export function registerRemoteDaemonHandlers(
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
+      if (connected) {
+        requestRendererRemoteResync();
+      }
 
       return {
         success: true,
@@ -377,6 +387,9 @@ export function registerRemoteDaemonHandlers(
       }
 
       await configManager.updateConfig({ remoteDaemon: next });
+      if (current.client.mode === 'remote' && current.client.activeProfileId === profileId) {
+        requestRendererRemoteResync();
+      }
       return { success: true, data: next.client };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to delete remote daemon connection profile') };
@@ -411,6 +424,7 @@ export function registerRemoteDaemonHandlers(
       }
 
       await configManager.updateConfig({ remoteDaemon: next });
+      requestRendererRemoteResync();
       return { success: true, data: next.client };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to update remote daemon client state') };

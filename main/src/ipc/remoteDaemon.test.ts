@@ -109,8 +109,12 @@ describe('remote daemon IPC', () => {
   it('persists connection profiles and client state through dedicated handlers', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
+    const send = vi.fn();
 
-    registerRemoteDaemonHandlers(ipcMain, { configManager });
+    registerRemoteDaemonHandlers(ipcMain, {
+      configManager,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
+    });
 
     const upsertProfile = ipcMain.handlers.get('remote-daemon:upsert-connection-profile');
     const updateClientState = ipcMain.handlers.get('remote-daemon:update-client-state');
@@ -158,6 +162,7 @@ describe('remote daemon IPC', () => {
         mode: 'remote',
       },
     });
+    expect(send).toHaveBeenCalledWith('remote-daemon:resync-required');
 
     await expect(getConfig?.({})).resolves.toEqual({
       success: true,
@@ -523,6 +528,7 @@ describe('remote daemon IPC', () => {
 
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub(initialConfig);
+    const send = vi.fn();
     vi.spyOn(remotePaneClientController, 'switchToLocalMode').mockResolvedValue({
       mode: 'local',
       status: 'local',
@@ -532,7 +538,10 @@ describe('remote daemon IPC', () => {
       lastError: null,
     });
 
-    registerRemoteDaemonHandlers(ipcMain, { configManager });
+    registerRemoteDaemonHandlers(ipcMain, {
+      configManager,
+      getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
+    });
 
     const deleteProfile = ipcMain.handlers.get('remote-daemon:delete-connection-profile');
 
@@ -544,6 +553,7 @@ describe('remote daemon IPC', () => {
         mode: 'local',
       },
     });
+    expect(send).toHaveBeenCalledWith('remote-daemon:resync-required');
   });
 
   it('creates a paired host client record and saved connection profile together', async () => {
