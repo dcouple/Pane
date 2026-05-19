@@ -33,6 +33,15 @@ export async function installElectronApiMock(page: Page) {
       activeBaseUrl: null as string | null,
       lastError: null as string | null,
     };
+    const remoteHostState = {
+      enabled: false,
+      status: 'inactive' as 'inactive' | 'live' | 'error',
+      listenHost: null as string | null,
+      listenPort: null as number | null,
+      lastError: null as string | null,
+      connectedClients: [] as Array<Record<string, unknown>>,
+      updatedAt: '1970-01-01T00:00:00.000Z',
+    };
     const cloudState = {
       status: 'not_provisioned' as const,
       ip: null as string | null,
@@ -86,6 +95,11 @@ export async function installElectronApiMock(page: Page) {
     const setRemoteConnectionState = (updates: Partial<typeof remoteConnectionState>) => {
       Object.assign(remoteConnectionState, updates);
       emit('remote-daemon:connection-state-changed', clone(remoteConnectionState));
+    };
+
+    const setRemoteHostState = (updates: Partial<typeof remoteHostState>) => {
+      Object.assign(remoteHostState, updates, { updatedAt: new Date().toISOString() });
+      emit('remote-daemon:host-state-changed', clone(remoteHostState));
     };
 
     const namespace = (overrides: Record<string, unknown> = {}) =>
@@ -259,6 +273,7 @@ export async function installElectronApiMock(page: Page) {
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),
         getConnectionState: () => success(clone(remoteConnectionState)),
+        getHostState: () => success(clone(remoteHostState)),
         setupHost: (input: {
           dataDirectoryMode?: 'current' | 'isolated';
           paneDir?: string;
@@ -286,6 +301,13 @@ export async function installElectronApiMock(page: Page) {
           };
           remoteDaemonConfig.host.clients.push(client);
           syncRemoteDaemonConfig();
+          setRemoteHostState({
+            enabled: true,
+            status: 'live',
+            listenHost: remoteDaemonConfig.host.config.listenHost,
+            listenPort,
+            lastError: null,
+          });
           return success({
             dataDirectoryMode: input.dataDirectoryMode ?? 'current',
             paneDir: input.paneDir ?? '~/.pane',
@@ -342,6 +364,14 @@ export async function installElectronApiMock(page: Page) {
             ...updates,
           };
           syncRemoteDaemonConfig();
+          setRemoteHostState({
+            enabled: Boolean(remoteDaemonConfig.host.config.enabled),
+            status: remoteDaemonConfig.host.config.enabled ? 'live' : 'inactive',
+            listenHost: remoteDaemonConfig.host.config.enabled ? remoteDaemonConfig.host.config.listenHost : null,
+            listenPort: remoteDaemonConfig.host.config.enabled ? remoteDaemonConfig.host.config.listenPort : null,
+            lastError: null,
+            connectedClients: [],
+          });
           return success(clone(remoteDaemonConfig.host.config));
         },
         upsertClientRecord: (record: Record<string, unknown>) => {
@@ -422,6 +452,8 @@ export async function installElectronApiMock(page: Page) {
         },
         onConnectionStateChanged: (callback: (state: unknown) => void) =>
           subscribe('remote-daemon:connection-state-changed', callback),
+        onHostStateChanged: (callback: (state: unknown) => void) =>
+          subscribe('remote-daemon:host-state-changed', callback),
       }),
       uiState: namespace({
         getExpanded: () => success([]),

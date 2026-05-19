@@ -295,7 +295,7 @@ describe('remote daemon IPC', () => {
     expect(response).toMatchObject({
       success: true,
       data: {
-        command: expect.stringContaining('scripts/pane-remote-setup.js'),
+        command: expect.stringContaining('pane-remote-setup.js'),
       },
     });
     expect(response.data?.command).toContain('--interactive-tailscale-setup');
