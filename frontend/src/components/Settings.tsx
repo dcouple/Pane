@@ -75,6 +75,8 @@ type AvailableShell = {
   path: string;
 };
 
+const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
+
 function formatRemoteBaseUrl(host: string, port: number): string {
   const trimmedHost = host.trim();
   const normalizedHost = trimmedHost.includes(':') && !trimmedHost.startsWith('[') && !trimmedHost.endsWith(']')
@@ -1367,9 +1369,24 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         {remoteConnectionState.activeBaseUrl ?? 'Paste a connection code below to use a VM or another machine.'}
                       </p>
                       {remoteConnectionState.status === 'connected' && (
-                        <p className="text-xs text-text-tertiary mt-2">
-                          Worktrees, terminals, and AI tool commands run on the remote host. Install Codex or Claude there to use those panels.
-                        </p>
+                        <div className="mt-2 space-y-2">
+                          <p className="text-xs text-text-tertiary">
+                            Worktrees, terminals, and AI tool commands run on the remote host. Install Codex or Claude there to use those panels.
+                          </p>
+                          <div className="rounded-md border border-border-secondary bg-surface-primary px-3 py-2">
+                            <p className="text-xs text-text-secondary">
+                              For Electron apps, native windows, and browser previews running on the host, use Remote Desktop alongside Pane.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => window.electronAPI.openExternal(REMOTE_DESKTOP_URL)}
+                              className="mt-1 inline-flex items-center gap-1.5 text-xs text-interactive hover:text-interactive-hover transition-colors"
+                            >
+                              Open Remote Desktop
+                              <ExternalLink className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
                       )}
                       {remoteConnectionState.mode === 'remote' && remoteLastSeenText && (
                         <p className="text-xs text-text-tertiary mt-2">{remoteLastSeenText}</p>

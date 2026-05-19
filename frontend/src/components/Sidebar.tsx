@@ -3,7 +3,7 @@ import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -62,6 +62,9 @@ interface RemoteFooterStatus {
   description: string;
   ariaLabel: string;
 }
+
+const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
+const REMOTE_DESKTOP_TOOLTIP = 'Use Remote Desktop to access the host device for Electron apps, native windows, and UI running on the remote machine.';
 
 function formatRemoteLastSeen(lastSeenAt: string | null): string | null {
   if (!lastSeenAt) {
@@ -305,6 +308,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
       <p className="text-[10px] text-text-tertiary">{remoteFooterStatus.description}</p>
     </div>
   );
+  const showRemoteDesktopLink = remoteConnectionState.mode === 'remote' && remoteConnectionState.status === 'connected';
+  const handleOpenRemoteDesktop = useCallback(() => {
+    void window.electronAPI.openExternal(REMOTE_DESKTOP_URL).catch(error => {
+      console.error('Failed to open Remote Desktop:', error);
+    });
+  }, []);
 
   // State for collapsed sidebar
   const [projects, setProjects] = useState<Project[]>([]);
@@ -371,6 +380,18 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
 
           {/* Projects with their sessions */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 flex flex-col items-center gap-1.5">
+            {showRemoteDesktopLink && (
+              <Tooltip content={REMOTE_DESKTOP_TOOLTIP} side="right">
+                <button
+                  type="button"
+                  onClick={handleOpenRemoteDesktop}
+                  aria-label="Open Remote Desktop"
+                  className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover hover:text-text-primary transition-colors"
+                >
+                  <Monitor className="w-4 h-4" />
+                </button>
+              </Tooltip>
+            )}
             {projects.map((project) => {
               const isActiveProject = project.id === activeProject?.id;
               const initial = project.name.charAt(0).toUpperCase();
@@ -561,7 +582,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
         </div>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
-          <ProjectSessionList sessionSortAscending={sessionSortAscending} />
+          <ProjectSessionList
+            sessionSortAscending={sessionSortAscending}
+            showRemoteDesktopLink={showRemoteDesktopLink}
+            onRemoteDesktopClick={handleOpenRemoteDesktop}
+            remoteDesktopTooltip={REMOTE_DESKTOP_TOOLTIP}
+          />
         </div>
 
         {/* Archived sessions - pinned above bottom */}

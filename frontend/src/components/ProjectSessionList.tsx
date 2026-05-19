@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -19,9 +19,17 @@ import { usePanelStore } from '../stores/panelStore';
 
 interface ProjectSessionListProps {
   sessionSortAscending: boolean;
+  showRemoteDesktopLink?: boolean;
+  onRemoteDesktopClick?: () => void;
+  remoteDesktopTooltip?: string;
 }
 
-export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListProps) {
+export function ProjectSessionList({
+  sessionSortAscending,
+  showRemoteDesktopLink = false,
+  onRemoteDesktopClick,
+  remoteDesktopTooltip,
+}: ProjectSessionListProps) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -335,6 +343,19 @@ export function ProjectSessionList({ sessionSortAscending }: ProjectSessionListP
           <Home className="w-4 h-4" />
           <span>Home</span>
         </button>
+
+        {showRemoteDesktopLink && onRemoteDesktopClick && (
+          <Tooltip content={remoteDesktopTooltip} side="right">
+            <button
+              type="button"
+              onClick={onRemoteDesktopClick}
+              className="flex items-center gap-2.5 px-4 py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
+            >
+              <Monitor className="w-4 h-4" />
+              <span>Remote Desktop</span>
+            </button>
+          </Tooltip>
+        )}
 
         {pinnedSessions.length > 0 && (
           <>
