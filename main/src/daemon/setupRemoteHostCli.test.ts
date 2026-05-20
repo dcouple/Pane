@@ -43,7 +43,7 @@ describe('runRemoteSetupCli', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
-        command: 'tailscale serve --bg http://127.0.0.1:42139',
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42139',
         note: 'Available through Tailscale Serve.',
       },
       fallbackTunnelCommands: [],

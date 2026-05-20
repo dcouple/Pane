@@ -60,16 +60,22 @@ describe('setupRemoteHost', () => {
         if (command === 'tailscale' && args[0] === 'version') {
           return commandResult({ status: 0, stdout: '1.80.0\n' });
         }
-        if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
+        if (
+          command === 'tailscale' &&
+          args[0] === 'serve' &&
+          args[1] === '--bg' &&
+          args[2] === '--tls-terminated-tcp=443' &&
+          args[3] === '42137'
+        ) {
           return commandResult({
             status: 0,
-            stdout: 'Available within your tailnet:\nhttps://office-mac.tailnet.ts.net\n',
+            stdout: 'Available within your tailnet:\n|-- tcp://office-mac.tailnet.ts.net:443 (TLS terminated)\n',
           });
         }
         if (command === 'tailscale' && args[0] === 'serve' && args[1] === 'status') {
           return commandResult({
             status: 0,
-            stdout: 'https://office-mac.tailnet.ts.net proxy http://127.0.0.1:42137\n',
+            stdout: 'tcp://office-mac.tailnet.ts.net:443 (TLS terminated) forward tcp://127.0.0.1:42137\n',
           });
         }
         if (command === 'tailscale' && args[0] === 'ip' && args[1] === '-4') {
@@ -109,7 +115,7 @@ describe('setupRemoteHost', () => {
       };
 
       expect(result.tunnel?.kind).toBe('tailscale');
-      expect(result.tunnel?.command).toBe('tailscale serve --bg http://127.0.0.1:42137');
+      expect(result.tunnel?.command).toBe('tailscale serve --bg --tls-terminated-tcp=443 42137');
       expect(result.tunnel?.tailscaleIp).toBe('100.127.116.52');
       expect(payload.baseUrl).toBe('https://office-mac.tailnet.ts.net');
       expect(payload.tunnel?.kind).toBe('tailscale');
@@ -140,24 +146,35 @@ describe('setupRemoteHost', () => {
         if (command === 'tailscale' && args[0] === 'version') {
           return commandResult({ status: 0, stdout: '1.80.0\n' });
         }
-        if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
+        if (
+          command === 'tailscale' &&
+          args[0] === 'serve' &&
+          args[1] === '--bg' &&
+          args[2] === '--tls-terminated-tcp=443'
+        ) {
           return commandResult({
             status: 1,
             stderr: [
               'sending serve config: Access denied: serve config denied',
               '',
-              'Use \'sudo tailscale serve --bg http://127.0.0.1:42137\'.',
+              'Use \'sudo tailscale serve --bg --tls-terminated-tcp=443 42137\'.',
               'To not require root, use \'sudo tailscale set --operator=$USER\' once.',
             ].join('\n'),
           });
         }
-        if (command === 'sudo' && args[0] === 'tailscale' && args[1] === 'serve' && args[2] === '--bg') {
+        if (
+          command === 'sudo' &&
+          args[0] === 'tailscale' &&
+          args[1] === 'serve' &&
+          args[2] === '--bg' &&
+          args[3] === '--tls-terminated-tcp=443'
+        ) {
           return commandResult({ status: 0 });
         }
         if (command === 'tailscale' && args[0] === 'serve' && args[1] === 'status') {
           return commandResult({
             status: 0,
-            stdout: 'https://wsl-host.tailnet.ts.net proxy http://127.0.0.1:42137\n',
+            stdout: 'tcp://wsl-host.tailnet.ts.net:443 (TLS terminated) forward tcp://127.0.0.1:42137\n',
           });
         }
 
@@ -176,7 +193,8 @@ describe('setupRemoteHost', () => {
         'tailscale',
         'serve',
         '--bg',
-        'http://127.0.0.1:42137',
+        '--tls-terminated-tcp=443',
+        '42137',
       ], expect.objectContaining({
         stdio: 'inherit',
       }));
@@ -206,16 +224,21 @@ describe('setupRemoteHost', () => {
         if (command === 'open') {
           return commandResult({ status: 0 });
         }
-        if (command === 'tailscale' && args[0] === 'serve' && args[1] === '--bg') {
+        if (
+          command === 'tailscale' &&
+          args[0] === 'serve' &&
+          args[1] === '--bg' &&
+          args[2] === '--tls-terminated-tcp=443'
+        ) {
           return commandResult({
             status: 0,
-            stdout: 'Available within your tailnet:\nhttps://office-mac.tailnet.ts.net\n',
+            stdout: 'Available within your tailnet:\n|-- tcp://office-mac.tailnet.ts.net:443 (TLS terminated)\n',
           });
         }
         if (command === 'tailscale' && args[0] === 'serve' && args[1] === 'status') {
           return commandResult({
             status: 0,
-            stdout: 'https://office-mac.tailnet.ts.net proxy http://127.0.0.1:42137\n',
+            stdout: 'tcp://office-mac.tailnet.ts.net:443 (TLS terminated) forward tcp://127.0.0.1:42137\n',
           });
         }
 

@@ -355,7 +355,7 @@ function selectTailscaleTunnel(options: {
 
   const tailscaleServe = options.interactiveTailscaleSetup
     ? runTailscaleServeInteractive(tailscaleCli, options.listenPort)
-    : runTailscaleCommand(tailscaleCli, ['serve', '--bg', `http://127.0.0.1:${options.listenPort}`]);
+    : runTailscaleCommand(tailscaleCli, ['serve', '--bg', '--tls-terminated-tcp=443', String(options.listenPort)]);
   if (!tailscaleServe.ok) {
     const instructions = options.interactiveTailscaleSetup
       ? getTailscaleServeSetupInstructions(options.listenPort)
@@ -725,12 +725,17 @@ function commandOutputToString(value: string | Buffer | null): string {
 }
 
 function extractFirstHttpsUrl(output: string): string | null {
-  const match = output.match(/https:\/\/[^\s|"'<>]+/);
-  if (!match) {
+  const httpsMatch = output.match(/https:\/\/[^\s|"'<>]+/);
+  if (httpsMatch) {
+    return httpsMatch[0].replace(/[),.]+$/g, '');
+  }
+
+  const tailscaleTcpMatch = output.match(/tcp:\/\/([^/\s|"'<>:]+)(?::443)?(?:\s+\(TLS terminated\))?/);
+  if (!tailscaleTcpMatch) {
     return null;
   }
 
-  return match[0].replace(/[),.]+$/g, '');
+  return `https://${tailscaleTcpMatch[1]}`;
 }
 
 function readTailscaleIpv4(tailscaleCli: ResolvedCommand): string | null {

@@ -371,7 +371,7 @@ describe('remote daemon IPC', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
-        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42137',
         tailscaleIp: '100.127.116.52',
       },
     });
@@ -422,7 +422,7 @@ describe('remote daemon IPC', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
-        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42137',
         tailscaleIp: '100.127.116.52',
       },
     });
@@ -753,7 +753,7 @@ describe('remote daemon IPC', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
-        command: 'tailscale serve --bg http://127.0.0.1:42137',
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42137',
         tailscaleIp: '100.127.116.52',
       },
       updatedAt: '2026-05-18T20:00:00.000Z',
@@ -796,7 +796,7 @@ describe('remote daemon IPC', () => {
       tunnel: {
         kind: 'tailscale',
         selected: true,
-        command: 'tailscale serve --bg http://127.0.0.1:42138',
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42138',
         tailscaleIp: '100.75.154.34',
       },
       updatedAt: '2026-05-18T20:01:00.000Z',

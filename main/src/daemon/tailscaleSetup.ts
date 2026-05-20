@@ -24,7 +24,7 @@ interface InstallAttempt {
 }
 
 export function buildTailscaleServeCommand(command: ResolvedCommand | null, port: number): string {
-  return `${command?.displayCommand ?? 'tailscale'} serve --bg http://127.0.0.1:${port}`;
+  return `${command?.displayCommand ?? 'tailscale'} serve --bg --tls-terminated-tcp=443 ${port}`;
 }
 
 export function installTailscaleCommandOrThrow(): ResolvedCommand {
@@ -105,15 +105,15 @@ export function runTailscaleUpInteractive(command: ResolvedCommand): void {
 }
 
 export function runTailscaleServeInteractive(command: ResolvedCommand, port: number): CommandResult {
-  const target = `http://127.0.0.1:${port}`;
-  let serve = runCommand(command, ['serve', '--bg', target]);
+  const args = ['serve', '--bg', '--tls-terminated-tcp=443', String(port)];
+  let serve = runCommand(command, args);
   if (serve.ok) {
     return serve;
   }
 
   let output = firstNonEmpty(serve.stderr, serve.stdout, 'unknown error');
   if (isTailscaleServeDisabled(output) && waitForTailscaleServeEnablement(output)) {
-    serve = runCommand(command, ['serve', '--bg', target]);
+    serve = runCommand(command, args);
     if (serve.ok) {
       return serve;
     }
@@ -122,7 +122,7 @@ export function runTailscaleServeInteractive(command: ResolvedCommand, port: num
 
   if (process.platform === 'linux' && isTailscaleServePermissionDenied(output)) {
     console.log('Pane remote setup: Tailscale Serve needs elevated permission; running sudo tailscale serve...');
-    const sudoServe = runCommandInteractive('sudo', [command.command, 'serve', '--bg', target], { timeoutMs: 300000 });
+    const sudoServe = runCommandInteractive('sudo', [command.command, ...args], { timeoutMs: 300000 });
     if (sudoServe.ok) {
       return sudoServe;
     }
@@ -223,7 +223,7 @@ export function getTailscaleSetupInstructions(): string {
 }
 
 export function getTailscaleServeSetupInstructions(port?: number): string {
-  const target = port ? ` http://127.0.0.1:${port}` : '';
+  const target = port ? ` --tls-terminated-tcp=443 ${port}` : '';
   if (process.platform === 'linux') {
     return [
       'Tailscale is installed and authenticated, but Pane could not configure Tailscale Serve.',
