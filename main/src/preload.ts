@@ -621,6 +621,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('remote-daemon:create-host-connection-code', input),
     updateHostConfig: (updates: Partial<RemoteDaemonHostConfig>): Promise<IPCResponse<RemoteDaemonHostConfig>> =>
       invokeIpc('remote-daemon:update-host-config', updates),
+    clearHostAccess: (): Promise<IPCResponse<RemoteDaemonConfig['host']>> =>
+      invokeIpc('remote-daemon:clear-host-access'),
     disconnectHostClients: (clientIds?: string[]): Promise<IPCResponse<{ disconnectedCount: number }>> =>
       invokeIpc('remote-daemon:disconnect-host-clients', clientIds),
     upsertClientRecord: (record: RemoteDaemonClientRecord): Promise<IPCResponse<RemoteDaemonClientRecord[]>> =>

@@ -346,6 +346,24 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
+  ipcMain.handle('remote-daemon:clear-host-access', async () => {
+    try {
+      const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+      const next = normalizeRemoteDaemonConfig({
+        ...current,
+        host: {
+          config: current.host.config,
+          clients: current.host.clients,
+        },
+      });
+
+      await configManager.updateConfig({ remoteDaemon: next });
+      return { success: true, data: next.host };
+    } catch (error) {
+      return { success: false, error: getErrorMessage(error, 'Failed to clear remote host access') };
+    }
+  });
+
   ipcMain.handle('remote-daemon:disconnect-host-clients', async (_event, clientIds: unknown) => {
     try {
       const parsedClientIds = parseOptionalClientIds(clientIds);

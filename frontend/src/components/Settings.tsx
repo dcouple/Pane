@@ -424,6 +424,19 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     });
   };
 
+  const handleClearRemoteHostAccess = async () => {
+    await runRemoteDaemonAction(async () => {
+      const response = await API.remoteDaemon.clearHostAccess();
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to forget remote host access');
+      }
+
+      setRemoteHostConnectionCode(null);
+      setRemoteSetupResult(null);
+      setRemoteSetupCopyResult('Forgot cached host access. Create a new code to rediscover the current tunnel.');
+    });
+  };
+
   const handleDisconnectRemoteClients = async (clientIds?: string[]) => {
     await runRemoteDaemonAction(async () => {
       const response = await API.remoteDaemon.disconnectHostClients(clientIds);
@@ -989,6 +1002,18 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                           disabled={remoteBusy}
                         >
                           Create & Copy Code
+                        </Button>
+                      )}
+                      {remoteDaemonConfig.host.access && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          icon={<Trash2 className="w-4 h-4" />}
+                          onClick={handleClearRemoteHostAccess}
+                          disabled={remoteBusy}
+                        >
+                          Forget Code
                         </Button>
                       )}
                       {remoteHostState.status === 'live' && remoteHostState.connectedClients.length > 0 && (

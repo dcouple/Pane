@@ -955,6 +955,42 @@ describe('remote daemon IPC', () => {
     });
   });
 
+  it('clears cached remote host access without disabling the host', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config = {
+      ...initialConfig.host.config,
+      enabled: true,
+      listenPort: 42138,
+    };
+    initialConfig.host.access = {
+      baseUrl: 'https://stale.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg http://127.0.0.1:42138',
+        tailscaleIp: '100.75.154.34',
+      },
+      updatedAt: '2026-05-20T18:07:28.787Z',
+    };
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    await expect(ipcMain.handlers.get('remote-daemon:clear-host-access')?.({})).resolves.toEqual({
+      success: true,
+      data: {
+        config: initialConfig.host.config,
+        clients: [],
+      },
+    });
+    expect(configManager.getConfig().remoteDaemon?.host.access).toBeUndefined();
+    expect(configManager.getConfig().remoteDaemon?.host.config).toMatchObject({
+      enabled: true,
+      listenPort: 42138,
+    });
+  });
+
   it('disconnects live remote host clients through IPC', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();
