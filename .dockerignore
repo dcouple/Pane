@@ -1,0 +1,8 @@
+**
+!deploy/
+!deploy/remote-pwa/
+!deploy/remote-pwa/Dockerfile
+!deploy/remote-pwa/nginx.conf
+!frontend/
+!frontend/dist/
+!frontend/dist/**

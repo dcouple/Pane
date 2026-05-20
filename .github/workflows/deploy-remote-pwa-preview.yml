@@ -78,7 +78,7 @@ jobs:
             --platform=managed \
             --image="$IMAGE" \
             --service-account="$runtime_service_account" \
-            --allow-unauthenticated \
+            --no-invoker-iam-check \
             --min-instances=0 \
             --max-instances=1 \
             --cpu=1 \
