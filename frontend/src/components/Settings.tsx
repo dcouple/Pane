@@ -433,7 +433,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       setRemoteHostConnectionCode(null);
       setRemoteSetupResult(null);
-      setRemoteSetupCopyResult('Forgot cached host access. Create a new code to rediscover the current tunnel.');
+      setRemoteSetupCopyResult('Forgot cached host code and revoked existing remote clients. Create a new code to reconnect.');
     });
   };
 

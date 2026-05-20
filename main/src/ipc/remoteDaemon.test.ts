@@ -819,6 +819,55 @@ describe('remote daemon IPC', () => {
     expect(configManager.getConfig().remoteDaemon?.host.access?.baseUrl).toBe('https://wsl.tailnet.ts.net');
   });
 
+  it('creates a fresh host connection code after forgetting the previous code', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config.enabled = true;
+    initialConfig.host.config.listenPort = 42138;
+    vi.mocked(readConfiguredTailscaleServeAccess).mockReturnValue({
+      baseUrl: 'https://wsl.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42138',
+        tailscaleIp: '100.75.154.34',
+      },
+      updatedAt: '2026-05-18T20:01:00.000Z',
+    });
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    const firstResponse = await createCode?.({}, { label: 'Office Mac mini' }) as {
+      success?: boolean;
+      data?: { connectionCode?: string };
+    };
+
+    expect(firstResponse.success).toBe(true);
+    expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+
+    const clearCode = ipcMain.handlers.get('remote-daemon:clear-host-access');
+    await expect(clearCode?.({})).resolves.toMatchObject({
+      success: true,
+      data: {
+        clients: [],
+      },
+    });
+
+    const secondResponse = await createCode?.({}, { label: 'Office Mac mini' }) as {
+      success?: boolean;
+      data?: { connectionCode?: string };
+    };
+
+    expect(secondResponse.success).toBe(true);
+    expect(secondResponse.data?.connectionCode).toContain('pane-remote://');
+    expect(secondResponse.data?.connectionCode).not.toBe(firstResponse.data?.connectionCode);
+    expect(decodePaneRemoteConnection(secondResponse.data?.connectionCode ?? '').token)
+      .not.toBe(decodePaneRemoteConnection(firstResponse.data?.connectionCode ?? '').token);
+    expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+  });
+
   it('normalizes stale remote mode back to local when no active profile remains', async () => {
     const initialConfig = createDefaultRemoteDaemonConfig();
     initialConfig.client = {
@@ -955,13 +1004,21 @@ describe('remote daemon IPC', () => {
     });
   });
 
-  it('clears cached remote host access without disabling the host', async () => {
+  it('clears cached remote host access and revokes existing host clients without disabling the host', async () => {
     const initialConfig = createDefaultRemoteDaemonConfig();
     initialConfig.host.config = {
       ...initialConfig.host.config,
       enabled: true,
       listenPort: 42138,
     };
+    initialConfig.host.clients = [
+      {
+        id: 'client-1',
+        label: 'Old phone',
+        tokenHash: 'old-token-hash',
+        createdAt: '2026-05-20T18:00:00.000Z',
+      },
+    ];
     initialConfig.host.access = {
       baseUrl: 'https://stale.tailnet.ts.net',
       tunnel: {
@@ -985,10 +1042,12 @@ describe('remote daemon IPC', () => {
       },
     });
     expect(configManager.getConfig().remoteDaemon?.host.access).toBeUndefined();
+    expect(configManager.getConfig().remoteDaemon?.host.clients).toEqual([]);
     expect(configManager.getConfig().remoteDaemon?.host.config).toMatchObject({
       enabled: true,
       listenPort: 42138,
     });
+    expect(disconnectActiveRemoteHostClients).toHaveBeenCalledWith();
   });
 
   it('disconnects live remote host clients through IPC', async () => {

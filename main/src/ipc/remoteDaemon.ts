@@ -353,11 +353,12 @@ export function registerRemoteDaemonHandlers(
         ...current,
         host: {
           config: current.host.config,
-          clients: current.host.clients,
+          clients: [],
         },
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
+      disconnectActiveRemoteHostClients();
       return { success: true, data: next.host };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to clear remote host access') };
