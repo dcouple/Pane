@@ -4,6 +4,7 @@ import {
   RemoteDaemonBrowserClient,
   parseSseEvents,
 } from '../../../frontend/src/remote/runtime/remoteDaemonBrowserClient';
+import { RemoteRuntimeAdapter } from '../../../frontend/src/remote/runtime/remoteRuntimeAdapter';
 import type { PaneRemoteConnectionImportPayload } from '../../../shared/types/remoteDaemon';
 
 const originalFetch = globalThis.fetch;
@@ -155,6 +156,52 @@ describe('Remote PWA browser runtime', () => {
     });
 
     client.disconnect();
+  });
+
+  it('routes remote sidebar mutations through session daemon commands', async () => {
+    installBrowserGlobals();
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as { channel?: string };
+      return new Response(JSON.stringify({
+        ok: true,
+        result: body.channel === 'sessions:toggle-favorite'
+          ? { success: true, data: { isFavorite: true } }
+          : { success: true },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const adapter = new RemoteRuntimeAdapter({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(adapter.toggleFavorite('session-1')).resolves.toEqual({ isFavorite: true });
+    await expect(adapter.archiveSession('session-1')).resolves.toBeUndefined();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstBody = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    const secondBody = JSON.parse((fetchMock.mock.calls[1][1] as RequestInit).body as string);
+    expect(firstBody).toMatchObject({
+      channel: 'sessions:toggle-favorite',
+      args: ['session-1'],
+      token: 'secret-token',
+      runtimeId: 'runtime-id-1',
+      clientLabel: 'Pane PWA on TestOS',
+    });
+    expect(secondBody).toMatchObject({
+      channel: 'sessions:delete',
+      args: ['session-1'],
+      token: 'secret-token',
+      runtimeId: 'runtime-id-1',
+      clientLabel: 'Pane PWA on TestOS',
+    });
   });
 });
 

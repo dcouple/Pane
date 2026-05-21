@@ -83,6 +83,14 @@ export class RemoteRuntimeAdapter {
     return this.invoke<RemotePwaAffordances>('remote:pwa-affordances');
   }
 
+  toggleFavorite(sessionId: string): Promise<{ isFavorite: boolean }> {
+    return this.invoke<{ isFavorite: boolean }>('sessions:toggle-favorite', [sessionId]);
+  }
+
+  archiveSession(sessionId: string): Promise<void> {
+    return this.invoke<void>('sessions:delete', [sessionId]);
+  }
+
   createTerminalPanel(sessionId: string, options: { title?: string; initialCommand?: string } = {}): Promise<ToolPanel> {
     const initialState = options.initialCommand
       ? {

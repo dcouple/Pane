@@ -30,6 +30,7 @@ export function RemotePwaApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [affordances, setAffordances] = useState<RemotePwaAffordances>(EMPTY_AFFORDANCES);
   const [affordancesLoading, setAffordancesLoading] = useState(false);
+  const [sidebarActionSessionId, setSidebarActionSessionId] = useState<string | null>(null);
 
   const projects = useRemoteSessionStore(state => state.projects);
   const selectedSessionId = useRemoteSessionStore(state => state.selectedSessionId);
@@ -59,7 +60,7 @@ export function RemotePwaApp() {
   const selectedPanel = terminalPanels.find(panel => panel.id === selectedPanelId) ?? terminalPanels[0] ?? null;
 
   const refreshProjects = useCallback(async (runtime: RemoteRuntimeAdapter | null = adapter) => {
-    if (!runtime) return;
+    if (!runtime) return null;
     setLoading(true);
     try {
       const nextProjects = await runtime.getProjectsWithSessions();
@@ -71,8 +72,10 @@ export function RemotePwaApp() {
         selectSession(findFirstSessionId(nextProjects));
       }
       setLastError(null);
+      return nextProjects;
     } catch (error) {
       setLastError(error instanceof Error ? error.message : 'Failed to load remote panes');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -176,6 +179,42 @@ export function RemotePwaApp() {
     setSidebarOpen(false);
   }, [selectSession]);
 
+  const toggleRemotePinnedSession = useCallback(async (sessionId: string) => {
+    if (!adapter || sidebarActionSessionId) return;
+    setSidebarActionSessionId(sessionId);
+    try {
+      await adapter.toggleFavorite(sessionId);
+      await refreshProjects(adapter);
+      setLastError(null);
+    } catch (error) {
+      setLastError(error instanceof Error ? error.message : 'Failed to update pinned pane');
+    } finally {
+      setSidebarActionSessionId(null);
+    }
+  }, [adapter, refreshProjects, sidebarActionSessionId]);
+
+  const archiveRemoteSession = useCallback(async (sessionId: string) => {
+    if (!adapter || sidebarActionSessionId) return;
+    const sessionName = findSessionName(projects, sessionId) ?? 'this pane';
+    if (!window.confirm(`Archive pane "${sessionName}"?`)) {
+      return;
+    }
+
+    setSidebarActionSessionId(sessionId);
+    try {
+      await adapter.archiveSession(sessionId);
+      const nextProjects = await refreshProjects(adapter);
+      if (selectedSessionId === sessionId && nextProjects) {
+        selectSession(findFirstSessionId(nextProjects));
+      }
+      setLastError(null);
+    } catch (error) {
+      setLastError(error instanceof Error ? error.message : 'Failed to archive pane');
+    } finally {
+      setSidebarActionSessionId(null);
+    }
+  }, [adapter, projects, refreshProjects, selectSession, selectedSessionId, sidebarActionSessionId]);
+
   const selectPanel = useCallback((panelId: string) => {
     if (!adapter || !selectedSessionId) return;
     setSelectedPanel(panelId);
@@ -257,7 +296,10 @@ export function RemotePwaApp() {
             projects={projects}
             selectedSessionId={selectedSessionId}
             loading={loading}
+            actionSessionId={sidebarActionSessionId}
             onSelectSession={selectRemoteSession}
+            onTogglePinned={toggleRemotePinnedSession}
+            onArchiveSession={archiveRemoteSession}
             onRefresh={() => { void refreshProjects(adapter); }}
             onClose={() => setSidebarOpen(false)}
             className="absolute inset-y-0 left-0 flex w-[min(22rem,calc(100vw-2rem))] max-w-full shadow-2xl"
@@ -269,7 +311,10 @@ export function RemotePwaApp() {
         projects={projects}
         selectedSessionId={selectedSessionId}
         loading={loading}
+        actionSessionId={sidebarActionSessionId}
         onSelectSession={selectRemoteSession}
+        onTogglePinned={toggleRemotePinnedSession}
+        onArchiveSession={archiveRemoteSession}
         onRefresh={() => { void refreshProjects(adapter); }}
         className="hidden w-80 shrink-0 md:flex"
       />
@@ -336,6 +381,16 @@ function findFirstSessionId(projects: Array<{ sessions?: Session[] }>): string |
     const session = project.sessions?.[0];
     if (session) {
       return session.id;
+    }
+  }
+  return null;
+}
+
+function findSessionName(projects: Array<{ sessions?: Session[] }>, sessionId: string): string | null {
+  for (const project of projects) {
+    const session = project.sessions?.find(candidate => candidate.id === sessionId);
+    if (session) {
+      return session.name || 'Untitled';
     }
   }
   return null;
