@@ -35,8 +35,9 @@ interface InvokeErrorPayload {
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 5;
-const HEALTH_CHECK_ATTEMPTS = 3;
-const HEALTH_CHECK_RETRY_DELAY_MS = 1_500;
+const HEALTH_CHECK_ATTEMPTS = 5;
+const INVOKE_ATTEMPTS = 4;
+const REQUEST_RETRY_DELAY_MS = 2_000;
 const RUNTIME_ID_STORAGE_KEY = 'pane.remotePwa.runtimeId';
 
 export class RemoteDaemonBrowserClient {
@@ -88,20 +89,47 @@ export class RemoteDaemonBrowserClient {
   }
 
   async invoke<T = unknown>(channel: string, args: unknown[] = []): Promise<T> {
-    const response = await fetch(this.endpoint('invoke'), {
-      method: 'POST',
-      headers: this.authHeaders({
-        'Content-Type': 'application/json; charset=utf-8',
-      }),
-      body: JSON.stringify({ channel, args }),
-    });
+    let lastError: unknown = null;
+    const signal = getRequiredSignal(this.abortController);
+    for (let attempt = 1; attempt <= INVOKE_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(this.endpoint('invoke'), {
+          method: 'POST',
+          headers: this.authHeaders({
+            'Content-Type': 'application/json; charset=utf-8',
+          }),
+          body: JSON.stringify({ channel, args }),
+          signal,
+        });
 
-    const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.ok ? `Remote request failed with ${response.status}` : payload.error?.message ?? 'Remote request failed');
+        const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
+        if (response.ok && payload.ok) {
+          return payload.result;
+        }
+
+        const message = payload.ok
+          ? `Remote request failed with ${response.status}`
+          : payload.error?.message ?? 'Remote request failed';
+        const error = new Error(message);
+        if (!isRetryableResponse(response.status)) {
+          throw new NonRetryableRemoteError(message);
+        }
+        lastError = error;
+      } catch (error) {
+        if (error instanceof NonRetryableRemoteError || signal.aborted) {
+          throw error;
+        }
+        lastError = error;
+      }
+
+      if (attempt < INVOKE_ATTEMPTS) {
+        await delay(REQUEST_RETRY_DELAY_MS * attempt, signal);
+      }
     }
 
-    return payload.result;
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Remote request failed');
   }
 
   private async checkHealth(signal: AbortSignal): Promise<void> {
@@ -121,7 +149,7 @@ export class RemoteDaemonBrowserClient {
       }
 
       if (attempt < HEALTH_CHECK_ATTEMPTS) {
-        await delay(HEALTH_CHECK_RETRY_DELAY_MS * attempt, signal);
+        await delay(REQUEST_RETRY_DELAY_MS * attempt, signal);
       }
     }
 
@@ -321,6 +349,19 @@ function getClientLabel(): string {
   const platform = navigator.platform || 'Browser';
   return `Pane PWA on ${platform}`;
 }
+
+function isRetryableResponse(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function getRequiredSignal(controller: AbortController | null): AbortSignal {
+  if (!controller) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+  return controller.signal;
+}
+
+class NonRetryableRemoteError extends Error {}
 
 function delay(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) {
