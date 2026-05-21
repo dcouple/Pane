@@ -93,12 +93,20 @@ export class RemoteDaemonBrowserClient {
     const signal = this.abortController?.signal;
     for (let attempt = 1; attempt <= INVOKE_ATTEMPTS; attempt += 1) {
       try {
+        const runtimeId = getRuntimeId();
+        const clientLabel = getClientLabel();
         const request: RequestInit = {
           method: 'POST',
-          headers: this.authHeaders({
-            'Content-Type': 'application/json; charset=utf-8',
+          headers: {
+            'Content-Type': 'text/plain;charset=UTF-8',
+          },
+          body: JSON.stringify({
+            channel,
+            args,
+            token: this.profile.token,
+            runtimeId,
+            clientLabel,
           }),
-          body: JSON.stringify({ channel, args }),
         };
         if (signal) {
           request.signal = signal;
@@ -166,8 +174,11 @@ export class RemoteDaemonBrowserClient {
 
   private async openEventStream(signal: AbortSignal): Promise<void> {
     try {
-      const response = await fetch(this.endpoint('events'), {
-        headers: this.authHeaders(),
+      const response = await fetch(this.endpoint('events', {
+        access_token: this.profile.token,
+        runtime_id: getRuntimeId(),
+        client_label: getClientLabel(),
+      }), {
         signal,
       });
 
@@ -259,17 +270,12 @@ export class RemoteDaemonBrowserClient {
     }, delay);
   }
 
-  private endpoint(path: 'events' | 'health' | 'invoke'): string {
-    return `${this.profile.baseUrl}/${path}`;
-  }
-
-  private authHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
-    return {
-      Authorization: `Bearer ${this.profile.token}`,
-      'X-Pane-Remote-Runtime-Id': getRuntimeId(),
-      'X-Pane-Remote-Client-Label': getClientLabel(),
-      ...extraHeaders,
-    };
+  private endpoint(path: 'events' | 'health' | 'invoke', params?: Record<string, string>): string {
+    const url = new URL(`${this.profile.baseUrl}/${path}`);
+    for (const [key, value] of Object.entries(params ?? {})) {
+      url.searchParams.set(key, value);
+    }
+    return url.toString();
   }
 
   private emitEvent(event: RemoteBrowserEvent): void {

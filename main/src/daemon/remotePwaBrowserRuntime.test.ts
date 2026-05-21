@@ -72,7 +72,7 @@ describe('Remote PWA browser runtime', () => {
     ]);
   });
 
-  it('sends invoke requests with auth and browser runtime headers', async () => {
+  it('sends invoke requests without preflight-only auth headers', async () => {
     installBrowserGlobals();
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       ok: true,
@@ -98,13 +98,63 @@ describe('Remote PWA browser runtime', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://host.example.test/invoke', {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer secret-token',
-        'Content-Type': 'application/json; charset=utf-8',
-        'X-Pane-Remote-Client-Label': 'Pane PWA on TestOS',
-        'X-Pane-Remote-Runtime-Id': 'runtime-id-1',
+        'Content-Type': 'text/plain;charset=UTF-8',
       },
-      body: JSON.stringify({ channel: 'sessions:get-all-with-projects', args: [] }),
+      body: JSON.stringify({
+        channel: 'sessions:get-all-with-projects',
+        args: [],
+        token: 'secret-token',
+        runtimeId: 'runtime-id-1',
+        clientLabel: 'Pane PWA on TestOS',
+      }),
     });
+  });
+
+  it('opens the event stream with browser auth metadata in query params', async () => {
+    installBrowserGlobals();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: ready\ndata: {"timestamp":"now"}\n\n'));
+      },
+    });
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/health')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream' },
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new RemoteDaemonBrowserClient({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://host.example.test/health', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+      cache: 'no-store',
+    });
+
+    const eventUrl = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(eventUrl.origin).toBe('https://host.example.test');
+    expect(eventUrl.pathname).toBe('/events');
+    expect(eventUrl.searchParams.get('access_token')).toBe('secret-token');
+    expect(eventUrl.searchParams.get('runtime_id')).toBe('runtime-id-1');
+    expect(eventUrl.searchParams.get('client_label')).toBe('Pane PWA on TestOS');
+    expect(fetchMock.mock.calls[1][1]).toEqual({
+      signal: expect.any(AbortSignal),
+    });
+
+    client.disconnect();
   });
 });
 

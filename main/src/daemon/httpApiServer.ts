@@ -282,7 +282,7 @@ export class PaneRemoteHttpApiServer {
     }
 
     if (url.pathname === '/events') {
-      this.handleEventStreamRequest(request, response);
+      this.handleEventStreamRequest(request, response, url);
       return;
     }
 
@@ -308,12 +308,6 @@ export class PaneRemoteHttpApiServer {
       return;
     }
 
-    const auth = this.authenticateRequest(request);
-    if (!auth.ok) {
-      this.writeJson(response, auth.statusCode, auth);
-      return;
-    }
-
     let invokeRequest: RemoteInvokeRequest;
     try {
       invokeRequest = await this.readInvokeRequest(request);
@@ -330,6 +324,12 @@ export class PaneRemoteHttpApiServer {
       }
 
       throw error;
+    }
+
+    const auth = this.authenticateRequest(request, invokeRequest.token);
+    if (!auth.ok) {
+      this.writeJson(response, auth.statusCode, auth);
+      return;
     }
 
     try {
@@ -371,13 +371,13 @@ export class PaneRemoteHttpApiServer {
     } satisfies RemoteHealthPayload);
   }
 
-  private handleEventStreamRequest(request: IncomingMessage, response: ServerResponse): void {
+  private handleEventStreamRequest(request: IncomingMessage, response: ServerResponse, url: URL): void {
     if (request.method !== 'GET') {
       this.writeMethodNotAllowed(response, 'GET');
       return;
     }
 
-    const auth = this.authenticateRequest(request);
+    const auth = this.authenticateRequest(request, url.searchParams.get('access_token'));
     if (!auth.ok) {
       this.writeJson(response, auth.statusCode, auth);
       return;
@@ -408,9 +408,9 @@ export class PaneRemoteHttpApiServer {
       response,
       remoteClientId: auth.client?.id ?? null,
       remoteClientTokenHash: auth.client?.tokenHash ?? null,
-      label: auth.client?.label ?? getClientLabelFromHeaders(request),
+      label: auth.client?.label ?? getClientLabelFromRequest(request, url.searchParams.get('client_label')),
       deviceLabel: getClientDeviceLabelFromHeaders(request),
-      remoteRuntimeId: getRemoteRuntimeIdFromHeaders(request),
+      remoteRuntimeId: getRemoteRuntimeIdFromRequest(request, url.searchParams.get('runtime_id')),
       remoteAddress: getRemoteAddress(request),
       connectedAt,
       lastSeenAt: connectedAt,
@@ -427,7 +427,7 @@ export class PaneRemoteHttpApiServer {
     response.on('close', cleanup);
   }
 
-  private authenticateRequest(request: IncomingMessage): RemoteRequestAuthResult {
+  private authenticateRequest(request: IncomingMessage, token?: string | null): RemoteRequestAuthResult {
     const remoteConfig = this.getRemoteConfig();
     if (!remoteConfig.host.config.enabled) {
       return {
@@ -448,7 +448,7 @@ export class PaneRemoteHttpApiServer {
     }
 
     return authenticateRemoteDaemonBearerToken(
-      request.headers.authorization,
+      getAuthorizationHeaderForRequest(request, token),
       remoteConfig.host.clients,
     );
   }
@@ -598,7 +598,7 @@ export class PaneRemoteHttpApiServer {
     args[2] = `${this.getRemoteVisibilityViewerPrefix(
       auth.client?.id ?? null,
       auth.client?.tokenHash ?? null,
-      getRemoteRuntimeIdFromHeaders(request),
+      getRemoteRuntimeIdFromRequest(request, invokeRequest.runtimeId),
     )}:viewer:${sanitizeVisibilityViewerPart(rawViewerId)}`;
     return args;
   }
@@ -660,12 +660,28 @@ function getClientLabelFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-client-label']);
 }
 
+function getClientLabelFromRequest(request: IncomingMessage, fallback?: string | null): string | null {
+  return getClientLabelFromHeaders(request) ?? getSingleString(fallback);
+}
+
 function getClientDeviceLabelFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-client-device-label']);
 }
 
 function getRemoteRuntimeIdFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-remote-runtime-id']);
+}
+
+function getRemoteRuntimeIdFromRequest(request: IncomingMessage, fallback?: string | null): string | null {
+  return getRemoteRuntimeIdFromHeaders(request) ?? getSingleString(fallback);
+}
+
+function getAuthorizationHeaderForRequest(
+  request: IncomingMessage,
+  token?: string | null,
+): string | string[] | undefined {
+  const bodyToken = getSingleString(token);
+  return bodyToken ? `Bearer ${bodyToken}` : request.headers.authorization;
 }
 
 function sanitizeVisibilityViewerPart(value: string): string {
@@ -684,11 +700,15 @@ function getRemoteAddress(request: IncomingMessage): string | null {
 
 function getSingleHeaderValue(value: string | string[] | undefined): string | null {
   const headerValue = Array.isArray(value) ? value[0] : value;
-  if (!headerValue) {
+  return getSingleString(headerValue);
+}
+
+function getSingleString(value: string | null | undefined): string | null {
+  if (!value) {
     return null;
   }
 
-  const trimmed = headerValue.trim();
+  const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -698,5 +718,16 @@ function isRemoteInvokeRequest(value: unknown): value is RemoteInvokeRequest {
   }
 
   const candidate = value as Partial<RemoteInvokeRequest>;
-  return typeof candidate.channel === 'string' && candidate.channel.length > 0 && Array.isArray(candidate.args);
+  return (
+    typeof candidate.channel === 'string' &&
+    candidate.channel.length > 0 &&
+    Array.isArray(candidate.args) &&
+    isOptionalString(candidate.token) &&
+    isOptionalString(candidate.runtimeId) &&
+    isOptionalString(candidate.clientLabel)
+  );
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
 }

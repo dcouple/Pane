@@ -153,6 +153,7 @@ async function openEventStream(
   server: PaneRemoteHttpApiServer,
   token?: string,
   headers?: Record<string, string>,
+  path = '/events',
 ): Promise<TestEventStream> {
   const address = server.getAddress();
   if (!address) {
@@ -163,7 +164,7 @@ async function openEventStream(
     const request = http.request({
       host: address.host,
       port: address.port,
-      path: '/events',
+      path,
       method: 'GET',
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -282,6 +283,31 @@ describe('PaneRemoteHttpApiServer', () => {
     });
   });
 
+  it('accepts browser invoke auth metadata from a simple request body', async () => {
+    const registry = new PaneCommandRegistry();
+    registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);
+
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestJson(server, 'POST', '/invoke', {
+      channel: 'sessions:get-all',
+      args: [],
+      token: 'secret-token',
+      runtimeId: 'browser-runtime-1',
+      clientLabel: 'Pane PWA on iPhone',
+    }, undefined, {
+      'Content-Type': 'text/plain;charset=UTF-8',
+    })).resolves.toEqual({
+      statusCode: 200,
+      body: {
+        ok: true,
+        result: [{ id: 'session-1' }],
+      },
+    });
+  });
+
   it('scopes terminal visibility invokes to the authenticated remote runtime', async () => {
     const registry = new PaneCommandRegistry();
     const handler = vi.fn(async () => ({ ok: true }));
@@ -305,6 +331,34 @@ describe('PaneRemoteHttpApiServer', () => {
       'panel-1',
       true,
       'remote:client-1:runtime-1:viewer:renderer-viewer-1',
+    );
+  });
+
+  it('scopes browser terminal visibility invokes to the body runtime id', async () => {
+    const registry = new PaneCommandRegistry();
+    const handler = vi.fn(async () => ({ ok: true }));
+    registry.register('terminal:setVisibility', handler);
+
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestJson(server, 'POST', '/invoke', {
+      channel: 'terminal:setVisibility',
+      args: ['panel-1', true, 'renderer-viewer-1'],
+      token: 'secret-token',
+      runtimeId: 'browser-runtime-1',
+    }, undefined, {
+      'Content-Type': 'text/plain;charset=UTF-8',
+    })).resolves.toMatchObject({
+      statusCode: 200,
+      body: { ok: true },
+    });
+
+    expect(handler).toHaveBeenCalledWith(
+      'panel-1',
+      true,
+      'remote:client-1:browser-runtime-1:viewer:renderer-viewer-1',
     );
   });
 
@@ -470,6 +524,35 @@ describe('PaneRemoteHttpApiServer', () => {
       args: [{ id: 'session-1' }],
       timestamp: expect.any(String),
     });
+
+    stream.close();
+    await waitFor(() => server.getConnectedClients().length === 0);
+  });
+
+  it('accepts browser SSE auth metadata from query params', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    const stream = await openEventStream(
+      server,
+      undefined,
+      undefined,
+      '/events?access_token=secret-token&runtime_id=browser-runtime-1&client_label=Pane%20PWA%20on%20iPhone',
+    );
+    const readyEvent = await stream.nextEvent();
+    expect(readyEvent.event).toBe('ready');
+
+    const heartbeatEvent = await stream.nextEvent();
+    expect(heartbeatEvent.event).toBe('heartbeat');
+    expect(server.getConnectedClients()).toMatchObject([{
+      clientId: 'client-1',
+      label: 'Mac mini',
+      remoteAddress: expect.any(String),
+      connectedAt: expect.any(String),
+      lastSeenAt: expect.any(String),
+    }]);
 
     stream.close();
     await waitFor(() => server.getConnectedClients().length === 0);

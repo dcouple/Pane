@@ -186,6 +186,9 @@ export interface RemotePaneConnectionState {
 export interface RemoteInvokeRequest {
   channel: string;
   args: unknown[];
+  token?: string;
+  runtimeId?: string;
+  clientLabel?: string;
 }
 
 export interface RemoteDaemonHeartbeatPayload {
