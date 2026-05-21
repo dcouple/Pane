@@ -131,6 +131,7 @@ export function RemotePwaApp() {
 
   const connectCode = useCallback(async (code: string) => {
     const profile = decodeRemoteConnectionCode(code);
+    forgetProfilesForBaseUrl(profile.baseUrl, setSavedProfiles);
     await connectProfile(profile);
   }, [connectProfile]);
 
@@ -356,8 +357,23 @@ function saveProfile(
   setSavedProfiles: (updater: (profiles: RemotePaneConnectionProfile[]) => RemotePaneConnectionProfile[]) => void,
 ): void {
   setSavedProfiles(previous => {
-    const next = [profile, ...previous.filter(candidate => candidate.id !== profile.id)];
+    const next = [profile, ...previous.filter(candidate => (
+      candidate.id !== profile.id && candidate.baseUrl !== profile.baseUrl
+    ))];
     window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
+    return next;
+  });
+}
+
+function forgetProfilesForBaseUrl(
+  baseUrl: string,
+  setSavedProfiles: (updater: (profiles: RemotePaneConnectionProfile[]) => RemotePaneConnectionProfile[]) => void,
+): void {
+  setSavedProfiles(previous => {
+    const next = previous.filter(profile => profile.baseUrl !== baseUrl);
+    if (next.length !== previous.length) {
+      window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
+    }
     return next;
   });
 }

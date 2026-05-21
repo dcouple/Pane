@@ -35,6 +35,8 @@ interface InvokeErrorPayload {
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 5;
+const HEALTH_CHECK_ATTEMPTS = 3;
+const HEALTH_CHECK_RETRY_DELAY_MS = 1_500;
 const RUNTIME_ID_STORAGE_KEY = 'pane.remotePwa.runtimeId';
 
 export class RemoteDaemonBrowserClient {
@@ -103,10 +105,29 @@ export class RemoteDaemonBrowserClient {
   }
 
   private async checkHealth(signal: AbortSignal): Promise<void> {
-    const response = await fetch(this.endpoint('health'), { signal });
-    if (!response.ok) {
-      throw new Error(`Remote health check failed with ${response.status}`);
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= HEALTH_CHECK_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(this.endpoint('health'), { signal, cache: 'no-store' });
+        if (response.ok) {
+          return;
+        }
+        lastError = new Error(`Remote health check failed with ${response.status}`);
+      } catch (error) {
+        if (signal.aborted) {
+          throw error;
+        }
+        lastError = error;
+      }
+
+      if (attempt < HEALTH_CHECK_ATTEMPTS) {
+        await delay(HEALTH_CHECK_RETRY_DELAY_MS * attempt, signal);
+      }
     }
+
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Remote health check failed');
   }
 
   private async openEventStream(signal: AbortSignal): Promise<void> {
@@ -299,4 +320,24 @@ function getRuntimeId(): string {
 function getClientLabel(): string {
   const platform = navigator.platform || 'Browser';
   return `Pane PWA on ${platform}`;
+}
+
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
 }
