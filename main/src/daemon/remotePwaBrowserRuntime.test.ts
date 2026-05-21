@@ -203,6 +203,81 @@ describe('Remote PWA browser runtime', () => {
       clientLabel: 'Pane PWA on TestOS',
     });
   });
+
+  it('routes remote pane creation through project and session daemon commands', async () => {
+    installBrowserGlobals();
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string) as { channel?: string };
+      const dataByChannel: Record<string, unknown> = {
+        'projects:list-branches': [{
+          name: 'origin/main',
+          isCurrent: false,
+          hasWorktree: false,
+          isRemote: true,
+        }],
+        'projects:detect-branch': 'main',
+        'sessions:create': { jobId: 'job-1' },
+      };
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { success: true, data: dataByChannel[body.channel ?? ''] },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const adapter = new RemoteRuntimeAdapter({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(adapter.listProjectBranches(42)).resolves.toEqual([{
+      name: 'origin/main',
+      isCurrent: false,
+      hasWorktree: false,
+      isRemote: true,
+    }]);
+    await expect(adapter.detectProjectBranch('/repo')).resolves.toBe('main');
+    await expect(adapter.createSession({
+      prompt: '',
+      worktreeTemplate: 'main',
+      count: 1,
+      toolType: 'none',
+      permissionMode: 'ignore',
+      projectId: 42,
+      isMainRepo: false,
+      baseBranch: 'origin/main',
+    })).resolves.toEqual({ jobId: 'job-1' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const bodies = fetchMock.mock.calls.map(call => JSON.parse((call[1] as RequestInit).body as string));
+    expect(bodies[0]).toMatchObject({
+      channel: 'projects:list-branches',
+      args: ['42'],
+    });
+    expect(bodies[1]).toMatchObject({
+      channel: 'projects:detect-branch',
+      args: ['/repo'],
+    });
+    expect(bodies[2]).toMatchObject({
+      channel: 'sessions:create',
+      args: [{
+        prompt: '',
+        worktreeTemplate: 'main',
+        count: 1,
+        toolType: 'none',
+        permissionMode: 'ignore',
+        projectId: 42,
+        isMainRepo: false,
+        baseBranch: 'origin/main',
+      }],
+    });
+  });
 });
 
 function createConnectionCode(overrides: Partial<PaneRemoteConnectionImportPayload> = {}): string {

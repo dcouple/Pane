@@ -1,4 +1,4 @@
-import { Archive, Monitor, Pin, RefreshCw, TerminalSquare, X } from 'lucide-react';
+import { Archive, Monitor, Pin, Plus, RefreshCw, TerminalSquare, X } from 'lucide-react';
 import { useMemo } from 'react';
 import type { RemoteProjectWithSessions } from '../runtime/remoteRuntimeAdapter';
 import type { Session } from '../../types/session';
@@ -12,6 +12,7 @@ interface RemoteSidebarProps {
   onSelectSession: (sessionId: string) => void;
   onTogglePinned: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
+  onCreateSession: (project: RemoteProjectWithSessions) => void;
   onRefresh: () => void;
   onClose?: () => void;
   className?: string;
@@ -25,6 +26,7 @@ export function RemoteSidebar({
   onSelectSession,
   onTogglePinned,
   onArchiveSession,
+  onCreateSession,
   onRefresh,
   onClose,
   className = 'flex w-80 shrink-0',
@@ -105,8 +107,17 @@ export function RemoteSidebar({
         {projects.map(project => (
           <div key={project.id} className="mb-4">
             <div className="mb-1 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wide text-text-tertiary">
-              <Monitor className="h-3.5 w-3.5" />
-              <span className="truncate">{project.name}</span>
+              <Monitor className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate">{project.name}</span>
+              <button
+                type="button"
+                onClick={() => onCreateSession(project)}
+                className="rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                title={`New pane in ${project.name}`}
+                aria-label={`New pane in ${project.name}`}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
             </div>
             <div className="space-y-1">
               {(project.sessions ?? []).map(session => (

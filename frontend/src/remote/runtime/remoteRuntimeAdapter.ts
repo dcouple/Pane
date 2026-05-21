@@ -1,11 +1,23 @@
 import type { ToolPanel } from '../../../../shared/types/panels';
 import type { RemoteDaemonEventEnvelope, RemotePaneConnectionProfile, RemotePwaAffordances } from '../../../../shared/types/remoteDaemon';
 import type { Project } from '../../types/project';
-import type { Session, SessionOutput } from '../../types/session';
+import type { CreateSessionRequest, Session, SessionOutput } from '../../types/session';
 import { RemoteDaemonBrowserClient, type RemoteBrowserConnectionState } from './remoteDaemonBrowserClient';
 
 export interface RemoteProjectWithSessions extends Project {
   sessions?: Session[];
+}
+
+export interface RemoteBranchInfo {
+  name: string;
+  isCurrent: boolean;
+  hasWorktree: boolean;
+  isRemote: boolean;
+}
+
+export interface RemoteCreateSessionResult {
+  jobId?: string;
+  jobIds?: string[];
 }
 
 interface IpcLikeResponse<T> {
@@ -89,6 +101,18 @@ export class RemoteRuntimeAdapter {
 
   archiveSession(sessionId: string): Promise<void> {
     return this.invoke<void>('sessions:delete', [sessionId]);
+  }
+
+  listProjectBranches(projectId: number): Promise<RemoteBranchInfo[]> {
+    return this.invoke<RemoteBranchInfo[]>('projects:list-branches', [String(projectId)]);
+  }
+
+  detectProjectBranch(path: string): Promise<string> {
+    return this.invoke<string>('projects:detect-branch', [path]);
+  }
+
+  createSession(request: CreateSessionRequest): Promise<RemoteCreateSessionResult> {
+    return this.invoke<RemoteCreateSessionResult>('sessions:create', [request]);
   }
 
   createTerminalPanel(sessionId: string, options: { title?: string; initialCommand?: string } = {}): Promise<ToolPanel> {

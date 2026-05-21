@@ -3,13 +3,14 @@ import type { ToolPanel } from '../../../shared/types/panels';
 import type { RemotePaneConnectionProfile, RemotePaneConnectionStatus, RemotePwaAffordances } from '../../../shared/types/remoteDaemon';
 import type { Session } from '../types/session';
 import { RemoteConnectionScreen } from './components/RemoteConnectionScreen';
+import { RemoteCreateSessionDialog } from './components/RemoteCreateSessionDialog';
 import { RemotePanelTabs, type RemoteTerminalCreateOptions } from './components/RemotePanelTabs';
 import { RemoteSessionList } from './components/RemoteSessionList';
 import { RemoteSidebar } from './components/RemoteSidebar';
 import { RemoteStatusBar } from './components/RemoteStatusBar';
 import { RemoteTerminalPanel } from './components/RemoteTerminalPanel';
 import { decodeRemoteConnectionCode } from './runtime/remoteProfile';
-import { RemoteRuntimeAdapter } from './runtime/remoteRuntimeAdapter';
+import { RemoteRuntimeAdapter, type RemoteProjectWithSessions } from './runtime/remoteRuntimeAdapter';
 import { useRemoteSessionStore } from './stores/remoteSessionStore';
 
 const SAVED_PROFILES_KEY = 'pane.remotePwa.savedProfiles';
@@ -31,6 +32,7 @@ export function RemotePwaApp() {
   const [affordances, setAffordances] = useState<RemotePwaAffordances>(EMPTY_AFFORDANCES);
   const [affordancesLoading, setAffordancesLoading] = useState(false);
   const [sidebarActionSessionId, setSidebarActionSessionId] = useState<string | null>(null);
+  const [createSessionProject, setCreateSessionProject] = useState<RemoteProjectWithSessions | null>(null);
 
   const projects = useRemoteSessionStore(state => state.projects);
   const selectedSessionId = useRemoteSessionStore(state => state.selectedSessionId);
@@ -215,6 +217,23 @@ export function RemotePwaApp() {
     }
   }, [adapter, projects, refreshProjects, selectSession, selectedSessionId, sidebarActionSessionId]);
 
+  const handleRemoteSessionCreated = useCallback(async (projectId: number, sessionName: string) => {
+    if (!adapter) return;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const nextProjects = await refreshProjects(adapter);
+      const createdSessionId = nextProjects ? findSessionIdByName(nextProjects, projectId, sessionName) : null;
+      if (createdSessionId) {
+        selectSession(createdSessionId);
+        setSidebarOpen(false);
+        return;
+      }
+      await delay(500);
+    }
+
+    setSidebarOpen(false);
+  }, [adapter, refreshProjects, selectSession]);
+
   const selectPanel = useCallback((panelId: string) => {
     if (!adapter || !selectedSessionId) return;
     setSelectedPanel(panelId);
@@ -300,6 +319,7 @@ export function RemotePwaApp() {
             onSelectSession={selectRemoteSession}
             onTogglePinned={toggleRemotePinnedSession}
             onArchiveSession={archiveRemoteSession}
+            onCreateSession={setCreateSessionProject}
             onRefresh={() => { void refreshProjects(adapter); }}
             onClose={() => setSidebarOpen(false)}
             className="absolute inset-y-0 left-0 flex w-[min(22rem,calc(100vw-2rem))] max-w-full shadow-2xl"
@@ -315,6 +335,7 @@ export function RemotePwaApp() {
         onSelectSession={selectRemoteSession}
         onTogglePinned={toggleRemotePinnedSession}
         onArchiveSession={archiveRemoteSession}
+        onCreateSession={setCreateSessionProject}
         onRefresh={() => { void refreshProjects(adapter); }}
         className="hidden w-80 shrink-0 md:flex"
       />
@@ -359,6 +380,15 @@ export function RemotePwaApp() {
           <UnsupportedPanel session={selectedSession} panel={selectedPanel} />
         )}
       </section>
+
+      {createSessionProject && (
+        <RemoteCreateSessionDialog
+          adapter={adapter}
+          project={createSessionProject}
+          onClose={() => setCreateSessionProject(null)}
+          onCreated={(sessionName) => handleRemoteSessionCreated(createSessionProject.id, sessionName)}
+        />
+      )}
     </div>
   );
 }
@@ -394,6 +424,16 @@ function findSessionName(projects: Array<{ sessions?: Session[] }>, sessionId: s
     }
   }
   return null;
+}
+
+function findSessionIdByName(projects: Array<{ id?: number; sessions?: Session[] }>, projectId: number, sessionName: string): string | null {
+  const project = projects.find(candidate => candidate.id === projectId);
+  const session = project?.sessions?.find(candidate => candidate.name === sessionName);
+  return session?.id ?? null;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function loadSavedProfiles(): RemotePaneConnectionProfile[] {
