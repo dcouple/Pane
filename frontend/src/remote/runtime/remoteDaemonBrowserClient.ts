@@ -90,16 +90,22 @@ export class RemoteDaemonBrowserClient {
 
   async invoke<T = unknown>(channel: string, args: unknown[] = []): Promise<T> {
     let lastError: unknown = null;
-    const signal = getRequiredSignal(this.abortController);
+    const signal = this.abortController?.signal;
     for (let attempt = 1; attempt <= INVOKE_ATTEMPTS; attempt += 1) {
       try {
-        const response = await fetch(this.endpoint('invoke'), {
+        const request: RequestInit = {
           method: 'POST',
           headers: this.authHeaders({
             'Content-Type': 'application/json; charset=utf-8',
           }),
           body: JSON.stringify({ channel, args }),
-          signal,
+        };
+        if (signal) {
+          request.signal = signal;
+        }
+
+        const response = await fetch(this.endpoint('invoke'), {
+          ...request,
         });
 
         const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
@@ -116,7 +122,7 @@ export class RemoteDaemonBrowserClient {
         }
         lastError = error;
       } catch (error) {
-        if (error instanceof NonRetryableRemoteError || signal.aborted) {
+        if (error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
         }
         lastError = error;
@@ -354,23 +360,16 @@ function isRetryableResponse(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
-function getRequiredSignal(controller: AbortController | null): AbortSignal {
-  if (!controller) {
-    throw new DOMException('Aborted', 'AbortError');
-  }
-  return controller.signal;
-}
-
 class NonRetryableRemoteError extends Error {}
 
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) {
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
     return Promise.reject(new DOMException('Aborted', 'AbortError'));
   }
 
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
+      signal?.removeEventListener('abort', onAbort);
       resolve();
     }, ms);
 
@@ -379,6 +378,6 @@ function delay(ms: number, signal: AbortSignal): Promise<void> {
       reject(new DOMException('Aborted', 'AbortError'));
     };
 
-    signal.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
