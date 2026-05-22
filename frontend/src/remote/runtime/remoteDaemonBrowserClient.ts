@@ -129,12 +129,15 @@ export class RemoteDaemonBrowserClient {
           ? `Remote request failed with ${response.status}`
           : payload.error?.message ?? 'Remote request failed';
         const error = new Error(message);
+        if (isAuthFailureResponse(response.status)) {
+          throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
+        }
         if (!isRetryableResponse(response.status)) {
           throw new NonRetryableRemoteError(message);
         }
         lastError = error;
       } catch (error) {
-        if (error instanceof NonRetryableRemoteError || signal?.aborted) {
+        if (error instanceof RemoteAuthInvalidError || error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
         }
         lastError = error;
@@ -175,19 +178,20 @@ export class RemoteDaemonBrowserClient {
   }
 
   private async openEventStream(signal: AbortSignal): Promise<void> {
-    if (typeof EventSource === 'function') {
-      this.openNativeEventSource(signal);
-      return;
-    }
-
     try {
-      const response = await fetch(this.endpoint('events', {
-        access_token: this.profile.token,
-        runtime_id: getRuntimeId(),
-        client_label: getClientLabel(),
-      }), {
+      if (typeof EventSource === 'function') {
+        await this.assertEventStreamAuthenticated(signal);
+        this.openNativeEventSource(signal);
+        return;
+      }
+
+      const response = await fetch(this.eventStreamEndpoint(), {
         signal,
       });
+
+      if (isAuthFailureResponse(response.status)) {
+        throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage());
+      }
 
       if (!response.ok || !response.body) {
         throw new Error(`Remote event stream failed with ${response.status}`);
@@ -206,18 +210,49 @@ export class RemoteDaemonBrowserClient {
       }
 
       const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof RemoteAuthInvalidError) {
+        this.closeEventSource();
+        this.setState({ status: 'error', lastError: message });
+        return;
+      }
+
       this.scheduleReconnect(message);
+    }
+  }
+
+  private async assertEventStreamAuthenticated(signal: AbortSignal): Promise<void> {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+
+    if (signal.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
+    signal.addEventListener('abort', abort, { once: true });
+
+    try {
+      const response = await fetch(this.eventStreamAuthCheckEndpoint(), {
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+
+      if (isAuthFailureResponse(response.status)) {
+        throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage());
+      }
+
+      if (!response.ok) {
+        throw new Error(`Remote event stream failed with ${response.status}`);
+      }
+    } finally {
+      controller.abort();
+      signal.removeEventListener('abort', abort);
     }
   }
 
   private openNativeEventSource(signal: AbortSignal): void {
     this.closeEventSource();
 
-    const eventSource = new EventSource(this.endpoint('events', {
-      access_token: this.profile.token,
-      runtime_id: getRuntimeId(),
-      client_label: getClientLabel(),
-    }));
+    const eventSource = new EventSource(this.eventStreamEndpoint());
     this.eventSource = eventSource;
 
     const closeOnAbort = () => {
@@ -265,6 +300,23 @@ export class RemoteDaemonBrowserClient {
     this.eventSourceAbortCleanup = () => {
       signal.removeEventListener('abort', closeOnAbort);
     };
+  }
+
+  private eventStreamEndpoint(): string {
+    return this.endpoint('events', {
+      access_token: this.profile.token,
+      runtime_id: getRuntimeId(),
+      client_label: getClientLabel(),
+    });
+  }
+
+  private eventStreamAuthCheckEndpoint(): string {
+    return this.endpoint('events', {
+      access_token: this.profile.token,
+      runtime_id: getRuntimeId(),
+      client_label: getClientLabel(),
+      auth_check: '1',
+    });
   }
 
   private handleNativeSseEvent(
@@ -465,7 +517,20 @@ function isRetryableResponse(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+function isAuthFailureResponse(status: number): boolean {
+  return status === 401 || status === 403;
+}
+
+function getRemoteAuthFailureMessage(serverMessage?: string): string {
+  const detail = serverMessage && serverMessage !== 'Remote request failed'
+    ? ` (${serverMessage})`
+    : '';
+  return `This connection code is not accepted by the remote host${detail}. Create and copy a new code from Pane Settings > Remote Pane, then reconnect.`;
+}
+
 class NonRetryableRemoteError extends Error {}
+
+class RemoteAuthInvalidError extends Error {}
 
 function isNetworkFailure(error: Error): boolean {
   return error.name === 'TypeError' || /fetch|load|network/i.test(error.message);

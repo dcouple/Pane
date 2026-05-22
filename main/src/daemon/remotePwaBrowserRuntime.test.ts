@@ -177,8 +177,25 @@ describe('Remote PWA browser runtime', () => {
     client.onEvent((event) => receivedEvents.push(event));
 
     await client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://host.example.test/health', {
+      signal: expect.any(AbortSignal) as AbortSignal,
+      cache: 'no-store',
+    });
+
+    const preflightUrl = new URL(String(fetchMock.mock.calls[1][0]));
+    expect(preflightUrl.origin).toBe('https://host.example.test');
+    expect(preflightUrl.pathname).toBe('/events');
+    expect(preflightUrl.searchParams.get('access_token')).toBe('secret-token');
+    expect(preflightUrl.searchParams.get('runtime_id')).toBe('runtime-id-1');
+    expect(preflightUrl.searchParams.get('client_label')).toBe('Pane PWA on TestOS');
+    expect(preflightUrl.searchParams.get('auth_check')).toBe('1');
+    expect(fetchMock.mock.calls[1][1]).toEqual({
+      signal: expect.any(AbortSignal),
+      cache: 'no-store',
+    });
     expect(MockEventSource.instances).toHaveLength(1);
 
     const eventSource = MockEventSource.instances[0];
@@ -214,6 +231,72 @@ describe('Remote PWA browser runtime', () => {
 
     client.disconnect();
     expect(eventSource.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops reconnecting when a native event stream preflight is rejected', async () => {
+    installBrowserGlobals();
+    const MockEventSource = installMockEventSource();
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/health')) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+
+      return new Response(JSON.stringify({
+        ok: false,
+        error: {
+          message: 'Remote daemon bearer token is invalid',
+        },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 403,
+      });
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new RemoteDaemonBrowserClient({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await client.connect();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(MockEventSource.instances).toHaveLength(0);
+    expect(client.getState()).toMatchObject({
+      status: 'error',
+      lastError: expect.stringContaining('connection code is not accepted'),
+    });
+  });
+
+  it('does not retry invoke requests when the host rejects the connection code', async () => {
+    installBrowserGlobals();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      ok: false,
+      error: {
+        message: 'Remote daemon bearer token is invalid',
+      },
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+      status: 403,
+    }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new RemoteDaemonBrowserClient({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(client.invoke('sessions:get-all-with-projects', [])).rejects.toThrow(
+      /connection code is not accepted.+Remote daemon bearer token is invalid/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('shows a Safari Tailscale hint when health checks fail before HTTP', async () => {

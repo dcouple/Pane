@@ -6,6 +6,7 @@ import {
   type RemoteDaemonConfig,
   type RemoteHostSetupResult,
 } from '../../../shared/types/remoteDaemon';
+import { authenticateRemoteDaemonBearerToken } from '../daemon/auth';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
@@ -56,6 +57,47 @@ function createConfigManagerStub(initialConfig?: RemoteDaemonConfig): ConfigMana
       return { remoteDaemon };
     },
   };
+}
+
+function createClientDroppingConfigManagerStub(initialConfig: RemoteDaemonConfig): ConfigManagerStub {
+  let remoteDaemon: RemoteDaemonConfig | undefined = initialConfig;
+
+  return {
+    getConfig() {
+      return { remoteDaemon };
+    },
+    async updateConfig(updates) {
+      remoteDaemon = updates.remoteDaemon
+        ? {
+            ...updates.remoteDaemon,
+            host: {
+              ...updates.remoteDaemon.host,
+              clients: [],
+            },
+          }
+        : undefined;
+      return { remoteDaemon };
+    },
+  };
+}
+
+function expectConnectionCodeAuthenticates(configManager: ConfigManagerStub, connectionCode: string | undefined): void {
+  const payload = decodePaneRemoteConnection(connectionCode ?? '');
+  const clients = configManager.getConfig().remoteDaemon?.host.clients ?? [];
+
+  expect(authenticateRemoteDaemonBearerToken(`Bearer ${payload.token}`, clients)).toMatchObject({
+    ok: true,
+  });
+}
+
+function expectConnectionCodeForbidden(configManager: ConfigManagerStub, connectionCode: string | undefined): void {
+  const payload = decodePaneRemoteConnection(connectionCode ?? '');
+  const clients = configManager.getConfig().remoteDaemon?.host.clients ?? [];
+
+  expect(authenticateRemoteDaemonBearerToken(`Bearer ${payload.token}`, clients)).toMatchObject({
+    ok: false,
+    statusCode: 403,
+  });
 }
 
 describe('remote daemon IPC', () => {
@@ -784,6 +826,7 @@ describe('remote daemon IPC', () => {
       },
     });
     expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+    expectConnectionCodeAuthenticates(configManager, response.data?.connectionCode);
     expect(configManager.getConfig().remoteDaemon?.client.profiles).toHaveLength(0);
   });
 
@@ -846,6 +889,7 @@ describe('remote daemon IPC', () => {
 
     expect(firstResponse.success).toBe(true);
     expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+    expectConnectionCodeAuthenticates(configManager, firstResponse.data?.connectionCode);
 
     const clearCode = ipcMain.handlers.get('remote-daemon:clear-host-access');
     await expect(clearCode?.({})).resolves.toMatchObject({
@@ -854,6 +898,7 @@ describe('remote daemon IPC', () => {
         clients: [],
       },
     });
+    expectConnectionCodeForbidden(configManager, firstResponse.data?.connectionCode);
 
     const secondResponse = await createCode?.({}, { label: 'Office Mac mini' }) as {
       success?: boolean;
@@ -866,6 +911,34 @@ describe('remote daemon IPC', () => {
     expect(decodePaneRemoteConnection(secondResponse.data?.connectionCode ?? '').token)
       .not.toBe(decodePaneRemoteConnection(firstResponse.data?.connectionCode ?? '').token);
     expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(1);
+    expectConnectionCodeForbidden(configManager, firstResponse.data?.connectionCode);
+    expectConnectionCodeAuthenticates(configManager, secondResponse.data?.connectionCode);
+  });
+
+  it('fails host connection code creation when the generated client is not persisted', async () => {
+    const initialConfig = createDefaultRemoteDaemonConfig();
+    initialConfig.host.config.enabled = true;
+    initialConfig.host.access = {
+      baseUrl: 'https://office-mac.tailnet.ts.net',
+      tunnel: {
+        kind: 'tailscale',
+        selected: true,
+        command: 'tailscale serve --bg --tls-terminated-tcp=443 42137',
+        tailscaleIp: '100.127.116.52',
+      },
+      updatedAt: '2026-05-18T20:00:00.000Z',
+    };
+    const ipcMain = createIpcMainStub();
+    const configManager = createClientDroppingConfigManagerStub(initialConfig);
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    await expect(createCode?.({}, { label: 'Office Mac mini' })).resolves.toEqual({
+      success: false,
+      error: 'Created remote connection code was not saved. Try again before sharing this code.',
+    });
+    expect(configManager.getConfig().remoteDaemon?.host.clients).toHaveLength(0);
   });
 
   it('normalizes stale remote mode back to local when no active profile remains', async () => {

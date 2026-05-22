@@ -558,6 +558,23 @@ describe('PaneRemoteHttpApiServer', () => {
     await waitFor(() => server.getConnectedClients().length === 0);
   });
 
+  it('checks browser SSE auth without registering a connected client', async () => {
+    const registry = new PaneCommandRegistry();
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    await expect(requestRaw(
+      server,
+      'GET',
+      '/events?access_token=secret-token&runtime_id=browser-runtime-1&client_label=Pane%20PWA%20on%20iPhone&auth_check=1',
+    )).resolves.toMatchObject({
+      statusCode: 204,
+      body: '',
+    });
+    expect(server.getConnectedClients()).toEqual([]);
+  });
+
   it('filters non-daemon events from the remote SSE stream', async () => {
     const registry = new PaneCommandRegistry();
     const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);

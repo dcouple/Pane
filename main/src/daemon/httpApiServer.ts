@@ -383,6 +383,14 @@ export class PaneRemoteHttpApiServer {
       return;
     }
 
+    if (url.searchParams.get('auth_check') === '1') {
+      response.writeHead(204, withCorsHeaders({
+        'Cache-Control': 'no-store',
+      }));
+      response.end();
+      return;
+    }
+
     response.writeHead(200, {
       ...REMOTE_DAEMON_CORS_HEADERS,
       'Cache-Control': 'no-cache, no-transform',

@@ -8,6 +8,7 @@ import {
   normalizeRemoteDaemonConfig,
   remoteImportPayloadToProfile,
   type PaneRemoteConnectionImportPayload,
+  type RemoteDaemonClientRecord,
   type RemoteDaemonConnectionPair,
   type RemoteDaemonClientMode,
   type RemoteDaemonClientSettings,
@@ -236,16 +237,27 @@ export function registerRemoteDaemonHandlers(
       const connectionCode = encodePaneRemoteConnection(
         createPaneRemoteConnectionImportPayload(pair, access.tunnel),
       );
-      const next = normalizeRemoteDaemonConfig({
-        ...current,
+      const buildNextConfig = (config: RemoteDaemonConfig): RemoteDaemonConfig => normalizeRemoteDaemonConfig({
+        ...config,
         host: {
-          ...current.host,
+          ...config.host,
           access,
-          clients: upsertById(current.host.clients, pair.client),
+          clients: upsertById(config.host.clients, pair.client),
         },
       });
 
-      await configManager.updateConfig({ remoteDaemon: next });
+      await configManager.updateConfig({ remoteDaemon: buildNextConfig(current) });
+      let persisted = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+
+      if (!hasPersistedRemoteHostClient(persisted, pair.client)) {
+        await configManager.updateConfig({ remoteDaemon: buildNextConfig(persisted) });
+        persisted = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
+      }
+
+      if (!hasPersistedRemoteHostClient(persisted, pair.client)) {
+        throw new Error('Created remote connection code was not saved. Try again before sharing this code.');
+      }
+
       return {
         success: true,
         data: {
@@ -848,6 +860,16 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
   }
 
   return items.map((item, index) => (index === existingIndex ? nextItem : item));
+}
+
+function hasPersistedRemoteHostClient(
+  config: RemoteDaemonConfig,
+  client: RemoteDaemonClientRecord,
+): boolean {
+  return config.host.clients.some((candidate) => (
+    candidate.id === client.id &&
+    candidate.tokenHash === client.tokenHash
+  ));
 }
 
 function findMatchingConnectionProfile(
