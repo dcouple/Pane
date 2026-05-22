@@ -41,6 +41,38 @@ function resolveImagePathForSession(filePath: string, sessionId: string): string
   return windowsPathToWSLMount(filePath);
 }
 
+function isWindowsAbsolutePath(value: string): boolean {
+  return /^[a-zA-Z]:\\/.test(value);
+}
+
+function resolveTerminalInitializationCwd(
+  panel: ToolPanel,
+  requestedCwd?: string,
+): string {
+  const sessionId = panel.sessionId;
+  const session = sessionId ? databaseService.getSession(sessionId) : null;
+  const sessionWorktreePath = session?.worktree_path;
+  const project = session?.project_id ? databaseService.getProject(session.project_id) : null;
+  const fallbackCwd = process.cwd();
+
+  if (!sessionWorktreePath) {
+    return requestedCwd || fallbackCwd;
+  }
+
+  if (!requestedCwd || requestedCwd === fallbackCwd) {
+    return sessionWorktreePath;
+  }
+
+  if (project?.wsl_enabled && isWindowsAbsolutePath(requestedCwd)) {
+    console.warn(
+      `[IPC] Ignoring Windows cwd for WSL terminal panel ${panel.id}; using session worktree ${sessionWorktreePath}`,
+    );
+    return sessionWorktreePath;
+  }
+
+  return requestedCwd;
+}
+
 /**
  * Save file bytes for a session and return the path to pass to the CLI tool.
  *
@@ -434,7 +466,7 @@ export function registerPanelHandlers(
 
     // Initialize based on panel type
     if (panel.type === 'terminal') {
-      const cwd = options?.cwd || process.cwd();
+      const cwd = resolveTerminalInitializationCwd(panel, options?.cwd);
 
       // Get WSL context from project for terminal shell spawning
       let wslContext = null;
