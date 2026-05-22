@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import type { ToolPanel } from '../../../../shared/types/panels';
@@ -43,6 +43,14 @@ export function useRemoteTerminal({
       setStatusText(error instanceof Error ? error.message : 'Failed to reset terminal');
     });
   };
+
+  const scrollLines = useCallback((amount: number) => {
+    terminalRef.current?.scrollLines(amount);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    terminalRef.current?.scrollToBottom();
+  }, []);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -160,7 +168,7 @@ export function useRemoteTerminal({
     void adapter.setTerminalVisibility(panel.id, true, TERMINAL_VIEWER_ID).catch(() => {});
   }, [adapter, connectionStatus, panel.id]);
 
-  return { containerRef, statusText, focusTerminal, resetTerminal };
+  return { containerRef, statusText, focusTerminal, resetTerminal, scrollLines, scrollToBottom };
 }
 
 async function hydrateTerminal(adapter: RemoteRuntimeAdapter, panelId: string, terminal: Terminal): Promise<void> {

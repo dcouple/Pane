@@ -3,6 +3,7 @@ import type { RemotePaneConnectionStatus, RemotePwaTerminalShortcut } from '../.
 import type { RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
 import { useRemoteTerminal } from '../hooks/useRemoteTerminal';
 import { RemoteTerminalInputBar } from './RemoteTerminalInputBar';
+import { RemoteTerminalScrollJoystick } from './RemoteTerminalScrollJoystick';
 
 interface RemoteTerminalPanelProps {
   adapter: RemoteRuntimeAdapter;
@@ -23,7 +24,14 @@ export function RemoteTerminalPanel({
   shortcutsLoading = false,
   onRefreshShortcuts,
 }: RemoteTerminalPanelProps) {
-  const { containerRef, statusText, focusTerminal, resetTerminal } = useRemoteTerminal({
+  const {
+    containerRef,
+    statusText,
+    focusTerminal,
+    resetTerminal,
+    scrollLines,
+    scrollToBottom,
+  } = useRemoteTerminal({
     adapter,
     panel,
     sessionId,
@@ -33,12 +41,17 @@ export function RemoteTerminalPanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[#010409]">
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <div ref={containerRef} className="h-full w-full overflow-hidden p-2" />
+        <div ref={containerRef} className="absolute inset-x-2 bottom-0 top-2 overflow-hidden" />
         {statusText !== 'Connected' && (
           <div className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/70 px-2 py-1 text-xs text-white">
             {statusText}
           </div>
         )}
+        <RemoteTerminalScrollJoystick
+          disabled={connectionStatus !== 'connected'}
+          onScrollLines={scrollLines}
+          onScrollToBottom={scrollToBottom}
+        />
       </div>
       <RemoteTerminalInputBar
         shortcuts={shortcuts}
