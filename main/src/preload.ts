@@ -132,6 +132,7 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'resource-monitor:',
   'sessions:',
   'terminal:',
+  'voice:',
 ] as const;
 
 const DAEMON_OWNED_EXACT_CHANNELS = [

@@ -102,6 +102,7 @@ export class RemoteDaemonBrowserClient {
         const request: RequestInit = {
           method: 'POST',
           headers: {
+            Authorization: `Bearer ${this.profile.token}`,
             'Content-Type': 'text/plain;charset=UTF-8',
           },
           body: JSON.stringify({

@@ -42,6 +42,8 @@ export interface AppConfig {
   verbose?: boolean;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  falApiKey?: string;
+  openRouterApiKey?: string;
   // Legacy fields for backward compatibility
   gitRepoPath?: string;
   systemPromptAppend?: string;
@@ -114,6 +116,8 @@ export interface UpdateConfigRequest {
   verbose?: boolean;
   anthropicApiKey?: string;
   openaiApiKey?: string;
+  falApiKey?: string;
+  openRouterApiKey?: string;
   claudeExecutablePath?: string;
   systemPromptAppend?: string;
   defaultPermissionMode?: 'approve' | 'ignore';

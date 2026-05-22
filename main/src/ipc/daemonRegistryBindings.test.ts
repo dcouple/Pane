@@ -10,6 +10,7 @@ import { registerProjectHandlers } from './project';
 import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
+import { registerVoiceHandlers } from './voice';
 import type { AppServices } from './types';
 
 vi.mock('../index', () => ({
@@ -56,6 +57,10 @@ const PROJECT_CHANNELS = [
 
 const CONFIG_CHANNELS = [
   'remote:pwa-affordances',
+] as const;
+
+const VOICE_CHANNELS = [
+  'voice:transcribe',
 ] as const;
 
 const PROMPT_CHANNELS = [
@@ -301,6 +306,20 @@ describe('daemon registry IPC bindings', () => {
       }],
       customCommands: [{ name: 'Codex Fast', command: 'codex --yolo' }],
     });
+  });
+
+  it('binds daemon-owned voice channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerVoiceHandlers(ipcMain, createServicesStub({
+      configManager: {
+        getConfig: () => ({}),
+      },
+    } as Partial<AppServices>), registry);
+
+    expect(registry.listChannels()).toEqual([...VOICE_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...VOICE_CHANNELS].sort());
   });
 
   it('binds daemon-owned prompt channels through the shared registry', () => {

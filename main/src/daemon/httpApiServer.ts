@@ -79,7 +79,8 @@ type RemoteRequestAuthResult =
     };
   };
 
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+const MAX_UNAUTHENTICATED_REQUEST_BODY_BYTES = 1024 * 1024;
+const MAX_AUTHENTICATED_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS = 5_000;
 const REMOTE_VISIBILITY_VIEWER_STALE_MS = 15 * 60 * 1000;
 const REMOTE_DAEMON_CORS_HEADERS = {
@@ -308,9 +309,13 @@ export class PaneRemoteHttpApiServer {
       return;
     }
 
+    const headerAuth = this.authenticateRequest(request);
+    const maxBodyBytes = headerAuth.ok
+      ? MAX_AUTHENTICATED_REQUEST_BODY_BYTES
+      : MAX_UNAUTHENTICATED_REQUEST_BODY_BYTES;
     let invokeRequest: RemoteInvokeRequest;
     try {
-      invokeRequest = await this.readInvokeRequest(request);
+      invokeRequest = await this.readInvokeRequest(request, maxBodyBytes);
     } catch (error) {
       if (error instanceof RemoteDaemonBadRequestError) {
         this.writeJson(response, error.statusCode, {
@@ -326,7 +331,9 @@ export class PaneRemoteHttpApiServer {
       throw error;
     }
 
-    const auth = this.authenticateRequest(request, invokeRequest.token);
+    const auth = headerAuth.ok
+      ? headerAuth
+      : this.authenticateRequest(request, invokeRequest.token);
     if (!auth.ok) {
       this.writeJson(response, auth.statusCode, auth);
       return;
@@ -463,8 +470,9 @@ export class PaneRemoteHttpApiServer {
 
   private async readInvokeRequest(
     request: IncomingMessage,
+    maxBodyBytes: number,
   ): Promise<RemoteInvokeRequest> {
-    const body = await readRequestBody(request);
+    const body = await readRequestBody(request, maxBodyBytes);
     if (body.length === 0) {
       throw new RemoteDaemonBadRequestError(
         'ERR_REMOTE_DAEMON_BAD_REQUEST',
@@ -626,7 +634,7 @@ export class PaneRemoteHttpApiServer {
   }
 }
 
-async function readRequestBody(request: IncomingMessage): Promise<string> {
+async function readRequestBody(request: IncomingMessage, maxBodyBytes: number): Promise<string> {
   const chunks: Buffer[] = [];
   let totalBytes = 0;
 
@@ -634,10 +642,10 @@ async function readRequestBody(request: IncomingMessage): Promise<string> {
     const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
     totalBytes += buffer.length;
 
-    if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+    if (totalBytes > maxBodyBytes) {
       throw new RemoteDaemonBadRequestError(
         'ERR_REMOTE_DAEMON_REQUEST_TOO_LARGE',
-        'Remote daemon request body exceeds the 1 MB limit',
+        `Remote daemon request body exceeds the ${Math.round(maxBodyBytes / (1024 * 1024))} MB limit`,
         413,
       );
     }

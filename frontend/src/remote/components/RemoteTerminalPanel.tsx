@@ -59,6 +59,7 @@ export function RemoteTerminalPanel({
         disabled={connectionStatus !== 'connected'}
         onOpenShortcuts={onRefreshShortcuts}
         onResetTerminal={resetTerminal}
+        onTranscribeAudio={(request) => adapter.transcribeVoice(request)}
         onSendInput={(data) => {
           void adapter.sendTerminalInput(panel.id, data)
             .then(() => {

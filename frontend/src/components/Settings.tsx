@@ -50,7 +50,8 @@ import {
   AlertCircle,
   Copy,
   Server,
-  ExternalLink
+  ExternalLink,
+  Mic
 } from 'lucide-react';
 import { Input, Textarea, Checkbox } from './ui/Input';
 import { Button } from './ui/Button';
@@ -123,6 +124,8 @@ function isTailscaleDnsConnectionFailure(profile: RemotePaneConnectionProfile | 
 
 export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [verbose, setVerbose] = useState(false);
+  const [falApiKey, setFalApiKey] = useState('');
+  const [openRouterApiKey, setOpenRouterApiKey] = useState('');
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [devMode, setDevMode] = useState(false);
@@ -243,6 +246,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       }
       const data = response.data;
       setVerbose(data.verbose || false);
+      setFalApiKey(data.falApiKey || '');
+      setOpenRouterApiKey(data.openRouterApiKey || '');
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
       setUsePtyHost(data.usePtyHost === true);
@@ -763,6 +768,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
 
       const response = await API.config.update({
         verbose,
+        falApiKey: falApiKey.trim() || undefined,
+        openRouterApiKey: openRouterApiKey.trim() || undefined,
         autoCheckUpdates,
         devMode,
         usePtyHost,
@@ -2733,6 +2740,35 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 <p className="text-xs text-text-tertiary mt-1">
                   Leave empty to use the 'claude' command from your system PATH.
                 </p>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Voice Transcription"
+                description="Provider keys used by PWA voice dictation"
+                icon={<Mic className="w-4 h-4" />}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Input
+                    type="password"
+                    label="Fal API Key"
+                    value={falApiKey}
+                    onChange={(e) => setFalApiKey(e.target.value)}
+                    placeholder="fal_..."
+                    fullWidth
+                    helperText="Used on the Pane main side for fal-ai/wizper transcription."
+                    autoComplete="off"
+                  />
+                  <Input
+                    type="password"
+                    label="OpenRouter API Key"
+                    value={openRouterApiKey}
+                    onChange={(e) => setOpenRouterApiKey(e.target.value)}
+                    placeholder="sk-or-..."
+                    fullWidth
+                    helperText="Used on the Pane main side for Gemini transcript cleanup."
+                    autoComplete="off"
+                  />
+                </div>
               </SettingsSection>
 
               <SettingsSection

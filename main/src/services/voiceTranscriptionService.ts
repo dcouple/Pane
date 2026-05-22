@@ -1,0 +1,354 @@
+import type { ConfigManager } from './configManager';
+import type {
+  VoiceTranscriptionChunk,
+  VoiceTranscriptionRequest,
+  VoiceTranscriptionResult,
+} from '../../../shared/types/voiceTranscription';
+
+const FAL_WIZPER_ENDPOINT = 'https://fal.run/fal-ai/wizper';
+const OPENROUTER_CHAT_COMPLETIONS_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const CLEANUP_MODEL = 'google/gemini-3.1-flash-lite' as const;
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const MAX_AUDIO_DURATION_MS = 60_000;
+const MAX_PROVIDER_ERROR_LENGTH = 400;
+
+const SUPPORTED_AUDIO_MIME_TYPES = new Set([
+  'audio/webm',
+  'audio/mp4',
+  'audio/mpeg',
+  'audio/mpga',
+  'audio/mp3',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
+]);
+
+const ASR_CLEANUP_PROMPT = `# ROLE
+
+You are an automatic-speech-recognition (ASR) post-processor. You receive a raw transcript from a speech-to-text model and return a corrected version. You are NOT an assistant. You do NOT respond, summarize, or help. You have exactly one job: fix obvious ASR errors and return the corrected text. Nothing else.
+
+# ABSOLUTE RULES
+
+- Output ONLY the corrected transcript. No preamble, no explanation, no JSON, no markdown fences, no quotes around the output.
+- NEVER add, remove, paraphrase, reorder, or summarize content. Same words, same order, same meaning.
+- NEVER respond to the content. If the speaker asks a question, return the question. If the speaker requests code, return the request.
+- If the input is empty or unintelligible, return it unchanged.
+
+# WHAT TO FIX
+
+1. Technical terms: restore correct spelling and casing. Treat the glossary below as authoritative.
+2. Homophones: pick the version that fits the surrounding context.
+3. Filler removal: drop "uh", "um", "uhh", "mm", "hmm", "you know", and "like" when used only as filler.
+4. Capitalization: first word of every sentence, "I", proper nouns, brand names.
+5. Punctuation: add natural punctuation based on speech rhythm. Do not over-punctuate.
+6. Acronyms: uppercase known acronyms including API, SDK, LLM, REST, gRPC, SQL, JSON, YAML, CSV, URL, HTTP, HTTPS, AWS, GCP.
+7. Internet slang: lowercase lol, lmao, btw, tbh, idk, imo, ftw.
+
+# WHAT NOT TO TOUCH
+
+- Word choice and phrasing. Preserve exactly as spoken, even if awkward.
+- Contractions. Keep them as spoken.
+- Style. Do not improve, shorten, or polish the text beyond ASR correction.
+- Repetition. Keep intentional repetition.
+
+# GLOSSARY
+
+Kubernetes, Postgres, PostgreSQL, useState, useEffect, useMemo, useCallback, useRef, Next.js, Node.js, TypeScript, JavaScript, Tailwind, shadcn/ui, Supabase, Vercel, Anthropic, Claude, Sonnet, Opus, Haiku, GPT, Gemini, Gemini 3.1 Flash Lite, Composio, n8n, Cursor, Aider, Codex, Doozy, Pane, Dcouple, fal.ai, Wizper, OpenRouter, Groq, gRPC, GraphQL, OAuth, JWT, Redis, MongoDB, ClickHouse, DuckDB, BM25, RAG, embeddings, Cohere, SWE-bench, NIAH, Whisper, Parakeet, Deepgram
+
+# OUTPUT
+
+Return only the corrected transcript. Nothing before it, nothing after it.`;
+
+interface ValidatedAudioInput {
+  dataUrl: string;
+  mimeType: string;
+  byteLength: number;
+}
+
+interface FalWizperResponse {
+  text?: unknown;
+  chunks?: unknown;
+  languages?: unknown;
+}
+
+interface OpenRouterResponse {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+    };
+  }>;
+}
+
+export class VoiceTranscriptionService {
+  constructor(private readonly configManager: ConfigManager) {}
+
+  async transcribe(request: VoiceTranscriptionRequest): Promise<VoiceTranscriptionResult> {
+    const input = validateVoiceTranscriptionRequest(request);
+    const falApiKey = this.getFalApiKey();
+    const openRouterApiKey = this.getOpenRouterApiKey();
+    if (!falApiKey) {
+      throw new Error('Fal API key is not configured. Add it in Settings under Voice Transcription.');
+    }
+    if (!openRouterApiKey) {
+      throw new Error('OpenRouter API key is not configured. Add it in Settings under Voice Transcription.');
+    }
+
+    const startedAt = Date.now();
+    const raw = await this.transcribeWithFal(input, request.language ?? 'en', falApiKey);
+    const cleanupStartedAt = Date.now();
+    const cleanText = raw.text.trim().length > 0
+      ? await this.cleanTranscript(raw.text, openRouterApiKey)
+      : raw.text;
+    const completedAt = Date.now();
+
+    return {
+      provider: 'fal-ai/wizper',
+      cleanupModel: CLEANUP_MODEL,
+      text: cleanText.trim(),
+      rawText: raw.text,
+      chunks: raw.chunks,
+      languages: raw.languages,
+      timings: {
+        falMs: cleanupStartedAt - startedAt,
+        cleanupMs: completedAt - cleanupStartedAt,
+        totalMs: completedAt - startedAt,
+      },
+    };
+  }
+
+  private getFalApiKey(): string | undefined {
+    return firstNonEmpty(this.configManager.getConfig().falApiKey, process.env.FAL_KEY);
+  }
+
+  private getOpenRouterApiKey(): string | undefined {
+    return firstNonEmpty(this.configManager.getConfig().openRouterApiKey, process.env.OPENROUTER_API_KEY);
+  }
+
+  private async transcribeWithFal(
+    input: ValidatedAudioInput,
+    language: 'en',
+    falApiKey: string,
+  ): Promise<{ text: string; chunks?: VoiceTranscriptionChunk[]; languages?: string[] }> {
+    const response = await fetch(FAL_WIZPER_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Key ${falApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audio_url: input.dataUrl,
+        task: 'transcribe',
+        language,
+        chunk_level: 'segment',
+        max_segment_len: 29,
+        merge_chunks: true,
+        version: '3',
+      }),
+    });
+
+    const payload = await readProviderJson<FalWizperResponse>(response, 'Fal Wizper transcription failed');
+    if (typeof payload.text !== 'string') {
+      throw new Error('Fal Wizper transcription response did not include text.');
+    }
+
+    return {
+      text: payload.text,
+      chunks: parseFalChunks(payload.chunks),
+      languages: parseStringArray(payload.languages),
+    };
+  }
+
+  private async cleanTranscript(rawTranscript: string, openRouterApiKey: string): Promise<string> {
+    const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${openRouterApiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://dcouple.ai',
+        'X-Title': 'Pane Voice Transcription',
+      },
+      body: JSON.stringify({
+        model: CLEANUP_MODEL,
+        messages: [
+          { role: 'system', content: ASR_CLEANUP_PROMPT },
+          { role: 'user', content: rawTranscript },
+        ],
+        temperature: 0,
+        reasoning: { enabled: false },
+        max_tokens: calculateCleanupMaxTokens(rawTranscript),
+      }),
+    });
+
+    const payload = await readProviderJson<OpenRouterResponse>(response, 'OpenRouter transcript cleanup failed');
+    const content = payload.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('OpenRouter cleanup response did not include text.');
+    }
+
+    return content.trim();
+  }
+}
+
+function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): ValidatedAudioInput {
+  if (!request || typeof request !== 'object') {
+    throw new Error('Voice transcription request is invalid.');
+  }
+
+  if (typeof request.audioDataUrl !== 'string' || request.audioDataUrl.trim().length === 0) {
+    throw new Error('Voice transcription audio data is required.');
+  }
+
+  if (typeof request.mimeType !== 'string' || request.mimeType.trim().length === 0) {
+    throw new Error('Voice transcription audio MIME type is required.');
+  }
+
+  if (request.durationMs !== undefined && request.durationMs > MAX_AUDIO_DURATION_MS + 1_000) {
+    throw new Error('Recording is too long. Keep voice clips under 60 seconds.');
+  }
+
+  if (request.language !== undefined && request.language !== 'en') {
+    throw new Error('Voice transcription currently supports English only.');
+  }
+
+  const match = request.audioDataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+  if (!match) {
+    throw new Error('Voice transcription audio must be a base64 data URL.');
+  }
+
+  const dataUrlMimeType = normalizeMimeType(match[1]);
+  const declaredMimeType = normalizeMimeType(request.mimeType);
+  if (!SUPPORTED_AUDIO_MIME_TYPES.has(dataUrlMimeType) || !SUPPORTED_AUDIO_MIME_TYPES.has(declaredMimeType)) {
+    throw new Error('Unsupported voice recording format. Use WebM, MP4, MP3, M4A, or WAV audio.');
+  }
+
+  const base64Payload = match[2].replace(/\s/g, '');
+  const byteLength = Buffer.byteLength(base64Payload, 'base64');
+  if (byteLength === 0) {
+    throw new Error('Voice recording was empty.');
+  }
+  if (byteLength > MAX_AUDIO_BYTES) {
+    throw new Error('Recording is too large. Keep voice clips under 10 MB.');
+  }
+
+  return {
+    dataUrl: `data:${dataUrlMimeType};base64,${base64Payload}`,
+    mimeType: dataUrlMimeType,
+    byteLength,
+  };
+}
+
+async function readProviderJson<T>(response: Response, fallbackMessage: string): Promise<T> {
+  let payload: unknown = null;
+  const text = await response.text();
+  if (text.trim().length > 0) {
+    try {
+      payload = JSON.parse(text) as unknown;
+    } catch {
+      if (!response.ok) {
+        throw new Error(`${fallbackMessage}: HTTP ${response.status}`);
+      }
+      throw new Error(`${fallbackMessage}: invalid JSON response.`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(`${fallbackMessage}: ${extractProviderMessage(payload) ?? `HTTP ${response.status}`}`);
+  }
+
+  return (payload ?? {}) as T;
+}
+
+function extractProviderMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidates = [
+    record.message,
+    record.error,
+    record.detail,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return truncateProviderError(candidate.trim());
+    }
+    if (candidate && typeof candidate === 'object') {
+      const nested = candidate as Record<string, unknown>;
+      if (typeof nested.message === 'string' && nested.message.trim()) {
+        return truncateProviderError(nested.message.trim());
+      }
+    }
+  }
+
+  return truncateProviderError(JSON.stringify(payload));
+}
+
+function truncateProviderError(message: string): string {
+  return message.length > MAX_PROVIDER_ERROR_LENGTH
+    ? `${message.slice(0, MAX_PROVIDER_ERROR_LENGTH)}...`
+    : message;
+}
+
+function parseFalChunks(value: unknown): VoiceTranscriptionChunk[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const chunks: VoiceTranscriptionChunk[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (typeof record.text !== 'string') {
+      continue;
+    }
+
+    const timestamp = parseTimestamp(record.timestamp);
+    chunks.push(timestamp ? { text: record.text, timestamp } : { text: record.text });
+  }
+
+  return chunks.length > 0 ? chunks : undefined;
+}
+
+function parseTimestamp(value: unknown): [number, number] | undefined {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return undefined;
+  }
+
+  const [start, end] = value;
+  return typeof start === 'number' && typeof end === 'number'
+    ? [start, end]
+    : undefined;
+}
+
+function parseStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const values = value.filter((item): item is string => typeof item === 'string');
+  return values.length > 0 ? values : undefined;
+}
+
+function calculateCleanupMaxTokens(rawTranscript: string): number {
+  return Math.min(8_192, Math.max(128, Math.ceil(rawTranscript.length / 2) + 256));
+}
+
+function normalizeMimeType(mimeType: string): string {
+  return mimeType.split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}

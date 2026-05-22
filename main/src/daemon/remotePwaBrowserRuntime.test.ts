@@ -101,6 +101,7 @@ describe('Remote PWA browser runtime', () => {
     expect(fetchMock).toHaveBeenCalledWith('https://host.example.test/invoke', {
       method: 'POST',
       headers: {
+        Authorization: 'Bearer secret-token',
         'Content-Type': 'text/plain;charset=UTF-8',
       },
       body: JSON.stringify({

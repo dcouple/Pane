@@ -1,5 +1,6 @@
 import type { ToolPanel } from '../../../../shared/types/panels';
 import type { RemoteDaemonEventEnvelope, RemotePaneConnectionProfile, RemotePwaAffordances } from '../../../../shared/types/remoteDaemon';
+import type { VoiceTranscriptionRequest, VoiceTranscriptionResult } from '../../../../shared/types/voiceTranscription';
 import type { Project } from '../../types/project';
 import type { CreateSessionRequest, Session, SessionOutput } from '../../types/session';
 import { RemoteDaemonBrowserClient, type RemoteBrowserConnectionState } from './remoteDaemonBrowserClient';
@@ -93,6 +94,10 @@ export class RemoteRuntimeAdapter {
 
   getPwaAffordances(): Promise<RemotePwaAffordances> {
     return this.invoke<RemotePwaAffordances>('remote:pwa-affordances');
+  }
+
+  transcribeVoice(request: VoiceTranscriptionRequest): Promise<VoiceTranscriptionResult> {
+    return this.invoke<VoiceTranscriptionResult>('voice:transcribe', [request]);
   }
 
   toggleFavorite(sessionId: string): Promise<{ isFavorite: boolean }> {

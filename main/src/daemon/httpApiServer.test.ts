@@ -473,7 +473,8 @@ describe('PaneRemoteHttpApiServer', () => {
     await expect(requestJson(server, 'POST', '/invoke', {
       channel: 'sessions:get-all',
       args: oversizedArgs,
-    }, 'secret-token')).resolves.toEqual({
+      token: 'secret-token',
+    })).resolves.toEqual({
       statusCode: 413,
       body: {
         ok: false,
@@ -481,6 +482,29 @@ describe('PaneRemoteHttpApiServer', () => {
           message: 'Remote daemon request body exceeds the 1 MB limit',
           code: 'ERR_REMOTE_DAEMON_REQUEST_TOO_LARGE',
         },
+      },
+    });
+  });
+
+  it('allows larger invoke bodies after header authentication', async () => {
+    const registry = new PaneCommandRegistry();
+    registry.register('sessions:get-all', async (value: unknown) => (
+      typeof value === 'string' ? value.length : 0
+    ));
+
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    activeServers.push(server);
+    await server.start();
+
+    const largeArg = 'x'.repeat(1024 * 1024);
+    await expect(requestJson(server, 'POST', '/invoke', {
+      channel: 'sessions:get-all',
+      args: [largeArg],
+    }, 'secret-token')).resolves.toEqual({
+      statusCode: 200,
+      body: {
+        ok: true,
+        result: largeArg.length,
       },
     });
   });

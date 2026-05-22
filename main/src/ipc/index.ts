@@ -23,6 +23,7 @@ import { registerRemoteDaemonHandlers } from './remoteDaemon';
 import { registerClipboardHandlers } from './clipboard';
 import { registerResourceMonitorHandlers } from './resourceMonitor';
 import { registerOnboardingHandlers } from './onboarding';
+import { registerVoiceHandlers } from './voice';
 import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 import { registerPermissionHandlers } from './permissions';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
@@ -70,6 +71,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerRemoteDaemonHandlers(ipcMain, services);
   registerClipboardHandlers(ipcMain, services);
   registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
+  registerVoiceHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);
   registerDaemonBridgeHandlers(ipcMain, bridgeRouter);
 

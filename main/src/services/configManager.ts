@@ -27,6 +27,8 @@ export class ConfigManager extends EventEmitter {
       gitRepoPath: defaultGitPath || os.homedir(),
       verbose: false,
       anthropicApiKey: undefined,
+      falApiKey: undefined,
+      openRouterApiKey: undefined,
       systemPromptAppend: undefined,
       runScript: undefined,
       theme: 'light-rounded',

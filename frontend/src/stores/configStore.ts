@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import { API } from '../utils/api';
-import type { AppConfig } from '../types/config';
+import type { AppConfig, UpdateConfigRequest } from '../types/config';
 
 interface ConfigStore {
   config: AppConfig | null;
   isLoading: boolean;
   error: string | null;
   fetchConfig: () => Promise<void>;
-  updateConfig: (updates: Partial<AppConfig>) => Promise<void>;
+  updateConfig: (updates: UpdateConfigRequest) => Promise<void>;
 }
 
 export const useConfigStore = create<ConfigStore>((set, get) => ({
@@ -24,12 +24,12 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
       } else {
         set({ error: response.error || 'Failed to fetch config', isLoading: false });
       }
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to fetch config', isLoading: false });
     }
   },
 
-  updateConfig: async (updates: Partial<AppConfig>) => {
+  updateConfig: async (updates: UpdateConfigRequest) => {
     try {
       const response = await API.config.update(updates);
       if (response.success) {
