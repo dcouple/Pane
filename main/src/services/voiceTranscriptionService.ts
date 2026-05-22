@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/types/voiceTranscription';
 
 const FAL_WIZPER_ENDPOINT = 'https://fal.run/fal-ai/wizper';
+const FAL_STORAGE_UPLOAD_INITIATE_ENDPOINT = 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3';
 const OPENROUTER_CHAT_COMPLETIONS_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 const CLEANUP_MODEL = 'google/gemini-3.1-flash-lite' as const;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
@@ -65,12 +66,18 @@ interface ValidatedAudioInput {
   dataUrl: string;
   mimeType: string;
   byteLength: number;
+  audioBuffer: Buffer;
 }
 
 interface FalWizperResponse {
   text?: unknown;
   chunks?: unknown;
   languages?: unknown;
+}
+
+interface FalStorageInitiateResponse {
+  file_url?: unknown;
+  upload_url?: unknown;
 }
 
 interface OpenRouterResponse {
@@ -131,6 +138,7 @@ export class VoiceTranscriptionService {
     language: 'en',
     falApiKey: string,
   ): Promise<{ text: string; chunks?: VoiceTranscriptionChunk[]; languages?: string[] }> {
+    const audioUrl = await this.uploadAudioToFalStorage(input, falApiKey);
     const response = await fetch(FAL_WIZPER_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -138,7 +146,7 @@ export class VoiceTranscriptionService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        audio_url: input.dataUrl,
+        audio_url: audioUrl,
         task: 'transcribe',
         language,
         chunk_level: 'segment',
@@ -158,6 +166,44 @@ export class VoiceTranscriptionService {
       chunks: parseFalChunks(payload.chunks),
       languages: parseStringArray(payload.languages),
     };
+  }
+
+  private async uploadAudioToFalStorage(input: ValidatedAudioInput, falApiKey: string): Promise<string> {
+    const filename = `pane-voice-${Date.now()}.${getAudioFileExtension(input.mimeType)}`;
+    const initiateResponse = await fetch(FAL_STORAGE_UPLOAD_INITIATE_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Key ${falApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        file_name: filename,
+        content_type: input.mimeType,
+      }),
+    });
+
+    const initiatePayload = await readProviderJson<FalStorageInitiateResponse>(
+      initiateResponse,
+      'Fal audio upload initialization failed',
+    );
+    if (typeof initiatePayload.file_url !== 'string' || typeof initiatePayload.upload_url !== 'string') {
+      throw new Error('Fal audio upload initialization response did not include upload URLs.');
+    }
+
+    const uploadResponse = await fetch(initiatePayload.upload_url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': input.mimeType,
+      },
+      body: new Blob([input.audioBuffer], { type: input.mimeType }),
+    });
+
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Fal audio upload failed: ${truncateProviderError(errorText || `HTTP ${uploadResponse.status}`)}`);
+    }
+
+    return initiatePayload.file_url;
   }
 
   private async cleanTranscript(rawTranscript: string, openRouterApiKey: string): Promise<string> {
@@ -212,7 +258,7 @@ function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): 
     throw new Error('Voice transcription currently supports English only.');
   }
 
-  const match = request.audioDataUrl.match(/^data:([^;,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
+  const match = request.audioDataUrl.match(/^data:([^,]+);base64,([a-zA-Z0-9+/=\s]+)$/);
   if (!match) {
     throw new Error('Voice transcription audio must be a base64 data URL.');
   }
@@ -224,7 +270,8 @@ function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): 
   }
 
   const base64Payload = match[2].replace(/\s/g, '');
-  const byteLength = Buffer.byteLength(base64Payload, 'base64');
+  const audioBuffer = Buffer.from(base64Payload, 'base64');
+  const byteLength = audioBuffer.byteLength;
   if (byteLength === 0) {
     throw new Error('Voice recording was empty.');
   }
@@ -236,6 +283,7 @@ function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): 
     dataUrl: `data:${dataUrlMimeType};base64,${base64Payload}`,
     mimeType: dataUrlMimeType,
     byteLength,
+    audioBuffer,
   };
 }
 
@@ -341,6 +389,26 @@ function calculateCleanupMaxTokens(rawTranscript: string): number {
 
 function normalizeMimeType(mimeType: string): string {
   return mimeType.split(';')[0]?.trim().toLowerCase() ?? '';
+}
+
+function getAudioFileExtension(mimeType: string): string {
+  switch (mimeType) {
+    case 'audio/mp4':
+    case 'audio/m4a':
+    case 'audio/x-m4a':
+      return 'm4a';
+    case 'audio/mpeg':
+    case 'audio/mpga':
+    case 'audio/mp3':
+      return 'mp3';
+    case 'audio/wav':
+    case 'audio/wave':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/webm':
+    default:
+      return 'webm';
+  }
 }
 
 function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
