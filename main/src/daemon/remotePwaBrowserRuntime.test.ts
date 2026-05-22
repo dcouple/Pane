@@ -8,12 +8,14 @@ import { RemoteRuntimeAdapter } from '../../../frontend/src/remote/runtime/remot
 import type { PaneRemoteConnectionImportPayload } from '../../../shared/types/remoteDaemon';
 
 const originalFetch = globalThis.fetch;
+const originalEventSource = globalThis.EventSource;
 const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
 const originalWindow = (globalThis as typeof globalThis & { window?: unknown }).window;
 
 afterEach(() => {
   vi.restoreAllMocks();
   globalThis.fetch = originalFetch;
+  globalThis.EventSource = originalEventSource;
 
   if (originalNavigator) {
     Object.defineProperty(globalThis, 'navigator', originalNavigator);
@@ -156,6 +158,92 @@ describe('Remote PWA browser runtime', () => {
     });
 
     client.disconnect();
+  });
+
+  it('uses native EventSource for browser SSE when available', async () => {
+    installBrowserGlobals();
+    const MockEventSource = installMockEventSource();
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+
+    const client = new RemoteDaemonBrowserClient({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+    const receivedEvents: unknown[] = [];
+    client.onEvent((event) => receivedEvents.push(event));
+
+    await client.connect();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(MockEventSource.instances).toHaveLength(1);
+
+    const eventSource = MockEventSource.instances[0];
+    const eventUrl = new URL(eventSource.url);
+    expect(eventUrl.origin).toBe('https://host.example.test');
+    expect(eventUrl.pathname).toBe('/events');
+    expect(eventUrl.searchParams.get('access_token')).toBe('secret-token');
+    expect(eventUrl.searchParams.get('runtime_id')).toBe('runtime-id-1');
+    expect(eventUrl.searchParams.get('client_label')).toBe('Pane PWA on TestOS');
+
+    eventSource.open();
+    eventSource.emit('ready', '{"timestamp":"2026-05-19T00:00:00.000Z"}');
+    eventSource.emit('heartbeat', '{"timestamp":"2026-05-19T00:00:01.000Z"}');
+    eventSource.emit(
+      'daemon-event',
+      '{"channel":"terminal:output","args":[{"panelId":"panel-1","data":"ok"}],"timestamp":"2026-05-19T00:00:02.000Z"}',
+    );
+
+    expect(client.getState().status).toBe('connected');
+    expect(client.getState().lastSeenAt).toBe('2026-05-19T00:00:02.000Z');
+    expect(receivedEvents).toMatchObject([
+      { type: 'ready' },
+      { type: 'heartbeat', payload: { timestamp: '2026-05-19T00:00:01.000Z' } },
+      {
+        type: 'daemon-event',
+        payload: {
+          channel: 'terminal:output',
+          args: [{ panelId: 'panel-1', data: 'ok' }],
+          timestamp: '2026-05-19T00:00:02.000Z',
+        },
+      },
+    ]);
+
+    client.disconnect();
+    expect(eventSource.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a Safari Tailscale hint when health checks fail before HTTP', async () => {
+    vi.useFakeTimers();
+    try {
+      installBrowserGlobals();
+      const fetchMock = vi.fn(async () => {
+        throw new TypeError('Load failed');
+      });
+      globalThis.fetch = fetchMock as typeof fetch;
+
+      const client = new RemoteDaemonBrowserClient({
+        id: 'profile-1',
+        baseUrl: 'https://host.tailnet.ts.net',
+        label: 'Remote Host',
+        token: 'secret-token',
+        transport: 'http+sse',
+      });
+
+      const connect = client.connect().catch((error: unknown) => error);
+      await vi.runAllTimersAsync();
+
+      const error = await connect;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(
+        /Safari could not reach the Tailscale host host\.tailnet\.ts\.net.+iCloud Private Relay/,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('routes remote sidebar mutations through session daemon commands', async () => {
@@ -305,6 +393,8 @@ function installBrowserGlobals(): void {
         values.set(key, value);
       },
     },
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis),
   };
 
   Object.defineProperty(globalThis, 'navigator', {
@@ -313,4 +403,60 @@ function installBrowserGlobals(): void {
       platform: 'TestOS',
     },
   });
+}
+
+function installMockEventSource(): { instances: MockEventSourceInstance[] } {
+  const instances: MockEventSourceInstance[] = [];
+
+  class MockEventSource implements Partial<EventSource> {
+    readonly url: string;
+    onopen: ((event: Event) => void) | null = null;
+    onerror: ((event: Event) => void) | null = null;
+    readonly close = vi.fn();
+    private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+
+    constructor(url: string | URL) {
+      this.url = String(url);
+      instances.push(this as MockEventSourceInstance);
+    }
+
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+      const listeners = this.listeners.get(type) ?? new Set<EventListenerOrEventListenerObject>();
+      listeners.add(listener);
+      this.listeners.set(type, listeners);
+    }
+
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
+      this.listeners.get(type)?.delete(listener);
+    }
+
+    open(): void {
+      this.onopen?.({ type: 'open' } as Event);
+    }
+
+    emit(type: string, data: string): void {
+      const event = { type, data } as MessageEvent<string>;
+      for (const listener of this.listeners.get(type) ?? []) {
+        if (typeof listener === 'function') {
+          listener(event);
+        } else {
+          listener.handleEvent(event);
+        }
+      }
+    }
+  }
+
+  Object.defineProperty(globalThis, 'EventSource', {
+    configurable: true,
+    writable: true,
+    value: MockEventSource,
+  });
+  return { instances };
+}
+
+interface MockEventSourceInstance extends EventSource {
+  url: string;
+  close: ReturnType<typeof vi.fn>;
+  open(): void;
+  emit(type: string, data: string): void;
 }

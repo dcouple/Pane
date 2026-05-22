@@ -42,6 +42,8 @@ const RUNTIME_ID_STORAGE_KEY = 'pane.remotePwa.runtimeId';
 
 export class RemoteDaemonBrowserClient {
   private abortController: AbortController | null = null;
+  private eventSource: EventSource | null = null;
+  private eventSourceAbortCleanup: (() => void) | null = null;
   private reconnectTimer: number | null = null;
   private reconnectAttempt = 0;
   private eventListeners = new Set<RemoteBrowserEventListener>();
@@ -72,6 +74,7 @@ export class RemoteDaemonBrowserClient {
   async connect(): Promise<void> {
     this.clearReconnectTimer();
     this.abortController?.abort();
+    this.closeEventSource();
     this.abortController = new AbortController();
     this.reconnectAttempt = 0;
     this.setState({ status: 'connecting', lastError: null });
@@ -83,6 +86,7 @@ export class RemoteDaemonBrowserClient {
   disconnect(): void {
     this.clearReconnectTimer();
     this.abortController?.abort();
+    this.closeEventSource();
     this.abortController = null;
     this.reconnectAttempt = 0;
     this.setState({ status: 'local', lastError: null });
@@ -167,12 +171,15 @@ export class RemoteDaemonBrowserClient {
       }
     }
 
-    throw lastError instanceof Error
-      ? lastError
-      : new Error('Remote health check failed');
+    throw this.createHealthCheckError(lastError);
   }
 
   private async openEventStream(signal: AbortSignal): Promise<void> {
+    if (typeof EventSource === 'function') {
+      this.openNativeEventSource(signal);
+      return;
+    }
+
     try {
       const response = await fetch(this.endpoint('events', {
         access_token: this.profile.token,
@@ -201,6 +208,76 @@ export class RemoteDaemonBrowserClient {
       const message = error instanceof Error ? error.message : String(error);
       this.scheduleReconnect(message);
     }
+  }
+
+  private openNativeEventSource(signal: AbortSignal): void {
+    this.closeEventSource();
+
+    const eventSource = new EventSource(this.endpoint('events', {
+      access_token: this.profile.token,
+      runtime_id: getRuntimeId(),
+      client_label: getClientLabel(),
+    }));
+    this.eventSource = eventSource;
+
+    const closeOnAbort = () => {
+      if (this.eventSource === eventSource) {
+        this.closeEventSource();
+      } else {
+        eventSource.close();
+      }
+    };
+
+    eventSource.onopen = () => {
+      if (signal.aborted || this.eventSource !== eventSource) {
+        return;
+      }
+
+      this.reconnectAttempt = 0;
+      this.setState({ status: 'connected', lastError: null, lastSeenAt: new Date().toISOString() });
+    };
+
+    eventSource.addEventListener('ready', (event) => {
+      this.handleNativeSseEvent('ready', event, signal, eventSource);
+    });
+    eventSource.addEventListener('heartbeat', (event) => {
+      this.handleNativeSseEvent('heartbeat', event, signal, eventSource);
+    });
+    eventSource.addEventListener('daemon-event', (event) => {
+      this.handleNativeSseEvent('daemon-event', event, signal, eventSource);
+    });
+
+    eventSource.onerror = () => {
+      if (signal.aborted || this.eventSource !== eventSource) {
+        return;
+      }
+
+      this.closeEventSource();
+      this.scheduleReconnect('Remote event stream failed');
+    };
+
+    if (signal.aborted) {
+      closeOnAbort();
+      return;
+    }
+
+    signal.addEventListener('abort', closeOnAbort, { once: true });
+    this.eventSourceAbortCleanup = () => {
+      signal.removeEventListener('abort', closeOnAbort);
+    };
+  }
+
+  private handleNativeSseEvent(
+    eventName: string,
+    event: MessageEvent,
+    signal: AbortSignal,
+    eventSource: EventSource,
+  ): void {
+    if (signal.aborted || this.eventSource !== eventSource) {
+      return;
+    }
+
+    this.handleSseEvent({ event: eventName, data: String(event.data ?? '') });
   }
 
   private async consumeEventStream(stream: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<void> {
@@ -297,6 +374,28 @@ export class RemoteDaemonBrowserClient {
       this.reconnectTimer = null;
     }
   }
+
+  private closeEventSource(): void {
+    this.eventSourceAbortCleanup?.();
+    this.eventSourceAbortCleanup = null;
+    this.eventSource?.close();
+    this.eventSource = null;
+  }
+
+  private createHealthCheckError(error: unknown): Error {
+    if (error instanceof Error && isNetworkFailure(error) && isTailscaleUrl(this.profile.baseUrl)) {
+      const hostname = getUrlHostname(this.profile.baseUrl);
+      return new Error(
+        `Safari could not reach the Tailscale host${hostname ? ` ${hostname}` : ''}. ` +
+        'Open Tailscale on this device, confirm it is connected to the same tailnet, then retry. ' +
+        'If this only fails in Safari or a Home Screen app, temporarily disable iCloud Private Relay and Limit IP Address Tracking for this network.',
+      );
+    }
+
+    return error instanceof Error
+      ? error
+      : new Error('Remote health check failed');
+  }
 }
 
 interface ParsedSseEvent {
@@ -367,6 +466,22 @@ function isRetryableResponse(status: number): boolean {
 }
 
 class NonRetryableRemoteError extends Error {}
+
+function isNetworkFailure(error: Error): boolean {
+  return error.name === 'TypeError' || /fetch|load|network/i.test(error.message);
+}
+
+function isTailscaleUrl(value: string): boolean {
+  return getUrlHostname(value)?.endsWith('.ts.net') ?? false;
+}
+
+function getUrlHostname(value: string): string | null {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
