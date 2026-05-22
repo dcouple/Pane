@@ -318,50 +318,42 @@ export function RemoteTerminalInputBar({
       )}
 
       <div className="flex items-end gap-2">
-        <textarea
-          value={draft}
-          onChange={event => setDraft(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              sendDraft();
-            }
-          }}
-          rows={2}
-          disabled={disabled}
-          placeholder="Type command or prompt..."
-          className="max-h-32 min-h-14 min-w-0 flex-1 resize-none rounded-lg border border-border-secondary bg-bg-primary px-3 py-2.5 text-sm leading-5 text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-interactive disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        <button
-          type="button"
-          onClick={isRecording ? stopRecording : () => { void startRecording(); }}
-          disabled={(!isRecording && disabled) || isTranscribing || !onTranscribeAudio}
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            isRecording
-              ? 'border-status-error/50 bg-status-error/10 text-status-error hover:bg-status-error/15'
-              : 'border-border-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
-          }`}
-          aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
-          title={isRecording ? 'Stop recording' : 'Voice input'}
-        >
-          {isTranscribing ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : isRecording ? (
-            <Square className="h-4 w-4" />
-          ) : (
-            <Mic className="h-4 w-4" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => { void pasteClipboard(); }}
-          disabled={disabled}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-border-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Paste clipboard into input"
-          title="Paste"
-        >
-          <ClipboardPaste className="h-4 w-4" />
-        </button>
+        <div className="relative min-w-0 flex-1">
+          <textarea
+            value={draft}
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendDraft();
+              }
+            }}
+            rows={4}
+            disabled={disabled}
+            placeholder="Type command or prompt..."
+            className="max-h-40 min-h-24 w-full resize-none rounded-lg border border-border-secondary bg-bg-primary px-3 py-2.5 pr-12 text-xs leading-4 text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-interactive disabled:cursor-not-allowed disabled:opacity-50"
+          />
+          <button
+            type="button"
+            onClick={isRecording ? stopRecording : () => { void startRecording(); }}
+            disabled={(!isRecording && disabled) || isTranscribing || !onTranscribeAudio}
+            className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-md border bg-bg-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              isRecording
+                ? 'border-status-error/50 text-status-error hover:bg-status-error/10'
+                : 'border-border-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+            }`}
+            aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
+            title={isRecording ? 'Stop recording' : 'Voice input'}
+          >
+            {isTranscribing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : isRecording ? (
+              <Square className="h-4 w-4" />
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
+          </button>
+        </div>
         <button
           type="button"
           onClick={sendDraft}
@@ -375,6 +367,17 @@ export function RemoteTerminalInputBar({
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
+        <button
+          type="button"
+          onClick={() => { void pasteClipboard(); }}
+          disabled={disabled}
+          className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-border-secondary px-2.5 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Paste clipboard into input"
+          title="Paste"
+        >
+          <ClipboardPaste className="h-3.5 w-3.5" />
+          Paste
+        </button>
         {CONTROL_KEYS.map(control => (
           <button
             key={control.label}
