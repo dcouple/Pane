@@ -45,6 +45,11 @@ describe('VoiceTranscriptionService', () => {
       }
 
       expect(urlText).toContain('openrouter.ai');
+      const body = JSON.parse(String(init?.body)) as {
+        messages?: Array<{ role: string; content: string }>;
+      };
+      expect(body.messages?.[0]?.content).toContain('GPT-5.5');
+      expect(body.messages?.[0]?.content).toContain('medium-high');
       return new Response(JSON.stringify({
         choices: [{
           message: {
