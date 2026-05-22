@@ -1,4 +1,5 @@
 import type { ConfigManager } from './configManager';
+import type { AnalyticsManager } from './analyticsManager';
 import type {
   VoiceTranscriptionChunk,
   VoiceTranscriptionRequest,
@@ -73,6 +74,10 @@ interface FalWizperResponse {
   text?: unknown;
   chunks?: unknown;
   languages?: unknown;
+  usage?: unknown;
+  cost?: unknown;
+  metadata?: unknown;
+  metrics?: unknown;
 }
 
 interface FalStorageInitiateResponse {
@@ -86,10 +91,21 @@ interface OpenRouterResponse {
       content?: unknown;
     };
   }>;
+  usage?: unknown;
+}
+
+interface ProviderUsage {
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
 }
 
 export class VoiceTranscriptionService {
-  constructor(private readonly configManager: ConfigManager) {}
+  constructor(
+    private readonly configManager: ConfigManager,
+    private readonly analyticsManager?: AnalyticsManager,
+  ) {}
 
   async transcribe(request: VoiceTranscriptionRequest): Promise<VoiceTranscriptionResult> {
     const input = validateVoiceTranscriptionRequest(request);
@@ -107,13 +123,13 @@ export class VoiceTranscriptionService {
     const cleanupStartedAt = Date.now();
     const cleanText = raw.text.trim().length > 0
       ? await this.cleanTranscript(raw.text, openRouterApiKey)
-      : raw.text;
+      : { text: raw.text };
     const completedAt = Date.now();
 
-    return {
+    const result: VoiceTranscriptionResult = {
       provider: 'fal-ai/wizper',
       cleanupModel: CLEANUP_MODEL,
-      text: cleanText.trim(),
+      text: cleanText.text.trim(),
       rawText: raw.text,
       chunks: raw.chunks,
       languages: raw.languages,
@@ -123,6 +139,14 @@ export class VoiceTranscriptionService {
         totalMs: completedAt - startedAt,
       },
     };
+    this.trackVoiceTranscriptionUsed({
+      input,
+      requestedDurationMs: request.durationMs,
+      result,
+      rawUsage: raw.usage,
+      cleanupUsage: cleanText.usage,
+    });
+    return result;
   }
 
   private getFalApiKey(): string | undefined {
@@ -137,7 +161,7 @@ export class VoiceTranscriptionService {
     input: ValidatedAudioInput,
     language: 'en',
     falApiKey: string,
-  ): Promise<{ text: string; chunks?: VoiceTranscriptionChunk[]; languages?: string[] }> {
+  ): Promise<{ text: string; chunks?: VoiceTranscriptionChunk[]; languages?: string[]; usage?: ProviderUsage }> {
     const audioUrl = await this.uploadAudioToFalStorage(input, falApiKey);
     const response = await fetch(FAL_WIZPER_ENDPOINT, {
       method: 'POST',
@@ -165,6 +189,7 @@ export class VoiceTranscriptionService {
       text: payload.text,
       chunks: parseFalChunks(payload.chunks),
       languages: parseStringArray(payload.languages),
+      usage: parseProviderUsage(payload),
     };
   }
 
@@ -206,7 +231,10 @@ export class VoiceTranscriptionService {
     return initiatePayload.file_url;
   }
 
-  private async cleanTranscript(rawTranscript: string, openRouterApiKey: string): Promise<string> {
+  private async cleanTranscript(
+    rawTranscript: string,
+    openRouterApiKey: string,
+  ): Promise<{ text: string; usage?: ProviderUsage }> {
     const response = await fetch(OPENROUTER_CHAT_COMPLETIONS_ENDPOINT, {
       method: 'POST',
       headers: {
@@ -233,7 +261,69 @@ export class VoiceTranscriptionService {
       throw new Error('OpenRouter cleanup response did not include text.');
     }
 
-    return content.trim();
+    return {
+      text: content.trim(),
+      usage: parseProviderUsage(payload.usage),
+    };
+  }
+
+  private trackVoiceTranscriptionUsed({
+    input,
+    requestedDurationMs,
+    result,
+    rawUsage,
+    cleanupUsage,
+  }: {
+    input: ValidatedAudioInput;
+    requestedDurationMs?: number;
+    result: VoiceTranscriptionResult;
+    rawUsage?: ProviderUsage;
+    cleanupUsage?: ProviderUsage;
+  }): void {
+    if (!this.analyticsManager) {
+      return;
+    }
+
+    try {
+      const totalCost = sumDefinedNumbers(rawUsage?.cost, cleanupUsage?.cost);
+      const audioDurationMs = typeof requestedDurationMs === 'number' ? Math.max(0, Math.round(requestedDurationMs)) : undefined;
+      const audioSeconds = audioDurationMs !== undefined ? Math.round(audioDurationMs / 100) / 10 : undefined;
+      this.analyticsManager.track('voice_transcription_used', {
+        provider: result.provider,
+        cleanup_model: result.cleanupModel,
+        language: result.languages?.[0] ?? 'en',
+        mime_type: input.mimeType,
+        audio_duration_ms: audioDurationMs,
+        audio_seconds: audioSeconds,
+        audio_duration_bucket: audioSeconds !== undefined
+          ? this.analyticsManager.categorizeDuration(audioSeconds)
+          : undefined,
+        audio_bytes: input.byteLength,
+        audio_bytes_bucket: this.analyticsManager.categorizeNumber(input.byteLength, [
+          100 * 1024,
+          500 * 1024,
+          1024 * 1024,
+          5 * 1024 * 1024,
+          10 * 1024 * 1024,
+        ]),
+        raw_transcript_chars: result.rawText.length,
+        clean_transcript_chars: result.text.length,
+        chunk_count: result.chunks?.length,
+        fal_ms: result.timings.falMs,
+        cleanup_ms: result.timings.cleanupMs,
+        total_ms: result.timings.totalMs,
+        fal_cost: rawUsage?.cost,
+        openrouter_cost: cleanupUsage?.cost,
+        total_cost: totalCost,
+        openrouter_prompt_tokens: cleanupUsage?.inputTokens,
+        openrouter_completion_tokens: cleanupUsage?.outputTokens,
+        openrouter_total_tokens: cleanupUsage?.totalTokens,
+      });
+    } catch (error) {
+      if (this.configManager.isVerbose()) {
+        console.warn('[VoiceTranscription] Failed to track analytics event:', error);
+      }
+    }
   }
 }
 
@@ -381,6 +471,65 @@ function parseStringArray(value: unknown): string[] | undefined {
 
   const values = value.filter((item): item is string => typeof item === 'string');
   return values.length > 0 ? values : undefined;
+}
+
+function parseProviderUsage(value: unknown): ProviderUsage | undefined {
+  const values = collectUsageNumbers(value);
+  const usage: ProviderUsage = {
+    cost: firstDefinedNumber(
+      values.cost,
+      values.cost_usd,
+      values.total_cost,
+      values.total_cost_usd,
+      values.upstream_inference_cost,
+      values.upstream_inference_completions_cost,
+    ),
+    inputTokens: firstDefinedNumber(values.prompt_tokens, values.input_tokens),
+    outputTokens: firstDefinedNumber(values.completion_tokens, values.output_tokens),
+    totalTokens: firstDefinedNumber(values.total_tokens),
+  };
+
+  return Object.values(usage).some(item => item !== undefined) ? usage : undefined;
+}
+
+function collectUsageNumbers(value: unknown): Record<string, number> {
+  const numbers: Record<string, number> = {};
+  const seen = new Set<unknown>();
+  const visit = (candidate: unknown) => {
+    if (!candidate || typeof candidate !== 'object' || seen.has(candidate)) {
+      return;
+    }
+    seen.add(candidate);
+
+    for (const [key, nestedValue] of Object.entries(candidate as Record<string, unknown>)) {
+      if (typeof nestedValue === 'number' && Number.isFinite(nestedValue)) {
+        numbers[key] ??= nestedValue;
+      } else if (typeof nestedValue === 'string' && nestedValue.trim() && Number.isFinite(Number(nestedValue))) {
+        numbers[key] ??= Number(nestedValue);
+      } else if (
+        nestedValue
+        && typeof nestedValue === 'object'
+        && ['usage', 'cost', 'metadata', 'metrics'].includes(key)
+      ) {
+        visit(nestedValue);
+      }
+    }
+  };
+
+  visit(value);
+  return numbers;
+}
+
+function firstDefinedNumber(...values: Array<number | undefined>): number | undefined {
+  return values.find((value): value is number => typeof value === 'number' && Number.isFinite(value));
+}
+
+function sumDefinedNumbers(...values: Array<number | undefined>): number | undefined {
+  const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  if (numbers.length === 0) {
+    return undefined;
+  }
+  return Number(numbers.reduce((sum, value) => sum + value, 0).toFixed(8));
 }
 
 function calculateCleanupMaxTokens(rawTranscript: string): number {
