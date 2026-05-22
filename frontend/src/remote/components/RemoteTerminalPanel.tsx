@@ -1,5 +1,9 @@
 import type { ToolPanel } from '../../../../shared/types/panels';
-import type { RemotePaneConnectionStatus, RemotePwaTerminalShortcut } from '../../../../shared/types/remoteDaemon';
+import type {
+  RemotePaneConnectionStatus,
+  RemotePwaTerminalShortcut,
+  RemotePwaVoiceTranscriptionAffordance,
+} from '../../../../shared/types/remoteDaemon';
 import type { RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
 import { useRemoteTerminal } from '../hooks/useRemoteTerminal';
 import { RemoteTerminalInputBar } from './RemoteTerminalInputBar';
@@ -11,6 +15,7 @@ interface RemoteTerminalPanelProps {
   sessionId: string;
   connectionStatus: RemotePaneConnectionStatus;
   shortcuts: RemotePwaTerminalShortcut[];
+  voiceTranscription: RemotePwaVoiceTranscriptionAffordance;
   shortcutsLoading?: boolean;
   onRefreshShortcuts: () => void;
 }
@@ -21,6 +26,7 @@ export function RemoteTerminalPanel({
   sessionId,
   connectionStatus,
   shortcuts,
+  voiceTranscription,
   shortcutsLoading = false,
   onRefreshShortcuts,
 }: RemoteTerminalPanelProps) {
@@ -56,10 +62,13 @@ export function RemoteTerminalPanel({
       <RemoteTerminalInputBar
         shortcuts={shortcuts}
         shortcutsLoading={shortcutsLoading}
+        voiceTranscription={voiceTranscription}
         disabled={connectionStatus !== 'connected'}
         onOpenShortcuts={onRefreshShortcuts}
         onResetTerminal={resetTerminal}
         onTranscribeAudio={(request) => adapter.transcribeVoice(request)}
+        onGetDeepgramToken={() => adapter.getDeepgramStreamingToken()}
+        onFinalizeStreamingAudio={(request) => adapter.finalizeStreamingVoice(request)}
         onSendInput={(data) => {
           void adapter.sendTerminalInput(panel.id, data)
             .then(() => {

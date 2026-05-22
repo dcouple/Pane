@@ -1,5 +1,6 @@
 import type { CloudVmConfig } from '../../../shared/types/cloud';
 import type { RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
+import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 
 export interface TerminalShortcut {
@@ -44,6 +45,8 @@ export interface AppConfig {
   openaiApiKey?: string;
   falApiKey?: string;
   openRouterApiKey?: string;
+  deepgramApiKey?: string;
+  voiceTranscriptionMode?: VoiceTranscriptionMode;
   // Legacy fields for backward compatibility
   gitRepoPath?: string;
   systemPromptAppend?: string;
@@ -118,6 +121,8 @@ export interface UpdateConfigRequest {
   openaiApiKey?: string;
   falApiKey?: string;
   openRouterApiKey?: string;
+  deepgramApiKey?: string;
+  voiceTranscriptionMode?: VoiceTranscriptionMode;
   claudeExecutablePath?: string;
   systemPromptAppend?: string;
   defaultPermissionMode?: 'approve' | 'ignore';

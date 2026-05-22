@@ -20,6 +20,7 @@ import {
   type RemotePaneConnectionProfile,
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
+import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import { useConfigStore } from '../stores/configStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -88,6 +89,10 @@ type AvailableShell = {
   path: string;
 };
 
+function isVoiceTranscriptionMode(value: unknown): value is VoiceTranscriptionMode {
+  return value === 'recorded' || value === 'streaming';
+}
+
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 
 function formatRemoteBaseUrl(host: string, port: number): string {
@@ -126,6 +131,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [verbose, setVerbose] = useState(false);
   const [falApiKey, setFalApiKey] = useState('');
   const [openRouterApiKey, setOpenRouterApiKey] = useState('');
+  const [deepgramApiKey, setDeepgramApiKey] = useState('');
+  const [voiceTranscriptionMode, setVoiceTranscriptionMode] = useState<VoiceTranscriptionMode>('streaming');
   const [claudeExecutablePath, setClaudeExecutablePath] = useState('');
   const [autoCheckUpdates, setAutoCheckUpdates] = useState(true);
   const [devMode, setDevMode] = useState(false);
@@ -248,6 +255,10 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setVerbose(data.verbose || false);
       setFalApiKey(data.falApiKey || '');
       setOpenRouterApiKey(data.openRouterApiKey || '');
+      setDeepgramApiKey(data.deepgramApiKey || '');
+      setVoiceTranscriptionMode(isVoiceTranscriptionMode(data.voiceTranscriptionMode)
+        ? data.voiceTranscriptionMode
+        : 'streaming');
       setAutoCheckUpdates(data.autoCheckUpdates !== false); // Default to true
       setDevMode(data.devMode || false);
       setUsePtyHost(data.usePtyHost === true);
@@ -770,6 +781,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         verbose,
         falApiKey: falApiKey.trim() || undefined,
         openRouterApiKey: openRouterApiKey.trim() || undefined,
+        deepgramApiKey: deepgramApiKey.trim() || undefined,
+        voiceTranscriptionMode,
         autoCheckUpdates,
         devMode,
         usePtyHost,
@@ -2747,7 +2760,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 description="Provider keys used by PWA voice dictation"
                 icon={<Mic className="w-4 h-4" />}
               >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <Input
                     type="password"
                     label="Fal API Key"
@@ -2768,6 +2781,50 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     helperText="Used on the Pane main side for Gemini transcript cleanup."
                     autoComplete="off"
                   />
+                  <Input
+                    type="password"
+                    label="Deepgram API Key"
+                    value={deepgramApiKey}
+                    onChange={(e) => setDeepgramApiKey(e.target.value)}
+                    placeholder="dg_..."
+                    fullWidth
+                    helperText="Used on the Pane main side to mint short-lived live transcription tokens."
+                    autoComplete="off"
+                  />
+                </div>
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm font-medium text-text-primary">Default PWA voice mode</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setVoiceTranscriptionMode('streaming')}
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        voiceTranscriptionMode === 'streaming'
+                          ? 'border-interactive bg-interactive/10 text-text-primary'
+                          : 'border-border-secondary bg-bg-primary text-text-secondary hover:bg-surface-hover'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold">Live streaming</span>
+                        <span className="rounded border border-border-secondary px-1.5 py-0.5 text-[10px] font-semibold uppercase text-text-tertiary">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-text-tertiary">Deepgram Nova-3. Realtime text while speaking. Approx. $0.462/hr ASR + cleanup.</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVoiceTranscriptionMode('recorded')}
+                      className={`rounded-lg border p-3 text-left transition-colors ${
+                        voiceTranscriptionMode === 'recorded'
+                          ? 'border-interactive bg-interactive/10 text-text-primary'
+                          : 'border-border-secondary bg-bg-primary text-text-secondary hover:bg-surface-hover'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">Batch recorded</span>
+                      <p className="mt-1 text-xs text-text-tertiary">Fal Wizper. Cheaper, but text appears after stop. Approx. $0.084/hr full pipeline.</p>
+                    </button>
+                  </div>
                 </div>
               </SettingsSection>
 

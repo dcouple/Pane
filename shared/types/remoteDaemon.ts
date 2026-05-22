@@ -1,3 +1,5 @@
+import type { VoiceTranscriptionMode } from './voiceTranscription';
+
 export type RemoteDaemonTransport = 'http+sse';
 export type RemoteDaemonClientMode = 'local' | 'remote';
 export type RemotePaneConnectionStatus = 'local' | 'connecting' | 'connected' | 'reconnecting' | 'error';
@@ -168,9 +170,31 @@ export interface RemotePwaCustomCommand {
   command: string;
 }
 
+export interface RemotePwaVoiceModePresentation {
+  label: string;
+  priceLabel: string;
+  latencyLabel: string;
+  recommended: boolean;
+}
+
+export interface RemotePwaVoiceTranscriptionAffordance {
+  availableModes: VoiceTranscriptionMode[];
+  defaultMode: VoiceTranscriptionMode;
+  configured: {
+    cleanup: boolean;
+    recorded: boolean;
+    streaming: boolean;
+    fal: boolean;
+    deepgram: boolean;
+    openRouter: boolean;
+  };
+  modes: Record<VoiceTranscriptionMode, RemotePwaVoiceModePresentation>;
+}
+
 export interface RemotePwaAffordances {
   terminalShortcuts: RemotePwaTerminalShortcut[];
   customCommands: RemotePwaCustomCommand[];
+  voiceTranscription: RemotePwaVoiceTranscriptionAffordance;
 }
 
 export interface RemotePaneConnectionState {

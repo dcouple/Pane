@@ -1,26 +1,30 @@
 import { ClipboardPaste, Command, Loader2, Mic, Send, Square, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RemotePwaTerminalShortcut } from '../../../../shared/types/remoteDaemon';
-import type { VoiceTranscriptionRequest, VoiceTranscriptionResult } from '../../../../shared/types/voiceTranscription';
+import { useEffect, useMemo, useState } from 'react';
+import type {
+  RemotePwaTerminalShortcut,
+  RemotePwaVoiceTranscriptionAffordance,
+} from '../../../../shared/types/remoteDaemon';
+import type {
+  VoiceDeepgramTokenResult,
+  VoiceStreamingFinalizeRequest,
+  VoiceTranscriptionMode,
+  VoiceTranscriptionRequest,
+  VoiceTranscriptionResult,
+} from '../../../../shared/types/voiceTranscription';
+import { useRemoteVoiceDictation } from '../hooks/useRemoteVoiceDictation';
 
 interface RemoteTerminalInputBarProps {
   shortcuts: RemotePwaTerminalShortcut[];
+  voiceTranscription: RemotePwaVoiceTranscriptionAffordance;
   shortcutsLoading?: boolean;
   disabled?: boolean;
   onOpenShortcuts?: () => void;
   onResetTerminal: () => void;
   onSendInput: (data: string) => void;
   onTranscribeAudio?: (request: VoiceTranscriptionRequest) => Promise<VoiceTranscriptionResult>;
+  onGetDeepgramToken?: () => Promise<VoiceDeepgramTokenResult>;
+  onFinalizeStreamingAudio?: (request: VoiceStreamingFinalizeRequest) => Promise<VoiceTranscriptionResult>;
 }
-
-const MAX_RECORDING_MS = 60_000;
-const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
-
-const PREFERRED_RECORDING_MIME_TYPES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/mp4',
-] as const;
 
 const CONTROL_KEYS = [
   { label: 'Stop', title: 'Send Ctrl-C to stop the running command', data: '\x03' },
@@ -30,36 +34,6 @@ const CONTROL_KEYS = [
   { label: 'Up', title: 'Send Up Arrow', data: '\x1b[A' },
   { label: 'Down', title: 'Send Down Arrow', data: '\x1b[B' },
 ] as const;
-
-function selectRecordingMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') {
-    return undefined;
-  }
-
-  return PREFERRED_RECORDING_MIME_TYPES.find(mimeType => MediaRecorder.isTypeSupported(mimeType));
-}
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error('Unable to read voice recording.'));
-      }
-    };
-    reader.onerror = () => reject(new Error('Unable to read voice recording.'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-function getVoiceErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return 'Voice transcription failed.';
-}
 
 function appendTranscriptDraft(current: string, transcript: string): string {
   const trimmedTranscript = transcript.trim();
@@ -76,30 +50,48 @@ function appendTranscriptDraft(current: string, transcript: string): string {
 
 export function RemoteTerminalInputBar({
   shortcuts,
+  voiceTranscription,
   shortcutsLoading = false,
   disabled = false,
   onOpenShortcuts,
   onResetTerminal,
   onSendInput,
   onTranscribeAudio,
+  onGetDeepgramToken,
+  onFinalizeStreamingAudio,
 }: RemoteTerminalInputBarProps) {
   const [draft, setDraft] = useState('');
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [clipboardError, setClipboardError] = useState<string | null>(null);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const recordingChunksRef = useRef<Blob[]>([]);
-  const recordingStartedAtRef = useRef(0);
-  const recordingFailedRef = useRef(false);
-  const maxRecordingTimerRef = useRef<number | null>(null);
+  const [voiceMode, setVoiceMode] = useState<VoiceTranscriptionMode>(voiceTranscription.defaultMode);
 
   const enabledShortcuts = useMemo(
     () => shortcuts.filter(shortcut => shortcut.enabled !== false && shortcut.text.trim()),
     [shortcuts],
   );
+  const availableVoiceModes = voiceTranscription.availableModes;
+  const selectedVoiceMode = availableVoiceModes.includes(voiceMode)
+    ? voiceMode
+    : voiceTranscription.defaultMode;
+  const canUseSelectedVoiceMode = availableVoiceModes.includes(selectedVoiceMode);
+
+  const appendTranscript = (text: string) => {
+    setDraft(current => appendTranscriptDraft(current, text));
+  };
+
+  const voice = useRemoteVoiceDictation({
+    mode: selectedVoiceMode,
+    onTranscript: appendTranscript,
+    onTranscribeAudio,
+    onGetDeepgramToken,
+    onFinalizeStreamingAudio,
+  });
+
+  useEffect(() => {
+    if (!availableVoiceModes.includes(voiceMode)) {
+      setVoiceMode(voiceTranscription.defaultMode);
+    }
+  }, [availableVoiceModes, voiceMode, voiceTranscription.defaultMode]);
 
   const sendInput = (data: string) => {
     if (disabled || !data) return;
@@ -116,7 +108,7 @@ export function RemoteTerminalInputBar({
     if (!text) return;
     setDraft(current => `${current}${text}`);
     setClipboardError(null);
-    setVoiceError(null);
+    voice.clearError();
   };
 
   const pasteClipboard = async () => {
@@ -131,144 +123,6 @@ export function RemoteTerminalInputBar({
       setClipboardError('Browser clipboard access is blocked. Paste into the input instead.');
     }
   };
-
-  const clearMaxRecordingTimer = () => {
-    if (maxRecordingTimerRef.current !== null) {
-      window.clearTimeout(maxRecordingTimerRef.current);
-      maxRecordingTimerRef.current = null;
-    }
-  };
-
-  const stopRecordingStream = () => {
-    streamRef.current?.getTracks().forEach(track => track.stop());
-    streamRef.current = null;
-  };
-
-  const stopRecording = () => {
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state !== 'inactive') {
-      recorder.stop();
-    }
-  };
-
-  const appendTranscript = (text: string) => {
-    setDraft(current => appendTranscriptDraft(current, text));
-    setVoiceError(null);
-  };
-
-  const finishRecording = async (recorder: MediaRecorder) => {
-    clearMaxRecordingTimer();
-    setIsRecording(false);
-    stopRecordingStream();
-    recorderRef.current = null;
-
-    const chunks = recordingChunksRef.current;
-    recordingChunksRef.current = [];
-    if (recordingFailedRef.current) {
-      recordingFailedRef.current = false;
-      return;
-    }
-    if (chunks.length === 0) {
-      return;
-    }
-
-    const mimeType = recorder.mimeType || chunks[0]?.type || 'audio/webm';
-    const audioBlob = new Blob(chunks, { type: mimeType });
-    if (audioBlob.size === 0) {
-      setVoiceError('Voice recording was empty.');
-      return;
-    }
-    if (audioBlob.size > MAX_AUDIO_BYTES) {
-      setVoiceError('Recording is too large. Keep voice clips under 10 MB.');
-      return;
-    }
-    if (!onTranscribeAudio) {
-      setVoiceError('Voice transcription is unavailable.');
-      return;
-    }
-
-    setIsTranscribing(true);
-    try {
-      const audioDataUrl = await blobToDataUrl(audioBlob);
-      const result = await onTranscribeAudio({
-        audioDataUrl,
-        mimeType,
-        durationMs: Date.now() - recordingStartedAtRef.current,
-        language: 'en',
-      });
-      appendTranscript(result.text);
-    } catch (error) {
-      setVoiceError(getVoiceErrorMessage(error));
-    } finally {
-      setIsTranscribing(false);
-    }
-  };
-
-  const startRecording = async () => {
-    if (!onTranscribeAudio) {
-      setVoiceError('Voice transcription is unavailable.');
-      return;
-    }
-    if (disabled || isRecording || isTranscribing) {
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setVoiceError('Voice recording is not supported in this browser.');
-      return;
-    }
-
-    try {
-      setClipboardError(null);
-      setVoiceError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const selectedMimeType = selectRecordingMimeType();
-      const recorder = selectedMimeType
-        ? new MediaRecorder(stream, { mimeType: selectedMimeType })
-        : new MediaRecorder(stream);
-
-      streamRef.current = stream;
-      recorderRef.current = recorder;
-      recordingChunksRef.current = [];
-      recordingFailedRef.current = false;
-      recordingStartedAtRef.current = Date.now();
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          recordingChunksRef.current.push(event.data);
-        }
-      };
-      recorder.onerror = () => {
-        recordingFailedRef.current = true;
-        setVoiceError('Voice recording failed.');
-        stopRecording();
-      };
-      recorder.onstop = () => {
-        void finishRecording(recorder);
-      };
-
-      recorder.start();
-      setIsRecording(true);
-      maxRecordingTimerRef.current = window.setTimeout(stopRecording, MAX_RECORDING_MS);
-    } catch (error) {
-      stopRecordingStream();
-      recorderRef.current = null;
-      recordingChunksRef.current = [];
-      recordingFailedRef.current = false;
-      setVoiceError(getVoiceErrorMessage(error));
-    }
-  };
-
-  useEffect(() => () => {
-    clearMaxRecordingTimer();
-    const recorder = recorderRef.current;
-    if (recorder) {
-      recorder.onstop = null;
-      if (recorder.state !== 'inactive') {
-        recorder.stop();
-      }
-    }
-    stopRecordingStream();
-  }, []);
 
   return (
     <div className="relative shrink-0 border-t border-border-primary bg-surface-primary p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden">
@@ -328,26 +182,26 @@ export function RemoteTerminalInputBar({
                 sendDraft();
               }
             }}
-            rows={4}
+            rows={6}
             disabled={disabled}
             placeholder="Type command or prompt..."
-            className="max-h-40 min-h-24 w-full resize-none rounded-lg border border-border-secondary bg-bg-primary px-3 py-2.5 pr-12 text-xs leading-4 text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-interactive disabled:cursor-not-allowed disabled:opacity-50"
+            className="max-h-56 min-h-32 w-full resize-none rounded-lg border border-border-secondary bg-bg-primary px-3 py-2.5 pr-14 text-xs leading-4 text-text-primary placeholder:text-text-muted focus:border-border-focus focus:outline-none focus:ring-1 focus:ring-interactive disabled:cursor-not-allowed disabled:opacity-50"
           />
           <button
             type="button"
-            onClick={isRecording ? stopRecording : () => { void startRecording(); }}
-            disabled={(!isRecording && disabled) || isTranscribing || !onTranscribeAudio}
-            className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-md border bg-bg-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              isRecording
+            onClick={() => { void voice.toggle(); }}
+            disabled={(!voice.isRecording && (disabled || voice.isTranscribing || !canUseSelectedVoiceMode))}
+            className={`absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-md border bg-bg-primary transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              voice.isRecording
                 ? 'border-status-error/50 text-status-error hover:bg-status-error/10'
                 : 'border-border-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
             }`}
-            aria-label={isRecording ? 'Stop voice recording' : 'Start voice recording'}
-            title={isRecording ? 'Stop recording' : 'Voice input'}
+            aria-label={voice.isRecording ? 'Stop voice recording' : 'Start voice recording'}
+            title={voice.isRecording ? 'Stop recording' : 'Voice input'}
           >
-            {isTranscribing ? (
+            {voice.isTranscribing ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isRecording ? (
+            ) : voice.isRecording ? (
               <Square className="h-4 w-4" />
             ) : (
               <Mic className="h-4 w-4" />
@@ -378,6 +232,27 @@ export function RemoteTerminalInputBar({
           <ClipboardPaste className="h-3.5 w-3.5" />
           Paste
         </button>
+        {availableVoiceModes.length > 1 && (
+          <div className="flex h-8 overflow-hidden rounded-md border border-border-secondary">
+            {availableVoiceModes.map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setVoiceMode(mode)}
+                disabled={disabled || voice.isRecording || voice.isTranscribing}
+                aria-pressed={selectedVoiceMode === mode}
+                title={`${voiceTranscription.modes[mode].latencyLabel}. ${voiceTranscription.modes[mode].priceLabel}`}
+                className={`px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  selectedVoiceMode === mode
+                    ? 'bg-interactive text-white'
+                    : 'bg-bg-primary text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+                }`}
+              >
+                {voiceTranscription.modes[mode].label}
+              </button>
+            ))}
+          </div>
+        )}
         {CONTROL_KEYS.map(control => (
           <button
             key={control.label}
@@ -417,19 +292,28 @@ export function RemoteTerminalInputBar({
         </button>
       </div>
 
-      {(clipboardError || voiceError || isRecording || isTranscribing) && (
+      {(clipboardError || voice.error || voice.isRecording || voice.isTranscribing || voice.interimTranscript || voice.streamingTranscript) && (
         <div className="mt-1 space-y-1">
           {clipboardError && (
             <p className="text-xs text-status-error">{clipboardError}</p>
           )}
-          {voiceError && (
-            <p className="text-xs text-status-error">{voiceError}</p>
+          {voice.error && (
+            <p className="text-xs text-status-error">{voice.error}</p>
           )}
-          {isRecording && (
-            <p className="text-xs text-status-warning">Recording voice input...</p>
+          {(voice.streamingTranscript || voice.interimTranscript) && (
+            <p className="line-clamp-2 text-xs text-text-tertiary">
+              {voice.streamingTranscript}
+              {voice.streamingTranscript && voice.interimTranscript ? ' ' : ''}
+              {voice.interimTranscript && <span className="text-text-muted">{voice.interimTranscript}</span>}
+            </p>
           )}
-          {isTranscribing && (
-            <p className="text-xs text-text-tertiary">Transcribing voice input...</p>
+          {voice.isRecording && (
+            <p className="text-xs text-status-warning">
+              {voice.activeMode === 'streaming' ? 'Live transcription active...' : 'Recording voice input...'}
+            </p>
+          )}
+          {voice.isTranscribing && (
+            <p className="text-xs text-text-tertiary">Cleaning up voice transcript...</p>
           )}
         </div>
       )}

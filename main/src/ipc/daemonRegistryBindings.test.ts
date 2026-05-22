@@ -61,6 +61,8 @@ const CONFIG_CHANNELS = [
 
 const VOICE_CHANNELS = [
   'voice:transcribe',
+  'voice:deepgram-token',
+  'voice:finalize-streaming',
 ] as const;
 
 const PROMPT_CHANNELS = [
@@ -305,6 +307,32 @@ describe('daemon registry IPC bindings', () => {
         enabled: true,
       }],
       customCommands: [{ name: 'Codex Fast', command: 'codex --yolo' }],
+      voiceTranscription: {
+        availableModes: [],
+        defaultMode: 'streaming',
+        configured: {
+          cleanup: false,
+          recorded: false,
+          streaming: false,
+          fal: false,
+          deepgram: false,
+          openRouter: false,
+        },
+        modes: {
+          streaming: {
+            label: 'Live',
+            priceLabel: '~$0.462/hr ASR + cleanup',
+            latencyLabel: 'Realtime text while speaking',
+            recommended: true,
+          },
+          recorded: {
+            label: 'Batch',
+            priceLabel: '~$0.084/hr full pipeline',
+            latencyLabel: 'Text appears after stop',
+            recommended: false,
+          },
+        },
+      },
     });
   });
 

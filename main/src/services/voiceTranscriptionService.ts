@@ -1,18 +1,24 @@
 import type { ConfigManager } from './configManager';
 import type { AnalyticsManager } from './analyticsManager';
 import type {
+  VoiceDeepgramTokenResult,
+  VoiceDeepgramStreamingMetadata,
   VoiceTranscriptionChunk,
   VoiceTranscriptionRequest,
   VoiceTranscriptionResult,
+  VoiceTranscriptionUsage,
+  VoiceStreamingFinalizeRequest,
 } from '../../../shared/types/voiceTranscription';
 
 const FAL_WIZPER_ENDPOINT = 'https://fal.run/fal-ai/wizper';
 const FAL_STORAGE_UPLOAD_INITIATE_ENDPOINT = 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3';
 const OPENROUTER_CHAT_COMPLETIONS_ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
+const DEEPGRAM_AUTH_GRANT_ENDPOINT = 'https://api.deepgram.com/v1/auth/grant';
 const CLEANUP_MODEL = 'google/gemini-3.1-flash-lite' as const;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const MAX_AUDIO_DURATION_MS = 60_000;
 const MAX_PROVIDER_ERROR_LENGTH = 400;
+const DEEPGRAM_NOVA3_STREAMING_COST_PER_HOUR_USD = 0.462;
 
 const SUPPORTED_AUDIO_MIME_TYPES = new Set([
   'audio/webm',
@@ -79,6 +85,17 @@ interface ValidatedAudioInput {
   audioBuffer: Buffer;
 }
 
+interface ValidatedStreamingFinalizeInput {
+  rawText: string;
+  durationMs?: number;
+  language: 'en';
+  timings?: {
+    asrMs?: number;
+    firstTranscriptMs?: number;
+  };
+  metadata?: VoiceDeepgramStreamingMetadata;
+}
+
 interface FalWizperResponse {
   text?: unknown;
   chunks?: unknown;
@@ -103,12 +120,12 @@ interface OpenRouterResponse {
   usage?: unknown;
 }
 
-interface ProviderUsage {
-  cost?: number;
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
+interface DeepgramGrantResponse {
+  access_token?: unknown;
+  expires_in?: unknown;
 }
+
+type ProviderUsage = VoiceTranscriptionUsage;
 
 export class VoiceTranscriptionService {
   constructor(
@@ -128,6 +145,9 @@ export class VoiceTranscriptionService {
     }
 
     const startedAt = Date.now();
+    if (this.configManager.isVerbose()) {
+      console.log('[VoiceTranscription] Recorded pipeline started');
+    }
     const raw = await this.transcribeWithFal(input, request.language ?? 'en', falApiKey);
     const cleanupStartedAt = Date.now();
     const cleanText = raw.text.trim().length > 0
@@ -136,6 +156,7 @@ export class VoiceTranscriptionService {
     const completedAt = Date.now();
 
     const result: VoiceTranscriptionResult = {
+      mode: 'recorded',
       provider: 'fal-ai/wizper',
       cleanupModel: CLEANUP_MODEL,
       text: cleanText.text.trim(),
@@ -143,10 +164,13 @@ export class VoiceTranscriptionService {
       chunks: raw.chunks,
       languages: raw.languages,
       timings: {
-        falMs: cleanupStartedAt - startedAt,
+        asrMs: cleanupStartedAt - startedAt,
         cleanupMs: completedAt - cleanupStartedAt,
         totalMs: completedAt - startedAt,
+        falMs: cleanupStartedAt - startedAt,
       },
+      providerUsage: raw.usage,
+      cleanupUsage: cleanText.usage,
     };
     this.trackVoiceTranscriptionUsed({
       input,
@@ -155,6 +179,90 @@ export class VoiceTranscriptionService {
       rawUsage: raw.usage,
       cleanupUsage: cleanText.usage,
     });
+    if (this.configManager.isVerbose()) {
+      console.log('[VoiceTranscription] Recorded pipeline completed', result.timings);
+    }
+    return result;
+  }
+
+  async getDeepgramStreamingToken(): Promise<VoiceDeepgramTokenResult> {
+    const deepgramApiKey = this.getDeepgramApiKey();
+    if (!deepgramApiKey) {
+      throw new Error('Deepgram API key is not configured. Add it in Settings under Voice Transcription.');
+    }
+
+    const response = await fetch(DEEPGRAM_AUTH_GRANT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${deepgramApiKey}`,
+      },
+    });
+    const payload = await readProviderJson<DeepgramGrantResponse>(response, 'Deepgram token grant failed');
+    if (typeof payload.access_token !== 'string' || payload.access_token.trim().length === 0) {
+      throw new Error('Deepgram token grant response did not include an access token.');
+    }
+
+    const expiresIn = typeof payload.expires_in === 'number' && Number.isFinite(payload.expires_in)
+      ? payload.expires_in
+      : 30;
+
+    return {
+      accessToken: payload.access_token,
+      expiresIn,
+      expiresAt: Date.now() + expiresIn * 1000,
+    };
+  }
+
+  async finalizeStreaming(request: VoiceStreamingFinalizeRequest): Promise<VoiceTranscriptionResult> {
+    const input = validateVoiceStreamingFinalizeRequest(request);
+    const openRouterApiKey = this.getOpenRouterApiKey();
+    if (!openRouterApiKey) {
+      throw new Error('OpenRouter API key is not configured. Add it in Settings under Voice Transcription.');
+    }
+
+    const cleanupStartedAt = Date.now();
+    if (this.configManager.isVerbose()) {
+      console.log('[VoiceTranscription] Streaming cleanup started', {
+        rawTranscriptChars: input.rawText.length,
+        asrMs: input.timings?.asrMs,
+        firstTranscriptMs: input.timings?.firstTranscriptMs,
+      });
+    }
+    const cleanText = input.rawText.trim().length > 0
+      ? await this.cleanTranscript(input.rawText, openRouterApiKey)
+      : { text: input.rawText };
+    const completedAt = Date.now();
+    const cleanupMs = completedAt - cleanupStartedAt;
+    const asrMs = Math.max(0, Math.round(input.timings?.asrMs ?? 0));
+    const providerUsage = getDeepgramUsage(input.metadata, input.durationMs);
+
+    const result: VoiceTranscriptionResult = {
+      mode: 'streaming',
+      provider: 'deepgram/nova-3',
+      cleanupModel: CLEANUP_MODEL,
+      text: cleanText.text.trim(),
+      rawText: input.rawText,
+      languages: ['en-US'],
+      timings: {
+        asrMs,
+        cleanupMs,
+        totalMs: asrMs + cleanupMs,
+        firstTranscriptMs: input.timings?.firstTranscriptMs,
+      },
+      providerUsage,
+      cleanupUsage: cleanText.usage,
+    };
+
+    this.trackVoiceTranscriptionUsed({
+      requestedDurationMs: input.durationMs,
+      result,
+      rawUsage: providerUsage,
+      cleanupUsage: cleanText.usage,
+      deepgramMetadata: input.metadata,
+    });
+    if (this.configManager.isVerbose()) {
+      console.log('[VoiceTranscription] Streaming pipeline completed', result.timings);
+    }
     return result;
   }
 
@@ -164,6 +272,10 @@ export class VoiceTranscriptionService {
 
   private getOpenRouterApiKey(): string | undefined {
     return firstNonEmpty(this.configManager.getConfig().openRouterApiKey, process.env.OPENROUTER_API_KEY);
+  }
+
+  private getDeepgramApiKey(): string | undefined {
+    return firstNonEmpty(this.configManager.getConfig().deepgramApiKey, process.env.DEEPGRAM_API_KEY);
   }
 
   private async transcribeWithFal(
@@ -282,12 +394,14 @@ export class VoiceTranscriptionService {
     result,
     rawUsage,
     cleanupUsage,
+    deepgramMetadata,
   }: {
-    input: ValidatedAudioInput;
+    input?: ValidatedAudioInput;
     requestedDurationMs?: number;
     result: VoiceTranscriptionResult;
     rawUsage?: ProviderUsage;
     cleanupUsage?: ProviderUsage;
+    deepgramMetadata?: VoiceDeepgramStreamingMetadata;
   }): void {
     if (!this.analyticsManager) {
       return;
@@ -298,30 +412,45 @@ export class VoiceTranscriptionService {
       const audioDurationMs = typeof requestedDurationMs === 'number' ? Math.max(0, Math.round(requestedDurationMs)) : undefined;
       const audioSeconds = audioDurationMs !== undefined ? Math.round(audioDurationMs / 100) / 10 : undefined;
       this.analyticsManager.track('voice_transcription_used', {
+        mode: result.mode,
         provider: result.provider,
+        asr_provider: result.provider,
         cleanup_model: result.cleanupModel,
         language: result.languages?.[0] ?? 'en',
-        mime_type: input.mimeType,
+        mime_type: input?.mimeType,
         audio_duration_ms: audioDurationMs,
         audio_seconds: audioSeconds,
         audio_duration_bucket: audioSeconds !== undefined
           ? this.analyticsManager.categorizeDuration(audioSeconds)
           : undefined,
-        audio_bytes: input.byteLength,
-        audio_bytes_bucket: this.analyticsManager.categorizeNumber(input.byteLength, [
-          100 * 1024,
-          500 * 1024,
-          1024 * 1024,
-          5 * 1024 * 1024,
-          10 * 1024 * 1024,
-        ]),
+        audio_bytes: input?.byteLength,
+        audio_bytes_bucket: input
+          ? this.analyticsManager.categorizeNumber(input.byteLength, [
+            100 * 1024,
+            500 * 1024,
+            1024 * 1024,
+            5 * 1024 * 1024,
+            10 * 1024 * 1024,
+          ])
+          : undefined,
         raw_transcript_chars: result.rawText.length,
         clean_transcript_chars: result.text.length,
         chunk_count: result.chunks?.length,
+        asr_ms: result.timings.asrMs,
         fal_ms: result.timings.falMs,
+        deepgram_ms: result.provider === 'deepgram/nova-3' ? result.timings.asrMs : undefined,
+        time_to_first_transcript_ms: result.timings.firstTranscriptMs,
         cleanup_ms: result.timings.cleanupMs,
         total_ms: result.timings.totalMs,
-        fal_cost: rawUsage?.cost,
+        provider_cost: rawUsage?.cost,
+        provider_cost_source: rawUsage?.costSource,
+        fal_cost: result.provider === 'fal-ai/wizper' ? rawUsage?.cost : undefined,
+        deepgram_cost: result.provider === 'deepgram/nova-3' ? rawUsage?.cost : undefined,
+        deepgram_cost_source: result.provider === 'deepgram/nova-3' ? rawUsage?.costSource : undefined,
+        deepgram_request_id: deepgramMetadata?.requestId,
+        deepgram_duration_seconds: deepgramMetadata?.duration,
+        deepgram_model_name: deepgramMetadata?.modelName,
+        deepgram_model_version: deepgramMetadata?.modelVersion,
         openrouter_cost: cleanupUsage?.cost,
         total_cost: totalCost,
         openrouter_prompt_tokens: cleanupUsage?.inputTokens,
@@ -383,6 +512,65 @@ function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): 
     mimeType: dataUrlMimeType,
     byteLength,
     audioBuffer,
+  };
+}
+
+function validateVoiceStreamingFinalizeRequest(request: VoiceStreamingFinalizeRequest): ValidatedStreamingFinalizeInput {
+  if (!request || typeof request !== 'object') {
+    throw new Error('Voice streaming finalization request is invalid.');
+  }
+  if (typeof request.rawText !== 'string') {
+    throw new Error('Voice streaming finalization requires a transcript.');
+  }
+  if (request.durationMs !== undefined && request.durationMs > MAX_AUDIO_DURATION_MS + 5_000) {
+    throw new Error('Streaming recording is too long. Keep voice clips under 60 seconds.');
+  }
+  if (request.language !== undefined && request.language !== 'en') {
+    throw new Error('Voice transcription currently supports English only.');
+  }
+
+  return {
+    rawText: request.rawText,
+    durationMs: typeof request.durationMs === 'number'
+      ? Math.max(0, Math.round(request.durationMs))
+      : undefined,
+    language: request.language ?? 'en',
+    timings: normalizeStreamingTimings(request.timings),
+    metadata: normalizeDeepgramMetadata(request.metadata),
+  };
+}
+
+function normalizeStreamingTimings(timings: VoiceStreamingFinalizeRequest['timings']): ValidatedStreamingFinalizeInput['timings'] {
+  if (!timings || typeof timings !== 'object') {
+    return undefined;
+  }
+
+  const normalized = {
+    asrMs: normalizeOptionalMs(timings.asrMs),
+    firstTranscriptMs: normalizeOptionalMs(timings.firstTranscriptMs),
+  };
+  return normalized.asrMs !== undefined || normalized.firstTranscriptMs !== undefined
+    ? normalized
+    : undefined;
+}
+
+function normalizeOptionalMs(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.round(value))
+    : undefined;
+}
+
+function normalizeDeepgramMetadata(metadata: VoiceStreamingFinalizeRequest['metadata']): VoiceDeepgramStreamingMetadata | undefined {
+  if (!metadata || typeof metadata !== 'object') {
+    return undefined;
+  }
+
+  return {
+    requestId: typeof metadata.requestId === 'string' ? metadata.requestId : undefined,
+    duration: typeof metadata.duration === 'number' && Number.isFinite(metadata.duration) ? metadata.duration : undefined,
+    cost: typeof metadata.cost === 'number' && Number.isFinite(metadata.cost) ? metadata.cost : undefined,
+    modelName: typeof metadata.modelName === 'string' ? metadata.modelName : undefined,
+    modelVersion: typeof metadata.modelVersion === 'string' ? metadata.modelVersion : undefined,
   };
 }
 
@@ -497,8 +685,38 @@ function parseProviderUsage(value: unknown): ProviderUsage | undefined {
     outputTokens: firstDefinedNumber(values.completion_tokens, values.output_tokens),
     totalTokens: firstDefinedNumber(values.total_tokens),
   };
+  if (usage.cost !== undefined) {
+    usage.costSource = 'provider';
+  }
 
   return Object.values(usage).some(item => item !== undefined) ? usage : undefined;
+}
+
+function getDeepgramUsage(
+  metadata: VoiceDeepgramStreamingMetadata | undefined,
+  durationMs: number | undefined,
+): ProviderUsage {
+  const metadataUsage = parseProviderUsage(metadata);
+  if (metadataUsage?.cost !== undefined) {
+    return {
+      ...metadataUsage,
+      costSource: 'metadata',
+    };
+  }
+
+  const durationSeconds = typeof durationMs === 'number'
+    ? durationMs / 1000
+    : metadata?.duration;
+  if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+    return {
+      cost: Number(((durationSeconds / 3600) * DEEPGRAM_NOVA3_STREAMING_COST_PER_HOUR_USD).toFixed(8)),
+      costSource: 'estimate',
+    };
+  }
+
+  return {
+    costSource: 'unavailable',
+  };
 }
 
 function collectUsageNumbers(value: unknown): Record<string, number> {

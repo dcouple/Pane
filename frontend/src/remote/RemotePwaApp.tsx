@@ -17,6 +17,32 @@ const SAVED_PROFILES_KEY = 'pane.remotePwa.savedProfiles';
 const EMPTY_AFFORDANCES: RemotePwaAffordances = {
   terminalShortcuts: [],
   customCommands: [],
+  voiceTranscription: {
+    availableModes: [],
+    defaultMode: 'streaming',
+    configured: {
+      cleanup: false,
+      recorded: false,
+      streaming: false,
+      fal: false,
+      deepgram: false,
+      openRouter: false,
+    },
+    modes: {
+      streaming: {
+        label: 'Live',
+        priceLabel: '~$0.462/hr ASR + cleanup',
+        latencyLabel: 'Realtime text while speaking',
+        recommended: true,
+      },
+      recorded: {
+        label: 'Batch',
+        priceLabel: '~$0.084/hr full pipeline',
+        latencyLabel: 'Text appears after stop',
+        recommended: false,
+      },
+    },
+  },
 };
 
 export function RemotePwaApp() {
@@ -372,6 +398,7 @@ export function RemotePwaApp() {
             connectionStatus={connectionStatus}
             shortcuts={affordances.terminalShortcuts}
             shortcutsLoading={affordancesLoading}
+            voiceTranscription={affordances.voiceTranscription}
             onRefreshShortcuts={() => { void loadAffordances(adapter); }}
           />
         )}

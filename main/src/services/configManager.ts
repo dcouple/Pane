@@ -29,6 +29,8 @@ export class ConfigManager extends EventEmitter {
       anthropicApiKey: undefined,
       falApiKey: undefined,
       openRouterApiKey: undefined,
+      deepgramApiKey: undefined,
+      voiceTranscriptionMode: 'streaming',
       systemPromptAppend: undefined,
       runScript: undefined,
       theme: 'light-rounded',

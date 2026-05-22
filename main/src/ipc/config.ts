@@ -4,6 +4,7 @@ import type { AppServices } from './types';
 import type { AppConfig, UpdateConfigRequest } from '../types/config';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { RemotePwaAffordances } from '../../../shared/types/remoteDaemon';
+import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import { ShellDetector } from '../utils/shellDetector';
 
 export function registerConfigHandlers(
@@ -26,6 +27,7 @@ export function registerConfigHandlers(
           name: command.name,
           command: command.command,
         })),
+        voiceTranscription: buildRemotePwaVoiceAffordance(config),
       };
     });
     commandRegistry.bindChannel(ipcMain, 'remote:pwa-affordances');
@@ -192,4 +194,62 @@ export function registerConfigHandlers(
       return { success: false, data: [] };
     }
   });
-} 
+}
+
+function buildRemotePwaVoiceAffordance(config: AppConfig): RemotePwaAffordances['voiceTranscription'] {
+  const fal = hasConfiguredValue(config.falApiKey, process.env.FAL_KEY);
+  const deepgram = hasConfiguredValue(config.deepgramApiKey, process.env.DEEPGRAM_API_KEY);
+  const openRouter = hasConfiguredValue(config.openRouterApiKey, process.env.OPENROUTER_API_KEY);
+  const recorded = fal && openRouter;
+  const streaming = deepgram && openRouter;
+  const availableModes: VoiceTranscriptionMode[] = [];
+
+  if (streaming) {
+    availableModes.push('streaming');
+  }
+  if (recorded) {
+    availableModes.push('recorded');
+  }
+
+  const configuredDefault = isVoiceTranscriptionMode(config.voiceTranscriptionMode)
+    ? config.voiceTranscriptionMode
+    : 'streaming';
+  const defaultMode = availableModes.includes(configuredDefault)
+    ? configuredDefault
+    : (availableModes[0] ?? configuredDefault);
+
+  return {
+    availableModes,
+    defaultMode,
+    configured: {
+      cleanup: openRouter,
+      recorded,
+      streaming,
+      fal,
+      deepgram,
+      openRouter,
+    },
+    modes: {
+      streaming: {
+        label: 'Live',
+        priceLabel: '~$0.462/hr ASR + cleanup',
+        latencyLabel: 'Realtime text while speaking',
+        recommended: true,
+      },
+      recorded: {
+        label: 'Batch',
+        priceLabel: '~$0.084/hr full pipeline',
+        latencyLabel: 'Text appears after stop',
+        recommended: false,
+      },
+    },
+  };
+}
+
+function hasConfiguredValue(...values: Array<string | undefined>): boolean {
+  return values.some(value => Boolean(value?.trim()));
+}
+
+function isVoiceTranscriptionMode(value: unknown): value is VoiceTranscriptionMode {
+  return value === 'recorded' || value === 'streaming';
+}
