@@ -1,4 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from 'http';
+import type { Duplex } from 'stream';
+import WebSocket, { type RawData, WebSocketServer } from 'ws';
 import { createFanoutEventSink, noopPaneEventSink, type PaneEventSink } from '../core/eventSink';
 import type { ConfigManager } from '../services/configManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
@@ -83,6 +85,50 @@ const MAX_UNAUTHENTICATED_REQUEST_BODY_BYTES = 1024 * 1024;
 const MAX_AUTHENTICATED_REQUEST_BODY_BYTES = 16 * 1024 * 1024;
 const DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS = 5_000;
 const REMOTE_VISIBILITY_VIEWER_STALE_MS = 15 * 60 * 1000;
+const DEEPGRAM_LISTEN_ENDPOINT = 'wss://api.deepgram.com/v1/listen';
+const VOICE_DEEPGRAM_STREAM_PATH = '/voice/deepgram-stream';
+const DEEPGRAM_STREAMING_KEYTERMS = [
+  'Doozy',
+  'Pane',
+  'Dcouple',
+  'Composio',
+  'Anthropic',
+  'Claude',
+  'Claude Opus',
+  'Claude Sonnet',
+  'GPT',
+  'GPT-5.5',
+  'GPT-5.5 medium',
+  'GPT-5.5 medium-high',
+  'Gemini',
+  'Gemini 3.1 Flash Lite',
+  'Postgres',
+  'PostgreSQL',
+  'Supabase',
+  'Next.js',
+  'TypeScript',
+  'JavaScript',
+  'useState',
+  'useEffect',
+  'useMemo',
+  'useCallback',
+  'gRPC',
+  'GraphQL',
+  'OAuth',
+  'JWT',
+  'Kubernetes',
+  'Cursor',
+  'Aider',
+  'Codex',
+  'OpenRouter',
+  'RAG',
+  'embeddings',
+  'BM25',
+  'SWE-bench',
+  'n8n',
+  'Tailwind',
+  'shadcn/ui',
+];
 const REMOTE_DAEMON_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -114,6 +160,7 @@ class RemoteDaemonBadRequestError extends Error {
 
 export class PaneRemoteHttpApiServer {
   private server: http.Server | null = null;
+  private voiceDeepgramWss: WebSocketServer | null = null;
   private readonly eventClients = new Map<string, ConnectedRemoteEventClient>();
   private readonly daemonEventSink: PaneEventSink;
   private address: RemoteHttpAddress | null = null;
@@ -214,6 +261,13 @@ export class PaneRemoteHttpApiServer {
         response.destroy(error instanceof Error ? error : new Error(message));
       });
     });
+    const voiceDeepgramWss = new WebSocketServer({ noServer: true });
+    this.voiceDeepgramWss = voiceDeepgramWss;
+    server.on('upgrade', (request, socket, head) => {
+      void this.handleUpgrade(request, socket, head).catch((error) => {
+        writeRawHttpError(socket, 500, error instanceof Error ? error.message : String(error));
+      });
+    });
 
     await new Promise<void>((resolve, reject) => {
       const handleError = (error: Error) => {
@@ -251,6 +305,16 @@ export class PaneRemoteHttpApiServer {
     const server = this.server;
     this.server = null;
     this.address = null;
+    const voiceDeepgramWss = this.voiceDeepgramWss;
+    this.voiceDeepgramWss = null;
+    if (voiceDeepgramWss) {
+      for (const client of voiceDeepgramWss.clients) {
+        client.terminate();
+      }
+      await new Promise<void>((resolve) => {
+        voiceDeepgramWss.close(() => resolve());
+      });
+    }
 
     for (const clientConnectionId of [...this.eventClients.keys()]) {
       this.dropEventClient(clientConnectionId);
@@ -261,6 +325,101 @@ export class PaneRemoteHttpApiServer {
         server.close(() => resolve());
       });
     }
+  }
+
+  private async handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`);
+    if (url.pathname !== VOICE_DEEPGRAM_STREAM_PATH) {
+      socket.destroy();
+      return;
+    }
+
+    const auth = this.authenticateRequest(request, url.searchParams.get('access_token'));
+    if (!auth.ok) {
+      writeRawHttpError(socket, auth.statusCode, auth.error.message);
+      return;
+    }
+
+    const deepgramApiKey = firstNonEmpty(this.configManager.getConfig().deepgramApiKey, process.env.DEEPGRAM_API_KEY);
+    if (!deepgramApiKey) {
+      writeRawHttpError(socket, 503, 'Deepgram API key is not configured');
+      return;
+    }
+
+    const wss = this.voiceDeepgramWss;
+    if (!wss) {
+      writeRawHttpError(socket, 503, 'Voice streaming proxy is not available');
+      return;
+    }
+
+    wss.handleUpgrade(request, socket, head, (client) => {
+      this.handleDeepgramProxySocket(client, deepgramApiKey);
+    });
+  }
+
+  private handleDeepgramProxySocket(client: WebSocket, deepgramApiKey: string): void {
+    const upstream = new WebSocket(buildDeepgramListenUrl(), {
+      headers: {
+        Authorization: `Token ${deepgramApiKey}`,
+      },
+    });
+    const pendingMessages: Array<{ data: RawData; isBinary: boolean }> = [];
+    let closing = false;
+
+    const closeBoth = (code?: number, reason?: Buffer) => {
+      if (closing) {
+        return;
+      }
+      closing = true;
+      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
+        client.close(code, reason);
+      }
+      if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) {
+        upstream.close(code, reason);
+      }
+    };
+
+    upstream.on('open', () => {
+      while (pendingMessages.length > 0 && upstream.readyState === WebSocket.OPEN) {
+        const message = pendingMessages.shift();
+        if (message) {
+          upstream.send(message.data, { binary: message.isBinary });
+        }
+      }
+    });
+    upstream.on('message', (data, isBinary) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(data, { binary: isBinary });
+      }
+    });
+    upstream.on('error', (error) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(JSON.stringify({
+          type: 'Error',
+          message: `Deepgram streaming connection failed: ${error.message}`,
+        }));
+      }
+      closeBoth(1011);
+    });
+    upstream.on('close', (code, reason) => {
+      closeBoth(code, reason);
+    });
+
+    client.on('message', (data, isBinary) => {
+      if (upstream.readyState === WebSocket.OPEN) {
+        upstream.send(data, { binary: isBinary });
+        return;
+      }
+      if (upstream.readyState === WebSocket.CONNECTING) {
+        pendingMessages.push({ data, isBinary });
+      }
+    });
+    client.on('error', () => {
+      closeBoth(1011);
+    });
+    client.on('close', (code, reason) => {
+      closeBoth(code, reason);
+    });
   }
 
   private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -672,6 +831,61 @@ function writeSseEvent(
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function writeRawHttpError(socket: Duplex, statusCode: number, message: string): void {
+  if (!socket.writable) {
+    socket.destroy();
+    return;
+  }
+
+  const body = JSON.stringify({
+    ok: false,
+    error: {
+      message,
+      code: 'ERR_REMOTE_DAEMON_WEBSOCKET_FAILED',
+    },
+  });
+  socket.write(
+    `HTTP/1.1 ${statusCode} ${getHttpStatusText(statusCode)}\r\n` +
+    'Content-Type: application/json; charset=utf-8\r\n' +
+    `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+    'Connection: close\r\n' +
+    '\r\n' +
+    body,
+  );
+  socket.destroy();
+}
+
+function getHttpStatusText(statusCode: number): string {
+  switch (statusCode) {
+    case 401:
+      return 'Unauthorized';
+    case 403:
+      return 'Forbidden';
+    case 500:
+      return 'Internal Server Error';
+    case 503:
+      return 'Service Unavailable';
+    default:
+      return 'Error';
+  }
+}
+
+function buildDeepgramListenUrl(): string {
+  const url = new URL(DEEPGRAM_LISTEN_ENDPOINT);
+  url.searchParams.set('model', 'nova-3');
+  url.searchParams.set('language', 'en-US');
+  url.searchParams.set('smart_format', 'true');
+  url.searchParams.set('punctuate', 'true');
+  url.searchParams.set('interim_results', 'true');
+  url.searchParams.set('endpointing', '300');
+  url.searchParams.set('vad_events', 'true');
+  url.searchParams.set('tag', 'pane-pwa-voice');
+  for (const term of DEEPGRAM_STREAMING_KEYTERMS) {
+    url.searchParams.append('keyterm', term);
+  }
+  return url.toString();
+}
+
 function getClientLabelFromHeaders(request: IncomingMessage): string | null {
   return getSingleHeaderValue(request.headers['x-pane-client-label']);
 }
@@ -726,6 +940,10 @@ function getSingleString(value: string | null | undefined): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function firstNonEmpty(...values: Array<string | undefined>): string | undefined {
+  return values.map(value => value?.trim()).find(Boolean);
 }
 
 function isRemoteInvokeRequest(value: unknown): value is RemoteInvokeRequest {

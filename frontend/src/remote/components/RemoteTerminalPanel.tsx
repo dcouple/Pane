@@ -67,6 +67,7 @@ export function RemoteTerminalPanel({
         onOpenShortcuts={onRefreshShortcuts}
         onResetTerminal={resetTerminal}
         onTranscribeAudio={(request) => adapter.transcribeVoice(request)}
+        onCreateStreamingSocket={() => adapter.createDeepgramStreamingSocket()}
         onGetDeepgramToken={() => adapter.getDeepgramStreamingToken()}
         onFinalizeStreamingAudio={(request) => adapter.finalizeStreamingVoice(request)}
         onSendInput={(data) => {

@@ -52,6 +52,7 @@ export interface DeepgramTranscriptUpdate {
 export type DeepgramLiveMessage =
   | { type: 'transcript'; update: DeepgramTranscriptUpdate }
   | { type: 'metadata'; metadata: VoiceDeepgramStreamingMetadata }
+  | { type: 'error'; message: string }
   | { type: 'other' };
 
 export function buildDeepgramListenUrl(keyterms = DEEPGRAM_STREAMING_KEYTERMS): string {
@@ -105,6 +106,16 @@ export function parseDeepgramLiveMessage(data: string): DeepgramLiveMessage {
         requestId: typeof record.request_id === 'string' ? record.request_id : undefined,
         duration: typeof record.duration === 'number' ? record.duration : undefined,
       },
+    };
+  }
+
+  if (record.type === 'Error') {
+    const message = typeof record.message === 'string' && record.message.trim()
+      ? record.message.trim()
+      : 'Deepgram live transcription failed.';
+    return {
+      type: 'error',
+      message,
     };
   }
 

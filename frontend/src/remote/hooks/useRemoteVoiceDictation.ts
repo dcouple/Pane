@@ -31,6 +31,7 @@ interface UseRemoteVoiceDictationOptions {
   mode: VoiceTranscriptionMode;
   onTranscript: (text: string) => void;
   onTranscribeAudio?: (request: VoiceTranscriptionRequest) => Promise<VoiceTranscriptionResult>;
+  onCreateStreamingSocket?: () => WebSocket;
   onGetDeepgramToken?: () => Promise<VoiceDeepgramTokenResult>;
   onFinalizeStreamingAudio?: (request: VoiceStreamingFinalizeRequest) => Promise<VoiceTranscriptionResult>;
 }
@@ -52,6 +53,7 @@ export function useRemoteVoiceDictation({
   mode,
   onTranscript,
   onTranscribeAudio,
+  onCreateStreamingSocket,
   onGetDeepgramToken,
   onFinalizeStreamingAudio,
 }: UseRemoteVoiceDictationOptions): UseRemoteVoiceDictationResult {
@@ -219,6 +221,10 @@ export function useRemoteVoiceDictation({
       deepgramMetadataRef.current = mergeDeepgramMetadata(deepgramMetadataRef.current, message.metadata);
       return;
     }
+    if (message.type === 'error') {
+      setError(message.message);
+      return;
+    }
     if (message.type !== 'transcript') {
       return;
     }
@@ -239,7 +245,7 @@ export function useRemoteVoiceDictation({
   }, []);
 
   const startStreaming = useCallback(async () => {
-    if (!onGetDeepgramToken || !onFinalizeStreamingAudio) {
+    if ((!onCreateStreamingSocket && !onGetDeepgramToken) || !onFinalizeStreamingAudio) {
       setError('Live voice transcription is unavailable.');
       return;
     }
@@ -254,8 +260,16 @@ export function useRemoteVoiceDictation({
     try {
       const selectedMimeType = selectRecordingMimeType();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const token = await onGetDeepgramToken();
-      const socket = await openDeepgramSocket(token.accessToken, handleDeepgramMessage);
+      let socket: WebSocket;
+      if (onCreateStreamingSocket) {
+        socket = await openStreamingSocket(onCreateStreamingSocket(), handleDeepgramMessage);
+      } else {
+        if (!onGetDeepgramToken) {
+          throw new Error('Live voice transcription is unavailable.');
+        }
+        const token = await onGetDeepgramToken();
+        socket = await openDeepgramSocket(token.accessToken, handleDeepgramMessage);
+      }
       const recorder = selectedMimeType
         ? new MediaRecorder(stream, { mimeType: selectedMimeType })
         : new MediaRecorder(stream);
@@ -295,7 +309,7 @@ export function useRemoteVoiceDictation({
       setActiveMode(null);
       setError(getVoiceErrorMessage(err));
     }
-  }, [handleDeepgramMessage, onFinalizeStreamingAudio, onGetDeepgramToken, resetStreamingState, stopMediaStream]);
+  }, [handleDeepgramMessage, onCreateStreamingSocket, onFinalizeStreamingAudio, onGetDeepgramToken, resetStreamingState, stopMediaStream]);
 
   const stopStreaming = useCallback(async () => {
     const socket = socketRef.current;
@@ -461,8 +475,14 @@ function openDeepgramSocket(
   accessToken: string,
   onMessage: (data: string) => void,
 ): Promise<WebSocket> {
+  return openStreamingSocket(new WebSocket(buildDeepgramListenUrl(), [DEEPGRAM_AUTH_PROTOCOL, accessToken]), onMessage);
+}
+
+function openStreamingSocket(
+  socket: WebSocket,
+  onMessage: (data: string) => void,
+): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(buildDeepgramListenUrl(), [DEEPGRAM_AUTH_PROTOCOL, accessToken]);
     const timeout = window.setTimeout(() => {
       socket.close();
       reject(new Error('Timed out connecting to Deepgram live transcription.'));

@@ -22,6 +22,7 @@ interface RemoteTerminalInputBarProps {
   onResetTerminal: () => void;
   onSendInput: (data: string) => void;
   onTranscribeAudio?: (request: VoiceTranscriptionRequest) => Promise<VoiceTranscriptionResult>;
+  onCreateStreamingSocket?: () => WebSocket;
   onGetDeepgramToken?: () => Promise<VoiceDeepgramTokenResult>;
   onFinalizeStreamingAudio?: (request: VoiceStreamingFinalizeRequest) => Promise<VoiceTranscriptionResult>;
 }
@@ -57,6 +58,7 @@ export function RemoteTerminalInputBar({
   onResetTerminal,
   onSendInput,
   onTranscribeAudio,
+  onCreateStreamingSocket,
   onGetDeepgramToken,
   onFinalizeStreamingAudio,
 }: RemoteTerminalInputBarProps) {
@@ -83,6 +85,7 @@ export function RemoteTerminalInputBar({
     mode: selectedVoiceMode,
     onTranscript: appendTranscript,
     onTranscribeAudio,
+    onCreateStreamingSocket,
     onGetDeepgramToken,
     onFinalizeStreamingAudio,
   });

@@ -154,6 +154,14 @@ export class RemoteDaemonBrowserClient {
       : new Error('Remote request failed');
   }
 
+  createDeepgramStreamingSocket(): WebSocket {
+    return new WebSocket(this.websocketEndpoint('voice/deepgram-stream', {
+      access_token: this.profile.token,
+      runtime_id: getRuntimeId(),
+      client_label: getClientLabel(),
+    }));
+  }
+
   private async checkHealth(signal: AbortSignal): Promise<void> {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= HEALTH_CHECK_ATTEMPTS; attempt += 1) {
@@ -400,11 +408,17 @@ export class RemoteDaemonBrowserClient {
     }, delay);
   }
 
-  private endpoint(path: 'events' | 'health' | 'invoke', params?: Record<string, string>): string {
+  private endpoint(path: string, params?: Record<string, string>): string {
     const url = new URL(`${this.profile.baseUrl}/${path}`);
     for (const [key, value] of Object.entries(params ?? {})) {
       url.searchParams.set(key, value);
     }
+    return url.toString();
+  }
+
+  private websocketEndpoint(path: string, params?: Record<string, string>): string {
+    const url = new URL(this.endpoint(path, params));
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
     return url.toString();
   }
 

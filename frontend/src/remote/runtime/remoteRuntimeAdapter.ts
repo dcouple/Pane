@@ -109,6 +109,10 @@ export class RemoteRuntimeAdapter {
     return this.invoke<VoiceDeepgramTokenResult>('voice:deepgram-token');
   }
 
+  createDeepgramStreamingSocket(): WebSocket {
+    return this.client.createDeepgramStreamingSocket();
+  }
+
   finalizeStreamingVoice(request: VoiceStreamingFinalizeRequest): Promise<VoiceTranscriptionResult> {
     return this.invoke<VoiceTranscriptionResult>('voice:finalize-streaming', [request]);
   }
