@@ -44,6 +44,9 @@ importers:
       web-streams-polyfill:
         specifier: ^3.3.3
         version: 3.3.3
+      ws:
+        specifier: ^8.20.1
+        version: 8.20.1
     devDependencies:
       '@electron/rebuild':
         specifier: ^4.0.1
