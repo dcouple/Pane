@@ -709,7 +709,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onboarding: {
     detectEnvironment: (): Promise<IPCResponse> => invokeIpc('onboarding:detect-environment'),
     setupDefaultRepo: (): Promise<IPCResponse> => invokeIpc('onboarding:setup-default-repo'),
-    starRepo: (): Promise<IPCResponse> => invokeIpc('onboarding:star-repo'),
+    supportProject: (): Promise<IPCResponse> => invokeIpc('onboarding:support-project'),
   },
 
   // UI State management

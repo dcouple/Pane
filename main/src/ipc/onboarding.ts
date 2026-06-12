@@ -15,6 +15,7 @@ function shellExecOpts(extra?: Record<string, unknown>): Record<string, unknown>
 
 const PANE_REPO = 'dcouple/Pane';
 const PANE_REPO_URL = `https://github.com/${PANE_REPO}.git`;
+const SUPPORT_GITHUB_USER = 'parsakhaz';
 
 interface EnvironmentInfo {
   gitInstalled: boolean;
@@ -50,6 +51,24 @@ function detectEnvironment(): EnvironmentInfo {
   }
 
   return result;
+}
+
+function starPaneRepo(): boolean {
+  try {
+    execSync(`gh api -X PUT /user/starred/${PANE_REPO}`, shellExecOpts({ stdio: 'ignore', timeout: 15000 }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function followSupportUser(): boolean {
+  try {
+    execSync(`gh api -X PUT /user/following/${SUPPORT_GITHUB_USER}`, shellExecOpts({ stdio: 'ignore', timeout: 15000 }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Checks that the path is a git repo related to dcouple/Pane (canonical or a fork cloned via `gh repo clone`). */
@@ -254,19 +273,21 @@ export function registerOnboardingHandlers(ipcMain: IpcMain, services: AppServic
     }
   });
 
-  // Star the Pane repo via gh API
-  ipcMain.handle('onboarding:star-repo', async () => {
-    try {
-      execSync(`gh api -X PUT /user/starred/${PANE_REPO}`, shellExecOpts({ stdio: 'ignore', timeout: 15000 }));
+  // Support Pane via gh API: star the repo and follow the maintainer.
+  ipcMain.handle('onboarding:support-project', async () => {
+    const results = {
+      starred: starPaneRepo(),
+      followed: followSupportUser(),
+    };
 
+    if (results.starred || results.followed) {
       if (analyticsManager) {
-        analyticsManager.track('onboarding_repo_starred');
+        analyticsManager.track('onboarding_project_supported', results);
       }
 
-      return { success: true, data: { method: 'api' } };
-    } catch {
-      // gh api failed — frontend should fall back to opening browser
-      return { success: false, error: 'gh_api_failed' };
+      return { success: true, data: results };
     }
+
+    return { success: false, error: 'gh_api_failed', data: results };
   });
 }

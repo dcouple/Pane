@@ -69,6 +69,7 @@ function App() {
   const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [hasCheckedOnboarding, setHasCheckedOnboarding] = useState(false);
+  const [completedOnboardingThisSession, setCompletedOnboardingThisSession] = useState(false);
   const analyticsCheckStarted = useRef(false);
   const onboardingCheckStarted = useRef(false);
 
@@ -409,7 +410,7 @@ function App() {
       let welcomeScreenShown = false;
       
       // If user explicitly said "don't show again", respect that preference
-      if (hideWelcome) {
+      if (hideWelcome || completedOnboardingThisSession) {
         welcomeScreenShown = false;
       } else {
         try {
@@ -485,7 +486,7 @@ function App() {
     // Set the flag first to prevent re-runs
     setHasCheckedWelcome(true);
     checkInitialState();
-  }, [isLoaded, isAnalyticsConsentOpen, hasCheckedOnboarding, isOnboardingOpen]);
+  }, [isLoaded, isAnalyticsConsentOpen, hasCheckedOnboarding, isOnboardingOpen, completedOnboardingThisSession]);
 
   // Discord popup logic is now combined with welcome screen logic above
 
@@ -640,6 +641,7 @@ function App() {
         <OnboardingDialog
           isOpen={isOnboardingOpen}
           onClose={() => {
+            setCompletedOnboardingThisSession(true);
             setIsOnboardingOpen(false);
             window.dispatchEvent(new Event('project-changed'));
           }}

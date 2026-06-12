@@ -231,7 +231,7 @@ export async function installElectronApiMock(page: Page) {
       onboarding: namespace({
         detectEnvironment: () => success({}),
         setupDefaultRepo: () => success({}),
-        starRepo: () => success({}),
+        supportProject: () => success({}),
       }),
       panels: namespace({
         getSessionPanels: () => success([]),

@@ -437,7 +437,7 @@ interface ElectronAPI {
   onboarding: {
     detectEnvironment: () => Promise<IPCResponse>;
     setupDefaultRepo: () => Promise<IPCResponse>;
-    starRepo: () => Promise<IPCResponse>;
+    supportProject: () => Promise<IPCResponse>;
   };
 
   // Spotlight
