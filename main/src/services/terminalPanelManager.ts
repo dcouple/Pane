@@ -49,6 +49,8 @@ class PtyHandleShim implements pty.IPty {
   handleFlowControl = false;
   readonly ptyId: string;
   private readonly handle: PtyHandleLike;
+  /** Monotonic resize ordinal; only the latest call may confirm cols/rows. */
+  private resizeSeq = 0;
 
   constructor(handle: PtyHandleLike, cols: number, rows: number) {
     this.handle = handle;
@@ -74,9 +76,17 @@ class PtyHandleShim implements pty.IPty {
   };
 
   resize(columns: number, rows: number): void {
-    this.cols = columns;
-    this.rows = rows;
-    this.handle.resize(columns, rows).catch((err: unknown) => {
+    // Confirm dims only after the async host resize succeeds so dedupe never
+    // compares against an unconfirmed size. The sequence check stops an older
+    // in-flight resize from overwriting a newer confirmed size when promises
+    // resolve out of order.
+    const seq = ++this.resizeSeq;
+    this.handle.resize(columns, rows).then(() => {
+      if (seq === this.resizeSeq) {
+        this.cols = columns;
+        this.rows = rows;
+      }
+    }).catch((err: unknown) => {
       console.warn('[ptyHost] resize failed', err);
     });
   }
@@ -1142,22 +1152,25 @@ export class TerminalPanelManager {
       return;
     }
 
-    // Reject unreasonably small dimensions (likely from hidden container)
-    if (cols < 20 || rows < 5) {
+    // Reject non-integers (NaN/Infinity/floats) and mid-layout garbage
+    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || rows < 5) {
       console.warn(`[TerminalPanelManager] Rejecting invalid resize ${cols}x${rows} for ${panelId}`);
+      return;
+    }
+
+    // Dedupe: avoids ConPTY repaints and redundant WINCH redraws
+    if (terminal.pty.cols === cols && terminal.pty.rows === rows) {
       return;
     }
 
     try {
       terminal.pty.resize(cols, rows);
     } catch (err) {
-      // PTY may have exited between the map lookup and the resize call
+      // A resize failure does not mean the pty died; onExit owns cleanup
       console.warn(`[TerminalPanelManager] Failed to resize terminal ${panelId}:`, err);
-      this.terminals.delete(panelId);
-      this.visibleViewersByPanel.delete(panelId);
       return;
     }
-    
+
     // Update panel state with new dimensions
     const panel = panelManager.getPanel(panelId);
     if (panel) {

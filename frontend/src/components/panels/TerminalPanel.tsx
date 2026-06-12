@@ -59,6 +59,9 @@ const DEFAULT_TERMINAL_FONT_SIZE = 14;
 const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
 const REFOCUS_DELAYED_REFRESH_MS = 300;
 const TERMINAL_VISIBILITY_REFRESH_MS = 60_000;
+const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-layout (Allotment minSize is 120)
+const MIN_PTY_COLS = 20;        // mirrors main-process floor
+const MIN_PTY_ROWS = 5;
 const TERMINAL_VISIBILITY_VIEWER_ID = getTerminalVisibilityViewerId();
 
 function getTerminalVisibilityViewerId(): string {
@@ -381,10 +384,19 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   } = useTerminalSearch(xtermRef);
 
   const resizePtyToFit = useCallback(() => {
-    if (!fitAddonRef.current) return;
+    if (!fitAddonRef.current || !terminalRef.current) return;
+    // Guard before fit(): the renderer grid is the damage point, not just the IPC.
+    // Width only: wrap junk is a cols problem, and a stacked pane at Allotment's
+    // 120px minSize minus tab-bar chrome leaves a legitimately <100px-tall container.
+    const rect = terminalRef.current.getBoundingClientRect();
+    if (rect.width < MIN_VIABLE_RECT_PX) return;
     fitAddonRef.current.fit();
     const dimensions = fitAddonRef.current.proposeDimensions();
-    if (dimensions) {
+    if (
+      dimensions &&
+      Number.isInteger(dimensions.cols) && Number.isInteger(dimensions.rows) &&
+      dimensions.cols >= MIN_PTY_COLS && dimensions.rows >= MIN_PTY_ROWS
+    ) {
       window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
     }
   }, [panel.id]);
@@ -393,6 +405,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const handleRefreshTerminal = useCallback(async () => {
     const terminal = xtermRef.current;
     if (!terminal) return;
+    // Entry guard: never reset+replay into a tiny/unsettled container (width only,
+    // matching resizePtyToFit: height-constrained panes are legitimate layouts)
+    const rect = terminalRef.current?.getBoundingClientRect();
+    if (!rect || rect.width < MIN_VIABLE_RECT_PX) return;
     try {
       const state = await window.electronAPI.invoke('terminal:getState', panel.id);
       if (state?.isAlternateScreen) {
@@ -403,6 +419,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         return;
       }
 
+      // Fit first so reset+replay lands at the settled width, not a stale/tiny grid
+      resizePtyToFit();
       terminal.reset();
       if (state?.scrollbackBuffer) {
         const content = typeof state.scrollbackBuffer === 'string'
@@ -412,7 +430,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             : '';
         if (content) terminal.write(content);
       }
-      resizePtyToFit();
+      // The old post-replay fit() invalidated WebGL via a dims change; after reordering
+      // that fit is a same-size no-op, so an explicit refresh is needed for WebGL redraw
+      if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
     } catch (e) {
       console.warn('[TerminalPanel] Failed to refresh terminal:', e);
     }
@@ -1256,25 +1276,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             }
           });
 
-          // Handle resize
-          // Debounce resize so fit() only fires after transitions settle (300ms sidebar animations)
+          // Handle resize — delegates to the guarded resizePtyToFit (single resize path)
+          // Debounce so fit() only fires after transitions settle (300ms sidebar animations)
           let resizeTimer: ReturnType<typeof setTimeout> | null = null;
           const debouncedResize = () => {
             if (resizeTimer) clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-              if (fitAddon && !disposed && terminalRef.current) {
-                // Skip resize if container is too small (likely hidden via display:none or mid-collapse)
-                const rect = terminalRef.current.getBoundingClientRect();
-                if (rect.width < 100 || rect.height < 100) {
-                  return;
-                }
-
-                fitAddon.fit();
-                const dimensions = fitAddon.proposeDimensions();
-                if (dimensions) {
-                  window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
-                }
-              }
+              if (!disposed) resizePtyToFit();
             }, 150);
           };
 
@@ -1411,11 +1419,19 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
       const containerWidth = terminalRef.current.clientWidth;
 
-      // If width is still changing or zero, the reflow isn't done — retry
-      if ((containerWidth === 0 || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
+      // If width is still changing or below viable threshold, the reflow isn't done — retry
+      if ((containerWidth < MIN_VIABLE_RECT_PX || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
         lastWidth = containerWidth;
         retries++;
         retryTimer = setTimeout(fitAndRefresh, 50);
+        return;
+      }
+
+      // Never settled at a viable size — bail; the ResizeObserver finishes the job once layout settles
+      if (containerWidth < MIN_VIABLE_RECT_PX) {
+        forwardToMainLog('warn', `[TerminalPanel] Activation refresh bailed for panel ${panel.id}: container ${containerWidth}px`);
+        setIsRefreshing(false);
+        if (autoFocus) xtermRef.current?.focus();
         return;
       }
 
@@ -1472,10 +1488,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
 
       const containerWidth = terminalRef.current.clientWidth;
-      if ((containerWidth === 0 || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
+      if ((containerWidth < MIN_VIABLE_RECT_PX || containerWidth !== lastWidth) && retries < MAX_RETRIES) {
         lastWidth = containerWidth;
         retries++;
         retryTimer = setTimeout(fitAndPaint, 50);
+        return;
+      }
+
+      // Never settled at a viable size — bail; the ResizeObserver finishes the job once layout settles
+      if (containerWidth < MIN_VIABLE_RECT_PX) {
+        console.warn(`[TerminalPanel] Activation fit bailed for panel ${panel.id}: container ${containerWidth}px`);
+        if (autoFocus) xtermRef.current?.focus();
         return;
       }
 
