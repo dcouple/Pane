@@ -2,8 +2,12 @@ name: Deploy Remote PWA Preview
 
 on:
   push:
-    branches: [nightly]
+    branches: [main, nightly]
   workflow_dispatch:
+
+concurrency:
+  group: remote-pwa-preview-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

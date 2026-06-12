@@ -1,12 +1,12 @@
 # Self-Hosted Remote Daemon
 
-This guide covers running Pane on your own workstation, Mac mini, Linux box, or VM and connecting to it from the local Pane desktop app.
+This guide covers running Pane on your own workstation, Mac mini, Linux box, or VM and connecting to it from the local Pane desktop app or the Remote Pane browser app.
 
 The intended flow is:
 
 1. Run one setup command on the remote machine.
 2. Copy the generated `pane-remote://...` connection code.
-3. Paste it into local Pane under `Settings > Self-Hosted Remote Daemon > Import Remote Connection`.
+3. Paste it into desktop Pane under `Settings > Remote Pane`, or open `https://runpane.com/app/` and paste it there.
 
 Pane saves the profile and attempts to connect immediately. Local desktop mode is unchanged until a remote profile is imported and activated.
 
@@ -18,16 +18,28 @@ From a source checkout:
 pnpm remote:setup -- --label "VM"
 ```
 
+SSH tunnel mode:
+
+```bash
+pnpm remote:setup -- --label "VM" --prefer-tunnel ssh
+```
+
 For validation against a separate data directory:
 
 ```bash
-PANE_DIR=/tmp/pane-remote-vm pnpm remote:setup -- --label "VM" --print-only
+PANE_DIR=/tmp/pane-remote-vm pnpm remote:setup -- --label "VM" --prefer-tunnel ssh --print-only
 ```
 
 Packaged Pane builds can run the same setup path without opening a window:
 
 ```bash
 pane --remote-setup --label "VM"
+```
+
+If Pane is already installed on the host, this is the most direct command:
+
+```bash
+pane --remote-setup --label "VM" --prefer-tunnel tailscale
 ```
 
 The setup command:
@@ -57,11 +69,31 @@ pnpm remote:setup -- --no-tailscale-serve
 On your local desktop machine:
 
 1. Open Pane.
-2. Go to `Settings > Self-Hosted Remote Daemon`.
+2. Go to `Settings > Remote Pane`.
 3. Paste the full `pane-remote://...` code into `Import Remote Connection`.
 4. Click `Import & Connect`.
 
 If the tunnel is not reachable yet, Pane still saves the profile and shows the connection error. Start the printed SSH/Tailscale tunnel and click `Connect` on the saved profile.
+
+## Use the Mobile / Browser App
+
+The same connection code works in the Remote Pane PWA:
+
+```text
+https://runpane.com/app/
+```
+
+Use the PWA for phone or tablet access to terminal-backed remote sessions:
+
+1. Set up the remote host with Tailscale or a trusted HTTPS tunnel.
+2. Copy the full `pane-remote://...` code printed by setup.
+3. Open `https://runpane.com/app/` on the client device.
+4. Paste the code and connect.
+
+For iPhone or iPad, open the URL in Safari, tap Share, then tap `Add to Home Screen`.
+For Android, open the URL in Chrome, open the browser menu, then tap `Add to Home screen` or `Install app`.
+
+SSH tunnel mode is mainly useful from desktop clients. For mobile browser access, prefer Tailscale or Manual HTTPS so the phone can reach the daemon URL directly.
 
 ## Security Model
 
@@ -103,7 +135,7 @@ Launch Pane on the host against that directory:
 PANE_DIR="$HOME/.pane_remote" pnpm dev
 ```
 
-In `Settings > Self-Hosted Remote Daemon`:
+In `Settings > Remote Pane`:
 
 1. Enable `Enable remote daemon listener`.
 2. Keep `Listen Host` on `127.0.0.1`.
@@ -186,6 +218,5 @@ Some actions operate on the local desktop client machine rather than the remote 
 ## Current Limitations
 
 - No hosted relay, NAT traversal, or account-based multi-tenant auth
-- No web/mobile client in this phase
 - No direct non-loopback listener support
 - No full live remote end-to-end CI harness yet

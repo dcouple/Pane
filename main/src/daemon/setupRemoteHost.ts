@@ -178,7 +178,7 @@ export function formatSetupRemoteHostResult(result: SetupRemoteHostResult): stri
     lines.push('');
   }
 
-  lines.push('Paste the full pane-remote:// code into Pane Settings > Self-Hosted Remote Daemon > Import Remote Connection.');
+  lines.push('Paste the full pane-remote:// code into Settings > Remote Pane in desktop Pane, or into https://runpane.com/app/.');
   return lines.join('\n');
 }
 

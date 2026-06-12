@@ -1381,18 +1381,18 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     <div className="space-y-1">
                       <p className="text-[11px] font-medium text-text-secondary">macOS / Linux</p>
                       <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
-                        curl -fsSL https://runpane.com/install-remote.sh | sh
+                        curl -fsSL https://runpane.com/install-remote.sh | sh -s -- --label "My Server"
                       </code>
                     </div>
                     <div className="space-y-1">
                       <p className="text-[11px] font-medium text-text-secondary">Windows PowerShell</p>
                       <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
-                        irm https://runpane.com/install-remote.ps1 | iex
+                        &amp; ([scriptblock]::Create((irm https://runpane.com/install-remote.ps1))) -Label "My Server"
                       </code>
                     </div>
                   </div>
                   <p className="text-xs text-text-tertiary">
-                    Install Codex, Claude Code, or your preferred CLI agent on the remote host before starting agent panels.
+                    Install Codex, Claude Code, or your preferred CLI agent on the remote host before starting agent panels. For phone access, keep the default Tailscale setup and open runpane.com/app on the phone.
                   </p>
                 </div>
 
