@@ -1473,9 +1473,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Performance mode keeps mounted terminals live, so returning to a panel only
   // needs layout/paint work. Do not reset and replay scrollback here.
+  // The overlay masks the font-swap flash (xterm renders one frame with fallback
+  // monospace before the real terminal font is rasterized after display:none→block).
   useEffect(() => {
     if (useBatterySaverTerminalVisibility) return;
     if (!panelVisible || !isInitialized || !fitAddonRef.current || !xtermRef.current) return;
+
+    setIsRefreshing(true);
 
     let lastWidth = 0;
     let retries = 0;
@@ -1483,6 +1487,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let hideOverlayTimer: ReturnType<typeof setTimeout> | null = null;
 
     const fitAndPaint = () => {
       if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
@@ -1495,21 +1500,27 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         return;
       }
 
-      // Never settled at a viable size — bail; the ResizeObserver finishes the job once layout settles
       if (containerWidth < MIN_VIABLE_RECT_PX) {
         console.warn(`[TerminalPanel] Activation fit bailed for panel ${panel.id}: container ${containerWidth}px`);
+        setIsRefreshing(false);
         if (autoFocus) xtermRef.current?.focus();
         return;
       }
 
-      resizePtyToFit();
-      const terminal = xtermRef.current;
-      if (terminal && terminal.rows > 0) {
-        terminal.refresh(0, terminal.rows - 1);
-      }
-      if (autoFocus) {
-        terminal?.focus();
-      }
+      void document.fonts.ready.then(() => {
+        if (cancelled || !fitAddonRef.current || !xtermRef.current) return;
+        resizePtyToFit();
+        const terminal = xtermRef.current;
+        if (terminal && terminal.rows > 0) {
+          terminal.refresh(0, terminal.rows - 1);
+        }
+        if (autoFocus) {
+          terminal?.focus();
+        }
+        hideOverlayTimer = setTimeout(() => {
+          if (!cancelled) setIsRefreshing(false);
+        }, 32);
+      });
     };
 
     const animationFrame = requestAnimationFrame(fitAndPaint);
@@ -1518,6 +1529,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       cancelled = true;
       cancelAnimationFrame(animationFrame);
       if (retryTimer) clearTimeout(retryTimer);
+      if (hideOverlayTimer) clearTimeout(hideOverlayTimer);
+      setIsRefreshing(false);
     };
   }, [useBatterySaverTerminalVisibility, panelVisible, isInitialized, autoFocus, resizePtyToFit]);
 
