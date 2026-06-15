@@ -143,7 +143,7 @@ export function RemoteConnectionScreen({
               value={code}
               onChange={event => setCode(event.target.value)}
               placeholder="pane-remote://..."
-              className="min-h-32 max-h-52 w-full resize-y rounded-md border border-border-primary bg-bg-secondary p-3 font-mono text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-border-focus"
+              className="ph-no-capture min-h-32 max-h-52 w-full resize-y rounded-md border border-border-primary bg-bg-secondary p-3 font-mono text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-border-focus"
             />
 
             {(error || clipboardError) && (

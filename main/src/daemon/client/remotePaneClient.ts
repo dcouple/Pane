@@ -6,6 +6,8 @@ import { isIP, type LookupFunction } from 'net';
 import { hostname as getOsHostname } from 'os';
 import { noopPaneEventSink, type PaneEventSink } from '../../core/eventSink';
 import type { ConfigManager } from '../../services/configManager';
+import type { AnalyticsManager } from '../../services/analyticsManager';
+import { getRemoteFailureCategory, trackRemotePaneEvent } from '../../services/remoteAnalytics';
 import { isPaneDaemonEventChannel } from '../server';
 import {
   createDefaultRemotePaneConnectionState,
@@ -451,14 +453,17 @@ export class RemotePaneClient {
 interface RemotePaneClientControllerOptions {
   configManager: ConfigManager;
   rendererEventSink: PaneEventSink;
+  analyticsManager?: Pick<AnalyticsManager, 'track'>;
 }
 
 export class RemotePaneClientController extends EventEmitter {
   private configManager: ConfigManager | null = null;
   private rendererEventSink: PaneEventSink = noopPaneEventSink;
+  private analyticsManager: Pick<AnalyticsManager, 'track'> | undefined;
   private activeClient: RemotePaneClient | null = null;
   private state = createDefaultRemotePaneConnectionState();
   private configListenerAttached = false;
+  private remoteRuntimeUsageTracked = false;
 
   private readonly configUpdatedListener = () => {
     void this.syncToConfig().catch((error) => {
@@ -479,6 +484,7 @@ export class RemotePaneClientController extends EventEmitter {
 
     this.configManager = options.configManager;
     this.rendererEventSink = options.rendererEventSink;
+    this.analyticsManager = options.analyticsManager;
     this.configManager.on('config-updated', this.configUpdatedListener);
     this.configListenerAttached = true;
 
@@ -513,7 +519,20 @@ export class RemotePaneClientController extends EventEmitter {
       throw new Error(this.state.lastError ?? 'Remote Pane client is not connected');
     }
 
-    return this.activeClient.invoke(channel, args);
+    const result = await this.activeClient.invoke(channel, args);
+    if (!this.remoteRuntimeUsageTracked) {
+      this.remoteRuntimeUsageTracked = true;
+      trackRemotePaneEvent(this.analyticsManager, 'remote_pane_remote_runtime_used', {
+        surface: 'desktop',
+        role: 'client',
+        flow: 'usage',
+        result: 'succeeded',
+        connection_mode: 'remote',
+        client_kind: 'desktop',
+        remote_runtime_used: true,
+      });
+    }
+    return result;
   }
 
   async activateProfile(profile: RemotePaneConnectionProfile): Promise<RemotePaneConnectionState> {
@@ -581,10 +600,40 @@ export class RemotePaneClientController extends EventEmitter {
     options: RemotePaneClientConnectOptions,
   ): Promise<void> {
     await this.disconnectActiveClient();
+    trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_connect_started', {
+      surface: 'desktop',
+      role: 'client',
+      flow: 'connect',
+      result: 'started',
+      connection_mode: 'remote',
+      tunnel_kind: profile.tunnel?.kind ?? 'unknown',
+      client_kind: 'desktop',
+    });
 
     const client = new RemotePaneClient(profile, {
       eventSink: this.rendererEventSink,
       onConnectionStateChange: (status, errorMessage, metadata) => {
+        if (status === 'connected') {
+          trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_connected', {
+            surface: 'desktop',
+            role: 'client',
+            flow: 'connect',
+            result: 'succeeded',
+            connection_mode: 'remote',
+            tunnel_kind: profile.tunnel?.kind ?? 'unknown',
+            client_kind: 'desktop',
+          });
+        } else if (status === 'error') {
+          trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_connection_failed', {
+            surface: 'desktop',
+            role: 'client',
+            flow: 'connect',
+            result: 'failed',
+            failure_stage: 'remote_client_state',
+            failure_category: getRemoteFailureCategory(errorMessage),
+            client_kind: 'desktop',
+          });
+        }
         this.setConnectionState({
           mode: 'remote',
           status,
@@ -616,6 +665,15 @@ export class RemotePaneClientController extends EventEmitter {
       });
     } catch (error) {
       if (options.retryOnInitialFailure && this.activeClient === client) {
+        trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_connection_failed', {
+          surface: 'desktop',
+          role: 'client',
+          flow: 'connect',
+          result: 'failed',
+          failure_stage: 'initial_connect_retrying',
+          failure_category: getRemoteFailureCategory(error),
+          client_kind: 'desktop',
+        });
         this.setConnectionState({
           mode: 'remote',
           status: 'reconnecting',
@@ -634,6 +692,15 @@ export class RemotePaneClientController extends EventEmitter {
         }
         await client.disconnect();
       }
+      trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_connection_failed', {
+        surface: 'desktop',
+        role: 'client',
+        flow: 'connect',
+        result: 'failed',
+        failure_stage: 'initial_connect',
+        failure_category: getRemoteFailureCategory(error),
+        client_kind: 'desktop',
+      });
       this.setConnectionState({
         mode: 'remote',
         status: 'error',
@@ -652,6 +719,14 @@ export class RemotePaneClientController extends EventEmitter {
     this.activeClient = null;
     if (client) {
       await client.disconnect();
+      trackRemotePaneEvent(this.analyticsManager, 'remote_pane_client_disconnected', {
+        surface: 'desktop',
+        role: 'client',
+        flow: 'connect',
+        result: 'succeeded',
+        connection_mode: 'local',
+        client_kind: 'desktop',
+      });
     }
   }
 

@@ -64,6 +64,58 @@ App version should come from the running app context and be attached to consent,
 first-open, usage, attribution, and close events. This lets PostHog distinguish
 current users from older installs.
 
+## Remote Pane Privacy
+
+Remote Pane analytics must use explicit sanitized events. Do not rely on
+autocapture for Remote Pane connection-code, token, host, or command surfaces.
+Any UI that renders or accepts `pane-remote://` codes, remote access tokens, or
+remote setup commands must include `ph-no-capture`.
+
+Remote Pane events must never include:
+
+- connection codes
+- bearer tokens
+- token hashes
+- base URLs
+- hostnames or IP addresses
+- profile labels
+- client labels
+- device labels
+- raw error messages
+- local paths or Pane data directories
+- remote runtime ids
+
+Allowed properties should stay enum-like: `surface`, `role`, `flow`, `result`,
+`tunnel_preference`, `tunnel_kind`, `data_mode`, `client_kind`,
+`connection_mode`, `failure_stage`, `failure_category`, and connected-client
+count buckets.
+
+## Remote Pane Event Catalog
+
+| Event | Primary source | Funnel role |
+|---|---|---|
+| `remote_pane_host_setup_started` | `main/src/ipc/remoteDaemon.ts` | Host setup started |
+| `remote_pane_host_setup_succeeded` | `main/src/ipc/remoteDaemon.ts` | Host setup completed |
+| `remote_pane_host_setup_failed` | `main/src/ipc/remoteDaemon.ts`, `main/src/daemon/remoteTransportController.ts` | Host setup or transport failed |
+| `remote_pane_setup_terminal_opened` | `main/src/ipc/remoteDaemon.ts` | Setup command opened in terminal |
+| `remote_pane_connection_code_created` | `main/src/ipc/remoteDaemon.ts` | Host code created |
+| `remote_pane_connection_code_copied` | `frontend/src/components/Settings.tsx` | Host code copied |
+| `remote_pane_connection_pair_created` | `main/src/ipc/remoteDaemon.ts` | Advanced paired profile created |
+| `remote_pane_connection_code_imported` | `main/src/ipc/remoteDaemon.ts` | Client imported code |
+| `remote_pane_connection_code_import_failed` | `main/src/ipc/remoteDaemon.ts` | Client import failed |
+| `remote_pane_client_connect_started` | `main/src/daemon/client/remotePaneClient.ts` | Desktop client connection started |
+| `remote_pane_client_connected` | `main/src/daemon/client/remotePaneClient.ts`, `main/src/daemon/httpApiServer.ts` | Desktop client connected |
+| `remote_pane_client_connection_failed` | `main/src/daemon/client/remotePaneClient.ts`, `main/src/ipc/remoteDaemon.ts` | Desktop client connection failed |
+| `remote_pane_client_disconnected` | `main/src/daemon/client/remotePaneClient.ts`, `main/src/daemon/httpApiServer.ts` | Desktop client disconnected |
+| `remote_pane_profile_deleted` | `main/src/ipc/remoteDaemon.ts` | Client profile removed |
+| `remote_pane_host_access_cleared` | `main/src/ipc/remoteDaemon.ts` | Host access revoked |
+| `remote_pane_host_clients_disconnected` | `main/src/ipc/remoteDaemon.ts` | Host disconnected clients |
+| `remote_pane_host_transport_started` | `main/src/daemon/remoteTransportController.ts` | Host transport live |
+| `remote_pane_host_transport_stopped` | `main/src/daemon/remoteTransportController.ts` | Host transport stopped |
+| `remote_pane_pwa_client_connected` | `main/src/daemon/httpApiServer.ts` | Browser/PWA client connected |
+| `remote_pane_pwa_client_disconnected` | `main/src/daemon/httpApiServer.ts` | Browser/PWA client disconnected |
+| `remote_pane_remote_runtime_used` | `main/src/daemon/client/remotePaneClient.ts` | Remote runtime actually used |
+
 ## Test Coverage
 
 Changes to consent, analytics config, or first-run event ordering should update

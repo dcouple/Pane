@@ -45,6 +45,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   remotePaneClientController.initialize({
     configManager: services.configManager,
     rendererEventSink,
+    analyticsManager: services.analyticsManager,
   });
   const bridgeRouter = createDaemonBridgeRouter(commandRegistry);
 

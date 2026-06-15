@@ -5,6 +5,7 @@ import { API } from '../utils/api';
 import {
   aliasWebVisitor,
   aliasWebVisitorDirect,
+  capture,
   captureAndOptOut,
   captureUnconditionally,
   discardPendingEvents,
@@ -634,6 +635,12 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     }
     try {
       await navigator.clipboard.writeText(remoteSetupResult.connectionCode);
+      capture('remote_pane_connection_code_copied', {
+        surface: 'desktop',
+        role: 'host',
+        flow: 'setup',
+        result: 'succeeded',
+      });
       setRemoteSetupCopyResult('Copied connection code.');
     } catch {
       setError('Failed to copy connection code');
@@ -647,6 +654,12 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     }
     try {
       await navigator.clipboard.writeText(connectionCode);
+      capture('remote_pane_connection_code_copied', {
+        surface: 'desktop',
+        role: 'host',
+        flow: 'setup',
+        result: 'succeeded',
+      });
       setRemoteSetupCopyResult('Copied connection code.');
     } catch {
       setError('Failed to copy connection code');
@@ -667,6 +680,12 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setRemoteHostConnectionCode(response.data.connectionCode);
       try {
         await navigator.clipboard.writeText(response.data.connectionCode);
+        capture('remote_pane_connection_code_copied', {
+          surface: 'desktop',
+          role: 'host',
+          flow: 'setup',
+          result: 'succeeded',
+        });
         setRemoteSetupCopyResult('Created and copied connection code.');
       } catch {
         setRemoteSetupCopyResult('Connection code ready. Click the code to copy it.');
@@ -1331,7 +1350,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 )}
 
                 {remoteSetupResult && (
-                  <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-3">
+                  <div className="ph-no-capture p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-text-primary">Connection code ready</p>
@@ -1356,6 +1375,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       rows={3}
                       readOnly
                       fullWidth
+                      className="ph-no-capture"
                     />
                     {remoteSetupCopyResult && (
                       <p className="text-xs text-status-success">{remoteSetupCopyResult}</p>
@@ -1383,6 +1403,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         rows={2}
                         readOnly
                         fullWidth
+                        className="ph-no-capture"
                       />
                     )}
                     {remoteSetupFallbackCommands.length > 0 && (
@@ -1393,6 +1414,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         rows={Math.min(3, remoteSetupFallbackCommands.length)}
                         readOnly
                         fullWidth
+                        className="ph-no-capture"
                       />
                     )}
                     {remoteSetupResult.dataDirectoryMode === 'isolated' && !remoteSetupResult.service.started && (
@@ -1403,6 +1425,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                         rows={2}
                         readOnly
                         fullWidth
+                        className="ph-no-capture"
                       />
                     )}
                   </div>
@@ -1527,6 +1550,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     placeholder="pane-remote://..."
                     rows={2}
                     fullWidth
+                    className="ph-no-capture"
                   />
                   <Button
                     type="button"
@@ -2161,6 +2185,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                     placeholder="pane-remote://..."
                     rows={3}
                     fullWidth
+                    className="ph-no-capture"
                   />
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -2349,7 +2374,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                       </Button>
                     </div>
                     {remoteCreatedToken && (
-                      <div className="p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-2">
+                      <div className="ph-no-capture p-3 rounded-lg bg-surface-secondary border border-border-secondary space-y-2">
                         <p className="text-sm font-medium text-text-primary">Latest generated remote token</p>
                         <Textarea
                           value={remoteCreatedToken}
@@ -2357,6 +2382,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                           rows={2}
                           readOnly
                           fullWidth
+                          className="ph-no-capture"
                         />
                         <p className="text-xs text-text-tertiary">
                           Use this token when creating a matching remote profile on another client machine.

@@ -209,7 +209,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const commandRegistry = registerIpcHandlers(services);
 
   let paneDaemonServer: PaneDaemonServer | null = null;
-  const remoteTransportController = new PaneRemoteTransportController(commandRegistry, configManager);
+  const remoteTransportController = new PaneRemoteTransportController(commandRegistry, configManager, analyticsManager);
   try {
     paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
     await paneDaemonServer.start();
