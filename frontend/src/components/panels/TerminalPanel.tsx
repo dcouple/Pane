@@ -54,6 +54,12 @@ interface TerminalRestoreState {
   cursorY?: number;
 }
 
+interface TerminalScrollAnchor {
+  distanceFromBottom: number;
+  wasNearBottom: boolean;
+  visibleLines: Array<{ offset: number; text: string }>;
+}
+
 const DEFAULT_TERMINAL_FONT_FAMILY = 'Geist Mono';
 const DEFAULT_TERMINAL_FONT_SIZE = 14;
 const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
@@ -63,6 +69,8 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
+const SCROLL_ANCHOR_VISIBLE_ROWS = 8;
+const MIN_SCROLL_ANCHOR_TEXT_LENGTH = 8;
 const TERMINAL_VISIBILITY_VIEWER_ID = getTerminalVisibilityViewerId();
 
 function getTerminalVisibilityViewerId(): string {
@@ -94,6 +102,52 @@ function waitForNextPaint(): Promise<void> {
       requestAnimationFrame(() => resolve());
     });
   });
+}
+
+function normalizeTerminalAnchorText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function captureTerminalScrollAnchor(terminal: Terminal, isNearBottom: boolean): TerminalScrollAnchor {
+  const buffer = terminal.buffer.active;
+  const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
+  const wasNearBottom = isNearBottom || distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_ROWS;
+  const visibleLines: TerminalScrollAnchor['visibleLines'] = [];
+  const endRow = Math.min(buffer.length, buffer.viewportY + terminal.rows);
+
+  for (let row = buffer.viewportY; row < endRow && visibleLines.length < SCROLL_ANCHOR_VISIBLE_ROWS; row++) {
+    const text = normalizeTerminalAnchorText(buffer.getLine(row)?.translateToString(true) ?? '');
+    if (text.length >= MIN_SCROLL_ANCHOR_TEXT_LENGTH) {
+      visibleLines.push({ offset: row - buffer.viewportY, text });
+    }
+  }
+
+  return { distanceFromBottom, wasNearBottom, visibleLines };
+}
+
+function findTerminalAnchorLine(terminal: Terminal, anchor: TerminalScrollAnchor): number | null {
+  const buffer = terminal.buffer.active;
+  if (anchor.visibleLines.length === 0) return null;
+
+  const fallbackTarget = Math.max(0, buffer.baseY - anchor.distanceFromBottom);
+  const search = (start: number, end: number): number | null => {
+    for (const visibleLine of anchor.visibleLines) {
+      for (let row = start; row < end; row++) {
+        const text = normalizeTerminalAnchorText(buffer.getLine(row)?.translateToString(true) ?? '');
+        if (
+          text.length >= MIN_SCROLL_ANCHOR_TEXT_LENGTH &&
+          (text.includes(visibleLine.text) || visibleLine.text.includes(text))
+        ) {
+          return Math.max(0, row - visibleLine.offset);
+        }
+      }
+    }
+    return null;
+  };
+
+  const localStart = Math.max(0, fallbackTarget - 300);
+  const localEnd = Math.min(buffer.length, fallbackTarget + terminal.rows + 300);
+  return search(localStart, localEnd) ?? search(0, buffer.length);
 }
 
 export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
@@ -411,7 +465,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   }, [panel.id]);
 
   // Refresh terminal: normal shells replay raw scrollback; live TUIs repaint via resize.
-  const handleRefreshTerminal = useCallback(async () => {
+  const handleRefreshTerminal = useCallback(async (scrollAnchor?: TerminalScrollAnchor) => {
     const terminal = xtermRef.current;
     if (!terminal) return;
     // Entry guard: never reset+replay into a tiny/unsettled container (width only,
@@ -419,14 +473,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     const rect = terminalRef.current?.getBoundingClientRect();
     if (!rect || rect.width < MIN_VIABLE_RECT_PX) return;
     try {
-      const scrollSnapshot = (() => {
-        const buffer = terminal.buffer.active;
-        const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
-        return {
-          distanceFromBottom,
-          wasNearBottom: isNearBottomRef.current || distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_ROWS,
-        };
-      })();
+      const scrollSnapshot = scrollAnchor ?? captureTerminalScrollAnchor(terminal, isNearBottomRef.current);
       const restoreScrollPosition = () => {
         if (scrollSnapshot.wasNearBottom) {
           terminal.scrollToBottom();
@@ -435,7 +482,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           return;
         }
 
-        const targetLine = Math.max(0, terminal.buffer.active.baseY - scrollSnapshot.distanceFromBottom);
+        const contentAnchorLine = findTerminalAnchorLine(terminal, scrollSnapshot);
+        const targetLine = contentAnchorLine ?? Math.max(0, terminal.buffer.active.baseY - scrollSnapshot.distanceFromBottom);
         terminal.scrollToLine(targetLine);
         isNearBottomRef.current = false;
         setShowScrollDown(true);
@@ -1482,7 +1530,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
       // Container stable — full refresh (reset + rewrite scrollback + fit)
       // This is what the manual "Refresh terminal" button does and makes TUI apps repaint correctly
-      await handleRefreshTerminal();
+      const scrollAnchor = captureTerminalScrollAnchor(xtermRef.current, isNearBottomRef.current);
+      await handleRefreshTerminal(scrollAnchor);
       await waitForNextPaint();
 
       if (cancelled) return;
@@ -1494,7 +1543,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       delayedRefreshTimer = setTimeout(() => {
         if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
         forwardToMainLog('info', `[TerminalPanel] Delayed refocus refresh for panel ${panel.id}`);
-        void handleRefreshTerminal();
+        void handleRefreshTerminal(scrollAnchor);
       }, REFOCUS_DELAYED_REFRESH_MS);
 
       hideOverlayTimer = setTimeout(() => {
@@ -1553,7 +1602,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       void document.fonts.ready.then(async () => {
         if (cancelled || !fitAddonRef.current || !xtermRef.current) return;
 
-        await handleRefreshTerminal();
+        const scrollAnchor = captureTerminalScrollAnchor(xtermRef.current, isNearBottomRef.current);
+        await handleRefreshTerminal(scrollAnchor);
         await waitForNextPaint();
         if (cancelled) return;
 
@@ -1564,7 +1614,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         delayedRefreshTimer = setTimeout(() => {
           if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
           forwardToMainLog('info', `[TerminalPanel] Delayed performance-mode activation refresh for panel ${panel.id}`);
-          void handleRefreshTerminal();
+          void handleRefreshTerminal(scrollAnchor);
         }, REFOCUS_DELAYED_REFRESH_MS);
 
         hideOverlayTimer = setTimeout(() => {
@@ -1637,7 +1687,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       {isInitialized && (
         <div className="absolute -top-0.5 right-2 z-30 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover/terminal:opacity-100 group-hover/terminal:pointer-events-auto transition-opacity">
           <button
-            onClick={handleRefreshTerminal}
+            onClick={() => {
+              void handleRefreshTerminal();
+            }}
             className="p-0.5 rounded bg-surface-secondary/60 hover:bg-surface-tertiary/80 text-text-tertiary hover:text-text-secondary transition-colors"
             title="Refresh terminal"
           >
