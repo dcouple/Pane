@@ -272,7 +272,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           Your settings and sessions are preserved.
         </p>
         <code className="block bg-surface-primary border border-border-primary rounded px-3 py-2 text-xs text-text-primary font-mono break-all">
-          npx --yes runpane@latest update
+          curl -fsSL https://runpane.com/install.sh | sh
         </code>
       </div>
     </div>

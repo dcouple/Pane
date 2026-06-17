@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import platform
 from dataclasses import dataclass
+from typing import List
 
 
 @dataclass(frozen=True)
@@ -50,7 +51,7 @@ def platform_param(platform_info: PanePlatform) -> str:
     return "linux"
 
 
-def arch_aliases(platform_info: PanePlatform) -> list[str]:
+def arch_aliases(platform_info: PanePlatform) -> List[str]:
     if platform_info.arch == "arm64":
         return ["arm64", "aarch64"]
     if platform_info.os == "linux":
