@@ -209,7 +209,8 @@ export function registerSessionHandlers(
           request.baseBranch,
           sessionToolType,
           request.folderId,
-          request.isMainRepo
+          request.isMainRepo,
+          request.startPinned
         );
 
         return { success: true, data: { jobIds: jobs.map(job => job.id) } };
@@ -222,7 +223,8 @@ export function registerSessionHandlers(
           folderId: request.folderId,
           isMainRepo: request.isMainRepo,
           baseBranch: request.baseBranch,
-          toolType: sessionToolType
+          toolType: sessionToolType,
+          startPinned: request.startPinned
         });
 
         return { success: true, data: { jobId: job.id } };

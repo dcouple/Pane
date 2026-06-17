@@ -1,6 +1,13 @@
-import { ChevronDown, GitBranch, GitFork, Search, X } from 'lucide-react';
+import { ChevronDown, GitBranch, GitFork, Pin, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { RemoteBranchInfo, RemoteProjectWithSessions, RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
+
+/**
+ * Remote Pane runs as a browser PWA, not inside Electron. Keep create-dialog
+ * preferences on browser-safe storage or daemon adapter calls; do not use the
+ * desktop session preference store because it writes through window.electronAPI.
+ */
+const REMOTE_START_PINNED_PREFERENCE_KEY = 'pane.remoteCreateSession.startPinned';
 
 interface RemoteCreateSessionDialogProps {
   adapter: RemoteRuntimeAdapter;
@@ -20,6 +27,7 @@ export function RemoteCreateSessionDialog({
   const [paneName, setPaneName] = useState('');
   const [branchSearch, setBranchSearch] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
+  const [startPinned, setStartPinned] = useState(() => loadRemoteStartPinnedPreference());
   const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +134,7 @@ export function RemoteCreateSessionDialog({
         projectId: project.id,
         isMainRepo: !useWorktree,
         baseBranch,
+        startPinned,
       });
       await onCreated(cleanedName);
       onClose();
@@ -232,6 +241,32 @@ export function RemoteCreateSessionDialog({
             <p className="mt-2 text-xs text-text-tertiary">Auto-filled from branch. Edit to customize.</p>
           </section>
 
+          <section className="border-b border-border-primary p-5">
+            <label className="flex items-center justify-between gap-4">
+              <span className="flex min-w-0 gap-3">
+                <Pin className="mt-1 h-4 w-4 shrink-0 text-text-tertiary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-text-primary">Start pinned</span>
+                  <span className="mt-1 block text-sm text-text-secondary">Show this pane in the pinned section immediately.</span>
+                </span>
+              </span>
+              <span className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${startPinned ? 'bg-interactive' : 'bg-surface-tertiary'}`}>
+                <input
+                  type="checkbox"
+                  checked={startPinned}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setStartPinned(checked);
+                    saveRemoteStartPinnedPreference(checked);
+                  }}
+                  className="peer sr-only"
+                  aria-label="Start pinned"
+                />
+                <span className={`absolute top-1 h-5 w-5 rounded-full bg-text-primary transition-transform ${startPinned ? 'translate-x-6' : 'translate-x-1'}`} />
+              </span>
+            </label>
+          </section>
+
           <section className="p-5">
             <label className="flex items-center justify-between gap-4">
               <span className="flex min-w-0 gap-3">
@@ -302,4 +337,22 @@ function sanitizePaneName(name: string): string {
     .replace(/\.{2,}/g, '.')
     .replace(/^\.+|\.+$/g, '')
     .trim();
+}
+
+function loadRemoteStartPinnedPreference(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(REMOTE_START_PINNED_PREFERENCE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveRemoteStartPinnedPreference(value: boolean): void {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(REMOTE_START_PINNED_PREFERENCE_KEY, value ? 'true' : 'false');
+    }
+  } catch {
+    // Ignore storage failures so the current create flow can still use local state.
+  }
 }

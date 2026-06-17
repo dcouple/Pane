@@ -3,7 +3,7 @@ import { API } from '../utils/api';
 import type { CreateSessionRequest } from '../types/session';
 import type { Project } from '../types/project';
 import { useErrorStore } from '../stores/errorStore';
-import { GitBranch, ChevronRight, ChevronDown, X, Search, Check, GitFork } from 'lucide-react';
+import { GitBranch, ChevronRight, ChevronDown, X, Search, Check, GitFork, Pin } from 'lucide-react';
 import { ToggleField } from './ui/Toggle';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -55,6 +55,7 @@ export function CreateSessionDialog({
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [useWorktree, setUseWorktree] = useState(true);
+  const [startPinned, setStartPinned] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSessionOptions, setShowSessionOptions] = useState(false);
   const [branchSearch, setBranchSearch] = useState('');
@@ -91,6 +92,7 @@ export function CreateSessionDialog({
     if (preferences) {
       setShowAdvanced(preferences.showAdvanced);
       setShowSessionOptions(preferences.showSessionOptions ?? false);
+      setStartPinned(preferences.startPinned ?? false);
     }
   }, [preferences]);
 
@@ -372,7 +374,8 @@ export function CreateSessionDialog({
         sessionName: cleanedName,
         count: sessionCount,
         toolType: 'none',
-        folderId
+        folderId,
+        startPinned
       });
 
       const response = await API.sessions.create({
@@ -384,7 +387,8 @@ export function CreateSessionDialog({
         projectId,
         folderId,
         isMainRepo: !useWorktree,
-        baseBranch: formData.baseBranch
+        baseBranch: formData.baseBranch,
+        startPinned
       });
 
       if (!response.success) {
@@ -642,6 +646,21 @@ export function CreateSessionDialog({
             {/* Advanced Options - Collapsible */}
             {showAdvanced && (
               <div className="px-6 pb-6 space-y-4 border-t border-border-primary pt-4">
+                {/* Start Pinned Toggle */}
+                <div className="flex items-center gap-2">
+                  <Pin className="w-4 h-4 text-text-tertiary" />
+                  <ToggleField
+                    label="Start pinned"
+                    description="Show this pane in the pinned section immediately."
+                    checked={startPinned}
+                    onChange={(checked) => {
+                      setStartPinned(checked);
+                      savePreferences({ startPinned: checked });
+                    }}
+                    size="sm"
+                  />
+                </div>
+
                 {/* Worktree Toggle */}
                 <div className="flex items-center gap-2">
                   <GitFork className="w-4 h-4 text-text-tertiary" />

@@ -305,7 +305,8 @@ export class SessionManager extends EventEmitter {
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
-    baseBranch?: string
+    baseBranch?: string,
+    startPinned?: boolean
   ): Promise<Session> {
     return await withLock(`session-creation`, async () => {
       return this.createSessionWithId(
@@ -320,7 +321,8 @@ export class SessionManager extends EventEmitter {
         folderId,
         toolType,
         baseCommit,
-        baseBranch
+        baseBranch,
+        startPinned
       );
     });
   }
@@ -337,7 +339,8 @@ export class SessionManager extends EventEmitter {
     folderId?: string,
     toolType?: 'claude' | 'none',
     baseCommit?: string,
-    baseBranch?: string
+    baseBranch?: string,
+    startPinned?: boolean
   ): Session {
     // Ensure this session ID isn't already being created
     if (this.activeSessions.has(id) || this.db.getSession(id)) {
@@ -375,7 +378,9 @@ export class SessionManager extends EventEmitter {
       // Model is now managed at panel level
       base_commit: baseCommit,
       base_branch: baseBranch,
-      tool_type: toolType
+      tool_type: toolType,
+      is_favorite: startPinned,
+      favorite_pinned_at: startPinned ? 'CURRENT_TIMESTAMP' : undefined
     };
 
     const dbSession = this.db.createSession(sessionData);

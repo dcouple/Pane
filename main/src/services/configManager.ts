@@ -373,7 +373,8 @@ export class ConfigManager extends EventEmitter {
         permissionMode: 'ignore',
         ultrathink: false
       },
-      showAdvanced: false
+      showAdvanced: false,
+      startPinned: false
     };
   }
 

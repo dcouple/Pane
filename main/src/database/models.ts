@@ -113,6 +113,8 @@ export interface CreateSessionData {
   tool_type?: "claude" | "none";
   base_commit?: string;
   base_branch?: string;
+  is_favorite?: boolean;
+  favorite_pinned_at?: string;
 }
 
 export interface UpdateSessionData {

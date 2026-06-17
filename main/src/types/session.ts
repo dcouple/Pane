@@ -67,6 +67,7 @@ export interface CreateSessionRequest {
   folderId?: string;
   isMainRepo?: boolean;
   baseBranch?: string;
+  startPinned?: boolean;
   model?: string;
   toolType?: 'claude' | 'none';
   claudeConfig?: {

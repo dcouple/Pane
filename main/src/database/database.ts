@@ -2833,8 +2833,8 @@ export class DatabaseService {
       this.db
         .prepare(
           `
-        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, tool_type, base_commit, base_branch)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, tool_type, base_commit, base_branch, is_favorite, favorite_pinned_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP WHEN ? = 1 AND ? IS NULL THEN CURRENT_TIMESTAMP ELSE ? END)
       `,
         )
         .run(
@@ -2851,6 +2851,11 @@ export class DatabaseService {
           data.tool_type || "claude",
           data.base_commit || null,
           data.base_branch || null,
+          data.is_favorite ? 1 : 0,
+          data.favorite_pinned_at || null,
+          data.is_favorite ? 1 : 0,
+          data.favorite_pinned_at || null,
+          data.favorite_pinned_at || null,
         );
 
       const session = this.getSession(data.id);

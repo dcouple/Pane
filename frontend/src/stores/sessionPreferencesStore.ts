@@ -14,6 +14,7 @@ export interface SessionCreationPreferences {
   };
   showAdvanced: boolean;
   showSessionOptions: boolean;
+  startPinned: boolean;
   baseBranch?: string;
 }
 
@@ -29,7 +30,8 @@ const defaultPreferences: SessionCreationPreferences = {
     ultrathink: false
   },
   showAdvanced: false,
-  showSessionOptions: false
+  showSessionOptions: false,
+  startPinned: false
 };
 
 interface SessionPreferencesStore {

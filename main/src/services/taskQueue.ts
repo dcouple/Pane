@@ -39,6 +39,7 @@ interface CreateSessionJob {
   isMainRepo?: boolean;
   baseBranch?: string;
   toolType?: 'claude' | 'none';
+  startPinned?: boolean;
 }
 
 interface ContinueSessionJob {
@@ -156,7 +157,7 @@ export class TaskQueue {
     const sessionConcurrency = isLinux ? 1 : 5;
     
     this.sessionQueue.process(sessionConcurrency, async (job) => {
-      const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType } = job.data;
+      const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType, startPinned } = job.data;
       const { sessionManager, worktreeManager, claudeCodeManager } = this.options;
 
       // Processing session creation job - verbose debug logging removed
@@ -244,7 +245,8 @@ export class TaskQueue {
           job.data.folderId,
           toolType,
           baseCommit,
-          actualBaseBranch
+          actualBaseBranch,
+          startPinned
         );
 
         // Only add prompt-related data if there's actually a prompt
@@ -504,7 +506,8 @@ export class TaskQueue {
     baseBranch?: string,
     toolType?: 'claude' | 'none',
     providedFolderId?: string,
-    isMainRepo?: boolean
+    isMainRepo?: boolean,
+    startPinned?: boolean
   ): Promise<(Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string })[]> {
     let folderId: string | undefined = providedFolderId;
     let generatedBaseName: string | undefined;
@@ -551,7 +554,7 @@ export class TaskQueue {
     for (let i = 0; i < count; i++) {
       // Use the generated base name if no template was provided
       const templateToUse = worktreeTemplate || generatedBaseName || '';
-      jobs.push(this.sessionQueue.add({ prompt, worktreeTemplate: templateToUse, index: i, permissionMode, projectId, folderId, isMainRepo, baseBranch, toolType }));
+      jobs.push(this.sessionQueue.add({ prompt, worktreeTemplate: templateToUse, index: i, permissionMode, projectId, folderId, isMainRepo, baseBranch, toolType, startPinned }));
     }
     return Promise.all(jobs);
   }

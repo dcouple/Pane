@@ -120,6 +120,10 @@ For Android, open the URL in Chrome, open the browser menu, then tap `Add to Hom
 
 SSH tunnel mode is mainly useful from desktop clients. For mobile browser access, prefer Tailscale or Manual HTTPS so the phone can reach the daemon URL directly.
 
+### Remote PWA Implementation Notes
+
+The Remote Pane PWA is a browser runtime. It does not have `window.electronAPI`, so client-side PWA preferences must use browser-safe storage such as `localStorage` or explicit daemon adapter calls. Do not reuse desktop renderer preference stores that persist through Electron IPC unless the call path is guarded for browser mode.
+
 ## Security Model
 
 - The daemon listener only supports loopback hosts: `127.0.0.1`, `::1`, or `localhost`.

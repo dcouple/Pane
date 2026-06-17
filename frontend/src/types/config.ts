@@ -101,6 +101,7 @@ export interface AppConfig {
       ultrathink?: boolean;
     };
     showAdvanced?: boolean;
+    startPinned?: boolean;
     baseBranch?: string;
   };
   // Pane commit footer setting (enabled by default)
