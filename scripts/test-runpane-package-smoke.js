@@ -25,7 +25,17 @@ function run(command, args, options = {}) {
 }
 
 function findPython() {
-  for (const command of [process.env.PYTHON, 'python3', 'python'].filter(Boolean)) {
+  const candidates = process.platform === 'win32'
+    ? [
+        process.env.PYTHON,
+        process.env.pythonLocation ? path.join(process.env.pythonLocation, 'python.exe') : undefined,
+        'python',
+        'py',
+        'python3'
+      ]
+    : [process.env.PYTHON, 'python3', 'python'];
+
+  for (const command of candidates.filter(Boolean)) {
     try {
       childProcess.execFileSync(command, ['--version'], { stdio: 'ignore' });
       return command;
