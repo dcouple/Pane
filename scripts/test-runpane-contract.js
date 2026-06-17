@@ -79,6 +79,13 @@ const artifactCases = [
   { platform: { os: 'win32', arch: 'arm64' }, format: 'exe' }
 ];
 
+const existingReuseCases = [
+  { args: ['install', 'daemon', '--pane-path', '/tmp/pane'], expected: true },
+  { args: ['install', 'client', '--pane-path', '/tmp/pane'], expected: false },
+  { args: ['install', '--pane-path', '/tmp/pane'], expected: false },
+  { args: ['update', '--pane-path', '/tmp/pane'], expected: false }
+];
+
 function ensureBuiltCli() {
   if (!fs.existsSync(npmCli)) {
     throw new Error('packages/runpane/dist/cli.js is missing. Run "pnpm --filter runpane build" first.');
@@ -225,6 +232,35 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
 }
 
+function compareExistingReusePolicy() {
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const { shouldReuseExistingPane } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js'));
+  const nodeOutput = existingReuseCases.map(({ args }) => {
+    const parsed = parseRunpaneArgs(args);
+    const target = parsed.command === 'update' ? 'client' : parsed.target;
+    return shouldReuseExistingPane(parsed, target);
+  });
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.cli import parse_args
+from runpane.installers import should_reuse_existing_pane
+
+cases = json.loads(sys.stdin.read())
+normalized = []
+for case in cases:
+    parsed = parse_args(case["args"])
+    target = "client" if parsed.command == "update" else parsed.target
+    normalized.append(should_reuse_existing_pane(parsed, target))
+print(json.dumps(normalized))
+`, JSON.stringify(existingReuseCases));
+
+  const expected = existingReuseCases.map((testCase) => testCase.expected);
+  assert.deepStrictEqual(nodeOutput, expected);
+  assert.deepStrictEqual(JSON.parse(pythonOutput), expected);
+}
+
 function checkHelpOutput() {
   const python = findPython();
   const pythonEnv = {
@@ -268,5 +304,6 @@ ensureBuiltCli();
 compareParserParity();
 comparePlatformParity();
 compareArtifactSelectionParity();
+compareExistingReusePolicy();
 checkHelpOutput();
 console.log('runpane CLI contract checks passed');

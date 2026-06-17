@@ -30,6 +30,10 @@ export function resolveExistingPanePath(panePath?: string): string | undefined {
   return candidates.find((candidate) => fs.existsSync(candidate));
 }
 
+export function shouldReuseExistingPane(parsed: Pick<ParsedArgs, 'command'>, target: InstallTarget): boolean {
+  return parsed.command === 'install' && target === 'daemon';
+}
+
 export async function installPaneArtifact(
   artifact: DownloadedArtifact,
   options: {
@@ -40,7 +44,7 @@ export async function installPaneArtifact(
   }
 ): Promise<InstalledPane> {
   const existing = resolveExistingPanePath(options.parsed.panePath);
-  if (existing) {
+  if (existing && shouldReuseExistingPane(options.parsed, options.target)) {
     return { executablePath: existing, installKind: 'existing' };
   }
 

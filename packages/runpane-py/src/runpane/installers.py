@@ -50,6 +50,10 @@ def resolve_existing_pane_path(pane_path: Optional[str] = None) -> Optional[str]
     return None
 
 
+def should_reuse_existing_pane(parsed, target: str) -> bool:
+    return parsed.command == "install" and target == "daemon"
+
+
 def install_pane_artifact(
     artifact: DownloadedArtifact,
     parsed,
@@ -58,7 +62,7 @@ def install_pane_artifact(
     target: str,
 ) -> InstalledPane:
     existing = resolve_existing_pane_path(parsed.pane_path)
-    if existing:
+    if existing and should_reuse_existing_pane(parsed, target):
         return InstalledPane(executable_path=existing, install_kind="existing")
 
     if platform.os == "darwin":
