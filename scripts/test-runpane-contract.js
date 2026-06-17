@@ -247,6 +247,70 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
 }
 
+async function checkPreferredDownloadUrls() {
+  const releases = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js'));
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => artifactRelease
+  });
+
+  let nodeUrl;
+  try {
+    const resolved = await releases.resolveRelease({
+      version: 'latest',
+      channel: 'stable',
+      source: 'npm',
+      platform: { os: 'linux', arch: 'x64' },
+      format: 'appimage',
+      target: 'client'
+    });
+    nodeUrl = resolved.preferredDownloadUrl;
+  } finally {
+    global.fetch = originalFetch;
+  }
+
+  const parsedNodeUrl = new URL(nodeUrl);
+  assert.strictEqual(`${parsedNodeUrl.origin}${parsedNodeUrl.pathname}`, 'https://runpane.com/api/download');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('platform'), 'linux');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('arch'), 'x64');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('format'), 'appimage');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('v'), '2.2.8');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('file'), 'Pane-2.2.8-linux-x86_64.AppImage');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('channel'), 'stable');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('source'), 'npm');
+
+  const pythonUrl = runPythonSnippet(`
+import json
+import sys
+import runpane.releases as releases
+from runpane.platforms import PanePlatform
+
+release = json.loads(sys.stdin.read())
+releases.fetch_release = lambda version: release
+resolved = releases.resolve_release(
+    version="latest",
+    channel="stable",
+    source="pip",
+    platform=PanePlatform(os="linux", arch="x64"),
+    format_name="appimage",
+    target="client",
+)
+print(resolved.preferred_download_url)
+`, JSON.stringify(artifactRelease));
+
+  const parsedPythonUrl = new URL(pythonUrl);
+  assert.strictEqual(`${parsedPythonUrl.origin}${parsedPythonUrl.pathname}`, 'https://runpane.com/api/download');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('platform'), 'linux');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('arch'), 'x64');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('format'), 'appimage');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('v'), '2.2.8');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('file'), 'Pane-2.2.8-linux-x86_64.AppImage');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('channel'), 'stable');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('source'), 'pip');
+}
+
 function compareExistingReusePolicy() {
   const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
   const { shouldReuseExistingPane } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js'));
@@ -428,6 +492,7 @@ async function runChecks() {
   compareParserParity();
   comparePlatformParity();
   compareArtifactSelectionParity();
+  await checkPreferredDownloadUrls();
   compareExistingReusePolicy();
   checkPlatformMatchingEdgeCases();
   await checkExistingDaemonShortCircuit();

@@ -43,7 +43,7 @@ export async function resolveRelease(options: ResolveReleaseOptions): Promise<Re
   const release = await fetchRelease(options.version);
   const format = options.format === 'auto' ? defaultFormat(options.platform, options.target) : options.format;
   const artifact = findArtifact(release, options.platform, format);
-  const preferredDownloadUrl = buildPreferredDownloadUrl(options, format);
+  const preferredDownloadUrl = buildPreferredDownloadUrl(options, format, release, artifact);
 
   return {
     release,
@@ -101,13 +101,16 @@ export function artifactFileName(urlOrName: string): string {
 
 function buildPreferredDownloadUrl(
   options: ResolveReleaseOptions,
-  format: Exclude<ArtifactFormat, 'auto'>
+  format: Exclude<ArtifactFormat, 'auto'>,
+  release: GitHubRelease,
+  artifact: GitHubReleaseAsset
 ): string {
   const params = new URLSearchParams({
     platform: platformParam(options.platform),
     arch: options.platform.arch,
     format,
-    version: options.version === 'latest' ? 'latest' : options.version.startsWith('v') ? options.version : `v${options.version}`,
+    v: release.tag_name.replace(/^v/, ''),
+    file: artifact.name,
     channel: options.channel,
     source: options.source
   });
