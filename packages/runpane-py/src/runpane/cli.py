@@ -5,7 +5,13 @@ from typing import List, Optional
 
 from .doctor import run_doctor
 from .download import download_artifact
-from .installers import install_pane_artifact, launch_pane_client, spawn_pane
+from .installers import (
+    install_pane_artifact,
+    launch_pane_client,
+    resolve_existing_pane_path,
+    should_reuse_existing_pane,
+    spawn_pane,
+)
 from .platforms import detect_platform
 from .releases import resolve_release
 from .version import print_version
@@ -165,6 +171,11 @@ def read_value(args: List[str], index: int, flag: str) -> str:
 
 def install_or_update(parsed: ParsedArgs) -> int:
     target = "client" if parsed.command == "update" else parsed.target
+    if not parsed.dry_run and should_reuse_existing_pane(parsed, target):
+        existing = resolve_existing_pane_path(parsed.pane_path)
+        if existing:
+            return spawn_pane(existing, ["--remote-setup", *parsed.remote_setup_args])
+
     platform = detect_platform()
     resolved = resolve_release(
         version=parsed.pane_version,

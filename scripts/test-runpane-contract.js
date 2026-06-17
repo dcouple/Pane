@@ -2,6 +2,7 @@
 const assert = require('assert');
 const childProcess = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const rootDir = path.resolve(__dirname, '..');
@@ -294,6 +295,95 @@ print(artifact["name"])
   assert.strictEqual(pythonArtifact, 'Pane-2.2.8-Windows-x64.zip');
 }
 
+async function checkExistingDaemonShortCircuit() {
+  const existingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'runpane-existing-'));
+  const existingPath = path.join(existingDir, process.platform === 'win32' ? 'Pane.exe' : 'pane');
+  fs.writeFileSync(existingPath, '');
+
+  const releasesPath = path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js');
+  const downloadPath = path.join(rootDir, 'packages', 'runpane', 'dist', 'download.js');
+  const installersPath = path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js');
+  const cliPath = path.join(rootDir, 'packages', 'runpane', 'dist', 'cli.js');
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const releases = require(releasesPath);
+  const download = require(downloadPath);
+  const installers = require(installersPath);
+  const originalResolveRelease = releases.resolveRelease;
+  const originalDownloadArtifact = download.downloadArtifact;
+  const originalSpawnPane = installers.spawnPane;
+  let spawned = null;
+
+  releases.resolveRelease = async () => {
+    throw new Error('resolveRelease should not be called for existing daemon reuse');
+  };
+  download.downloadArtifact = async () => {
+    throw new Error('downloadArtifact should not be called for existing daemon reuse');
+  };
+  installers.spawnPane = async (executablePath, args) => {
+    spawned = { executablePath, args };
+    return 0;
+  };
+
+  try {
+    delete require.cache[require.resolve(cliPath)];
+    const { installOrUpdate } = require(cliPath);
+    const parsed = parseRunpaneArgs(['install', 'daemon', '--pane-path', existingPath, '--label', 'Existing', '--print-only']);
+    const code = await installOrUpdate(parsed);
+    assert.strictEqual(code, 0);
+    assert.deepStrictEqual(spawned, {
+      executablePath: existingPath,
+      args: ['--remote-setup', '--label', 'Existing', '--print-only']
+    });
+  } finally {
+    releases.resolveRelease = originalResolveRelease;
+    download.downloadArtifact = originalDownloadArtifact;
+    installers.spawnPane = originalSpawnPane;
+    delete require.cache[require.resolve(cliPath)];
+    fs.rmSync(existingDir, { recursive: true, force: true });
+  }
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import os
+import tempfile
+import runpane.cli as cli
+from runpane.cli import install_or_update, parse_args
+
+handle = tempfile.NamedTemporaryFile(delete=False)
+handle.close()
+captured = {}
+
+def fail_resolve(*args, **kwargs):
+    raise AssertionError("resolve_release should not be called for existing daemon reuse")
+
+def fail_download(*args, **kwargs):
+    raise AssertionError("download_artifact should not be called for existing daemon reuse")
+
+def fake_spawn(executable_path, args):
+    captured["matchesExisting"] = executable_path == handle.name
+    captured["args"] = args
+    return 0
+
+cli.resolve_release = fail_resolve
+cli.download_artifact = fail_download
+cli.spawn_pane = fake_spawn
+
+try:
+    parsed = parse_args(["install", "daemon", "--pane-path", handle.name, "--label", "Existing", "--print-only"])
+    code = install_or_update(parsed)
+    print(json.dumps({"code": code, "captured": captured}))
+finally:
+    os.unlink(handle.name)
+`);
+  assert.deepStrictEqual(JSON.parse(pythonOutput), {
+    code: 0,
+    captured: {
+      matchesExisting: true,
+      args: ['--remote-setup', '--label', 'Existing', '--print-only']
+    }
+  });
+}
+
 function checkHelpOutput() {
   const python = findPython();
   const pythonEnv = {
@@ -333,11 +423,19 @@ function checkHelpOutput() {
   }
 }
 
-ensureBuiltCli();
-compareParserParity();
-comparePlatformParity();
-compareArtifactSelectionParity();
-compareExistingReusePolicy();
-checkPlatformMatchingEdgeCases();
-checkHelpOutput();
-console.log('runpane CLI contract checks passed');
+async function runChecks() {
+  ensureBuiltCli();
+  compareParserParity();
+  comparePlatformParity();
+  compareArtifactSelectionParity();
+  compareExistingReusePolicy();
+  checkPlatformMatchingEdgeCases();
+  await checkExistingDaemonShortCircuit();
+  checkHelpOutput();
+  console.log('runpane CLI contract checks passed');
+}
+
+runChecks().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -2,14 +2,20 @@
 import { helpText, parseRunpaneArgs, type ParsedArgs } from './commands';
 import { downloadArtifact } from './download';
 import { runDoctor } from './doctor';
-import { installPaneArtifact, launchPaneClient, spawnPane } from './installers';
+import {
+  installPaneArtifact,
+  launchPaneClient,
+  resolveExistingPanePath,
+  shouldReuseExistingPane,
+  spawnPane
+} from './installers';
 import { detectPlatform } from './platform';
 import { resolveRelease } from './releases';
 import { printVersion } from './version';
 
 const SOURCE = 'npm' as const;
 
-async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   const parsed = parseRunpaneArgs(argv);
 
   if (parsed.command === 'help') {
@@ -33,8 +39,15 @@ async function main(argv: string[]): Promise<number> {
   return 0;
 }
 
-async function installOrUpdate(parsed: ParsedArgs): Promise<number> {
+export async function installOrUpdate(parsed: ParsedArgs): Promise<number> {
   const target = parsed.command === 'update' ? 'client' : parsed.target;
+  if (!parsed.dryRun && shouldReuseExistingPane(parsed, target)) {
+    const existing = resolveExistingPanePath(parsed.panePath);
+    if (existing) {
+      return spawnPane(existing, ['--remote-setup', ...parsed.remoteSetupArgs]);
+    }
+  }
+
   const platform = detectPlatform();
   const resolved = await resolveRelease({
     version: parsed.paneVersion,
@@ -94,9 +107,11 @@ function printDryRun(
   }
 }
 
-main(process.argv.slice(2)).then((code) => {
-  process.exitCode = code;
-}).catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  }).catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
+}

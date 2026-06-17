@@ -14,6 +14,7 @@ function run(command, args, options = {}) {
   childProcess.execFileSync(command, args, {
     cwd: rootDir,
     stdio: 'inherit',
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       PIP_DISABLE_PIP_VERSION_CHECK: '1',
