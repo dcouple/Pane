@@ -123,7 +123,7 @@ function matchesFormat(name: string, format: Exclude<ArtifactFormat, 'auto'>): b
 function matchesPlatform(name: string, platform: PanePlatform): boolean {
   const lower = name.toLowerCase();
   if (platform.os === 'darwin') return lower.includes('macos') || lower.includes('darwin') || lower.includes('mac');
-  if (platform.os === 'win32') return lower.includes('windows') || lower.includes('win');
+  if (platform.os === 'win32') return lower.includes('windows') || /(?:^|[._-])win(?:32|64)?(?:[._-]|$)/.test(lower);
   return lower.includes('linux');
 }
 

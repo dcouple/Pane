@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -109,5 +110,5 @@ def matches_platform(name: str, platform: PanePlatform) -> bool:
     if platform.os == "darwin":
         return "macos" in lower or "darwin" in lower or "mac" in lower
     if platform.os == "win32":
-        return "windows" in lower or "win" in lower
+        return "windows" in lower or re.search(r"(?:^|[._-])win(?:32|64)?(?:[._-]|$)", lower) is not None
     return "linux" in lower

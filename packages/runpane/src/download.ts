@@ -2,6 +2,9 @@ import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
+import { pipeline } from 'stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'stream/web';
 import { artifactFileName, type ResolvedRelease } from './releases';
 
 export interface DownloadedArtifact {
@@ -48,8 +51,10 @@ async function downloadToFile(url: string, targetPath: string, verbose: boolean)
     throw new Error(`${response.status} ${response.statusText}`);
   }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  fs.writeFileSync(targetPath, buffer);
+  await pipeline(
+    Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+    fs.createWriteStream(targetPath)
+  );
 }
 
 async function verifyChecksumIfAvailable(resolved: ResolvedRelease, artifactPath: string, fileName: string): Promise<void> {

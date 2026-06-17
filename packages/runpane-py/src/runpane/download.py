@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import tempfile
 import time
 import urllib.error
@@ -46,7 +47,7 @@ def download_to_file(url: str, target_path: str, verbose: bool) -> None:
         if getattr(response, "status", 200) >= 400:
             raise RuntimeError(f"{response.status} {response.reason}")
         with open(target_path, "wb") as target:
-            target.write(response.read())
+            shutil.copyfileobj(response, target, length=1024 * 1024)
 
 
 def verify_checksum_if_available(resolved: ResolvedRelease, artifact_path: str, file_name: str) -> None:

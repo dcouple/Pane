@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -32,7 +33,7 @@ def resolve_existing_pane_path(pane_path: Optional[str] = None) -> Optional[str]
             ])
         if program_files:
             candidates.append(os.path.join(program_files, "Pane", "Pane.exe"))
-    elif subprocess.run(["uname"], capture_output=True, text=True).stdout.strip() == "Darwin":
+    elif platform.system().lower() == "darwin":
         candidates.extend([
             "/Applications/Pane.app/Contents/MacOS/Pane",
             os.path.join(home, "Applications", "Pane.app", "Contents", "MacOS", "Pane"),

@@ -86,6 +86,20 @@ const existingReuseCases = [
   { args: ['update', '--pane-path', '/tmp/pane'], expected: false }
 ];
 
+const platformEdgeRelease = {
+  tag_name: 'v2.2.8',
+  name: 'v2.2.8',
+  body: '',
+  html_url: 'https://github.com/dcouple/Pane/releases/tag/v2.2.8',
+  published_at: '2026-01-01T00:00:00Z',
+  prerelease: false,
+  draft: false,
+  assets: [
+    { name: 'Pane-2.2.8-darwin-x64.zip', browser_download_url: 'https://example.test/darwin-x64.zip' },
+    { name: 'Pane-2.2.8-Windows-x64.zip', browser_download_url: 'https://example.test/windows-x64.zip' }
+  ]
+};
+
 function ensureBuiltCli() {
   if (!fs.existsSync(npmCli)) {
     throw new Error('packages/runpane/dist/cli.js is missing. Run "pnpm --filter runpane build" first.');
@@ -261,6 +275,25 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), expected);
 }
 
+function checkPlatformMatchingEdgeCases() {
+  const { findArtifact } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js'));
+  const nodeArtifact = findArtifact(platformEdgeRelease, { os: 'win32', arch: 'x64' }, 'zip').name;
+
+  const pythonArtifact = runPythonSnippet(`
+import json
+import sys
+from runpane.platforms import PanePlatform
+from runpane.releases import find_artifact
+
+release = json.loads(sys.stdin.read())
+artifact = find_artifact(release, PanePlatform(os="win32", arch="x64"), "zip")
+print(artifact["name"])
+`, JSON.stringify(platformEdgeRelease));
+
+  assert.strictEqual(nodeArtifact, 'Pane-2.2.8-Windows-x64.zip');
+  assert.strictEqual(pythonArtifact, 'Pane-2.2.8-Windows-x64.zip');
+}
+
 function checkHelpOutput() {
   const python = findPython();
   const pythonEnv = {
@@ -305,5 +338,6 @@ compareParserParity();
 comparePlatformParity();
 compareArtifactSelectionParity();
 compareExistingReusePolicy();
+checkPlatformMatchingEdgeCases();
 checkHelpOutput();
 console.log('runpane CLI contract checks passed');
