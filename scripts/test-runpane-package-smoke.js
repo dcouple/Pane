@@ -106,7 +106,11 @@ function smokePythonPackage() {
   run(python, ['-m', 'venv', venvDir]);
   const isolatedPython = venvPython(venvDir);
   run(isolatedPython, ['-m', 'pip', 'install', pythonPackageDir]);
-  run(isolatedPython, ['-c', 'from runpane.generated_contract import RUNPANE_CONTRACT; assert RUNPANE_CONTRACT["schemaVersion"] == 1']);
+  run(
+    isolatedPython,
+    ['-c', 'from runpane.generated_contract import RUNPANE_CONTRACT; assert RUNPANE_CONTRACT["schemaVersion"] == 1'],
+    { shell: false }
+  );
   run(isolatedPython, ['-m', 'runpane', '--help']);
   run(isolatedPython, ['-m', 'runpane'], { env: { CI: '1' } });
   run(isolatedPython, ['-m', 'runpane', 'setup'], { env: { CI: '1' } });
