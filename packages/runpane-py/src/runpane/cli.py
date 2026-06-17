@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, TypeVar
 
 from .doctor import run_doctor
 from .download import download_artifact
+from .generated_contract import RUNPANE_CONTRACT
 from .installers import (
     install_pane_artifact,
     launch_pane_client,
@@ -21,43 +22,28 @@ from .version import print_version
 
 SOURCE = "pip"
 
-COMMANDS = {"help", "setup", "install", "update", "version", "doctor"}
-TARGETS = {"client", "daemon"}
-FORMATS = {"auto", "appimage", "deb", "dmg", "zip", "exe"}
-CHANNELS = {"stable", "nightly"}
+COMMANDS = {command["name"] for command in RUNPANE_CONTRACT["commands"]}
+TARGETS = set(RUNPANE_CONTRACT["enums"]["installTargets"])
+FORMATS = set(RUNPANE_CONTRACT["enums"]["artifactFormats"])
+CHANNELS = set(RUNPANE_CONTRACT["enums"]["channels"])
 
-REMOTE_VALUE_FLAGS = {
-    "--label",
-    "--prefer-tunnel",
-    "--channel",
-    "--base-url",
-    "--pane-dir",
-    "--listen-port",
-    "--port",
-    "--repo-ref",
-}
-
-REMOTE_BOOLEAN_FLAGS = {
-    "--auto-listen-port",
-    "--interactive-tailscale-setup",
-    "--no-install-service",
-    "--no-tailscale-serve",
-    "--print-only",
-}
+REMOTE_VALUE_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteValue"]}
+REMOTE_BOOLEAN_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteBoolean"]}
+DEFAULTS = RUNPANE_CONTRACT["defaults"]
 
 
 @dataclass
 class ParsedArgs:
     command: str
-    target: str = "client"
-    pane_version: str = "latest"
-    channel: str = "stable"
-    format: str = "auto"
+    target: str = DEFAULTS["target"]
+    pane_version: str = DEFAULTS["paneVersion"]
+    channel: str = DEFAULTS["channel"]
+    format: str = DEFAULTS["format"]
     download_dir: Optional[str] = None
     pane_path: Optional[str] = None
-    dry_run: bool = False
-    yes: bool = False
-    verbose: bool = False
+    dry_run: bool = DEFAULTS["dryRun"]
+    yes: bool = DEFAULTS["yes"]
+    verbose: bool = DEFAULTS["verbose"]
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -348,76 +334,5 @@ def install_or_update(parsed: ParsedArgs) -> int:
 
 
 def help_text(topic: Optional[str]) -> str:
-    if topic == "install":
-        return "\n".join([
-            "Usage:",
-            "  runpane install [client|daemon] [options]",
-            "",
-            "Examples:",
-            '  npx --yes runpane@latest install daemon --label "My Server"',
-            '  pnpm dlx runpane@latest install daemon --prefer-tunnel ssh --label "VM"',
-            '  pipx run runpane install daemon --label "My Server"',
-            "",
-            "Wrapper options:",
-            "  --version <latest|vX.Y.Z>",
-            "  --format <auto|appimage|deb|dmg|zip|exe>",
-            "  --download-dir <path>",
-            "  --pane-path <path>",
-            "  --dry-run",
-            "  --yes",
-            "  --verbose",
-            "",
-            "Daemon passthrough options:",
-            "  --label <name>",
-            "  --prefer-tunnel <tailscale|ssh|manual|auto>",
-            "  --channel <stable|nightly>",
-            "  --base-url <url>",
-            "  --pane-dir <path>",
-            "  --listen-port <port> / --port <port>",
-            "  --auto-listen-port",
-            "  --interactive-tailscale-setup",
-            "  --no-install-service",
-            "  --no-tailscale-serve",
-            "  --print-only",
-            "  --repo-ref <ref>",
-        ])
-
-    if topic == "update":
-        return "Usage:\n  runpane update [--version <latest|vX.Y.Z>] [--dry-run] [--yes]"
-    if topic == "setup":
-        return "\n".join([
-            "Usage:",
-            "  runpane setup",
-            "",
-            "Opens the guided setup for desktop install, remote host setup, update, and diagnostics.",
-            "",
-            "Quick start:",
-            "  pipx run runpane",
-            "  python -m pip install runpane && python -m runpane setup",
-        ])
-    if topic == "version":
-        return "Usage:\n  runpane version\n  runpane --version"
-    if topic == "doctor":
-        return "Usage:\n  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]"
-
-    return "\n".join([
-        "Usage:",
-        "  runpane",
-        "  runpane setup",
-        "  runpane install [client|daemon] [options]",
-        "  runpane update [options]",
-        "  runpane version",
-        "  runpane doctor",
-        "  runpane help [command]",
-        "",
-        "Quick start:",
-        "  pipx run runpane",
-        "  python -m pip install runpane && python -m runpane setup",
-        "",
-        "Advanced examples:",
-        "  pipx run runpane install client",
-        '  pipx run runpane install daemon --label "My Server"',
-        "  uvx runpane@latest",
-        "",
-        'Run "runpane help install" for install options.',
-    ])
+    help_topics = RUNPANE_CONTRACT["help"]["pip"]
+    return "\n".join(help_topics.get(topic or "default", help_topics["default"]))

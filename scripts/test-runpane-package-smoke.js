@@ -58,6 +58,14 @@ function packageBin(installDir) {
     : path.join(installDir, 'node_modules', '.bin', 'runpane');
 }
 
+function checkNpmGeneratedContract(installDir) {
+  const contractPath = path.join(installDir, 'node_modules', 'runpane', 'dist', 'generated', 'contract.js');
+  const { RUNPANE_CONTRACT } = require(contractPath);
+  if (RUNPANE_CONTRACT.schemaVersion !== 1) {
+    throw new Error(`Unexpected npm generated contract schema version at ${contractPath}`);
+  }
+}
+
 function packNpmPackage() {
   run('pnpm', ['--filter', 'runpane', 'pack', '--pack-destination', tempDir]);
   const tarball = fs.readdirSync(tempDir)
@@ -82,10 +90,12 @@ function smokeNpmPackage(tarball) {
   run('pnpm', ['--package', tarball, 'dlx', 'runpane'], { env: { CI: '1' } });
 
   run('npm', ['install', '--prefix', npmInstallDir, tarball]);
+  checkNpmGeneratedContract(npmInstallDir);
   run(packageBin(npmInstallDir), ['--help']);
   run(packageBin(npmInstallDir), ['setup'], { env: { CI: '1' } });
 
   run('pnpm', ['--dir', pnpmInstallDir, 'add', tarball]);
+  checkNpmGeneratedContract(pnpmInstallDir);
   run(packageBin(pnpmInstallDir), ['--help']);
   run(packageBin(pnpmInstallDir), ['setup'], { env: { CI: '1' } });
 }
@@ -96,6 +106,7 @@ function smokePythonPackage() {
   run(python, ['-m', 'venv', venvDir]);
   const isolatedPython = venvPython(venvDir);
   run(isolatedPython, ['-m', 'pip', 'install', pythonPackageDir]);
+  run(isolatedPython, ['-c', 'from runpane.generated_contract import RUNPANE_CONTRACT\nassert RUNPANE_CONTRACT["schemaVersion"] == 1']);
   run(isolatedPython, ['-m', 'runpane', '--help']);
   run(isolatedPython, ['-m', 'runpane'], { env: { CI: '1' } });
   run(isolatedPython, ['-m', 'runpane', 'setup'], { env: { CI: '1' } });

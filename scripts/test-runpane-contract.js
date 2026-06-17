@@ -8,39 +8,9 @@ const path = require('path');
 const rootDir = path.resolve(__dirname, '..');
 const npmCli = path.join(rootDir, 'packages', 'runpane', 'dist', 'cli.js');
 const pythonSource = path.join(rootDir, 'packages', 'runpane-py', 'src');
-
-const parserSamples = [
-  ['setup'],
-  ['install'],
-  ['install', 'client', '--version', 'v2.2.8', '--format', 'dmg', '--download-dir', '/tmp/pane-downloads', '--dry-run', '--yes'],
-  [
-    'install',
-    'daemon',
-    '--label',
-    'VM',
-    '--prefer-tunnel',
-    'ssh',
-    '--channel',
-    'nightly',
-    '--base-url',
-    'https://example.test',
-    '--pane-dir',
-    '/tmp/pane',
-    '--listen-port',
-    '4555',
-    '--auto-listen-port',
-    '--print-only',
-    '--repo-ref',
-    'main',
-    '--unknown-future-flag',
-    'future-value',
-    '--dry-run',
-    '--verbose'
-  ],
-  ['update', '--version', 'latest', '--format', 'appimage', '--pane-path', '/usr/bin/pane', '--dry-run'],
-  ['doctor', '--pane-path', '/usr/bin/pane', '--format', 'zip', '--verbose'],
-  ['--version']
-];
+const contractFixturePath = path.join(rootDir, 'scripts', 'fixtures', 'runpane-contract.json');
+const contractFixture = JSON.parse(fs.readFileSync(contractFixturePath, 'utf8'));
+const parserSamples = contractFixture.parserSamples;
 
 const platformCases = [
   { platform: { os: 'darwin', arch: 'arm64' }, target: 'client' },
@@ -106,6 +76,13 @@ function ensureBuiltCli() {
   if (!fs.existsSync(npmCli)) {
     throw new Error('packages/runpane/dist/cli.js is missing. Run "pnpm --filter runpane build" first.');
   }
+}
+
+function checkGeneratedContractFresh() {
+  childProcess.execFileSync(process.execPath, [path.join(rootDir, 'scripts', 'generate-runpane-contract.js'), '--check'], {
+    cwd: rootDir,
+    stdio: 'inherit'
+  });
 }
 
 function findPython() {
@@ -466,26 +443,20 @@ function checkHelpOutput() {
   });
 
   for (const output of [nodeHelp, pyHelp]) {
-    for (const text of ['runpane setup', 'runpane install', 'runpane update', 'runpane version', 'runpane doctor']) {
+    for (const text of contractFixture.help.topLevelIncludes) {
       assertIncludes(output, text);
     }
   }
 
-  assertIncludes(nodeHelp, 'pnpm dlx runpane@latest');
-  assertIncludes(pyHelp, 'pipx run runpane');
-  assertIncludes(nodeHelp, 'npx --yes runpane@latest');
-  assertIncludes(pyHelp, 'python -m pip install runpane && python -m runpane setup');
+  for (const text of contractFixture.help.npmIncludes) {
+    assertIncludes(nodeHelp, text);
+  }
+  for (const text of contractFixture.help.pipIncludes) {
+    assertIncludes(pyHelp, text);
+  }
 
   for (const output of [nodeInstallHelp, pyInstallHelp]) {
-    for (const text of [
-      '--version <latest|vX.Y.Z>',
-      '--format <auto|appimage|deb|dmg|zip|exe>',
-      '--download-dir <path>',
-      '--pane-path <path>',
-      '--label <name>',
-      '--prefer-tunnel <tailscale|ssh|manual|auto>',
-      '--repo-ref <ref>'
-    ]) {
+    for (const text of contractFixture.help.installIncludes) {
       assertIncludes(output, text);
     }
   }
@@ -513,6 +484,7 @@ function checkNoArgsAndSetupFallback() {
 }
 
 async function runChecks() {
+  checkGeneratedContractFresh();
   ensureBuiltCli();
   compareParserParity();
   comparePlatformParity();

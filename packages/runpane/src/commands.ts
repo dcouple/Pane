@@ -1,13 +1,19 @@
-export type RunpaneCommand = 'help' | 'setup' | 'install' | 'update' | 'version' | 'doctor';
-export type InstallTarget = 'client' | 'daemon';
-export type ArtifactFormat = 'auto' | 'appimage' | 'deb' | 'dmg' | 'zip' | 'exe';
+import {
+  RUNPANE_CONTRACT,
+  type ArtifactFormat,
+  type InstallTarget,
+  type RunpaneChannel,
+  type RunpaneCommand
+} from './generated/contract';
+
+export type { ArtifactFormat, InstallTarget, RunpaneCommand };
 
 export interface ParsedArgs {
   command: RunpaneCommand;
   helpTopic?: string;
   target: InstallTarget;
   paneVersion: string;
-  channel: 'stable' | 'nightly';
+  channel: RunpaneChannel;
   format: ArtifactFormat;
   downloadDir?: string;
   panePath?: string;
@@ -17,38 +23,22 @@ export interface ParsedArgs {
   remoteSetupArgs: string[];
 }
 
-const COMMANDS = new Set(['help', 'setup', 'install', 'update', 'version', 'doctor']);
-const TARGETS = new Set(['client', 'daemon']);
-const FORMATS = new Set(['auto', 'appimage', 'deb', 'dmg', 'zip', 'exe']);
-const CHANNELS = new Set(['stable', 'nightly']);
+const COMMANDS = new Set<string>(RUNPANE_CONTRACT.commands.map((command) => command.name));
+const TARGETS = new Set<string>(RUNPANE_CONTRACT.enums.installTargets);
+const FORMATS = new Set<string>(RUNPANE_CONTRACT.enums.artifactFormats);
+const CHANNELS = new Set<string>(RUNPANE_CONTRACT.enums.channels);
 
-const REMOTE_VALUE_FLAGS = new Set([
-  '--label',
-  '--prefer-tunnel',
-  '--channel',
-  '--base-url',
-  '--pane-dir',
-  '--listen-port',
-  '--port',
-  '--repo-ref'
-]);
-
-const REMOTE_BOOLEAN_FLAGS = new Set([
-  '--auto-listen-port',
-  '--interactive-tailscale-setup',
-  '--no-install-service',
-  '--no-tailscale-serve',
-  '--print-only'
-]);
+const REMOTE_VALUE_FLAGS = new Set<string>(RUNPANE_CONTRACT.flags.remoteValue.map((flag) => flag.name));
+const REMOTE_BOOLEAN_FLAGS = new Set<string>(RUNPANE_CONTRACT.flags.remoteBoolean.map((flag) => flag.name));
 
 const DEFAULTS: Omit<ParsedArgs, 'command'> = {
-  target: 'client',
-  paneVersion: 'latest',
-  channel: 'stable',
-  format: 'auto',
-  dryRun: false,
-  yes: false,
-  verbose: false,
+  target: RUNPANE_CONTRACT.defaults.target,
+  paneVersion: RUNPANE_CONTRACT.defaults.paneVersion,
+  channel: RUNPANE_CONTRACT.defaults.channel,
+  format: RUNPANE_CONTRACT.defaults.format,
+  dryRun: RUNPANE_CONTRACT.defaults.dryRun,
+  yes: RUNPANE_CONTRACT.defaults.yes,
+  verbose: RUNPANE_CONTRACT.defaults.verbose,
   remoteSetupArgs: []
 };
 
@@ -147,7 +137,7 @@ function parseFlags(args: string[], parsed: ParsedArgs): void {
         if (!CHANNELS.has(value)) {
           throw new Error(`Invalid --channel "${value}". Expected stable or nightly.`);
         }
-        parsed.channel = value as 'stable' | 'nightly';
+        parsed.channel = value as RunpaneChannel;
       }
       appendRemoteArg(parsed, arg, value);
       continue;
@@ -200,100 +190,9 @@ function readValue(args: string[], index: number, flag: string): string {
 }
 
 export function helpText(topic?: string): string {
-  if (topic === 'install') {
-    return [
-      'Usage:',
-      '  runpane install [client|daemon] [options]',
-      '',
-      'Examples:',
-      '  npx --yes runpane@latest install client',
-      '  npx --yes runpane@latest install daemon --label "My Server"',
-      '  pnpm dlx runpane@latest install daemon --prefer-tunnel ssh --label "VM"',
-      '',
-      'Wrapper options:',
-      '  --version <latest|vX.Y.Z>        Pane release to install',
-      '  --format <auto|appimage|deb|dmg|zip|exe>',
-      '  --download-dir <path>',
-      '  --pane-path <path>               Use an existing Pane executable',
-      '  --dry-run                       Print the plan without downloading',
-      '  --yes                           Skip interactive prompts where possible',
-      '  --verbose',
-      '',
-      'Daemon passthrough options:',
-      '  --label <name>',
-      '  --prefer-tunnel <tailscale|ssh|manual|auto>',
-      '  --channel <stable|nightly>',
-      '  --base-url <url>',
-      '  --pane-dir <path>',
-      '  --listen-port <port> / --port <port>',
-      '  --auto-listen-port',
-      '  --interactive-tailscale-setup',
-      '  --no-install-service',
-      '  --no-tailscale-serve',
-      '  --print-only',
-      '  --repo-ref <ref>'
-    ].join('\n');
-  }
-
-  if (topic === 'setup') {
-    return [
-      'Usage:',
-      '  runpane setup',
-      '',
-      'Opens the guided setup for desktop install, remote host setup, update, and diagnostics.',
-      '',
-      'Quick start:',
-      '  npx --yes runpane@latest',
-      '  npm i -g runpane && runpane setup'
-    ].join('\n');
-  }
-
-  if (topic === 'update') {
-    return [
-      'Usage:',
-      '  runpane update [options]',
-      '',
-      'Updates Pane using the same artifact selection as "runpane install client".',
-      '',
-      'Options:',
-      '  --version <latest|vX.Y.Z>',
-      '  --format <auto|appimage|deb|dmg|zip|exe>',
-      '  --download-dir <path>',
-      '  --pane-path <path>',
-      '  --dry-run',
-      '  --yes',
-      '  --verbose'
-    ].join('\n');
-  }
-
-  if (topic === 'version') {
-    return 'Usage:\n  runpane version\n  runpane --version';
-  }
-
-  if (topic === 'doctor') {
-    return 'Usage:\n  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]';
-  }
-
-  return [
-    'Usage:',
-    '  runpane',
-    '  runpane setup',
-    '  runpane install [client|daemon] [options]',
-    '  runpane update [options]',
-    '  runpane version',
-    '  runpane doctor',
-    '  runpane help [command]',
-    '',
-    'Quick start:',
-    '  npx --yes runpane@latest',
-    '  npm i -g runpane && runpane setup',
-    '',
-    'Advanced examples:',
-    '  npx --yes runpane@latest install client',
-    '  npx --yes runpane@latest install daemon --label "My Server"',
-    '  pnpm dlx runpane@latest',
-    '  pipx run runpane',
-    '',
-    'Run "runpane help install" for install options.'
-  ].join('\n');
+  const helpTopics = RUNPANE_CONTRACT.help.npm;
+  const key = topic && Object.prototype.hasOwnProperty.call(helpTopics, topic)
+    ? topic as keyof typeof helpTopics
+    : 'default';
+  return helpTopics[key].join('\n');
 }

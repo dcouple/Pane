@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "parserSamples": [
+    [
+      "setup"
+    ],
+    [
+      "install"
+    ],
+    [
+      "install",
+      "client",
+      "--version",
+      "v2.2.8",
+      "--format",
+      "dmg",
+      "--download-dir",
+      "/tmp/pane-downloads",
+      "--dry-run",
+      "--yes"
+    ],
+    [
+      "install",
+      "daemon",
+      "--label",
+      "VM",
+      "--prefer-tunnel",
+      "ssh",
+      "--channel",
+      "nightly",
+      "--base-url",
+      "https://example.test",
+      "--pane-dir",
+      "/tmp/pane",
+      "--listen-port",
+      "4555",
+      "--auto-listen-port",
+      "--print-only",
+      "--repo-ref",
+      "main",
+      "--unknown-future-flag",
+      "future-value",
+      "--dry-run",
+      "--verbose"
+    ],
+    [
+      "update",
+      "--version",
+      "latest",
+      "--format",
+      "appimage",
+      "--pane-path",
+      "/usr/bin/pane",
+      "--dry-run"
+    ],
+    [
+      "doctor",
+      "--pane-path",
+      "/usr/bin/pane",
+      "--format",
+      "zip",
+      "--verbose"
+    ],
+    [
+      "--version"
+    ]
+  ],
+  "help": {
+    "topLevelIncludes": [
+      "runpane setup",
+      "runpane install",
+      "runpane update",
+      "runpane version",
+      "runpane doctor"
+    ],
+    "npmIncludes": [
+      "pnpm dlx runpane@latest",
+      "npx --yes runpane@latest"
+    ],
+    "pipIncludes": [
+      "pipx run runpane",
+      "python -m pip install runpane && python -m runpane setup"
+    ],
+    "installIncludes": [
+      "--version <latest|vX.Y.Z>",
+      "--format <auto|appimage|deb|dmg|zip|exe>",
+      "--download-dir <path>",
+      "--pane-path <path>",
+      "--label <name>",
+      "--prefer-tunnel <tailscale|ssh|manual|auto>",
+      "--repo-ref <ref>"
+    ]
+  }
+}
