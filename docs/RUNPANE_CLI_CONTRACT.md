@@ -98,6 +98,8 @@ runpane install daemon
 runpane update
 runpane version
 runpane doctor
+runpane agent-context
+runpane agent-context --command "panes create" --json
 runpane repos list --json
 runpane repos add --path /path/to/repo --name Pane --yes --json
 runpane panes create --repo active --name issue-252 --agent codex --prompt "Kick off the discussion skill for issue 252" --yes
@@ -122,6 +124,10 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 `runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.
 
+`runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.
+
+`runpane agent-context --command "panes create"` prints the detailed definition for one command. Add `--json` for machine-readable output.
+
 `runpane repos list` connects to the running local Pane daemon and prints saved repository records.
 
 `runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.
@@ -129,6 +135,45 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 `runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.
 
 `runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.
+
+## Agent Context
+
+Pane lets a developer manage repositories and user-visible panes. Agents can use runpane to list/add Pane repositories and create panes with terminal-backed tools.
+
+Brief discovery command:
+
+```bash
+runpane agent-context
+runpane agent-context --json
+```
+
+Detailed command discovery:
+
+```bash
+runpane agent-context --command <command> [--json]
+```
+
+Brief tools:
+
+- `agent-context`: Print token-efficient Pane command context for coding agents.
+- `repos list`: List repositories saved in the running Pane app.
+- `repos add`: Register an existing git repository with the running Pane app.
+- `panes create`: Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.
+
+Managed AGENTS.md block body:
+
+```md
+## Pane
+
+The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, and implementation work.
+
+Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command "panes create"` or another command name for the detailed schema only when needed.
+
+Common commands:
+- `runpane repos list --json`
+- `runpane repos add --path <repo> --yes --json`
+- `runpane panes create --repo active --name <name> --agent codex --prompt "<task>" --yes`
+```
 
 ## Wrapper Flags
 
@@ -167,7 +212,7 @@ These flags are consumed by local daemon-control commands:
 --json
 ```
 
-`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development.
+`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running.
 
 ## Daemon Passthrough Flags
 

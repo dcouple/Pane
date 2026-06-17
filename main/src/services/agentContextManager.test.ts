@@ -1,0 +1,122 @@
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  ensureProjectAgentContext,
+  PANE_AGENT_CONTEXT_END,
+  PANE_AGENT_CONTEXT_START,
+} from './agentContextManager';
+
+const tempDirs: string[] = [];
+
+function enabledConfig() {
+  return { agentContext: { managedAgentsMd: true } };
+}
+
+function disabledConfig() {
+  return { agentContext: { managedAgentsMd: false } };
+}
+
+async function createTempProject(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-agent-context-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+describe('agentContextManager', () => {
+  afterEach(async () => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('creates AGENTS.md with a managed Pane block by default', async () => {
+    const projectPath = await createTempProject();
+
+    const result = await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+
+    expect(result.changed).toBe(true);
+    expect(result.filePath).toBe(path.join(projectPath, 'AGENTS.md'));
+    const content = await fs.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
+    expect(content).toContain(PANE_AGENT_CONTEXT_START);
+    expect(content).toContain('runpane agent-context');
+    expect(content).toContain(PANE_AGENT_CONTEXT_END);
+  });
+
+  it('updates an existing agents.md variant while preserving user content', async () => {
+    const projectPath = await createTempProject();
+    const agentsPath = path.join(projectPath, 'agents.md');
+    await fs.writeFile(agentsPath, '# Repo Rules\n\nKeep this line.\n', 'utf8');
+
+    const first = await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+    const second = await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+
+    expect(first.changed).toBe(true);
+    expect(first.filePath).toBe(agentsPath);
+    expect(second.changed).toBe(false);
+    const content = await fs.readFile(agentsPath, 'utf8');
+    expect(content).toContain('# Repo Rules');
+    expect(content).toContain('Keep this line.');
+    expect(content.match(/pane-agent-context:start/g)).toHaveLength(1);
+  });
+
+  it('replaces only the managed block on subsequent writes', async () => {
+    const projectPath = await createTempProject();
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fs.writeFile(agentsPath, [
+      '# User Top',
+      '',
+      PANE_AGENT_CONTEXT_START,
+      'old managed content',
+      PANE_AGENT_CONTEXT_END,
+      '',
+      '# User Bottom',
+      ''
+    ].join('\n'), 'utf8');
+
+    await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+
+    const content = await fs.readFile(agentsPath, 'utf8');
+    expect(content).toContain('# User Top');
+    expect(content).toContain('# User Bottom');
+    expect(content).not.toContain('old managed content');
+    expect(content.match(/pane-agent-context:start/g)).toHaveLength(1);
+  });
+
+  it('removes the Pane-owned block when managed AGENTS is disabled', async () => {
+    const projectPath = await createTempProject();
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fs.writeFile(agentsPath, [
+      '# User Top',
+      '',
+      PANE_AGENT_CONTEXT_START,
+      'old managed content',
+      PANE_AGENT_CONTEXT_END,
+      '',
+      '# User Bottom',
+      ''
+    ].join('\n'), 'utf8');
+
+    const result = await ensureProjectAgentContext({ path: projectPath }, disabledConfig());
+
+    expect(result).toMatchObject({ changed: true, removed: true, filePath: agentsPath });
+    const content = await fs.readFile(agentsPath, 'utf8');
+    expect(content).toContain('# User Top');
+    expect(content).toContain('# User Bottom');
+    expect(content).not.toContain(PANE_AGENT_CONTEXT_START);
+  });
+
+  it('deletes an otherwise empty AGENTS.md file when disabling', async () => {
+    const projectPath = await createTempProject();
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+
+    await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+    await ensureProjectAgentContext({ path: projectPath }, disabledConfig());
+
+    await expect(fs.access(agentsPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});

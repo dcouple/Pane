@@ -6,6 +6,7 @@ import socket
 import sys
 from typing import Dict, List, Optional, Tuple, TypeVar
 
+from .agent_context import run_agent_context
 from .doctor import run_doctor
 from .download import download_artifact
 from .generated_contract import RUNPANE_CONTRACT
@@ -61,6 +62,7 @@ class ParsedArgs:
     yes: bool = DEFAULTS["yes"]
     verbose: bool = DEFAULTS["verbose"]
     json: bool = False
+    context_command: Optional[str] = None
     pane_dir: Optional[str] = None
     repo: Optional[str] = None
     repo_path: Optional[str] = None
@@ -94,6 +96,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return print_version(parsed.pane_path)
         if parsed.command == "doctor":
             return run_doctor(parsed, SOURCE)
+        if parsed.command == "agent-context":
+            return run_agent_context(parsed)
         if parsed.command == "repos list":
             return run_repos_list(parsed)
         if parsed.command == "repos add":
@@ -260,6 +264,7 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
     index = 0
     while index < len(args):
         arg = args[index]
+        is_agent_context_command = parsed.command == "agent-context"
         is_local_command = parsed.command in {"repos list", "repos add", "panes create"}
         if arg in {"-h", "--help"}:
             parsed.help_topic = parsed.command
@@ -270,6 +275,11 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
             parsed.yes = True
         elif arg == "--verbose":
             parsed.verbose = True
+        elif is_agent_context_command and arg == "--json":
+            parsed.json = True
+        elif is_agent_context_command and arg == "--command":
+            index += 1
+            parsed.context_command = read_value(args, index, arg)
         elif is_local_command and arg in LOCAL_BOOLEAN_FLAGS:
             parse_local_boolean_flag(parsed, arg)
         elif is_local_command and arg in LOCAL_VALUE_FLAGS:

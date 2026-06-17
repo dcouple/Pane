@@ -22,6 +22,7 @@ export interface ParsedArgs {
   yes: boolean;
   verbose: boolean;
   json: boolean;
+  contextCommand?: string;
   paneDir?: string;
   repo?: string;
   repoPath?: string;
@@ -116,6 +117,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
 function parseFlags(args: string[], parsed: ParsedArgs): void {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
+    const isAgentContextCommand = parsed.command === 'agent-context';
     const isLocalCommand = parsed.command === 'repos list' || parsed.command === 'repos add' || parsed.command === 'panes create';
 
     if (arg === '-h' || arg === '--help') {
@@ -134,6 +136,14 @@ function parseFlags(args: string[], parsed: ParsedArgs): void {
     }
     if (arg === '--verbose') {
       parsed.verbose = true;
+      continue;
+    }
+    if (isAgentContextCommand && arg === '--json') {
+      parsed.json = true;
+      continue;
+    }
+    if (isAgentContextCommand && arg === '--command') {
+      parsed.contextCommand = readValue(args, ++index, arg);
       continue;
     }
     if (isLocalCommand && LOCAL_BOOLEAN_FLAGS.has(arg)) {

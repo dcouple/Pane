@@ -137,6 +137,7 @@ function compareParserParity() {
       yes: parsed.yes,
       verbose: parsed.verbose,
       json: parsed.json,
+      contextCommand: parsed.contextCommand ?? null,
       paneDir: parsed.paneDir ?? null,
       repo: parsed.repo ?? null,
       repoPath: parsed.repoPath ?? null,
@@ -176,6 +177,7 @@ for args in samples:
         "yes": parsed.yes,
         "verbose": parsed.verbose,
         "json": parsed.json,
+        "contextCommand": parsed.context_command,
         "paneDir": parsed.pane_dir,
         "repo": parsed.repo,
         "repoPath": parsed.repo_path,
@@ -540,6 +542,35 @@ function checkHelpOutput() {
   }
 }
 
+function compareAgentContextParity() {
+  const python = findPython();
+  const pythonEnv = {
+    ...process.env,
+    PYTHONPATH: pythonSource
+  };
+  const runNode = (args) => childProcess.execFileSync(process.execPath, [npmCli, ...args], { encoding: 'utf8' }).trim();
+  const runPython = (args) => childProcess.execFileSync(python, ['-m', 'runpane', ...args], {
+    encoding: 'utf8',
+    env: pythonEnv,
+    cwd: rootDir
+  }).trim();
+
+  const nodeBrief = JSON.parse(runNode(['agent-context', '--json']));
+  const pyBrief = JSON.parse(runPython(['agent-context', '--json']));
+  assert.deepStrictEqual(pyBrief, nodeBrief);
+  assert.strictEqual(nodeBrief.mode, 'brief');
+  assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes create'));
+
+  const nodeDetail = JSON.parse(runNode(['agent-context', '--command', 'panes create', '--json']));
+  const pyDetail = JSON.parse(runPython(['agent-context', '--command', 'panes create', '--json']));
+  assert.deepStrictEqual(pyDetail, nodeDetail);
+  assert.strictEqual(nodeDetail.mode, 'command');
+  assert.strictEqual(nodeDetail.command.name, 'panes create');
+
+  assertIncludes(runNode(['agent-context']), 'Detailed definitions: runpane agent-context --command <command> [--json]');
+  assertIncludes(runPython(['agent-context', '--command', 'panes create']), 'runpane panes create');
+}
+
 function checkNoArgsAndSetupFallback() {
   const python = findPython();
   const pythonEnv = {
@@ -574,6 +605,7 @@ async function runChecks() {
   checkPlatformMatchingEdgeCases();
   await checkExistingDaemonShortCircuit();
   checkHelpOutput();
+  compareAgentContextParity();
   checkNoArgsAndSetupFallback();
   console.log('runpane CLI contract checks passed');
 }

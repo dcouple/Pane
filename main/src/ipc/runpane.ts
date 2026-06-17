@@ -7,6 +7,7 @@ import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { PathResolver } from '../utils/pathResolver';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
+import { ensureProjectAgentContext } from '../services/agentContextManager';
 import type { Project } from '../database/models';
 import type { TerminalPanelState } from '../../../shared/types/panels';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
@@ -40,7 +41,7 @@ export function registerRunpaneHandlers(
   services: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
-  const { databaseService, sessionManager, taskQueue } = services;
+  const { databaseService, sessionManager, taskQueue, configManager } = services;
 
   commandRegistry.register('runpane:repos:list', async (): Promise<RunpaneRepoListResult> => {
     const repos = databaseService.getAllProjects().map((project) =>
@@ -98,6 +99,12 @@ export function registerRunpaneHandlers(
       undefined,
       'ignore',
     );
+
+    try {
+      await ensureProjectAgentContext(project, configManager.getConfig());
+    } catch (error) {
+      console.warn('[Runpane] Failed to update Pane agent context after repo add:', error);
+    }
 
     return {
       ok: true,

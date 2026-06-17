@@ -11,6 +11,9 @@ import { PathResolver } from '../utils/pathResolver';
 import { CommandRunner } from '../utils/commandRunner';
 import { GIT_ATTRIBUTION_ENV } from '../utils/attribution';
 import { detectProjectConfig } from '../services/projectConfigDetector';
+import { ensureProjectAgentContext } from '../services/agentContextManager';
+import type { ConfigManager } from '../services/configManager';
+import type { Project } from '../database/models';
 
 // Helper function to stop a running project script
 async function stopProjectScriptInternal(projectId?: number): Promise<{ success: boolean; error?: string }> {
@@ -74,7 +77,7 @@ export function registerProjectHandlers(
   services: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
-  const { databaseService, sessionManager, worktreeManager, analyticsManager } = services;
+  const { databaseService, sessionManager, worktreeManager, analyticsManager, configManager } = services;
 
   commandRegistry.register('projects:get-all', async () => {
     try {
@@ -204,6 +207,10 @@ export function registerProjectHandlers(
 
       console.log('[Main] Project created successfully:', project);
 
+      if (project) {
+        await updateProjectAgentContextBestEffort(project, configManager, 'project create');
+      }
+
       // Track project creation
       if (analyticsManager && project) {
         const allProjects = databaseService.getAllProjects();
@@ -263,6 +270,8 @@ export function registerProjectHandlers(
         if (ctx) {
           await worktreeManager.initializeProject(project.path, undefined, ctx.pathResolver, ctx.commandRunner);
         }
+
+        await updateProjectAgentContextBestEffort(project, configManager, 'project activate');
 
         // Track project switch
         if (analyticsManager) {
@@ -747,4 +756,16 @@ export function registerProjectHandlers(
     }
   });
   commandRegistry.bindChannels(ipcMain, DAEMON_PROJECT_CHANNELS);
+}
+
+async function updateProjectAgentContextBestEffort(
+  project: Project,
+  configManager: ConfigManager,
+  source: string,
+): Promise<void> {
+  try {
+    await ensureProjectAgentContext(project, configManager.getConfig());
+  } catch (error) {
+    console.warn(`[Main] Failed to update Pane agent context during ${source}:`, error);
+  }
 }

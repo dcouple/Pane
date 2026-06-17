@@ -106,6 +106,10 @@ export interface AppConfig {
   };
   // Pane commit footer setting (enabled by default)
   enableCommitFooter?: boolean;
+  // Agent-facing Pane context in repository instructions files
+  agentContext?: {
+    managedAgentsMd: boolean;
+  };
   // Use interactive mode for Claude CLI (persistent process with stdin instead of spawn-per-message)
   useInteractiveMode?: boolean;
   // Route PTY spawns through an isolated ptyHost UtilityProcess for crash
@@ -158,6 +162,7 @@ export interface UpdateConfigRequest {
   additionalPaths?: string[];
   sessionCreationPreferences?: AppConfig['sessionCreationPreferences'];
   enableCommitFooter?: boolean;
+  agentContext?: AppConfig['agentContext'];
   useInteractiveMode?: boolean;
   usePtyHost?: boolean;
   analytics?: AnalyticsConfig;

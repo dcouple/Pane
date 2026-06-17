@@ -7,10 +7,11 @@ import type { RemotePwaAffordances } from '../../../shared/types/remoteDaemon';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import { ShellDetector } from '../utils/shellDetector';
 import { syncAutoStartOnBoot } from '../utils/autoStart';
+import { ensureProjectAgentContext } from '../services/agentContextManager';
 
 export function registerConfigHandlers(
   ipcMain: IpcMain,
-  { app, configManager, claudeCodeManager, getMainWindow }: AppServices,
+  { app, configManager, claudeCodeManager, getMainWindow, sessionManager }: AppServices,
   commandRegistry?: PaneCommandRegistry,
 ): void {
   if (commandRegistry) {
@@ -49,9 +50,11 @@ export function registerConfigHandlers(
     try {
       // Check if Claude path is being updated
       const oldConfig = configManager.getConfig();
-      const claudePathChanged = updates.claudeExecutablePath !== undefined && 
+      const claudePathChanged = updates.claudeExecutablePath !== undefined &&
                                updates.claudeExecutablePath !== oldConfig.claudeExecutablePath;
-      
+      const managedAgentsMdChanged = updates.agentContext?.managedAgentsMd !== undefined
+        && updates.agentContext.managedAgentsMd !== oldConfig.agentContext?.managedAgentsMd;
+
       await configManager.updateConfig(updates);
 
       if (updates.autoStartOnBoot !== undefined) {
@@ -62,6 +65,17 @@ export function registerConfigHandlers(
       if (claudePathChanged) {
         claudeCodeManager.clearAvailabilityCache();
         console.log('[Config] Claude executable path changed, cleared availability cache');
+      }
+
+      if (managedAgentsMdChanged) {
+        const activeProject = sessionManager.getActiveProject();
+        if (activeProject) {
+          try {
+            await ensureProjectAgentContext(activeProject, configManager.getConfig());
+          } catch (error) {
+            console.warn('[Config] Failed to update Pane agent context after setting change:', error);
+          }
+        }
       }
 
       // Apply UI scale live

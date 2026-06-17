@@ -13,6 +13,7 @@
     "defaults",
     "enums",
     "agentTemplates",
+    "agentContext",
     "commands",
     "flags",
     "help",
@@ -21,181 +22,531 @@
     "jsonSchemas"
   ],
   "properties": {
-    "$schema": { "type": "string" },
-    "schemaVersion": { "const": 1 },
-    "name": { "const": "runpane" },
-    "description": { "type": "string", "minLength": 1 },
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "name": {
+      "const": "runpane"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
     "packageInstallPolicy": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "minItems": 1
     },
     "compatibility": {
       "type": "object",
-      "required": ["node", "python"],
+      "required": [
+        "node",
+        "python"
+      ],
       "properties": {
-        "node": { "type": "string", "minLength": 1 },
-        "python": { "type": "string", "minLength": 1 }
+        "node": {
+          "type": "string",
+          "minLength": 1
+        },
+        "python": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": false
     },
     "terminology": {
       "type": "object",
-      "required": ["repo", "pane", "tool", "agent"],
+      "required": [
+        "repo",
+        "pane",
+        "tool",
+        "agent"
+      ],
       "properties": {
-        "repo": { "type": "string" },
-        "pane": { "type": "string" },
-        "tool": { "type": "string" },
-        "agent": { "type": "string" }
+        "repo": {
+          "type": "string"
+        },
+        "pane": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "defaults": {
       "type": "object",
-      "required": ["target", "paneVersion", "channel", "format", "dryRun", "yes", "verbose"],
+      "required": [
+        "target",
+        "paneVersion",
+        "channel",
+        "format",
+        "dryRun",
+        "yes",
+        "verbose"
+      ],
       "properties": {
-        "target": { "type": "string" },
-        "paneVersion": { "type": "string" },
-        "channel": { "type": "string" },
-        "format": { "type": "string" },
-        "dryRun": { "type": "boolean" },
-        "yes": { "type": "boolean" },
-        "verbose": { "type": "boolean" }
+        "target": {
+          "type": "string"
+        },
+        "paneVersion": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "yes": {
+          "type": "boolean"
+        },
+        "verbose": {
+          "type": "boolean"
+        }
       },
       "additionalProperties": false
     },
     "enums": {
       "type": "object",
-      "required": ["installTargets", "artifactFormats", "channels", "agents"],
+      "required": [
+        "installTargets",
+        "artifactFormats",
+        "channels",
+        "agents"
+      ],
       "properties": {
-        "installTargets": { "$ref": "#/$defs/stringList" },
-        "artifactFormats": { "$ref": "#/$defs/stringList" },
-        "channels": { "$ref": "#/$defs/stringList" },
-        "agents": { "$ref": "#/$defs/stringList" }
+        "installTargets": {
+          "$ref": "#/$defs/stringList"
+        },
+        "artifactFormats": {
+          "$ref": "#/$defs/stringList"
+        },
+        "channels": {
+          "$ref": "#/$defs/stringList"
+        },
+        "agents": {
+          "$ref": "#/$defs/stringList"
+        }
       },
       "additionalProperties": false
     },
     "agentTemplates": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/agentTemplate" }
+      "additionalProperties": {
+        "$ref": "#/$defs/agentTemplate"
+      }
     },
     "commands": {
       "type": "array",
-      "items": { "$ref": "#/$defs/command" },
+      "items": {
+        "$ref": "#/$defs/command"
+      },
       "minItems": 1
     },
     "flags": {
       "type": "object",
-      "required": ["wrapper", "remoteValue", "remoteBoolean", "localValue", "localBoolean"],
+      "required": [
+        "wrapper",
+        "remoteValue",
+        "remoteBoolean",
+        "localValue",
+        "localBoolean"
+      ],
       "properties": {
         "wrapper": {
           "type": "array",
-          "items": { "$ref": "#/$defs/flag" }
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
         },
         "remoteValue": {
           "type": "array",
-          "items": { "$ref": "#/$defs/flag" }
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
         },
         "remoteBoolean": {
           "type": "array",
-          "items": { "$ref": "#/$defs/flag" }
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
         },
         "localValue": {
           "type": "array",
-          "items": { "$ref": "#/$defs/flag" }
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
         },
         "localBoolean": {
           "type": "array",
-          "items": { "$ref": "#/$defs/flag" }
+          "items": {
+            "$ref": "#/$defs/flag"
+          }
         }
       },
       "additionalProperties": false
     },
     "help": {
       "type": "object",
-      "required": ["npm", "pip"],
+      "required": [
+        "npm",
+        "pip"
+      ],
       "properties": {
-        "npm": { "$ref": "#/$defs/helpSurface" },
-        "pip": { "$ref": "#/$defs/helpSurface" }
+        "npm": {
+          "$ref": "#/$defs/helpSurface"
+        },
+        "pip": {
+          "$ref": "#/$defs/helpSurface"
+        }
       },
       "additionalProperties": false
     },
-    "docs": { "type": "object" },
-    "testFixtures": { "type": "object" },
+    "docs": {
+      "type": "object"
+    },
+    "testFixtures": {
+      "type": "object"
+    },
     "jsonSchemas": {
       "type": "object",
-      "additionalProperties": { "type": "object" }
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "agentContext": {
+      "$ref": "#/$defs/agentContext"
     }
   },
   "additionalProperties": false,
   "$defs": {
     "stringList": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "minItems": 1,
       "uniqueItems": true
     },
     "command": {
       "type": "object",
-      "required": ["name", "summary", "usage"],
+      "required": [
+        "name",
+        "summary",
+        "usage"
+      ],
       "properties": {
-        "name": { "type": "string", "minLength": 1 },
-        "summary": { "type": "string", "minLength": 1 },
-        "usage": { "$ref": "#/$defs/stringList" },
-        "interactiveEntrypoint": { "type": "boolean" },
-        "defaultTarget": { "type": "string" },
-        "targets": { "$ref": "#/$defs/stringList" },
-        "target": { "type": "string" },
-        "unknownDaemonFlagsForwarded": { "type": "boolean" },
-        "mutates": { "type": "boolean" },
-        "jsonSchemas": { "$ref": "#/$defs/stringList" }
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "usage": {
+          "$ref": "#/$defs/stringList"
+        },
+        "interactiveEntrypoint": {
+          "type": "boolean"
+        },
+        "defaultTarget": {
+          "type": "string"
+        },
+        "targets": {
+          "$ref": "#/$defs/stringList"
+        },
+        "target": {
+          "type": "string"
+        },
+        "unknownDaemonFlagsForwarded": {
+          "type": "boolean"
+        },
+        "mutates": {
+          "type": "boolean"
+        },
+        "jsonSchemas": {
+          "$ref": "#/$defs/stringList"
+        }
       },
       "additionalProperties": false
     },
     "agentTemplate": {
       "type": "object",
-      "required": ["title", "command"],
+      "required": [
+        "title",
+        "command"
+      ],
       "properties": {
-        "title": { "type": "string", "minLength": 1 },
-        "command": { "type": "string", "minLength": 1 },
-        "description": { "type": "string" }
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "flag": {
       "type": "object",
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^--" },
-        "value": { "type": "string" },
+        "name": {
+          "type": "string",
+          "pattern": "^--"
+        },
+        "value": {
+          "type": "string"
+        },
         "aliases": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "description": { "type": "string" }
+        "description": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "helpSurface": {
       "type": "object",
-      "required": ["default", "install", "setup", "update", "version", "doctor", "repos list", "repos add", "panes create"],
+      "required": [
+        "default",
+        "install",
+        "setup",
+        "update",
+        "version",
+        "doctor",
+        "repos list",
+        "repos add",
+        "panes create",
+        "agent-context"
+      ],
       "properties": {
-        "default": { "$ref": "#/$defs/helpLines" },
-        "install": { "$ref": "#/$defs/helpLines" },
-        "setup": { "$ref": "#/$defs/helpLines" },
-        "update": { "$ref": "#/$defs/helpLines" },
-        "version": { "$ref": "#/$defs/helpLines" },
-        "doctor": { "$ref": "#/$defs/helpLines" },
-        "repos list": { "$ref": "#/$defs/helpLines" },
-        "repos add": { "$ref": "#/$defs/helpLines" },
-        "panes create": { "$ref": "#/$defs/helpLines" }
+        "default": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "install": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "setup": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "update": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "version": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "doctor": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "repos list": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "repos add": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panes create": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "agent-context": {
+          "$ref": "#/$defs/helpLines"
+        }
       },
       "additionalProperties": false
     },
     "helpLines": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "minItems": 1
+    },
+    "agentContext": {
+      "type": "object",
+      "required": [
+        "brief",
+        "commands",
+        "managedBlock"
+      ],
+      "properties": {
+        "brief": {
+          "$ref": "#/$defs/agentContextBrief"
+        },
+        "commands": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/agentContextCommand"
+          }
+        },
+        "managedBlock": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentContextBrief": {
+      "type": "object",
+      "required": [
+        "title",
+        "summary",
+        "rules",
+        "detailCommand",
+        "tools"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rules": {
+          "$ref": "#/$defs/stringList"
+        },
+        "detailCommand": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/agentContextTool"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentContextTool": {
+      "type": "object",
+      "required": [
+        "name",
+        "summary",
+        "arguments"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "$ref": "#/$defs/stringList"
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentContextCommand": {
+      "type": "object",
+      "required": [
+        "name",
+        "summary",
+        "details",
+        "arguments",
+        "examples"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiresPaneDaemon": {
+          "type": "boolean"
+        },
+        "mutates": {
+          "type": "boolean"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentContextArgument"
+          }
+        },
+        "examples": {
+          "$ref": "#/$defs/stringList"
+        },
+        "jsonSchemas": {
+          "$ref": "#/$defs/stringList"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentContextArgument": {
+      "type": "object",
+      "required": [
+        "name",
+        "required",
+        "description"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

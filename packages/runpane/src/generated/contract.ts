@@ -115,6 +115,18 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "agent-context",
+      "summary": "Print token-efficient Pane command context for coding agents.",
+      "usage": [
+        "runpane agent-context [--json]",
+        "runpane agent-context --command <command> [--json]"
+      ],
+      "jsonSchemas": [
+        "agentContextBriefResult",
+        "agentContextCommandResult"
+      ]
+    },
+    {
       "name": "repos list",
       "summary": "List repositories saved in the running Pane app.",
       "usage": [
@@ -326,6 +338,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane agent-context [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
@@ -341,6 +354,7 @@ export const RUNPANE_CONTRACT = {
         "  pnpm dlx runpane@latest",
         "  pipx run runpane",
         "",
+        "Run \"runpane agent-context\" when an agent needs Pane command context.",
         "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
@@ -457,6 +471,23 @@ export const RUNPANE_CONTRACT = {
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
         "  --yes                          Skip confirmation for mutating commands"
+      ],
+      "agent-context": [
+        "Usage:",
+        "  runpane agent-context [--json]",
+        "  runpane agent-context --command <command> [--json]",
+        "",
+        "Prints Pane command context for coding agents without requiring a running Pane app.",
+        "",
+        "Options:",
+        "  --command <command>            Print the full definition for one runpane command",
+        "  --json                         Print machine-readable output",
+        "",
+        "Examples:",
+        "  runpane agent-context",
+        "  runpane agent-context --json",
+        "  runpane agent-context --command \"panes create\"",
+        "  runpane agent-context --command \"panes create\" --json"
       ]
     },
     "pip": {
@@ -468,6 +499,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane agent-context [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
@@ -482,6 +514,7 @@ export const RUNPANE_CONTRACT = {
         "  pipx run runpane install daemon --label \"My Server\"",
         "  uvx runpane@latest",
         "",
+        "Run \"runpane agent-context\" when an agent needs Pane command context.",
         "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
@@ -587,6 +620,23 @@ export const RUNPANE_CONTRACT = {
         "  --json",
         "  --dry-run",
         "  --yes"
+      ],
+      "agent-context": [
+        "Usage:",
+        "  runpane agent-context [--json]",
+        "  runpane agent-context --command <command> [--json]",
+        "",
+        "Prints Pane command context for coding agents without requiring a running Pane app.",
+        "",
+        "Options:",
+        "  --command <command>",
+        "  --json",
+        "",
+        "Examples:",
+        "  runpane agent-context",
+        "  runpane agent-context --json",
+        "  runpane agent-context --command \"panes create\"",
+        "  runpane agent-context --command \"panes create\" --json"
       ]
     }
   },
@@ -652,6 +702,8 @@ export const RUNPANE_CONTRACT = {
       "runpane update",
       "runpane version",
       "runpane doctor",
+      "runpane agent-context",
+      "runpane agent-context --command \"panes create\" --json",
       "runpane repos list --json",
       "runpane repos add --path /path/to/repo --name Pane --yes --json",
       "runpane panes create --repo active --name issue-252 --agent codex --prompt \"Kick off the discussion skill for issue 252\" --yes",
@@ -668,13 +720,15 @@ export const RUNPANE_CONTRACT = {
       "`runpane update` uses the same release resolution and installer path as `install client`.",
       "`runpane version` prints the wrapper package version, the installed Pane version when detectable, and the latest GitHub release version when reachable.",
       "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.",
+      "`runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.",
+      "`runpane agent-context --command \"panes create\"` prints the detailed definition for one command. Add `--json` for machine-readable output.",
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
       "`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.",
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.",
       "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
-    "localControlFlagNote": "`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development.",
+    "localControlFlagNote": "`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -751,6 +805,15 @@ export const RUNPANE_CONTRACT = {
         "--verbose"
       ],
       [
+        "agent-context"
+      ],
+      [
+        "agent-context",
+        "--command",
+        "panes create",
+        "--json"
+      ],
+      [
         "repos",
         "list",
         "--json",
@@ -803,6 +866,7 @@ export const RUNPANE_CONTRACT = {
       "runpane update",
       "runpane version",
       "runpane doctor",
+      "runpane agent-context",
       "runpane repos list",
       "runpane repos add",
       "runpane panes create"
@@ -1190,7 +1254,551 @@ export const RUNPANE_CONTRACT = {
         }
       },
       "additionalProperties": false
+    },
+    "agentContextBriefResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "mode",
+        "source",
+        "summary",
+        "rules",
+        "tools",
+        "detailCommand"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "mode": {
+          "const": "brief"
+        },
+        "source": {
+          "const": "runpane-contract"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "summary",
+              "arguments"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "detailCommand": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentContextCommandResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "mode",
+        "source",
+        "command"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "mode": {
+          "const": "command"
+        },
+        "source": {
+          "const": "runpane-contract"
+        },
+        "command": {
+          "type": "object",
+          "required": [
+            "name",
+            "summary",
+            "details",
+            "arguments",
+            "examples"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "details": {
+              "type": "string"
+            },
+            "requiresPaneDaemon": {
+              "type": "boolean"
+            },
+            "mutates": {
+              "type": "boolean"
+            },
+            "arguments": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "examples": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "jsonSchemas": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "notes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
+  },
+  "agentContext": {
+    "brief": {
+      "title": "Pane agent context",
+      "summary": "Pane lets a developer manage repositories and user-visible panes. Agents can use runpane to list/add Pane repositories and create panes with terminal-backed tools.",
+      "rules": [
+        "Start with `runpane repos list --json` to find the saved repository when unsure.",
+        "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
+        "Use `runpane panes create` to create a Pane session and open a built-in agent or custom terminal command.",
+        "Use `runpane agent-context --command <command>` for detailed command definitions only when needed."
+      ],
+      "detailCommand": "runpane agent-context --command <command> [--json]",
+      "tools": [
+        {
+          "name": "agent-context",
+          "summary": "Print token-efficient Pane command context for coding agents.",
+          "arguments": [
+            "--command <command>",
+            "--json"
+          ]
+        },
+        {
+          "name": "repos list",
+          "summary": "List repositories saved in the running Pane app.",
+          "arguments": [
+            "--json",
+            "--pane-dir <path>"
+          ]
+        },
+        {
+          "name": "repos add",
+          "summary": "Register an existing git repository with the running Pane app.",
+          "arguments": [
+            "--path <path>",
+            "--name <name>",
+            "--yes",
+            "--json",
+            "--dry-run",
+            "--pane-dir <path>"
+          ]
+        },
+        {
+          "name": "panes create",
+          "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
+          "arguments": [
+            "--repo <selector>",
+            "--name <name>",
+            "--agent <codex|claude>",
+            "--tool-command <command>",
+            "--prompt <text>",
+            "--from-json <path|->",
+            "--yes",
+            "--json"
+          ]
+        }
+      ]
+    },
+    "commands": {
+      "help": {
+        "name": "help",
+        "summary": "Show help for runpane or a specific command.",
+        "details": "Use this when you need human-readable usage text for a command.",
+        "requiresPaneDaemon": false,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "command",
+            "value": "<command>",
+            "required": false,
+            "description": "Optional command topic such as \"panes create\"."
+          }
+        ],
+        "examples": [
+          "runpane help",
+          "runpane help panes create"
+        ],
+        "notes": [
+          "Help text is generated from the runpane contract."
+        ]
+      },
+      "setup": {
+        "name": "setup",
+        "summary": "Open the guided setup wizard for install, remote host setup, update, and diagnostics.",
+        "details": "Use this for a human-driven Pane setup flow, not for unattended agent orchestration.",
+        "requiresPaneDaemon": false,
+        "mutates": false,
+        "arguments": [],
+        "examples": [
+          "runpane setup"
+        ],
+        "notes": [
+          "In non-interactive shells, setup prints help and exits successfully."
+        ]
+      },
+      "install": {
+        "name": "install",
+        "summary": "Install Pane on this machine or configure this machine as a remote daemon host.",
+        "details": "Installs or launches Pane release artifacts at command runtime. `install daemon` forwards remote setup flags to Pane.",
+        "requiresPaneDaemon": false,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "target",
+            "value": "<client|daemon>",
+            "required": false,
+            "description": "Install the desktop client or configure a remote daemon host."
+          },
+          {
+            "name": "--version",
+            "value": "<latest|vX.Y.Z>",
+            "required": false,
+            "description": "Pane release to install."
+          },
+          {
+            "name": "--format",
+            "value": "<auto|appimage|deb|dmg|zip|exe>",
+            "required": false,
+            "description": "Release artifact format."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip interactive prompts where possible."
+          }
+        ],
+        "examples": [
+          "runpane install client",
+          "runpane install daemon --label \"My Server\""
+        ],
+        "notes": [
+          "Package install itself is inert; work begins only when runpane is executed."
+        ]
+      },
+      "update": {
+        "name": "update",
+        "summary": "Update the Pane desktop app using the same artifact path as install client.",
+        "details": "Resolves and installs the selected Pane client release.",
+        "requiresPaneDaemon": false,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--version",
+            "value": "<latest|vX.Y.Z>",
+            "required": false,
+            "description": "Pane release to update to."
+          },
+          {
+            "name": "--format",
+            "value": "<auto|appimage|deb|dmg|zip|exe>",
+            "required": false,
+            "description": "Release artifact format."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Print the update plan without downloading."
+          }
+        ],
+        "examples": [
+          "runpane update",
+          "runpane update --version latest"
+        ],
+        "notes": [
+          "Equivalent artifact selection to `runpane install client`."
+        ]
+      },
+      "version": {
+        "name": "version",
+        "summary": "Print the runpane wrapper version and installed Pane version when detectable.",
+        "details": "Use this for diagnostics or to confirm which wrapper is available.",
+        "requiresPaneDaemon": false,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--pane-path",
+            "value": "<path>",
+            "required": false,
+            "description": "Inspect a specific Pane executable."
+          }
+        ],
+        "examples": [
+          "runpane version",
+          "runpane --version"
+        ],
+        "notes": []
+      },
+      "doctor": {
+        "name": "doctor",
+        "summary": "Run platform, release, installed Pane, and remote setup diagnostics.",
+        "details": "Use this when runpane install/update behavior needs environment diagnostics.",
+        "requiresPaneDaemon": false,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--pane-path",
+            "value": "<path>",
+            "required": false,
+            "description": "Use an existing Pane executable for diagnostics."
+          },
+          {
+            "name": "--verbose",
+            "required": false,
+            "description": "Print extra diagnostics."
+          }
+        ],
+        "examples": [
+          "runpane doctor",
+          "runpane doctor --verbose"
+        ],
+        "notes": []
+      },
+      "agent-context": {
+        "name": "agent-context",
+        "summary": "Print token-efficient Pane command context for coding agents.",
+        "details": "Use this first when an agent needs to discover Pane primitives. It is local/offline and does not require a running Pane app.",
+        "requiresPaneDaemon": false,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--command",
+            "value": "<command>",
+            "required": false,
+            "description": "Print the detailed definition for one command, for example \"panes create\"."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane agent-context",
+          "runpane agent-context --command \"panes create\" --json"
+        ],
+        "jsonSchemas": [
+          "agentContextBriefResult",
+          "agentContextCommandResult"
+        ],
+        "notes": [
+          "Default output is brief so AGENTS.md can point here without bloating context."
+        ]
+      },
+      "repos list": {
+        "name": "repos list",
+        "summary": "List repositories saved in the running Pane app.",
+        "details": "Use this to find the right Pane-managed repository before creating panes. If the repo is missing, use `repos add` first.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable repository records."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane repos list --json"
+        ],
+        "jsonSchemas": [
+          "repoListResult"
+        ],
+        "notes": [
+          "Requires a running Pane app or daemon for the selected Pane data directory."
+        ]
+      },
+      "repos add": {
+        "name": "repos add",
+        "summary": "Register an existing git repository with the running Pane app.",
+        "details": "Use this when the repository exists on disk but is not saved in Pane yet. It validates the path as a git repository.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--path",
+            "value": "<path>",
+            "required": true,
+            "description": "Existing git repository path to register with Pane."
+          },
+          {
+            "name": "--name",
+            "value": "<name>",
+            "required": false,
+            "description": "Saved repository name; defaults to the directory name."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and preview without adding the repo."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane repos add --path /path/to/repo --yes --json"
+        ],
+        "jsonSchemas": [
+          "repoAddRequest",
+          "repoAddResult"
+        ],
+        "notes": [
+          "It does not create directories or initialize git repositories by default."
+        ]
+      },
+      "panes create": {
+        "name": "panes create",
+        "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
+        "details": "Use this to set up user-visible panes for work. Select a saved repository, choose a built-in agent or custom terminal command, and optionally send initial input after the tool starts.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--repo",
+            "value": "<selector>",
+            "required": true,
+            "description": "Repository selector: active, id, exact path, or saved repository name."
+          },
+          {
+            "name": "--name",
+            "value": "<name>",
+            "required": true,
+            "description": "Pane/session name."
+          },
+          {
+            "name": "--agent",
+            "value": "<codex|claude>",
+            "required": false,
+            "description": "Built-in agent terminal template to open."
+          },
+          {
+            "name": "--tool-command",
+            "value": "<command>",
+            "required": false,
+            "description": "Custom terminal command to run instead of a built-in agent."
+          },
+          {
+            "name": "--prompt",
+            "value": "<text>",
+            "required": false,
+            "description": "Alias for --initial-input; sends text after the command is ready."
+          },
+          {
+            "name": "--initial-input-file",
+            "value": "<path|->",
+            "required": false,
+            "description": "Read initial input from a file or stdin."
+          },
+          {
+            "name": "--from-json",
+            "value": "<path|->",
+            "required": false,
+            "description": "Read a full panes.create request JSON payload."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panes create --repo active --name issue-257 --agent codex --prompt \"Plan this issue\" --yes",
+          "runpane panes create --from-json panes.json --yes --json"
+        ],
+        "jsonSchemas": [
+          "paneCreateRequest",
+          "paneCreateResult"
+        ],
+        "notes": [
+          "At least one of --agent or --tool-command is required unless --from-json is used.",
+          "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user."
+        ]
+      }
+    },
+    "managedBlock": [
+      "## Pane",
+      "",
+      "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, and implementation work.",
+      "",
+      "Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command \"panes create\"` or another command name for the detailed schema only when needed.",
+      "",
+      "Common commands:",
+      "- `runpane repos list --json`",
+      "- `runpane repos add --path <repo> --yes --json`",
+      "- `runpane panes create --repo active --name <name> --agent codex --prompt \"<task>\" --yes`"
+    ]
   }
 } as const;
 

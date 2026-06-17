@@ -60,6 +60,13 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
         active: false,
       })),
     },
+    configManager: {
+      getConfig: vi.fn(() => ({
+        agentContext: {
+          managedAgentsMd: true,
+        },
+      })),
+    },
     sessionManager: {
       getSessionsForProject: vi.fn(() => [session]),
       getSession: vi.fn(() => session),
@@ -214,6 +221,7 @@ describe('runpane IPC handlers', () => {
       },
     });
     expect(services.databaseService.createProject).toHaveBeenCalledTimes(1);
+    expect(fs.readFileSync(path.join(repoPath, 'AGENTS.md'), 'utf8')).toContain('runpane agent-context');
   });
 
   it('rejects repo add for a non-git directory', async () => {

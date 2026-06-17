@@ -156,7 +156,7 @@ function validateContract(contract, schema) {
 
   const commandNames = ensureArray(contract.commands, 'commands').map((command) => command.name);
   assertUnique(commandNames, 'commands');
-  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor', 'repos list', 'repos add', 'panes create']) {
+  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor', 'agent-context', 'repos list', 'repos add', 'panes create']) {
     if (!commandNames.includes(required)) {
       throw new Error(`commands must include "${required}"`);
     }
@@ -212,6 +212,42 @@ function validateContract(contract, schema) {
   const samples = contract.testFixtures?.parserSamples;
   if (!Array.isArray(samples) || samples.length === 0) {
     throw new Error('testFixtures.parserSamples must be a non-empty array');
+  }
+
+  validateAgentContext(contract, commandNames);
+}
+
+function validateAgentContext(contract, commandNames) {
+  const context = contract.agentContext;
+  if (!context || !isObject(context)) {
+    throw new Error('agentContext is required');
+  }
+
+  const detailedCommands = context.commands;
+  if (!isObject(detailedCommands)) {
+    throw new Error('agentContext.commands must be an object');
+  }
+
+  for (const name of commandNames) {
+    const detail = detailedCommands[name];
+    if (!detail) {
+      throw new Error(`agentContext.commands.${name} is required`);
+    }
+    if (detail.name !== name) {
+      throw new Error(`agentContext.commands.${name}.name must match the command name`);
+    }
+    for (const schemaName of detail.jsonSchemas ?? []) {
+      if (!contract.jsonSchemas?.[schemaName]) {
+        throw new Error(`agentContext.commands.${name}.jsonSchemas references unknown schema "${schemaName}"`);
+      }
+    }
+  }
+
+  const commandNameSet = new Set(commandNames);
+  for (const tool of context.brief?.tools ?? []) {
+    if (!commandNameSet.has(tool.name)) {
+      throw new Error(`agentContext.brief.tools references unknown command "${tool.name}"`);
+    }
   }
 }
 
@@ -309,6 +345,17 @@ function renderMarkdown(contract) {
   for (const description of contract.docs.commandDescriptions) {
     lines.push(description, '');
   }
+
+  lines.push('## Agent Context', '');
+  lines.push(contract.agentContext.brief.summary, '');
+  lines.push('Brief discovery command:', '', fenced(['runpane agent-context', 'runpane agent-context --json']), '');
+  lines.push('Detailed command discovery:', '', fenced([contract.agentContext.brief.detailCommand]), '');
+  lines.push('Brief tools:', '');
+  for (const tool of contract.agentContext.brief.tools) {
+    lines.push(`- \`${tool.name}\`: ${tool.summary}`);
+  }
+  lines.push('');
+  lines.push('Managed AGENTS.md block body:', '', fenced(contract.agentContext.managedBlock, 'md'), '');
 
   lines.push('## Wrapper Flags', '');
   lines.push('These flags are consumed by the wrapper:', '', fenced(flagLines(contract.flags.wrapper)), '');

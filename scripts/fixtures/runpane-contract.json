@@ -62,6 +62,15 @@
       "--verbose"
     ],
     [
+      "agent-context"
+    ],
+    [
+      "agent-context",
+      "--command",
+      "panes create",
+      "--json"
+    ],
+    [
       "repos",
       "list",
       "--json",
@@ -115,6 +124,7 @@
       "runpane update",
       "runpane version",
       "runpane doctor",
+      "runpane agent-context",
       "runpane repos list",
       "runpane repos add",
       "runpane panes create"

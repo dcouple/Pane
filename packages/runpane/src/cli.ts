@@ -2,6 +2,7 @@
 import * as os from 'node:os';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
+import { runAgentContext } from './agentContext';
 import { helpText, parseRunpaneArgs, type ParsedArgs } from './commands';
 import { downloadArtifact } from './download';
 import { runDoctor } from './doctor';
@@ -41,6 +42,10 @@ export async function main(argv: string[]): Promise<number> {
 
   if (parsed.command === 'doctor') {
     return runDoctor(parsed, SOURCE);
+  }
+
+  if (parsed.command === 'agent-context') {
+    return runAgentContext(parsed);
   }
 
   if (parsed.command === 'repos list') {

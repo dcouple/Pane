@@ -158,6 +158,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [additionalPathsText, setAdditionalPathsText] = useState('');
   const [platform, setPlatform] = useState<string>('darwin');
   const [enableCommitFooter, setEnableCommitFooter] = useState(true);
+  const [managedAgentsMd, setManagedAgentsMd] = useState(true);
   const [autoRenameToPR, setAutoRenameToPR] = useState<boolean>(true);
   const [uiScale, setUiScale] = useState(1.0);
   const [terminalFontFamily, setTerminalFontFamily] = useState('');
@@ -285,6 +286,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       setTerminalPowerMode(data.terminalPowerMode === 'batterySaver' ? 'batterySaver' : 'performance');
       setClaudeExecutablePath(data.claudeExecutablePath || '');
       setEnableCommitFooter(data.enableCommitFooter !== false); // Default to true
+      setManagedAgentsMd(data.agentContext?.managedAgentsMd !== false); // Default to true
       setUiScale(data.uiScale || 1.0);
       setTerminalFontFamily(data.terminalFontFamily || '');
       setTerminalFontSize(data.terminalFontSize || 14);
@@ -873,6 +875,9 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         terminalPowerMode,
         claudeExecutablePath,
         enableCommitFooter,
+        agentContext: {
+          managedAgentsMd,
+        },
         uiScale,
         additionalPaths: parsedPaths,
         notifications: notificationSettings,
@@ -2034,6 +2039,21 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 />
                 <p className="text-xs text-text-tertiary mt-1">
                   When a PR is detected for a session, automatically rename it to the PR title.
+                </p>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Agent Context"
+                description="Publish Pane command discovery for coding agents"
+                icon={<FileText className="w-4 h-4" />}
+              >
+                <Checkbox
+                  label="Write Pane instructions to AGENTS.md"
+                  checked={managedAgentsMd}
+                  onChange={(e) => setManagedAgentsMd(e.target.checked)}
+                />
+                <p className="text-xs text-text-tertiary mt-1">
+                  Adds a small managed block so coding agents can discover runpane commands.
                 </p>
               </SettingsSection>
 

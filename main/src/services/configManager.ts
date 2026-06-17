@@ -73,6 +73,9 @@ export class ConfigManager extends EventEmitter {
         showAdvanced: false
       },
       analytics: defaultAnalyticsConfig(),
+      agentContext: {
+        managedAgentsMd: true
+      },
       remoteDaemon: createDefaultRemoteDaemonConfig(),
       terminalShortcuts: [
         {
@@ -150,6 +153,10 @@ export class ConfigManager extends EventEmitter {
         analytics: {
           ...this.config.analytics,
           ...loadedConfig.analytics
+        },
+        agentContext: {
+          ...this.config.agentContext,
+          ...loadedConfig.agentContext
         },
         cloud: loadedConfig.cloud !== undefined
           ? normalizeCloudVmConfig(loadedConfig.cloud)
@@ -291,11 +298,19 @@ export class ConfigManager extends EventEmitter {
             ...updates.analytics
           }
         : this.config.analytics;
+    const agentContext =
+      updates.agentContext !== undefined
+        ? {
+            ...this.config.agentContext,
+            ...updates.agentContext
+          }
+        : this.config.agentContext;
 
     this.config = {
       ...this.config,
       ...updates,
       analytics,
+      agentContext,
       cloud: 'cloud' in updates
         ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
         : this.config.cloud,
