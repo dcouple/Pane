@@ -28,6 +28,19 @@ def run_repos_list(parsed: Any) -> int:
     return 0
 
 
+def run_repos_add(parsed: Any) -> int:
+    request = build_repo_add_request(parsed)
+    confirm_repo_add(parsed, request)
+    result = invoke_daemon("runpane:repos:add", [request], pane_dir=parsed.pane_dir)
+
+    if parsed.json:
+        print_json(result)
+    else:
+        print_repo_add_result(result)
+
+    return 0
+
+
 def run_panes_create(parsed: Any) -> int:
     request = build_pane_create_request(parsed)
     confirm_pane_create(parsed, request)
@@ -44,6 +57,17 @@ def run_panes_create(parsed: Any) -> int:
         print_pane_create_result(result)
 
     return 0 if result.get("ok") else 1
+
+
+def build_repo_add_request(parsed: Any) -> Dict[str, Any]:
+    if not parsed.repo_path:
+        raise ValueError("runpane repos add requires --path.")
+
+    return {
+        "path": parsed.repo_path,
+        **optional_value("name", parsed.name),
+        **optional_value("dryRun", True if parsed.dry_run else None),
+    }
 
 
 def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
@@ -112,6 +136,18 @@ def resolve_initial_input(parsed: Any) -> Optional[str]:
     return parsed.initial_input
 
 
+def confirm_repo_add(parsed: Any, request: Dict[str, Any]) -> None:
+    if parsed.dry_run or parsed.yes:
+        return
+    if not is_interactive_shell():
+        raise ValueError("runpane repos add mutates Pane state. Rerun with --yes in non-interactive shells.")
+
+    label = f"{request.get('name')} at {request.get('path')}" if request.get("name") else request.get("path")
+    answer = input(f"Add Pane repo {label}? [y/N] ").strip().lower()
+    if answer not in {"y", "yes"}:
+        raise ValueError("Cancelled.")
+
+
 def confirm_pane_create(parsed: Any, request: Dict[str, Any]) -> None:
     if parsed.dry_run or parsed.yes:
         return
@@ -150,6 +186,24 @@ def read_input_source(source: str) -> str:
 
 def print_json(value: Any) -> None:
     print(json.dumps(value, indent=2))
+
+
+def print_repo_add_result(result: Dict[str, Any]) -> None:
+    preview = result.get("preview") or {}
+    if result.get("dryRun") and preview:
+        if preview.get("alreadyExists"):
+            print(f"Repo already exists: {preview.get('name')}\t{preview.get('path')}")
+            return
+        print(f"Would add Pane repo {preview.get('name')}\t{preview.get('path')}")
+        return
+
+    repo = result.get("repo")
+    if repo:
+        action = "Added Pane repo" if result.get("created") else "Repo already exists"
+        print(f"{action}: {repo.get('id')}\t{repo.get('name')}\t{repo.get('path')}")
+        return
+
+    print("Repo add completed.")
 
 
 def print_pane_create_result(result: Dict[str, Any]) -> None:

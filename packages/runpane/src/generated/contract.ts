@@ -125,6 +125,18 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "repos add",
+      "summary": "Register an existing git repository with the running Pane app.",
+      "usage": [
+        "runpane repos add --path <path> [--name <name>] [--json] [--yes]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "repoAddRequest",
+        "repoAddResult"
+      ]
+    },
+    {
       "name": "panes create",
       "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
       "usage": [
@@ -239,9 +251,14 @@ export const RUNPANE_CONTRACT = {
         "description": "Repository selector: active, id, exact path, or saved repository name."
       },
       {
+        "name": "--path",
+        "value": "<path>",
+        "description": "Existing git repository path to register with Pane."
+      },
+      {
         "name": "--name",
         "value": "<name>",
-        "description": "Name for the created pane/session."
+        "description": "Name for the registered repository or created pane/session."
       },
       {
         "name": "--worktree-name",
@@ -310,6 +327,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane repos list [--json]",
+        "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane help [command]",
         "",
@@ -401,6 +419,20 @@ export const RUNPANE_CONTRACT = {
         "  --json                         Print machine-readable output",
         "  --pane-dir <path>              Connect to a specific Pane data directory"
       ],
+      "repos add": [
+        "Usage:",
+        "  runpane repos add --path <path> [--name <name>] [--json] [--yes]",
+        "",
+        "Registers an existing git repository with the running Pane app.",
+        "",
+        "Options:",
+        "  --path <path>                  Existing git repository path",
+        "  --name <name>                  Saved repository name; defaults to the directory name",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without adding the repo",
+        "  --yes                          Skip confirmation for mutating commands"
+      ],
       "panes create": [
         "Usage:",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
@@ -437,6 +469,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane repos list [--json]",
+        "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane help [command]",
         "",
@@ -515,6 +548,20 @@ export const RUNPANE_CONTRACT = {
         "Options:",
         "  --json",
         "  --pane-dir <path>"
+      ],
+      "repos add": [
+        "Usage:",
+        "  runpane repos add --path <path> [--name <name>] [--json] [--yes]",
+        "",
+        "Registers an existing git repository with the running Pane app.",
+        "",
+        "Options:",
+        "  --path <path>",
+        "  --name <name>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --dry-run",
+        "  --yes"
       ],
       "panes create": [
         "Usage:",
@@ -606,6 +653,7 @@ export const RUNPANE_CONTRACT = {
       "runpane version",
       "runpane doctor",
       "runpane repos list --json",
+      "runpane repos add --path /path/to/repo --name Pane --yes --json",
       "runpane panes create --repo active --name issue-252 --agent codex --prompt \"Kick off the discussion skill for issue 252\" --yes",
       "runpane panes create --from-json panes.json --yes --json",
       "runpane help",
@@ -621,6 +669,7 @@ export const RUNPANE_CONTRACT = {
       "`runpane version` prints the wrapper package version, the installed Pane version when detectable, and the latest GitHub release version when reachable.",
       "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.",
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
+      "`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.",
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.",
       "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field."
     ],
@@ -709,6 +758,19 @@ export const RUNPANE_CONTRACT = {
         "/tmp/pane"
       ],
       [
+        "repos",
+        "add",
+        "--path",
+        "/tmp/repo",
+        "--name",
+        "Repo",
+        "--dry-run",
+        "--yes",
+        "--json",
+        "--pane-dir",
+        "/tmp/pane"
+      ],
+      [
         "panes",
         "create",
         "--repo",
@@ -742,6 +804,7 @@ export const RUNPANE_CONTRACT = {
       "runpane version",
       "runpane doctor",
       "runpane repos list",
+      "runpane repos add",
       "runpane panes create"
     ],
     "npmHelpIncludes": [
@@ -834,6 +897,73 @@ export const RUNPANE_CONTRACT = {
             },
             "additionalProperties": false
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "repoAddRequest": {
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "repoAddResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "created"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "created": {
+          "type": "boolean"
+        },
+        "dryRun": {
+          "type": "boolean"
+        },
+        "repo": {
+          "$ref": "#/jsonSchemas/repoListResult/properties/repos/items"
+        },
+        "preview": {
+          "type": "object",
+          "required": [
+            "name",
+            "path",
+            "alreadyExists",
+            "wouldCreate"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "alreadyExists": {
+              "type": "boolean"
+            },
+            "wouldCreate": {
+              "type": "boolean"
+            },
+            "environment": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false

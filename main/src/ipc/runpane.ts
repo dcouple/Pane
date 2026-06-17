@@ -1,3 +1,5 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
@@ -15,6 +17,8 @@ import type {
   RunpanePaneCreateRequest,
   RunpanePaneCreateResult,
   RunpanePaneCreateResultItem,
+  RunpaneRepoAddRequest,
+  RunpaneRepoAddResult,
   RunpaneRepoListResult,
   RunpaneRepoSelector,
   RunpaneRepoSummary,
@@ -24,6 +28,7 @@ import type {
 
 const RUNPANE_CHANNELS = [
   'runpane:repos:list',
+  'runpane:repos:add',
   'runpane:panes:create',
 ] as const;
 
@@ -42,6 +47,63 @@ export function registerRunpaneHandlers(
       projectToRepoSummary(project, sessionManager.getSessionsForProject(project.id).length)
     );
     return { ok: true, repos };
+  });
+
+  commandRegistry.register('runpane:repos:add', async (request: unknown): Promise<RunpaneRepoAddResult> => {
+    const normalized = parseRepoAddRequest(request);
+    const existing = resolveProjectByPath(databaseService.getAllProjects(), normalized.path);
+
+    if (existing) {
+      return {
+        ok: true,
+        created: false,
+        dryRun: normalized.dryRun || undefined,
+        repo: projectToRepoSummary(existing, sessionManager.getSessionsForProject(existing.id).length),
+        preview: normalized.dryRun
+          ? {
+              name: existing.name,
+              path: existing.path,
+              alreadyExists: true,
+              wouldCreate: false,
+              environment: new PathResolver(existing).environment,
+            }
+          : undefined,
+      };
+    }
+
+    validateRepositoryPath(normalized.path);
+
+    const preview = {
+      name: normalized.name,
+      path: normalized.path,
+      alreadyExists: false,
+      wouldCreate: true,
+      environment: new PathResolver({ path: normalized.path }).environment,
+    };
+
+    if (normalized.dryRun) {
+      return {
+        ok: true,
+        created: false,
+        dryRun: true,
+        preview,
+      };
+    }
+
+    const project = databaseService.createProject(
+      normalized.name,
+      normalized.path,
+      undefined,
+      undefined,
+      undefined,
+      'ignore',
+    );
+
+    return {
+      ok: true,
+      created: true,
+      repo: projectToRepoSummary(project, 0),
+    };
   });
 
   commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
@@ -162,6 +224,26 @@ function parsePaneCreateRequest(value: unknown): RunpanePaneCreateRequest {
   };
 }
 
+function parseRepoAddRequest(value: unknown): Required<Pick<RunpaneRepoAddRequest, 'path' | 'name'>> & Pick<RunpaneRepoAddRequest, 'dryRun'> {
+  if (!isRecord(value)) {
+    throw new Error('Repo add request must be an object');
+  }
+
+  if (typeof value.path !== 'string' || value.path.trim().length === 0) {
+    throw new Error('Repo add request must include a path');
+  }
+
+  const repoPath = path.resolve(value.path);
+  const providedName = optionalString(value.name)?.trim();
+  const defaultName = path.basename(repoPath) || repoPath;
+
+  return {
+    path: repoPath,
+    name: providedName && providedName.length > 0 ? providedName : defaultName,
+    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+  };
+}
+
 function parsePaneCreateItem(value: unknown, index: number): RunpanePaneCreateItem {
   if (!isRecord(value)) {
     throw new Error(`Pane create item ${index} must be an object`);
@@ -178,6 +260,33 @@ function parsePaneCreateItem(value: unknown, index: number): RunpanePaneCreateIt
     sessionPrompt: optionalString(value.sessionPrompt),
     tool: parseToolSpec(value.tool, index),
   };
+}
+
+function validateRepositoryPath(repoPath: string): void {
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(repoPath);
+  } catch {
+    throw new Error(`Repo path does not exist: ${repoPath}`);
+  }
+
+  if (!stat.isDirectory()) {
+    throw new Error(`Repo path must be a directory: ${repoPath}`);
+  }
+
+  try {
+    const output = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: repoPath,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+
+    if (output !== 'true') {
+      throw new Error('not inside work tree');
+    }
+  } catch {
+    throw new Error(`Repo path must be an existing git repository: ${repoPath}`);
+  }
 }
 
 function parseToolSpec(value: unknown, index: number): RunpaneToolSpec {

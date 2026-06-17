@@ -178,7 +178,7 @@
     },
     "helpSurface": {
       "type": "object",
-      "required": ["default", "install", "setup", "update", "version", "doctor", "repos list", "panes create"],
+      "required": ["default", "install", "setup", "update", "version", "doctor", "repos list", "repos add", "panes create"],
       "properties": {
         "default": { "$ref": "#/$defs/helpLines" },
         "install": { "$ref": "#/$defs/helpLines" },
@@ -187,6 +187,7 @@
         "version": { "$ref": "#/$defs/helpLines" },
         "doctor": { "$ref": "#/$defs/helpLines" },
         "repos list": { "$ref": "#/$defs/helpLines" },
+        "repos add": { "$ref": "#/$defs/helpLines" },
         "panes create": { "$ref": "#/$defs/helpLines" }
       },
       "additionalProperties": false

@@ -19,6 +19,28 @@ interface RepoListResult {
   repos: RepoSummary[];
 }
 
+interface RepoAddRequest {
+  path: string;
+  name?: string;
+  dryRun?: boolean;
+}
+
+interface RepoAddPreview {
+  name: string;
+  path: string;
+  alreadyExists: boolean;
+  wouldCreate: boolean;
+  environment?: string;
+}
+
+interface RepoAddResult {
+  ok: true;
+  created: boolean;
+  dryRun?: boolean;
+  repo?: RepoSummary;
+  preview?: RepoAddPreview;
+}
+
 interface PaneCreateRequest {
   repo: string | { id: number } | { path: string } | { name: string } | { active: true };
   panes: PaneCreateItem[];
@@ -76,6 +98,23 @@ export async function runReposList(parsed: ParsedArgs): Promise<number> {
   return 0;
 }
 
+export async function runReposAdd(parsed: ParsedArgs): Promise<number> {
+  const request = buildRepoAddRequest(parsed);
+  await confirmRepoAdd(parsed, request);
+
+  const result = await invokeDaemon<RepoAddResult>('runpane:repos:add', [request], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+  } else {
+    printRepoAddResult(result);
+  }
+
+  return 0;
+}
+
 export async function runPanesCreate(parsed: ParsedArgs): Promise<number> {
   const request = await buildPaneCreateRequest(parsed);
   await confirmPaneCreate(parsed, request);
@@ -92,6 +131,18 @@ export async function runPanesCreate(parsed: ParsedArgs): Promise<number> {
   }
 
   return result.ok ? 0 : 1;
+}
+
+function buildRepoAddRequest(parsed: ParsedArgs): RepoAddRequest {
+  if (!parsed.repoPath) {
+    throw new Error('runpane repos add requires --path.');
+  }
+
+  return {
+    path: parsed.repoPath,
+    name: parsed.name,
+    dryRun: parsed.dryRun || undefined,
+  };
 }
 
 async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateRequest> {
@@ -128,6 +179,27 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
   };
 
   return request;
+}
+
+async function confirmRepoAdd(parsed: ParsedArgs, request: RepoAddRequest): Promise<void> {
+  if (parsed.dryRun || parsed.yes) {
+    return;
+  }
+
+  if (!isInteractiveShell()) {
+    throw new Error('runpane repos add mutates Pane state. Rerun with --yes in non-interactive shells.');
+  }
+
+  const label = request.name ? `${request.name} at ${request.path}` : request.path;
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`Add Pane repo ${label}? [y/N] `)).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('Cancelled.');
+    }
+  } finally {
+    rl.close();
+  }
 }
 
 async function buildToolSpec(parsed: ParsedArgs): Promise<PaneToolSpec> {
@@ -235,6 +307,25 @@ function readInputSource(source: string): string {
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
+}
+
+function printRepoAddResult(result: RepoAddResult): void {
+  if (result.dryRun && result.preview) {
+    if (result.preview.alreadyExists) {
+      console.log(`Repo already exists: ${result.preview.name}\t${result.preview.path}`);
+      return;
+    }
+    console.log(`Would add Pane repo ${result.preview.name}\t${result.preview.path}`);
+    return;
+  }
+
+  if (result.repo) {
+    const action = result.created ? 'Added Pane repo' : 'Repo already exists';
+    console.log(`${action}: ${result.repo.id}\t${result.repo.name}\t${result.repo.path}`);
+    return;
+  }
+
+  console.log('Repo add completed.');
 }
 
 function printPaneCreateResult(result: PaneCreateResult): void {

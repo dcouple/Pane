@@ -12,7 +12,7 @@ import {
   shouldReuseExistingPane,
   spawnPane
 } from './installers';
-import { runPanesCreate, runReposList } from './localControl';
+import { runPanesCreate, runReposAdd, runReposList } from './localControl';
 import { detectPlatform } from './platform';
 import { resolveRelease } from './releases';
 import { printVersion } from './version';
@@ -45,6 +45,10 @@ export async function main(argv: string[]): Promise<number> {
 
   if (parsed.command === 'repos list') {
     return runReposList(parsed);
+  }
+
+  if (parsed.command === 'repos add') {
+    return runReposAdd(parsed);
   }
 
   if (parsed.command === 'panes create') {

@@ -99,6 +99,7 @@ runpane update
 runpane version
 runpane doctor
 runpane repos list --json
+runpane repos add --path /path/to/repo --name Pane --yes --json
 runpane panes create --repo active --name issue-252 --agent codex --prompt "Kick off the discussion skill for issue 252" --yes
 runpane panes create --from-json panes.json --yes --json
 runpane help
@@ -122,6 +123,8 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 `runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.
 
 `runpane repos list` connects to the running local Pane daemon and prints saved repository records.
+
+`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.
 
 `runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.
 
@@ -150,6 +153,7 @@ These flags are consumed by local daemon-control commands:
 ```bash
 --pane-dir <path>
 --repo <selector>
+--path <path>
 --name <name>
 --worktree-name <name>
 --base-branch <branch>

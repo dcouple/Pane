@@ -24,6 +24,28 @@ export interface RunpaneRepoListResult {
   repos: RunpaneRepoSummary[];
 }
 
+export interface RunpaneRepoAddRequest {
+  path: string;
+  name?: string;
+  dryRun?: boolean;
+}
+
+export interface RunpaneRepoAddPreview {
+  name: string;
+  path: string;
+  alreadyExists: boolean;
+  wouldCreate: boolean;
+  environment?: ProjectEnvironment;
+}
+
+export interface RunpaneRepoAddResult {
+  ok: true;
+  created: boolean;
+  dryRun?: boolean;
+  repo?: RunpaneRepoSummary;
+  preview?: RunpaneRepoAddPreview;
+}
+
 export interface RunpaneAgentToolSpec {
   agent: RunpaneAgentId;
   title?: string;

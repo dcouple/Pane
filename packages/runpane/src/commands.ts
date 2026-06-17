@@ -24,6 +24,7 @@ export interface ParsedArgs {
   json: boolean;
   paneDir?: string;
   repo?: string;
+  repoPath?: string;
   name?: string;
   worktreeName?: string;
   baseBranch?: string;
@@ -115,7 +116,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
 function parseFlags(args: string[], parsed: ParsedArgs): void {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
-    const isLocalCommand = parsed.command === 'repos list' || parsed.command === 'panes create';
+    const isLocalCommand = parsed.command === 'repos list' || parsed.command === 'repos add' || parsed.command === 'panes create';
 
     if (arg === '-h' || arg === '--help') {
       const topic = parsed.command;
@@ -217,6 +218,10 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
   }
   if (flag === '--repo') {
     parsed.repo = value;
+    return;
+  }
+  if (flag === '--path') {
+    parsed.repoPath = value;
     return;
   }
   if (flag === '--name') {

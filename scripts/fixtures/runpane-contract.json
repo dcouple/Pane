@@ -69,6 +69,19 @@
       "/tmp/pane"
     ],
     [
+      "repos",
+      "add",
+      "--path",
+      "/tmp/repo",
+      "--name",
+      "Repo",
+      "--dry-run",
+      "--yes",
+      "--json",
+      "--pane-dir",
+      "/tmp/pane"
+    ],
+    [
       "panes",
       "create",
       "--repo",
@@ -103,6 +116,7 @@
       "runpane version",
       "runpane doctor",
       "runpane repos list",
+      "runpane repos add",
       "runpane panes create"
     ],
     "npmIncludes": [

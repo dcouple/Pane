@@ -16,7 +16,7 @@ from .installers import (
     should_reuse_existing_pane,
     spawn_pane,
 )
-from .local_control import run_panes_create, run_repos_list
+from .local_control import run_panes_create, run_repos_add, run_repos_list
 from .platforms import detect_platform
 from .releases import resolve_release
 from .version import print_version
@@ -63,6 +63,7 @@ class ParsedArgs:
     json: bool = False
     pane_dir: Optional[str] = None
     repo: Optional[str] = None
+    repo_path: Optional[str] = None
     name: Optional[str] = None
     worktree_name: Optional[str] = None
     base_branch: Optional[str] = None
@@ -95,6 +96,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             return run_doctor(parsed, SOURCE)
         if parsed.command == "repos list":
             return run_repos_list(parsed)
+        if parsed.command == "repos add":
+            return run_repos_add(parsed)
         if parsed.command == "panes create":
             return run_panes_create(parsed)
         if parsed.command in {"install", "update"}:
@@ -257,7 +260,7 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
     index = 0
     while index < len(args):
         arg = args[index]
-        is_local_command = parsed.command in {"repos list", "panes create"}
+        is_local_command = parsed.command in {"repos list", "repos add", "panes create"}
         if arg in {"-h", "--help"}:
             parsed.help_topic = parsed.command
             parsed.command = "help"
@@ -327,6 +330,9 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
         return
     if flag == "--repo":
         parsed.repo = value
+        return
+    if flag == "--path":
+        parsed.repo_path = value
         return
     if flag == "--name":
         parsed.name = value

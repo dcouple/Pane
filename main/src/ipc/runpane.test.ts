@@ -1,4 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { Project } from '../database/models';
 import type { Session } from '../types/session';
@@ -48,6 +52,13 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
     getMainWindow: () => null,
     databaseService: {
       getAllProjects: vi.fn(() => [project]),
+      createProject: vi.fn((name: string, repoPath: string): Project => ({
+        ...project,
+        id: 2,
+        name,
+        path: repoPath,
+        active: false,
+      })),
     },
     sessionManager: {
       getSessionsForProject: vi.fn(() => [session]),
@@ -66,6 +77,17 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
   } as unknown as AppServices;
 }
 
+const tempDirs: string[] = [];
+
+function createTempGitRepo(name = 'repo'): string {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-test-'));
+  tempDirs.push(parent);
+  const repoPath = path.join(parent, name);
+  fs.mkdirSync(repoPath);
+  execFileSync('git', ['init'], { cwd: repoPath, stdio: 'ignore' });
+  return repoPath;
+}
+
 function createRegistry(services = createServices()): PaneCommandRegistry {
   const registry = new PaneCommandRegistry();
   registerRunpaneHandlers({} as never, services, registry);
@@ -76,6 +98,15 @@ describe('runpane IPC handlers', () => {
   beforeEach(() => {
     vi.mocked(panelManager.createPanel).mockReset();
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
+  });
+
+  afterEach(() => {
+    while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
   });
 
   it('lists saved Pane repositories with session counts', async () => {
@@ -93,6 +124,112 @@ describe('runpane IPC handlers', () => {
         sessionCount: 1,
       }],
     });
+  });
+
+  it('dry-runs adding an existing git repository without saving it', async () => {
+    const repoPath = createTempGitRepo('pane-addon');
+    const services = createServices({
+      databaseService: {
+        getAllProjects: vi.fn(() => []),
+        createProject: vi.fn(),
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSessionsForProject: vi.fn(() => []),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:repos:add', [{
+      path: repoPath,
+      dryRun: true,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      created: false,
+      dryRun: true,
+      preview: {
+        name: 'pane-addon',
+        path: repoPath,
+        alreadyExists: false,
+        wouldCreate: true,
+      },
+    });
+    expect(services.databaseService.createProject).not.toHaveBeenCalled();
+  });
+
+  it('adds an existing git repository idempotently', async () => {
+    const repoPath = createTempGitRepo();
+    const savedProject: Project = {
+      ...project,
+      id: 3,
+      name: 'New Repo',
+      path: repoPath,
+      active: false,
+    };
+    const projects: Project[] = [];
+    const services = createServices({
+      databaseService: {
+        getAllProjects: vi.fn(() => projects),
+        createProject: vi.fn((name: string, savedPath: string): Project => {
+          const created = { ...savedProject, name, path: savedPath };
+          projects.push(created);
+          return created;
+        }),
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSessionsForProject: vi.fn(() => []),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const created = await registry.invoke('runpane:repos:add', [{
+      path: repoPath,
+      name: 'Registered Repo',
+    }]);
+    const existing = await registry.invoke('runpane:repos:add', [{
+      path: repoPath,
+    }]);
+
+    expect(created).toMatchObject({
+      ok: true,
+      created: true,
+      repo: {
+        id: 3,
+        name: 'Registered Repo',
+        path: repoPath,
+        active: false,
+        sessionCount: 0,
+      },
+    });
+    expect(existing).toMatchObject({
+      ok: true,
+      created: false,
+      repo: {
+        id: 3,
+        name: 'Registered Repo',
+        path: repoPath,
+      },
+    });
+    expect(services.databaseService.createProject).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects repo add for a non-git directory', async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-test-'));
+    tempDirs.push(parent);
+    const registry = createRegistry(createServices({
+      databaseService: {
+        getAllProjects: vi.fn(() => []),
+        createProject: vi.fn(),
+      } as never,
+    }));
+
+    await expect(registry.invoke('runpane:repos:add', [{
+      path: parent,
+      dryRun: true,
+    }])).rejects.toThrow('Repo path must be an existing git repository');
   });
 
   it('dry-runs pane creation with contract-backed agent templates', async () => {
