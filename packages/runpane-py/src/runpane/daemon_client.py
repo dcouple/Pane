@@ -35,7 +35,7 @@ def get_pane_daemon_endpoint(app_directory: str, platform: str = sys.platform) -
 
     return {
         "transport": "unix",
-        "path": os.path.join(get_unix_socket_directory_name(resolved_app_directory), DAEMON_SOCKET_FILENAME),
+        "path": posixpath.join(get_unix_socket_directory_name(resolved_app_directory), DAEMON_SOCKET_FILENAME),
     }
 
 
@@ -125,7 +125,7 @@ def get_windows_pipe_name(app_directory: str) -> str:
 def get_unix_socket_directory_name(app_directory: str) -> str:
     digest = hashlib.sha256(app_directory.encode("utf-8")).hexdigest()[:16]
     uid_suffix = f"-{os.getuid()}" if hasattr(os, "getuid") else ""
-    return os.path.join(UNIX_SOCKET_BASE_DIRECTORY, f"pane-daemon{uid_suffix}-{digest}")
+    return posixpath.join(UNIX_SOCKET_BASE_DIRECTORY, f"pane-daemon{uid_suffix}-{digest}")
 
 
 def encode_frame(frame: Dict[str, Any]) -> bytes:

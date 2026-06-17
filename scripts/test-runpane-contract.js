@@ -248,6 +248,28 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
 }
 
+function checkPythonUnixEndpointSeparatorsAreHostIndependent() {
+  const pythonOutput = runPythonSnippet(`
+import json
+import ntpath
+import runpane.daemon_client as daemon_client
+
+original_os_path = daemon_client.os.path
+daemon_client.os.path = ntpath
+try:
+    endpoint = daemon_client.get_pane_daemon_endpoint("/Users/parsa/.pane", "linux")
+finally:
+    daemon_client.os.path = original_os_path
+
+print(json.dumps(endpoint))
+`);
+  const endpoint = JSON.parse(pythonOutput);
+  assert.strictEqual(endpoint.transport, 'unix');
+  assert.ok(endpoint.path.startsWith('/tmp/'), `Expected Unix socket path to start with /tmp/: ${endpoint.path}`);
+  assert.ok(endpoint.path.endsWith('/daemon.sock'), `Expected Unix socket path to end with /daemon.sock: ${endpoint.path}`);
+  assert.strictEqual(endpoint.path.includes('\\'), false, `Expected Unix socket path to use forward slashes: ${endpoint.path}`);
+}
+
 function compareArtifactSelectionParity() {
   const { findArtifact } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js'));
   const nodeOutput = artifactCases.map(({ platform, format }) => ({
@@ -543,6 +565,7 @@ async function runChecks() {
   compareParserParity();
   comparePlatformParity();
   compareDaemonEndpointParity();
+  checkPythonUnixEndpointSeparatorsAreHostIndependent();
   compareArtifactSelectionParity();
   await checkPreferredDownloadUrls();
   compareExistingReusePolicy();
