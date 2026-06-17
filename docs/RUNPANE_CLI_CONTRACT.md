@@ -98,6 +98,9 @@ runpane install daemon
 runpane update
 runpane version
 runpane doctor
+runpane repos list --json
+runpane panes create --repo active --name issue-252 --agent codex --prompt "Kick off the discussion skill for issue 252" --yes
+runpane panes create --from-json panes.json --yes --json
 runpane help
 runpane <command> --help
 ```
@@ -118,6 +121,12 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 `runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.
 
+`runpane repos list` connects to the running local Pane daemon and prints saved repository records.
+
+`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.
+
+`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.
+
 ## Wrapper Flags
 
 These flags are consumed by the wrapper:
@@ -128,11 +137,33 @@ These flags are consumed by the wrapper:
 --pane-path <path>
 --format <auto|appimage|deb|dmg|zip|exe>
 --dry-run
---yes
+--yes (aliases: -y)
 --verbose
 ```
 
 The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.
+
+## Local Control Flags
+
+These flags are consumed by local daemon-control commands:
+
+```bash
+--pane-dir <path>
+--repo <selector>
+--name <name>
+--worktree-name <name>
+--base-branch <branch>
+--agent <codex|claude>
+--tool-command <command>
+--title <title>
+--initial-input <text> (aliases: --prompt)
+--initial-input-file <path|->
+--from-json <path|->
+--timeout-ms <milliseconds>
+--json
+```
+
+`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development.
 
 ## Daemon Passthrough Flags
 

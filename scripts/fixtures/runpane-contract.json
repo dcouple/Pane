@@ -62,6 +62,36 @@
       "--verbose"
     ],
     [
+      "repos",
+      "list",
+      "--json",
+      "--pane-dir",
+      "/tmp/pane"
+    ],
+    [
+      "panes",
+      "create",
+      "--repo",
+      "active",
+      "--name",
+      "issue-252",
+      "--agent",
+      "codex",
+      "--prompt",
+      "Kick off discussion",
+      "--dry-run",
+      "--yes",
+      "--json"
+    ],
+    [
+      "panes",
+      "create",
+      "--from-json",
+      "-",
+      "--yes",
+      "--json"
+    ],
+    [
       "--version"
     ]
   ],
@@ -71,7 +101,9 @@
       "runpane install",
       "runpane update",
       "runpane version",
-      "runpane doctor"
+      "runpane doctor",
+      "runpane repos list",
+      "runpane panes create"
     ],
     "npmIncludes": [
       "pnpm dlx runpane@latest",

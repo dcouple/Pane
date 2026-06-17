@@ -12,6 +12,7 @@ import {
   shouldReuseExistingPane,
   spawnPane
 } from './installers';
+import { runPanesCreate, runReposList } from './localControl';
 import { detectPlatform } from './platform';
 import { resolveRelease } from './releases';
 import { printVersion } from './version';
@@ -40,6 +41,14 @@ export async function main(argv: string[]): Promise<number> {
 
   if (parsed.command === 'doctor') {
     return runDoctor(parsed, SOURCE);
+  }
+
+  if (parsed.command === 'repos list') {
+    return runReposList(parsed);
+  }
+
+  if (parsed.command === 'panes create') {
+    return runPanesCreate(parsed);
   }
 
   if (parsed.command === 'install' || parsed.command === 'update') {
@@ -183,6 +192,7 @@ function createParsedArgs(command: ParsedArgs['command'], overrides: Partial<Par
     dryRun: false,
     yes: false,
     verbose: false,
+    json: false,
     remoteSetupArgs: [],
     ...overrides
   };

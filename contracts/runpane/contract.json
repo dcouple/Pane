@@ -29,7 +29,20 @@
   "enums": {
     "installTargets": ["client", "daemon"],
     "artifactFormats": ["auto", "appimage", "deb", "dmg", "zip", "exe"],
-    "channels": ["stable", "nightly"]
+    "channels": ["stable", "nightly"],
+    "agents": ["codex", "claude"]
+  },
+  "agentTemplates": {
+    "codex": {
+      "title": "Codex",
+      "command": "codex --yolo",
+      "description": "Open a Codex terminal tab and allow the initial input to drive the agent."
+    },
+    "claude": {
+      "title": "Claude Code",
+      "command": "claude --dangerously-skip-permissions",
+      "description": "Open a Claude Code terminal tab and allow the initial input to drive the agent."
+    }
   },
   "commands": [
     {
@@ -66,6 +79,22 @@
       "name": "doctor",
       "summary": "Run platform, release, installed Pane, and remote setup diagnostics.",
       "usage": ["runpane doctor"]
+    },
+    {
+      "name": "repos list",
+      "summary": "List repositories saved in the running Pane app.",
+      "usage": ["runpane repos list [--json] [--pane-dir <path>]"],
+      "jsonSchemas": ["repoListResult"]
+    },
+    {
+      "name": "panes create",
+      "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
+      "usage": [
+        "runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "runpane panes create --from-json <path|-> [--yes] [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": ["paneCreateRequest", "paneCreateResult"]
     }
   ],
   "flags": {
@@ -154,6 +183,75 @@
       {
         "name": "--print-only"
       }
+    ],
+    "localValue": [
+      {
+        "name": "--pane-dir",
+        "value": "<path>",
+        "description": "Connect to a Pane daemon using this Pane data directory."
+      },
+      {
+        "name": "--repo",
+        "value": "<selector>",
+        "description": "Repository selector: active, id, exact path, or saved repository name."
+      },
+      {
+        "name": "--name",
+        "value": "<name>",
+        "description": "Name for the created pane/session."
+      },
+      {
+        "name": "--worktree-name",
+        "value": "<name>",
+        "description": "Worktree name to request. Defaults to --name."
+      },
+      {
+        "name": "--base-branch",
+        "value": "<branch>",
+        "description": "Base branch for the created worktree."
+      },
+      {
+        "name": "--agent",
+        "value": "<codex|claude>",
+        "description": "Built-in agent terminal template to open."
+      },
+      {
+        "name": "--tool-command",
+        "value": "<command>",
+        "description": "Custom terminal command to run instead of a built-in agent."
+      },
+      {
+        "name": "--title",
+        "value": "<title>",
+        "description": "Terminal tab title. Defaults to the selected agent title or Terminal."
+      },
+      {
+        "name": "--initial-input",
+        "value": "<text>",
+        "aliases": ["--prompt"],
+        "description": "Text to send to the terminal after the command is ready. --prompt is an alias."
+      },
+      {
+        "name": "--initial-input-file",
+        "value": "<path|->",
+        "description": "Read initial input from a file or stdin."
+      },
+      {
+        "name": "--from-json",
+        "value": "<path|->",
+        "description": "Read a full panes.create request JSON payload from a file or stdin."
+      },
+      {
+        "name": "--timeout-ms",
+        "value": "<milliseconds>",
+        "description": "Maximum time to wait for each pane creation job."
+      }
+    ],
+    "localBoolean": [
+      {
+        "name": "--json",
+        "description": "Print machine-readable JSON output."
+      }
     ]
   },
   "help": {
@@ -166,6 +264,8 @@
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane repos list [--json]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -178,7 +278,7 @@
         "  pnpm dlx runpane@latest",
         "  pipx run runpane",
         "",
-        "Run \"runpane help install\" for install options."
+        "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
         "Usage:",
@@ -245,6 +345,41 @@
       "doctor": [
         "Usage:",
         "  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]"
+      ],
+      "repos list": [
+        "Usage:",
+        "  runpane repos list [--json] [--pane-dir <path>]",
+        "",
+        "Lists repositories saved in the running Pane app.",
+        "",
+        "Options:",
+        "  --json                         Print machine-readable output",
+        "  --pane-dir <path>              Connect to a specific Pane data directory"
+      ],
+      "panes create": [
+        "Usage:",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --from-json <path|-> [--yes] [--json]",
+        "",
+        "Creates Pane sessions in a saved repository and opens a terminal-backed tool tab.",
+        "",
+        "Options:",
+        "  --repo <selector>              active, id, exact path, or saved repository name",
+        "  --name <name>                  Pane/session name",
+        "  --worktree-name <name>         Worktree name; defaults to --name",
+        "  --base-branch <branch>         Base branch for the worktree",
+        "  --agent <codex|claude>         Built-in terminal template",
+        "  --tool-command <command>       Custom terminal command",
+        "  --title <title>                Terminal tab title",
+        "  --initial-input <text>         Text sent after the command is ready",
+        "  --prompt <text>                Alias for --initial-input",
+        "  --initial-input-file <path|->  Read initial input from a file or stdin",
+        "  --from-json <path|->           Read a full request payload",
+        "  --timeout-ms <milliseconds>    Pane creation timeout",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without creating panes",
+        "  --yes                          Skip confirmation for mutating commands"
       ]
     },
     "pip": {
@@ -256,6 +391,8 @@
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane repos list [--json]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -267,7 +404,7 @@
         "  pipx run runpane install daemon --label \"My Server\"",
         "  uvx runpane@latest",
         "",
-        "Run \"runpane help install\" for install options."
+        "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
         "Usage:",
@@ -323,6 +460,41 @@
       "doctor": [
         "Usage:",
         "  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]"
+      ],
+      "repos list": [
+        "Usage:",
+        "  runpane repos list [--json] [--pane-dir <path>]",
+        "",
+        "Lists repositories saved in the running Pane app.",
+        "",
+        "Options:",
+        "  --json",
+        "  --pane-dir <path>"
+      ],
+      "panes create": [
+        "Usage:",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --from-json <path|-> [--yes] [--json]",
+        "",
+        "Creates Pane sessions in a saved repository and opens a terminal-backed tool tab.",
+        "",
+        "Options:",
+        "  --repo <selector>",
+        "  --name <name>",
+        "  --worktree-name <name>",
+        "  --base-branch <branch>",
+        "  --agent <codex|claude>",
+        "  --tool-command <command>",
+        "  --title <title>",
+        "  --initial-input <text>",
+        "  --prompt <text>",
+        "  --initial-input-file <path|->",
+        "  --from-json <path|->",
+        "  --timeout-ms <milliseconds>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --dry-run",
+        "  --yes"
       ]
     }
   },
@@ -388,6 +560,9 @@
       "runpane update",
       "runpane version",
       "runpane doctor",
+      "runpane repos list --json",
+      "runpane panes create --repo active --name issue-252 --agent codex --prompt \"Kick off the discussion skill for issue 252\" --yes",
+      "runpane panes create --from-json panes.json --yes --json",
       "runpane help",
       "runpane <command> --help"
     ],
@@ -399,9 +574,13 @@
       "The wrapper must stream Pane stdout/stderr without reformatting because `pane --remote-setup` prints the one-time `pane-remote://...` connection code.",
       "`runpane update` uses the same release resolution and installer path as `install client`.",
       "`runpane version` prints the wrapper package version, the installed Pane version when detectable, and the latest GitHub release version when reachable.",
-      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints."
+      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.",
+      "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
+      "`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.",
+      "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
+    "localControlFlagNote": "`runpane repos list` and `runpane panes create` use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -423,9 +602,12 @@
       ["install", "daemon", "--label", "VM", "--prefer-tunnel", "ssh", "--channel", "nightly", "--base-url", "https://example.test", "--pane-dir", "/tmp/pane", "--listen-port", "4555", "--auto-listen-port", "--print-only", "--repo-ref", "main", "--unknown-future-flag", "future-value", "--dry-run", "--verbose"],
       ["update", "--version", "latest", "--format", "appimage", "--pane-path", "/usr/bin/pane", "--dry-run"],
       ["doctor", "--pane-path", "/usr/bin/pane", "--format", "zip", "--verbose"],
+      ["repos", "list", "--json", "--pane-dir", "/tmp/pane"],
+      ["panes", "create", "--repo", "active", "--name", "issue-252", "--agent", "codex", "--prompt", "Kick off discussion", "--dry-run", "--yes", "--json"],
+      ["panes", "create", "--from-json", "-", "--yes", "--json"],
       ["--version"]
     ],
-    "topLevelHelpIncludes": ["runpane setup", "runpane install", "runpane update", "runpane version", "runpane doctor"],
+    "topLevelHelpIncludes": ["runpane setup", "runpane install", "runpane update", "runpane version", "runpane doctor", "runpane repos list", "runpane panes create"],
     "npmHelpIncludes": ["pnpm dlx runpane@latest", "npx --yes runpane@latest"],
     "pipHelpIncludes": ["pipx run runpane", "python -m pip install runpane && python -m runpane setup"],
     "installHelpIncludes": [
@@ -462,13 +644,151 @@
       },
       "additionalProperties": false
     },
-    "future.repoListResult": {
+    "repoListResult": {
       "type": "object",
-      "description": "Reserved for #252 repo listing output."
+      "required": ["ok", "repos"],
+      "properties": {
+        "ok": { "const": true },
+        "repos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "path", "active", "sessionCount"],
+            "properties": {
+              "id": { "type": "number" },
+              "name": { "type": "string" },
+              "path": { "type": "string" },
+              "active": { "type": "boolean" },
+              "environment": { "type": "string" },
+              "sessionCount": { "type": "number" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
     },
-    "future.paneCreateResult": {
+    "paneCreateRequest": {
       "type": "object",
-      "description": "Reserved for #252 pane creation output."
+      "required": ["repo", "panes"],
+      "properties": {
+        "repo": {
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "type": "number" },
+                "path": { "type": "string" },
+                "name": { "type": "string" },
+                "active": { "const": true }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "panes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "tool"],
+            "properties": {
+              "name": { "type": "string" },
+              "worktreeName": { "type": "string" },
+              "baseBranch": { "type": "string" },
+              "sessionPrompt": { "type": "string" },
+              "tool": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": ["agent"],
+                    "properties": {
+                      "agent": { "enum": ["codex", "claude"] },
+                      "title": { "type": "string" },
+                      "initialInput": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": ["command"],
+                    "properties": {
+                      "command": { "type": "string" },
+                      "title": { "type": "string" },
+                      "initialInput": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "dryRun": { "type": "boolean" },
+        "timeoutMs": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "paneCreateResult": {
+      "type": "object",
+      "required": ["ok", "repo", "items"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "repo": { "$ref": "#/jsonSchemas/repoListResult/properties/repos/items" },
+        "items": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["ok", "index", "name"],
+                "properties": {
+                  "ok": { "const": true },
+                  "index": { "type": "number" },
+                  "name": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "paneId": { "type": "string" },
+                  "panelId": { "type": "string" },
+                  "worktreePath": { "type": "string" },
+                  "tool": {
+                    "type": "object",
+                    "required": ["title", "command"],
+                    "properties": {
+                      "title": { "type": "string" },
+                      "command": { "type": "string" },
+                      "agent": { "enum": ["codex", "claude"] }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": ["ok", "index", "error"],
+                "properties": {
+                  "ok": { "const": false },
+                  "index": { "type": "number" },
+                  "name": { "type": "string" },
+                  "error": {
+                    "type": "object",
+                    "required": ["message"],
+                    "properties": {
+                      "message": { "type": "string" },
+                      "code": { "type": "string" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -67,6 +67,10 @@ interface SendInputJob {
   input: string;
 }
 
+export interface CreateSessionQueueResult {
+  sessionId: string;
+}
+
 export class TaskQueue {
   private sessionQueue: Bull.Queue<CreateSessionJob> | SimpleQueue<CreateSessionJob>;
   private inputQueue: Bull.Queue<SendInputJob> | SimpleQueue<SendInputJob>;
@@ -495,6 +499,111 @@ export class TaskQueue {
   async createSession(data: CreateSessionJob): Promise<Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string }> {
     const job = await this.sessionQueue.add(data);
     return job;
+  }
+
+  async createSessionAndWait(
+    data: CreateSessionJob,
+    options: { timeoutMs?: number } = {},
+  ): Promise<CreateSessionQueueResult> {
+    const job = await this.createSession(data);
+    return this.waitForSessionCreationJob(job, options.timeoutMs ?? 120_000);
+  }
+
+  private async waitForSessionCreationJob(
+    job: Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string; result?: unknown; error?: Error },
+    timeoutMs: number,
+  ): Promise<CreateSessionQueueResult> {
+    const bullJob = job as Bull.Job<CreateSessionJob> & { finished?: () => Promise<unknown> };
+    if (typeof bullJob.finished === 'function') {
+      return this.withSessionCreationTimeout(
+        bullJob.finished().then(result => this.parseSessionCreationResult(result, job.id)),
+        timeoutMs,
+        job.id,
+      );
+    }
+
+    const simpleJob = job as { id: string; status: string; result?: unknown; error?: Error };
+    if (simpleJob.status === 'completed') {
+      return this.parseSessionCreationResult(simpleJob.result, simpleJob.id);
+    }
+    if (simpleJob.status === 'failed') {
+      throw simpleJob.error ?? new Error(`Session creation job ${simpleJob.id} failed`);
+    }
+
+    let cleanup: () => void = () => {};
+    return this.withSessionCreationTimeout(new Promise<CreateSessionQueueResult>((resolve, reject) => {
+      const handleCompleted = (completedJob: unknown, result: unknown) => {
+        const completedJobId = this.getQueueJobId(completedJob);
+        if (completedJobId !== String(simpleJob.id)) {
+          return;
+        }
+        cleanup();
+        try {
+          resolve(this.parseSessionCreationResult(result, simpleJob.id));
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      const handleFailed = (failedJob: unknown, error: unknown) => {
+        const failedJobId = this.getQueueJobId(failedJob);
+        if (failedJobId !== String(simpleJob.id)) {
+          return;
+        }
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      };
+
+      cleanup = () => {
+        this.sessionQueue.removeListener('completed', handleCompleted);
+        this.sessionQueue.removeListener('failed', handleFailed);
+      };
+
+      this.sessionQueue.on('completed', handleCompleted);
+      this.sessionQueue.on('failed', handleFailed);
+    }), timeoutMs, simpleJob.id, cleanup);
+  }
+
+  private parseSessionCreationResult(result: unknown, jobId: string | number): CreateSessionQueueResult {
+    if (
+      typeof result === 'object' &&
+      result !== null &&
+      typeof (result as { sessionId?: unknown }).sessionId === 'string'
+    ) {
+      return { sessionId: (result as { sessionId: string }).sessionId };
+    }
+
+    throw new Error(`Session creation job ${jobId} completed without a sessionId`);
+  }
+
+  private withSessionCreationTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    jobId: string | number,
+    onTimeout?: () => void,
+  ): Promise<T> {
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeout = setTimeout(() => {
+        onTimeout?.();
+        reject(new Error(`Timed out waiting for session creation job ${jobId}`));
+      }, timeoutMs);
+    });
+
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    });
+  }
+
+  private getQueueJobId(job: unknown): string | null {
+    if (typeof job !== 'object' || job === null) {
+      return null;
+    }
+
+    const id = (job as { id?: unknown }).id;
+    return typeof id === 'string' || typeof id === 'number' ? String(id) : null;
   }
 
   async createMultipleSessions(

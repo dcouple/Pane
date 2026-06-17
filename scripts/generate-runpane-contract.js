@@ -10,6 +10,7 @@ const paths = {
   contract: path.join(rootDir, 'contracts', 'runpane', 'contract.json'),
   schema: path.join(rootDir, 'contracts', 'runpane', 'schema.json'),
   npmContract: path.join(rootDir, 'packages', 'runpane', 'src', 'generated', 'contract.ts'),
+  sharedContract: path.join(rootDir, 'shared', 'types', 'generatedRunpaneContract.ts'),
   pyContract: path.join(rootDir, 'packages', 'runpane-py', 'src', 'runpane', 'generated_contract.py'),
   fixture: path.join(rootDir, 'scripts', 'fixtures', 'runpane-contract.json'),
   docs: path.join(rootDir, 'docs', 'RUNPANE_CLI_CONTRACT.md')
@@ -155,7 +156,7 @@ function validateContract(contract, schema) {
 
   const commandNames = ensureArray(contract.commands, 'commands').map((command) => command.name);
   assertUnique(commandNames, 'commands');
-  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor']) {
+  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor', 'repos list', 'panes create']) {
     if (!commandNames.includes(required)) {
       throw new Error(`commands must include "${required}"`);
     }
@@ -175,18 +176,32 @@ function validateContract(contract, schema) {
     throw new Error('defaults.channel must be one of enums.channels');
   }
 
+  for (const agent of contract.enums.agents) {
+    const template = contract.agentTemplates?.[agent];
+    if (!template) {
+      throw new Error(`agentTemplates.${agent} is required`);
+    }
+    if (typeof template.title !== 'string' || typeof template.command !== 'string') {
+      throw new Error(`agentTemplates.${agent} must include title and command`);
+    }
+  }
+
+  const flagNamesAndAliases = (flags) => flags.flatMap((flag) => [flag.name, ...(flag.aliases ?? [])]);
   const remoteValueFlags = ensureArray(contract.flags?.remoteValue, 'flags.remoteValue').map((flag) => flag.name);
   const remoteBooleanFlags = ensureArray(contract.flags?.remoteBoolean, 'flags.remoteBoolean').map((flag) => flag.name);
-  const wrapperFlags = ensureArray(contract.flags?.wrapper, 'flags.wrapper').map((flag) => flag.name);
+  const wrapperFlags = flagNamesAndAliases(ensureArray(contract.flags?.wrapper, 'flags.wrapper'));
+  const localValueFlags = flagNamesAndAliases(ensureArray(contract.flags?.localValue, 'flags.localValue'));
+  const localBooleanFlags = flagNamesAndAliases(ensureArray(contract.flags?.localBoolean, 'flags.localBoolean'));
   assertUnique([...remoteValueFlags, ...remoteBooleanFlags], 'remote flags');
   assertUnique(wrapperFlags, 'wrapper flags');
+  assertUnique([...localValueFlags, ...localBooleanFlags], 'local flags');
 
   for (const surface of ['npm', 'pip']) {
     const help = contract.help?.[surface];
     if (!help) {
       throw new Error(`help.${surface} is required`);
     }
-    for (const topic of ['default', 'install', 'setup', 'update', 'version', 'doctor']) {
+    for (const topic of ['default', ...commandNames.filter((name) => name !== 'help')]) {
       const lines = help[topic];
       if (!Array.isArray(lines) || lines.length === 0) {
         throw new Error(`help.${surface}.${topic} must be a non-empty array`);
@@ -213,6 +228,7 @@ function renderTypeScript(contract) {
     "export type InstallTarget = typeof RUNPANE_CONTRACT.enums.installTargets[number];",
     "export type ArtifactFormat = typeof RUNPANE_CONTRACT.enums.artifactFormats[number];",
     "export type RunpaneChannel = typeof RUNPANE_CONTRACT.enums.channels[number];",
+    "export type RunpaneAgent = typeof RUNPANE_CONTRACT.enums.agents[number];",
     ''
   ].join('\n');
 }
@@ -245,7 +261,10 @@ function fenced(lines, language = 'bash') {
 }
 
 function flagLines(flags) {
-  return flags.map((flag) => `${flag.name}${flag.value ? ` ${flag.value}` : ''}`);
+  return flags.map((flag) => {
+    const aliases = flag.aliases?.length ? ` (aliases: ${flag.aliases.join(', ')})` : '';
+    return `${flag.name}${flag.value ? ` ${flag.value}` : ''}${aliases}`;
+  });
 }
 
 function renderMarkdown(contract) {
@@ -295,6 +314,10 @@ function renderMarkdown(contract) {
   lines.push('These flags are consumed by the wrapper:', '', fenced(flagLines(contract.flags.wrapper)), '');
   lines.push(contract.docs.wrapperFlagNote, '');
 
+  lines.push('## Local Control Flags', '');
+  lines.push('These flags are consumed by local daemon-control commands:', '', fenced(flagLines([...contract.flags.localValue, ...contract.flags.localBoolean])), '');
+  lines.push(contract.docs.localControlFlagNote, '');
+
   lines.push('## Daemon Passthrough Flags', '');
   lines.push('`runpane install daemon` forwards these flags to `pane --remote-setup`:', '');
   lines.push(fenced([...flagLines(contract.flags.remoteValue), ...flagLines(contract.flags.remoteBoolean)]), '');
@@ -333,6 +356,7 @@ function main() {
 
   const outputs = new Map([
     [paths.npmContract, renderTypeScript(contract)],
+    [paths.sharedContract, renderTypeScript(contract)],
     [paths.pyContract, renderPython(contract)],
     [paths.fixture, renderFixture(contract)],
     [paths.docs, renderMarkdown(contract)]

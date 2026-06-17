@@ -21,6 +21,13 @@ const platformCases = [
   { platform: { os: 'win32', arch: 'arm64' }, target: 'daemon' }
 ];
 
+const daemonEndpointCases = [
+  { appDirectory: '/Users/parsa/.pane', platform: 'darwin' },
+  { appDirectory: '/tmp/.pane-test', platform: 'linux' },
+  { appDirectory: 'C:\\Users\\Parsa\\.pane', platform: 'win32' },
+  { appDirectory: 'c:\\users\\parsa\\.pane', platform: 'win32' }
+];
+
 const artifactRelease = {
   tag_name: 'v2.2.8',
   name: 'v2.2.8',
@@ -129,6 +136,19 @@ function compareParserParity() {
       dryRun: parsed.dryRun,
       yes: parsed.yes,
       verbose: parsed.verbose,
+      json: parsed.json,
+      paneDir: parsed.paneDir ?? null,
+      repo: parsed.repo ?? null,
+      name: parsed.name ?? null,
+      worktreeName: parsed.worktreeName ?? null,
+      baseBranch: parsed.baseBranch ?? null,
+      agent: parsed.agent ?? null,
+      toolCommand: parsed.toolCommand ?? null,
+      title: parsed.title ?? null,
+      initialInput: parsed.initialInput ?? null,
+      initialInputFile: parsed.initialInputFile ?? null,
+      fromJson: parsed.fromJson ?? null,
+      timeoutMs: parsed.timeoutMs ?? null,
       remoteSetupArgs: parsed.remoteSetupArgs
     };
   });
@@ -154,6 +174,19 @@ for args in samples:
         "dryRun": parsed.dry_run,
         "yes": parsed.yes,
         "verbose": parsed.verbose,
+        "json": parsed.json,
+        "paneDir": parsed.pane_dir,
+        "repo": parsed.repo,
+        "name": parsed.name,
+        "worktreeName": parsed.worktree_name,
+        "baseBranch": parsed.base_branch,
+        "agent": parsed.agent,
+        "toolCommand": parsed.tool_command,
+        "title": parsed.title,
+        "initialInput": parsed.initial_input,
+        "initialInputFile": parsed.initial_input_file,
+        "fromJson": parsed.from_json,
+        "timeoutMs": parsed.timeout_ms,
         "remoteSetupArgs": parsed.remote_setup_args,
     })
 print(json.dumps(normalized))
@@ -190,6 +223,27 @@ for case in cases:
     })
 print(json.dumps(normalized))
 `, JSON.stringify(platformCases));
+
+  assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
+}
+
+function compareDaemonEndpointParity() {
+  const { getPaneDaemonEndpoint } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
+  const nodeOutput = daemonEndpointCases.map(({ appDirectory, platform }) =>
+    getPaneDaemonEndpoint(appDirectory, platform)
+  );
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.daemon_client import get_pane_daemon_endpoint
+
+cases = json.loads(sys.stdin.read())
+normalized = []
+for case in cases:
+    normalized.append(get_pane_daemon_endpoint(case["appDirectory"], case["platform"]))
+print(json.dumps(normalized))
+`, JSON.stringify(daemonEndpointCases));
 
   assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
 }
@@ -488,6 +542,7 @@ async function runChecks() {
   ensureBuiltCli();
   compareParserParity();
   comparePlatformParity();
+  compareDaemonEndpointParity();
   compareArtifactSelectionParity();
   await checkPreferredDownloadUrls();
   compareExistingReusePolicy();

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import os
 import socket
 import sys
-from typing import Dict, List, Optional, TypeVar
+from typing import Dict, List, Optional, Tuple, TypeVar
 
 from .doctor import run_doctor
 from .download import download_artifact
@@ -16,19 +16,35 @@ from .installers import (
     should_reuse_existing_pane,
     spawn_pane,
 )
+from .local_control import run_panes_create, run_repos_list
 from .platforms import detect_platform
 from .releases import resolve_release
 from .version import print_version
 
 SOURCE = "pip"
 
-COMMANDS = {command["name"] for command in RUNPANE_CONTRACT["commands"]}
+COMMAND_MATCHERS = sorted(
+    ((command["name"], command["name"].split(" ")) for command in RUNPANE_CONTRACT["commands"]),
+    key=lambda item: len(item[1]),
+    reverse=True,
+)
 TARGETS = set(RUNPANE_CONTRACT["enums"]["installTargets"])
 FORMATS = set(RUNPANE_CONTRACT["enums"]["artifactFormats"])
 CHANNELS = set(RUNPANE_CONTRACT["enums"]["channels"])
+AGENTS = set(RUNPANE_CONTRACT["enums"]["agents"])
 
 REMOTE_VALUE_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteValue"]}
 REMOTE_BOOLEAN_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteBoolean"]}
+LOCAL_VALUE_FLAGS = {
+    value
+    for flag in RUNPANE_CONTRACT["flags"]["localValue"]
+    for value in [flag["name"], *flag.get("aliases", [])]
+}
+LOCAL_BOOLEAN_FLAGS = {
+    value
+    for flag in RUNPANE_CONTRACT["flags"]["localBoolean"]
+    for value in [flag["name"], *flag.get("aliases", [])]
+}
 DEFAULTS = RUNPANE_CONTRACT["defaults"]
 
 
@@ -44,6 +60,19 @@ class ParsedArgs:
     dry_run: bool = DEFAULTS["dryRun"]
     yes: bool = DEFAULTS["yes"]
     verbose: bool = DEFAULTS["verbose"]
+    json: bool = False
+    pane_dir: Optional[str] = None
+    repo: Optional[str] = None
+    name: Optional[str] = None
+    worktree_name: Optional[str] = None
+    base_branch: Optional[str] = None
+    agent: Optional[str] = None
+    tool_command: Optional[str] = None
+    title: Optional[str] = None
+    initial_input: Optional[str] = None
+    initial_input_file: Optional[str] = None
+    from_json: Optional[str] = None
+    timeout_ms: Optional[float] = None
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -64,6 +93,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             return print_version(parsed.pane_path)
         if parsed.command == "doctor":
             return run_doctor(parsed, SOURCE)
+        if parsed.command == "repos list":
+            return run_repos_list(parsed)
+        if parsed.command == "panes create":
+            return run_panes_create(parsed)
         if parsed.command in {"install", "update"}:
             return install_or_update(parsed)
         print(help_text(None))
@@ -192,15 +225,21 @@ def parse_args(argv: List[str]) -> ParsedArgs:
     args = list(argv)
     if not args or args[0] in {"-h", "--help"}:
         return ParsedArgs(command="help")
-    first = args.pop(0)
+    first = args[0]
     if first in {"-v", "--version"}:
         return ParsedArgs(command="version")
-    if first not in COMMANDS:
-        raise ValueError(f"Unknown command: {first}\n\n{help_text(None)}")
     if first == "help":
-        return ParsedArgs(command="help", help_topic=args[0] if args else None)
+        args.pop(0)
+        return ParsedArgs(command="help", help_topic=" ".join(args) or None)
 
-    parsed = ParsedArgs(command=first)
+    matched = match_command(args)
+    if not matched:
+        raise ValueError(f"Unknown command: {first}\n\n{help_text(None)}")
+
+    command, tokens = matched
+    del args[:len(tokens)]
+
+    parsed = ParsedArgs(command=command)
     if parsed.command == "install" and args and not args[0].startswith("-"):
         target = args.pop(0)
         if target not in TARGETS:
@@ -218,6 +257,7 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
     index = 0
     while index < len(args):
         arg = args[index]
+        is_local_command = parsed.command in {"repos list", "panes create"}
         if arg in {"-h", "--help"}:
             parsed.help_topic = parsed.command
             parsed.command = "help"
@@ -227,6 +267,11 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
             parsed.yes = True
         elif arg == "--verbose":
             parsed.verbose = True
+        elif is_local_command and arg in LOCAL_BOOLEAN_FLAGS:
+            parse_local_boolean_flag(parsed, arg)
+        elif is_local_command and arg in LOCAL_VALUE_FLAGS:
+            index += 1
+            parse_local_value_flag(parsed, arg, read_value(args, index, arg))
         elif arg == "--version":
             index += 1
             parsed.pane_version = read_value(args, index, arg)
@@ -262,6 +307,68 @@ def parse_flags(args: List[str], parsed: ParsedArgs) -> None:
         index += 1
 
 
+def match_command(args: List[str]) -> Optional[Tuple[str, List[str]]]:
+    for command, tokens in COMMAND_MATCHERS:
+        if args[:len(tokens)] == tokens:
+            return command, tokens
+    return None
+
+
+def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
+    if flag == "--json":
+        parsed.json = True
+        return
+    raise ValueError(f"Unknown option for {parsed.command}: {flag}")
+
+
+def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
+    if flag == "--pane-dir":
+        parsed.pane_dir = value
+        return
+    if flag == "--repo":
+        parsed.repo = value
+        return
+    if flag == "--name":
+        parsed.name = value
+        return
+    if flag == "--worktree-name":
+        parsed.worktree_name = value
+        return
+    if flag == "--base-branch":
+        parsed.base_branch = value
+        return
+    if flag == "--agent":
+        if value not in AGENTS:
+            raise ValueError(f"Invalid --agent {value}. Expected one of: {', '.join(sorted(AGENTS))}")
+        parsed.agent = value
+        return
+    if flag == "--tool-command":
+        parsed.tool_command = value
+        return
+    if flag == "--title":
+        parsed.title = value
+        return
+    if flag in {"--initial-input", "--prompt"}:
+        parsed.initial_input = value
+        return
+    if flag == "--initial-input-file":
+        parsed.initial_input_file = value
+        return
+    if flag == "--from-json":
+        parsed.from_json = value
+        return
+    if flag == "--timeout-ms":
+        try:
+            timeout_ms = float(value)
+        except ValueError as error:
+            raise ValueError("--timeout-ms must be a positive number.") from error
+        if timeout_ms <= 0:
+            raise ValueError("--timeout-ms must be a positive number.")
+        parsed.timeout_ms = timeout_ms
+        return
+    raise ValueError(f"Unknown option for {parsed.command}: {flag}")
+
+
 def append_remote_arg(parsed: ParsedArgs, flag: str, value: Optional[str] = None) -> None:
     if parsed.command == "install" and parsed.target == "daemon":
         parsed.remote_setup_args.append(flag)
@@ -272,7 +379,7 @@ def append_remote_arg(parsed: ParsedArgs, flag: str, value: Optional[str] = None
 
 
 def read_value(args: List[str], index: int, flag: str) -> str:
-    if index >= len(args) or args[index].startswith("-"):
+    if index >= len(args) or (args[index].startswith("-") and args[index] != "-"):
         raise ValueError(f"{flag} requires a value.")
     return args[index]
 

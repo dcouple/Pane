@@ -30,6 +30,9 @@ export interface TerminalPanelState {
   cwd?: string;                  // Current working directory
   shellType?: string;            // bash, zsh, etc.
   initialCommand?: string;       // Command to run on terminal init (e.g., "claude --dangerously-skip-permissions")
+  initialInput?: string;         // First input to send once the initial command is ready
+  initialInputSentAt?: string;   // Set after initialInput has been written once
+  initialInputError?: string;    // Best-effort error if initialInput could not be written
   
   // Enhanced persistence (can be added incrementally)
   scrollbackBuffer?: string | string[];   // Full terminal output history (string for new format, array for legacy)

@@ -242,6 +242,52 @@ export class TerminalPanelManager {
     return { commandToRun: initialCommand, customState: nextState, isCliCommand: true };
   }
 
+  private async markInitialInputSent(panelId: string): Promise<string | null> {
+    const currentPanel = panelManager.getPanel(panelId);
+    if (!currentPanel) {
+      return null;
+    }
+
+    const state = currentPanel.state;
+    const customState = (state.customState || {}) as TerminalPanelState;
+    if (!customState.initialInput || customState.initialInputSentAt) {
+      return null;
+    }
+
+    const input = customState.initialInput;
+    customState.initialInputSentAt = new Date().toISOString();
+    customState.initialInputError = undefined;
+    state.customState = customState;
+    await panelManager.updatePanel(panelId, { state });
+    return input;
+  }
+
+  private async markInitialInputError(panelId: string, error: unknown): Promise<void> {
+    const currentPanel = panelManager.getPanel(panelId);
+    if (!currentPanel) {
+      return;
+    }
+
+    const state = currentPanel.state;
+    const customState = (state.customState || {}) as TerminalPanelState;
+    customState.initialInputError = error instanceof Error ? error.message : String(error);
+    state.customState = customState;
+    await panelManager.updatePanel(panelId, { state });
+  }
+
+  private sendInitialInputOnce(panelId: string): void {
+    this.markInitialInputSent(panelId).then((initialInput) => {
+      if (!initialInput) {
+        return;
+      }
+
+      this.writeToTerminal(panelId, initialInput.endsWith('\r') ? initialInput : `${initialInput}\r`);
+    }).catch((error) => {
+      console.warn(`[TerminalPanelManager] Failed to send initial input for panel ${panelId}:`, error);
+      this.markInitialInputError(panelId, error).catch(() => {});
+    });
+  }
+
   private stripAnsiSequences(output: string): string {
     // eslint-disable-next-line no-control-regex
     return output.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g, '');
@@ -806,6 +852,7 @@ export class TerminalPanelManager {
     // Get initialCommand from existing state before updating
     const existingState = panel.state.customState as TerminalPanelState | undefined;
     const initialCommand = existingState?.initialCommand;
+    const initialInput = existingState?.initialInput;
 
     // If we have an initial command, set up the prompt detection listener BEFORE
     // setupTerminalHandlers so we don't miss early shell output.
@@ -862,6 +909,7 @@ export class TerminalPanelManager {
 
             // Emit to renderer
             this.sendRendererEvent('terminal:cliReady', { panelId });
+            this.sendInitialInputOnce(panelId);
           };
 
           // Listen for first CLI output after command injection.
@@ -875,6 +923,8 @@ export class TerminalPanelManager {
 
           // Safety timeout: dismiss after 10s regardless
           setTimeout(signalCliReady, 10000);
+        } else if (initialInput) {
+          setTimeout(() => this.sendInitialInputOnce(panelId), 1000);
         }
       };
 
@@ -895,6 +945,8 @@ export class TerminalPanelManager {
 
       // Safety timeout: if prompt is never detected within 5s, inject anyway
       setTimeout(injectCommand, 5000);
+    } else if (initialInput) {
+      setTimeout(() => this.sendInitialInputOnce(panel.id), 1000);
     }
 
     // Set up event handlers
