@@ -8,7 +8,7 @@ import { commandExecutor } from '../utils/commandExecutor';
 import { getCurrentWorktreeName } from '../utils/worktreeUtils';
 import { getAppDirectory } from '../utils/appDirectory';
 
-const MAC_UPDATE_COMMAND = 'curl -fsSL https://runpane.com/install.sh | sh';
+const MAC_UPDATE_COMMAND = 'npx --yes runpane@latest update';
 
 export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker }: AppServices): void {
   // Version checking handlers

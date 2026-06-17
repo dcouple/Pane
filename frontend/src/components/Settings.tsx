@@ -1458,15 +1458,29 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-text-secondary">macOS / Linux</p>
-                      <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
-                        curl -fsSL https://runpane.com/install-remote.sh | sh -s -- --label "My Server"
+                      <p className="text-[11px] font-medium text-text-secondary">npx</p>
+                      <code className="ph-no-capture block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        npx --yes runpane@latest install daemon --label "My Server"
                       </code>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-[11px] font-medium text-text-secondary">Windows PowerShell</p>
-                      <code className="block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
-                        &amp; ([scriptblock]::Create((irm https://runpane.com/install-remote.ps1))) -Label "My Server"
+                      <p className="text-[11px] font-medium text-text-secondary">pnpm</p>
+                      <code className="ph-no-capture block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        pnpm dlx runpane@latest install daemon --label "My Server"
+                      </code>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-text-secondary">Python tools</p>
+                      <code className="ph-no-capture block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        pipx run runpane install daemon --label "My Server"
+                      </code>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] font-medium text-text-secondary">SSH tunnel</p>
+                      <code className="ph-no-capture block rounded-md bg-surface-primary border border-border-secondary px-3 py-2 text-xs text-text-primary overflow-x-auto">
+                        npx --yes runpane@latest install daemon --label "My Server" --prefer-tunnel ssh
                       </code>
                     </div>
                   </div>

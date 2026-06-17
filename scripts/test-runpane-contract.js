@@ -1,0 +1,272 @@
+#!/usr/bin/env node
+const assert = require('assert');
+const childProcess = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const rootDir = path.resolve(__dirname, '..');
+const npmCli = path.join(rootDir, 'packages', 'runpane', 'dist', 'cli.js');
+const pythonSource = path.join(rootDir, 'packages', 'runpane-py', 'src');
+
+const parserSamples = [
+  ['install'],
+  ['install', 'client', '--version', 'v2.2.8', '--format', 'dmg', '--download-dir', '/tmp/pane-downloads', '--dry-run', '--yes'],
+  [
+    'install',
+    'daemon',
+    '--label',
+    'VM',
+    '--prefer-tunnel',
+    'ssh',
+    '--channel',
+    'nightly',
+    '--base-url',
+    'https://example.test',
+    '--pane-dir',
+    '/tmp/pane',
+    '--listen-port',
+    '4555',
+    '--auto-listen-port',
+    '--print-only',
+    '--repo-ref',
+    'main',
+    '--unknown-future-flag',
+    'future-value',
+    '--dry-run',
+    '--verbose'
+  ],
+  ['update', '--version', 'latest', '--format', 'appimage', '--pane-path', '/usr/bin/pane', '--dry-run'],
+  ['doctor', '--pane-path', '/usr/bin/pane', '--format', 'zip', '--verbose'],
+  ['--version']
+];
+
+const platformCases = [
+  { platform: { os: 'darwin', arch: 'arm64' }, target: 'client' },
+  { platform: { os: 'darwin', arch: 'arm64' }, target: 'daemon' },
+  { platform: { os: 'linux', arch: 'x64' }, target: 'client' },
+  { platform: { os: 'linux', arch: 'arm64' }, target: 'daemon' },
+  { platform: { os: 'win32', arch: 'x64' }, target: 'client' },
+  { platform: { os: 'win32', arch: 'arm64' }, target: 'daemon' }
+];
+
+const artifactRelease = {
+  tag_name: 'v2.2.8',
+  name: 'v2.2.8',
+  body: '',
+  html_url: 'https://github.com/dcouple/Pane/releases/tag/v2.2.8',
+  published_at: '2026-01-01T00:00:00Z',
+  prerelease: false,
+  draft: false,
+  assets: [
+    { name: 'Pane-2.2.8-linux-x86_64.AppImage', browser_download_url: 'https://example.test/linux-x64.AppImage' },
+    { name: 'Pane-2.2.8-linux-arm64.AppImage', browser_download_url: 'https://example.test/linux-arm64.AppImage' },
+    { name: 'Pane-2.2.8-linux-x86_64.deb', browser_download_url: 'https://example.test/linux-x64.deb' },
+    { name: 'Pane-2.2.8-linux-arm64.deb', browser_download_url: 'https://example.test/linux-arm64.deb' },
+    { name: 'Pane-2.2.8-macOS-universal.dmg', browser_download_url: 'https://example.test/macos.dmg' },
+    { name: 'Pane-2.2.8-macOS-universal.zip', browser_download_url: 'https://example.test/macos.zip' },
+    { name: 'Pane-2.2.8-Windows-x64.exe', browser_download_url: 'https://example.test/win-x64.exe' },
+    { name: 'Pane-2.2.8-Windows-arm64.exe', browser_download_url: 'https://example.test/win-arm64.exe' }
+  ]
+};
+
+const artifactCases = [
+  { platform: { os: 'linux', arch: 'x64' }, format: 'appimage' },
+  { platform: { os: 'linux', arch: 'arm64' }, format: 'appimage' },
+  { platform: { os: 'linux', arch: 'x64' }, format: 'deb' },
+  { platform: { os: 'darwin', arch: 'arm64' }, format: 'dmg' },
+  { platform: { os: 'darwin', arch: 'x64' }, format: 'zip' },
+  { platform: { os: 'win32', arch: 'x64' }, format: 'exe' },
+  { platform: { os: 'win32', arch: 'arm64' }, format: 'exe' }
+];
+
+function ensureBuiltCli() {
+  if (!fs.existsSync(npmCli)) {
+    throw new Error('packages/runpane/dist/cli.js is missing. Run "pnpm --filter runpane build" first.');
+  }
+}
+
+function findPython() {
+  for (const command of [process.env.PYTHON, 'python3', 'python'].filter(Boolean)) {
+    try {
+      childProcess.execFileSync(command, ['--version'], { stdio: 'ignore' });
+      return command;
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  throw new Error('Could not find a Python executable. Set PYTHON to override.');
+}
+
+function runPythonSnippet(source, input) {
+  return childProcess.execFileSync(findPython(), ['-c', source], {
+    cwd: rootDir,
+    encoding: 'utf8',
+    input,
+    env: {
+      ...process.env,
+      PYTHONPATH: pythonSource
+    }
+  }).trim();
+}
+
+function assertIncludes(text, expected) {
+  assert.ok(text.includes(expected), `Expected output to include: ${expected}`);
+}
+
+function compareParserParity() {
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const nodeOutput = parserSamples.map((args) => {
+    const parsed = parseRunpaneArgs(args);
+    return {
+      command: parsed.command,
+      helpTopic: parsed.helpTopic ?? null,
+      target: parsed.target,
+      paneVersion: parsed.paneVersion,
+      channel: parsed.channel,
+      format: parsed.format,
+      downloadDir: parsed.downloadDir ?? null,
+      panePath: parsed.panePath ?? null,
+      dryRun: parsed.dryRun,
+      yes: parsed.yes,
+      verbose: parsed.verbose,
+      remoteSetupArgs: parsed.remoteSetupArgs
+    };
+  });
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.cli import parse_args
+
+samples = json.loads(sys.stdin.read())
+normalized = []
+for args in samples:
+    parsed = parse_args(args)
+    normalized.append({
+        "command": parsed.command,
+        "helpTopic": parsed.help_topic,
+        "target": parsed.target,
+        "paneVersion": parsed.pane_version,
+        "channel": parsed.channel,
+        "format": parsed.format,
+        "downloadDir": parsed.download_dir,
+        "panePath": parsed.pane_path,
+        "dryRun": parsed.dry_run,
+        "yes": parsed.yes,
+        "verbose": parsed.verbose,
+        "remoteSetupArgs": parsed.remote_setup_args,
+    })
+print(json.dumps(normalized))
+`, JSON.stringify(parserSamples));
+
+  assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
+}
+
+function comparePlatformParity() {
+  const { archAliases, defaultFormat, platformParam } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'platform.js'));
+  const nodeOutput = platformCases.map(({ platform, target }) => ({
+    platform,
+    target,
+    defaultFormat: defaultFormat(platform, target),
+    platformParam: platformParam(platform),
+    archAliases: archAliases(platform)
+  }));
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.platforms import PanePlatform, arch_aliases, default_format, platform_param
+
+cases = json.loads(sys.stdin.read())
+normalized = []
+for case in cases:
+    platform = PanePlatform(**case["platform"])
+    normalized.append({
+        "platform": case["platform"],
+        "target": case["target"],
+        "defaultFormat": default_format(platform, case["target"]),
+        "platformParam": platform_param(platform),
+        "archAliases": arch_aliases(platform),
+    })
+print(json.dumps(normalized))
+`, JSON.stringify(platformCases));
+
+  assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
+}
+
+function compareArtifactSelectionParity() {
+  const { findArtifact } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js'));
+  const nodeOutput = artifactCases.map(({ platform, format }) => ({
+    platform,
+    format,
+    artifact: findArtifact(artifactRelease, platform, format).name
+  }));
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.platforms import PanePlatform
+from runpane.releases import find_artifact
+
+payload = json.loads(sys.stdin.read())
+release = payload["release"]
+cases = payload["cases"]
+normalized = []
+for case in cases:
+    platform = PanePlatform(**case["platform"])
+    normalized.append({
+        "platform": case["platform"],
+        "format": case["format"],
+        "artifact": find_artifact(release, platform, case["format"])["name"],
+    })
+print(json.dumps(normalized))
+`, JSON.stringify({ release: artifactRelease, cases: artifactCases }));
+
+  assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
+}
+
+function checkHelpOutput() {
+  const python = findPython();
+  const pythonEnv = {
+    ...process.env,
+    PYTHONPATH: pythonSource
+  };
+  const nodeHelp = childProcess.execFileSync(process.execPath, [npmCli, '--help'], { encoding: 'utf8' });
+  const nodeInstallHelp = childProcess.execFileSync(process.execPath, [npmCli, 'help', 'install'], { encoding: 'utf8' });
+  const pyHelp = childProcess.execFileSync(python, ['-m', 'runpane', '--help'], { encoding: 'utf8', env: pythonEnv, cwd: rootDir });
+  const pyInstallHelp = childProcess.execFileSync(python, ['-m', 'runpane', 'help', 'install'], {
+    encoding: 'utf8',
+    env: pythonEnv,
+    cwd: rootDir
+  });
+
+  for (const output of [nodeHelp, pyHelp]) {
+    for (const text of ['runpane install', 'runpane update', 'runpane version', 'runpane doctor']) {
+      assertIncludes(output, text);
+    }
+  }
+
+  assertIncludes(nodeHelp, 'pnpm dlx runpane@latest');
+  assertIncludes(pyHelp, 'pipx run runpane');
+
+  for (const output of [nodeInstallHelp, pyInstallHelp]) {
+    for (const text of [
+      '--version <latest|vX.Y.Z>',
+      '--format <auto|appimage|deb|dmg|zip|exe>',
+      '--download-dir <path>',
+      '--pane-path <path>',
+      '--label <name>',
+      '--prefer-tunnel <tailscale|ssh|manual|auto>',
+      '--repo-ref <ref>'
+    ]) {
+      assertIncludes(output, text);
+    }
+  }
+}
+
+ensureBuiltCli();
+compareParserParity();
+comparePlatformParity();
+compareArtifactSelectionParity();
+checkHelpOutput();
+console.log('runpane CLI contract checks passed');

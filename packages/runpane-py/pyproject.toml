@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runpane"
+version = "2.2.8"
+description = "Thin PyPI installer and remote setup CLI for Pane"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "AGPL-3.0" }
+authors = [
+  { name = "Dcouple Inc", email = "hello@dcouple.ai" }
+]
+keywords = ["pane", "installer", "remote", "daemon", "cli"]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development"
+]
+
+[project.urls]
+Homepage = "https://runpane.com"
+Repository = "https://github.com/dcouple/Pane"
+Issues = "https://github.com/dcouple/Pane/issues"
+
+[project.scripts]
+runpane = "runpane.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

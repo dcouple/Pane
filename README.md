@@ -25,6 +25,17 @@
 
 **Quick install (recommended)**
 
+<sub>Package manager</sub><br />
+<pre><code>npx --yes runpane@latest install client</code></pre>
+
+<sub>pnpm</sub><br />
+<pre><code>pnpm dlx runpane@latest install client</code></pre>
+
+<sub>Python tools</sub><br />
+<pre><code>pipx run runpane install client</code></pre>
+
+<sub>or use the shell installers</sub><br />
+
 <sub>Mac / Linux</sub><br />
 <pre><code>curl -fsSL https://runpane.com/install.sh | sh</code></pre>
 
@@ -107,7 +118,31 @@ The easiest setup path is in the app:
 4. On another desktop, open Pane, go to `Settings > Remote Pane`, paste the code, and connect.
 5. On a phone or tablet, open [runpane.com/app](https://runpane.com/app/), paste the same code, and connect.
 
-For a headless VM or server, use the remote installer instead:
+For a headless VM or server, use `runpane`:
+
+```bash
+npx --yes runpane@latest install daemon --label "My Server"
+```
+
+pnpm:
+
+```bash
+pnpm dlx runpane@latest install daemon --label "My Server"
+```
+
+Python tools:
+
+```bash
+pipx run runpane install daemon --label "My Server"
+```
+
+Use SSH instead of Tailscale:
+
+```bash
+npx --yes runpane@latest install daemon --label "My Server" --prefer-tunnel ssh
+```
+
+The hosted shell installers remain available:
 
 ```bash
 curl -fsSL https://runpane.com/install-remote.sh | sh -s -- --label "My Server"
@@ -117,12 +152,6 @@ Windows PowerShell:
 
 ```powershell
 & ([scriptblock]::Create((irm https://runpane.com/install-remote.ps1))) -Label "My Server"
-```
-
-Prefer SSH instead of Tailscale:
-
-```bash
-pnpm remote:setup -- --label "My Server" --prefer-tunnel ssh
 ```
 
 The CLI setup command prints the same connection code and, for SSH mode, the forwarding command. See the [Remote Daemon docs](https://runpane.com/docs/remote-daemon) for the full step-by-step setup, mobile install instructions, API key notes, and security model.
@@ -159,6 +188,13 @@ Other tools build custom chat UIs that only work with agents they've explicitly 
 ## Installation
 
 ### Quick Install
+
+**Package manager:**
+```bash
+npx --yes runpane@latest install client
+pnpm dlx runpane@latest install client
+pipx run runpane install client
+```
 
 **Mac / Linux:**
 ```bash

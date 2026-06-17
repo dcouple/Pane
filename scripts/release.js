@@ -13,6 +13,12 @@ const path = require('path');
 const rootDir = path.resolve(__dirname, '..');
 const pkgPath = path.join(rootDir, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+const versionedPackageFiles = [
+  'package.json',
+  'packages/runpane/package.json',
+  'packages/runpane-py/pyproject.toml',
+  'packages/runpane-py/src/runpane/__init__.py',
+];
 
 function run(command, options = {}) {
   const result = execSync(command, {
@@ -33,6 +39,41 @@ function getHeadPackageVersion() {
     return JSON.parse(headPackageJson).version;
   } catch {
     console.error('Unable to read package.json from HEAD. Aborting before tag.');
+    process.exit(1);
+  }
+}
+
+function getHeadFile(filePath) {
+  try {
+    return run(`git show HEAD:${filePath}`);
+  } catch {
+    console.error(`Unable to read ${filePath} from HEAD. Aborting before tag.`);
+    process.exit(1);
+  }
+}
+
+function verifyHeadPackageVersions(expectedVersion) {
+  const rootPackage = JSON.parse(getHeadFile('package.json'));
+  const npmPackage = JSON.parse(getHeadFile('packages/runpane/package.json'));
+  const pyproject = getHeadFile('packages/runpane-py/pyproject.toml');
+  const pyInit = getHeadFile('packages/runpane-py/src/runpane/__init__.py');
+
+  const pyprojectMatch = /^version = "([^"]+)"/m.exec(pyproject);
+  const pyInitMatch = /^__version__ = "([^"]+)"/m.exec(pyInit);
+  const versions = {
+    'package.json': rootPackage.version,
+    'packages/runpane/package.json': npmPackage.version,
+    'packages/runpane-py/pyproject.toml': pyprojectMatch?.[1],
+    'packages/runpane-py/src/runpane/__init__.py': pyInitMatch?.[1],
+  };
+
+  const mismatches = Object.entries(versions)
+    .filter(([, version]) => version !== expectedVersion)
+    .map(([filePath, version]) => `${filePath}: ${version || 'missing'}`);
+
+  if (mismatches.length > 0) {
+    console.error(`HEAD package versions are not all ${expectedVersion}. Aborting before tag.`);
+    mismatches.forEach((mismatch) => console.error(`  ${mismatch}`));
     process.exit(1);
   }
 }
@@ -183,12 +224,11 @@ try {
   // Tag does not exist remotely.
 }
 
-// Update version
-pkg.version = cleanVersion;
-fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+// Update version metadata for the desktop app and wrapper packages.
+run(`node scripts/sync-runpane-package-versions.js ${cleanVersion}`, { stdio: 'inherit' });
 
 // Commit, tag, push
-run('git add package.json', { stdio: 'inherit' });
+run(`git add ${versionedPackageFiles.join(' ')}`, { stdio: 'inherit' });
 try {
   run(`git commit -m "release: v${cleanVersion}"`, { stdio: 'inherit' });
 } catch {
@@ -209,6 +249,7 @@ if (headPackageVersion !== cleanVersion) {
   console.error('The release tag must point at a commit that contains the released package.json version.');
   process.exit(1);
 }
+verifyHeadPackageVersions(cleanVersion);
 run(`git tag ${tagName}`, { stdio: 'inherit' });
 run('git push origin HEAD:main', { stdio: 'inherit' });
 run(`git push origin ${tagName}`, { stdio: 'inherit' });

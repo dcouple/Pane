@@ -265,14 +265,14 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       <div className="space-y-3 text-sm">
         <p className="text-text-secondary">
           This opens Terminal and copies the Pane update command.
-          Paste it, press Return, and the latest Pane DMG will download and open.
+          Paste it, press Return, and the latest Pane installer will download and open.
         </p>
         <p className="text-text-secondary">
           After the DMG opens: close Pane, drag Pane.app into Applications, and choose Replace.
           Your settings and sessions are preserved.
         </p>
         <code className="block bg-surface-primary border border-border-primary rounded px-3 py-2 text-xs text-text-primary font-mono break-all">
-          curl -fsSL https://runpane.com/install.sh | sh
+          npx --yes runpane@latest update
         </code>
       </div>
     </div>

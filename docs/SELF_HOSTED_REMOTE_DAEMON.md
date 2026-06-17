@@ -12,6 +12,31 @@ Pane saves the profile and attempts to connect immediately. Local desktop mode i
 
 ## One-Command Setup
 
+Recommended package-manager commands:
+
+```bash
+npx --yes runpane@latest install daemon --label "VM"
+pnpm dlx runpane@latest install daemon --label "VM"
+pipx run runpane install daemon --label "VM"
+uvx runpane@latest install daemon --label "VM"
+```
+
+SSH tunnel mode:
+
+```bash
+npx --yes runpane@latest install daemon --label "VM" --prefer-tunnel ssh
+```
+
+Persistent installs are also supported:
+
+```bash
+npm i -g runpane
+runpane install daemon --label "VM"
+
+python -m pip install runpane
+runpane install daemon --label "VM"
+```
+
 From a source checkout:
 
 ```bash

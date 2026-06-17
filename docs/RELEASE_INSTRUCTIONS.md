@@ -4,6 +4,9 @@ Pane releases are cut from a clean `main` checkout with `scripts/release.js`.
 The script updates `package.json`, commits `release: vX.Y.Z`, tags the same
 commit, pushes `HEAD:main`, and pushes the tag.
 
+The same release commit also keeps the npm and PyPI wrapper package versions in
+sync through `scripts/sync-runpane-package-versions.js`.
+
 ## Mechanical Invariants
 
 Before a release, these facts must be true:
@@ -12,6 +15,8 @@ Before a release, these facts must be true:
 - `HEAD` matches `origin/main`.
 - For inferred bumps (`patch`, `minor`, `major`), `package.json` version matches
   the latest `v*` semver tag.
+- `packages/runpane/package.json`, `packages/runpane-py/pyproject.toml`, and
+  `packages/runpane-py/src/runpane/__init__.py` match the root release version.
 - The release tag does not already exist locally or on `origin`.
 - Dependencies are installed before running the release script so commit hooks can
   run successfully.
@@ -34,6 +39,9 @@ node -p "require('./package.json').version"
 
 pnpm typecheck
 pnpm lint
+pnpm run check:runpane-package-versions
+pnpm run test:runpane-contract
+pnpm run test:runpane-package-smoke
 pnpm test:ci:minimal
 
 pnpm run release patch
@@ -58,6 +66,7 @@ Pull requests to `main` run:
 - `Code Quality`
   - typecheck
   - lint
+  - runpane wrapper compatibility tests across Node, Python, Linux, macOS, and Windows
   - main process tests on Linux, macOS, and Windows
   - frontend unit tests
   - maintained Playwright smoke tests
@@ -76,6 +85,8 @@ Pushes to `main` run:
   - Windows arm64 installer
   - GitHub release publishing
   - `SHA256SUMS.txt`
+  - npm `runpane` publish
+  - PyPI `runpane` publish
 - `Notify website on release`
 
 The release is not considered complete until the tag-triggered `Build & Release`
@@ -99,6 +110,8 @@ Confirm:
 - `HEAD` and `origin/main` point at the release commit.
 - The release commit has the expected `vX.Y.Z` tag.
 - `Build & Release` succeeded for the tag.
+- `npm view runpane version` reports `X.Y.Z`.
+- `python3 -m pip index versions runpane` includes `X.Y.Z`.
 - `Notify website on release` succeeded for the tag.
 - `Code Quality` succeeded for the release commit on `main`.
 - `Deploy Remote PWA Preview` succeeded for the release commit on `main`.
@@ -106,6 +119,23 @@ Confirm:
 ## Required Secrets
 
 GitHub Actions provides `GITHUB_TOKEN` automatically.
+
+The npm and PyPI packages should publish through trusted publishing:
+
+- npm: configure a trusted publisher for package `runpane` on npmjs.com with
+  repository `dcouple/Pane`, workflow filename `build.yml`, and `npm publish`
+  permission. The workflow installs npm `11.5.1` or newer for OIDC support.
+- PyPI: configure a trusted publisher for project `runpane` with repository
+  `dcouple/Pane`, workflow filename `build.yml`, and GitHub environment `pypi`.
+
+Fallback token publishing is allowed only for first package reservation or
+manual recovery. Use `NPM_TOKEN` or `PYPI_API_TOKEN` as local environment
+variables or GitHub Actions secrets, do not commit token files such as `.npmrc`
+or `.pypirc`, and revoke or rotate the tokens after use.
+
+If the source repository remains private, do not promise npm provenance:
+npm trusted publishing can still be used, but npm provenance attestations are
+not generated for private repositories.
 
 The release and preview workflows also depend on repository secrets and
 variables configured in GitHub Actions. Relevant examples include:
@@ -127,6 +157,8 @@ The build process generates update metadata and installers under
 - macOS `.dmg` and `.zip`
 - Linux `.deb` and `.AppImage`
 - Windows `.exe`
+- npm package `runpane`
+- PyPI package `runpane`
 
 ## Rollback
 

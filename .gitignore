@@ -9,6 +9,7 @@
 node_modules/
 .pnpm-store/
 package-lock.json
+*.egg-info/
 
 # Build outputs
 dist/

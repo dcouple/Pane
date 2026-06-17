@@ -1,0 +1,132 @@
+import path from 'path';
+import type { ArtifactFormat } from './commands';
+import { archAliases, defaultFormat, platformParam, type PanePlatform } from './platform';
+
+const GITHUB_API_BASE = 'https://api.github.com/repos/dcouple/Pane/releases';
+const DOWNLOAD_API_BASE = 'https://runpane.com/api/download';
+
+export interface GitHubReleaseAsset {
+  name: string;
+  browser_download_url: string;
+}
+
+export interface GitHubRelease {
+  tag_name: string;
+  name: string;
+  body: string;
+  html_url: string;
+  published_at: string;
+  prerelease: boolean;
+  draft: boolean;
+  assets?: GitHubReleaseAsset[];
+}
+
+export interface ResolvedRelease {
+  release: GitHubRelease;
+  artifact: GitHubReleaseAsset;
+  format: Exclude<ArtifactFormat, 'auto'>;
+  preferredDownloadUrl: string;
+  fallbackDownloadUrl: string;
+  checksumUrl: string;
+}
+
+export interface ResolveReleaseOptions {
+  version: string;
+  channel: 'stable' | 'nightly';
+  source: 'npm' | 'pip';
+  platform: PanePlatform;
+  format: ArtifactFormat;
+  target: 'client' | 'daemon';
+}
+
+export async function resolveRelease(options: ResolveReleaseOptions): Promise<ResolvedRelease> {
+  const release = await fetchRelease(options.version);
+  const format = options.format === 'auto' ? defaultFormat(options.platform, options.target) : options.format;
+  const artifact = findArtifact(release, options.platform, format);
+  const preferredDownloadUrl = buildPreferredDownloadUrl(options, format);
+
+  return {
+    release,
+    artifact,
+    format,
+    preferredDownloadUrl,
+    fallbackDownloadUrl: artifact.browser_download_url,
+    checksumUrl: `https://github.com/dcouple/Pane/releases/download/${release.tag_name}/SHA256SUMS.txt`
+  };
+}
+
+export async function fetchRelease(version: string): Promise<GitHubRelease> {
+  const normalized = version === 'latest' ? 'latest' : version.startsWith('v') ? `tags/${version}` : `tags/v${version}`;
+  const response = await fetch(`${GITHUB_API_BASE}/${normalized}`, {
+    headers: {
+      accept: 'application/vnd.github+json',
+      'user-agent': 'runpane-installer'
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Pane release ${version}: ${response.status} ${response.statusText}`);
+  }
+
+  const release = await response.json() as GitHubRelease;
+  if (release.draft || release.prerelease) {
+    throw new Error(`Release ${release.tag_name} is not a stable public release.`);
+  }
+  return release;
+}
+
+export function findArtifact(
+  release: GitHubRelease,
+  platform: PanePlatform,
+  format: Exclude<ArtifactFormat, 'auto'>
+): GitHubReleaseAsset {
+  const assets = release.assets ?? [];
+  const aliases = archAliases(platform);
+  const candidates = assets.filter((asset) => matchesFormat(asset.name, format) && matchesPlatform(asset.name, platform));
+  const exact = candidates.find((asset) => aliases.some((alias) => lowerName(asset).includes(alias.toLowerCase())));
+  const universal = candidates.find((asset) => lowerName(asset).includes('universal'));
+  const selected = exact ?? universal ?? candidates[0];
+
+  if (!selected) {
+    const assetNames = assets.map((asset) => asset.name).join(', ') || 'no assets';
+    throw new Error(`No Pane ${format} asset found for ${platform.os}/${platform.arch} in ${release.tag_name}. Assets: ${assetNames}`);
+  }
+
+  return selected;
+}
+
+export function artifactFileName(urlOrName: string): string {
+  return path.basename(urlOrName.split('?')[0]);
+}
+
+function buildPreferredDownloadUrl(
+  options: ResolveReleaseOptions,
+  format: Exclude<ArtifactFormat, 'auto'>
+): string {
+  const params = new URLSearchParams({
+    platform: platformParam(options.platform),
+    arch: options.platform.arch,
+    format,
+    version: options.version === 'latest' ? 'latest' : options.version.startsWith('v') ? options.version : `v${options.version}`,
+    channel: options.channel,
+    source: options.source
+  });
+  return `${DOWNLOAD_API_BASE}?${params.toString()}`;
+}
+
+function matchesFormat(name: string, format: Exclude<ArtifactFormat, 'auto'>): boolean {
+  const lower = name.toLowerCase();
+  if (format === 'appimage') return lower.endsWith('.appimage');
+  return lower.endsWith(`.${format}`);
+}
+
+function matchesPlatform(name: string, platform: PanePlatform): boolean {
+  const lower = name.toLowerCase();
+  if (platform.os === 'darwin') return lower.includes('macos') || lower.includes('darwin') || lower.includes('mac');
+  if (platform.os === 'win32') return lower.includes('windows') || lower.includes('win');
+  return lower.includes('linux');
+}
+
+function lowerName(asset: GitHubReleaseAsset): string {
+  return asset.name.toLowerCase();
+}

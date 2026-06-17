@@ -1,5 +1,6 @@
 packages:
   - 'frontend'
   - 'main'
+  - 'packages/runpane'
   - 'shared'
 minimumReleaseAge: 10080

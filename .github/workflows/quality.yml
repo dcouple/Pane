@@ -51,6 +51,49 @@ jobs:
       env:
         PANE_DIR: ${{ runner.temp }}/pane-ci
 
+  runpane-wrapper-tests:
+    name: Runpane Wrapper (${{ matrix.os }}, Node ${{ matrix.node-version }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2022]
+        node-version: ['18.17.0', '22.15.1']
+        python-version: ['3.8', '3.13']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'pnpm'
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install wrapper dependencies
+      run: pnpm install --filter runpane --ignore-scripts
+
+    - name: Check wrapper package versions
+      run: node scripts/sync-runpane-package-versions.js --check
+
+    - name: Build npm wrapper
+      run: pnpm --filter runpane build
+
+    - name: Run wrapper contract tests
+      run: node scripts/test-runpane-contract.js
+
+    - name: Run package manager smoke tests
+      run: node scripts/test-runpane-package-smoke.js
+
   cross-os-main-tests:
     name: Main Process Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
