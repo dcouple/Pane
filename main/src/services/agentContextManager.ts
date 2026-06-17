@@ -1,3 +1,4 @@
+import { constants } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import type { Project } from '../database/models';
@@ -13,7 +14,7 @@ const AGENTS_FILENAMES = ['AGENTS.md', 'agents.md'] as const;
 export interface AgentContextWriteResult {
   changed: boolean;
   filePath?: string;
-  skipped?: 'disabled' | 'missing';
+  skipped?: 'disabled' | 'missing' | 'unsafe-file';
   removed?: boolean;
 }
 
@@ -29,6 +30,9 @@ export async function ensureProjectAgentContext(
   }
 
   const filePath = await resolveAgentsFilePath(root);
+  if (!filePath) {
+    return { changed: false, skipped: 'unsafe-file' };
+  }
   const existing = await readFileIfExists(filePath);
   const block = renderManagedAgentContextBlock();
   const next = upsertManagedBlock(existing ?? '', block);
@@ -37,7 +41,7 @@ export async function ensureProjectAgentContext(
     return { changed: false, filePath };
   }
 
-  await fs.writeFile(filePath, next, 'utf8');
+  await writeFileNoFollow(filePath, next);
   return { changed: true, filePath };
 }
 
@@ -81,7 +85,7 @@ export function removeManagedBlock(existing: string): string {
 }
 
 async function removeProjectAgentContext(root: string): Promise<AgentContextWriteResult> {
-  const filePath = await findExistingAgentsFile(root);
+  const { filePath } = await findExistingAgentsFile(root);
   if (!filePath) {
     return { changed: false, skipped: 'disabled' };
   }
@@ -96,39 +100,62 @@ async function removeProjectAgentContext(root: string): Promise<AgentContextWrit
     return { changed: false, filePath, skipped: 'disabled' };
   }
 
-  if (next.length === 0) {
-    await fs.rm(filePath, { force: true });
-  } else {
-    await fs.writeFile(filePath, next, 'utf8');
-  }
+  await writeFileNoFollow(filePath, next);
   return { changed: true, filePath, removed: true };
 }
 
-async function resolveAgentsFilePath(root: string): Promise<string> {
+async function resolveAgentsFilePath(root: string): Promise<string | undefined> {
   const existing = await findExistingAgentsFile(root);
-  return existing ?? path.join(root, 'AGENTS.md');
+  if (existing.filePath) {
+    return existing.filePath;
+  }
+  if (existing.hasUnsafeCandidate) {
+    return undefined;
+  }
+
+  const canonicalPath = path.join(root, 'AGENTS.md');
+  const status = await inspectAgentsFile(canonicalPath);
+  return status === 'missing' ? canonicalPath : undefined;
 }
 
-async function findExistingAgentsFile(root: string): Promise<string | undefined> {
+async function findExistingAgentsFile(root: string): Promise<{ filePath?: string; hasUnsafeCandidate: boolean }> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(root);
+  } catch (error) {
+    if (isNotFound(error)) {
+      return { hasUnsafeCandidate: false };
+    }
+    throw error;
+  }
+
+  let hasUnsafeCandidate = false;
   for (const fileName of AGENTS_FILENAMES) {
-    const filePath = path.join(root, fileName);
-    try {
-      const stat = await fs.stat(filePath);
-      if (stat.isFile()) {
-        return filePath;
-      }
-    } catch (error) {
-      if (!isNotFound(error)) {
-        throw error;
-      }
+    const actualFileName = entries.find((entry) => entry === fileName);
+    if (!actualFileName) {
+      continue;
+    }
+
+    const filePath = path.join(root, actualFileName);
+    const status = await inspectAgentsFile(filePath);
+    if (status === 'file') {
+      return { filePath, hasUnsafeCandidate };
+    }
+    if (status === 'unsafe') {
+      hasUnsafeCandidate = true;
     }
   }
-  return undefined;
+  return { hasUnsafeCandidate };
 }
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
-    return await fs.readFile(filePath, 'utf8');
+    const handle = await fs.open(filePath, constants.O_RDONLY | noFollowFlag());
+    try {
+      return await handle.readFile('utf8');
+    } finally {
+      await handle.close();
+    }
   } catch (error) {
     if (isNotFound(error)) {
       return undefined;
@@ -137,8 +164,40 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
   }
 }
 
+async function inspectAgentsFile(filePath: string): Promise<'file' | 'missing' | 'unsafe'> {
+  try {
+    const stat = await fs.lstat(filePath);
+    return stat.isFile() ? 'file' : 'unsafe';
+  } catch (error) {
+    if (isNotFound(error)) {
+      return 'missing';
+    }
+    throw error;
+  }
+}
+
+async function writeFileNoFollow(filePath: string, content: string): Promise<void> {
+  const handle = await fs.open(
+    filePath,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | noFollowFlag(),
+    0o666,
+  );
+  try {
+    await handle.writeFile(content, 'utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
 function resolveProjectRoot(project: Pick<Project, 'path' | 'wsl_enabled' | 'wsl_distribution'>): string {
   return new PathResolver(project).toFileSystem(project.path);
+}
+
+function noFollowFlag(): number {
+  if (process.platform === 'win32') {
+    return 0;
+  }
+  return constants.O_NOFOLLOW ?? 0;
 }
 
 function consumeTrailingNewline(value: string, index: number): number {

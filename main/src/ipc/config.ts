@@ -11,7 +11,7 @@ import { ensureProjectAgentContext } from '../services/agentContextManager';
 
 export function registerConfigHandlers(
   ipcMain: IpcMain,
-  { app, configManager, claudeCodeManager, getMainWindow, sessionManager }: AppServices,
+  { app, configManager, claudeCodeManager, databaseService, getMainWindow, sessionManager }: AppServices,
   commandRegistry?: PaneCommandRegistry,
 ): void {
   if (commandRegistry) {
@@ -68,10 +68,15 @@ export function registerConfigHandlers(
       }
 
       if (managedAgentsMdChanged) {
+        const nextConfig = configManager.getConfig();
         const activeProject = sessionManager.getActiveProject();
-        if (activeProject) {
+        const projects = nextConfig.agentContext?.managedAgentsMd === false
+          ? databaseService.getAllProjects()
+          : activeProject ? [activeProject] : [];
+
+        for (const project of projects) {
           try {
-            await ensureProjectAgentContext(activeProject, configManager.getConfig());
+            await ensureProjectAgentContext(project, nextConfig);
           } catch (error) {
             console.warn('[Config] Failed to update Pane agent context after setting change:', error);
           }

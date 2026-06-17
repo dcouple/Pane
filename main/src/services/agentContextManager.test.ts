@@ -110,13 +110,33 @@ describe('agentContextManager', () => {
     expect(content).not.toContain(PANE_AGENT_CONTEXT_START);
   });
 
-  it('deletes an otherwise empty AGENTS.md file when disabling', async () => {
+  it('keeps an otherwise empty AGENTS.md file when disabling', async () => {
     const projectPath = await createTempProject();
     const agentsPath = path.join(projectPath, 'AGENTS.md');
 
     await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
     await ensureProjectAgentContext({ path: projectPath }, disabledConfig());
 
-    await expect(fs.access(agentsPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.access(agentsPath)).resolves.toBeUndefined();
+    await expect(fs.readFile(agentsPath, 'utf8')).resolves.toBe('');
+  });
+
+  it('does not follow symlinked AGENTS.md files', async () => {
+    const projectPath = await createTempProject();
+    const outsidePath = await createTempProject();
+    const targetPath = path.join(outsidePath, 'outside-agents-target');
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fs.writeFile(targetPath, 'outside file\n', 'utf8');
+
+    try {
+      await fs.symlink(targetPath, agentsPath);
+    } catch {
+      return;
+    }
+
+    const result = await ensureProjectAgentContext({ path: projectPath }, enabledConfig());
+
+    expect(result).toMatchObject({ changed: false, skipped: 'unsafe-file' });
+    await expect(fs.readFile(targetPath, 'utf8')).resolves.toBe('outside file\n');
   });
 });
