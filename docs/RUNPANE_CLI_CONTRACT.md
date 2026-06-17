@@ -153,7 +153,7 @@ pipx, uvx, and `python -m runpane`.
 Wrappers should prefer:
 
 ```text
-https://runpane.com/api/download?platform=<platform>&arch=<arch>&format=<format>&v=<version>&file=<asset-file>&channel=<channel>&source=<npm|pip>
+https://runpane.com/api/download?platform=<platform>&arch=<arch>&format=<format>&version=<version>&channel=<channel>&source=<npm|pip>
 ```
 
 If the website route cannot satisfy the download, wrappers may fall back to the

@@ -36,7 +36,7 @@ def resolve_release(
     release = fetch_release(version)
     selected_format = default_format(platform, target) if format_name == "auto" else format_name
     artifact = find_artifact(release, platform, selected_format)
-    preferred = build_preferred_download_url(channel, source, platform, selected_format, release, artifact)
+    preferred = build_preferred_download_url(channel, source, platform, selected_format, release)
     tag_name = release["tag_name"]
     return ResolvedRelease(
         release=release,
@@ -92,16 +92,12 @@ def build_preferred_download_url(
     platform: PanePlatform,
     format_name: str,
     release: Dict[str, Any],
-    artifact: Dict[str, Any],
 ) -> str:
-    tag_name = str(release["tag_name"])
-    version = tag_name[1:] if tag_name.startswith("v") else tag_name
     query = urllib.parse.urlencode({
         "platform": platform_param(platform),
         "arch": platform.arch,
         "format": format_name,
-        "v": version,
-        "file": artifact["name"],
+        "version": release["tag_name"],
         "channel": channel,
         "source": source,
     })

@@ -276,8 +276,8 @@ async function checkPreferredDownloadUrls() {
   assert.strictEqual(parsedNodeUrl.searchParams.get('platform'), 'linux');
   assert.strictEqual(parsedNodeUrl.searchParams.get('arch'), 'x64');
   assert.strictEqual(parsedNodeUrl.searchParams.get('format'), 'appimage');
-  assert.strictEqual(parsedNodeUrl.searchParams.get('v'), '2.2.8');
-  assert.strictEqual(parsedNodeUrl.searchParams.get('file'), 'Pane-2.2.8-linux-x86_64.AppImage');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('version'), 'v2.2.8');
+  assert.strictEqual(parsedNodeUrl.searchParams.get('file'), null);
   assert.strictEqual(parsedNodeUrl.searchParams.get('channel'), 'stable');
   assert.strictEqual(parsedNodeUrl.searchParams.get('source'), 'npm');
 
@@ -305,8 +305,8 @@ print(resolved.preferred_download_url)
   assert.strictEqual(parsedPythonUrl.searchParams.get('platform'), 'linux');
   assert.strictEqual(parsedPythonUrl.searchParams.get('arch'), 'x64');
   assert.strictEqual(parsedPythonUrl.searchParams.get('format'), 'appimage');
-  assert.strictEqual(parsedPythonUrl.searchParams.get('v'), '2.2.8');
-  assert.strictEqual(parsedPythonUrl.searchParams.get('file'), 'Pane-2.2.8-linux-x86_64.AppImage');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('version'), 'v2.2.8');
+  assert.strictEqual(parsedPythonUrl.searchParams.get('file'), null);
   assert.strictEqual(parsedPythonUrl.searchParams.get('channel'), 'stable');
   assert.strictEqual(parsedPythonUrl.searchParams.get('source'), 'pip');
 }
