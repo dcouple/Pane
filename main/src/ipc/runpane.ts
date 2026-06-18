@@ -5,6 +5,7 @@ import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { PathResolver } from '../utils/pathResolver';
+import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
@@ -50,17 +51,6 @@ const RUNPANE_CHANNELS = [
 const AGENT_TEMPLATES = RUNPANE_CONTRACT.agentTemplates;
 const AGENT_IDS = new Set<string>(RUNPANE_CONTRACT.enums.agents);
 const DEFAULT_PANEL_OUTPUT_LIMIT = 200;
-
-/* eslint-disable no-control-regex */
-const ANSI_PATTERNS: RegExp[] = [
-  /\x1b\[[0-9;]*[a-zA-Z]/g,
-  /\x1b\].*?(?:\x07|\x1b\\)/g,
-  /\x1b\[?[0-9;]*[hl]/g,
-  /\x1b[()][AB012]/g,
-  /[^\n]*\r(?!\n)/g,
-  /\x1b/g,
-];
-/* eslint-enable no-control-regex */
 
 export function registerRunpaneHandlers(
   _ipcMain: IpcMain,
@@ -426,7 +416,7 @@ function panelScrollbackOutput(panel: ToolPanel, limit: number): { text: string;
     return null;
   }
 
-  const stripped = stripAnsiCodes(rawScrollback);
+  const stripped = sanitizeTerminalOutput(rawScrollback);
   if (!stripped) {
     return null;
   }
@@ -459,14 +449,6 @@ function getPanelScrollback(panel: ToolPanel): string | null {
   }
 
   return null;
-}
-
-function stripAnsiCodes(text: string): string {
-  let result = text;
-  for (const pattern of ANSI_PATTERNS) {
-    result = result.replace(pattern, '');
-  }
-  return result;
 }
 
 function panelOutputCommand(panelId: string): string {

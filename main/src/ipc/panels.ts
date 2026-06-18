@@ -13,6 +13,7 @@ import { databaseService } from '../services/database';
 import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
 import type { AppServices } from './types';
 import { getAppSubdirectory } from '../utils/appDirectory';
+import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { getWSLHome, linuxToUNCPath, posixJoin } from '../utils/wslUtils';
 
 const execFileAsync = promisify(execFile);
@@ -324,25 +325,6 @@ async function readClipboardImageFallback(sessionId: string): Promise<{ filePath
   sessionImageCounters.set(sessionId, count);
 
   return { filePath: resolveImagePathForSession(filePath, sessionId), imageNumber: count };
-}
-
-/* eslint-disable no-control-regex -- ANSI escape stripping requires control characters */
-const ANSI_PATTERNS: RegExp[] = [
-  /\x1b\[[0-9;]*[a-zA-Z]/g,        // SGR (colors, bold, etc.) and other CSI sequences
-  /\x1b\].*?(?:\x07|\x1b\\)/g,     // OSC sequences (title setting, hyperlinks, etc.)
-  /\x1b\[?[0-9;]*[hl]/g,           // Mode set/reset
-  /\x1b[()][AB012]/g,               // Other single-char escape sequences
-  /[^\n]*\r(?!\n)/g,                // Carriage return without newline (overwrite lines)
-  /\x1b/g,                          // Remaining bare escape chars
-];
-/* eslint-enable no-control-regex */
-
-function stripAnsiCodes(text: string): string {
-  let result = text;
-  for (const pattern of ANSI_PATTERNS) {
-    result = result.replace(pattern, '');
-  }
-  return result;
 }
 
 const DAEMON_PANEL_CHANNELS = [
@@ -701,7 +683,7 @@ export function registerPanelHandlers(
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 
-      const stripped = stripAnsiCodes(rawScrollback);
+      const stripped = sanitizeTerminalOutput(rawScrollback);
       const allLines = stripped.split('\n');
       const lastLines = allLines.slice(-lines);
       const content = lastLines.join('\n');
@@ -810,7 +792,7 @@ export function registerPanelHandlers(
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 
-      const stripped = stripAnsiCodes(rawScrollback);
+      const stripped = sanitizeTerminalOutput(rawScrollback);
       const allLines = stripped.split('\n');
       const lastLines = allLines.slice(-lines);
       const content = lastLines.join('\n');

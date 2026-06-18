@@ -107,7 +107,7 @@ runpane panes create --repo active --name issue-252 --agent codex --prompt "Kick
 runpane panes create --from-json panes.json --yes --json
 runpane panels list --pane <pane-id> --json
 runpane panels output --panel <panel-id> --limit 200 --json
-runpane panels input --panel <panel-id> --text "Continue\n" --yes --json
+printf 'Continue\n' | runpane panels input --panel <panel-id> --input-file - --yes --json
 runpane help
 runpane <command> --help
 ```
@@ -142,13 +142,13 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 `runpane panels list` lists tool panels inside one Pane session.
 
-`runpane panels output` reads bounded recent terminal output from one panel.
+`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.
 
-`runpane panels input` sends exact input bytes to one terminal panel. Include a newline in the input when the agent means Enter.
+`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.
 
 `runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.
 
-When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock`. In that case invoke the Windows wrapper through PowerShell, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.
+When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.
 
 ## Agent Context
 
@@ -187,7 +187,7 @@ The developer is using Pane for this repository. Pane can manage saved repositor
 
 Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command "panes create"` or another command name for the detailed schema only when needed.
 
-After creating panes or sending terminal input, validate with bounded panel output before reporting success.
+After creating panes or sending terminal input, validate with bounded panel output before reporting success. Prefer `--input-file` for exact terminal bytes, newlines, Ctrl-C, quotes, or multi-line input.
 
 Common commands:
 - `runpane repos list --json`
@@ -195,9 +195,9 @@ Common commands:
 - `runpane panes create --repo active --name <name> --agent codex --prompt "<task>" --yes`
 - `runpane panels list --pane <pane-id> --json`
 - `runpane panels output --panel <panel-id> --limit 200 --json`
-- `runpane panels input --panel <panel-id> --text "<input>" --yes`
+- `runpane panels input --panel <panel-id> --input-file <path|-> --yes`
 
-WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock`, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id.
+WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id.
 ```
 
 ## Wrapper Flags
@@ -242,7 +242,7 @@ These flags are consumed by local daemon-control commands:
 --json
 ```
 
-`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon.
+`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.
 
 ## Daemon Passthrough Flags
 

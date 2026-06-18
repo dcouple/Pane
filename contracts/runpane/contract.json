@@ -410,7 +410,7 @@
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
-        "  runpane panels input --panel <panel-id> --text <text> --yes",
+        "  runpane panels input --panel <panel-id> --input-file <path|-> --yes",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -623,7 +623,7 @@
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
-        "  runpane panels input --panel <panel-id> --text <text> --yes",
+        "  runpane panels input --panel <panel-id> --input-file <path|-> --yes",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -880,7 +880,7 @@
       "runpane panes create --from-json panes.json --yes --json",
       "runpane panels list --pane <pane-id> --json",
       "runpane panels output --panel <panel-id> --limit 200 --json",
-      "runpane panels input --panel <panel-id> --text \"Continue\\n\" --yes --json",
+      "printf 'Continue\\n' | runpane panels input --panel <panel-id> --input-file - --yes --json",
       "runpane help",
       "runpane <command> --help"
     ],
@@ -900,13 +900,13 @@
       "`runpane panes list` lists Pane sessions, optionally scoped to one saved repository.",
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool.",
       "`runpane panels list` lists tool panels inside one Pane session.",
-      "`runpane panels output` reads bounded recent terminal output from one panel.",
-      "`runpane panels input` sends exact input bytes to one terminal panel. Include a newline in the input when the agent means Enter.",
+      "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
+      "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
       "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.",
-      "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock`. In that case invoke the Windows wrapper through PowerShell, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
+      "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
-    "localControlFlagNote": "`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon.",
+    "localControlFlagNote": "`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -1858,11 +1858,12 @@
       "summary": "Pane lets a developer manage repositories and user-visible panes. Agents can use runpane to list/add Pane repositories and create panes with terminal-backed tools.",
       "rules": [
         "Start with `runpane repos list --json` to find the saved repository when unsure.",
-        "If WSL cannot find `/tmp/pane-daemon.../daemon.sock`, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
+        "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
         "Use `runpane panes create` to create a Pane session and open a built-in agent or custom terminal command.",
         "Use `runpane panels list`, `runpane panels output`, and `runpane panels input` when you need to inspect or drive an existing Pane terminal.",
         "After creating panes or sending terminal input, validate with bounded panel output before reporting success.",
+        "Prefer `--input-file` for terminal input that includes Enter, Ctrl-C, quotes, or multiple lines.",
         "Use `runpane agent-context --command <command>` for detailed command definitions only when needed."
       ],
       "detailCommand": "runpane agent-context --command <command> [--json]",
@@ -1913,6 +1914,7 @@
             "--agent <codex|claude>",
             "--tool-command <command>",
             "--prompt <text>",
+            "--initial-input-file <path|->",
             "--from-json <path|->",
             "--yes",
             "--json"
@@ -2163,7 +2165,8 @@
         ],
         "notes": [
           "Requires a running Pane app or daemon for the selected Pane data directory.",
-          "If this fails from WSL with a missing `/tmp/pane-daemon.../daemon.sock`, the user may be running Windows Pane. Retry via `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
+          "If this fails from WSL with a missing `/tmp/pane-daemon.../daemon.sock`, `volta: command not found`, or a Windows shim error, the user may be running Windows Pane. Retry via `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
+          "When using PowerShell from WSL, set a Windows cwd such as `$env:TEMP` or `$env:USERPROFILE` before running runpane to avoid UNC cwd issues."
         ]
       },
       "repos add": {
@@ -2257,7 +2260,7 @@
       "panes create": {
         "name": "panes create",
         "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
-        "details": "Use this to set up user-visible panes for work. Select a saved repository, choose a built-in agent or custom terminal command, and optionally send initial input after the tool starts.",
+        "details": "Use this to set up user-visible panes for work. Select a saved repository, choose a built-in agent or custom terminal command, and optionally send initial input after the tool starts. For multi-step shell setup, pass a shell command through --tool-command rather than adding a new runpane primitive.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -2325,7 +2328,10 @@
         "notes": [
           "At least one of --agent or --tool-command is required unless --from-json is used.",
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
+          "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
+          "For POSIX or WSL command chaining, use a custom terminal command like `bash -lc 'cmd1 && cmd2 && cmd3'`.",
+          "For Windows PowerShell command chaining, use a custom terminal command like `powershell -NoProfile -Command \"cmd1; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cmd2\"`.",
           "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent codex --prompt \"Plan this issue\" --yes --json'`."
         ]
       },
@@ -2367,7 +2373,7 @@
       "panels output": {
         "name": "panels output",
         "summary": "Read recent terminal output from a panel.",
-        "details": "Use this to inspect recent terminal output from a terminal-backed panel without loading the full history by default. Live terminal scrollback is returned as bounded recent lines; persisted output fallback is returned as bounded records.",
+        "details": "Use this to inspect recent terminal output from a terminal-backed panel without loading the full history by default. Live terminal scrollback is returned as bounded recent lines; persisted output fallback is returned as bounded records. Terminal control noise is stripped before returning text.",
         "requiresPaneDaemon": true,
         "mutates": false,
         "arguments": [
@@ -2403,13 +2409,14 @@
         ],
         "notes": [
           "Default output is bounded to the latest 200 lines or records. Use a larger --limit only when hasMore is true and more history is needed.",
-          "Use --json when an agent needs timestamps, record types, returnedCount, or hasMore."
+          "Use --json when an agent needs timestamps, record types, returnedCount, or hasMore.",
+          "The output is intended to be agent-readable, but terminal prompts and shell echoes may still appear; use the newest relevant lines before concluding success."
         ]
       },
       "panels input": {
         "name": "panels input",
         "summary": "Send input bytes to a terminal panel.",
-        "details": "Use this to answer prompts or continue an agent inside an existing Pane terminal panel.",
+        "details": "Use this to answer prompts or continue an agent inside an existing Pane terminal panel. Input is byte-oriented; choose --input-file for exact control over newlines and control characters.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -2449,15 +2456,18 @@
           }
         ],
         "examples": [
-          "runpane panels input --panel <panel-id> --text \"Continue\\n\" --yes --json",
-          "printf 'Continue\\n' | runpane panels input --panel <panel-id> --input-file - --yes"
+          "printf 'Continue\\n' | runpane panels input --panel <panel-id> --input-file - --yes",
+          "printf '\\003' | runpane panels input --panel <panel-id> --input-file - --yes",
+          "runpane panels input --panel <panel-id> --text \"simple text\" --yes --json"
         ],
         "jsonSchemas": [
           "panelInputRequest",
           "panelInputResult"
         ],
         "notes": [
-          "Input is sent exactly as provided. Include `\\n` or `\\r` when the terminal should receive Enter.",
+          "Input is sent exactly as provided. Include a real newline byte when the terminal should receive Enter; across shells, `--input-file` is safer than `--text \"...\\n\"`.",
+          "Use `--input-file -` or a temp file for multi-line input, quotes, Ctrl-C, or shell-sensitive text.",
+          "If interrupting a running process, send Ctrl-C first, validate/read output, then send the next command in a separate `panels input` call so bytes are not dropped.",
           "After sending input, validate with `runpane panels output --panel <panel-id> --json` before reporting success.",
           "Runpane records action metadata and errors for observability, but should not log full input text by default."
         ]
@@ -2470,7 +2480,7 @@
       "",
       "Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command \"panes create\"` or another command name for the detailed schema only when needed.",
       "",
-      "After creating panes or sending terminal input, validate with bounded panel output before reporting success.",
+      "After creating panes or sending terminal input, validate with bounded panel output before reporting success. Prefer `--input-file` for exact terminal bytes, newlines, Ctrl-C, quotes, or multi-line input.",
       "",
       "Common commands:",
       "- `runpane repos list --json`",
@@ -2478,9 +2488,9 @@
       "- `runpane panes create --repo active --name <name> --agent codex --prompt \"<task>\" --yes`",
       "- `runpane panels list --pane <pane-id> --json`",
       "- `runpane panels output --panel <panel-id> --limit 200 --json`",
-      "- `runpane panels input --panel <panel-id> --text \"<input>\" --yes`",
+      "- `runpane panels input --panel <panel-id> --input-file <path|-> --yes`",
       "",
-      "WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock`, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id."
+      "WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id."
     ]
   }
 }

@@ -460,7 +460,9 @@ describe('runpane IPC handlers', () => {
   });
 
   it('strips terminal control sequences from live scrollback output', async () => {
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue('\x1b[31mred\x1b[0m\nnext\n');
+    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(
+      '\x1b[31mred\x1b[0m\n[?25h[?2004hprompt$ [?2004lecho next\nnext[?25l[?25h\n',
+    );
     const registry = createRegistry();
 
     const result = await registry.invoke('runpane:panels:output', [{
@@ -471,10 +473,10 @@ describe('runpane IPC handlers', () => {
     expect(result).toMatchObject({
       returnedCount: 1,
       hasMore: false,
-      text: 'red\nnext\n',
+      text: 'red\nprompt$ echo next\nnext\n',
       outputs: [{
         type: 'stdout',
-        data: 'red\nnext\n',
+        data: 'red\nprompt$ echo next\nnext\n',
       }],
     });
   });
