@@ -9,7 +9,10 @@ const ANSI_PATTERNS: RegExp[] = [
 ];
 /* eslint-enable no-control-regex */
 
-const DEGRADED_XTERM_MODE_PATTERN = /\[\?[0-9;]+[hl]/g;
+const DEGRADED_XTERM_FRAGMENT = String.raw`\[\?(?:25|2004)[hl]`;
+const DEGRADED_XTERM_LINE_START_PATTERN = new RegExp(`(^|\\n)(?:${DEGRADED_XTERM_FRAGMENT}){2,}`, 'g');
+const DEGRADED_XTERM_LINE_END_PATTERN = new RegExp(`(?:${DEGRADED_XTERM_FRAGMENT}){2,}(?=\\n|$)`, 'g');
+const DEGRADED_BRACKETED_PASTE_AFTER_PROMPT_PATTERN = new RegExp(`([>$#%])\\s*(?:\\[\\?2004[hl])+(?=\\S)`, 'g');
 
 export function sanitizeTerminalOutput(text: string): string {
   let result = text;
@@ -17,5 +20,8 @@ export function sanitizeTerminalOutput(text: string): string {
     result = result.replace(pattern, '');
   }
 
-  return result.replace(DEGRADED_XTERM_MODE_PATTERN, '');
+  return result
+    .replace(DEGRADED_XTERM_LINE_START_PATTERN, '$1')
+    .replace(DEGRADED_XTERM_LINE_END_PATTERN, '')
+    .replace(DEGRADED_BRACKETED_PASTE_AFTER_PROMPT_PATTERN, '$1 ');
 }

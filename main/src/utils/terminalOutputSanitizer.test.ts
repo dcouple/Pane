@@ -21,4 +21,10 @@ describe('sanitizeTerminalOutput', () => {
       'result [ok] [?not-a-mode] [123h]\n',
     );
   });
+
+  it('keeps literal xterm-looking text intact', () => {
+    expect(sanitizeTerminalOutput('docs mention [?25h and [?2004l fragments\n')).toBe(
+      'docs mention [?25h and [?2004l fragments\n',
+    );
+  });
 });
