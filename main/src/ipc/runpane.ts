@@ -71,7 +71,6 @@ const DEFAULT_PANEL_OUTPUT_LIMIT = 200;
 const DEFAULT_PANEL_SCREEN_LIMIT = 80;
 const DEFAULT_PANEL_WAIT_TIMEOUT_MS = 30_000;
 const DEFAULT_PANEL_WAIT_INTERVAL_MS = 500;
-const MAX_PANE_CREATE_CONCURRENCY = 3;
 
 export function registerRunpaneHandlers(
   _ipcMain: IpcMain,
@@ -201,9 +200,8 @@ export function registerRunpaneHandlers(
         throw new Error('Task queue not initialized');
       }
 
-      const items = await mapWithConcurrency(
+      const items = await mapSequentially(
         normalized.panes,
-        clampPaneCreateConcurrency(normalized.concurrency, normalized.panes.length),
         (item, index) => createPaneItem(services, repo, item, index, {
           timeoutMs: normalized.timeoutMs,
           waitReady: normalized.waitReady,
@@ -534,32 +532,16 @@ function toPaneReadiness(result: RunpanePanelWaitResult): RunpanePaneReadiness {
   };
 }
 
-async function mapWithConcurrency<T, R>(
+async function mapSequentially<T, R>(
   items: readonly T[],
-  concurrency: number,
   worker: (item: T, index: number) => Promise<R>,
 ): Promise<R[]> {
   const results = new Array<R>(items.length);
-  let nextIndex = 0;
-
-  async function runWorker(): Promise<void> {
-    while (nextIndex < items.length) {
-      const index = nextIndex++;
-      results[index] = await worker(items[index], index);
-    }
+  for (let index = 0; index < items.length; index++) {
+    results[index] = await worker(items[index], index);
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()),
-  );
   return results;
-}
-
-function clampPaneCreateConcurrency(value: number | undefined, itemCount: number): number {
-  if (itemCount <= 1) {
-    return 1;
-  }
-  return Math.min(value ?? MAX_PANE_CREATE_CONCURRENCY, MAX_PANE_CREATE_CONCURRENCY, itemCount);
 }
 
 function resolveTerminalPanel(panelId: string): ToolPanel {
@@ -1457,15 +1439,15 @@ function trackRunpaneAction(
     repo_id: metadata.repoId,
     pane_id_hash: paneIdHash,
     panel_id_hash: panelIdHash,
-	    result_count: metadata.resultCount,
-	    input_bytes: metadata.inputBytes,
-	    limit: metadata.limit,
+    result_count: metadata.resultCount,
+    input_bytes: metadata.inputBytes,
+    limit: metadata.limit,
     condition: metadata.condition,
     timed_out: metadata.timedOut,
     available: metadata.available,
     environment: metadata.environment,
-	    error_type: errorType,
-	  });
+    error_type: errorType,
+  });
 
   const logPayload = {
     action,

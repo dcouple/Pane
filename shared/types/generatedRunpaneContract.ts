@@ -422,7 +422,7 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--concurrency",
         "value": "<count>",
-        "description": "Maximum concurrent pane creates for multi-pane JSON payloads; capped by Pane."
+        "description": "Accepted for forward compatibility. Pane currently serializes multi-pane session creation so queued jobs do not time out before starting."
       },
       {
         "name": "--limit",
@@ -625,7 +625,7 @@ export const RUNPANE_CONTRACT = {
         "  --timeout-ms <milliseconds>    Pane creation timeout",
         "  --wait-ready                   Wait for terminal readiness before returning",
         "  --ready-timeout-ms <ms>        Readiness wait timeout; defaults to 30000",
-        "  --concurrency <count>          Multi-pane create concurrency; defaults/caps at 3",
+        "  --concurrency <count>          Accepted; creation is currently serialized",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -886,7 +886,7 @@ export const RUNPANE_CONTRACT = {
         "  --timeout-ms <milliseconds>    Pane creation timeout",
         "  --wait-ready                   Wait for terminal readiness before returning",
         "  --ready-timeout-ms <ms>        Readiness wait timeout; defaults to 30000",
-        "  --concurrency <count>          Multi-pane create concurrency; defaults/caps at 3",
+        "  --concurrency <count>          Accepted; creation is currently serialized",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -3073,7 +3073,7 @@ export const RUNPANE_CONTRACT = {
             "name": "--concurrency",
             "value": "<count>",
             "required": false,
-            "description": "Concurrent pane creates for JSON payloads; defaults/caps at 3."
+            "description": "Accepted for compatibility. Pane currently serializes multi-pane session creation so queued jobs do not time out before starting."
           }
         ],
         "examples": [
@@ -3090,6 +3090,7 @@ export const RUNPANE_CONTRACT = {
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
           "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
+          "Multi-pane requests are created sequentially today. The --concurrency flag is accepted for compatibility, but agents should not rely on parallel creation.",
           "For POSIX or WSL command chaining, use a custom terminal command like `bash -lc 'cmd1 && cmd2 && cmd3'`.",
           "For Windows PowerShell command chaining, use a custom terminal command like `powershell -NoProfile -Command \"cmd1; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cmd2\"`.",
           "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent codex --prompt \"Plan this issue\" --yes --json'`.",

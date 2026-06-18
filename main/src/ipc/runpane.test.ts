@@ -895,6 +895,51 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('serializes multi-pane session creation before enqueueing the next pane', async () => {
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      id: 'panel-1',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Codex',
+      state: {},
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+
+    let activeCreates = 0;
+    let maxActiveCreates = 0;
+    const createSessionAndWait = vi.fn(async () => {
+      activeCreates += 1;
+      maxActiveCreates = Math.max(maxActiveCreates, activeCreates);
+      await Promise.resolve();
+      activeCreates -= 1;
+      return { sessionId: session.id };
+    });
+    const services = createServices({
+      taskQueue: {
+        createSessionAndWait,
+      },
+    } as never);
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      concurrency: 3,
+      panes: [{
+        name: 'issue-one',
+        tool: { agent: 'codex' },
+      }, {
+        name: 'issue-two',
+        tool: { agent: 'codex' },
+      }],
+    }]);
+
+    expect(result.ok).toBe(true);
+    expect(createSessionAndWait).toHaveBeenCalledTimes(2);
+    expect(maxActiveCreates).toBe(1);
+  });
+
   it('creates panes with readiness validation when requested', async () => {
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
