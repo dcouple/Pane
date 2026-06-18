@@ -44,7 +44,8 @@ describe('agentContextManager', () => {
     const content = await fs.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(content).toContain(PANE_AGENT_CONTEXT_START);
     expect(content).toContain('runpane agent-context');
-    expect(content).toContain('Prefer `--input-file` for exact terminal bytes');
+    expect(content).toContain('Default to context-safe validation');
+    expect(content).toContain('Prefer `runpane panels submit` for normal text plus Enter');
     expect(content).toContain('Set-Location $env:TEMP');
     expect(content).toContain('broken Windows shim');
     expect(content).toContain(PANE_AGENT_CONTEXT_END);

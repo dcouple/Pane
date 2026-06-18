@@ -782,9 +782,13 @@ describe('runpane IPC handlers', () => {
   });
 
   it('diagnoses built-in agents through the Pane project context', async () => {
+    const lookupCommand = process.platform === 'win32' ? 'where codex' : 'command -v codex';
+    const executablePath = process.platform === 'win32'
+      ? 'C:\\Users\\user\\AppData\\Roaming\\npm\\codex.cmd'
+      : '/home/user/.local/bin/codex';
     const execAsync = vi.fn(async (command: string) => {
-      if (command === 'command -v codex') {
-        return { stdout: '/home/user/.local/bin/codex\n', stderr: '' };
+      if (command === lookupCommand) {
+        return { stdout: `${executablePath}\n`, stderr: '' };
       }
       if (command === 'codex --version') {
         return { stdout: 'codex 0.141.0\n', stderr: '' };
@@ -809,7 +813,7 @@ describe('runpane IPC handlers', () => {
       repo: 'active',
     }]);
 
-    expect(execAsync).toHaveBeenCalledWith('command -v codex', project.path, expect.objectContaining({
+    expect(execAsync).toHaveBeenCalledWith(lookupCommand, project.path, expect.objectContaining({
       timeout: 5000,
       silent: true,
     }));
@@ -817,7 +821,7 @@ describe('runpane IPC handlers', () => {
       ok: true,
       agent: 'codex',
       available: true,
-      executablePath: '/home/user/.local/bin/codex',
+      executablePath,
       version: 'codex 0.141.0',
       repo: {
         id: project.id,
