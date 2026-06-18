@@ -5,6 +5,8 @@ import { Modal, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { useConfigStore } from '../stores/configStore';
 import {
+  aliasInstallIdentity,
+  aliasInstallIdentityDirect,
   aliasWebVisitor,
   aliasWebVisitorDirect,
   captureAndOptOut,
@@ -53,6 +55,8 @@ export default function AnalyticsConsentDialog({
         identity,
       }, { flushPendingEvents: false });
 
+      aliasInstallIdentity(identity);
+
       if (identity?.webDistinctId) {
         aliasWebVisitor(identity.webDistinctId, identity.distinctId);
         void window.electronAPI?.analytics?.redeemAttribution?.();
@@ -86,6 +90,8 @@ export default function AnalyticsConsentDialog({
         posthogHost: config?.analytics?.posthogHost,
         identity,
       }, { flushPendingEvents: false });
+
+      await aliasInstallIdentityDirect(identity);
 
       if (identity?.webDistinctId) {
         await aliasWebVisitorDirect(identity);

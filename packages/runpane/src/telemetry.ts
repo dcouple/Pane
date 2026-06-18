@@ -1,0 +1,393 @@
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import type { ArtifactFormat, InstallTarget, RunpaneCommand } from './commands';
+import type { PanePlatform } from './platform';
+import { getWrapperVersion } from './version';
+
+const TELEMETRY_ENDPOINT = 'https://runpane.com/api/runpane/telemetry';
+const INSTALL_ID_PATTERN = /^install_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TELEMETRY_TIMEOUT_MS = 1500;
+
+export type WrapperTelemetryEventName =
+  | 'runpane_wrapper_command_started'
+  | 'runpane_wrapper_download_requested'
+  | 'runpane_wrapper_download_succeeded'
+  | 'runpane_wrapper_download_failed'
+  | 'runpane_wrapper_github_fallback_used'
+  | 'runpane_wrapper_command_succeeded'
+  | 'runpane_wrapper_command_failed';
+
+export type WrapperInvocation =
+  | 'npm'
+  | 'npx'
+  | 'npm_global'
+  | 'pnpm'
+  | 'pnpm_dlx'
+  | 'yarn_dlx'
+  | 'bunx'
+  | 'unknown';
+
+export type WrapperFailureStage =
+  | 'parse'
+  | 'resolve_release'
+  | 'download'
+  | 'checksum'
+  | 'install'
+  | 'remote_setup'
+  | 'launch'
+  | 'unknown';
+
+export type WrapperFailureCategory =
+  | 'network'
+  | 'timeout'
+  | 'not_found'
+  | 'permission'
+  | 'checksum'
+  | 'unsupported_platform'
+  | 'validation'
+  | 'process_exit'
+  | 'unknown';
+
+export interface WrapperTelemetryContext {
+  command: RunpaneCommand | 'unknown';
+  resolvedCommand?: 'install' | 'update' | 'doctor' | 'help' | 'unknown';
+  target?: InstallTarget;
+  paneVersion?: string;
+  channel?: 'stable' | 'nightly';
+  format?: ArtifactFormat;
+  platform?: PanePlatform;
+  resolvedFormat?: Exclude<ArtifactFormat, 'auto'>;
+  dryRun?: boolean;
+  installKind?: 'existing' | 'installed' | 'launched-installer';
+  usedFallback?: boolean;
+  failureStage?: WrapperFailureStage;
+  failureCategory?: WrapperFailureCategory;
+  exitCode?: number;
+}
+
+export type WrapperTelemetryProperties = Record<string, string | number | boolean>;
+
+interface ConfigFile {
+  analytics?: {
+    installId?: unknown;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export function createInitialTelemetryContext(argv: string[]): WrapperTelemetryContext {
+  const first = argv[0];
+  if (!first) {
+    return { command: 'setup', resolvedCommand: 'help' };
+  }
+  if (first === '-h' || first === '--help' || first === 'help') {
+    return { command: 'help', resolvedCommand: 'help' };
+  }
+  if (first === '-v' || first === '--version') {
+    return { command: 'version' };
+  }
+  if (first === 'install') {
+    const target = argv[1] === 'daemon' || argv[1] === 'client' ? argv[1] : 'client';
+    return { command: 'install', resolvedCommand: 'install', target };
+  }
+  if (first === 'setup') {
+    return { command: 'setup' };
+  }
+  if (first === 'update') {
+    return { command: 'update', resolvedCommand: 'update', target: 'client' };
+  }
+  if (first === 'doctor') {
+    return { command: 'doctor', resolvedCommand: 'doctor' };
+  }
+  if (first === 'version') {
+    return { command: 'version' };
+  }
+  if (first === 'agent-context') {
+    return { command: 'agent-context' };
+  }
+  if (first === 'repos') {
+    return { command: argv[1] === 'add' ? 'repos add' : 'repos list' };
+  }
+  if (first === 'panes') {
+    return { command: argv[1] === 'list' ? 'panes list' : 'panes create' };
+  }
+  if (first === 'panels') {
+    if (argv[1] === 'output') return { command: 'panels output' };
+    if (argv[1] === 'input') return { command: 'panels input' };
+    return { command: 'panels list' };
+  }
+  return { command: 'unknown' };
+}
+
+export function applyParsedArgsToTelemetryContext(
+  context: WrapperTelemetryContext,
+  parsed: {
+    command: RunpaneCommand;
+    target: InstallTarget;
+    paneVersion: string;
+    channel: 'stable' | 'nightly';
+    format: ArtifactFormat;
+    dryRun: boolean;
+  }
+): void {
+  context.command = parsed.command;
+  context.target = parsed.command === 'update' ? 'client' : parsed.target;
+  context.paneVersion = parsed.paneVersion;
+  context.channel = parsed.channel;
+  context.format = parsed.format;
+  context.dryRun = parsed.dryRun;
+  if (parsed.command === 'install' || parsed.command === 'update') {
+    context.resolvedCommand = parsed.command;
+  }
+  if (parsed.command === 'help') {
+    context.resolvedCommand = 'help';
+  }
+  if (parsed.command === 'doctor') {
+    context.resolvedCommand = 'doctor';
+  }
+}
+
+export function setSetupSelection(
+  context: WrapperTelemetryContext,
+  resolvedCommand: 'install' | 'update' | 'doctor',
+  target?: InstallTarget
+): void {
+  context.command = 'setup';
+  context.resolvedCommand = resolvedCommand;
+  context.target = target;
+}
+
+export function categorizeFailure(error: unknown): WrapperFailureCategory {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes('checksum')) return 'checksum';
+  if (normalized.includes('timeout') || normalized.includes('timed out')) return 'timeout';
+  if (normalized.includes('enoent') || normalized.includes('not found') || normalized.includes('404')) return 'not_found';
+  if (normalized.includes('permission') || normalized.includes('eacces') || normalized.includes('eperm')) return 'permission';
+  if (normalized.includes('unsupported')) return 'unsupported_platform';
+  if (normalized.includes('invalid') || normalized.includes('required') || normalized.includes('validation')) return 'validation';
+  if (
+    normalized.includes('network') ||
+    normalized.includes('fetch') ||
+    normalized.includes('socket') ||
+    normalized.includes('econn') ||
+    normalized.includes('enotfound')
+  ) {
+    return 'network';
+  }
+  return 'unknown';
+}
+
+export function detectNpmInvocation(
+  env: NodeJS.ProcessEnv = process.env,
+  argv: string[] = process.argv
+): WrapperInvocation {
+  const userAgent = (env.npm_config_user_agent ?? '').toLowerCase();
+  const npmCommand = (env.npm_command ?? '').toLowerCase();
+  const execPath = (env.npm_execpath ?? '').toLowerCase();
+  const argvText = argv.join(' ').toLowerCase();
+
+  if (userAgent.includes('bun') || execPath.includes('bun') || argvText.includes('bunx')) {
+    return 'bunx';
+  }
+  if (userAgent.includes('yarn') || execPath.includes('yarn')) {
+    return 'yarn_dlx';
+  }
+  if (userAgent.includes('pnpm') || execPath.includes('pnpm')) {
+    return npmCommand === 'dlx' || argvText.includes(' dlx ') ? 'pnpm_dlx' : 'pnpm';
+  }
+  if (npmCommand === 'exec' || argvText.includes('npx')) {
+    return 'npx';
+  }
+  if (env.npm_config_global === 'true') {
+    return 'npm_global';
+  }
+  if (userAgent.includes('npm') || execPath.includes('npm')) {
+    return 'npm';
+  }
+  return 'unknown';
+}
+
+export function buildWrapperTelemetryProperties(input: {
+  installId: string;
+  wrapperVersion: string;
+  invocation: WrapperInvocation;
+  context: WrapperTelemetryContext;
+}): WrapperTelemetryProperties {
+  const { context } = input;
+  const properties: WrapperTelemetryProperties = {
+    install_id: input.installId,
+    wrapper: 'npm',
+    invocation: input.invocation,
+    command: context.command,
+    download_source: 'npm',
+  };
+
+  setIfDefined(properties, 'wrapper_version', sanitizeShortString(input.wrapperVersion));
+  setIfDefined(properties, 'resolved_command', context.resolvedCommand);
+  setIfDefined(properties, 'target', context.target);
+  setIfDefined(properties, 'platform', context.platform?.os);
+  setIfDefined(properties, 'arch', context.platform?.arch);
+  setIfDefined(properties, 'pane_version', sanitizeShortString(context.paneVersion));
+  setIfDefined(properties, 'channel', context.channel);
+  setIfDefined(properties, 'format', context.resolvedFormat ?? context.format);
+  setIfDefined(properties, 'dry_run', context.dryRun);
+  setIfDefined(properties, 'install_kind', context.installKind);
+  setIfDefined(properties, 'used_fallback', context.usedFallback);
+  setIfDefined(properties, 'failure_stage', context.failureStage);
+  setIfDefined(properties, 'failure_category', context.failureCategory);
+  setIfDefined(properties, 'exit_code', sanitizeExitCode(context.exitCode));
+
+  return properties;
+}
+
+export async function trackWrapperEvent(
+  event: WrapperTelemetryEventName,
+  context: WrapperTelemetryContext
+): Promise<void> {
+  if (isTelemetryDisabled()) {
+    return;
+  }
+
+  try {
+    const installId = await getOrCreateWrapperInstallId();
+    const properties = buildWrapperTelemetryProperties({
+      installId,
+      wrapperVersion: getWrapperVersion(),
+      invocation: detectNpmInvocation(),
+      context,
+    });
+    await postTelemetry({ event, properties });
+  } catch {
+    // Telemetry must not affect wrapper behavior.
+  }
+}
+
+function appDirectory(): string {
+  return process.env.PANE_DIR || process.env.FOOZOL_DIR || path.join(os.homedir(), '.pane');
+}
+
+async function getOrCreateWrapperInstallId(): Promise<string> {
+  const dir = appDirectory();
+  const configPath = path.join(dir, 'config.json');
+  const fallbackPath = path.join(dir, 'runpane-wrapper-identity.json');
+  await fs.mkdir(dir, { recursive: true });
+
+  const config = await readConfig(configPath);
+  if (config.status === 'ok') {
+    const analytics = isRecord(config.value.analytics) ? config.value.analytics : {};
+    const existing = analytics.installId;
+    if (typeof existing === 'string' && INSTALL_ID_PATTERN.test(existing)) {
+      return existing;
+    }
+
+    const installId = createInstallId();
+    const nextConfig: ConfigFile = {
+      ...config.value,
+      analytics: {
+        ...analytics,
+        installId,
+      },
+    };
+    await fs.writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`, 'utf8');
+    return installId;
+  }
+
+  if (config.status === 'missing') {
+    const installId = createInstallId();
+    await fs.writeFile(configPath, `${JSON.stringify({ analytics: { installId } }, null, 2)}\n`, 'utf8');
+    return installId;
+  }
+
+  return getOrCreateFallbackInstallId(fallbackPath);
+}
+
+async function readConfig(configPath: string): Promise<
+  | { status: 'ok'; value: ConfigFile }
+  | { status: 'missing' }
+  | { status: 'invalid' }
+> {
+  try {
+    const raw = await fs.readFile(configPath, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? { status: 'ok', value: parsed as ConfigFile } : { status: 'invalid' };
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return { status: 'missing' };
+    }
+    return { status: 'invalid' };
+  }
+}
+
+async function getOrCreateFallbackInstallId(fallbackPath: string): Promise<string> {
+  try {
+    const raw = await fs.readFile(fallbackPath, 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (isRecord(parsed) && typeof parsed.installId === 'string' && INSTALL_ID_PATTERN.test(parsed.installId)) {
+      return parsed.installId;
+    }
+  } catch {
+    // Fall through and create a new fallback identity.
+  }
+
+  const installId = createInstallId();
+  await fs.writeFile(fallbackPath, `${JSON.stringify({ installId }, null, 2)}\n`, 'utf8');
+  return installId;
+}
+
+async function postTelemetry(payload: { event: WrapperTelemetryEventName; properties: WrapperTelemetryProperties }): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TELEMETRY_TIMEOUT_MS);
+  try {
+    await fetch(TELEMETRY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'user-agent': 'runpane-installer' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isTelemetryDisabled(): boolean {
+  return Boolean(process.env.CI || process.env.RUNPANE_TELEMETRY_DISABLED);
+}
+
+function createInstallId(): string {
+  return `install_${randomUUID()}`;
+}
+
+function sanitizeShortString(value: string | undefined): string | undefined {
+  if (!value || value.length > 80 || /[\\/]/.test(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function sanitizeExitCode(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isInteger(value) || value < 0 || value > 255) {
+    return undefined;
+  }
+  return value;
+}
+
+function setIfDefined(
+  properties: WrapperTelemetryProperties,
+  key: string,
+  value: string | number | boolean | undefined
+): void {
+  if (value !== undefined) {
+    properties[key] = value;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}

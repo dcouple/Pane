@@ -12,6 +12,8 @@ const contractFixturePath = path.join(rootDir, 'scripts', 'fixtures', 'runpane-c
 const contractFixture = JSON.parse(fs.readFileSync(contractFixturePath, 'utf8'));
 const parserSamples = contractFixture.parserSamples;
 
+process.env.RUNPANE_TELEMETRY_DISABLED = '1';
+
 const platformCases = [
   { platform: { os: 'darwin', arch: 'arm64' }, target: 'client' },
   { platform: { os: 'darwin', arch: 'arm64' }, target: 'daemon' },
@@ -111,6 +113,7 @@ function runPythonSnippet(source, input) {
     input,
     env: {
       ...process.env,
+      PYTHONDONTWRITEBYTECODE: '1',
       PYTHONPATH: pythonSource
     }
   }).trim();
@@ -379,6 +382,132 @@ print(resolved.preferred_download_url)
   assert.strictEqual(parsedPythonUrl.searchParams.get('source'), 'pip');
 }
 
+function assertNoSensitiveTelemetryValues(properties) {
+  for (const [key, value] of Object.entries(properties)) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    assert.strictEqual(value.includes('/Users/'), false, `Telemetry property ${key} leaked a POSIX path`);
+    assert.strictEqual(value.includes('C:\\'), false, `Telemetry property ${key} leaked a Windows path`);
+    assert.strictEqual(value.includes('secret'), false, `Telemetry property ${key} leaked a secret marker`);
+    assert.strictEqual(value.includes('token'), false, `Telemetry property ${key} leaked a token marker`);
+  }
+}
+
+function compareWrapperTelemetrySanitizers() {
+  const telemetry = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'telemetry.js'));
+  const installId = 'install_11111111-1111-4111-8111-111111111111';
+  const wrapperVersion = '2.3.2';
+  const failureCases = [
+    'Checksum mismatch for Pane.AppImage',
+    'Request timed out',
+    'Pane.exe not found',
+    'EACCES permission denied',
+    'Unsupported OS',
+    'Invalid --format value',
+    'socket hang up',
+    'plain failure'
+  ];
+  const nodeContext = {
+    command: 'install',
+    resolvedCommand: 'install',
+    target: 'daemon',
+    paneVersion: 'latest',
+    channel: 'stable',
+    format: 'auto',
+    platform: { os: 'linux', arch: 'x64' },
+    resolvedFormat: 'appimage',
+    dryRun: false,
+    installKind: 'installed',
+    usedFallback: true,
+    failureStage: 'download',
+    failureCategory: telemetry.categorizeFailure(new Error(failureCases[0])),
+    exitCode: 1
+  };
+  const nodeProps = telemetry.buildWrapperTelemetryProperties({
+    installId,
+    wrapperVersion,
+    invocation: 'npx',
+    context: nodeContext
+  });
+  const unsafeNodeProps = telemetry.buildWrapperTelemetryProperties({
+    installId,
+    wrapperVersion,
+    invocation: 'npx',
+    context: {
+      ...nodeContext,
+      paneVersion: '/Users/parsa/secret-token/v2.3.2',
+      exitCode: 999
+    }
+  });
+  const nodeCategories = failureCases.map((message) => telemetry.categorizeFailure(new Error(message)));
+
+  const pythonOutput = runPythonSnippet(`
+import json
+import sys
+from runpane.telemetry import build_wrapper_telemetry_properties, categorize_failure
+
+payload = json.loads(sys.stdin.read())
+
+class Platform:
+    os = "linux"
+    arch = "x64"
+
+context = {
+    "command": "install",
+    "resolved_command": "install",
+    "target": "daemon",
+    "pane_version": "latest",
+    "channel": "stable",
+    "format": "auto",
+    "platform": Platform(),
+    "resolved_format": "appimage",
+    "dry_run": False,
+    "install_kind": "installed",
+    "used_fallback": True,
+    "failure_stage": "download",
+    "failure_category": categorize_failure(payload["failureCases"][0]),
+    "exit_code": 1,
+}
+unsafe_context = dict(context)
+unsafe_context["pane_version"] = "/Users/parsa/secret-token/v2.3.2"
+unsafe_context["exit_code"] = 999
+
+print(json.dumps({
+    "props": build_wrapper_telemetry_properties(
+        install_id=payload["installId"],
+        invocation="pipx",
+        context=context,
+        version=payload["wrapperVersion"],
+    ),
+    "unsafeProps": build_wrapper_telemetry_properties(
+        install_id=payload["installId"],
+        invocation="pipx",
+        context=unsafe_context,
+        version=payload["wrapperVersion"],
+    ),
+    "categories": [categorize_failure(message) for message in payload["failureCases"]],
+}))
+`, JSON.stringify({ installId, wrapperVersion, failureCases }));
+  const python = JSON.parse(pythonOutput);
+
+  const normalize = ({ wrapper, invocation, download_source: downloadSource, ...properties }) => properties;
+  assert.deepStrictEqual(normalize(python.props), normalize(nodeProps));
+  assert.strictEqual(nodeProps.wrapper, 'npm');
+  assert.strictEqual(nodeProps.download_source, 'npm');
+  assert.strictEqual(python.props.wrapper, 'pip');
+  assert.strictEqual(python.props.download_source, 'pip');
+  assert.strictEqual(Object.hasOwn(unsafeNodeProps, 'pane_version'), false);
+  assert.strictEqual(Object.hasOwn(unsafeNodeProps, 'exit_code'), false);
+  assert.strictEqual(Object.hasOwn(python.unsafeProps, 'pane_version'), false);
+  assert.strictEqual(Object.hasOwn(python.unsafeProps, 'exit_code'), false);
+  assert.deepStrictEqual(python.categories, nodeCategories);
+  assertNoSensitiveTelemetryValues(nodeProps);
+  assertNoSensitiveTelemetryValues(unsafeNodeProps);
+  assertNoSensitiveTelemetryValues(python.props);
+  assertNoSensitiveTelemetryValues(python.unsafeProps);
+}
+
 function compareExistingReusePolicy() {
   const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
   const { shouldReuseExistingPane } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js'));
@@ -521,6 +650,7 @@ function checkHelpOutput() {
   const python = findPython();
   const pythonEnv = {
     ...process.env,
+    PYTHONDONTWRITEBYTECODE: '1',
     PYTHONPATH: pythonSource
   };
   const nodeHelp = childProcess.execFileSync(process.execPath, [npmCli, '--help'], { encoding: 'utf8' });
@@ -556,6 +686,7 @@ function compareAgentContextParity() {
   const python = findPython();
   const pythonEnv = {
     ...process.env,
+    PYTHONDONTWRITEBYTECODE: '1',
     PYTHONPATH: pythonSource
   };
   const runNode = (args) => childProcess.execFileSync(process.execPath, [npmCli, ...args], { encoding: 'utf8' }).trim();
@@ -585,6 +716,7 @@ function checkNoArgsAndSetupFallback() {
   const python = findPython();
   const pythonEnv = {
     ...process.env,
+    PYTHONDONTWRITEBYTECODE: '1',
     PYTHONPATH: pythonSource
   };
 
@@ -611,6 +743,7 @@ async function runChecks() {
   checkPythonUnixEndpointSeparatorsAreHostIndependent();
   compareArtifactSelectionParity();
   await checkPreferredDownloadUrls();
+  compareWrapperTelemetrySanitizers();
   compareExistingReusePolicy();
   checkPlatformMatchingEdgeCases();
   await checkExistingDaemonShortCircuit();

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 import os
 import socket
 import sys
-from typing import Dict, List, Optional, Tuple, TypeVar
+from typing import Callable, Dict, List, Optional, Tuple, TypeVar
 
 from .agent_context import run_agent_context
 from .doctor import run_doctor
@@ -28,6 +28,14 @@ from .local_control import (
 )
 from .platforms import detect_platform
 from .releases import resolve_release
+from .telemetry import (
+    WrapperTelemetryContext,
+    apply_parsed_args_to_telemetry_context,
+    categorize_failure,
+    create_initial_telemetry_context,
+    set_setup_selection,
+    track_wrapper_event,
+)
 from .version import print_version
 
 SOURCE = "pip"
@@ -94,59 +102,104 @@ class ParsedArgs:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    effective_argv = sys.argv[1:] if argv is None else argv
+    telemetry_context = create_initial_telemetry_context(effective_argv)
     try:
-        effective_argv = sys.argv[1:] if argv is None else argv
         if not effective_argv:
-            return run_no_args_entrypoint()
+            return run_tracked_command(
+                telemetry_context,
+                lambda: run_no_args_entrypoint(telemetry_context),
+            )
 
-        parsed = parse_args(effective_argv)
-        if parsed.command == "help":
-            print(help_text(parsed.help_topic))
-            return 0
-        if parsed.command == "setup":
-            return run_no_args_entrypoint()
-        if parsed.command == "version":
-            return print_version(parsed.pane_path)
-        if parsed.command == "doctor":
-            return run_doctor(parsed, SOURCE)
-        if parsed.command == "agent-context":
-            return run_agent_context(parsed)
-        if parsed.command == "repos list":
-            return run_repos_list(parsed)
-        if parsed.command == "repos add":
-            return run_repos_add(parsed)
-        if parsed.command == "panes list":
-            return run_panes_list(parsed)
-        if parsed.command == "panes create":
-            return run_panes_create(parsed)
-        if parsed.command == "panels list":
-            return run_panels_list(parsed)
-        if parsed.command == "panels output":
-            return run_panels_output(parsed)
-        if parsed.command == "panels input":
-            return run_panels_input(parsed)
-        if parsed.command in {"install", "update"}:
-            return install_or_update(parsed)
-        print(help_text(None))
-        return 0
+        try:
+            parsed = parse_args(effective_argv)
+        except Exception as error:
+            telemetry_context["failure_stage"] = "parse"
+            telemetry_context["failure_category"] = categorize_failure(error)
+            track_wrapper_event("runpane_wrapper_command_failed", telemetry_context)
+            raise
+        apply_parsed_args_to_telemetry_context(telemetry_context, parsed)
+
+        return run_tracked_command(
+            telemetry_context,
+            lambda: dispatch_parsed_command(parsed, telemetry_context),
+        )
     except Exception as error:
         print(str(error), file=sys.stderr)
         return 1
 
 
-def run_no_args_entrypoint() -> int:
+def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTelemetryContext) -> int:
+    if parsed.command == "help":
+        print(help_text(parsed.help_topic))
+        return 0
+    if parsed.command == "setup":
+        return run_no_args_entrypoint(telemetry_context)
+    if parsed.command == "version":
+        return print_version(parsed.pane_path)
+    if parsed.command == "doctor":
+        return run_doctor(parsed, SOURCE)
+    if parsed.command == "agent-context":
+        return run_agent_context(parsed)
+    if parsed.command == "repos list":
+        return run_repos_list(parsed)
+    if parsed.command == "repos add":
+        return run_repos_add(parsed)
+    if parsed.command == "panes list":
+        return run_panes_list(parsed)
+    if parsed.command == "panes create":
+        return run_panes_create(parsed)
+    if parsed.command == "panels list":
+        return run_panels_list(parsed)
+    if parsed.command == "panels output":
+        return run_panels_output(parsed)
+    if parsed.command == "panels input":
+        return run_panels_input(parsed)
+    if parsed.command in {"install", "update"}:
+        return install_or_update(parsed, telemetry_context)
+    print(help_text(None))
+    return 0
+
+
+def run_tracked_command(telemetry_context: WrapperTelemetryContext, execute: Callable[[], int]) -> int:
+    track_wrapper_event("runpane_wrapper_command_started", telemetry_context)
+    try:
+        code = execute()
+        telemetry_context["exit_code"] = code
+        if code == 0:
+            track_wrapper_event("runpane_wrapper_command_succeeded", telemetry_context)
+        else:
+            telemetry_context.setdefault("failure_stage", infer_failure_stage(telemetry_context))
+            telemetry_context.setdefault("failure_category", "process_exit")
+            track_wrapper_event("runpane_wrapper_command_failed", telemetry_context)
+        return code
+    except Exception as error:
+        telemetry_context.setdefault("failure_stage", "unknown")
+        telemetry_context.setdefault("failure_category", categorize_failure(error))
+        track_wrapper_event("runpane_wrapper_command_failed", telemetry_context)
+        raise
+
+
+def infer_failure_stage(telemetry_context: WrapperTelemetryContext) -> str:
+    if telemetry_context.get("resolved_command") == "install" and telemetry_context.get("target") == "daemon":
+        return "remote_setup"
+    return "unknown"
+
+
+def run_no_args_entrypoint(telemetry_context: WrapperTelemetryContext) -> int:
     if not is_interactive_shell():
+        telemetry_context["resolved_command"] = "help"
         print(help_text(None))
         return 0
 
-    return run_interactive_wizard()
+    return run_interactive_wizard(telemetry_context)
 
 
 def is_interactive_shell() -> bool:
     return bool(sys.stdin.isatty() and sys.stdout.isatty() and not os.environ.get("CI"))
 
 
-def run_interactive_wizard() -> int:
+def run_interactive_wizard(telemetry_context: WrapperTelemetryContext) -> int:
     print("Pane setup")
     print("Choose what this machine should do. You can rerun setup any time.")
     print()
@@ -176,14 +229,17 @@ def run_interactive_wizard() -> int:
     if action == "client":
         print()
         print("Installing Pane desktop app on this machine...")
-        return install_or_update(create_parsed_args("install", target="client"))
+        set_setup_selection(telemetry_context, "install", "client")
+        return install_or_update(create_parsed_args("install", target="client"), telemetry_context)
     if action == "update":
         print()
         print("Updating Pane desktop app on this machine...")
-        return install_or_update(create_parsed_args("update", target="client"))
+        set_setup_selection(telemetry_context, "update", "client")
+        return install_or_update(create_parsed_args("update", target="client"), telemetry_context)
     if action == "doctor":
         print()
         print("Running runpane diagnostics...")
+        set_setup_selection(telemetry_context, "doctor")
         return run_doctor(create_parsed_args("doctor"), SOURCE)
 
     print()
@@ -223,11 +279,12 @@ def run_interactive_wizard() -> int:
     print("Setting up this machine as a Pane remote host...")
     print("When setup finishes, paste the printed pane-remote:// code into Pane or runpane.com/app.")
 
+    set_setup_selection(telemetry_context, "install", "daemon")
     return install_or_update(create_parsed_args(
         "install",
         target="daemon",
         remote_setup_args=remote_setup_args,
-    ))
+    ), telemetry_context)
 
 
 ChoiceT = TypeVar("ChoiceT", bound=str)
@@ -454,25 +511,51 @@ def read_value(args: List[str], index: int, flag: str) -> str:
     return args[index]
 
 
-def install_or_update(parsed: ParsedArgs) -> int:
+def install_or_update(parsed: ParsedArgs, telemetry_context: Optional[WrapperTelemetryContext] = None) -> int:
     target = "client" if parsed.command == "update" else parsed.target
+    context = telemetry_context if telemetry_context is not None else create_install_telemetry_context(parsed, target)
+    context["target"] = target
+    context["pane_version"] = parsed.pane_version
+    context["channel"] = parsed.channel
+    context["format"] = parsed.format
+    context["dry_run"] = parsed.dry_run
+
     if not parsed.dry_run and should_reuse_existing_pane(parsed, target):
         existing = resolve_existing_pane_path(parsed.pane_path)
         if existing:
             print(f"runpane: using existing Pane executable at {existing}")
             print("runpane: starting remote setup...")
-            return spawn_pane(existing, ["--remote-setup", *parsed.remote_setup_args])
+            context["install_kind"] = "existing"
+            code = spawn_pane(existing, ["--remote-setup", *parsed.remote_setup_args])
+            context["exit_code"] = code
+            if code != 0:
+                context["failure_stage"] = "remote_setup"
+                context["failure_category"] = "process_exit"
+            return code
 
-    platform = detect_platform()
+    try:
+        platform = detect_platform()
+        context["platform"] = platform
+    except Exception as error:
+        context["failure_stage"] = "resolve_release"
+        context["failure_category"] = categorize_failure(error)
+        raise
+
     print(f"runpane: resolving Pane release {parsed.pane_version}...")
-    resolved = resolve_release(
-        version=parsed.pane_version,
-        channel=parsed.channel,
-        source=SOURCE,
-        platform=platform,
-        format_name=parsed.format,
-        target=target,
-    )
+    try:
+        resolved = resolve_release(
+            version=parsed.pane_version,
+            channel=parsed.channel,
+            source=SOURCE,
+            platform=platform,
+            format_name=parsed.format,
+            target=target,
+        )
+        context["resolved_format"] = resolved.format
+    except Exception as error:
+        context["failure_stage"] = "resolve_release"
+        context["failure_category"] = categorize_failure(error)
+        raise
 
     if parsed.dry_run:
         print("runpane dry run")
@@ -493,21 +576,73 @@ def install_or_update(parsed: ParsedArgs) -> int:
 
     print(f"runpane: selected {resolved.artifact['name']}")
     print(f"runpane: downloading {resolved.artifact['name']}...")
-    artifact = download_artifact(resolved, parsed.download_dir, parsed.verbose)
+    track_wrapper_event("runpane_wrapper_download_requested", context)
+
+    def on_fallback_used(error: Exception) -> None:
+        fallback_context = dict(context)
+        fallback_context["used_fallback"] = True
+        fallback_context["failure_stage"] = "download"
+        fallback_context["failure_category"] = categorize_failure(error)
+        track_wrapper_event("runpane_wrapper_github_fallback_used", fallback_context)
+
+    try:
+        artifact = download_artifact(
+            resolved,
+            parsed.download_dir,
+            parsed.verbose,
+            on_fallback_used=on_fallback_used,
+        )
+        context["used_fallback"] = artifact.used_fallback
+        track_wrapper_event("runpane_wrapper_download_succeeded", context)
+    except Exception as error:
+        failure_category = categorize_failure(error)
+        context["failure_stage"] = "checksum" if failure_category == "checksum" else "download"
+        context["failure_category"] = failure_category
+        track_wrapper_event("runpane_wrapper_download_failed", context)
+        raise
+
     fallback = " from GitHub fallback" if artifact.used_fallback else ""
     print(f"runpane: downloaded {artifact.file_name}{fallback}")
     print("runpane: installing Pane...")
-    installed = install_pane_artifact(artifact, parsed, platform, resolved.format, target)
+    try:
+        installed = install_pane_artifact(artifact, parsed, platform, resolved.format, target)
+        context["install_kind"] = installed.install_kind
+    except Exception as error:
+        context["failure_stage"] = "install"
+        context["failure_category"] = categorize_failure(error)
+        raise
 
     if target == "daemon":
         print("runpane: starting remote setup...")
-        return spawn_pane(installed.executable_path, ["--remote-setup", *parsed.remote_setup_args])
+        code = spawn_pane(installed.executable_path, ["--remote-setup", *parsed.remote_setup_args])
+        context["exit_code"] = code
+        if code != 0:
+            context["failure_stage"] = "remote_setup"
+            context["failure_category"] = "process_exit"
+        return code
 
     if installed.install_kind == "installed":
-        launch_pane_client(installed.executable_path)
+        try:
+            launch_pane_client(installed.executable_path)
+        except Exception as error:
+            context["failure_stage"] = "launch"
+            context["failure_category"] = categorize_failure(error)
+            raise
 
     print(f"Pane {installed.install_kind}: {installed.executable_path}")
     return 0
+
+
+def create_install_telemetry_context(parsed: ParsedArgs, target: str) -> WrapperTelemetryContext:
+    return {
+        "command": parsed.command,
+        "resolved_command": parsed.command if parsed.command in {"install", "update"} else None,
+        "target": target,
+        "pane_version": parsed.pane_version,
+        "channel": parsed.channel,
+        "format": parsed.format,
+        "dry_run": parsed.dry_run,
+    }
 
 
 def help_text(topic: Optional[str]) -> str:

@@ -36,6 +36,7 @@ import { CreateSessionDialog } from './components/CreateSessionDialog';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { useNavigationStore } from './stores/navigationStore';
 import {
+  aliasInstallIdentity,
   aliasWebVisitor,
   capture,
   captureAppFirstOpened,
@@ -373,9 +374,12 @@ function App() {
         identity,
       }, { flushPendingEvents: false });
 
-      if (analyticsEnabled && identity?.webDistinctId) {
-        aliasWebVisitor(identity.webDistinctId, identity.distinctId);
-        void window.electronAPI?.analytics?.redeemAttribution?.();
+      if (analyticsEnabled && identity) {
+        aliasInstallIdentity(identity);
+        if (identity.webDistinctId) {
+          aliasWebVisitor(identity.webDistinctId, identity.distinctId);
+          void window.electronAPI?.analytics?.redeemAttribution?.();
+        }
       }
 
       // Sync distinct ID to main process so shutdown analytics use the same identity

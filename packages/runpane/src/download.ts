@@ -16,7 +16,8 @@ export interface DownloadedArtifact {
 export async function downloadArtifact(
   resolved: ResolvedRelease,
   downloadDir?: string,
-  verbose = false
+  verbose = false,
+  onFallbackUsed?: (error: unknown) => Promise<void> | void
 ): Promise<DownloadedArtifact> {
   const targetDir = downloadDir ?? path.join(os.tmpdir(), `runpane-${Date.now()}`);
   fs.mkdirSync(targetDir, { recursive: true });
@@ -30,6 +31,11 @@ export async function downloadArtifact(
   } catch (error) {
     usedFallback = true;
     console.warn(`runpane: website download route failed; falling back to GitHub release asset. ${formatError(error)}`);
+    try {
+      await onFallbackUsed?.(error);
+    } catch {
+      // Fallback telemetry must not affect download behavior.
+    }
     await downloadToFile(resolved.fallbackDownloadUrl, targetPath, verbose);
   }
 

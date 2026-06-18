@@ -67,6 +67,13 @@ function contextProperties(identity = currentIdentity): Record<string, unknown> 
   });
 }
 
+function installDistinctId(identity = currentIdentity): string | undefined {
+  if (!identity?.installId) return undefined;
+
+  const distinctId = `install:${identity.installId}`;
+  return distinctId === identity.distinctId ? undefined : distinctId;
+}
+
 function identifyUser(config: PostHogConfig): void {
   currentIdentity = config.identity;
   if (!config.enabled || !config.identity) return;
@@ -93,9 +100,13 @@ async function directCapture(
   eventName: string,
   properties?: Record<string, unknown>,
   identity = currentIdentity,
-  options: { processPersonProfile?: boolean } = {}
+  options: { processPersonProfile?: boolean; distinctId?: string } = {}
 ): Promise<void> {
   const { token, host, distinctId } = directCaptureTarget(identity);
+  const eventDistinctId =
+    typeof options.distinctId === 'string' && options.distinctId.length > 0
+      ? options.distinctId
+      : distinctId;
   const shouldProcessPersonProfile = Boolean(options.processPersonProfile && identity);
 
   const payload = {
@@ -104,7 +115,7 @@ async function directCapture(
     properties: compactProperties({
       ...contextProperties(identity),
       ...properties,
-      distinct_id: distinctId,
+      distinct_id: eventDistinctId,
       token,
       $lib: 'posthog-js',
       ...(shouldProcessPersonProfile
@@ -207,9 +218,20 @@ export function aliasWebVisitor(webDistinctId?: string, distinctId = currentIden
   if (!webDistinctId || !distinctId || webDistinctId === distinctId) return;
 
   try {
-    posthog.alias(webDistinctId, distinctId);
+    posthog.alias(distinctId, webDistinctId);
   } catch (error) {
     console.error('[PostHog] Failed to alias web visitor:', error);
+  }
+}
+
+export function aliasInstallIdentity(identity = currentIdentity): void {
+  const installIdDistinctId = installDistinctId(identity);
+  if (!installIdDistinctId || !identity?.distinctId) return;
+
+  try {
+    posthog.alias(identity.distinctId, installIdDistinctId);
+  } catch (error) {
+    console.error('[PostHog] Failed to alias install identity:', error);
   }
 }
 
@@ -218,9 +240,27 @@ export async function aliasWebVisitorDirect(identity = currentIdentity): Promise
 
   await directCapture(
     '$create_alias',
-    { alias: identity.webDistinctId },
+    { alias: identity.distinctId },
     identity,
-    { processPersonProfile: true }
+    {
+      distinctId: identity.webDistinctId,
+      processPersonProfile: true,
+    }
+  );
+}
+
+export async function aliasInstallIdentityDirect(identity = currentIdentity): Promise<void> {
+  const installIdDistinctId = installDistinctId(identity);
+  if (!installIdDistinctId || !identity?.distinctId) return;
+
+  await directCapture(
+    '$create_alias',
+    { alias: identity.distinctId },
+    identity,
+    {
+      distinctId: installIdDistinctId,
+      processPersonProfile: true,
+    }
   );
 }
 

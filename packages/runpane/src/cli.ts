@@ -24,24 +24,46 @@ import {
 } from './localControl';
 import { detectPlatform } from './platform';
 import { resolveRelease } from './releases';
+import {
+  applyParsedArgsToTelemetryContext,
+  categorizeFailure,
+  createInitialTelemetryContext,
+  setSetupSelection,
+  trackWrapperEvent,
+  type WrapperTelemetryContext
+} from './telemetry';
 import { printVersion } from './version';
 
 const SOURCE = 'npm' as const;
 
 export async function main(argv: string[]): Promise<number> {
+  const telemetryContext = createInitialTelemetryContext(argv);
   if (argv.length === 0) {
-    return runNoArgsEntrypoint();
+    return runTrackedCommand(telemetryContext, () => runNoArgsEntrypoint(telemetryContext));
   }
 
-  const parsed = parseRunpaneArgs(argv);
+  let parsed: ParsedArgs;
+  try {
+    parsed = parseRunpaneArgs(argv);
+  } catch (error) {
+    telemetryContext.failureStage = 'parse';
+    telemetryContext.failureCategory = categorizeFailure(error);
+    await trackWrapperEvent('runpane_wrapper_command_failed', telemetryContext);
+    throw error;
+  }
+  applyParsedArgsToTelemetryContext(telemetryContext, parsed);
 
+  return runTrackedCommand(telemetryContext, () => dispatchParsedCommand(parsed, telemetryContext));
+}
+
+async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: WrapperTelemetryContext): Promise<number> {
   if (parsed.command === 'help') {
     console.log(helpText(parsed.helpTopic));
     return 0;
   }
 
   if (parsed.command === 'setup') {
-    return runNoArgsEntrypoint();
+    return runNoArgsEntrypoint(telemetryContext);
   }
 
   if (parsed.command === 'version') {
@@ -85,27 +107,59 @@ export async function main(argv: string[]): Promise<number> {
   }
 
   if (parsed.command === 'install' || parsed.command === 'update') {
-    return installOrUpdate(parsed);
+    return installOrUpdate(parsed, telemetryContext);
   }
 
   console.log(helpText());
   return 0;
 }
 
-async function runNoArgsEntrypoint(): Promise<number> {
+async function runTrackedCommand(
+  telemetryContext: WrapperTelemetryContext,
+  execute: () => Promise<number>
+): Promise<number> {
+  await trackWrapperEvent('runpane_wrapper_command_started', telemetryContext);
+  try {
+    const code = await execute();
+    telemetryContext.exitCode = code;
+    if (code === 0) {
+      await trackWrapperEvent('runpane_wrapper_command_succeeded', telemetryContext);
+    } else {
+      telemetryContext.failureStage ??= inferFailureStage(telemetryContext);
+      telemetryContext.failureCategory ??= 'process_exit';
+      await trackWrapperEvent('runpane_wrapper_command_failed', telemetryContext);
+    }
+    return code;
+  } catch (error) {
+    telemetryContext.failureStage ??= 'unknown';
+    telemetryContext.failureCategory ??= categorizeFailure(error);
+    await trackWrapperEvent('runpane_wrapper_command_failed', telemetryContext);
+    throw error;
+  }
+}
+
+function inferFailureStage(telemetryContext: WrapperTelemetryContext): WrapperTelemetryContext['failureStage'] {
+  if (telemetryContext.resolvedCommand === 'install' && telemetryContext.target === 'daemon') {
+    return 'remote_setup';
+  }
+  return 'unknown';
+}
+
+async function runNoArgsEntrypoint(telemetryContext: WrapperTelemetryContext): Promise<number> {
   if (!isInteractiveShell()) {
+    telemetryContext.resolvedCommand = 'help';
     console.log(helpText());
     return 0;
   }
 
-  return runInteractiveWizard();
+  return runInteractiveWizard(telemetryContext);
 }
 
 function isInteractiveShell(): boolean {
   return Boolean(input.isTTY && output.isTTY && !process.env.CI);
 }
 
-async function runInteractiveWizard(): Promise<number> {
+async function runInteractiveWizard(telemetryContext: WrapperTelemetryContext): Promise<number> {
   const rl = createInterface({ input, output });
 
   try {
@@ -138,18 +192,21 @@ async function runInteractiveWizard(): Promise<number> {
     if (action === 'client') {
       console.log('');
       console.log('Installing Pane desktop app on this machine...');
-      return installOrUpdate(createParsedArgs('install', { target: 'client' }));
+      setSetupSelection(telemetryContext, 'install', 'client');
+      return installOrUpdate(createParsedArgs('install', { target: 'client' }), telemetryContext);
     }
 
     if (action === 'update') {
       console.log('');
       console.log('Updating Pane desktop app on this machine...');
-      return installOrUpdate(createParsedArgs('update', { target: 'client' }));
+      setSetupSelection(telemetryContext, 'update', 'client');
+      return installOrUpdate(createParsedArgs('update', { target: 'client' }), telemetryContext);
     }
 
     if (action === 'doctor') {
       console.log('');
       console.log('Running runpane diagnostics...');
+      setSetupSelection(telemetryContext, 'doctor');
       return runDoctor(createParsedArgs('doctor'), SOURCE);
     }
 
@@ -191,10 +248,11 @@ async function runInteractiveWizard(): Promise<number> {
     console.log('Setting up this machine as a Pane remote host...');
     console.log('When setup finishes, paste the printed pane-remote:// code into Pane or runpane.com/app.');
 
+    setSetupSelection(telemetryContext, 'install', 'daemon');
     return installOrUpdate(createParsedArgs('install', {
       target: 'daemon',
       remoteSetupArgs
-    }));
+    }), telemetryContext);
   } finally {
     rl.close();
   }
@@ -231,27 +289,56 @@ function createParsedArgs(command: ParsedArgs['command'], overrides: Partial<Par
   };
 }
 
-export async function installOrUpdate(parsed: ParsedArgs): Promise<number> {
+export async function installOrUpdate(parsed: ParsedArgs, telemetryContext?: WrapperTelemetryContext): Promise<number> {
   const target = parsed.command === 'update' ? 'client' : parsed.target;
+  const context = telemetryContext ?? createInstallTelemetryContext(parsed, target);
+  context.target = target;
+  context.paneVersion = parsed.paneVersion;
+  context.channel = parsed.channel;
+  context.format = parsed.format;
+  context.dryRun = parsed.dryRun;
   if (!parsed.dryRun && shouldReuseExistingPane(parsed, target)) {
     const existing = resolveExistingPanePath(parsed.panePath);
     if (existing) {
       console.log(`runpane: using existing Pane executable at ${existing}`);
       console.log('runpane: starting remote setup...');
-      return spawnPane(existing, ['--remote-setup', ...parsed.remoteSetupArgs]);
+      context.installKind = 'existing';
+      const code = await spawnPane(existing, ['--remote-setup', ...parsed.remoteSetupArgs]);
+      context.exitCode = code;
+      if (code !== 0) {
+        context.failureStage = 'remote_setup';
+        context.failureCategory = 'process_exit';
+      }
+      return code;
     }
   }
 
-  const platform = detectPlatform();
+  let platform: ReturnType<typeof detectPlatform>;
+  try {
+    platform = detectPlatform();
+    context.platform = platform;
+  } catch (error) {
+    context.failureStage = 'resolve_release';
+    context.failureCategory = categorizeFailure(error);
+    throw error;
+  }
   console.log(`runpane: resolving Pane release ${parsed.paneVersion}...`);
-  const resolved = await resolveRelease({
-    version: parsed.paneVersion,
-    channel: parsed.channel,
-    source: SOURCE,
-    platform,
-    format: parsed.format,
-    target
-  });
+  let resolved: Awaited<ReturnType<typeof resolveRelease>>;
+  try {
+    resolved = await resolveRelease({
+      version: parsed.paneVersion,
+      channel: parsed.channel,
+      source: SOURCE,
+      platform,
+      format: parsed.format,
+      target
+    });
+    context.resolvedFormat = resolved.format;
+  } catch (error) {
+    context.failureStage = 'resolve_release';
+    context.failureCategory = categorizeFailure(error);
+    throw error;
+  }
 
   if (parsed.dryRun) {
     printDryRun(parsed, resolved.artifact.name, resolved.preferredDownloadUrl, resolved.fallbackDownloadUrl);
@@ -260,27 +347,78 @@ export async function installOrUpdate(parsed: ParsedArgs): Promise<number> {
 
   console.log(`runpane: selected ${resolved.artifact.name}`);
   console.log(`runpane: downloading ${resolved.artifact.name}...`);
-  const artifact = await downloadArtifact(resolved, parsed.downloadDir, parsed.verbose);
+  await trackWrapperEvent('runpane_wrapper_download_requested', context);
+  let artifact: Awaited<ReturnType<typeof downloadArtifact>>;
+  try {
+    artifact = await downloadArtifact(resolved, parsed.downloadDir, parsed.verbose, async (error) => {
+      await trackWrapperEvent('runpane_wrapper_github_fallback_used', {
+        ...context,
+        usedFallback: true,
+        failureStage: 'download',
+        failureCategory: categorizeFailure(error),
+      });
+    });
+    context.usedFallback = artifact.usedFallback;
+    await trackWrapperEvent('runpane_wrapper_download_succeeded', context);
+  } catch (error) {
+    const failureCategory = categorizeFailure(error);
+    context.failureStage = failureCategory === 'checksum' ? 'checksum' : 'download';
+    context.failureCategory = failureCategory;
+    await trackWrapperEvent('runpane_wrapper_download_failed', context);
+    throw error;
+  }
   console.log(`runpane: downloaded ${artifact.fileName}${artifact.usedFallback ? ' from GitHub fallback' : ''}`);
   console.log('runpane: installing Pane...');
-  const installed = await installPaneArtifact(artifact, {
-    parsed,
-    platform,
-    format: resolved.format,
-    target
-  });
+  let installed: Awaited<ReturnType<typeof installPaneArtifact>>;
+  try {
+    installed = await installPaneArtifact(artifact, {
+      parsed,
+      platform,
+      format: resolved.format,
+      target
+    });
+    context.installKind = installed.installKind;
+  } catch (error) {
+    context.failureStage = 'install';
+    context.failureCategory = categorizeFailure(error);
+    throw error;
+  }
 
   if (target === 'daemon') {
     console.log('runpane: starting remote setup...');
-    return spawnPane(installed.executablePath, ['--remote-setup', ...parsed.remoteSetupArgs]);
+    const code = await spawnPane(installed.executablePath, ['--remote-setup', ...parsed.remoteSetupArgs]);
+    context.exitCode = code;
+    if (code !== 0) {
+      context.failureStage = 'remote_setup';
+      context.failureCategory = 'process_exit';
+    }
+    return code;
   }
 
   if (installed.installKind === 'installed') {
-    launchPaneClient(installed.executablePath);
+    try {
+      launchPaneClient(installed.executablePath);
+    } catch (error) {
+      context.failureStage = 'launch';
+      context.failureCategory = categorizeFailure(error);
+      throw error;
+    }
   }
 
   console.log(`Pane ${installed.installKind === 'existing' ? 'found' : 'installed'}: ${installed.executablePath}`);
   return 0;
+}
+
+function createInstallTelemetryContext(parsed: ParsedArgs, target: ParsedArgs['target']): WrapperTelemetryContext {
+  return {
+    command: parsed.command,
+    resolvedCommand: parsed.command === 'install' || parsed.command === 'update' ? parsed.command : undefined,
+    target,
+    paneVersion: parsed.paneVersion,
+    channel: parsed.channel,
+    format: parsed.format,
+    dryRun: parsed.dryRun,
+  };
 }
 
 function printDryRun(

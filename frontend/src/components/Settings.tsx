@@ -3,6 +3,8 @@ import { NotificationSettings } from './NotificationSettings';
 import { useNotifications } from '../hooks/useNotifications';
 import { API } from '../utils/api';
 import {
+  aliasInstallIdentity,
+  aliasInstallIdentityDirect,
   aliasWebVisitor,
   aliasWebVisitorDirect,
   capture,
@@ -831,6 +833,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
     }, { flushPendingEvents: false });
 
     if (enabled) {
+      aliasInstallIdentity(identity);
       if (identity?.webDistinctId) {
         aliasWebVisitor(identity.webDistinctId, identity.distinctId);
         void window.electronAPI?.analytics?.redeemAttribution?.();
@@ -839,6 +842,8 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
       flushPendingEvents();
       return;
     }
+
+    await aliasInstallIdentityDirect(identity);
 
     if (identity?.webDistinctId) {
       await aliasWebVisitorDirect(identity);

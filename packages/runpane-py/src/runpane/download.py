@@ -8,7 +8,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, Optional
 
 from .releases import ResolvedRelease, artifact_file_name
 
@@ -20,7 +20,12 @@ class DownloadedArtifact:
     used_fallback: bool
 
 
-def download_artifact(resolved: ResolvedRelease, download_dir: Optional[str], verbose: bool) -> DownloadedArtifact:
+def download_artifact(
+    resolved: ResolvedRelease,
+    download_dir: Optional[str],
+    verbose: bool,
+    on_fallback_used: Optional[Callable[[Exception], None]] = None,
+) -> DownloadedArtifact:
     target_dir = download_dir or os.path.join(tempfile.gettempdir(), f"runpane-{int(time.time() * 1000)}")
     os.makedirs(target_dir, exist_ok=True)
 
@@ -33,6 +38,11 @@ def download_artifact(resolved: ResolvedRelease, download_dir: Optional[str], ve
     except Exception as error:
         used_fallback = True
         print(f"runpane: website download route failed; falling back to GitHub release asset. {error}")
+        if on_fallback_used is not None:
+            try:
+                on_fallback_used(error)
+            except Exception:
+                pass
         download_to_file(resolved.fallback_download_url, target_path, verbose)
 
     verify_checksum_if_available(resolved, target_path, file_name)

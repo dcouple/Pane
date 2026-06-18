@@ -277,6 +277,9 @@ The npm package uses `source=npm` for all npm-registry consumers, including `npx
 The PyPI package uses `source=pip` for all Python consumers, including pip, pipx, uvx, and `python -m runpane`.
 Wrappers should prefer `https://runpane.com/api/download?platform=<platform>&arch=<arch>&format=<format>&version=<version>&channel=<channel>&source=<npm|pip>`.
 If the website route cannot satisfy the download, wrappers may fall back to the matching GitHub release asset and print a warning that website attribution may be incomplete for that run.
+Wrappers also emit best-effort lifecycle telemetry to `https://runpane.com/api/runpane/telemetry` for command start/success/failure, download request/success/failure, and GitHub fallback usage.
+Wrapper telemetry uses a persisted anonymous `install_id` in the form `install_<uuid>` and PostHog `distinct_id = install:<install_id>` so distinct wrapper users can be counted with `count(DISTINCT properties.install_id)`.
+Wrapper telemetry must be disabled in CI and when `RUNPANE_TELEMETRY_DISABLED` is set, and must not include raw paths, labels, prompts, raw error text, or environment values.
 
 ## Publishing Credentials
 

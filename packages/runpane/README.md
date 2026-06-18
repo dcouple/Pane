@@ -97,6 +97,11 @@ npm package downloads use `source=npm` when requesting release artifacts from
 `runpane.com/api/download`. If that route is unavailable, the CLI falls back to
 matching GitHub release assets and prints a warning.
 
+The wrapper also sends best-effort lifecycle telemetry with a persisted
+anonymous `install_id`. Count distinct wrapper users with
+`count(DISTINCT properties.install_id)` on `runpane_wrapper_*` events. Set
+`RUNPANE_TELEMETRY_DISABLED=1` to disable wrapper telemetry.
+
 ## Maintenance Notes
 
 Keep the npm and PyPI clients in sync with each Pane release. When changing
