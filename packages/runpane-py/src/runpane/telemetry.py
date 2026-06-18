@@ -39,6 +39,8 @@ def create_initial_telemetry_context(argv: Optional[List[str]] = None) -> Wrappe
         return {"command": "version"}
     if first == "agent-context":
         return {"command": "agent-context"}
+    if first == "agents":
+        return {"command": "agents doctor" if len(args) > 1 and args[1] == "doctor" else "unknown"}
     if first == "repos":
         return {"command": "repos add" if len(args) > 1 and args[1] == "add" else "repos list"}
     if first == "panes":
@@ -48,6 +50,12 @@ def create_initial_telemetry_context(argv: Optional[List[str]] = None) -> Wrappe
             return {"command": "panels output"}
         if len(args) > 1 and args[1] == "input":
             return {"command": "panels input"}
+        if len(args) > 1 and args[1] == "screen":
+            return {"command": "panels screen"}
+        if len(args) > 1 and args[1] == "submit":
+            return {"command": "panels submit"}
+        if len(args) > 1 and args[1] == "wait":
+            return {"command": "panels wait"}
         return {"command": "panels list"}
     return {"command": "unknown"}
 

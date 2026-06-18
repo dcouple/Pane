@@ -18,9 +18,13 @@ from .installers import (
     spawn_pane,
 )
 from .local_control import (
+    run_agents_doctor,
     run_panels_input,
     run_panels_list,
     run_panels_output,
+    run_panels_screen,
+    run_panels_submit,
+    run_panels_wait,
     run_panes_create,
     run_panes_list,
     run_repos_add,
@@ -96,7 +100,13 @@ class ParsedArgs:
     panel_input_file: Optional[str] = None
     from_json: Optional[str] = None
     timeout_ms: Optional[float] = None
+    wait_ready: bool = False
+    ready_timeout_ms: Optional[float] = None
+    concurrency: Optional[int] = None
     limit: Optional[int] = None
+    wait_condition: Optional[str] = None
+    contains: Optional[str] = None
+    interval_ms: Optional[float] = None
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -155,6 +165,14 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panels_output(parsed)
     if parsed.command == "panels input":
         return run_panels_input(parsed)
+    if parsed.command == "panels screen":
+        return run_panels_screen(parsed)
+    if parsed.command == "panels submit":
+        return run_panels_submit(parsed)
+    if parsed.command == "panels wait":
+        return run_panels_wait(parsed)
+    if parsed.command == "agents doctor":
+        return run_agents_doctor(parsed)
     if parsed.command in {"install", "update"}:
         return install_or_update(parsed, telemetry_context)
     print(help_text(None))
@@ -409,6 +427,9 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
     if flag == "--json":
         parsed.json = True
         return
+    if flag == "--wait-ready":
+        parsed.wait_ready = True
+        return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
 
@@ -472,6 +493,24 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             raise ValueError("--timeout-ms must be a positive number.")
         parsed.timeout_ms = timeout_ms
         return
+    if flag == "--ready-timeout-ms":
+        try:
+            ready_timeout_ms = float(value)
+        except ValueError as error:
+            raise ValueError("--ready-timeout-ms must be a positive number.") from error
+        if ready_timeout_ms <= 0:
+            raise ValueError("--ready-timeout-ms must be a positive number.")
+        parsed.ready_timeout_ms = ready_timeout_ms
+        return
+    if flag == "--concurrency":
+        try:
+            concurrency = int(value)
+        except ValueError as error:
+            raise ValueError("--concurrency must be a positive integer.") from error
+        if concurrency <= 0:
+            raise ValueError("--concurrency must be a positive integer.")
+        parsed.concurrency = concurrency
+        return
     if flag == "--limit":
         try:
             limit = int(value)
@@ -480,6 +519,23 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
         if limit <= 0:
             raise ValueError("--limit must be a positive integer.")
         parsed.limit = limit
+        return
+    if flag == "--for":
+        if value not in {"initialized", "ready", "idle", "text"}:
+            raise ValueError("--for must be one of: initialized, ready, idle, text.")
+        parsed.wait_condition = value
+        return
+    if flag == "--contains":
+        parsed.contains = value
+        return
+    if flag == "--interval-ms":
+        try:
+            interval_ms = float(value)
+        except ValueError as error:
+            raise ValueError("--interval-ms must be a positive number.") from error
+        if interval_ms <= 0:
+            raise ValueError("--interval-ms must be a positive number.")
+        parsed.interval_ms = interval_ms
         return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
@@ -493,6 +549,10 @@ def is_runpane_local_command(command: str) -> bool:
         "panels list",
         "panels output",
         "panels input",
+        "panels screen",
+        "panels submit",
+        "panels wait",
+        "agents doctor",
     }
 
 

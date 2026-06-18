@@ -28,6 +28,20 @@ const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw 
 
 type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
 
+export interface TerminalPanelSnapshot {
+  initialized: true;
+  scrollbackBuffer: string;
+  alternateScreenBuffer: string;
+  isAlternateScreen: boolean;
+  activityStatus: 'active' | 'idle';
+  lastActivityTime: string;
+  currentCommand: string;
+  isCliPanel?: boolean;
+  isCliReady?: boolean;
+  agentType?: CliAgentType;
+  agentSessionId?: string;
+}
+
 /**
  * IPty-compatible shim over a ptyHost `PtyHandle`.
  *
@@ -1358,6 +1372,29 @@ export class TerminalPanelManager {
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
       serializedBuffer: this.serializedBuffers.get(panelId)
+    };
+  }
+
+  getTerminalSnapshot(panelId: string): TerminalPanelSnapshot | null {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return null;
+
+    const panel = panelManager.getPanel(panelId);
+    const customState = (panel?.state.customState || {}) as TerminalPanelState;
+    const agentType = customState.agentType ?? this.getCliAgentType(customState.initialCommand);
+
+    return {
+      initialized: true,
+      scrollbackBuffer: terminal.scrollbackBuffer,
+      alternateScreenBuffer: terminal.alternateScreenBuffer,
+      isAlternateScreen: terminal.isAlternateScreen,
+      activityStatus: terminal.activityStatus,
+      lastActivityTime: terminal.lastActivity.toISOString(),
+      currentCommand: terminal.currentCommand,
+      isCliPanel: customState.isCliPanel,
+      isCliReady: customState.isCliReady,
+      agentType,
+      agentSessionId: customState.agentSessionId ?? terminal.codexAgentSessionId,
     };
   }
 

@@ -7,7 +7,7 @@ import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { PathResolver } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { panelManager } from '../services/panelManager';
-import { terminalPanelManager } from '../services/terminalPanelManager';
+import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
@@ -15,6 +15,8 @@ import type { TerminalPanelState, ToolPanel } from '../../../shared/types/panels
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import type {
   RunpaneAgentId,
+  RunpaneAgentDoctorRequest,
+  RunpaneAgentDoctorResult,
   RunpanePaneListRequest,
   RunpanePaneListResult,
   RunpanePaneCreateFailureItem,
@@ -22,6 +24,8 @@ import type {
   RunpanePaneCreateRequest,
   RunpanePaneCreateResult,
   RunpanePaneCreateResultItem,
+  RunpanePaneReadiness,
+  RunpanePanelBlockedState,
   RunpanePanelInputRequest,
   RunpanePanelInputResult,
   RunpanePanelListRequest,
@@ -29,6 +33,15 @@ import type {
   RunpanePanelOutputRecord,
   RunpanePanelOutputRequest,
   RunpanePanelOutputResult,
+  RunpanePanelScreenRequest,
+  RunpanePanelScreenResult,
+  RunpanePanelScreenSource,
+  RunpanePanelStateSummary,
+  RunpanePanelSubmitRequest,
+  RunpanePanelSubmitResult,
+  RunpanePanelWaitCondition,
+  RunpanePanelWaitRequest,
+  RunpanePanelWaitResult,
   RunpaneRepoAddRequest,
   RunpaneRepoAddResult,
   RunpaneRepoListResult,
@@ -46,11 +59,19 @@ const RUNPANE_CHANNELS = [
   'runpane:panels:list',
   'runpane:panels:output',
   'runpane:panels:input',
+  'runpane:panels:screen',
+  'runpane:panels:submit',
+  'runpane:panels:wait',
+  'runpane:agents:doctor',
 ] as const;
 
 const AGENT_TEMPLATES = RUNPANE_CONTRACT.agentTemplates;
 const AGENT_IDS = new Set<string>(RUNPANE_CONTRACT.enums.agents);
 const DEFAULT_PANEL_OUTPUT_LIMIT = 200;
+const DEFAULT_PANEL_SCREEN_LIMIT = 80;
+const DEFAULT_PANEL_WAIT_TIMEOUT_MS = 30_000;
+const DEFAULT_PANEL_WAIT_INTERVAL_MS = 500;
+const MAX_PANE_CREATE_CONCURRENCY = 3;
 
 export function registerRunpaneHandlers(
   _ipcMain: IpcMain,
@@ -180,63 +201,18 @@ export function registerRunpaneHandlers(
         throw new Error('Task queue not initialized');
       }
 
-      const items: RunpanePaneCreateResultItem[] = [];
-      for (let index = 0; index < normalized.panes.length; index++) {
-        const item = normalized.panes[index];
-        try {
-          const tool = resolveToolSpec(item.tool);
-          const sessionResult = await taskQueue.createSessionAndWait({
-            prompt: item.sessionPrompt ?? '',
-            worktreeTemplate: item.worktreeName ?? item.name,
-            projectId: repo.id,
-            baseBranch: item.baseBranch,
-            toolType: 'none',
-          }, { timeoutMs: normalized.timeoutMs });
-
-          const session = sessionManager.getSession(sessionResult.sessionId);
-          if (!session) {
-            throw new Error(`Created session ${sessionResult.sessionId} was not found`);
-          }
-
-          const initialState: TerminalPanelState = {
-            initialCommand: tool.command,
-            initialInput: tool.initialInput,
-            agentType: tool.agent,
-            isCliPanel: Boolean(tool.agent),
-          };
-
-          const panel = await panelManager.createPanel({
-            sessionId: session.id,
-            type: 'terminal',
-            title: tool.title,
-            initialState,
-          });
-
-          const context = sessionManager.getProjectContext(session.id);
-          await terminalPanelManager.initializeTerminal(
-            panel,
-            session.worktreePath,
-            context?.commandRunner.wslContext ?? null,
-          );
-
-          items.push({
-            ok: true,
-            index,
-            name: item.name,
-            sessionId: session.id,
-            paneId: session.id,
-            panelId: panel.id,
-            worktreePath: session.worktreePath,
-            nextCommand: panelOutputCommand(panel.id),
-            tool: describeTool(tool),
-          });
-        } catch (error) {
-          items.push(createFailureItem(index, item, error));
-        }
-      }
+      const items = await mapWithConcurrency(
+        normalized.panes,
+        clampPaneCreateConcurrency(normalized.concurrency, normalized.panes.length),
+        (item, index) => createPaneItem(services, repo, item, index, {
+          timeoutMs: normalized.timeoutMs,
+          waitReady: normalized.waitReady,
+          readyTimeoutMs: normalized.readyTimeoutMs,
+        }),
+      );
 
       return {
-        ok: items.every(item => item.ok),
+        ok: items.every(isPaneCreateItemSuccessful),
         repo: repoSummary,
         items,
       };
@@ -334,6 +310,77 @@ export function registerRunpaneHandlers(
       inputBytes: result.inputBytes,
     }));
   });
+
+  commandRegistry.register('runpane:panels:screen', async (request: unknown): Promise<RunpanePanelScreenResult> => {
+    return withRunpaneAction(services, 'panels:screen', {}, () => {
+      const normalized = parsePanelScreenRequest(request);
+      const panel = resolveTerminalPanel(normalized.panelId);
+      return buildPanelScreenResult(panel, normalized.limit ?? DEFAULT_PANEL_SCREEN_LIMIT);
+    }, result => ({
+      paneId: result.paneId,
+      panelId: result.panelId,
+      limit: result.limit,
+      resultCount: result.returnedLineCount,
+    }));
+  });
+
+  commandRegistry.register('runpane:panels:submit', async (request: unknown): Promise<RunpanePanelSubmitResult> => {
+    return withRunpaneAction(services, 'panels:submit', {}, () => {
+      const normalized = parsePanelSubmitRequest(request);
+      const panel = resolveTerminalPanel(normalized.panelId);
+      if (!terminalPanelManager.isTerminalInitialized(panel.id)) {
+        throw new Error(`Terminal panel ${panel.id} is not initialized`);
+      }
+
+      const input = ensureSubmitEnter(normalized.input);
+      terminalPanelManager.writeToTerminal(panel.id, input);
+
+      return {
+        ok: true,
+        panelId: panel.id,
+        paneId: panel.sessionId,
+        inputBytes: Buffer.byteLength(input, 'utf8'),
+        enter: 'cr',
+        sentAt: new Date().toISOString(),
+        nextCommand: panelWaitCommand(panel.id),
+      };
+    }, result => ({
+      paneId: result.paneId,
+      panelId: result.panelId,
+      inputBytes: result.inputBytes,
+    }));
+  });
+
+  commandRegistry.register('runpane:panels:wait', async (request: unknown): Promise<RunpanePanelWaitResult> => {
+    return withRunpaneAction(services, 'panels:wait', {}, async () => {
+      const normalized = parsePanelWaitRequest(request);
+      const panel = resolveTerminalPanel(normalized.panelId);
+      return waitForPanel(panel, normalized);
+    }, result => ({
+      paneId: result.paneId,
+      panelId: result.panelId,
+      ok: result.ok,
+      resultCount: result.matched ? 1 : 0,
+      condition: result.condition,
+      timedOut: result.timedOut,
+    }));
+  });
+
+  commandRegistry.register('runpane:agents:doctor', async (request: unknown): Promise<RunpaneAgentDoctorResult> => {
+    return withRunpaneAction(services, 'agents:doctor', {}, async () => {
+      const normalized = parseAgentDoctorRequest(request);
+      const repo = normalized.repo
+        ? resolveRepoSelector(databaseService.getAllProjects(), normalized.repo)
+        : resolveActiveProject(databaseService.getAllProjects());
+      return runAgentDoctor(services, repo, normalized.agent);
+    }, result => ({
+      repoId: result.repo?.id,
+      ok: result.ok,
+      resultCount: result.checks.length,
+      available: result.available,
+      environment: result.environment,
+    }));
+  });
 }
 
 export function runpaneDaemonChannels(): readonly string[] {
@@ -390,6 +437,452 @@ function panelToSummary(panel: ToolPanel) {
   };
 }
 
+interface PaneCreateItemOptions {
+  timeoutMs?: number;
+  waitReady?: boolean;
+  readyTimeoutMs?: number;
+}
+
+async function createPaneItem(
+  services: AppServices,
+  repo: Project,
+  item: RunpanePaneCreateItem,
+  index: number,
+  options: PaneCreateItemOptions,
+): Promise<RunpanePaneCreateResultItem> {
+  const { sessionManager, taskQueue } = services;
+  if (!taskQueue) {
+    throw new Error('Task queue not initialized');
+  }
+
+  try {
+    const tool = resolveToolSpec(item.tool);
+    const sessionResult = await taskQueue.createSessionAndWait({
+      prompt: item.sessionPrompt ?? '',
+      worktreeTemplate: item.worktreeName ?? item.name,
+      projectId: repo.id,
+      baseBranch: item.baseBranch,
+      toolType: 'none',
+    }, { timeoutMs: options.timeoutMs });
+
+    const session = sessionManager.getSession(sessionResult.sessionId);
+    if (!session) {
+      throw new Error(`Created session ${sessionResult.sessionId} was not found`);
+    }
+
+    const initialState: TerminalPanelState = {
+      initialCommand: tool.command,
+      initialInput: tool.initialInput,
+      agentType: tool.agent,
+      isCliPanel: Boolean(tool.agent),
+    };
+
+    const panel = await panelManager.createPanel({
+      sessionId: session.id,
+      type: 'terminal',
+      title: tool.title,
+      initialState,
+    });
+
+    const context = sessionManager.getProjectContext(session.id);
+    await terminalPanelManager.initializeTerminal(
+      panel,
+      session.worktreePath,
+      context?.commandRunner.wslContext ?? null,
+    );
+
+    const readiness = options.waitReady
+      ? toPaneReadiness(await waitForPanel(panel, {
+        panelId: panel.id,
+        condition: 'ready',
+        timeoutMs: options.readyTimeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS,
+        intervalMs: DEFAULT_PANEL_WAIT_INTERVAL_MS,
+      }))
+      : undefined;
+
+    return {
+      ok: true,
+      index,
+      name: item.name,
+      sessionId: session.id,
+      paneId: session.id,
+      panelId: panel.id,
+      worktreePath: session.worktreePath,
+      nextCommand: readiness?.nextCommand ?? panelOutputCommand(panel.id),
+      tool: describeTool(tool),
+      readiness,
+    };
+  } catch (error) {
+    return createFailureItem(index, item, error);
+  }
+}
+
+function isPaneCreateItemSuccessful(item: RunpanePaneCreateResultItem): boolean {
+  return item.ok && (!item.readiness || item.readiness.ok);
+}
+
+function toPaneReadiness(result: RunpanePanelWaitResult): RunpanePaneReadiness {
+  return {
+    ok: result.ok,
+    condition: result.condition,
+    matched: result.matched,
+    timedOut: result.timedOut,
+    elapsedMs: result.elapsedMs,
+    state: result.state,
+    blocked: result.blocked,
+    nextCommand: result.nextCommand,
+  };
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await worker(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => runWorker()),
+  );
+  return results;
+}
+
+function clampPaneCreateConcurrency(value: number | undefined, itemCount: number): number {
+  if (itemCount <= 1) {
+    return 1;
+  }
+  return Math.min(value ?? MAX_PANE_CREATE_CONCURRENCY, MAX_PANE_CREATE_CONCURRENCY, itemCount);
+}
+
+function resolveTerminalPanel(panelId: string): ToolPanel {
+  const panel = resolvePanel(panelId);
+  if (panel.type !== 'terminal') {
+    throw new Error(`Panel ${panel.id} is a ${panel.type} panel, not a terminal panel`);
+  }
+  return panel;
+}
+
+function buildPanelScreenResult(panel: ToolPanel, limit: number): RunpanePanelScreenResult {
+  const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
+  const customState = getTerminalCustomState(panel);
+  const state = panelStateSummary(panel, liveSnapshot, customState);
+  const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
+  const bounded = boundSanitizedLines(rawText, limit);
+
+  return {
+    ok: true,
+    panelId: panel.id,
+    paneId: panel.sessionId,
+    source,
+    limit,
+    returnedLineCount: bounded.returnedLineCount,
+    hasMore: bounded.hasMore,
+    text: bounded.text,
+    state,
+    nextCommand: bounded.hasMore ? panelOutputCommand(panel.id) : panelWaitCommand(panel.id),
+  };
+}
+
+function selectPanelScreenText(
+  snapshot: TerminalPanelSnapshot | null,
+  customState: TerminalPanelState,
+): { source: RunpanePanelScreenSource; rawText: string } {
+  if (snapshot) {
+    if (snapshot.isAlternateScreen && snapshot.alternateScreenBuffer) {
+      return { source: 'alternateScreen', rawText: snapshot.alternateScreenBuffer };
+    }
+    if (snapshot.scrollbackBuffer) {
+      return { source: 'scrollback', rawText: snapshot.scrollbackBuffer };
+    }
+    return { source: 'empty', rawText: '' };
+  }
+
+  const persistedAlternate = customState.alternateScreenBuffer;
+  if (customState.isAlternateScreen && persistedAlternate) {
+    return { source: 'persistedOutput', rawText: persistedAlternate };
+  }
+
+  const persistedScrollback = normalizeScrollbackBuffer(customState.scrollbackBuffer);
+  if (persistedScrollback) {
+    return { source: 'persistedOutput', rawText: persistedScrollback };
+  }
+
+  return { source: 'empty', rawText: '' };
+}
+
+function panelStateSummary(
+  panel: ToolPanel,
+  snapshot: TerminalPanelSnapshot | null,
+  customState: TerminalPanelState = getTerminalCustomState(panel),
+): RunpanePanelStateSummary {
+  const customAgentType = typeof customState.agentType === 'string' && AGENT_IDS.has(customState.agentType)
+    ? customState.agentType as RunpaneAgentId
+    : undefined;
+
+  return {
+    initialized: Boolean(snapshot || customState.isInitialized || terminalPanelManager.isTerminalInitialized(panel.id)),
+    isAlternateScreen: snapshot?.isAlternateScreen ?? customState.isAlternateScreen,
+    activityStatus: snapshot?.activityStatus,
+    isCliReady: snapshot?.isCliReady ?? customState.isCliReady,
+    isCliPanel: snapshot?.isCliPanel ?? customState.isCliPanel,
+    agentType: snapshot?.agentType ?? customAgentType,
+    lastActivity: snapshot?.lastActivityTime ?? customState.lastActivityTime ?? toIsoString(panel.metadata.lastActiveAt),
+  };
+}
+
+function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
+  return (isRecord(panel.state.customState) ? panel.state.customState : {}) as TerminalPanelState;
+}
+
+function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.join('\n');
+  }
+  return '';
+}
+
+function boundSanitizedLines(rawText: string, limit: number): { text: string; hasMore: boolean; returnedLineCount: number } {
+  const stripped = sanitizeTerminalOutput(rawText);
+  if (!stripped) {
+    return { text: '', hasMore: false, returnedLineCount: 0 };
+  }
+
+  const allLines = stripped.split('\n');
+  const hasMore = allLines.length > limit;
+  const lines = hasMore ? allLines.slice(-limit) : allLines;
+  return {
+    text: lines.join('\n'),
+    hasMore,
+    returnedLineCount: lines.length,
+  };
+}
+
+async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest): Promise<RunpanePanelWaitResult> {
+  const startedAt = Date.now();
+  const timeoutMs = request.timeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS;
+  const intervalMs = request.intervalMs ?? DEFAULT_PANEL_WAIT_INTERVAL_MS;
+  let lastScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+  let condition = request.condition ?? defaultWaitCondition(lastScreen.state);
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    lastScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    condition = request.condition ?? defaultWaitCondition(lastScreen.state);
+    const blocked = detectPanelBlocker(lastScreen.text, lastScreen.state.agentType, panel.id);
+    const matched = isWaitConditionMatched(condition, lastScreen, request.contains, blocked);
+
+    if (matched) {
+      return panelWaitResult(panel, condition, true, false, startedAt, lastScreen);
+    }
+    if (blocked && condition !== 'text') {
+      return panelWaitResult(panel, condition, false, false, startedAt, lastScreen, blocked);
+    }
+
+    await sleep(Math.min(intervalMs, Math.max(timeoutMs - (Date.now() - startedAt), 0)));
+  }
+
+  return panelWaitResult(panel, condition, false, true, startedAt, lastScreen);
+}
+
+function defaultWaitCondition(state: RunpanePanelStateSummary): RunpanePanelWaitCondition {
+  return state.isCliPanel ? 'ready' : 'idle';
+}
+
+function isWaitConditionMatched(
+  condition: RunpanePanelWaitCondition,
+  screen: RunpanePanelScreenResult,
+  contains: string | undefined,
+  blocked?: RunpanePanelBlockedState,
+): boolean {
+  switch (condition) {
+    case 'initialized':
+      return screen.state.initialized;
+    case 'ready':
+      if (blocked) return false;
+      return screen.state.initialized && (screen.state.isCliPanel ? screen.state.isCliReady === true : true);
+    case 'idle':
+      return screen.state.initialized && screen.state.activityStatus === 'idle';
+    case 'text':
+      return Boolean(contains && screen.text.includes(contains));
+  }
+}
+
+function panelWaitResult(
+  panel: ToolPanel,
+  condition: RunpanePanelWaitCondition,
+  matched: boolean,
+  timedOut: boolean,
+  startedAt: number,
+  screen: RunpanePanelScreenResult,
+  blocked?: RunpanePanelBlockedState,
+): RunpanePanelWaitResult {
+  return {
+    ok: matched && !timedOut && !blocked,
+    panelId: panel.id,
+    paneId: panel.sessionId,
+    condition,
+    matched,
+    timedOut,
+    elapsedMs: Date.now() - startedAt,
+    state: screen.state,
+    blocked,
+    screen: {
+      source: screen.source,
+      text: screen.text,
+      hasMore: screen.hasMore,
+    },
+    nextCommand: blocked?.suggestedCommand ?? (matched ? panelScreenCommand(panel.id) : panelWaitCommand(panel.id, condition)),
+  };
+}
+
+function detectPanelBlocker(
+  text: string,
+  agentType: RunpaneAgentId | undefined,
+  panelId: string,
+): RunpanePanelBlockedState | undefined {
+  if (!text) return undefined;
+
+  if (
+    (agentType === 'codex' || /codex/i.test(text)) &&
+    /update available/i.test(text) &&
+    (/skip/i.test(text) || /npm install -g @openai\/codex/i.test(text))
+  ) {
+    return {
+      kind: 'codex-update',
+      message: 'Codex is showing an update prompt instead of accepting the task prompt.',
+      suggestedCommand: `runpane panels submit --panel ${panelId} --text "2" --yes --json`,
+    };
+  }
+
+  if (/press enter to continue/i.test(text)) {
+    return {
+      kind: 'agent-prompt',
+      message: 'The terminal is waiting at an interactive prompt.',
+      suggestedCommand: panelScreenCommand(panelId),
+    };
+  }
+
+  return undefined;
+}
+
+function ensureSubmitEnter(input: string): string {
+  if (input.endsWith('\r')) {
+    return input;
+  }
+  if (input.endsWith('\r\n')) {
+    return `${input.slice(0, -2)}\r`;
+  }
+  if (input.endsWith('\n')) {
+    return `${input.slice(0, -1)}\r`;
+  }
+  return `${input}\r`;
+}
+
+async function runAgentDoctor(
+  services: AppServices,
+  repo: Project,
+  agent: RunpaneAgentId,
+): Promise<RunpaneAgentDoctorResult> {
+  const context = services.sessionManager.getProjectContextByProjectId(repo.id);
+  const repoSummary = projectToRepoSummary(repo, services.sessionManager.getSessionsForProject(repo.id).length);
+  const environment = new PathResolver(repo).environment;
+  const command = AGENT_TEMPLATES[agent].command;
+  const executable = agentCommandExecutable(command);
+  const checks: RunpaneAgentDoctorResult['checks'] = [];
+  const warnings: string[] = [];
+
+  if (!context) {
+    checks.push({
+      name: 'repo-context',
+      ok: false,
+      message: `Could not create Pane execution context for repo ${repo.id}.`,
+    });
+    return {
+      ok: false,
+      agent,
+      command,
+      repo: repoSummary,
+      environment,
+      available: false,
+      checks,
+      warnings,
+    };
+  }
+
+  const lookupCommand = environment === 'windows' ? `where ${executable}` : `command -v ${executable}`;
+  let executablePath: string | undefined;
+  let version: string | undefined;
+
+  try {
+    const result = await context.commandRunner.execAsync(lookupCommand, repo.path, {
+      timeout: 5_000,
+      silent: true,
+    });
+    executablePath = firstNonEmptyLine(result.stdout);
+    checks.push({
+      name: 'executable',
+      ok: Boolean(executablePath),
+      message: executablePath ? `Found ${executable} at ${executablePath}.` : `${executable} was not found on PATH.`,
+    });
+  } catch (error) {
+    checks.push({
+      name: 'executable',
+      ok: false,
+      message: commandErrorMessage(error, `${executable} was not found on PATH.`),
+    });
+  }
+
+  if (executablePath) {
+    try {
+      const result = await context.commandRunner.execAsync(`${executable} --version`, repo.path, {
+        timeout: 5_000,
+        silent: true,
+      });
+      version = firstNonEmptyLine(result.stdout) || firstNonEmptyLine(result.stderr);
+      checks.push({
+        name: 'version',
+        ok: Boolean(version),
+        message: version ? version : `${executable} did not print a version.`,
+      });
+    } catch (error) {
+      warnings.push(commandErrorMessage(error, `${executable} --version failed.`));
+      checks.push({
+        name: 'version',
+        ok: false,
+        message: `${executable} is on PATH, but --version failed.`,
+      });
+    }
+  }
+
+  if (environment === 'wsl' && !executablePath) {
+    warnings.push(`Repo ${repo.name} is a WSL repo; install ${executable} inside the WSL distro Pane uses, not only on Windows.`);
+  }
+
+  const available = Boolean(executablePath);
+  return {
+    ok: available,
+    agent,
+    command,
+    repo: repoSummary,
+    environment,
+    available,
+    executablePath,
+    version,
+    checks,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  };
+}
+
 function outputToRecord(output: SessionOutput): RunpanePanelOutputRecord {
   return {
     type: output.type,
@@ -440,19 +933,22 @@ function getPanelScrollback(panel: ToolPanel): string | null {
     return null;
   }
 
-  const persisted = (customState as TerminalPanelState).scrollbackBuffer;
-  if (typeof persisted === 'string') {
-    return persisted;
-  }
-  if (Array.isArray(persisted)) {
-    return persisted.join('\n');
-  }
+  const persisted = normalizeScrollbackBuffer((customState as TerminalPanelState).scrollbackBuffer);
+  if (persisted) return persisted;
 
   return null;
 }
 
 function panelOutputCommand(panelId: string): string {
   return `runpane panels output --panel ${panelId} --limit ${DEFAULT_PANEL_OUTPUT_LIMIT} --json`;
+}
+
+function panelScreenCommand(panelId: string): string {
+  return `runpane panels screen --panel ${panelId} --limit ${DEFAULT_PANEL_SCREEN_LIMIT} --json`;
+}
+
+function panelWaitCommand(panelId: string, condition: RunpanePanelWaitCondition = 'ready'): string {
+  return `runpane panels wait --panel ${panelId} --for ${condition} --timeout-ms ${DEFAULT_PANEL_WAIT_TIMEOUT_MS} --json`;
 }
 
 function parsePaneListRequest(value: unknown): RunpanePaneListRequest {
@@ -487,6 +983,9 @@ function parsePaneCreateRequest(value: unknown): RunpanePaneCreateRequest {
     panes: panesValue.map(parsePaneCreateItem),
     dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
     timeoutMs: typeof value.timeoutMs === 'number' ? value.timeoutMs : undefined,
+    waitReady: typeof value.waitReady === 'boolean' ? value.waitReady : undefined,
+    readyTimeoutMs: parsePositiveInteger(value.readyTimeoutMs, 'readyTimeoutMs'),
+    concurrency: parsePositiveInteger(value.concurrency, 'concurrency'),
   };
 }
 
@@ -536,6 +1035,92 @@ function parsePanelInputRequest(value: unknown): RunpanePanelInputRequest {
     panelId,
     input: value.input,
   };
+}
+
+function parsePanelScreenRequest(value: unknown): RunpanePanelScreenRequest {
+  if (!isRecord(value)) {
+    throw new Error('Panel screen request must be an object');
+  }
+
+  const panelId = optionalString(value.panelId)?.trim();
+  if (!panelId) {
+    throw new Error('Panel screen request must include panelId');
+  }
+
+  return {
+    panelId,
+    limit: parsePositiveInteger(value.limit, 'limit'),
+  };
+}
+
+function parsePanelSubmitRequest(value: unknown): RunpanePanelSubmitRequest {
+  if (!isRecord(value)) {
+    throw new Error('Panel submit request must be an object');
+  }
+
+  const panelId = optionalString(value.panelId)?.trim();
+  if (!panelId) {
+    throw new Error('Panel submit request must include panelId');
+  }
+  if (typeof value.input !== 'string') {
+    throw new Error('Panel submit request must include input');
+  }
+
+  return {
+    panelId,
+    input: value.input,
+  };
+}
+
+function parsePanelWaitRequest(value: unknown): RunpanePanelWaitRequest {
+  if (!isRecord(value)) {
+    throw new Error('Panel wait request must be an object');
+  }
+
+  const panelId = optionalString(value.panelId)?.trim();
+  if (!panelId) {
+    throw new Error('Panel wait request must include panelId');
+  }
+
+  const contains = optionalString(value.contains);
+  const condition = parseWaitCondition(value.condition, contains);
+  if (condition === 'text' && (!contains || contains.length === 0)) {
+    throw new Error('Panel wait request with condition "text" must include contains');
+  }
+
+  return {
+    panelId,
+    condition,
+    contains,
+    timeoutMs: parsePositiveInteger(value.timeoutMs, 'timeoutMs'),
+    intervalMs: parsePositiveInteger(value.intervalMs, 'intervalMs'),
+  };
+}
+
+function parseAgentDoctorRequest(value: unknown): RunpaneAgentDoctorRequest {
+  if (!isRecord(value)) {
+    throw new Error('Agent doctor request must be an object');
+  }
+  if (typeof value.agent !== 'string' || !AGENT_IDS.has(value.agent)) {
+    throw new Error(`Agent doctor request must include agent: ${[...AGENT_IDS].join(', ')}`);
+  }
+
+  return {
+    agent: value.agent as RunpaneAgentId,
+    repo: value.repo === undefined || value.repo === null || value.repo === ''
+      ? undefined
+      : parseRepoSelector(value.repo),
+  };
+}
+
+function parseWaitCondition(value: unknown, contains?: string): RunpanePanelWaitCondition | undefined {
+  if (value === undefined || value === null || value === '') {
+    return contains ? 'text' : undefined;
+  }
+  if (value === 'initialized' || value === 'ready' || value === 'idle' || value === 'text') {
+    return value;
+  }
+  throw new Error('Panel wait condition must be one of: initialized, ready, idle, text');
 }
 
 function parseRepoAddRequest(value: unknown): Required<Pick<RunpaneRepoAddRequest, 'path' | 'name'>> & Pick<RunpaneRepoAddRequest, 'dryRun'> {
@@ -818,6 +1403,10 @@ interface RunpaneActionMetadata {
   inputBytes?: number;
   limit?: number;
   ok?: boolean;
+  condition?: string;
+  timedOut?: boolean;
+  available?: boolean;
+  environment?: string;
 }
 
 async function withRunpaneAction<T>(
@@ -868,11 +1457,15 @@ function trackRunpaneAction(
     repo_id: metadata.repoId,
     pane_id_hash: paneIdHash,
     panel_id_hash: panelIdHash,
-    result_count: metadata.resultCount,
-    input_bytes: metadata.inputBytes,
-    limit: metadata.limit,
-    error_type: errorType,
-  });
+	    result_count: metadata.resultCount,
+	    input_bytes: metadata.inputBytes,
+	    limit: metadata.limit,
+    condition: metadata.condition,
+    timed_out: metadata.timedOut,
+    available: metadata.available,
+    environment: metadata.environment,
+	    error_type: errorType,
+	  });
 
   const logPayload = {
     action,
@@ -885,6 +1478,10 @@ function trackRunpaneAction(
     resultCount: metadata.resultCount,
     inputBytes: metadata.inputBytes,
     limit: metadata.limit,
+    condition: metadata.condition,
+    timedOut: metadata.timedOut,
+    available: metadata.available,
+    environment: metadata.environment,
     error: errorMessage,
   };
 
@@ -893,6 +1490,38 @@ function trackRunpaneAction(
   } else {
     console.warn('[Runpane] Local control action failed', logPayload);
   }
+}
+
+function agentCommandExecutable(command: string): string {
+  const executable = command.trim().split(/\s+/)[0];
+  if (!executable || !/^[A-Za-z0-9._-]+$/.test(executable)) {
+    throw new Error(`Unsupported agent command executable: ${command}`);
+  }
+  return executable;
+}
+
+function firstNonEmptyLine(value: string | undefined): string | undefined {
+  return value
+    ?.split(/\r?\n/)
+    .map(line => line.trim())
+    .find(line => line.length > 0);
+}
+
+function commandErrorMessage(error: unknown, fallback: string): string {
+  if (isRecord(error)) {
+    const stderr = firstNonEmptyLine(typeof error.stderr === 'string' ? error.stderr : undefined);
+    const stdout = firstNonEmptyLine(typeof error.stdout === 'string' ? error.stdout : undefined);
+    if (stderr) return stderr;
+    if (stdout) return stdout;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function optionalString(value: unknown): string | undefined {

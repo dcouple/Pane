@@ -40,7 +40,13 @@ export interface ParsedArgs {
   panelInputFile?: string;
   fromJson?: string;
   timeoutMs?: number;
+  waitReady?: boolean;
+  readyTimeoutMs?: number;
+  concurrency?: number;
   limit?: number;
+  waitCondition?: string;
+  contains?: string;
+  intervalMs?: number;
   remoteSetupArgs: string[];
 }
 
@@ -222,6 +228,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
     parsed.json = true;
     return;
   }
+  if (flag === '--wait-ready') {
+    parsed.waitReady = true;
+    return;
+  }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
 }
@@ -302,12 +312,47 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     parsed.timeoutMs = timeoutMs;
     return;
   }
+  if (flag === '--ready-timeout-ms') {
+    const readyTimeoutMs = Number(value);
+    if (!Number.isFinite(readyTimeoutMs) || readyTimeoutMs <= 0) {
+      throw new Error('--ready-timeout-ms must be a positive number.');
+    }
+    parsed.readyTimeoutMs = readyTimeoutMs;
+    return;
+  }
+  if (flag === '--concurrency') {
+    const concurrency = Number(value);
+    if (!Number.isInteger(concurrency) || concurrency <= 0) {
+      throw new Error('--concurrency must be a positive integer.');
+    }
+    parsed.concurrency = concurrency;
+    return;
+  }
   if (flag === '--limit') {
     const limit = Number(value);
     if (!Number.isInteger(limit) || limit <= 0) {
       throw new Error('--limit must be a positive integer.');
     }
     parsed.limit = limit;
+    return;
+  }
+  if (flag === '--for') {
+    if (!['initialized', 'ready', 'idle', 'text'].includes(value)) {
+      throw new Error('--for must be one of: initialized, ready, idle, text.');
+    }
+    parsed.waitCondition = value;
+    return;
+  }
+  if (flag === '--contains') {
+    parsed.contains = value;
+    return;
+  }
+  if (flag === '--interval-ms') {
+    const intervalMs = Number(value);
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error('--interval-ms must be a positive number.');
+    }
+    parsed.intervalMs = intervalMs;
     return;
   }
 
@@ -321,7 +366,11 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panes create'
     || command === 'panels list'
     || command === 'panels output'
-    || command === 'panels input';
+    || command === 'panels input'
+    || command === 'panels screen'
+    || command === 'panels submit'
+    || command === 'panels wait'
+    || command === 'agents doctor';
 }
 
 function appendRemoteArg(parsed: ParsedArgs, flag: string, value?: string): void {

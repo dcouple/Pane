@@ -343,6 +343,7 @@
         "update",
         "version",
         "doctor",
+        "agents doctor",
         "repos list",
         "repos add",
         "panes list",
@@ -350,6 +351,9 @@
         "panels list",
         "panels output",
         "panels input",
+        "panels screen",
+        "panels submit",
+        "panels wait",
         "agent-context"
       ],
       "properties": {
@@ -371,6 +375,9 @@
         "doctor": {
           "$ref": "#/$defs/helpLines"
         },
+        "agents doctor": {
+          "$ref": "#/$defs/helpLines"
+        },
         "repos list": {
           "$ref": "#/$defs/helpLines"
         },
@@ -390,6 +397,15 @@
           "$ref": "#/$defs/helpLines"
         },
         "panels input": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels screen": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels submit": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels wait": {
           "$ref": "#/$defs/helpLines"
         },
         "agent-context": {

@@ -14,9 +14,13 @@ import {
   spawnPane
 } from './installers';
 import {
+  runAgentsDoctor,
   runPanelsInput,
   runPanelsList,
   runPanelsOutput,
+  runPanelsScreen,
+  runPanelsSubmit,
+  runPanelsWait,
   runPanesCreate,
   runPanesList,
   runReposAdd,
@@ -104,6 +108,22 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   if (parsed.command === 'panels input') {
     return runPanelsInput(parsed);
+  }
+
+  if (parsed.command === 'panels screen') {
+    return runPanelsScreen(parsed);
+  }
+
+  if (parsed.command === 'panels submit') {
+    return runPanelsSubmit(parsed);
+  }
+
+  if (parsed.command === 'panels wait') {
+    return runPanelsWait(parsed);
+  }
+
+  if (parsed.command === 'agents doctor') {
+    return runAgentsDoctor(parsed);
   }
 
   if (parsed.command === 'install' || parsed.command === 'update') {

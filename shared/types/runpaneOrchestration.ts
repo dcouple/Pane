@@ -73,11 +73,46 @@ export interface RunpanePaneCreateRequest {
   panes: RunpanePaneCreateItem[];
   dryRun?: boolean;
   timeoutMs?: number;
+  waitReady?: boolean;
+  readyTimeoutMs?: number;
+  concurrency?: number;
 }
 
 export interface RunpaneErrorPayload {
   message: string;
   code?: string;
+}
+
+export type RunpanePanelActivityStatus = 'active' | 'idle';
+export type RunpanePanelScreenSource = 'alternateScreen' | 'scrollback' | 'persistedOutput' | 'empty';
+export type RunpanePanelWaitCondition = 'initialized' | 'ready' | 'idle' | 'text';
+export type RunpanePanelBlockerKind = 'codex-update' | 'agent-prompt' | 'unknown';
+
+export interface RunpanePanelStateSummary {
+  initialized: boolean;
+  isAlternateScreen?: boolean;
+  activityStatus?: RunpanePanelActivityStatus;
+  isCliReady?: boolean;
+  isCliPanel?: boolean;
+  agentType?: RunpaneAgentId;
+  lastActivity?: string;
+}
+
+export interface RunpanePanelBlockedState {
+  kind: RunpanePanelBlockerKind;
+  message: string;
+  suggestedCommand?: string;
+}
+
+export interface RunpanePaneReadiness {
+  ok: boolean;
+  condition: RunpanePanelWaitCondition;
+  matched: boolean;
+  timedOut: boolean;
+  elapsedMs: number;
+  state: RunpanePanelStateSummary;
+  blocked?: RunpanePanelBlockedState;
+  nextCommand?: string;
 }
 
 export interface RunpanePaneCreateSuccessItem {
@@ -94,6 +129,7 @@ export interface RunpanePaneCreateSuccessItem {
     command: string;
     agent?: RunpaneAgentId;
   };
+  readiness?: RunpanePaneReadiness;
 }
 
 export interface RunpanePaneCreateFailureItem {
@@ -184,6 +220,24 @@ export interface RunpanePanelOutputResult {
   text: string;
 }
 
+export interface RunpanePanelScreenRequest {
+  panelId: string;
+  limit?: number;
+}
+
+export interface RunpanePanelScreenResult {
+  ok: true;
+  panelId: string;
+  paneId?: string;
+  source: RunpanePanelScreenSource;
+  limit: number;
+  returnedLineCount: number;
+  hasMore: boolean;
+  text: string;
+  state: RunpanePanelStateSummary;
+  nextCommand?: string;
+}
+
 export interface RunpanePanelInputRequest {
   panelId: string;
   input: string;
@@ -196,6 +250,67 @@ export interface RunpanePanelInputResult {
   inputBytes: number;
   sentAt: string;
   nextCommand?: string;
+}
+
+export interface RunpanePanelSubmitRequest {
+  panelId: string;
+  input: string;
+}
+
+export interface RunpanePanelSubmitResult {
+  ok: true;
+  panelId: string;
+  paneId?: string;
+  inputBytes: number;
+  enter: 'cr';
+  sentAt: string;
+  nextCommand?: string;
+}
+
+export interface RunpanePanelWaitRequest {
+  panelId: string;
+  condition?: RunpanePanelWaitCondition;
+  contains?: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+}
+
+export interface RunpanePanelWaitResult {
+  ok: boolean;
+  panelId: string;
+  paneId?: string;
+  condition: RunpanePanelWaitCondition;
+  matched: boolean;
+  timedOut: boolean;
+  elapsedMs: number;
+  state: RunpanePanelStateSummary;
+  blocked?: RunpanePanelBlockedState;
+  screen: Pick<RunpanePanelScreenResult, 'source' | 'text' | 'hasMore'>;
+  nextCommand?: string;
+}
+
+export interface RunpaneAgentDoctorRequest {
+  agent: RunpaneAgentId;
+  repo?: RunpaneRepoSelector;
+}
+
+export interface RunpaneAgentDoctorCheck {
+  name: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface RunpaneAgentDoctorResult {
+  ok: boolean;
+  agent: RunpaneAgentId;
+  command: string;
+  repo?: RunpaneRepoSummary;
+  environment?: ProjectEnvironment;
+  available: boolean;
+  executablePath?: string;
+  version?: string;
+  checks: RunpaneAgentDoctorCheck[];
+  warnings?: string[];
 }
 
 export interface RunpaneResolvedTool {

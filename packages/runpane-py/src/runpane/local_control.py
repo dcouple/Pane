@@ -61,7 +61,7 @@ def run_panes_create(parsed: Any) -> int:
         "runpane:panes:create",
         [request],
         pane_dir=parsed.pane_dir,
-        timeout_ms=(parsed.timeout_ms or 120_000) + 10_000,
+        timeout_ms=(parsed.timeout_ms or 120_000) + (parsed.ready_timeout_ms or 30_000) + 10_000,
     )
 
     if parsed.json:
@@ -123,6 +123,77 @@ def run_panels_input(parsed: Any) -> int:
     return 0
 
 
+def run_panels_screen(parsed: Any) -> int:
+    if not parsed.panel_id:
+        raise ValueError("runpane panels screen requires --panel.")
+
+    result = invoke_daemon("runpane:panels:screen", [{
+        "panelId": parsed.panel_id,
+        "limit": parsed.limit,
+    }], pane_dir=parsed.pane_dir)
+
+    if parsed.json:
+        print_json(result)
+        return 0
+
+    text = result.get("text") or ""
+    sys.stdout.write(text)
+    if text and not text.endswith("\n"):
+        sys.stdout.write("\n")
+    return 0
+
+
+def run_panels_submit(parsed: Any) -> int:
+    request = build_panel_input_request(parsed, "submit")
+    confirm_panel_input(parsed, request, "submit")
+    result = invoke_daemon("runpane:panels:submit", [request], pane_dir=parsed.pane_dir)
+
+    if parsed.json:
+        print_json(result)
+    else:
+        input_bytes = result.get("inputBytes", 0)
+        suffix = "" if input_bytes == 1 else "s"
+        print(f"Submitted {input_bytes} byte{suffix} with Enter to panel {result.get('panelId')}.")
+        if result.get("nextCommand"):
+            print(f"Next: {result.get('nextCommand')}")
+    return 0
+
+
+def run_panels_wait(parsed: Any) -> int:
+    if not parsed.panel_id:
+        raise ValueError("runpane panels wait requires --panel.")
+
+    result = invoke_daemon("runpane:panels:wait", [{
+        "panelId": parsed.panel_id,
+        "condition": parsed.wait_condition,
+        "contains": parsed.contains,
+        "timeoutMs": parsed.timeout_ms,
+        "intervalMs": parsed.interval_ms,
+    }], pane_dir=parsed.pane_dir, timeout_ms=(parsed.timeout_ms or 30_000) + 5_000)
+
+    if parsed.json:
+        print_json(result)
+    else:
+        print_panel_wait_result(result)
+    return 0 if result.get("ok") else 1
+
+
+def run_agents_doctor(parsed: Any) -> int:
+    if not parsed.agent:
+        raise ValueError("runpane agents doctor requires --agent codex|claude.")
+
+    result = invoke_daemon("runpane:agents:doctor", [{
+        "agent": parsed.agent,
+        "repo": parsed.repo,
+    }], pane_dir=parsed.pane_dir)
+
+    if parsed.json:
+        print_json(result)
+    else:
+        print_agent_doctor_result(result)
+    return 0 if result.get("ok") else 1
+
+
 def build_repo_add_request(parsed: Any) -> Dict[str, Any]:
     if not parsed.repo_path:
         raise ValueError("runpane repos add requires --path.")
@@ -134,13 +205,13 @@ def build_repo_add_request(parsed: Any) -> Dict[str, Any]:
     }
 
 
-def build_panel_input_request(parsed: Any) -> Dict[str, Any]:
+def build_panel_input_request(parsed: Any, command: str = "input") -> Dict[str, Any]:
     if not parsed.panel_id:
-        raise ValueError("runpane panels input requires --panel.")
+        raise ValueError(f"runpane panels {command} requires --panel.")
     if parsed.panel_input is not None and parsed.panel_input_file:
         raise ValueError("Use either --text or --input-file, not both.")
     if parsed.panel_input is None and not parsed.panel_input_file:
-        raise ValueError("runpane panels input requires --text or --input-file.")
+        raise ValueError(f"runpane panels {command} requires --text or --input-file.")
 
     return {
         "panelId": parsed.panel_id,
@@ -157,6 +228,12 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             payload["dryRun"] = True
         if parsed.timeout_ms is not None:
             payload["timeoutMs"] = parsed.timeout_ms
+        if parsed.wait_ready:
+            payload["waitReady"] = True
+        if parsed.ready_timeout_ms is not None:
+            payload["readyTimeoutMs"] = parsed.ready_timeout_ms
+        if parsed.concurrency is not None:
+            payload["concurrency"] = parsed.concurrency
         return payload
 
     if not parsed.repo:
@@ -174,6 +251,9 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
         }],
         **optional_value("dryRun", True if parsed.dry_run else None),
         **optional_value("timeoutMs", parsed.timeout_ms),
+        **optional_value("waitReady", True if parsed.wait_ready else None),
+        **optional_value("readyTimeoutMs", parsed.ready_timeout_ms),
+        **optional_value("concurrency", parsed.concurrency),
     }
 
 
@@ -238,15 +318,17 @@ def confirm_pane_create(parsed: Any, request: Dict[str, Any]) -> None:
         raise ValueError("Cancelled.")
 
 
-def confirm_panel_input(parsed: Any, request: Dict[str, Any]) -> None:
+def confirm_panel_input(parsed: Any, request: Dict[str, Any], command: str = "input") -> None:
     if parsed.yes:
         return
     if not is_interactive_shell():
-        raise ValueError("runpane panels input mutates a Pane terminal. Rerun with --yes in non-interactive shells.")
+        raise ValueError(f"runpane panels {command} mutates a Pane terminal. Rerun with --yes in non-interactive shells.")
 
     input_bytes = len(request.get("input", "").encode("utf-8"))
     suffix = "" if input_bytes == 1 else "s"
-    answer = input(f"Send {input_bytes} byte{suffix} to panel {request.get('panelId')}? [y/N] ").strip().lower()
+    verb = "Submit" if command == "submit" else "Send"
+    enter_suffix = " plus Enter" if command == "submit" else ""
+    answer = input(f"{verb} {input_bytes} byte{suffix}{enter_suffix} to panel {request.get('panelId')}? [y/N] ").strip().lower()
     if answer not in {"y", "yes"}:
         raise ValueError("Cancelled.")
 
@@ -314,9 +396,59 @@ def print_pane_create_result(result: Dict[str, Any]) -> None:
         if item.get("ok"):
             worktree = f" at {item.get('worktreePath')}" if item.get("worktreePath") else ""
             print(f"Created {name}: session {item.get('sessionId', 'unknown')} panel {item.get('panelId', 'unknown')}{worktree}")
+            readiness = item.get("readiness")
+            if readiness:
+                ready_state = "yes" if readiness.get("ok") else "timed out" if readiness.get("timedOut") else "blocked"
+                print(f"  Ready: {ready_state} after {readiness.get('elapsedMs')}ms")
+                blocked = readiness.get("blocked")
+                if blocked:
+                    print(f"  Blocked: {blocked.get('message')}")
+            if item.get("nextCommand"):
+                print(f"  Next: {item.get('nextCommand')}")
         else:
             error = item.get("error") or {}
             print(f"Failed {name}: {error.get('message', 'unknown error')}", file=sys.stderr)
+
+
+def print_panel_wait_result(result: Dict[str, Any]) -> None:
+    condition = result.get("condition")
+    panel_id = result.get("panelId")
+    elapsed = result.get("elapsedMs")
+    if result.get("ok"):
+        print(f"Matched {condition} for panel {panel_id} after {elapsed}ms.")
+    elif result.get("blocked"):
+        print(f"Blocked waiting for {condition} on panel {panel_id}: {result['blocked'].get('message')}")
+    elif result.get("timedOut"):
+        print(f"Timed out waiting for {condition} on panel {panel_id} after {elapsed}ms.")
+    else:
+        print(f"Did not match {condition} for panel {panel_id}.")
+
+    state = result.get("state") or {}
+    status_parts = [
+        "initialized" if state.get("initialized") else "not-initialized",
+        state.get("activityStatus"),
+        None if state.get("isCliReady") is None else "cli-ready" if state.get("isCliReady") else "cli-not-ready",
+        state.get("agentType"),
+    ]
+    status = ", ".join(part for part in status_parts if part)
+    if status:
+        print(f"State: {status}")
+    if result.get("nextCommand"):
+        print(f"Next: {result.get('nextCommand')}")
+
+
+def print_agent_doctor_result(result: Dict[str, Any]) -> None:
+    repo = f" in {result['repo'].get('name')}" if result.get("repo") else ""
+    environment = f" ({result.get('environment')})" if result.get("environment") else ""
+    print(f"{result.get('agent')}: {'available' if result.get('available') else 'not available'}{repo}{environment}")
+    if result.get("executablePath"):
+        print(f"Path: {result.get('executablePath')}")
+    if result.get("version"):
+        print(f"Version: {result.get('version')}")
+    for check in result.get("checks", []):
+        print(f"{'OK' if check.get('ok') else 'FAIL'} {check.get('name')}: {check.get('message')}")
+    for warning in result.get("warnings") or []:
+        print(f"Warning: {warning}")
 
 
 def print_panel_list_result(result: Dict[str, Any]) -> None:

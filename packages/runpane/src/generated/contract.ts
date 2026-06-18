@@ -115,6 +115,16 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "agents doctor",
+      "summary": "Diagnose whether a built-in agent command is available in a Pane repository environment.",
+      "usage": [
+        "runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]"
+      ],
+      "jsonSchemas": [
+        "agentDoctorResult"
+      ]
+    },
+    {
       "name": "agent-context",
       "summary": "Print token-efficient Pane command context for coding agents.",
       "usage": [
@@ -192,6 +202,16 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "panels screen",
+      "summary": "Read a compact current-screen view from a terminal panel.",
+      "usage": [
+        "runpane panels screen --panel <panel-id> [--limit <count>] [--json]"
+      ],
+      "jsonSchemas": [
+        "panelScreenResult"
+      ]
+    },
+    {
       "name": "panels input",
       "summary": "Send input bytes to a terminal panel.",
       "usage": [
@@ -201,6 +221,28 @@ export const RUNPANE_CONTRACT = {
       "jsonSchemas": [
         "panelInputRequest",
         "panelInputResult"
+      ]
+    },
+    {
+      "name": "panels submit",
+      "summary": "Send text to a terminal panel and append a terminal Enter byte.",
+      "usage": [
+        "runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "panelSubmitRequest",
+        "panelSubmitResult"
+      ]
+    },
+    {
+      "name": "panels wait",
+      "summary": "Wait for a terminal panel to initialize, become ready/idle, or contain text.",
+      "usage": [
+        "runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--contains <text>] [--timeout-ms <ms>] [--interval-ms <ms>] [--json]"
+      ],
+      "jsonSchemas": [
+        "panelWaitResult"
       ]
     }
   ],
@@ -373,9 +415,34 @@ export const RUNPANE_CONTRACT = {
         "description": "Maximum time to wait for each pane creation job."
       },
       {
+        "name": "--ready-timeout-ms",
+        "value": "<milliseconds>",
+        "description": "Readiness wait timeout for panes create --wait-ready."
+      },
+      {
+        "name": "--concurrency",
+        "value": "<count>",
+        "description": "Maximum concurrent pane creates for multi-pane JSON payloads; capped by Pane."
+      },
+      {
         "name": "--limit",
         "value": "<count>",
         "description": "Maximum recent output lines or records to read."
+      },
+      {
+        "name": "--for",
+        "value": "<initialized|ready|idle|text>",
+        "description": "Panel wait condition."
+      },
+      {
+        "name": "--contains",
+        "value": "<text>",
+        "description": "Text to wait for with panels wait --for text."
+      },
+      {
+        "name": "--interval-ms",
+        "value": "<milliseconds>",
+        "description": "Polling interval for panels wait."
       },
       {
         "name": "--text",
@@ -392,6 +459,10 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--json",
         "description": "Print machine-readable JSON output."
+      },
+      {
+        "name": "--wait-ready",
+        "description": "Wait for created terminal panels to be ready before returning."
       }
     ]
   },
@@ -406,13 +477,17 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane agent-context [--json]",
+        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--wait-ready]",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
+        "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels input --panel <panel-id> --input-file <path|-> --yes",
+        "  runpane panels submit --panel <panel-id> --text <text> --yes",
+        "  runpane panels wait --panel <panel-id> [--for ready|idle|text] [--json]",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -423,7 +498,6 @@ export const RUNPANE_CONTRACT = {
         "  npx --yes runpane@latest install client",
         "  npx --yes runpane@latest install daemon --label \"My Server\"",
         "  pnpm dlx runpane@latest",
-        "  pipx run runpane",
         "",
         "Run \"runpane agent-context\" when an agent needs Pane command context.",
         "Run \"runpane help panes create\" for pane orchestration options."
@@ -549,6 +623,9 @@ export const RUNPANE_CONTRACT = {
         "  --initial-input-file <path|->  Read initial input from a file or stdin",
         "  --from-json <path|->           Read a full request payload",
         "  --timeout-ms <milliseconds>    Pane creation timeout",
+        "  --wait-ready                   Wait for terminal readiness before returning",
+        "  --ready-timeout-ms <ms>        Readiness wait timeout; defaults to 30000",
+        "  --concurrency <count>          Multi-pane create concurrency; defaults/caps at 3",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -607,6 +684,59 @@ export const RUNPANE_CONTRACT = {
         "  runpane agent-context --json",
         "  runpane agent-context --command \"panes create\"",
         "  runpane agent-context --command \"panes create\" --json"
+      ],
+      "agents doctor": [
+        "Usage:",
+        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "",
+        "Diagnoses whether Codex or Claude is available in the same repository environment Pane will use.",
+        "",
+        "Options:",
+        "  --agent <codex|claude>         Built-in agent command to diagnose",
+        "  --repo <selector>              active, id, exact path, or saved repository name; defaults to active",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
+      ],
+      "panels screen": [
+        "Usage:",
+        "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
+        "",
+        "Reads a compact current-screen view from a terminal panel. Prefers alternate-screen/TUI output and falls back to recent scrollback.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --limit <count>                Maximum lines to return; defaults to 80",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
+      ],
+      "panels submit": [
+        "Usage:",
+        "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
+        "",
+        "Sends text to a terminal panel and normalizes the final terminal Enter to CR. Use this for ordinary prompt answers and shell commands.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --text <text>                  Text to submit before Enter",
+        "  --input-file <path|->          Read text from a file or stdin before Enter",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --yes                          Skip confirmation for this mutating command"
+      ],
+      "panels wait": [
+        "Usage:",
+        "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--contains <text>] [--timeout-ms <ms>] [--interval-ms <ms>] [--json]",
+        "",
+        "Polls a terminal panel until it is initialized, ready, idle, or contains text. Output is intentionally small and includes next-step guidance.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --for <condition>              initialized, ready, idle, or text; defaults to ready for CLI panels and idle otherwise",
+        "  --contains <text>              Text required for --for text; implies --for text when omitted",
+        "  --timeout-ms <milliseconds>    Wait timeout; defaults to 30000",
+        "  --interval-ms <milliseconds>   Poll interval; defaults to 500",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
       ]
     },
     "pip": {
@@ -619,13 +749,17 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane agent-context [--json]",
+        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude>",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--wait-ready]",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
+        "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels input --panel <panel-id> --input-file <path|-> --yes",
+        "  runpane panels submit --panel <panel-id> --text <text> --yes",
+        "  runpane panels wait --panel <panel-id> [--for ready|idle|text] [--json]",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -738,22 +872,25 @@ export const RUNPANE_CONTRACT = {
         "Creates Pane sessions in a saved repository and opens a terminal-backed tool tab.",
         "",
         "Options:",
-        "  --repo <selector>",
-        "  --name <name>",
-        "  --worktree-name <name>",
-        "  --base-branch <branch>",
-        "  --agent <codex|claude>",
-        "  --tool-command <command>",
-        "  --title <title>",
-        "  --initial-input <text>",
-        "  --prompt <text>",
-        "  --initial-input-file <path|->",
-        "  --from-json <path|->",
-        "  --timeout-ms <milliseconds>",
-        "  --pane-dir <path>",
-        "  --json",
-        "  --dry-run",
-        "  --yes"
+        "  --repo <selector>              active, id, exact path, or saved repository name",
+        "  --name <name>                  Pane/session name",
+        "  --worktree-name <name>         Worktree name; defaults to --name",
+        "  --base-branch <branch>         Base branch for the worktree",
+        "  --agent <codex|claude>         Built-in terminal template",
+        "  --tool-command <command>       Custom terminal command",
+        "  --title <title>                Terminal tab title",
+        "  --initial-input <text>         Text sent after the command is ready",
+        "  --prompt <text>                Alias for --initial-input",
+        "  --initial-input-file <path|->  Read initial input from a file or stdin",
+        "  --from-json <path|->           Read a full request payload",
+        "  --timeout-ms <milliseconds>    Pane creation timeout",
+        "  --wait-ready                   Wait for terminal readiness before returning",
+        "  --ready-timeout-ms <ms>        Readiness wait timeout; defaults to 30000",
+        "  --concurrency <count>          Multi-pane create concurrency; defaults/caps at 3",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without creating panes",
+        "  --yes                          Skip confirmation for mutating commands"
       ],
       "panels list": [
         "Usage:",
@@ -808,6 +945,59 @@ export const RUNPANE_CONTRACT = {
         "  runpane agent-context --json",
         "  runpane agent-context --command \"panes create\"",
         "  runpane agent-context --command \"panes create\" --json"
+      ],
+      "agents doctor": [
+        "Usage:",
+        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "",
+        "Diagnoses whether Codex or Claude is available in the same repository environment Pane will use.",
+        "",
+        "Options:",
+        "  --agent <codex|claude>         Built-in agent command to diagnose",
+        "  --repo <selector>              active, id, exact path, or saved repository name; defaults to active",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
+      ],
+      "panels screen": [
+        "Usage:",
+        "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
+        "",
+        "Reads a compact current-screen view from a terminal panel. Prefers alternate-screen/TUI output and falls back to recent scrollback.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --limit <count>                Maximum lines to return; defaults to 80",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
+      ],
+      "panels submit": [
+        "Usage:",
+        "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
+        "",
+        "Sends text to a terminal panel and normalizes the final terminal Enter to CR. Use this for ordinary prompt answers and shell commands.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --text <text>                  Text to submit before Enter",
+        "  --input-file <path|->          Read text from a file or stdin before Enter",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --yes                          Skip confirmation for this mutating command"
+      ],
+      "panels wait": [
+        "Usage:",
+        "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--contains <text>] [--timeout-ms <ms>] [--interval-ms <ms>] [--json]",
+        "",
+        "Polls a terminal panel until it is initialized, ready, idle, or contains text. Output is intentionally small and includes next-step guidance.",
+        "",
+        "Options:",
+        "  --panel <panel-id>             Terminal panel id",
+        "  --for <condition>              initialized, ready, idle, or text; defaults to ready for CLI panels and idle otherwise",
+        "  --contains <text>              Text required for --for text; implies --for text when omitted",
+        "  --timeout-ms <milliseconds>    Wait timeout; defaults to 30000",
+        "  --interval-ms <milliseconds>   Poll interval; defaults to 500",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output"
       ]
     }
   },
@@ -1074,6 +1264,62 @@ export const RUNPANE_CONTRACT = {
       ],
       [
         "--version"
+      ],
+      [
+        "agents",
+        "doctor",
+        "--agent",
+        "codex",
+        "--repo",
+        "active",
+        "--json"
+      ],
+      [
+        "panes",
+        "create",
+        "--from-json",
+        "-",
+        "--wait-ready",
+        "--ready-timeout-ms",
+        "45000",
+        "--concurrency",
+        "2",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panels",
+        "screen",
+        "--panel",
+        "panel-1",
+        "--limit",
+        "80",
+        "--json"
+      ],
+      [
+        "panels",
+        "submit",
+        "--panel",
+        "panel-1",
+        "--text",
+        "2",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panels",
+        "wait",
+        "--panel",
+        "panel-1",
+        "--for",
+        "text",
+        "--contains",
+        "ready",
+        "--timeout-ms",
+        "30000",
+        "--interval-ms",
+        "500",
+        "--json"
       ]
     ],
     "topLevelHelpIncludes": [
@@ -1089,7 +1335,11 @@ export const RUNPANE_CONTRACT = {
       "runpane panes create",
       "runpane panels list",
       "runpane panels output",
-      "runpane panels input"
+      "runpane panels input",
+      "runpane agents doctor",
+      "runpane panels screen",
+      "runpane panels submit",
+      "runpane panels wait"
     ],
     "npmHelpIncludes": [
       "pnpm dlx runpane@latest",
@@ -1358,6 +1608,15 @@ export const RUNPANE_CONTRACT = {
         },
         "timeoutMs": {
           "type": "number"
+        },
+        "waitReady": {
+          "type": "boolean"
+        },
+        "readyTimeoutMs": {
+          "type": "number"
+        },
+        "concurrency": {
+          "type": "number"
         }
       },
       "additionalProperties": false
@@ -1430,6 +1689,102 @@ export const RUNPANE_CONTRACT = {
                           "codex",
                           "claude"
                         ]
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "readiness": {
+                    "type": "object",
+                    "required": [
+                      "ok",
+                      "condition",
+                      "matched",
+                      "timedOut",
+                      "elapsedMs",
+                      "state"
+                    ],
+                    "properties": {
+                      "ok": {
+                        "type": "boolean"
+                      },
+                      "condition": {
+                        "enum": [
+                          "initialized",
+                          "ready",
+                          "idle",
+                          "text"
+                        ]
+                      },
+                      "matched": {
+                        "type": "boolean"
+                      },
+                      "timedOut": {
+                        "type": "boolean"
+                      },
+                      "elapsedMs": {
+                        "type": "number"
+                      },
+                      "state": {
+                        "type": "object",
+                        "required": [
+                          "initialized"
+                        ],
+                        "properties": {
+                          "initialized": {
+                            "type": "boolean"
+                          },
+                          "isAlternateScreen": {
+                            "type": "boolean"
+                          },
+                          "activityStatus": {
+                            "enum": [
+                              "active",
+                              "idle"
+                            ]
+                          },
+                          "isCliReady": {
+                            "type": "boolean"
+                          },
+                          "isCliPanel": {
+                            "type": "boolean"
+                          },
+                          "agentType": {
+                            "enum": [
+                              "codex",
+                              "claude"
+                            ]
+                          },
+                          "lastActivity": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "blocked": {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "message"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "codex-update",
+                              "agent-prompt",
+                              "unknown"
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "suggestedCommand": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "nextCommand": {
+                        "type": "string"
                       }
                     },
                     "additionalProperties": false
@@ -1852,20 +2207,358 @@ export const RUNPANE_CONTRACT = {
         }
       },
       "additionalProperties": false
+    },
+    "panelScreenResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "panelId",
+        "source",
+        "limit",
+        "returnedLineCount",
+        "hasMore",
+        "text",
+        "state"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "alternateScreen",
+            "scrollback",
+            "persistedOutput",
+            "empty"
+          ]
+        },
+        "limit": {
+          "type": "number"
+        },
+        "returnedLineCount": {
+          "type": "number"
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "text": {
+          "type": "string"
+        },
+        "state": {
+          "type": "object",
+          "required": [
+            "initialized"
+          ],
+          "properties": {
+            "initialized": {
+              "type": "boolean"
+            },
+            "isAlternateScreen": {
+              "type": "boolean"
+            },
+            "activityStatus": {
+              "enum": [
+                "active",
+                "idle"
+              ]
+            },
+            "isCliReady": {
+              "type": "boolean"
+            },
+            "isCliPanel": {
+              "type": "boolean"
+            },
+            "agentType": {
+              "enum": [
+                "codex",
+                "claude"
+              ]
+            },
+            "lastActivity": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "nextCommand": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "panelSubmitRequest": {
+      "type": "object",
+      "required": [
+        "panelId",
+        "input"
+      ],
+      "properties": {
+        "panelId": {
+          "type": "string"
+        },
+        "input": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "panelSubmitResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "panelId",
+        "inputBytes",
+        "enter",
+        "sentAt"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "inputBytes": {
+          "type": "number"
+        },
+        "enter": {
+          "const": "cr"
+        },
+        "sentAt": {
+          "type": "string"
+        },
+        "nextCommand": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "panelWaitResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "panelId",
+        "condition",
+        "matched",
+        "timedOut",
+        "elapsedMs",
+        "state",
+        "screen"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "condition": {
+          "enum": [
+            "initialized",
+            "ready",
+            "idle",
+            "text"
+          ]
+        },
+        "matched": {
+          "type": "boolean"
+        },
+        "timedOut": {
+          "type": "boolean"
+        },
+        "elapsedMs": {
+          "type": "number"
+        },
+        "state": {
+          "type": "object",
+          "required": [
+            "initialized"
+          ],
+          "properties": {
+            "initialized": {
+              "type": "boolean"
+            },
+            "isAlternateScreen": {
+              "type": "boolean"
+            },
+            "activityStatus": {
+              "enum": [
+                "active",
+                "idle"
+              ]
+            },
+            "isCliReady": {
+              "type": "boolean"
+            },
+            "isCliPanel": {
+              "type": "boolean"
+            },
+            "agentType": {
+              "enum": [
+                "codex",
+                "claude"
+              ]
+            },
+            "lastActivity": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "blocked": {
+          "type": "object",
+          "required": [
+            "kind",
+            "message"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "codex-update",
+                "agent-prompt",
+                "unknown"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "screen": {
+          "type": "object",
+          "required": [
+            "source",
+            "text",
+            "hasMore"
+          ],
+          "properties": {
+            "source": {
+              "enum": [
+                "alternateScreen",
+                "scrollback",
+                "persistedOutput",
+                "empty"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "hasMore": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "nextCommand": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "agentDoctorResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "agent",
+        "command",
+        "available",
+        "checks"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "agent": {
+          "enum": [
+            "codex",
+            "claude"
+          ]
+        },
+        "command": {
+          "type": "string"
+        },
+        "repo": {
+          "$ref": "#/jsonSchemas/repoListResult/properties/repos/items"
+        },
+        "environment": {
+          "enum": [
+            "wsl",
+            "windows",
+            "linux",
+            "macos"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "executablePath": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "ok",
+              "message"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
     }
   },
   "agentContext": {
     "brief": {
       "title": "Pane agent context",
-      "summary": "Pane lets a developer manage repositories and user-visible panes. Agents can use runpane to list/add Pane repositories and create panes with terminal-backed tools.",
+      "summary": "Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.",
       "rules": [
         "Start with `runpane repos list --json` to find the saved repository when unsure.",
         "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
-        "Use `runpane panes create` to create a Pane session and open a built-in agent or custom terminal command.",
-        "Use `runpane panels list`, `runpane panels output`, and `runpane panels input` when you need to inspect or drive an existing Pane terminal.",
-        "After creating panes or sending terminal input, validate with bounded panel output before reporting success.",
-        "Prefer `--input-file` for terminal input that includes Enter, Ctrl-C, quotes, or multiple lines.",
+        "Use `runpane agents doctor --agent <codex|claude> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
+        "Use `runpane panes create --wait-ready` to create panes and validate initial terminal readiness in one call.",
+        "Use `runpane panels screen` for compact current state, `panels wait` for readiness/text checks, and `panels submit` for ordinary Enter-submitted input.",
+        "Use `runpane panels input` only when exact bytes are required, such as Ctrl-C or handcrafted terminal input.",
+        "After creating panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success.",
         "Use `runpane agent-context --command <command>` for detailed command definitions only when needed."
       ],
       "detailCommand": "runpane agent-context --command <command> [--json]",
@@ -1875,6 +2568,15 @@ export const RUNPANE_CONTRACT = {
           "summary": "Print token-efficient Pane command context for coding agents.",
           "arguments": [
             "--command <command>",
+            "--json"
+          ]
+        },
+        {
+          "name": "agents doctor",
+          "summary": "Check whether Codex or Claude is available in the repo environment Pane will use.",
+          "arguments": [
+            "--agent <codex|claude>",
+            "--repo <selector>",
             "--json"
           ]
         },
@@ -1918,6 +2620,9 @@ export const RUNPANE_CONTRACT = {
             "--prompt <text>",
             "--initial-input-file <path|->",
             "--from-json <path|->",
+            "--wait-ready",
+            "--ready-timeout-ms <ms>",
+            "--concurrency <count>",
             "--yes",
             "--json"
           ]
@@ -1942,6 +2647,16 @@ export const RUNPANE_CONTRACT = {
           ]
         },
         {
+          "name": "panels screen",
+          "summary": "Read a compact current-screen view from a terminal panel.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--limit <count>",
+            "--json",
+            "--pane-dir <path>"
+          ]
+        },
+        {
           "name": "panels input",
           "summary": "Send input bytes to a terminal panel.",
           "arguments": [
@@ -1949,6 +2664,31 @@ export const RUNPANE_CONTRACT = {
             "--text <text>",
             "--input-file <path|->",
             "--yes",
+            "--json",
+            "--pane-dir <path>"
+          ]
+        },
+        {
+          "name": "panels submit",
+          "summary": "Send text plus terminal Enter to a terminal panel.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--text <text>",
+            "--input-file <path|->",
+            "--yes",
+            "--json",
+            "--pane-dir <path>"
+          ]
+        },
+        {
+          "name": "panels wait",
+          "summary": "Wait for terminal initialized, ready, idle, or text state with compact output.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--for <condition>",
+            "--contains <text>",
+            "--timeout-ms <ms>",
+            "--interval-ms <ms>",
             "--json",
             "--pane-dir <path>"
           ]
@@ -2317,11 +3057,29 @@ export const RUNPANE_CONTRACT = {
             "name": "--json",
             "required": false,
             "description": "Print machine-readable output."
+          },
+          {
+            "name": "--wait-ready",
+            "required": false,
+            "description": "Wait for each created terminal panel to be ready before returning."
+          },
+          {
+            "name": "--ready-timeout-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Readiness timeout per pane; defaults to 30000."
+          },
+          {
+            "name": "--concurrency",
+            "value": "<count>",
+            "required": false,
+            "description": "Concurrent pane creates for JSON payloads; defaults/caps at 3."
           }
         ],
         "examples": [
           "runpane panes create --repo active --name issue-257 --agent codex --prompt \"Plan this issue\" --yes",
-          "runpane panes create --from-json panes.json --yes --json"
+          "runpane panes create --from-json panes.json --yes --json",
+          "runpane panes create --repo active --name issue-123 --agent codex --prompt \"Plan this issue\" --wait-ready --yes --json"
         ],
         "jsonSchemas": [
           "paneCreateRequest",
@@ -2334,7 +3092,9 @@ export const RUNPANE_CONTRACT = {
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
           "For POSIX or WSL command chaining, use a custom terminal command like `bash -lc 'cmd1 && cmd2 && cmd3'`.",
           "For Windows PowerShell command chaining, use a custom terminal command like `powershell -NoProfile -Command \"cmd1; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cmd2\"`.",
-          "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent codex --prompt \"Plan this issue\" --yes --json'`."
+          "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent codex --prompt \"Plan this issue\" --yes --json'`.",
+          "Use --wait-ready when an agent needs to verify that an agent terminal started instead of only creating a pane.",
+          "If readiness returns blocked, inspect blocked.suggestedCommand rather than guessing which prompt to answer."
         ]
       },
       "panels list": {
@@ -2412,7 +3172,8 @@ export const RUNPANE_CONTRACT = {
         "notes": [
           "Default output is bounded to the latest 200 lines or records. Use a larger --limit only when hasMore is true and more history is needed.",
           "Use --json when an agent needs timestamps, record types, returnedCount, or hasMore.",
-          "The output is intended to be agent-readable, but terminal prompts and shell echoes may still appear; use the newest relevant lines before concluding success."
+          "The output is intended to be agent-readable, but terminal prompts and shell echoes may still appear; use the newest relevant lines before concluding success.",
+          "Prefer `panels screen` for a smaller current-state read before increasing output limits."
         ]
       },
       "panels input": {
@@ -2471,28 +3232,232 @@ export const RUNPANE_CONTRACT = {
           "Use `--input-file -` or a temp file for multi-line input, quotes, Ctrl-C, or shell-sensitive text.",
           "If interrupting a running process, send Ctrl-C first, validate/read output, then send the next command in a separate `panels input` call so bytes are not dropped.",
           "After sending input, validate with `runpane panels output --panel <panel-id> --json` before reporting success.",
-          "Runpane records action metadata and errors for observability, but should not log full input text by default."
+          "Runpane records action metadata and errors for observability, but should not log full input text by default.",
+          "For ordinary text plus Enter, prefer `panels submit` so the terminal receives a CR Enter byte."
+        ]
+      },
+      "agents doctor": {
+        "name": "agents doctor",
+        "summary": "Diagnose whether a built-in agent command is available in a Pane repository environment.",
+        "details": "Use this before creating Codex or Claude panes when PATH may differ between macOS/Linux/Windows/WSL or between the wrapper shell and Pane. The check runs through Pane project context, not the wrapper process.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--agent",
+            "value": "<codex|claude>",
+            "required": true,
+            "description": "Built-in agent command to diagnose."
+          },
+          {
+            "name": "--repo",
+            "value": "<selector>",
+            "required": false,
+            "description": "Repository selector; defaults to the active Pane repo."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane agents doctor --agent codex --repo active --json"
+        ],
+        "jsonSchemas": [
+          "agentDoctorResult"
+        ],
+        "notes": [
+          "For WSL repos, install the agent inside the WSL distro Pane uses, not only on Windows.",
+          "This diagnoses built-in Codex/Claude templates only; custom commands should be validated by creating a pane and reading its screen."
+        ]
+      },
+      "panels screen": {
+        "name": "panels screen",
+        "summary": "Read a compact current-screen view from a terminal panel.",
+        "details": "Use this for token-safe current terminal state. It prefers active alternate-screen/TUI output, then live scrollback, then persisted output. Default output is bounded to 80 lines.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": true,
+            "description": "Terminal panel id."
+          },
+          {
+            "name": "--limit",
+            "value": "<count>",
+            "required": false,
+            "description": "Maximum lines to return; defaults to 80."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane panels screen --panel <panel-id> --limit 80 --json"
+        ],
+        "jsonSchemas": [
+          "panelScreenResult"
+        ],
+        "notes": [
+          "Use this before `panels output` when an agent only needs the latest visible/current state.",
+          "If hasMore is true and context is missing, rerun with a larger --limit or use `panels output`."
+        ]
+      },
+      "panels submit": {
+        "name": "panels submit",
+        "summary": "Send text to a terminal panel and append a terminal Enter byte.",
+        "details": "Use this for ordinary interactive submissions. The daemon normalizes a final LF or CRLF to CR, or appends CR if no newline is present. Exact byte workflows remain on `panels input`.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": true,
+            "description": "Terminal panel id."
+          },
+          {
+            "name": "--text",
+            "value": "<text>",
+            "required": false,
+            "description": "Text to submit before Enter."
+          },
+          {
+            "name": "--input-file",
+            "value": "<path|->",
+            "required": false,
+            "description": "Read text from a file or stdin before Enter."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for this mutating command."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane panels submit --panel <panel-id> --text \"2\" --yes --json",
+          "printf \"echo hello\" | runpane panels submit --panel <panel-id> --input-file - --yes --json"
+        ],
+        "jsonSchemas": [
+          "panelSubmitRequest",
+          "panelSubmitResult"
+        ],
+        "notes": [
+          "The response includes nextCommand for validation. Run it before reporting that the input worked.",
+          "Use `panels input` for Ctrl-C, escape sequences, or any workflow requiring exact bytes."
+        ]
+      },
+      "panels wait": {
+        "name": "panels wait",
+        "summary": "Wait for a terminal panel to initialize, become ready/idle, or contain text.",
+        "details": "Use this to validate asynchronous terminal behavior without pulling large scrollback. It returns brief readiness state, blocker hints, a compact screen, and a next command.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": true,
+            "description": "Terminal panel id."
+          },
+          {
+            "name": "--for",
+            "value": "<initialized|ready|idle|text>",
+            "required": false,
+            "description": "Condition to wait for. Defaults to ready for CLI panels and idle otherwise."
+          },
+          {
+            "name": "--contains",
+            "value": "<text>",
+            "required": false,
+            "description": "Text required for --for text; implies --for text when --for is omitted."
+          },
+          {
+            "name": "--timeout-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Wait timeout; defaults to 30000."
+          },
+          {
+            "name": "--interval-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Polling interval; defaults to 500."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          }
+        ],
+        "examples": [
+          "runpane panels wait --panel <panel-id> --for ready --timeout-ms 30000 --json",
+          "runpane panels wait --panel <panel-id> --contains \"Ready\" --json"
+        ],
+        "jsonSchemas": [
+          "panelWaitResult"
+        ],
+        "notes": [
+          "If blocked is present, do not assume success. Use blocked.suggestedCommand or inspect `panels screen`.",
+          "The default timeout and screen are intentionally small for agent context safety."
         ]
       }
     },
     "managedBlock": [
       "## Pane",
       "",
-      "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, and implementation work.",
+      "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.",
       "",
-      "Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command \"panes create\"` or another command name for the detailed schema only when needed.",
+      "Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command \"panels wait\"` or another command name for detailed schema only when needed.",
       "",
-      "After creating panes or sending terminal input, validate with bounded panel output before reporting success. Prefer `--input-file` for exact terminal bytes, newlines, Ctrl-C, quotes, or multi-line input.",
+      "Default to context-safe validation: after creating panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.",
       "",
       "Common commands:",
       "- `runpane repos list --json`",
       "- `runpane repos add --path <repo> --yes --json`",
-      "- `runpane panes create --repo active --name <name> --agent codex --prompt \"<task>\" --yes`",
+      "- `runpane agents doctor --agent codex --repo active --json`",
+      "- `runpane panes create --repo active --name <name> --agent codex --prompt \"<task>\" --wait-ready --yes --json`",
       "- `runpane panels list --pane <pane-id> --json`",
-      "- `runpane panels output --panel <panel-id> --limit 200 --json`",
-      "- `runpane panels input --panel <panel-id> --input-file <path|-> --yes`",
+      "- `runpane panels screen --panel <panel-id> --limit 80 --json`",
+      "- `runpane panels wait --panel <panel-id> --for ready --timeout-ms 30000 --json`",
+      "- `runpane panels submit --panel <panel-id> --text \"<answer>\" --yes --json`",
+      "- `runpane panels input --panel <panel-id> --input-file <path|-> --yes --json`",
       "",
-      "WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id."
+      "WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use."
     ]
   }
 } as const;

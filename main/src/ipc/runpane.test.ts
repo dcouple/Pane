@@ -21,6 +21,7 @@ vi.mock('../services/terminalPanelManager', () => ({
   terminalPanelManager: {
     initializeTerminal: vi.fn(),
     isTerminalInitialized: vi.fn(),
+    getTerminalSnapshot: vi.fn(),
     getTerminalScrollback: vi.fn(),
     writeToTerminal: vi.fn(),
   },
@@ -107,6 +108,17 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
           wslContext: null,
         },
       })),
+      getProjectContextByProjectId: vi.fn(() => ({
+        commandRunner: {
+          wslContext: null,
+          execAsync: vi.fn(async (command: string) => {
+            if (command.includes('--version')) {
+              return { stdout: 'codex 0.141.0\n', stderr: '' };
+            }
+            return { stdout: '/usr/local/bin/codex\n', stderr: '' };
+          }),
+        },
+      })),
     },
     taskQueue: {
       createSessionAndWait: vi.fn(async () => ({ sessionId: session.id })),
@@ -144,6 +156,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.getPanelsForSession).mockReset();
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReset();
     vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
 
@@ -154,6 +167,7 @@ describe('runpane IPC handlers', () => {
       sessionId === session.id ? [terminalPanel] : []
     );
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReturnValue(true);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(null);
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(null);
   });
 
@@ -629,6 +643,189 @@ describe('runpane IPC handlers', () => {
     );
   });
 
+  it('submits text with a terminal Enter and returns validation guidance', async () => {
+    const services = createServices();
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panels:submit', [{
+      panelId: terminalPanel.id,
+      input: 'echo hello\n',
+    }]);
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledWith(terminalPanel.id, 'echo hello\r');
+    expect(result).toMatchObject({
+      ok: true,
+      panelId: terminalPanel.id,
+      paneId: session.id,
+      inputBytes: 11,
+      enter: 'cr',
+      nextCommand: `runpane panels wait --panel ${terminalPanel.id} --for ready --timeout-ms 30000 --json`,
+    });
+    expect(services.analyticsManager?.track).toHaveBeenCalledWith(
+      'runpane_local_control',
+      expect.objectContaining({
+        action: 'panels:submit',
+        status: 'success',
+        input_bytes: 11,
+      }),
+    );
+    expect(services.analyticsManager?.track).not.toHaveBeenCalledWith(
+      'runpane_local_control',
+      expect.objectContaining({
+        input: 'echo hello\n',
+      }),
+    );
+  });
+
+  it('reads compact panel screen state from live alternate-screen output', async () => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: 'old\n',
+      alternateScreenBuffer: 'one\ntwo\nthree',
+      isAlternateScreen: true,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'codex',
+    });
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:screen', [{
+      panelId: terminalPanel.id,
+      limit: 2,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      panelId: terminalPanel.id,
+      paneId: session.id,
+      source: 'alternateScreen',
+      limit: 2,
+      returnedLineCount: 2,
+      hasMore: true,
+      text: 'two\nthree',
+      state: {
+        initialized: true,
+        activityStatus: 'idle',
+        isCliReady: true,
+        agentType: 'codex',
+      },
+    });
+  });
+
+  it('waits for ready terminal state with bounded screen output', async () => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: 'agent ready\n',
+      alternateScreenBuffer: '',
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'codex',
+    });
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:wait', [{
+      panelId: terminalPanel.id,
+      timeoutMs: 10,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      panelId: terminalPanel.id,
+      condition: 'ready',
+      matched: true,
+      timedOut: false,
+      screen: {
+        source: 'scrollback',
+        text: 'agent ready\n',
+      },
+      nextCommand: `runpane panels screen --panel ${terminalPanel.id} --limit 80 --json`,
+    });
+  });
+
+  it('reports Codex update prompts as blockers instead of ready', async () => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: 'Update available! 0.136.0 -> 0.141.0\n2. Skip\nPress enter to continue\n',
+      alternateScreenBuffer: '',
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'codex',
+    });
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:wait', [{
+      panelId: terminalPanel.id,
+      timeoutMs: 10,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      condition: 'ready',
+      matched: false,
+      timedOut: false,
+      blocked: {
+        kind: 'codex-update',
+        suggestedCommand: `runpane panels submit --panel ${terminalPanel.id} --text "2" --yes --json`,
+      },
+    });
+  });
+
+  it('diagnoses built-in agents through the Pane project context', async () => {
+    const execAsync = vi.fn(async (command: string) => {
+      if (command === 'command -v codex') {
+        return { stdout: '/home/user/.local/bin/codex\n', stderr: '' };
+      }
+      if (command === 'codex --version') {
+        return { stdout: 'codex 0.141.0\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const services = createServices({
+      sessionManager: {
+        ...createServices().sessionManager,
+        getProjectContextByProjectId: vi.fn(() => ({
+          commandRunner: {
+            wslContext: null,
+            execAsync,
+          },
+        })),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:agents:doctor', [{
+      agent: 'codex',
+      repo: 'active',
+    }]);
+
+    expect(execAsync).toHaveBeenCalledWith('command -v codex', project.path, expect.objectContaining({
+      timeout: 5000,
+      silent: true,
+    }));
+    expect(result).toMatchObject({
+      ok: true,
+      agent: 'codex',
+      available: true,
+      executablePath: '/home/user/.local/bin/codex',
+      version: 'codex 0.141.0',
+      repo: {
+        id: project.id,
+        name: project.name,
+      },
+    });
+  });
+
   it('creates a session, terminal panel, and initial-input state', async () => {
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
@@ -690,6 +887,66 @@ describe('runpane IPC handlers', () => {
         panelId: 'panel-1',
         worktreePath: session.worktreePath,
         nextCommand: 'runpane panels output --panel panel-1 --limit 200 --json',
+      }],
+    });
+  });
+
+  it('creates panes with readiness validation when requested', async () => {
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      id: 'panel-1',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Codex',
+      state: {},
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: 'ready\n',
+      alternateScreenBuffer: '',
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'codex',
+    });
+
+    const registry = createRegistry(createServices());
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      concurrency: 3,
+      panes: [{
+        name: 'issue-252',
+        tool: {
+          agent: 'codex',
+        },
+      }],
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        panelId: 'panel-1',
+        readiness: {
+          ok: true,
+          condition: 'ready',
+          matched: true,
+          timedOut: false,
+          state: {
+            initialized: true,
+            isCliReady: true,
+          },
+          nextCommand: 'runpane panels screen --panel panel-1 --limit 80 --json',
+        },
+        nextCommand: 'runpane panels screen --panel panel-1 --limit 80 --json',
       }],
     });
   });

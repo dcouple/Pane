@@ -148,6 +148,62 @@
     ],
     [
       "--version"
+    ],
+    [
+      "agents",
+      "doctor",
+      "--agent",
+      "codex",
+      "--repo",
+      "active",
+      "--json"
+    ],
+    [
+      "panes",
+      "create",
+      "--from-json",
+      "-",
+      "--wait-ready",
+      "--ready-timeout-ms",
+      "45000",
+      "--concurrency",
+      "2",
+      "--yes",
+      "--json"
+    ],
+    [
+      "panels",
+      "screen",
+      "--panel",
+      "panel-1",
+      "--limit",
+      "80",
+      "--json"
+    ],
+    [
+      "panels",
+      "submit",
+      "--panel",
+      "panel-1",
+      "--text",
+      "2",
+      "--yes",
+      "--json"
+    ],
+    [
+      "panels",
+      "wait",
+      "--panel",
+      "panel-1",
+      "--for",
+      "text",
+      "--contains",
+      "ready",
+      "--timeout-ms",
+      "30000",
+      "--interval-ms",
+      "500",
+      "--json"
     ]
   ],
   "help": {
@@ -164,7 +220,11 @@
       "runpane panes create",
       "runpane panels list",
       "runpane panels output",
-      "runpane panels input"
+      "runpane panels input",
+      "runpane agents doctor",
+      "runpane panels screen",
+      "runpane panels submit",
+      "runpane panels wait"
     ],
     "npmIncludes": [
       "pnpm dlx runpane@latest",

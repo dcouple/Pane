@@ -107,6 +107,9 @@ export function createInitialTelemetryContext(argv: string[]): WrapperTelemetryC
   if (first === 'agent-context') {
     return { command: 'agent-context' };
   }
+  if (first === 'agents') {
+    return { command: argv[1] === 'doctor' ? 'agents doctor' : 'unknown' };
+  }
   if (first === 'repos') {
     return { command: argv[1] === 'add' ? 'repos add' : 'repos list' };
   }
@@ -116,6 +119,9 @@ export function createInitialTelemetryContext(argv: string[]): WrapperTelemetryC
   if (first === 'panels') {
     if (argv[1] === 'output') return { command: 'panels output' };
     if (argv[1] === 'input') return { command: 'panels input' };
+    if (argv[1] === 'screen') return { command: 'panels screen' };
+    if (argv[1] === 'submit') return { command: 'panels submit' };
+    if (argv[1] === 'wait') return { command: 'panels wait' };
     return { command: 'panels list' };
   }
   return { command: 'unknown' };

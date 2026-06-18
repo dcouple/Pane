@@ -158,7 +158,13 @@ function compareParserParity() {
       panelInputFile: parsed.panelInputFile ?? null,
       fromJson: parsed.fromJson ?? null,
       timeoutMs: parsed.timeoutMs ?? null,
+      waitReady: parsed.waitReady ?? false,
+      readyTimeoutMs: parsed.readyTimeoutMs ?? null,
+      concurrency: parsed.concurrency ?? null,
       limit: parsed.limit ?? null,
+      waitCondition: parsed.waitCondition ?? null,
+      contains: parsed.contains ?? null,
+      intervalMs: parsed.intervalMs ?? null,
       remoteSetupArgs: parsed.remoteSetupArgs
     };
   });
@@ -203,7 +209,13 @@ for args in samples:
         "panelInputFile": parsed.panel_input_file,
         "fromJson": parsed.from_json,
         "timeoutMs": parsed.timeout_ms,
+        "waitReady": parsed.wait_ready,
+        "readyTimeoutMs": parsed.ready_timeout_ms,
+        "concurrency": parsed.concurrency,
         "limit": parsed.limit,
+        "waitCondition": parsed.wait_condition,
+        "contains": parsed.contains,
+        "intervalMs": parsed.interval_ms,
         "remoteSetupArgs": parsed.remote_setup_args,
     })
 print(json.dumps(normalized))

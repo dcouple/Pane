@@ -156,7 +156,7 @@ function validateContract(contract, schema) {
 
   const commandNames = ensureArray(contract.commands, 'commands').map((command) => command.name);
   assertUnique(commandNames, 'commands');
-  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor', 'agent-context', 'repos list', 'repos add', 'panes list', 'panes create', 'panels list', 'panels output', 'panels input']) {
+  for (const required of ['help', 'setup', 'install', 'update', 'version', 'doctor', 'agent-context', 'agents doctor', 'repos list', 'repos add', 'panes list', 'panes create', 'panels list', 'panels output', 'panels input', 'panels screen', 'panels submit', 'panels wait']) {
     if (!commandNames.includes(required)) {
       throw new Error(`commands must include "${required}"`);
     }

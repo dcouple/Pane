@@ -46,6 +46,9 @@ interface PaneCreateRequest {
   panes: PaneCreateItem[];
   dryRun?: boolean;
   timeoutMs?: number;
+  waitReady?: boolean;
+  readyTimeoutMs?: number;
+  concurrency?: number;
 }
 
 interface PaneCreateItem {
@@ -71,6 +74,7 @@ interface PaneCreateResult {
     panelId?: string;
     worktreePath?: string;
     nextCommand?: string;
+    readiness?: PanelReadiness;
     error?: { message: string; code?: string };
   }>;
 }
@@ -147,6 +151,83 @@ interface PanelInputResult {
   nextCommand?: string;
 }
 
+interface PanelStateSummary {
+  initialized: boolean;
+  isAlternateScreen?: boolean;
+  activityStatus?: 'active' | 'idle';
+  isCliReady?: boolean;
+  isCliPanel?: boolean;
+  agentType?: RunpaneAgent;
+  lastActivity?: string;
+}
+
+interface PanelBlockedState {
+  kind: 'codex-update' | 'agent-prompt' | 'unknown';
+  message: string;
+  suggestedCommand?: string;
+}
+
+interface PanelReadiness {
+  ok: boolean;
+  condition: string;
+  matched: boolean;
+  timedOut: boolean;
+  elapsedMs: number;
+  state: PanelStateSummary;
+  blocked?: PanelBlockedState;
+  nextCommand?: string;
+}
+
+interface PanelScreenResult {
+  ok: true;
+  panelId: string;
+  paneId?: string;
+  source: 'alternateScreen' | 'scrollback' | 'persistedOutput' | 'empty';
+  limit: number;
+  returnedLineCount: number;
+  hasMore: boolean;
+  text: string;
+  state: PanelStateSummary;
+  nextCommand?: string;
+}
+
+interface PanelSubmitResult {
+  ok: true;
+  panelId: string;
+  paneId?: string;
+  inputBytes: number;
+  enter: 'cr';
+  sentAt: string;
+  nextCommand?: string;
+}
+
+interface PanelWaitResult extends PanelReadiness {
+  panelId: string;
+  paneId?: string;
+  screen: {
+    source: PanelScreenResult['source'];
+    text: string;
+    hasMore: boolean;
+  };
+}
+
+interface AgentDoctorResult {
+  ok: boolean;
+  agent: RunpaneAgent;
+  command: string;
+  repo?: RepoSummary;
+  environment?: string;
+  available: boolean;
+  executablePath?: string;
+  version?: string;
+  checks: Array<{
+    name: string;
+    ok: boolean;
+    message: string;
+  }>;
+  warnings?: string[];
+}
+
 export async function runReposList(parsed: ParsedArgs): Promise<number> {
   const result = await invokeDaemon<RepoListResult>('runpane:repos:list', [], {
     paneDir: parsed.paneDir,
@@ -210,7 +291,7 @@ export async function runPanesCreate(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon<PaneCreateResult>('runpane:panes:create', [request], {
     paneDir: parsed.paneDir,
-    timeoutMs: (parsed.timeoutMs ?? 120_000) + 10_000,
+    timeoutMs: (parsed.timeoutMs ?? 120_000) + (parsed.readyTimeoutMs ?? 30_000) + 10_000,
   });
 
   if (parsed.json) {
@@ -283,6 +364,96 @@ export async function runPanelsInput(parsed: ParsedArgs): Promise<number> {
   return 0;
 }
 
+export async function runPanelsScreen(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.panelId) {
+    throw new Error('runpane panels screen requires --panel.');
+  }
+
+  const result = await invokeDaemon<PanelScreenResult>('runpane:panels:screen', [{
+    panelId: parsed.panelId,
+    limit: parsed.limit,
+  }], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+    return 0;
+  }
+
+  output.write(result.text);
+  if (result.text && !result.text.endsWith('\n')) {
+    output.write('\n');
+  }
+  return 0;
+}
+
+export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
+  const request = buildPanelInputRequest(parsed, 'submit');
+  await confirmPanelInput(parsed, request, 'submit');
+
+  const result = await invokeDaemon<PanelSubmitResult>('runpane:panels:submit', [request], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+  } else {
+    console.log(`Submitted ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} with Enter to panel ${result.panelId}.`);
+    if (result.nextCommand) {
+      console.log(`Next: ${result.nextCommand}`);
+    }
+  }
+
+  return 0;
+}
+
+export async function runPanelsWait(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.panelId) {
+    throw new Error('runpane panels wait requires --panel.');
+  }
+
+  const result = await invokeDaemon<PanelWaitResult>('runpane:panels:wait', [{
+    panelId: parsed.panelId,
+    condition: parsed.waitCondition,
+    contains: parsed.contains,
+    timeoutMs: parsed.timeoutMs,
+    intervalMs: parsed.intervalMs,
+  }], {
+    paneDir: parsed.paneDir,
+    timeoutMs: (parsed.timeoutMs ?? 30_000) + 5_000,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+    return result.ok ? 0 : 1;
+  }
+
+  printPanelWaitResult(result);
+  return result.ok ? 0 : 1;
+}
+
+export async function runAgentsDoctor(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.agent) {
+    throw new Error('runpane agents doctor requires --agent codex|claude.');
+  }
+
+  const result = await invokeDaemon<AgentDoctorResult>('runpane:agents:doctor', [{
+    agent: parsed.agent,
+    repo: parsed.repo,
+  }], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+    return result.ok ? 0 : 1;
+  }
+
+  printAgentDoctorResult(result);
+  return result.ok ? 0 : 1;
+}
+
 function buildRepoAddRequest(parsed: ParsedArgs): RepoAddRequest {
   if (!parsed.repoPath) {
     throw new Error('runpane repos add requires --path.');
@@ -295,15 +466,15 @@ function buildRepoAddRequest(parsed: ParsedArgs): RepoAddRequest {
   };
 }
 
-function buildPanelInputRequest(parsed: ParsedArgs): PanelInputRequest {
+function buildPanelInputRequest(parsed: ParsedArgs, command: 'input' | 'submit' = 'input'): PanelInputRequest {
   if (!parsed.panelId) {
-    throw new Error('runpane panels input requires --panel.');
+    throw new Error(`runpane panels ${command} requires --panel.`);
   }
   if (parsed.panelInput !== undefined && parsed.panelInputFile) {
     throw new Error('Use either --text or --input-file, not both.');
   }
   if (parsed.panelInput === undefined && !parsed.panelInputFile) {
-    throw new Error('runpane panels input requires --text or --input-file.');
+    throw new Error(`runpane panels ${command} requires --text or --input-file.`);
   }
 
   return {
@@ -321,6 +492,15 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     }
     if (parsed.timeoutMs !== undefined) {
       request.timeoutMs = parsed.timeoutMs;
+    }
+    if (parsed.waitReady) {
+      request.waitReady = true;
+    }
+    if (parsed.readyTimeoutMs !== undefined) {
+      request.readyTimeoutMs = parsed.readyTimeoutMs;
+    }
+    if (parsed.concurrency !== undefined) {
+      request.concurrency = parsed.concurrency;
     }
     return request;
   }
@@ -343,6 +523,9 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     }],
     dryRun: parsed.dryRun || undefined,
     timeoutMs: parsed.timeoutMs,
+    waitReady: parsed.waitReady || undefined,
+    readyTimeoutMs: parsed.readyTimeoutMs,
+    concurrency: parsed.concurrency,
   };
 
   return request;
@@ -436,19 +619,25 @@ async function confirmPaneCreate(parsed: ParsedArgs, request: PaneCreateRequest)
   }
 }
 
-async function confirmPanelInput(parsed: ParsedArgs, request: PanelInputRequest): Promise<void> {
+async function confirmPanelInput(
+  parsed: ParsedArgs,
+  request: PanelInputRequest,
+  command: 'input' | 'submit' = 'input',
+): Promise<void> {
   if (parsed.yes) {
     return;
   }
 
   if (!isInteractiveShell()) {
-    throw new Error('runpane panels input mutates a Pane terminal. Rerun with --yes in non-interactive shells.');
+    throw new Error(`runpane panels ${command} mutates a Pane terminal. Rerun with --yes in non-interactive shells.`);
   }
 
   const rl = createInterface({ input, output });
   try {
     const byteCount = Buffer.byteLength(request.input, 'utf8');
-    const answer = (await rl.question(`Send ${byteCount} byte${byteCount === 1 ? '' : 's'} to panel ${request.panelId}? [y/N] `)).trim().toLowerCase();
+    const verb = command === 'submit' ? 'Submit' : 'Send';
+    const suffix = command === 'submit' ? ' plus Enter' : '';
+    const answer = (await rl.question(`${verb} ${byteCount} byte${byteCount === 1 ? '' : 's'}${suffix} to panel ${request.panelId}? [y/N] `)).trim().toLowerCase();
     if (answer !== 'y' && answer !== 'yes') {
       throw new Error('Cancelled.');
     }
@@ -533,9 +722,61 @@ function printPaneCreateResult(result: PaneCreateResult): void {
     if (item.ok) {
       const worktree = item.worktreePath ? ` at ${item.worktreePath}` : '';
       console.log(`Created ${item.name ?? `pane ${item.index}`}: session ${item.sessionId ?? 'unknown'} panel ${item.panelId ?? 'unknown'}${worktree}`);
+      if (item.readiness) {
+        console.log(`  Ready: ${item.readiness.ok ? 'yes' : item.readiness.timedOut ? 'timed out' : 'blocked'} after ${item.readiness.elapsedMs}ms`);
+        if (item.readiness.blocked) {
+          console.log(`  Blocked: ${item.readiness.blocked.message}`);
+        }
+      }
+      if (item.nextCommand) {
+        console.log(`  Next: ${item.nextCommand}`);
+      }
       continue;
     }
     console.error(`Failed ${item.name ?? `pane ${item.index}`}: ${item.error?.message ?? 'unknown error'}`);
+  }
+}
+
+function printPanelWaitResult(result: PanelWaitResult): void {
+  if (result.ok) {
+    console.log(`Matched ${result.condition} for panel ${result.panelId} after ${result.elapsedMs}ms.`);
+  } else if (result.blocked) {
+    console.log(`Blocked waiting for ${result.condition} on panel ${result.panelId}: ${result.blocked.message}`);
+  } else if (result.timedOut) {
+    console.log(`Timed out waiting for ${result.condition} on panel ${result.panelId} after ${result.elapsedMs}ms.`);
+  } else {
+    console.log(`Did not match ${result.condition} for panel ${result.panelId}.`);
+  }
+
+  const statusParts = [
+    result.state.initialized ? 'initialized' : 'not-initialized',
+    result.state.activityStatus,
+    result.state.isCliReady === undefined ? undefined : result.state.isCliReady ? 'cli-ready' : 'cli-not-ready',
+    result.state.agentType,
+  ].filter(Boolean);
+  if (statusParts.length > 0) {
+    console.log(`State: ${statusParts.join(', ')}`);
+  }
+  if (result.nextCommand) {
+    console.log(`Next: ${result.nextCommand}`);
+  }
+}
+
+function printAgentDoctorResult(result: AgentDoctorResult): void {
+  const repo = result.repo ? ` in ${result.repo.name}` : '';
+  const environment = result.environment ? ` (${result.environment})` : '';
+  console.log(`${result.agent}: ${result.available ? 'available' : 'not available'}${repo}${environment}`);
+  if (result.executablePath) {
+    console.log(`Path: ${result.executablePath}`);
+  }
+  if (result.version) {
+    console.log(`Version: ${result.version}`);
+  }
+  for (const check of result.checks) {
+    console.log(`${check.ok ? 'OK' : 'FAIL'} ${check.name}: ${check.message}`);
+  }
+  for (const warning of result.warnings ?? []) {
+    console.log(`Warning: ${warning}`);
   }
 }
 
@@ -580,6 +821,9 @@ function parsePaneCreateRequestPayload(value: unknown): PaneCreateRequest {
     panes: panes.map(parsePaneCreateItemPayload),
     dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
     timeoutMs: typeof value.timeoutMs === 'number' ? value.timeoutMs : undefined,
+    waitReady: typeof value.waitReady === 'boolean' ? value.waitReady : undefined,
+    readyTimeoutMs: typeof value.readyTimeoutMs === 'number' ? value.readyTimeoutMs : undefined,
+    concurrency: typeof value.concurrency === 'number' ? value.concurrency : undefined,
   };
 }
 

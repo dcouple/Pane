@@ -33,6 +33,7 @@ vi.mock('../utils/attribution', () => ({
 }));
 
 import { TerminalPanelManager } from './terminalPanelManager';
+import { panelManager } from './panelManager';
 
 type TerminalUnderTest = {
   pty: {
@@ -57,6 +58,7 @@ type TerminalUnderTest = {
   idleTimer: ReturnType<typeof setTimeout> | null;
   inSyncBlock: boolean;
   codexResumeOutputBuffer: string;
+  codexAgentSessionId?: string;
 };
 
 type FlushOutputBufferAccess = {
@@ -68,6 +70,11 @@ type VisibilityAccess = {
   setVisibility(panelId: string, isVisible: boolean, viewerId?: string): void;
   clearVisibilityViewersByPrefix(prefix: string): void;
   pruneVisibilityViewersByPrefix(prefix: string, staleAfterMs: number): void;
+};
+
+type SnapshotAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  getTerminalSnapshot(panelId: string): ReturnType<TerminalPanelManager['getTerminalSnapshot']>;
 };
 
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
@@ -107,6 +114,7 @@ function createConfigManagerStub(): ConfigManager {
 describe('TerminalPanelManager hidden output delivery', () => {
   afterEach(() => {
     resetPaneRuntimeForTests();
+    vi.mocked(panelManager.getPanel).mockReset();
   });
 
   it('keeps visible terminal output on the combined runtime sink', () => {
@@ -270,6 +278,54 @@ describe('TerminalPanelManager hidden output delivery', () => {
     manager.setVisibility(terminal.panelId, false, 'local:host');
 
     expect(terminal.isVisible).toBe(false);
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('returns live terminal snapshots for daemon reads', () => {
+    const manager = new TerminalPanelManager() as unknown as SnapshotAccess;
+    const terminal = createTerminal({
+      scrollbackBuffer: 'scrollback',
+      alternateScreenBuffer: 'screen',
+      isAlternateScreen: true,
+      activityStatus: 'active',
+      currentCommand: 'codex',
+      codexAgentSessionId: 'agent-session-1',
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+    vi.mocked(panelManager.getPanel).mockReturnValue({
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal',
+      title: 'Codex',
+      state: {
+        isActive: true,
+        customState: {
+          isCliPanel: true,
+          isCliReady: true,
+          agentType: 'codex',
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    });
+
+    const snapshot = manager.getTerminalSnapshot(terminal.panelId);
+
+    expect(snapshot).toMatchObject({
+      initialized: true,
+      scrollbackBuffer: 'scrollback',
+      alternateScreenBuffer: 'screen',
+      isAlternateScreen: true,
+      activityStatus: 'active',
+      currentCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'codex',
+      agentSessionId: 'agent-session-1',
+    });
     disposeFlowControlRecord(terminal.flowControl);
   });
 });

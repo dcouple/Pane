@@ -152,7 +152,7 @@ When running from WSL while Pane is installed on Windows, the Linux wrapper may 
 
 ## Agent Context
 
-Pane lets a developer manage repositories and user-visible panes. Agents can use runpane to list/add Pane repositories and create panes with terminal-backed tools.
+Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.
 
 Brief discovery command:
 
@@ -170,34 +170,41 @@ runpane agent-context --command <command> [--json]
 Brief tools:
 
 - `agent-context`: Print token-efficient Pane command context for coding agents.
+- `agents doctor`: Check whether Codex or Claude is available in the repo environment Pane will use.
 - `repos list`: List repositories saved in the running Pane app.
 - `repos add`: Register an existing git repository with the running Pane app.
 - `panes list`: List Pane sessions, optionally scoped to a saved repository.
 - `panes create`: Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.
 - `panels list`: List tool panels inside a Pane session.
 - `panels output`: Read recent terminal output from a panel.
+- `panels screen`: Read a compact current-screen view from a terminal panel.
 - `panels input`: Send input bytes to a terminal panel.
+- `panels submit`: Send text plus terminal Enter to a terminal panel.
+- `panels wait`: Wait for terminal initialized, ready, idle, or text state with compact output.
 
 Managed AGENTS.md block body:
 
 ```md
 ## Pane
 
-The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, and implementation work.
+The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.
 
-Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command "panes create"` or another command name for the detailed schema only when needed.
+Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command "panels wait"` or another command name for detailed schema only when needed.
 
-After creating panes or sending terminal input, validate with bounded panel output before reporting success. Prefer `--input-file` for exact terminal bytes, newlines, Ctrl-C, quotes, or multi-line input.
+Default to context-safe validation: after creating panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.
 
 Common commands:
 - `runpane repos list --json`
 - `runpane repos add --path <repo> --yes --json`
-- `runpane panes create --repo active --name <name> --agent codex --prompt "<task>" --yes`
+- `runpane agents doctor --agent codex --repo active --json`
+- `runpane panes create --repo active --name <name> --agent codex --prompt "<task>" --wait-ready --yes --json`
 - `runpane panels list --pane <pane-id> --json`
-- `runpane panels output --panel <panel-id> --limit 200 --json`
-- `runpane panels input --panel <panel-id> --input-file <path|-> --yes`
+- `runpane panels screen --panel <panel-id> --limit 80 --json`
+- `runpane panels wait --panel <panel-id> --for ready --timeout-ms 30000 --json`
+- `runpane panels submit --panel <panel-id> --text "<answer>" --yes --json`
+- `runpane panels input --panel <panel-id> --input-file <path|-> --yes --json`
 
-WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id.
+WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use.
 ```
 
 ## Wrapper Flags
@@ -236,10 +243,16 @@ These flags are consumed by local daemon-control commands:
 --initial-input-file <path|->
 --from-json <path|->
 --timeout-ms <milliseconds>
+--ready-timeout-ms <milliseconds>
+--concurrency <count>
 --limit <count>
+--for <initialized|ready|idle|text>
+--contains <text>
+--interval-ms <milliseconds>
 --text <text>
 --input-file <path|->
 --json
+--wait-ready
 ```
 
 `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.
