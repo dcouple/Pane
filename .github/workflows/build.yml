@@ -11,9 +11,6 @@ on:
         type: boolean
         default: false
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     strategy:
@@ -42,17 +39,17 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v6
       with:
         node-version: '22.15.1'
         cache: 'pnpm'
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: |
           ~/.cache/electron
@@ -78,7 +75,7 @@ jobs:
 
     - run: ls -la dist-electron/
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: pane-${{ matrix.os }}-${{ github.ref_name }}
         path: ${{ matrix.artifact_path }}
@@ -132,13 +129,13 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v7
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v6
       with:
         node-version: '22.15.1'
         cache: 'pnpm'
-    - uses: actions/setup-python@v5
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
     - run: pnpm install --filter runpane --ignore-scripts
@@ -157,9 +154,9 @@ jobs:
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v7
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v6
       with:
         node-version: '22.15.1'
         registry-url: 'https://registry.npmjs.org'
@@ -192,8 +189,8 @@ jobs:
     env:
       PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
+    - uses: actions/checkout@v7
+    - uses: actions/setup-python@v6
       with:
         python-version: '3.11'
     - name: Build Python distribution
@@ -221,13 +218,13 @@ jobs:
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@v4
-    - uses: pnpm/action-setup@v4
-    - uses: actions/setup-node@v4
+    - uses: actions/checkout@v7
+    - uses: pnpm/action-setup@v6
+    - uses: actions/setup-node@v6
       with:
         node-version: '22.15.1'
         cache: 'pnpm'
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       with:
         path: |
           ~/AppData/Local/electron/Cache
@@ -250,7 +247,7 @@ jobs:
 
     - run: dir dist-electron
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: pane-windows-${{ matrix.arch }}-${{ github.ref_name }}
         path: |
