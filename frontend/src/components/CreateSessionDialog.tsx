@@ -4,7 +4,7 @@ import type { CreateSessionRequest } from '../types/session';
 import type { Project } from '../types/project';
 import { useErrorStore } from '../stores/errorStore';
 import { GitBranch, ChevronRight, ChevronDown, X, Search, Check, GitFork, Pin } from 'lucide-react';
-import { ToggleField } from './ui/Toggle';
+import { Toggle } from './ui/Toggle';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -439,17 +439,17 @@ export function CreateSessionDialog({
           <form id="create-session-form" onSubmit={handleSubmit}>
             {/* 1. Base Branch (select first, auto-populates session name) */}
             {isLoadingBranches && branches.length === 0 ? (
-              <div className="p-6 border-b border-border-primary animate-pulse">
-                <div className="flex items-center gap-2 mb-1">
+              <div className="px-6 pt-6 pb-5 border-b border-border-primary animate-pulse">
+                <div className="flex items-center gap-2 mb-2">
                   <div className="w-4 h-4 bg-surface-tertiary rounded" />
                   <div className="w-24 h-4 bg-surface-tertiary rounded" />
                 </div>
                 <div className="w-full h-9 bg-surface-tertiary rounded-md" />
-                <div className="w-64 h-3 bg-surface-tertiary rounded mt-1" />
+                <div className="w-64 h-3 bg-surface-tertiary rounded mt-2" />
               </div>
             ) : branches.length > 0 ? (
-              <div className="p-6 border-b border-border-primary">
-                <div className="flex items-center gap-2 mb-1">
+              <div className="px-6 pt-6 pb-5 border-b border-border-primary">
+                <div className="flex items-center gap-2 mb-2">
                   <GitBranch className="w-4 h-4 text-text-tertiary" />
                   <label htmlFor="baseBranch" className="text-sm font-medium text-text-primary">
                     Base Branch
@@ -595,15 +595,15 @@ export function CreateSessionDialog({
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-text-tertiary mt-1">
+                <p className="text-xs text-text-tertiary mt-2">
                   Remote branches will automatically track the remote for git pull/push.
                 </p>
               </div>
             ) : null}
 
             {/* 2. Pane Name (auto-populated from branch, editable) */}
-            <div className="p-6 border-b border-border-primary">
-              <label className="block text-sm font-medium text-text-primary mb-1">
+            <div className="px-6 pt-6 pb-5 border-b border-border-primary">
+              <label className="block text-sm font-medium text-text-primary mb-2">
                 Pane Name
               </label>
               <Input
@@ -620,7 +620,7 @@ export function CreateSessionDialog({
                 placeholder="Enter a name for your pane"
                 className="w-full"
               />
-              <p className="text-xs text-text-tertiary mt-1">
+              <p className="text-xs text-text-tertiary mt-2">
                 Auto-filled from branch. Edit to customize.
               </p>
             </div>
@@ -645,97 +645,103 @@ export function CreateSessionDialog({
 
             {/* Advanced Options - Collapsible */}
             {showAdvanced && (
-              <div className="px-6 pb-6 space-y-4 border-t border-border-primary pt-4">
-                {/* Start Pinned Toggle */}
-                <div className="flex items-center gap-2">
-                  <Pin className="w-4 h-4 text-text-tertiary" />
-                  <ToggleField
-                    label="Start pinned"
-                    description="Show this pane in the pinned section immediately."
-                    checked={startPinned}
-                    onChange={(checked) => {
-                      setStartPinned(checked);
-                      savePreferences({ startPinned: checked });
-                    }}
-                    size="sm"
-                  />
-                </div>
-
-                {/* Worktree Toggle */}
-                <div className="flex items-center gap-2">
-                  <GitFork className="w-4 h-4 text-text-tertiary" />
-                  <ToggleField
-                    label="Use worktree"
-                    description="Run in an isolated git worktree. Disable to run directly in the project directory."
-                    checked={useWorktree}
-                    onChange={(checked) => {
-                      setUseWorktree(checked);
-                      if (!checked) {
-                        // No worktree = no isolation, force single pane
-                        setSessionCount(1);
-                        setFormData(prev => ({ ...prev, count: 1 }));
-                        setShowSessionOptions(false);
-                      }
-                    }}
-                    size="sm"
-                  />
-                </div>
-
-                {/* Number of Panes — only available with worktree isolation */}
-                {useWorktree && <div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-text-secondary">Panes: {sessionCount}</span>
-                    {!showSessionOptions && sessionCount === 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowSessionOptions(true)}
-                        className="text-text-tertiary hover:text-text-primary p-1"
-                        title="Create multiple panes"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                    )}
-                    {(showSessionOptions || sessionCount > 1) && (
-                      <div className="flex-1 flex items-center gap-2">
-                        <input
-                          id="count"
-                          type="range"
-                          min="1"
-                          max="5"
-                          value={sessionCount}
-                          onChange={(e) => {
-                            const count = parseInt(e.target.value) || 1;
-                            setSessionCount(count);
-                            setFormData(prev => ({ ...prev, count }));
-                          }}
-                          className="flex-1"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setShowSessionOptions(false);
-                            setSessionCount(1);
-                            setFormData(prev => ({ ...prev, count: 1 }));
-                          }}
-                          className="text-text-tertiary hover:text-text-primary p-1"
-                          title="Reset to 1"
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    )}
+              <div className="px-6 pb-6 border-t border-border-primary pt-5">
+                <div className="rounded-lg border border-border-primary overflow-hidden divide-y divide-border-primary">
+                  {/* Start Pinned Toggle */}
+                  <div className="flex items-center gap-4 px-5 py-4">
+                    <Pin className="w-4 h-4 text-text-tertiary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-text-primary">Start pinned</div>
+                      <div className="text-xs text-text-secondary mt-0.5">Show this pane in the pinned section immediately.</div>
+                    </div>
+                    <Toggle
+                      checked={startPinned}
+                      onChange={(checked) => {
+                        setStartPinned(checked);
+                        savePreferences({ startPinned: checked });
+                      }}
+                      size="sm"
+                    />
                   </div>
-                  {sessionCount > 1 && (
-                    <p className="text-xs text-text-tertiary mt-1">
-                      Creating multiple panes with numbered suffixes
-                    </p>
-                  )}
-                </div>}
 
+                  {/* Worktree Toggle */}
+                  <div className="flex items-center gap-4 px-5 py-4">
+                    <GitFork className="w-4 h-4 text-text-tertiary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-text-primary">Use worktree</div>
+                      <div className="text-xs text-text-secondary mt-0.5">Run in an isolated git worktree. Disable to run directly in the project directory.</div>
+                    </div>
+                    <Toggle
+                      checked={useWorktree}
+                      onChange={(checked) => {
+                        setUseWorktree(checked);
+                        if (!checked) {
+                          setSessionCount(1);
+                          setFormData(prev => ({ ...prev, count: 1 }));
+                          setShowSessionOptions(false);
+                        }
+                      }}
+                      size="sm"
+                    />
+                  </div>
+
+                  {/* Number of Panes */}
+                  {useWorktree && (
+                    <div className="flex items-center gap-4 px-5 py-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-text-primary">Panes: {sessionCount}</span>
+                          {!showSessionOptions && sessionCount === 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setShowSessionOptions(true)}
+                              className="text-text-tertiary hover:text-text-primary p-0.5"
+                              title="Create multiple panes"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
+                        </div>
+                        {sessionCount > 1 && (
+                          <div className="text-xs text-text-secondary mt-0.5">Creating multiple panes with numbered suffixes</div>
+                        )}
+                      </div>
+                      {(showSessionOptions || sessionCount > 1) && (
+                        <div className="flex items-center gap-2 shrink-0" style={{ width: '140px' }}>
+                          <input
+                            id="count"
+                            type="range"
+                            min="1"
+                            max="5"
+                            value={sessionCount}
+                            onChange={(e) => {
+                              const count = parseInt(e.target.value) || 1;
+                              setSessionCount(count);
+                              setFormData(prev => ({ ...prev, count }));
+                            }}
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setShowSessionOptions(false);
+                              setSessionCount(1);
+                              setFormData(prev => ({ ...prev, count: 1 }));
+                            }}
+                            className="text-text-tertiary hover:text-text-primary p-0.5"
+                            title="Reset to 1"
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </form>

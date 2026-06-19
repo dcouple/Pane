@@ -343,7 +343,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
       <>
         <div
           data-testid="sidebar"
-          className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0 border-r border-border-primary"
+          className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0"
           style={{ width: '48px' }}
         >
           {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
@@ -479,7 +479,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
     <>
       <div
         data-testid="sidebar"
-        className="pane-sidebar-shell bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0 border-r border-border-primary"
+        className="pane-sidebar-shell bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0"
         style={{ width: `${width}px` }}
       >
         {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
@@ -492,7 +492,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
           onMouseDown={onResize}
         >
           {/* Visual indicator */}
-          <div className="absolute inset-0 bg-border-secondary group-hover:bg-interactive transition-colors" />
+          <div className="absolute inset-0 group-hover:bg-interactive transition-colors" />
           {/* Larger grab area */}
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
           {/* Drag indicator dots */}

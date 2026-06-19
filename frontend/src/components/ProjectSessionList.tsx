@@ -403,7 +403,7 @@ export function ProjectSessionList({
                 </button>
               </div>
 
-              {isExpanded && (
+              {isExpanded && projectSessions.length > 0 && (
                 <div className="mt-0.5">
                   {projectSessions.map((session) => (
                     <SessionRow

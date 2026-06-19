@@ -127,7 +127,7 @@ body.light-rounded {
 :root.night-owl-oled .pane-sidebar-shell,
 :root.terracotta .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
-  border: 1px solid var(--color-border-primary);
+  border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
   overflow: hidden;
   box-shadow: var(--panel-shell-shadow);
