@@ -784,6 +784,62 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('does not treat persisted terminal state as live wait readiness', async () => {
+    vi.mocked(terminalPanelManager.isTerminalInitialized).mockReturnValue(false);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(null);
+    vi.mocked(panelManager.getPanel).mockReturnValue({
+      ...terminalPanel,
+      state: {
+        ...terminalPanel.state,
+        customState: {
+          ...terminalPanel.state.customState,
+          isInitialized: true,
+          isCliReady: true,
+          scrollbackBuffer: 'persisted ready\n',
+        },
+      },
+    });
+    const registry = createRegistry();
+
+    const ready = await registry.invoke('runpane:panels:wait', [{
+      panelId: terminalPanel.id,
+      condition: 'ready',
+      timeoutMs: 1,
+      intervalMs: 1,
+    }]);
+    const initialized = await registry.invoke('runpane:panels:wait', [{
+      panelId: terminalPanel.id,
+      condition: 'initialized',
+      timeoutMs: 1,
+      intervalMs: 1,
+    }]);
+
+    expect(ready).toMatchObject({
+      ok: false,
+      condition: 'ready',
+      matched: false,
+      timedOut: true,
+      state: {
+        initialized: false,
+        isCliPanel: true,
+      },
+      screen: {
+        source: 'persistedOutput',
+        text: 'persisted ready\n',
+      },
+    });
+    expect(ready.state.isCliReady).toBeUndefined();
+    expect(initialized).toMatchObject({
+      ok: false,
+      condition: 'initialized',
+      matched: false,
+      timedOut: true,
+      state: {
+        initialized: false,
+      },
+    });
+  });
+
   it('reports Codex update prompts as blockers instead of ready', async () => {
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
       initialized: true,

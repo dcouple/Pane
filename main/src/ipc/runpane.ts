@@ -642,12 +642,13 @@ function panelStateSummary(
   const customAgentType = typeof customState.agentType === 'string' && AGENT_IDS.has(customState.agentType)
     ? customState.agentType as RunpaneAgentId
     : undefined;
+  const hasLiveTerminal = Boolean(snapshot || terminalPanelManager.isTerminalInitialized(panel.id));
 
   return {
-    initialized: Boolean(snapshot || customState.isInitialized || terminalPanelManager.isTerminalInitialized(panel.id)),
+    initialized: hasLiveTerminal,
     isAlternateScreen: snapshot?.isAlternateScreen ?? customState.isAlternateScreen,
     activityStatus: snapshot?.activityStatus,
-    isCliReady: snapshot?.isCliReady ?? customState.isCliReady,
+    isCliReady: snapshot?.isCliReady ?? (hasLiveTerminal ? customState.isCliReady : undefined),
     isCliPanel: snapshot?.isCliPanel ?? customState.isCliPanel,
     agentType: snapshot?.agentType ?? customAgentType,
     lastActivity: snapshot?.lastActivityTime ?? customState.lastActivityTime ?? toIsoString(panel.metadata.lastActiveAt),
