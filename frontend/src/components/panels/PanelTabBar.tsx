@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, ChevronDown, ChevronRight, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Cpu, RefreshCw, Globe } from 'lucide-react';
+import { Plus, X, Terminal, ChevronDown, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -11,16 +11,9 @@ import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
-import { useResourceMonitor } from '../../hooks/useResourceMonitor';
 import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
 import { PanelTabStrip } from './PanelTabStrip';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
-
-function formatMemory(mb: number): string {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  if (mb >= 1) return `${Math.round(mb)} MB`;
-  return `${Math.round(mb * 1024)} KB`;
-}
 
 // Build prompt for setting up intelligent dev command — adapts based on Worktree File Sync config
 export function buildSetupRunScriptPrompt(fileSyncEntries?: WorktreeFileSyncEntry[]): string {
@@ -94,14 +87,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const [, setFocusedDropdownIndex] = useState(-1);
   const dropdownItemsRef = useRef<(HTMLButtonElement | HTMLInputElement | null)[]>([]);
 
-  // Resource monitor state
-  const [showResourcePopover, setShowResourcePopover] = useState(false);
-  const resourceChipRef = useRef<HTMLButtonElement>(null);
-  const resourcePopoverRef = useRef<HTMLDivElement>(null);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['pane-app']));
-  const { snapshot, isLoading: resourceLoading, startActive, stopActive, refresh } = useResourceMonitor();
-  const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties>({});
-
   // Activity status moved to PanelTabStrip
 
   const customCommands = config?.customCommands ?? [];
@@ -157,49 +142,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     }).catch(() => {});
   }, [config, updateConfig]);
   
-  // Resource monitor handlers
-  const toggleResourcePopover = useCallback(() => {
-    if (showResourcePopover) {
-      setShowResourcePopover(false);
-      stopActive();
-      return;
-    }
-
-    setShowResourcePopover(true);
-    void refresh();
-    startActive();
-  }, [showResourcePopover, refresh, startActive, stopActive]);
-
-  // Popover positioning
-  useEffect(() => {
-    if (showResourcePopover && resourceChipRef.current) {
-      const rect = resourceChipRef.current.getBoundingClientRect();
-      setPopoverStyle({
-        position: 'fixed',
-        top: rect.bottom + 8,
-        right: Math.max(8, window.innerWidth - rect.right),
-        zIndex: 10000,
-      });
-    }
-  }, [showResourcePopover]);
-
-  // Click-outside handler for resource popover
-  useEffect(() => {
-    if (!showResourcePopover) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (
-        resourceChipRef.current && !resourceChipRef.current.contains(target) &&
-        resourcePopoverRef.current && !resourcePopoverRef.current.contains(target)
-      ) {
-        setShowResourcePopover(false);
-        stopActive();
-      }
-    };
-    const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
-    return () => { clearTimeout(timer); document.removeEventListener('mousedown', handleClickOutside); };
-  }, [showResourcePopover, stopActive]);
-
   // Add Tool dropdown positioning
   useEffect(() => {
     if (!showDropdown || !dropdownRef.current) return;
@@ -223,35 +165,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       window.removeEventListener('scroll', updatePosition, true);
     };
   }, [showDropdown]);
-
-  // Escape handler for resource popover
-  useEffect(() => {
-    if (!showResourcePopover) return;
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setShowResourcePopover(false); stopActive(); }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [showResourcePopover, stopActive]);
-
-  const toggleSection = useCallback((id: string) => {
-    setExpandedSections(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleRefresh = useCallback(() => { void refresh(); }, [refresh]);
-
-  const electronTotalCpu = useMemo(() =>
-    snapshot?.electronProcesses.reduce((sum, p) => sum + p.cpuPercent, 0) ?? 0
-  , [snapshot]);
-
-  const electronTotalMem = useMemo(() =>
-    snapshot?.electronProcesses.reduce((sum, p) => sum + p.memoryMB, 0) ?? 0
-  , [snapshot]);
 
   // Memoize event handlers to prevent unnecessary re-renders
   const handlePanelClick = useCallback((panel: ToolPanel) => {
@@ -735,32 +648,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
         {/* Right side actions */}
         <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          {/* Resource monitor chip */}
-          <button
-            ref={resourceChipRef}
-            onClick={toggleResourcePopover}
-            className={cn(
-              "inline-flex items-center gap-1.5 h-[var(--panel-tab-height)] px-2.5 rounded text-xs font-mono transition-colors flex-shrink-0",
-              showResourcePopover
-                ? "text-text-primary bg-surface-hover"
-                : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
-            )}
-            title="Resource Usage"
-          >
-            <Cpu className="w-3.5 h-3.5" />
-            {snapshot && (
-              <>
-                {snapshot.cpuReady && (
-                  <>
-                    <span>{snapshot.totalCpuPercent.toFixed(0)}%</span>
-                    <span className="text-text-quaternary">|</span>
-                  </>
-                )}
-                <span>{formatMemory(snapshot.totalMemoryMB)}</span>
-              </>
-            )}
-          </button>
-
           {/* Run Dev Server button */}
           {session && (
             <Tooltip content={
@@ -806,117 +693,6 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       </div>
     </div>
 
-    {/* Resource monitor popover */}
-    {showResourcePopover && createPortal(
-      <div
-        ref={resourcePopoverRef}
-        className="bg-surface-primary border border-border-subtle/60 rounded-lg shadow-dropdown-elevated backdrop-blur-sm animate-dropdown-enter overflow-hidden w-[320px]"
-        style={popoverStyle}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border-secondary">
-          <span className="text-[10px] font-semibold text-text-tertiary tracking-wider uppercase">
-            Resource Usage
-          </span>
-          <button
-            onClick={handleRefresh}
-            className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
-            disabled={resourceLoading}
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", resourceLoading && "animate-spin")} />
-          </button>
-        </div>
-
-        {!snapshot ? (
-          <div className="px-3 py-4 text-sm text-text-secondary">
-            {resourceLoading ? 'Loading resource usage...' : 'No resource snapshot yet.'}
-          </div>
-        ) : (
-          <>
-            {/* Summary */}
-            <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
-              <span className="text-sm text-text-secondary">
-                CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '—'}</strong>
-              </span>
-              <span className="text-sm text-text-secondary">
-                Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
-              </span>
-            </div>
-
-            {/* Scrollable content */}
-            <div className="max-h-[400px] overflow-y-auto">
-              {/* Pane App section */}
-              <div className="border-b border-border-secondary">
-                <button
-                  onClick={() => toggleSection('pane-app')}
-                  className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-                >
-                  <div className="flex items-center gap-1.5">
-                    {expandedSections.has('pane-app')
-                      ? <ChevronDown className="w-3 h-3 text-text-quaternary" />
-                      : <ChevronRight className="w-3 h-3 text-text-quaternary" />}
-                    <span className="text-sm font-medium text-text-primary">Pane App</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                    <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '—'}</span>
-                    <span>{formatMemory(electronTotalMem)}</span>
-                  </div>
-                </button>
-                {expandedSections.has('pane-app') && snapshot.electronProcesses.map(p => (
-                  <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                    <span className="text-xs text-text-secondary">{p.label}</span>
-                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                      <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '—'}</span>
-                      <span>{formatMemory(p.memoryMB)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Per-session sections */}
-              {snapshot.sessions.map(sess => (
-                <div
-                  key={sess.sessionId}
-                  className={cn(
-                    "border-b border-border-secondary",
-                    sess.sessionId === session?.id && "bg-interactive/5"
-                  )}
-                >
-                  <button
-                    onClick={() => toggleSection(sess.sessionId)}
-                    className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {expandedSections.has(sess.sessionId)
-                        ? <ChevronDown className="w-3 h-3 text-text-quaternary flex-shrink-0" />
-                        : <ChevronRight className="w-3 h-3 text-text-quaternary flex-shrink-0" />}
-                      {sess.sessionId === session?.id && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-interactive flex-shrink-0" />
-                      )}
-                      <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                      <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '—'}</span>
-                      <span>{formatMemory(sess.totalMemoryMB)}</span>
-                    </div>
-                  </button>
-                  {expandedSections.has(sess.sessionId) && sess.children.map(child => (
-                    <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                      <span className="text-xs text-text-secondary truncate">{child.name}</span>
-                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                        <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '—'}</span>
-                        <span>{formatMemory(child.memoryMB)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </div>,
-      document.body
-    )}
     </>
   );
 });

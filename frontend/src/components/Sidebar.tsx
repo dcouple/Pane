@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -20,6 +21,7 @@ import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
+import { useResourceMonitor } from '../hooks/useResourceMonitor';
 import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
@@ -59,6 +61,12 @@ interface SidebarProps {
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 const REMOTE_DESKTOP_TOOLTIP = 'Use Remote Desktop to access the host device for Electron apps, native windows, and UI running on the remote machine.';
 
+function formatMemory(mb: number): string {
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  if (mb >= 1) return `${Math.round(mb)} MB`;
+  return `${Math.round(mb * 1024)} KB`;
+}
+
 const HelpCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -78,6 +86,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
   const [sessionSortAscending, setSessionSortAscending] = useState<boolean>(true); // Default to ascending (newest at bottom)
   const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
   const [remoteHostState, setRemoteHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
+  const resourceMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const resourcePopoverRef = useRef<HTMLDivElement>(null);
+  const [showResourcePopover, setShowResourcePopover] = useState(false);
+  const [resourcePopoverStyle, setResourcePopoverStyle] = useState<React.CSSProperties>({});
+  const [expandedResourceSections, setExpandedResourceSections] = useState<Set<string>>(new Set(['pane-app']));
+  const { snapshot, isLoading: resourceLoading, startActive, stopActive, refresh } = useResourceMonitor();
 
   useEffect(() => {
     // Fetch version info and UI state on component mount
@@ -166,6 +180,94 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
       console.error('Failed to save session sort order:', error);
     }
   };
+
+  const openResourcePopover = useCallback(() => {
+    setShowResourcePopover(true);
+    void refresh();
+    startActive();
+  }, [refresh, startActive]);
+
+  const closeResourcePopover = useCallback(() => {
+    setShowResourcePopover(false);
+    stopActive();
+  }, [stopActive]);
+
+  const toggleResourceSection = useCallback((id: string) => {
+    setExpandedResourceSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleResourceRefresh = useCallback(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!showResourcePopover || !resourceMenuButtonRef.current) return;
+
+    const updatePosition = () => {
+      if (!resourceMenuButtonRef.current) return;
+      const rect = resourceMenuButtonRef.current.getBoundingClientRect();
+      setResourcePopoverStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        right: Math.max(8, window.innerWidth - rect.right),
+        zIndex: 10000,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [showResourcePopover]);
+
+  useEffect(() => {
+    if (!showResourcePopover) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        resourceMenuButtonRef.current && !resourceMenuButtonRef.current.contains(target) &&
+        resourcePopoverRef.current && !resourcePopoverRef.current.contains(target)
+      ) {
+        closeResourcePopover();
+      }
+    };
+
+    const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showResourcePopover, closeResourcePopover]);
+
+  useEffect(() => {
+    if (!showResourcePopover) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeResourcePopover();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showResourcePopover, closeResourcePopover]);
+
+  const electronTotalCpu = useMemo(
+    () => snapshot?.electronProcesses.reduce((sum, p) => sum + p.cpuPercent, 0) ?? 0,
+    [snapshot],
+  );
+
+  const electronTotalMem = useMemo(
+    () => snapshot?.electronProcesses.reduce((sum, p) => sum + p.memoryMB, 0) ?? 0,
+    [snapshot],
+  );
 
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -421,6 +523,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
             <Dropdown
               trigger={
                 <button
+                  ref={resourceMenuButtonRef}
                   className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
                   aria-label="Sidebar menu"
                 >
@@ -439,6 +542,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
                   label: 'Settings',
                   icon: SettingsIcon,
                   onClick: onSettingsClick
+                },
+                {
+                  id: 'resources',
+                  label: 'Resource Usage',
+                  icon: Cpu,
+                  onClick: openResourcePopover
                 },
                 {
                   id: 'sort',
@@ -515,6 +624,103 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
     </div>
 
       <Settings isOpen={isSettingsOpen} onClose={onSettingsClose} initialSection={settingsInitialSection} />
+      {showResourcePopover && createPortal(
+        <div
+          ref={resourcePopoverRef}
+          className="bg-surface-primary border border-border-subtle/60 rounded-lg shadow-dropdown-elevated backdrop-blur-sm animate-dropdown-enter overflow-hidden w-[320px]"
+          style={resourcePopoverStyle}
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-border-secondary">
+            <span className="text-[10px] font-semibold text-text-tertiary tracking-wider uppercase">
+              Resource Usage
+            </span>
+            <button
+              onClick={handleResourceRefresh}
+              className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
+              disabled={resourceLoading}
+              aria-label="Refresh resource usage"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${resourceLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {!snapshot ? (
+            <div className="px-3 py-4 text-sm text-text-secondary">
+              {resourceLoading ? 'Loading resource usage...' : 'No resource snapshot yet.'}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
+                <span className="text-sm text-text-secondary">
+                  CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '-'}</strong>
+                </span>
+                <span className="text-sm text-text-secondary">
+                  Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
+                </span>
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto">
+                <div className="border-b border-border-secondary">
+                  <button
+                    onClick={() => toggleResourceSection('pane-app')}
+                    className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      {expandedResourceSections.has('pane-app')
+                        ? <ChevronDown className="w-3 h-3 text-text-quaternary" />
+                        : <ChevronRight className="w-3 h-3 text-text-quaternary" />}
+                      <span className="text-sm font-medium text-text-primary">Pane App</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
+                      <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '-'}</span>
+                      <span>{formatMemory(electronTotalMem)}</span>
+                    </div>
+                  </button>
+                  {expandedResourceSections.has('pane-app') && snapshot.electronProcesses.map(p => (
+                    <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
+                      <span className="text-xs text-text-secondary">{p.label}</span>
+                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
+                        <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '-'}</span>
+                        <span>{formatMemory(p.memoryMB)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {snapshot.sessions.map(sess => (
+                  <div key={sess.sessionId} className="border-b border-border-secondary">
+                    <button
+                      onClick={() => toggleResourceSection(sess.sessionId)}
+                      className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {expandedResourceSections.has(sess.sessionId)
+                          ? <ChevronDown className="w-3 h-3 text-text-quaternary flex-shrink-0" />
+                          : <ChevronRight className="w-3 h-3 text-text-quaternary flex-shrink-0" />}
+                        <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
+                        <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '-'}</span>
+                        <span>{formatMemory(sess.totalMemoryMB)}</span>
+                      </div>
+                    </button>
+                    {expandedResourceSections.has(sess.sessionId) && sess.children.map(child => (
+                      <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
+                        <span className="text-xs text-text-secondary truncate">{child.name}</span>
+                        <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
+                          <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '-'}</span>
+                          <span>{formatMemory(child.memoryMB)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
     </>
   );
 }
