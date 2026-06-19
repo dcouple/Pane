@@ -220,6 +220,7 @@ def is_interactive_shell() -> bool:
 def run_interactive_wizard(telemetry_context: WrapperTelemetryContext) -> int:
     print("Pane setup")
     print("Choose what this machine should do. You can rerun setup any time.")
+    print("Commands: runpane help, runpane doctor, runpane doctor --json, runpane agent-context --json")
     print()
     print("1) Install Pane desktop app on this machine")
     print("2) Set up this machine as a remote host")
@@ -542,6 +543,7 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
 
 def is_runpane_local_command(command: str) -> bool:
     return command in {
+        "doctor",
         "repos list",
         "repos add",
         "panes list",

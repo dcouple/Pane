@@ -98,6 +98,7 @@ runpane install daemon
 runpane update
 runpane version
 runpane doctor
+runpane doctor --json
 runpane agent-context
 runpane agent-context --command "panes create" --json
 runpane repos list --json
@@ -112,7 +113,7 @@ runpane help
 runpane <command> --help
 ```
 
-`runpane` with no arguments and `runpane setup` open an interactive wizard when stdin and stdout are TTYs. In non-interactive shells or CI, both forms must print help and exit successfully instead of waiting for input.
+`runpane` with no arguments and `runpane setup` open an interactive wizard when stdin and stdout are TTYs. In non-interactive shells or CI, both forms must print help, common commands, and agent discovery hints, then exit successfully instead of waiting for input.
 
 `runpane install` is an alias for `runpane install client`.
 
@@ -126,7 +127,7 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 `runpane version` prints the wrapper package version, the installed Pane version when detectable, and the latest GitHub release version when reachable.
 
-`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.
+`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state.
 
 `runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.
 
@@ -154,7 +155,13 @@ When running from WSL while Pane is installed on Windows, the Linux wrapper may 
 
 Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.
 
-Brief discovery command:
+Doctor-first environment discovery:
+
+```bash
+runpane doctor --json
+```
+
+Brief CLI context:
 
 ```bash
 runpane agent-context
@@ -169,6 +176,7 @@ runpane agent-context --command <command> [--json]
 
 Brief tools:
 
+- `doctor`: Report wrapper, platform, installed Pane, and daemon reachability before an agent mutates Pane state.
 - `agent-context`: Print token-efficient Pane command context for coding agents.
 - `agents doctor`: Check whether Codex or Claude is available in the repo environment Pane will use.
 - `repos list`: List repositories saved in the running Pane app.
@@ -189,11 +197,15 @@ Managed AGENTS.md block body:
 
 The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.
 
-Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command "panels wait"` or another command name for detailed schema only when needed.
+Start with `runpane doctor --json` before taking Pane actions. Use it to understand wrapper/runtime details, daemon reachability, and the next safe commands.
+
+Use `runpane agent-context --json` for full Pane CLI context. Use `runpane agent-context --command "panels wait" --json` or another command name for detailed schema only when needed.
 
 Default to context-safe validation: after creating panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.
 
 Common commands:
+- `runpane doctor --json`
+- `runpane agent-context --json`
 - `runpane repos list --json`
 - `runpane repos add --path <repo> --yes --json`
 - `runpane agents doctor --agent codex --repo active --json`
@@ -204,7 +216,7 @@ Common commands:
 - `runpane panels submit --panel <panel-id> --text "<answer>" --yes --json`
 - `runpane panels input --panel <panel-id> --input-file <path|-> --yes --json`
 
-WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use.
+WSL note: if `runpane doctor --json` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use.
 ```
 
 ## Wrapper Flags
@@ -255,7 +267,7 @@ These flags are consumed by local daemon-control commands:
 --wait-ready
 ```
 
-`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.
+`runpane doctor --json`, `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.
 
 ## Daemon Passthrough Flags
 

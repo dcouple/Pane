@@ -348,7 +348,8 @@ function renderMarkdown(contract) {
 
   lines.push('## Agent Context', '');
   lines.push(contract.agentContext.brief.summary, '');
-  lines.push('Brief discovery command:', '', fenced(['runpane agent-context', 'runpane agent-context --json']), '');
+  lines.push('Doctor-first environment discovery:', '', fenced(['runpane doctor --json']), '');
+  lines.push('Brief CLI context:', '', fenced(['runpane agent-context', 'runpane agent-context --json']), '');
   lines.push('Detailed command discovery:', '', fenced([contract.agentContext.brief.detailCommand]), '');
   lines.push('Brief tools:', '');
   for (const tool of contract.agentContext.brief.tools) {

@@ -24,6 +24,27 @@ export interface RunpaneRepoListResult {
   repos: RunpaneRepoSummary[];
 }
 
+export interface RunpaneDoctorResult {
+  ok: true;
+  app: {
+    version: string;
+    isPackaged: boolean;
+    platform: string;
+    electronVersion?: string;
+    nodeVersion?: string;
+  };
+  daemon: {
+    channels: string[];
+  };
+  repos: {
+    count: number;
+    active?: RunpaneRepoSummary;
+  };
+  agentContext: {
+    recommendedFirstCommands: string[];
+  };
+}
+
 export interface RunpaneRepoAddRequest {
   path: string;
   name?: string;

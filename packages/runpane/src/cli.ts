@@ -185,6 +185,7 @@ async function runInteractiveWizard(telemetryContext: WrapperTelemetryContext): 
   try {
     console.log('Pane setup');
     console.log('Choose what this machine should do. You can rerun setup any time.');
+    console.log('Commands: runpane help, runpane doctor, runpane doctor --json, runpane agent-context --json');
     console.log('');
     console.log('1) Install Pane desktop app on this machine');
     console.log('2) Set up this machine as a remote host');

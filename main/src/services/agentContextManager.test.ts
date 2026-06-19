@@ -43,6 +43,7 @@ describe('agentContextManager', () => {
     expect(result.filePath).toBe(path.join(projectPath, 'AGENTS.md'));
     const content = await fs.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(content).toContain(PANE_AGENT_CONTEXT_START);
+    expect(content).toContain('runpane doctor --json');
     expect(content).toContain('runpane agent-context');
     expect(content).toContain('Default to context-safe validation');
     expect(content).toContain('Prefer `runpane panels submit` for normal text plus Enter');

@@ -40,7 +40,7 @@ type PaneDaemonFrame =
   | PaneDaemonErrorResponseFrame
   | PaneDaemonEventFrame;
 
-interface PaneDaemonEndpoint {
+export interface PaneDaemonEndpoint {
   transport: 'pipe' | 'unix';
   path: string;
 }

@@ -17,6 +17,7 @@ import type {
   RunpaneAgentId,
   RunpaneAgentDoctorRequest,
   RunpaneAgentDoctorResult,
+  RunpaneDoctorResult,
   RunpanePaneListRequest,
   RunpanePaneListResult,
   RunpanePaneCreateFailureItem,
@@ -52,6 +53,7 @@ import type {
 } from '../../../shared/types/runpaneOrchestration';
 
 const RUNPANE_CHANNELS = [
+  'runpane:doctor',
   'runpane:repos:list',
   'runpane:repos:add',
   'runpane:panes:list',
@@ -78,6 +80,38 @@ export function registerRunpaneHandlers(
   commandRegistry: PaneCommandRegistry,
 ): void {
   const { databaseService, sessionManager, taskQueue, configManager } = services;
+
+  commandRegistry.register('runpane:doctor', async (): Promise<RunpaneDoctorResult> => {
+    return withRunpaneAction(services, 'doctor', {}, () => {
+      const repos = databaseService.getAllProjects().map((project) =>
+        projectToRepoSummary(project, sessionManager.getSessionsForProject(project.id).length)
+      );
+      return {
+        ok: true,
+        app: {
+          version: services.app.getVersion(),
+          isPackaged: services.app.isPackaged,
+          platform: process.platform,
+          electronVersion: process.versions.electron,
+          nodeVersion: process.versions.node,
+        },
+        daemon: {
+          channels: [...runpaneDaemonChannels()],
+        },
+        repos: {
+          count: repos.length,
+          active: repos.find(repo => repo.active),
+        },
+        agentContext: {
+          recommendedFirstCommands: [
+            'runpane doctor --json',
+            'runpane agent-context --json',
+            'runpane agent-context --command "<command>" --json',
+          ],
+        },
+      };
+    }, result => ({ resultCount: result.repos.count }));
+  });
 
   commandRegistry.register('runpane:repos:list', async (): Promise<RunpaneRepoListResult> => {
     return withRunpaneAction(services, 'repos:list', {}, () => {

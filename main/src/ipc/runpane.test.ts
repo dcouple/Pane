@@ -74,7 +74,10 @@ const terminalPanel: ToolPanel = {
 
 function createServices(overrides: Partial<AppServices> = {}): AppServices {
   return {
-    app: {} as AppServices['app'],
+    app: {
+      getVersion: vi.fn(() => '2.3.8'),
+      isPackaged: false,
+    } as AppServices['app'],
     getMainWindow: () => null,
     databaseService: {
       getAllProjects: vi.fn(() => [project]),
@@ -178,6 +181,38 @@ describe('runpane IPC handlers', () => {
         fs.rmSync(dir, { recursive: true, force: true });
       }
     }
+  });
+
+  it('reports top-level runpane doctor health', async () => {
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:doctor');
+
+    expect(result).toMatchObject({
+      ok: true,
+      app: {
+        version: '2.3.8',
+        isPackaged: false,
+        platform: process.platform,
+      },
+      repos: {
+        count: 1,
+        active: {
+          id: project.id,
+          name: project.name,
+          path: project.path,
+          active: true,
+          sessionCount: 1,
+        },
+      },
+      agentContext: {
+        recommendedFirstCommands: expect.arrayContaining([
+          'runpane doctor --json',
+          'runpane agent-context --json',
+        ]),
+      },
+    });
+    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
   });
 
   it('lists saved Pane repositories with session counts', async () => {

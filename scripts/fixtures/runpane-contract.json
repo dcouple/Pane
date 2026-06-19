@@ -62,6 +62,12 @@
       "--verbose"
     ],
     [
+      "doctor",
+      "--json",
+      "--pane-dir",
+      "/tmp/pane"
+    ],
+    [
       "agent-context"
     ],
     [
@@ -224,7 +230,11 @@
       "runpane agents doctor",
       "runpane panels screen",
       "runpane panels submit",
-      "runpane panels wait"
+      "runpane panels wait",
+      "runpane doctor --json",
+      "runpane agent-context --json",
+      "Agent discovery:",
+      "Common commands:"
     ],
     "npmIncludes": [
       "pnpm dlx runpane@latest",

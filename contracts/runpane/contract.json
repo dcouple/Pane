@@ -107,9 +107,12 @@
     },
     {
       "name": "doctor",
-      "summary": "Run platform, release, installed Pane, and remote setup diagnostics.",
+      "summary": "Run platform, release, installed Pane, daemon reachability, and remote setup diagnostics.",
       "usage": [
-        "runpane doctor"
+        "runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]"
+      ],
+      "jsonSchemas": [
+        "doctorResult"
       ]
     },
     {
@@ -497,7 +500,17 @@
         "  npx --yes runpane@latest install daemon --label \"My Server\"",
         "  pnpm dlx runpane@latest",
         "",
-        "Run \"runpane agent-context\" when an agent needs Pane command context.",
+        "Common commands:",
+        "  runpane help",
+        "  runpane setup",
+        "  runpane install",
+        "  runpane doctor",
+        "",
+        "Agent discovery:",
+        "  runpane doctor --json",
+        "  runpane agent-context --json",
+        "  runpane agent-context --command \"<command>\" --json",
+        "",
         "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
@@ -564,7 +577,20 @@
       ],
       "doctor": [
         "Usage:",
-        "  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]"
+        "  runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]",
+        "",
+        "Checks wrapper/runtime details, release metadata, installed Pane detection, and Pane daemon reachability.",
+        "",
+        "Options:",
+        "  --json                         Print a machine-readable environment report",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --pane-path <path>             Inspect a specific Pane executable",
+        "  --format <format>              Release artifact format to inspect",
+        "  --verbose                      Print extra diagnostics",
+        "",
+        "Agent discovery:",
+        "  runpane doctor --json",
+        "  runpane agent-context --json"
       ],
       "repos list": [
         "Usage:",
@@ -769,7 +795,17 @@
         "  pipx run runpane install daemon --label \"My Server\"",
         "  uvx runpane@latest",
         "",
-        "Run \"runpane agent-context\" when an agent needs Pane command context.",
+        "Common commands:",
+        "  runpane help",
+        "  runpane setup",
+        "  runpane install",
+        "  runpane doctor",
+        "",
+        "Agent discovery:",
+        "  runpane doctor --json",
+        "  runpane agent-context --json",
+        "  runpane agent-context --command \"<command>\" --json",
+        "",
         "Run \"runpane help panes create\" for pane orchestration options."
       ],
       "install": [
@@ -825,7 +861,20 @@
       ],
       "doctor": [
         "Usage:",
-        "  runpane doctor [--pane-path <path>] [--format <format>] [--verbose]"
+        "  runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]",
+        "",
+        "Checks wrapper/runtime details, release metadata, installed Pane detection, and Pane daemon reachability.",
+        "",
+        "Options:",
+        "  --json",
+        "  --pane-dir <path>",
+        "  --pane-path <path>",
+        "  --format <format>",
+        "  --verbose",
+        "",
+        "Agent discovery:",
+        "  runpane doctor --json",
+        "  runpane agent-context --json"
       ],
       "repos list": [
         "Usage:",
@@ -1061,6 +1110,7 @@
       "runpane update",
       "runpane version",
       "runpane doctor",
+      "runpane doctor --json",
       "runpane agent-context",
       "runpane agent-context --command \"panes create\" --json",
       "runpane repos list --json",
@@ -1075,14 +1125,14 @@
       "runpane <command> --help"
     ],
     "commandDescriptions": [
-      "`runpane` with no arguments and `runpane setup` open an interactive wizard when stdin and stdout are TTYs. In non-interactive shells or CI, both forms must print help and exit successfully instead of waiting for input.",
+      "`runpane` with no arguments and `runpane setup` open an interactive wizard when stdin and stdout are TTYs. In non-interactive shells or CI, both forms must print help, common commands, and agent discovery hints, then exit successfully instead of waiting for input.",
       "`runpane install` is an alias for `runpane install client`.",
       "`runpane install client` downloads the selected Pane desktop artifact and installs, opens, or launches it for the current platform.",
       "`runpane install daemon` downloads or installs Pane, resolves a stable Pane executable path, and spawns `<pane executable> --remote-setup <forwarded remote setup args>`.",
       "The wrapper must stream Pane stdout/stderr without reformatting because `pane --remote-setup` prints the one-time `pane-remote://...` connection code.",
       "`runpane update` uses the same release resolution and installer path as `install client`.",
       "`runpane version` prints the wrapper package version, the installed Pane version when detectable, and the latest GitHub release version when reachable.",
-      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, and remote-daemon hints.",
+      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state.",
       "`runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.",
       "`runpane agent-context --command \"panes create\"` prints the detailed definition for one command. Add `--json` for machine-readable output.",
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
@@ -1096,7 +1146,7 @@
       "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
-    "localControlFlagNote": "`runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
+    "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -1174,6 +1224,12 @@
         "--format",
         "zip",
         "--verbose"
+      ],
+      [
+        "doctor",
+        "--json",
+        "--pane-dir",
+        "/tmp/pane"
       ],
       [
         "agent-context"
@@ -1337,7 +1393,11 @@
       "runpane agents doctor",
       "runpane panels screen",
       "runpane panels submit",
-      "runpane panels wait"
+      "runpane panels wait",
+      "runpane doctor --json",
+      "runpane agent-context --json",
+      "Agent discovery:",
+      "Common commands:"
     ],
     "npmHelpIncludes": [
       "pnpm dlx runpane@latest",
@@ -1382,6 +1442,168 @@
             }
           },
           "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "doctorResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "source",
+        "wrapper",
+        "release",
+        "installedPane",
+        "daemon",
+        "nextCommands"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "npm",
+            "pip"
+          ]
+        },
+        "wrapper": {
+          "type": "object",
+          "required": [
+            "runtime",
+            "version",
+            "paneDir",
+            "endpoint"
+          ],
+          "properties": {
+            "runtime": {
+              "enum": [
+                "node",
+                "python"
+              ]
+            },
+            "version": {
+              "type": "string"
+            },
+            "paneDir": {
+              "type": "string"
+            },
+            "endpoint": {
+              "type": "object",
+              "required": [
+                "transport",
+                "path"
+              ],
+              "properties": {
+                "transport": {
+                  "enum": [
+                    "pipe",
+                    "unix"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "platform": {
+          "type": "object",
+          "properties": {
+            "os": {
+              "type": "string"
+            },
+            "arch": {
+              "type": "string"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "release": {
+          "type": "object",
+          "required": [
+            "ok"
+          ],
+          "properties": {
+            "ok": {
+              "type": "boolean"
+            },
+            "error": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": true
+        },
+        "installedPane": {
+          "type": "object",
+          "required": [
+            "found"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "daemon": {
+          "type": "object",
+          "required": [
+            "reachable",
+            "endpoint"
+          ],
+          "properties": {
+            "reachable": {
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "object",
+              "required": [
+                "transport",
+                "path"
+              ],
+              "properties": {
+                "transport": {
+                  "enum": [
+                    "pipe",
+                    "unix"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "result": {
+              "type": "object"
+            },
+            "error": {
+              "type": "string"
+            },
+            "nextCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "nextCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false
@@ -2549,18 +2771,28 @@
       "title": "Pane agent context",
       "summary": "Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.",
       "rules": [
-        "Start with `runpane repos list --json` to find the saved repository when unsure.",
-        "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
+        "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
+        "Use `runpane agent-context --json` for the full agent-facing CLI context, or `runpane agent-context --command <command> --json` for one detailed command definition.",
+        "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
+        "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`.",
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
         "Use `runpane agents doctor --agent <codex|claude> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
         "Use `runpane panes create --wait-ready` to create panes and validate initial terminal readiness in one call.",
         "Use `runpane panels screen` for compact current state, `panels wait` for readiness/text checks, and `panels submit` for ordinary Enter-submitted input.",
         "Use `runpane panels input` only when exact bytes are required, such as Ctrl-C or handcrafted terminal input.",
-        "After creating panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success.",
-        "Use `runpane agent-context --command <command>` for detailed command definitions only when needed."
+        "After creating panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success."
       ],
       "detailCommand": "runpane agent-context --command <command> [--json]",
       "tools": [
+        {
+          "name": "doctor",
+          "summary": "Report wrapper, platform, installed Pane, and daemon reachability before an agent mutates Pane state.",
+          "arguments": [
+            "--json",
+            "--pane-dir <path>",
+            "--pane-path <path>"
+          ]
+        },
         {
           "name": "agent-context",
           "summary": "Print token-efficient Pane command context for coding agents.",
@@ -2824,16 +3056,33 @@
       },
       "doctor": {
         "name": "doctor",
-        "summary": "Run platform, release, installed Pane, and remote setup diagnostics.",
-        "details": "Use this when runpane install/update behavior needs environment diagnostics.",
+        "summary": "Run platform, release, installed Pane, daemon reachability, and remote setup diagnostics.",
+        "details": "Use this first when an agent needs to understand whether Pane is installed, which wrapper/runtime is running, what daemon endpoint is expected, and whether the running Pane app is reachable. JSON mode should return a report even when the daemon is unreachable.",
         "requiresPaneDaemon": false,
         "mutates": false,
         "arguments": [
           {
+            "name": "--json",
+            "required": false,
+            "description": "Print a machine-readable environment report."
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Connect to a specific Pane data directory."
+          },
+          {
             "name": "--pane-path",
             "value": "<path>",
             "required": false,
-            "description": "Use an existing Pane executable for diagnostics."
+            "description": "Inspect a specific Pane executable."
+          },
+          {
+            "name": "--format",
+            "value": "<format>",
+            "required": false,
+            "description": "Release artifact format to inspect."
           },
           {
             "name": "--verbose",
@@ -2842,10 +3091,17 @@
           }
         ],
         "examples": [
-          "runpane doctor",
-          "runpane doctor --verbose"
+          "runpane doctor --json",
+          "runpane doctor"
         ],
-        "notes": []
+        "jsonSchemas": [
+          "doctorResult"
+        ],
+        "notes": [
+          "Agents should run `runpane doctor --json` before mutating Pane state.",
+          "The JSON report includes daemon reachability as data; an unreachable daemon is not a reason to skip the rest of the report.",
+          "Use `runpane agent-context --json` after doctor when full CLI context is needed."
+        ]
       },
       "agent-context": {
         "name": "agent-context",
@@ -3441,11 +3697,15 @@
       "",
       "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.",
       "",
-      "Use `runpane agent-context` for a brief Pane command schema. Use `runpane agent-context --command \"panels wait\"` or another command name for detailed schema only when needed.",
+      "Start with `runpane doctor --json` before taking Pane actions. Use it to understand wrapper/runtime details, daemon reachability, and the next safe commands.",
+      "",
+      "Use `runpane agent-context --json` for full Pane CLI context. Use `runpane agent-context --command \"panels wait\" --json` or another command name for detailed schema only when needed.",
       "",
       "Default to context-safe validation: after creating panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.",
       "",
       "Common commands:",
+      "- `runpane doctor --json`",
+      "- `runpane agent-context --json`",
       "- `runpane repos list --json`",
       "- `runpane repos add --path <repo> --yes --json`",
       "- `runpane agents doctor --agent codex --repo active --json`",
@@ -3456,7 +3716,7 @@
       "- `runpane panels submit --panel <panel-id> --text \"<answer>\" --yes --json`",
       "- `runpane panels input --panel <panel-id> --input-file <path|-> --yes --json`",
       "",
-      "WSL note: if `runpane repos list` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use."
+      "WSL note: if `runpane doctor --json` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use."
     ]
   }
 }

@@ -360,7 +360,8 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
 }
 
 function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
-  return command === 'repos list'
+  return command === 'doctor'
+    || command === 'repos list'
     || command === 'repos add'
     || command === 'panes list'
     || command === 'panes create'

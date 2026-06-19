@@ -712,6 +712,8 @@ function compareAgentContextParity() {
   const pyBrief = JSON.parse(runPython(['agent-context', '--json']));
   assert.deepStrictEqual(pyBrief, nodeBrief);
   assert.strictEqual(nodeBrief.mode, 'brief');
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('runpane doctor --json')));
+  assert.ok(nodeBrief.tools.some((tool) => tool.name === 'doctor'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes create'));
 
   const nodeDetail = JSON.parse(runNode(['agent-context', '--command', 'panes create', '--json']));
@@ -742,6 +744,11 @@ function checkNoArgsAndSetupFallback() {
   for (const output of outputs) {
     assertIncludes(output, 'Usage:');
     assertIncludes(output, 'runpane setup');
+    assertIncludes(output, 'runpane help');
+    assertIncludes(output, 'runpane install');
+    assertIncludes(output, 'runpane doctor --json');
+    assertIncludes(output, 'runpane agent-context --json');
+    assertIncludes(output, 'Agent discovery:');
     assertIncludes(output, 'Quick start:');
   }
 }
