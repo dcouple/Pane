@@ -18,6 +18,7 @@ import {
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 
 const PANE_CHAT_TITLE = 'Pane Chat';
+const PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION = 2;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isValidUuid(value: unknown): value is string {
@@ -115,6 +116,7 @@ export class PaneChatManager {
     const shouldResetClaudeLaunch = agent === 'claude' && (
       !isValidUuid(previousCustomState?.agentSessionId) ||
       previousCustomState?.initialInputMode !== 'argument' ||
+      previousCustomState?.initialInputDeliveryVersion !== PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION ||
       (previousCustomState?.hasClaudeSessionId === true && !previousCustomState.initialInputSentAt)
     );
     const nextCustomState: TerminalPanelState = {
@@ -126,6 +128,12 @@ export class PaneChatManager {
 
     if (shouldResetClaudeLaunch) {
       nextCustomState.hasClaudeSessionId = undefined;
+      nextCustomState.wasInterrupted = undefined;
+      nextCustomState.scrollbackBuffer = '';
+      nextCustomState.alternateScreenBuffer = '';
+      nextCustomState.serializedBuffer = undefined;
+      nextCustomState.lastActiveCommand = undefined;
+      nextCustomState.isInitialized = false;
     }
 
     const nextState = {
@@ -148,6 +156,7 @@ export class PaneChatManager {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
       initialInput: this.buildInitialInput(guidePath),
       initialInputMode: agent === 'claude' ? 'argument' : 'stdin',
+      initialInputDeliveryVersion: agent === 'claude' ? PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION : undefined,
       agentType: agent,
       ...(agentSessionId ? { agentSessionId } : {}),
       isCliPanel: true,
@@ -178,6 +187,7 @@ export class PaneChatManager {
     return agent === 'claude' && (
       !isValidUuid(customState?.agentSessionId) ||
       customState?.initialInputMode !== 'argument' ||
+      customState?.initialInputDeliveryVersion !== PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION ||
       (customState?.hasClaudeSessionId === true && !customState.initialInputSentAt)
     );
   }
