@@ -71,6 +71,7 @@ export const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'folders:',
   'logs:',
   'panels:',
+  'pane-chat:',
   'projects:',
   'prompts:',
   'resource-monitor:',

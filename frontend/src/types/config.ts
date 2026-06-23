@@ -1,5 +1,6 @@
 import type { CloudVmConfig } from '../../../shared/types/cloud';
 import type { RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
+import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 
@@ -68,6 +69,8 @@ export interface AppConfig {
   defaultPermissionMode?: 'approve' | 'ignore';
   // Default model for new sessions
   defaultModel?: string;
+  // Default agent used by the global Pane Chat orchestrator terminal
+  defaultOrchestratorAgent?: PaneChatAgent;
   // Auto-check for updates
   autoCheckUpdates?: boolean;
   // Start Pane automatically when the user logs in
@@ -151,6 +154,7 @@ export interface UpdateConfigRequest {
   systemPromptAppend?: string;
   defaultPermissionMode?: 'approve' | 'ignore';
   defaultModel?: string;
+  defaultOrchestratorAgent?: PaneChatAgent;
   autoCheckUpdates?: boolean;
   autoStartOnBoot?: boolean;
   stravuApiKey?: string;

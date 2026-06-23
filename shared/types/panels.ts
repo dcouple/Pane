@@ -155,6 +155,7 @@ export interface ToolPanelMetadata {
 }
 
 export interface CreatePanelRequest {
+  id?: string;                    // Optional stable ID for managed singleton panels
   sessionId: string;
   type: ToolPanelType;
   title?: string;                // Optional custom title

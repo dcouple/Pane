@@ -876,7 +876,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return result;
   }
 
-  private buildSystemPromptAppend(dbSession: { project_id?: number; [key: string]: unknown }): string | undefined {
+  private buildSystemPromptAppend(dbSession: { project_id?: number | null; [key: string]: unknown }): string | undefined {
     const systemPromptParts: string[] = [];
 
     // Add global system prompt first

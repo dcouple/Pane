@@ -18,6 +18,11 @@ import type { BaseAIPanelState, ToolPanelState, ToolPanel, ResumableSession, Ter
 import { formatForDisplay } from '../utils/timestampUtils';
 import { scriptExecutionTracker } from './scriptExecutionTracker';
 
+interface CreateSessionOptions {
+  detached?: boolean;
+  hidden?: boolean;
+}
+
 // Interface for generic JSON message data that can contain various properties
 interface GenericMessageData {
   type?: string;
@@ -193,8 +198,10 @@ export class SessionManager extends EventEmitter {
   }
 
   initializeFromDatabase(): void {
-    // Get all sessions from database
-    const dbSessions = this.db.getAllSessions();
+    // Hidden sessions are included for crash recovery, but not emitted to the
+    // normal renderer session list.
+    const dbSessions = this.db.getAllSessions(undefined, { includeHidden: true });
+    const visibleDbSessions = dbSessions.filter(s => !s.is_hidden);
 
     // Partition sessions by status
     const activeSessions = dbSessions.filter(s => s.status === 'running' || s.status === 'pending');
@@ -213,7 +220,7 @@ export class SessionManager extends EventEmitter {
     }
 
     // Load all sessions from database
-    this.emit('sessions-loaded', dbSessions.map(this.convertDbSessionToSession.bind(this)));
+    this.emit('sessions-loaded', visibleDbSessions.map(this.convertDbSessionToSession.bind(this)));
   }
 
   private convertDbSessionToSession(dbSession: DbSession): Session {
@@ -240,7 +247,7 @@ export class SessionManager extends EventEmitter {
       permissionMode: dbSession.permission_mode,
       runStartedAt: dbSession.run_started_at,
       isMainRepo: dbSession.is_main_repo,
-      projectId: dbSession.project_id, // Add the missing projectId field
+      projectId: dbSession.project_id ?? undefined,
       folderId: dbSession.folder_id,
       displayOrder: dbSession.display_order, // Include displayOrder for proper sorting
       isFavorite: dbSession.is_favorite,
@@ -248,6 +255,7 @@ export class SessionManager extends EventEmitter {
       // Model is now managed at panel level
       toolType: normalizedToolType,
       archived: dbSession.archived || false,
+      isHidden: !!dbSession.is_hidden,
       baseCommit: dbSession.base_commit,
       baseBranch: dbSession.base_branch,
       pr_renamed: !!dbSession.pr_renamed
@@ -306,7 +314,8 @@ export class SessionManager extends EventEmitter {
     toolType?: 'claude' | 'none',
     baseCommit?: string,
     baseBranch?: string,
-    startPinned?: boolean
+    startPinned?: boolean,
+    options?: CreateSessionOptions
   ): Promise<Session> {
     return await withLock(`session-creation`, async () => {
       return this.createSessionWithId(
@@ -322,7 +331,8 @@ export class SessionManager extends EventEmitter {
         toolType,
         baseCommit,
         baseBranch,
-        startPinned
+        startPinned,
+        options
       );
     });
   }
@@ -340,7 +350,8 @@ export class SessionManager extends EventEmitter {
     toolType?: 'claude' | 'none',
     baseCommit?: string,
     baseBranch?: string,
-    startPinned?: boolean
+    startPinned?: boolean,
+    options?: CreateSessionOptions
   ): Session {
     // Ensure this session ID isn't already being created
     if (this.activeSessions.has(id) || this.db.getSession(id)) {
@@ -350,10 +361,13 @@ export class SessionManager extends EventEmitter {
     // Add log entry for session creation
     addSessionLog(id, 'info', `Creating session: ${name}`, 'SessionManager');
     
-    let targetProject;
+    let targetProject: Project | null = null;
+    const isDetached = options?.detached === true;
     
-    if (projectId) {
-      targetProject = this.getProjectById(projectId);
+    if (isDetached) {
+      targetProject = null;
+    } else if (projectId) {
+      targetProject = this.getProjectById(projectId) ?? null;
       if (!targetProject) {
         throw new Error(`Project with ID ${projectId} not found`);
       }
@@ -371,7 +385,7 @@ export class SessionManager extends EventEmitter {
       initial_prompt: prompt || '', // Use empty string if prompt is undefined/null
       worktree_name: worktreeName,
       worktree_path: worktreePath,
-      project_id: targetProject.id,
+      project_id: targetProject?.id ?? null,
       folder_id: folderId,
       permission_mode: permissionMode,
       is_main_repo: isMainRepo,
@@ -380,7 +394,8 @@ export class SessionManager extends EventEmitter {
       base_branch: baseBranch,
       tool_type: toolType,
       is_favorite: startPinned,
-      favorite_pinned_at: startPinned ? 'CURRENT_TIMESTAMP' : undefined
+      favorite_pinned_at: startPinned ? 'CURRENT_TIMESTAMP' : undefined,
+      is_hidden: options?.hidden === true
     };
 
     const dbSession = this.db.createSession(sessionData);
@@ -393,7 +408,7 @@ export class SessionManager extends EventEmitter {
     // this.emit('session-created', session);
 
     // Track session creation with analytics
-    if (this.analyticsManager) {
+    if (this.analyticsManager && !options?.hidden) {
       // Get session statistics for analytics
       const allSessions = this.db.getAllSessions();
       const activeSessions = allSessions.filter(s => !s.archived);

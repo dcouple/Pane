@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -72,7 +72,9 @@ export function ProjectSessionList({
   const sessionsLoaded = useSessionStore(s => s.isLoaded);
   const activeSessionId = useSessionStore(s => s.activeSessionId);
   const setActiveSession = useSessionStore(s => s.setActiveSession);
+  const activeView = useNavigationStore(s => s.activeView);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
+  const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
   // Expansion state lives in the navigation store so the always-mounted
@@ -305,6 +307,27 @@ export function ProjectSessionList({
         >
           <Home className="w-4 h-4" />
           <span>Home</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSidebarNavigationScope('repositories');
+            setActiveSession(null);
+            navigateToPaneChat();
+          }}
+          className={cn(
+            SIDEBAR_ROW_BASE,
+            SIDEBAR_ROW_GAP,
+            SIDEBAR_ROW_PADDING,
+            'py-2 text-sm hover:bg-surface-hover hover:text-text-primary',
+            activeView === 'pane-chat'
+              ? 'bg-surface-hover text-text-primary'
+              : 'text-text-secondary',
+          )}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>Pane Chat</span>
         </button>
 
         {showRemoteDesktopLink && onRemoteDesktopClick && (

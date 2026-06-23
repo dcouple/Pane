@@ -4,7 +4,7 @@ import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -339,7 +339,9 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const activeProjectId = useNavigationStore((state) => state.activeProjectId);
+  const activeView = useNavigationStore((state) => state.activeView);
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
+  const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
   const setSidebarNavigationScope = useNavigationStore((state) => state.setSidebarNavigationScope);
   useSessionNavigationHotkeys({ projects, sessionSortAscending });
 
@@ -400,6 +402,24 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
 
           {/* Projects with their sessions */}
           <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 flex flex-col items-center gap-1.5">
+            <Tooltip content="Pane Chat" side="right">
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarNavigationScope('repositories');
+                  setActiveSession(null);
+                  navigateToPaneChat();
+                }}
+                aria-label="Pane Chat"
+                className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
+                  activeView === 'pane-chat'
+                    ? 'bg-interactive/20 text-interactive ring-1 ring-interactive/50'
+                    : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+              </button>
+            </Tooltip>
             {showRemoteDesktopLink && (
               <Tooltip content={REMOTE_DESKTOP_TOOLTIP} side="right">
                 <button

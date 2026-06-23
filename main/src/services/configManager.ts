@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import type { AnalyticsIdentity, AppConfig } from '../types/config';
 import { normalizeCloudVmConfig } from '../../../shared/types/cloud';
+import { DEFAULT_PANE_CHAT_AGENT, normalizePaneChatAgent } from '../../../shared/types/paneChat';
 import { createDefaultRemoteDaemonConfig, normalizeRemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktreeFileSync';
@@ -52,6 +53,7 @@ export class ConfigManager extends EventEmitter {
       terminalPowerMode: 'performance',
       defaultPermissionMode: 'ignore',
       defaultModel: 'sonnet',
+      defaultOrchestratorAgent: DEFAULT_PANE_CHAT_AGENT,
       autoStartOnBoot: true,
       stravuApiKey: undefined,
       stravuServerUrl: '', // Stravu integration disabled
@@ -158,6 +160,9 @@ export class ConfigManager extends EventEmitter {
           ...this.config.agentContext,
           ...loadedConfig.agentContext
         },
+        defaultOrchestratorAgent: normalizePaneChatAgent(
+          loadedConfig.defaultOrchestratorAgent ?? this.config.defaultOrchestratorAgent,
+        ),
         cloud: loadedConfig.cloud !== undefined
           ? normalizeCloudVmConfig(loadedConfig.cloud)
           : this.config.cloud,
@@ -311,6 +316,9 @@ export class ConfigManager extends EventEmitter {
       ...updates,
       analytics,
       agentContext,
+      defaultOrchestratorAgent: 'defaultOrchestratorAgent' in updates
+        ? normalizePaneChatAgent(updates.defaultOrchestratorAgent)
+        : this.config.defaultOrchestratorAgent,
       cloud: 'cloud' in updates
         ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
         : this.config.cloud,

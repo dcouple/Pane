@@ -87,7 +87,49 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     };
     const configState: Record<string, unknown> = {
       remoteDaemon: clone(remoteDaemonConfig),
+      defaultOrchestratorAgent: 'claude',
       ...clone(mockOptions.initialConfig ?? {}),
+    };
+    const paneChatSession = {
+      id: '__pane_chat_session__',
+      name: 'Pane Chat',
+      worktreePath: '/tmp/.pane',
+      prompt: '',
+      status: 'stopped',
+      createdAt: new Date(0).toISOString(),
+      lastActivity: new Date(0).toISOString(),
+      output: [],
+      jsonMessages: [],
+      isRunning: false,
+      permissionMode: 'ignore',
+      displayOrder: 0,
+      isFavorite: false,
+      toolType: 'none',
+      archived: false,
+      isHidden: true,
+    };
+    const paneChatPanel = {
+      id: '__pane_chat_terminal__',
+      sessionId: '__pane_chat_session__',
+      type: 'terminal',
+      title: 'Pane Chat',
+      state: {
+        isActive: true,
+        hasBeenViewed: false,
+        customState: {
+          initialCommand: 'claude --dangerously-skip-permissions',
+          initialInput: 'Read "/tmp/.pane/skills/pane-chat/runpane-orchestrator.md" and initialize yourself as Pane Chat.',
+          agentType: 'claude',
+          isCliPanel: true,
+          isCliReady: false,
+        },
+      },
+      metadata: {
+        createdAt: new Date(0).toISOString(),
+        lastActiveAt: new Date(0).toISOString(),
+        position: 0,
+        permanent: true,
+      },
     };
     let mockSessions: Array<Record<string, unknown>> = [];
     let cloudDisconnectError: string | null = null;
@@ -280,6 +322,16 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         onGitHubAuthTerminalExit: (callback: (...args: unknown[]) => void) => subscribe('onboarding:github-auth-pty-exit', callback),
         setupDefaultRepo: () => success({}),
         supportProject: () => success({}),
+      }),
+      paneChat: namespace({
+        getOrCreate: () => success({
+          session: clone(paneChatSession),
+          panel: clone(paneChatPanel),
+          agent: configState.defaultOrchestratorAgent === 'codex' ? 'codex' : 'claude',
+          cwd: '/tmp/.pane',
+          guidePath: '/tmp/.pane/skills/pane-chat/runpane-orchestrator.md',
+          started: false,
+        }),
       }),
       panels: namespace({
         getSessionPanels: () => success([]),

@@ -38,6 +38,7 @@ import {
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
+import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import { useConfigStore } from '../stores/configStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -79,6 +80,7 @@ import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { CollapsibleCard } from './ui/CollapsibleCard';
 import { SettingsSection } from './ui/SettingsSection';
 import { Dropdown } from './ui/Dropdown';
+import { ClaudeIcon, OpenAIIcon } from './ui/BrandIcons';
 
 interface IPCResponse<T = unknown> {
   success: boolean;
@@ -170,6 +172,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
   const [platform, setPlatform] = useState<string>('darwin');
   const [enableCommitFooter, setEnableCommitFooter] = useState(true);
   const [managedAgentsMd, setManagedAgentsMd] = useState(true);
+  const [defaultOrchestratorAgent, setDefaultOrchestratorAgent] = useState<PaneChatAgent>('claude');
   const [autoRenameToPR, setAutoRenameToPR] = useState<boolean>(true);
   const [sidebarPaneRowLayout, setSidebarPaneRowLayout] = useState<SidebarPaneRowLayout>('single');
   const [uiScale, setUiScale] = useState(1.0);
@@ -301,6 +304,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         setInitialTerminalPowerMode(loadedTerminalPowerMode);
       }
       setClaudeExecutablePath(data.claudeExecutablePath || '');
+      setDefaultOrchestratorAgent(data.defaultOrchestratorAgent === 'codex' ? 'codex' : 'claude');
       setEnableCommitFooter(data.enableCommitFooter !== false); // Default to true
       setManagedAgentsMd(data.agentContext?.managedAgentsMd !== false); // Default to true
       setUiScale(data.uiScale || 1.0);
@@ -919,6 +923,7 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
         usePtyHost,
         terminalPowerMode,
         claudeExecutablePath,
+        defaultOrchestratorAgent,
         enableCommitFooter,
         agentContext: {
           managedAgentsMd,
@@ -2111,6 +2116,37 @@ export function Settings({ isOpen, onClose, initialSection }: SettingsProps) {
                 <p className="text-xs text-text-tertiary mt-1">
                   When a PR is detected for a session, automatically rename it to the PR title.
                 </p>
+              </SettingsSection>
+
+              <SettingsSection
+                title="Default Pane Chat Agent"
+                description="Choose the agent used when Pane Chat opens a new global terminal"
+                icon={<Terminal className="w-4 h-4" />}
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'claude' as const, label: 'Claude', icon: ClaudeIcon },
+                    { id: 'codex' as const, label: 'Codex', icon: OpenAIIcon },
+                  ].map((option) => {
+                    const Icon = option.icon;
+                    const selected = defaultOrchestratorAgent === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() => setDefaultOrchestratorAgent(option.id)}
+                        className={`flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-md border transition-colors ${
+                          selected
+                            ? 'bg-interactive text-text-on-interactive border-interactive'
+                            : 'bg-surface-secondary text-text-secondary border-border-secondary hover:bg-surface-hover'
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span className="truncate">{option.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </SettingsSection>
 
               <SettingsSection

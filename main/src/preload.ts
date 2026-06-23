@@ -126,6 +126,7 @@ interface UpdaterInfo {
 const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'folders:',
   'logs:',
+  'pane-chat:',
   'panels:',
   'projects:',
   'prompts:',
@@ -445,6 +446,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       line?: number;
       column?: number;
     }): Promise<IPCResponse> => invokeIpc('diagnostics:renderer-fatal', payload),
+  },
+
+  paneChat: {
+    getOrCreate: (): Promise<IPCResponse> => invokeIpc('pane-chat:get-or-create'),
   },
 
   // Session management

@@ -1494,6 +1494,9 @@ export class DatabaseService {
     const hasBaseBranchColumn = sessionsTableInfoBase.some(
       (col: SqliteTableInfo) => col.name === "base_branch",
     );
+    const hasIsHiddenColumn = sessionsTableInfoBase.some(
+      (col: SqliteTableInfo) => col.name === "is_hidden",
+    );
 
     if (!hasBaseCommitColumn) {
       this.db.prepare("ALTER TABLE sessions ADD COLUMN base_commit TEXT").run();
@@ -1503,6 +1506,14 @@ export class DatabaseService {
     if (!hasBaseBranchColumn) {
       this.db.prepare("ALTER TABLE sessions ADD COLUMN base_branch TEXT").run();
       console.log("[Database] Added base_branch column to sessions table");
+    }
+
+    if (!hasIsHiddenColumn) {
+      this.db.prepare("ALTER TABLE sessions ADD COLUMN is_hidden BOOLEAN DEFAULT 0").run();
+      this.db
+        .prepare("CREATE INDEX IF NOT EXISTS idx_sessions_hidden ON sessions(is_hidden)")
+        .run();
+      console.log("[Database] Added is_hidden column to sessions table");
     }
 
     // Add commit mode settings columns to projects table if they don't exist
@@ -2816,9 +2827,10 @@ export class DatabaseService {
           AND (archived = 0 OR archived IS NULL)
           AND folder_id IS NULL
           AND (is_main_repo = 0 OR is_main_repo IS NULL)
+          AND (is_hidden = 0 OR is_hidden IS NULL)
       `,
         )
-        .get(data.project_id) as { max_order: number | null };
+        .get(data.project_id ?? null) as { max_order: number | null };
 
       const maxFolderOrder = this.db
         .prepare(
@@ -2828,7 +2840,7 @@ export class DatabaseService {
         WHERE project_id = ? AND parent_folder_id IS NULL
       `,
         )
-        .get(data.project_id) as { max_order: number | null };
+        .get(data.project_id ?? null) as { max_order: number | null };
 
       // Use the maximum of both to ensure no overlap
       const maxOrder = Math.max(
@@ -2840,8 +2852,8 @@ export class DatabaseService {
       this.db
         .prepare(
           `
-        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, tool_type, base_commit, base_branch, is_favorite, favorite_pinned_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP WHEN ? = 1 AND ? IS NULL THEN CURRENT_TIMESTAMP ELSE ? END)
+        INSERT INTO sessions (id, name, initial_prompt, worktree_name, worktree_path, status, project_id, folder_id, permission_mode, is_main_repo, display_order, tool_type, base_commit, base_branch, is_favorite, favorite_pinned_at, is_hidden)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'CURRENT_TIMESTAMP' THEN CURRENT_TIMESTAMP WHEN ? = 1 AND ? IS NULL THEN CURRENT_TIMESTAMP ELSE ? END, ?)
       `,
         )
         .run(
@@ -2850,7 +2862,7 @@ export class DatabaseService {
           data.initial_prompt,
           data.worktree_name,
           data.worktree_path,
-          data.project_id,
+          data.project_id ?? null,
           data.folder_id || null,
           data.permission_mode || "ignore",
           data.is_main_repo ? 1 : 0,
@@ -2863,6 +2875,7 @@ export class DatabaseService {
           data.is_favorite ? 1 : 0,
           data.favorite_pinned_at || null,
           data.favorite_pinned_at || null,
+          data.is_hidden ? 1 : 0,
         );
 
       const session = this.getSession(data.id);
@@ -2880,17 +2893,18 @@ export class DatabaseService {
     return session;
   }
 
-  getAllSessions(projectId?: number): Session[] {
+  getAllSessions(projectId?: number, options?: { includeHidden?: boolean }): Session[] {
+    const hiddenClause = options?.includeHidden ? "" : " AND (is_hidden = 0 OR is_hidden IS NULL)";
     if (projectId !== undefined) {
       return this.db
         .prepare(
-          "SELECT * FROM sessions WHERE project_id = ? AND (archived = 0 OR archived IS NULL) AND (is_main_repo = 0 OR is_main_repo IS NULL) ORDER BY display_order ASC, created_at DESC",
+          `SELECT * FROM sessions WHERE project_id = ? AND (archived = 0 OR archived IS NULL) AND (is_main_repo = 0 OR is_main_repo IS NULL)${hiddenClause} ORDER BY display_order ASC, created_at DESC`,
         )
         .all(projectId) as Session[];
     }
     return this.db
       .prepare(
-        "SELECT * FROM sessions WHERE (archived = 0 OR archived IS NULL) AND (is_main_repo = 0 OR is_main_repo IS NULL) ORDER BY display_order ASC, created_at DESC",
+        `SELECT * FROM sessions WHERE (archived = 0 OR archived IS NULL) AND (is_main_repo = 0 OR is_main_repo IS NULL)${hiddenClause} ORDER BY display_order ASC, created_at DESC`,
       )
       .all() as Session[];
   }
@@ -2956,25 +2970,27 @@ export class DatabaseService {
     this.db.prepare("DELETE FROM session_git_status_cache").run();
   }
 
-  getAllSessionsIncludingArchived(): Session[] {
+  getAllSessionsIncludingArchived(options?: { includeHidden?: boolean }): Session[] {
+    const hiddenClause = options?.includeHidden ? "" : " AND (is_hidden = 0 OR is_hidden IS NULL)";
     return this.db
       .prepare(
-        "SELECT * FROM sessions WHERE (is_main_repo = 0 OR is_main_repo IS NULL) ORDER BY created_at DESC",
+        `SELECT * FROM sessions WHERE (is_main_repo = 0 OR is_main_repo IS NULL)${hiddenClause} ORDER BY created_at DESC`,
       )
       .all() as Session[];
   }
 
-  getArchivedSessions(projectId?: number): Session[] {
+  getArchivedSessions(projectId?: number, options?: { includeHidden?: boolean }): Session[] {
+    const hiddenClause = options?.includeHidden ? "" : " AND (is_hidden = 0 OR is_hidden IS NULL)";
     if (projectId !== undefined) {
       return this.db
         .prepare(
-          "SELECT * FROM sessions WHERE project_id = ? AND archived = 1 AND (is_main_repo = 0 OR is_main_repo IS NULL) ORDER BY updated_at DESC",
+          `SELECT * FROM sessions WHERE project_id = ? AND archived = 1 AND (is_main_repo = 0 OR is_main_repo IS NULL)${hiddenClause} ORDER BY updated_at DESC`,
         )
         .all(projectId) as Session[];
     }
     return this.db
       .prepare(
-        "SELECT * FROM sessions WHERE archived = 1 AND (is_main_repo = 0 OR is_main_repo IS NULL) ORDER BY updated_at DESC",
+        `SELECT * FROM sessions WHERE archived = 1 AND (is_main_repo = 0 OR is_main_repo IS NULL)${hiddenClause} ORDER BY updated_at DESC`,
       )
       .all() as Session[];
   }

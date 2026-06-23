@@ -5,6 +5,7 @@ import { useSessionHistoryStore } from '../stores/sessionHistoryStore';
 import { useHotkey } from '../hooks/useHotkey';
 import { useHotkeyStore } from '../stores/hotkeyStore';
 import { HomePage } from './HomePage';
+import { PaneChatView } from './PaneChatView';
 import '@xterm/xterm/css/xterm.css';
 import { useSessionView } from '../hooks/useSessionView';
 import { DetailPanel } from './DetailPanel';
@@ -670,7 +671,7 @@ export const SessionView = memo(() => {
 
   // --- Add Tool commands (palette-only, no keybindings) ---
   // Only enabled in session view (not project view) to prevent hidden panel mutations
-  const isInSessionView = !!activeSession && activeView !== 'project';
+  const isInSessionView = !!activeSession && activeView === 'sessions';
 
   useHotkey({
     id: 'add-tool-terminal',
@@ -1704,6 +1705,10 @@ export const SessionView = memo(() => {
         isMerging={isMergingProject}
       />
     );
+  }
+
+  if (activeView === 'pane-chat') {
+    return <PaneChatView />;
   }
 
   if (!activeSession) {

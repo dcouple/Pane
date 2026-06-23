@@ -65,8 +65,11 @@ export class PanelManager {
       // This allows auto-creation to work again in the future if they close it again and create a new session
       databaseService.removeClosedPanelType(request.sessionId, request.type);
 
-      // Generate unique ID
-      const panelId = uuidv4();
+      const panelId = request.id ?? uuidv4();
+      const existingPanel = this.getPanel(panelId);
+      if (existingPanel) {
+        return existingPanel;
+      }
       
       // Auto-generate title if not provided
       const title = request.title || this.generatePanelTitle(request.sessionId, request.type);

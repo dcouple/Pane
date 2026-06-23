@@ -11,7 +11,7 @@ const toProjectIdArray = (projectIds: Set<number>): number[] =>
   Array.from(projectIds).sort((a, b) => a - b);
 
 interface NavigationState {
-  activeView: 'sessions' | 'project';
+  activeView: 'sessions' | 'project' | 'pane-chat';
   activeProjectId: number | null;
 
   // Sidebar collapse
@@ -37,10 +37,11 @@ interface NavigationState {
   setSidebarNavigationScope: (scope: SidebarNavigationScope) => void;
 
   // Actions
-  setActiveView: (view: 'sessions' | 'project') => void;
+  setActiveView: (view: 'sessions' | 'project' | 'pane-chat') => void;
   setActiveProjectId: (projectId: number | null) => void;
   navigateToProject: (projectId: number) => void;
   navigateToSessions: () => void;
+  navigateToPaneChat: () => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
@@ -110,6 +111,11 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
 
   navigateToSessions: () => set({
     activeView: 'sessions',
+    activeProjectId: null
+  }),
+
+  navigateToPaneChat: () => set({
+    activeView: 'pane-chat',
     activeProjectId: null
   }),
 }));

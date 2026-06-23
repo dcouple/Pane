@@ -48,7 +48,7 @@ export function groupSessionsByProject(
   const map = new Map<number, Session[]>();
 
   sessions
-    .filter(session => !session.archived)
+    .filter(session => !session.archived && !session.isHidden)
     .forEach(session => {
       if (session.projectId == null) return;
       const list = map.get(session.projectId) || [];
@@ -90,7 +90,7 @@ export function getPinnedSessions(
   getProjectName?: (session: Session) => string | undefined
 ): PinnedSession[] {
   return sessions
-    .filter(session => !session.archived && session.isFavorite)
+    .filter(session => !session.archived && !session.isHidden && session.isFavorite)
     .map(session => {
       const projectName = getProjectName
         ? getProjectName(session)

@@ -6,6 +6,7 @@ import { useConfigStore } from '../stores/configStore';
 import { panelApi } from '../services/panelApi';
 import { API } from '../utils/api';
 import type { Session, SessionOutput, GitStatus } from '../types/session';
+import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 
 interface SessionEventData {
   sessionId: string;
@@ -271,6 +272,10 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeSessionOutput);
 
     const unsubscribeTerminalOutput = window.electronAPI.events.onTerminalOutput((output: { sessionId: string; type: 'stdout' | 'stderr'; data: string }) => {
+      if (output.sessionId === PANE_CHAT_SESSION_ID) {
+        return;
+      }
+
       // Validate event has required session context
       if (!validateEventSession(output)) {
         return; // Ignore invalid events

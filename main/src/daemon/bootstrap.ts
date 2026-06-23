@@ -17,6 +17,8 @@ import { ExecutionTracker } from '../services/executionTracker';
 import { WorktreeNameGenerator } from '../services/worktreeNameGenerator';
 import { RunCommandManager } from '../services/runCommandManager';
 import { VersionChecker } from '../services/versionChecker';
+import { SkillCacheManager } from '../services/skillCacheManager';
+import { PaneChatManager } from '../services/paneChatManager';
 import { TaskQueue } from '../services/taskQueue';
 import { registerIpcHandlers } from '../ipc';
 import { PaneDaemonServer } from './server';
@@ -171,6 +173,12 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const worktreeNameGenerator = new WorktreeNameGenerator(configManager);
   const runCommandManager = new RunCommandManager(databaseService);
   const versionChecker = new VersionChecker(configManager, logger);
+  const skillCacheManager = new SkillCacheManager(logger);
+  await skillCacheManager.start();
+  const paneChatManager = new PaneChatManager(configManager, sessionManager, skillCacheManager);
+  await paneChatManager.getOrCreate().catch(error => {
+    logger.warn('[PaneChat] Failed to ensure startup Pane Chat session', error instanceof Error ? error : undefined);
+  });
   const taskQueue = new TaskQueue({
     sessionManager,
     worktreeManager,
@@ -193,6 +201,8 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     worktreeNameGenerator,
     runCommandManager,
     versionChecker,
+    skillCacheManager,
+    paneChatManager,
     taskQueue,
     getMainWindow: options.getMainWindow,
     logger,
@@ -293,6 +303,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
       if (paneDaemonServer) {
         await paneDaemonServer.stop();
       }
+      skillCacheManager.stop();
       versionChecker.stopPeriodicCheck();
       logger.close();
     },

@@ -24,6 +24,7 @@ export interface Session {
   model?: string;
   toolType?: 'claude' | 'none';
   archived?: boolean;
+  isHidden?: boolean;
   gitStatus?: GitStatus;
   baseCommit?: string;
   baseBranch?: string;

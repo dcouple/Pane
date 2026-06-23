@@ -5,6 +5,7 @@ import { registerFileHandlers } from './file';
 import { registerConfigHandlers } from './config';
 import { registerGitHandlers } from './git';
 import { registerPanelHandlers } from './panels';
+import { registerPaneChatHandlers } from './paneChat';
 import { registerPermissionHandlers } from './permissions';
 import { registerProjectHandlers } from './project';
 import { registerPromptHandlers } from './prompt';
@@ -69,6 +70,10 @@ const PROMPT_CHANNELS = [
   'sessions:get-prompts',
   'prompts:get-all',
   'prompts:get-by-id',
+] as const;
+
+const PANE_CHAT_CHANNELS = [
+  'pane-chat:get-or-create',
 ] as const;
 
 const PERMISSION_CHANNELS = [
@@ -360,6 +365,16 @@ describe('daemon registry IPC bindings', () => {
 
     expect(registry.listChannels()).toEqual([...PROMPT_CHANNELS].sort());
     expect(ipcMain.boundChannels.sort()).toEqual([...PROMPT_CHANNELS].sort());
+  });
+
+  it('binds daemon-owned Pane Chat channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerPaneChatHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...PANE_CHAT_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...PANE_CHAT_CHANNELS].sort());
   });
 
   it('binds daemon-owned permission channels through the shared registry', () => {

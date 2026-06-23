@@ -1,8 +1,9 @@
 // Utility for making API calls using Electron IPC
-import type { CreateSessionRequest } from '../types/session';
+import type { CreateSessionRequest, Session } from '../types/session';
 import type { Project } from '../types/project';
 import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
+import type { PaneChatState } from '../../../shared/types/paneChat';
 import type {
   RemoteDaemonClientRecord,
   RemoteDaemonConnectionPair,
@@ -57,6 +58,13 @@ const isElectron = () => {
 
 // Wrapper class for API calls that provides error handling and consistent interface
 export class API {
+  static paneChat = {
+    async getOrCreate(): Promise<IPCResponse<PaneChatState<Session>>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.paneChat.getOrCreate();
+    },
+  };
+
   // Session management
   static sessions = {
     async getAll() {

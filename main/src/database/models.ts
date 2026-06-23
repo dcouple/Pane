@@ -66,7 +66,7 @@ export interface Session {
   pid?: number;
   archived?: boolean;
   last_viewed_at?: string;
-  project_id?: number;
+  project_id?: number | null;
   folder_id?: string;
   claude_session_id?: string;
   permission_mode?: "approve" | "ignore";
@@ -80,6 +80,7 @@ export interface Session {
   base_branch?: string;
   skip_continue_next?: boolean;
   pr_renamed?: boolean;
+  is_hidden?: boolean;
 }
 
 export interface SessionOutput {
@@ -105,7 +106,7 @@ export interface CreateSessionData {
   initial_prompt: string;
   worktree_name: string;
   worktree_path: string;
-  project_id: number;
+  project_id?: number | null;
   folder_id?: string;
   permission_mode?: "approve" | "ignore";
   is_main_repo?: boolean;
@@ -115,6 +116,7 @@ export interface CreateSessionData {
   base_branch?: string;
   is_favorite?: boolean;
   favorite_pinned_at?: string;
+  is_hidden?: boolean;
 }
 
 export interface UpdateSessionData {

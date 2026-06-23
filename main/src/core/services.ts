@@ -12,6 +12,8 @@ import type { RunCommandManager } from '../services/runCommandManager';
 import type { VersionChecker } from '../services/versionChecker';
 import type { Logger } from '../utils/logger';
 import type { ArchiveProgressManager } from '../services/archiveProgressManager';
+import type { SkillCacheManager } from '../services/skillCacheManager';
+import type { PaneChatManager } from '../services/paneChatManager';
 
 /**
  * Daemon-neutral service graph. Electron-only dependencies are intentionally
@@ -32,4 +34,6 @@ export interface CoreServices {
   versionChecker: VersionChecker;
   logger?: Logger;
   archiveProgressManager?: ArchiveProgressManager;
+  skillCacheManager?: SkillCacheManager;
+  paneChatManager?: PaneChatManager;
 }
