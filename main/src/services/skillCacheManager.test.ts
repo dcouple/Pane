@@ -4,6 +4,10 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SkillCacheManager } from './skillCacheManager';
 
+function normalizePathSeparators(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
 describe('SkillCacheManager Pane Chat guide', () => {
   const originalPaneDir = process.env.PANE_DIR;
   let tempDir: string | undefined;
@@ -32,10 +36,11 @@ describe('SkillCacheManager Pane Chat guide', () => {
     await manager.ensurePaneChatGuide();
 
     const guide = await fs.readFile(manager.paneChatGuidePath, 'utf8');
+    const normalizedGuide = normalizePathSeparators(guide);
     expect(guide).toContain('Pane Chat orchestrator skill');
     expect(guide).toContain('RunPane orchestrator skill for Codex');
-    expect(guide).toContain('/skills/dcouple/parsa/.codex/skills/runpane-orchestrator/SKILL.md');
-    expect(guide).toContain('/skills/dcouple/docs/readme-workflow-map.png');
+    expect(normalizedGuide).toContain('/skills/dcouple/parsa/.codex/skills/runpane-orchestrator/SKILL.md');
+    expect(normalizedGuide).toContain('/skills/dcouple/docs/readme-workflow-map.png');
     expect(guide).toContain('Do not replace orchestration with a normal chat answer for Pane work.');
     expect(guide).toContain('verify its state with');
   });
@@ -61,9 +66,9 @@ describe('SkillCacheManager Pane Chat guide', () => {
     const codexSkill = await fs.readFile(manager.codexPaneOrchestratorSkillPath, 'utf8');
     const claudeSkill = await fs.readFile(manager.claudePaneOrchestratorSkillPath, 'utf8');
 
-    expect(manager.paneChatOrchestratorSkillPath).toContain('/skills/pane-chat/pane-orchestrator/SKILL.md');
-    expect(manager.codexPaneOrchestratorSkillPath).toContain('/.codex/skills/pane-orchestrator/SKILL.md');
-    expect(manager.claudePaneOrchestratorSkillPath).toContain('/.claude/skills/pane-orchestrator/SKILL.md');
+    expect(normalizePathSeparators(manager.paneChatOrchestratorSkillPath)).toContain('/skills/pane-chat/pane-orchestrator/SKILL.md');
+    expect(normalizePathSeparators(manager.codexPaneOrchestratorSkillPath)).toContain('/.codex/skills/pane-orchestrator/SKILL.md');
+    expect(normalizePathSeparators(manager.claudePaneOrchestratorSkillPath)).toContain('/.claude/skills/pane-orchestrator/SKILL.md');
     expect(codexSkill).toBe(canonicalSkill);
     expect(claudeSkill).toBe(canonicalSkill);
     expect(canonicalSkill).toContain('name: pane-orchestrator');
