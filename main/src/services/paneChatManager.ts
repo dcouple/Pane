@@ -112,14 +112,18 @@ export class PaneChatManager {
 
   private async updatePanelLaunchState(panel: ToolPanel, agent: PaneChatAgent, guidePath: string): Promise<void> {
     const previousCustomState = panel.state.customState as TerminalPanelState | undefined;
+    const shouldResetClaudeLaunch = agent === 'claude' && (
+      !isValidUuid(previousCustomState?.agentSessionId) ||
+      previousCustomState?.initialInputMode !== 'argument'
+    );
     const nextCustomState: TerminalPanelState = {
       ...previousCustomState,
-      ...this.buildTerminalState(agent, guidePath, previousCustomState),
+      ...this.buildTerminalState(agent, guidePath, previousCustomState, shouldResetClaudeLaunch),
       initialInputSentAt: undefined,
       initialInputError: undefined,
     };
 
-    if (agent === 'claude' && !isValidUuid(previousCustomState?.agentSessionId)) {
+    if (shouldResetClaudeLaunch) {
       nextCustomState.hasClaudeSessionId = undefined;
     }
 
@@ -131,8 +135,13 @@ export class PaneChatManager {
     await panelManager.updatePanel(panel.id, { state: nextState });
   }
 
-  private buildTerminalState(agent: PaneChatAgent, guidePath: string, previousState?: TerminalPanelState): TerminalPanelState {
-    const agentSessionId = this.resolveAgentSessionId(agent, previousState);
+  private buildTerminalState(
+    agent: PaneChatAgent,
+    guidePath: string,
+    previousState?: TerminalPanelState,
+    forceNewAgentSession = false,
+  ): TerminalPanelState {
+    const agentSessionId = this.resolveAgentSessionId(agent, previousState, forceNewAgentSession);
 
     return {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
@@ -153,9 +162,11 @@ export class PaneChatManager {
     ].join(' ');
   }
 
-  private resolveAgentSessionId(agent: PaneChatAgent, previousState?: TerminalPanelState): string | undefined {
+  private resolveAgentSessionId(agent: PaneChatAgent, previousState?: TerminalPanelState, forceNewAgentSession = false): string | undefined {
     if (agent === 'claude') {
-      return isValidUuid(previousState?.agentSessionId) ? previousState.agentSessionId : randomUUID();
+      return !forceNewAgentSession && isValidUuid(previousState?.agentSessionId)
+        ? previousState.agentSessionId
+        : randomUUID();
     }
 
     return previousState?.agentType === 'codex' ? previousState.agentSessionId : undefined;
@@ -165,7 +176,8 @@ export class PaneChatManager {
     const customState = panel.state.customState as TerminalPanelState | undefined;
     return agent === 'claude' && (
       !isValidUuid(customState?.agentSessionId) ||
-      customState?.initialInputMode !== 'argument'
+      customState?.initialInputMode !== 'argument' ||
+      (customState?.hasClaudeSessionId === true && !customState.initialInputSentAt)
     );
   }
 
