@@ -118,7 +118,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         hasBeenViewed: false,
         customState: {
           initialCommand: 'claude --dangerously-skip-permissions',
-          initialInput: 'Read "/tmp/.pane/skills/pane-chat/runpane-orchestrator.md" and initialize yourself as Pane Chat.',
+          initialInput: 'Read the Pane Chat guide at /tmp/.pane/skills/pane-chat/runpane-orchestrator.md and initialize yourself as Pane Chat.',
           agentType: 'claude',
           isCliPanel: true,
           isCliReady: false,

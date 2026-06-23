@@ -18,7 +18,7 @@ import {
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 
 const PANE_CHAT_TITLE = 'Pane Chat';
-const PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION = 2;
+const PANE_CHAT_BOOTSTRAP_VERSION = 3;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function isValidUuid(value: unknown): value is string {
@@ -113,12 +113,12 @@ export class PaneChatManager {
 
   private async updatePanelLaunchState(panel: ToolPanel, agent: PaneChatAgent, guidePath: string): Promise<void> {
     const previousCustomState = panel.state.customState as TerminalPanelState | undefined;
+    const shouldRefreshBootstrap = this.needsBootstrapRefresh(previousCustomState, agent);
     const shouldResetClaudeLaunch = agent === 'claude' && (
       !isValidUuid(previousCustomState?.agentSessionId) ||
-      previousCustomState?.initialInputMode !== 'argument' ||
-      previousCustomState?.initialInputDeliveryVersion !== PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION ||
       (previousCustomState?.hasClaudeSessionId === true && !previousCustomState.initialInputSentAt)
     );
+    const shouldResetLaunchState = shouldRefreshBootstrap || shouldResetClaudeLaunch;
     const nextCustomState: TerminalPanelState = {
       ...previousCustomState,
       ...this.buildTerminalState(agent, guidePath, previousCustomState, shouldResetClaudeLaunch),
@@ -128,6 +128,9 @@ export class PaneChatManager {
 
     if (shouldResetClaudeLaunch) {
       nextCustomState.hasClaudeSessionId = undefined;
+    }
+
+    if (shouldResetLaunchState) {
       nextCustomState.wasInterrupted = undefined;
       nextCustomState.scrollbackBuffer = '';
       nextCustomState.alternateScreenBuffer = '';
@@ -156,7 +159,7 @@ export class PaneChatManager {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
       initialInput: this.buildInitialInput(guidePath),
       initialInputMode: agent === 'claude' ? 'argument' : 'stdin',
-      initialInputDeliveryVersion: agent === 'claude' ? PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION : undefined,
+      initialInputDeliveryVersion: PANE_CHAT_BOOTSTRAP_VERSION,
       agentType: agent,
       ...(agentSessionId ? { agentSessionId } : {}),
       isCliPanel: true,
@@ -165,11 +168,7 @@ export class PaneChatManager {
   }
 
   private buildInitialInput(guidePath: string): string {
-    return [
-      `Read the Pane Chat guide at ${guidePath} and initialize yourself as Pane Chat.`,
-      'Then run runpane doctor --json before planning or orchestrating any Pane work.',
-      'If runpane resolves to a Windows path from a WSL shell or otherwise fails to start, diagnose the local CLI install/path mismatch before continuing.',
-    ].join(' ');
+    return `Read the Pane Chat guide at ${guidePath} and initialize yourself as Pane Chat.`;
   }
 
   private resolveAgentSessionId(agent: PaneChatAgent, previousState?: TerminalPanelState, forceNewAgentSession = false): string | undefined {
@@ -184,11 +183,17 @@ export class PaneChatManager {
 
   private needsLaunchStateRepair(panel: ToolPanel, agent: PaneChatAgent): boolean {
     const customState = panel.state.customState as TerminalPanelState | undefined;
-    return agent === 'claude' && (
+    return this.needsBootstrapRefresh(customState, agent) || (agent === 'claude' && (
       !isValidUuid(customState?.agentSessionId) ||
-      customState?.initialInputMode !== 'argument' ||
-      customState?.initialInputDeliveryVersion !== PANE_CHAT_CLAUDE_BOOTSTRAP_VERSION ||
       (customState?.hasClaudeSessionId === true && !customState.initialInputSentAt)
+    ));
+  }
+
+  private needsBootstrapRefresh(customState: TerminalPanelState | undefined, agent: PaneChatAgent): boolean {
+    const expectedInputMode = agent === 'claude' ? 'argument' : 'stdin';
+    return (
+      customState?.initialInputMode !== expectedInputMode ||
+      customState?.initialInputDeliveryVersion !== PANE_CHAT_BOOTSTRAP_VERSION
     );
   }
 
