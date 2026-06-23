@@ -34,6 +34,9 @@ jobs:
     - name: Run linting
       run: pnpm lint
 
+    - name: Rebuild native modules for Node tests
+      run: pnpm rebuild better-sqlite3-multiple-ciphers
+
     - name: Run main process test suite
       run: CI=1 pnpm --filter main exec vitest run
 
@@ -42,6 +45,9 @@ jobs:
 
     - name: Install Playwright browser dependencies
       run: pnpm exec playwright install --with-deps chromium
+
+    - name: Rebuild native modules for Electron smoke tests
+      run: pnpm run electron:rebuild
 
     - name: Run maintained functional smoke tests
       run: xvfb-run -a pnpm test:ci:minimal
@@ -117,6 +123,9 @@ jobs:
 
     - name: Run main process type checking
       run: pnpm --filter main typecheck
+
+    - name: Rebuild native modules for Node tests
+      run: pnpm rebuild better-sqlite3-multiple-ciphers
 
     - name: Run main process unit tests
       run: pnpm --filter main test
