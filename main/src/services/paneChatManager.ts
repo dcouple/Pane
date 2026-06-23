@@ -115,6 +115,7 @@ export class PaneChatManager {
     const previousCustomState = panel.state.customState as TerminalPanelState | undefined;
     const shouldRefreshBootstrap = this.needsBootstrapRefresh(previousCustomState, agent);
     const shouldResetClaudeLaunch = agent === 'claude' && (
+      shouldRefreshBootstrap ||
       !isValidUuid(previousCustomState?.agentSessionId) ||
       (previousCustomState?.hasClaudeSessionId === true && !previousCustomState.initialInputSentAt)
     );
