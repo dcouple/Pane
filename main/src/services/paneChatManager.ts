@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { withLock } from '../utils/mutex';
 import { getAppDirectory } from '../utils/appDirectory';
 import { panelManager } from './panelManager';
@@ -17,6 +18,11 @@ import {
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 
 const PANE_CHAT_TITLE = 'Pane Chat';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
 
 export class PaneChatManager {
   constructor(
@@ -82,10 +88,16 @@ export class PaneChatManager {
   private async ensurePanel(sessionId: string, agent: PaneChatAgent, guidePath: string): Promise<ToolPanel> {
     const existingPanel = panelManager.getPanel(PANE_CHAT_PANEL_ID);
     if (existingPanel) {
-      if (!terminalPanelManager.isTerminalInitialized(existingPanel.id)) {
+      const existingAgent = this.resolvePanelAgent(existingPanel) ?? agent;
+      const needsRepair = this.needsLaunchStateRepair(existingPanel, existingAgent);
+      if (needsRepair && terminalPanelManager.isTerminalInitialized(existingPanel.id)) {
+        terminalPanelManager.destroyTerminal(existingPanel.id);
+      }
+
+      if (!terminalPanelManager.isTerminalInitialized(existingPanel.id) || needsRepair) {
         await this.updatePanelLaunchState(existingPanel, agent, guidePath);
       }
-      return existingPanel;
+      return panelManager.getPanel(PANE_CHAT_PANEL_ID) ?? existingPanel;
     }
 
     return panelManager.createPanel({
@@ -99,24 +111,34 @@ export class PaneChatManager {
   }
 
   private async updatePanelLaunchState(panel: ToolPanel, agent: PaneChatAgent, guidePath: string): Promise<void> {
+    const previousCustomState = panel.state.customState as TerminalPanelState | undefined;
+    const nextCustomState: TerminalPanelState = {
+      ...previousCustomState,
+      ...this.buildTerminalState(agent, guidePath, previousCustomState),
+      initialInputSentAt: undefined,
+      initialInputError: undefined,
+    };
+
+    if (agent === 'claude' && !isValidUuid(previousCustomState?.agentSessionId)) {
+      nextCustomState.hasClaudeSessionId = undefined;
+    }
+
     const nextState = {
       ...panel.state,
-      customState: {
-        ...(panel.state.customState as TerminalPanelState | undefined),
-        ...this.buildTerminalState(agent, guidePath),
-        initialInputSentAt: undefined,
-        initialInputError: undefined,
-      },
+      customState: nextCustomState,
     };
 
     await panelManager.updatePanel(panel.id, { state: nextState });
   }
 
-  private buildTerminalState(agent: PaneChatAgent, guidePath: string): TerminalPanelState {
+  private buildTerminalState(agent: PaneChatAgent, guidePath: string, previousState?: TerminalPanelState): TerminalPanelState {
+    const agentSessionId = this.resolveAgentSessionId(agent, previousState);
+
     return {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
       initialInput: this.buildInitialInput(guidePath),
       agentType: agent,
+      ...(agentSessionId ? { agentSessionId } : {}),
       isCliPanel: true,
       isCliReady: false,
     };
@@ -125,8 +147,22 @@ export class PaneChatManager {
   private buildInitialInput(guidePath: string): string {
     return [
       `Read ${JSON.stringify(guidePath)} and initialize yourself as Pane Chat.`,
-      'Then run `runpane doctor --json` before planning or orchestrating any Pane work.',
+      'Then run runpane doctor --json before planning or orchestrating any Pane work.',
+      'If runpane resolves to a Windows path from a WSL shell or otherwise fails to start, diagnose the local CLI install/path mismatch before continuing.',
     ].join(' ');
+  }
+
+  private resolveAgentSessionId(agent: PaneChatAgent, previousState?: TerminalPanelState): string | undefined {
+    if (agent === 'claude') {
+      return isValidUuid(previousState?.agentSessionId) ? previousState.agentSessionId : randomUUID();
+    }
+
+    return previousState?.agentType === 'codex' ? previousState.agentSessionId : undefined;
+  }
+
+  private needsLaunchStateRepair(panel: ToolPanel, agent: PaneChatAgent): boolean {
+    const customState = panel.state.customState as TerminalPanelState | undefined;
+    return agent === 'claude' && !isValidUuid(customState?.agentSessionId);
   }
 
   private resolvePanelAgent(panel: ToolPanel): PaneChatAgent | undefined {

@@ -4,6 +4,7 @@ import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntime
 import { panelManager } from './panelManager';
 import * as os from 'os';
 import * as path from 'path';
+import { randomUUID } from 'crypto';
 import { getShellPath } from '../utils/shellPath';
 import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
@@ -27,6 +28,12 @@ const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
 
 type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
 
 export interface TerminalPanelSnapshot {
   initialized: true;
@@ -218,12 +225,21 @@ export class TerminalPanelManager {
       !initialCommand.includes('--session-id') &&
       !initialCommand.includes('--resume')
     ) {
+      const existingClaudeSessionId = isValidUuid(customState.agentSessionId)
+        ? customState.agentSessionId
+        : isValidUuid(panelId)
+          ? panelId
+          : undefined;
+      const claudeSessionId = existingClaudeSessionId ?? randomUUID();
+      const canResumeClaudeSession = customState.hasClaudeSessionId === true && Boolean(existingClaudeSessionId);
+
       nextState.hasClaudeSessionId = true;
+      nextState.agentSessionId = claudeSessionId;
       nextState.wasInterrupted = undefined;
       return {
-        commandToRun: customState.hasClaudeSessionId
-          ? `claude --resume ${panelId} --dangerously-skip-permissions`
-          : `${initialCommand} --session-id ${panelId}`,
+        commandToRun: canResumeClaudeSession
+          ? `claude --resume ${claudeSessionId} --dangerously-skip-permissions`
+          : `${initialCommand} --session-id ${claudeSessionId}`,
         customState: nextState,
         isCliCommand: true,
       };
