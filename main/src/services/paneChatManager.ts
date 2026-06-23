@@ -137,6 +137,7 @@ export class PaneChatManager {
     return {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
       initialInput: this.buildInitialInput(guidePath),
+      initialInputMode: agent === 'claude' ? 'argument' : 'stdin',
       agentType: agent,
       ...(agentSessionId ? { agentSessionId } : {}),
       isCliPanel: true,
@@ -146,7 +147,7 @@ export class PaneChatManager {
 
   private buildInitialInput(guidePath: string): string {
     return [
-      `Read ${JSON.stringify(guidePath)} and initialize yourself as Pane Chat.`,
+      `Read the Pane Chat guide at ${guidePath} and initialize yourself as Pane Chat.`,
       'Then run runpane doctor --json before planning or orchestrating any Pane work.',
       'If runpane resolves to a Windows path from a WSL shell or otherwise fails to start, diagnose the local CLI install/path mismatch before continuing.',
     ].join(' ');
@@ -162,7 +163,10 @@ export class PaneChatManager {
 
   private needsLaunchStateRepair(panel: ToolPanel, agent: PaneChatAgent): boolean {
     const customState = panel.state.customState as TerminalPanelState | undefined;
-    return agent === 'claude' && !isValidUuid(customState?.agentSessionId);
+    return agent === 'claude' && (
+      !isValidUuid(customState?.agentSessionId) ||
+      customState?.initialInputMode !== 'argument'
+    );
   }
 
   private resolvePanelAgent(panel: ToolPanel): PaneChatAgent | undefined {

@@ -203,6 +203,10 @@ export class TerminalPanelManager {
     return undefined;
   }
 
+  private quoteCommandArgument(value: string): string {
+    return `"${value.replace(/(["$`])/g, '\\$1')}"`;
+  }
+
   private resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: TerminalPanelState): {
     commandToRun: string;
     customState: TerminalPanelState;
@@ -232,14 +236,22 @@ export class TerminalPanelManager {
           : undefined;
       const claudeSessionId = existingClaudeSessionId ?? randomUUID();
       const canResumeClaudeSession = customState.hasClaudeSessionId === true && Boolean(existingClaudeSessionId);
+      const initialPromptArg = customState.initialInputMode === 'argument' && customState.initialInput?.trim()
+        ? ` ${this.quoteCommandArgument(customState.initialInput)}`
+        : '';
 
       nextState.hasClaudeSessionId = true;
       nextState.agentSessionId = claudeSessionId;
       nextState.wasInterrupted = undefined;
+      if (initialPromptArg && !canResumeClaudeSession) {
+        nextState.initialInputSentAt = new Date().toISOString();
+        nextState.initialInputError = undefined;
+      }
+
       return {
         commandToRun: canResumeClaudeSession
           ? `claude --resume ${claudeSessionId} --dangerously-skip-permissions`
-          : `${initialCommand} --session-id ${claudeSessionId}`,
+          : `${initialCommand} --session-id ${claudeSessionId}${initialPromptArg}`,
         customState: nextState,
         isCliCommand: true,
       };
