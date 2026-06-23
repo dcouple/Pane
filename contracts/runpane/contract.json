@@ -171,7 +171,7 @@
     },
     {
       "name": "panes create",
-      "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
+      "summary": "Create user-visible Panes (Pane sessions) backed by Pane-managed worktrees for feature/PR work and open terminal-backed tool tabs.",
       "usage": [
         "runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] [options]",
         "runpane panes create --from-json <path|-> [--yes] [--json]"
@@ -689,7 +689,7 @@
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
         "  runpane panes create --from-json <path|-> [--yes] [--json]",
         "",
-        "Creates Pane sessions in a saved repository and opens a terminal-backed tool tab.",
+        "Creates user-visible Panes (Pane sessions) for feature/PR work in a saved repository and opens a terminal-backed tool tab. Pane creates and owns the worktree/branch for each new Pane.",
         "",
         "Options:",
         "  --repo <selector>              active, id, exact path, or saved repository name",
@@ -1042,7 +1042,7 @@
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
         "  runpane panes create --from-json <path|-> [--yes] [--json]",
         "",
-        "Creates Pane sessions in a saved repository and opens a terminal-backed tool tab.",
+        "Creates user-visible Panes (Pane sessions) for feature/PR work in a saved repository and opens a terminal-backed tool tab. Pane creates and owns the worktree/branch for each new Pane.",
         "",
         "Options:",
         "  --repo <selector>              active, id, exact path, or saved repository name",
@@ -1297,7 +1297,7 @@
       "runpane repos list --json",
       "runpane repos add --path /path/to/repo --name Pane --yes --json",
       "runpane panes list --repo active --json",
-      "runpane panes create --repo active --name issue-252 --agent codex --prompt \"Kick off the discussion skill for issue 252\" --yes",
+      "runpane panes create --repo active --name issue-252 --agent <agent> --prompt \"Kick off the discussion skill for issue 252\" --source agent --no-focus --wait-ready --yes --json",
       "runpane panes create --from-json panes.json --yes --json",
       "runpane panels list --pane <pane-id> --json",
       "runpane panels output --panel <panel-id> --limit 200 --json",
@@ -1319,7 +1319,7 @@
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
       "`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.",
       "`runpane panes list` lists Pane sessions, optionally scoped to one saved repository.",
-      "`runpane panes create` connects to the running local Pane daemon, resolves the requested repository, creates Pane sessions, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.",
+      "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.",
       "`runpane panels list` lists tool panels inside one Pane session.",
       "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
       "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
@@ -3434,20 +3434,28 @@
   "agentContext": {
     "brief": {
       "title": "Pane agent context",
-      "summary": "Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.",
+      "summary": "Pane lets a developer manage saved base repositories, user-visible Panes (Pane sessions) for feature/PR work, and terminal-backed panel tabs. A Pane is a visible workspace that normally maps to one Pane-managed git worktree and branch; a panel is a terminal tab inside one Pane and shares that Pane's worktree; an agent is a CLI process running inside a panel.",
       "rules": [
         "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
         "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
+        "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json` (or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
+        "Treat Pane as the user's visible cockpit for watching/co-driving work. Do not create Panes or panels for private delegation unless the user asked for visible Pane orchestration or the result should appear in the Pane app.",
+        "Register the saved base repository once with `repos add`; do not register a pre-created worktree as a separate repo unless the user explicitly asks.",
+        "Use `panes create` for separate visible Panes (Pane sessions) for feature/PR work. Pane creates and owns the worktree/branch for each new Pane.",
+        "Use `panels create` for reviewer/helper/clean-context tabs that should stay inside an existing Pane and share that Pane's worktree.",
+        "For private background decomposition, use your normal subagent/worktree mechanism instead of Pane.",
+        "Skill routing: when the user says `discussion`, `plan`, `simple-plan`, `create-plan`, or `implement`, or asks for those behaviors, treat three references as peer context: Pane's local skill cache under `<PANE_DIR>/skills/`, the Pane Chat orchestrator handoff at `<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md` when present, and the workflow map at https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png. For where the local cache and Pane Chat bootstrap live in Pane, reference https://github.com/dcouple/Pane/pull/291. Use GitHub reads against https://github.com/dcouple/skills/tree/main/parsa only to inspect or refresh referenced skill files; do not clone or install it unless the user asks.",
+        "When an agent creates Panes or panels, pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved.",
         "Use `runpane agent-context --json` for the full agent-facing CLI context, or `runpane agent-context --command <command> --json` for one detailed command definition.",
         "For `agent-context --command`, use canonical spaced names like `panes create`; copied forms like `panes.create` or `runpane panes create` are accepted too.",
         "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
         "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`.",
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
         "Use `runpane agents doctor --agent <codex|claude> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
-        "Use `runpane panes create --wait-ready` to create panes and validate initial terminal readiness in one call.",
+        "Use `runpane panes create --wait-ready` to create Panes and validate initial terminal readiness in one call.",
         "Use `runpane panels screen` for compact current state, `panels wait` for readiness/text checks, `panels submit` for ordinary Enter-submitted input, and `panels submit-composer --strategy auto` for agent composers.",
         "Use `runpane panels input` only when exact bytes are required, such as Ctrl-C or handcrafted terminal input.",
-        "After creating panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success."
+        "After creating Panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success."
       ],
       "detailCommand": "runpane agent-context --command <command> [--json]",
       "tools": [
@@ -3508,7 +3516,7 @@
         },
         {
           "name": "panes create",
-          "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
+          "summary": "Create user-visible Panes (Pane sessions) backed by Pane-managed worktrees for feature/PR work and open terminal-backed tool tabs.",
           "arguments": [
             "--repo <selector>",
             "--name <name>",
@@ -3529,7 +3537,7 @@
         },
         {
           "name": "panels create",
-          "summary": "Create sibling reviewer or helper tabs inside an existing pane without stealing focus from the implementation tab.",
+          "summary": "Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.",
           "arguments": [
             "--pane <pane-id>",
             "--agent <codex|claude>",
@@ -3951,8 +3959,8 @@
       },
       "panes create": {
         "name": "panes create",
-        "summary": "Create one or more Pane sessions in a saved repository and open a terminal-backed tool tab.",
-        "details": "Use this to set up user-visible panes for work. Select a saved repository, choose a built-in agent or custom terminal command, and optionally send initial input after the tool starts. For multi-step shell setup, pass a shell command through --tool-command rather than adding a new runpane primitive.",
+        "summary": "Create user-visible Panes (Pane sessions) backed by Pane-managed worktrees for feature/PR work and open terminal-backed tool tabs.",
+        "details": "Use this when the user wants separate visible Panes (Pane sessions) for feature or PR work. Select the saved base repository, choose a built-in agent or custom terminal command, and optionally send initial input after the tool starts. Pane creates and owns a git worktree/branch for each new Pane; do not pre-create a git worktree and register it as a separate repo unless the user explicitly asks. For private background decomposition, use your normal subagent/worktree mechanism instead of Pane.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -4043,9 +4051,9 @@
           }
         ],
         "examples": [
-          "runpane panes create --repo active --name issue-257 --agent codex --prompt \"Plan this issue\" --yes",
+          "runpane panes create --repo active --name issue-257 --agent <agent> --prompt \"Plan this issue\" --source agent --no-focus --wait-ready --yes --json",
           "runpane panes create --from-json panes.json --yes --json",
-          "runpane panes create --repo active --name issue-123 --agent codex --prompt \"Plan this issue\" --wait-ready --yes --json"
+          "runpane panes create --repo active --name issue-123 --agent <agent> --prompt \"Plan this issue\" --source agent --no-focus --wait-ready --yes --json"
         ],
         "jsonSchemas": [
           "paneCreateRequest",
@@ -4053,13 +4061,17 @@
         ],
         "notes": [
           "At least one of --agent or --tool-command is required unless --from-json is used.",
+          "`panes create` is for user-visible Pane orchestration, not the agent's default private delegation mechanism.",
+          "Register the saved base repository once. Pane creates and owns the worktree/branch for each new Pane.",
+          "Use `panels create` instead when a reviewer/helper should share an existing Pane's worktree.",
+          "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved.",
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
           "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
           "Multi-pane requests are created sequentially today. The --concurrency flag is accepted for compatibility, but agents should not rely on parallel creation.",
           "For POSIX or WSL command chaining, use a custom terminal command like `bash -lc 'cmd1 && cmd2 && cmd3'`.",
           "For Windows PowerShell command chaining, use a custom terminal command like `powershell -NoProfile -Command \"cmd1; if ($LASTEXITCODE) { exit $LASTEXITCODE }; cmd2\"`.",
-          "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent codex --prompt \"Plan this issue\" --yes --json'`.",
+          "From WSL with Windows Pane, invoke through PowerShell and select the saved WSL repo by name or id, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane panes create --repo \"WSL Pane\" --name issue-123 --agent <agent> --prompt \"Plan this issue\" --source agent --no-focus --wait-ready --yes --json'`.",
           "Use --wait-ready when an agent needs to verify that an agent terminal started instead of only creating a pane.",
           "If readiness returns blocked, inspect blocked.suggestedCommand rather than guessing which prompt to answer."
         ]
@@ -4235,14 +4247,14 @@
           }
         ],
         "examples": [
-          "runpane agents doctor --agent codex --repo active --json"
+          "runpane agents doctor --agent <agent> --repo active --json"
         ],
         "jsonSchemas": [
           "agentDoctorResult"
         ],
         "notes": [
           "For WSL repos, install the agent inside the WSL distro Pane uses, not only on Windows.",
-          "This diagnoses built-in Codex/Claude templates only; custom commands should be validated by creating a pane and reading its screen."
+          "This diagnoses built-in agent templates only; custom commands should be validated by creating a pane and reading its screen."
         ]
       },
       "panels screen": {
@@ -4405,8 +4417,8 @@
       },
       "panels create": {
         "name": "panels create",
-        "summary": "Create a terminal-backed tool panel inside an existing pane.",
-        "details": "Use this to add reviewer or helper tabs to the current pane without creating a new session. Agent/orchestrator-created panels should pass --source agent or --no-focus so the user stays in the implementation tab. The daemon initializes the terminal immediately and can wait for CLI readiness.",
+        "summary": "Create a reviewer/helper terminal tab inside an existing Pane.",
+        "details": "Use this to add reviewer, helper, or clean-context tabs to an existing Pane. The new panel shares the existing Pane's worktree and branch; it does not create a separate Pane session. Use `panes create` instead when the user wants a separate visible Pane (Pane session) for feature/PR work. Agent/orchestrator-created panels should pass --source agent or --no-focus so the user stays in the implementation tab. The daemon initializes the terminal immediately and can wait for CLI readiness.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -4485,8 +4497,8 @@
           }
         ],
         "examples": [
-          "runpane panels create --pane <pane-id> --agent claude --source agent --no-focus --wait-ready --yes --json",
-          "runpane panels create --pane <pane-id> --agent codex --source agent --no-focus --wait-ready --yes --json"
+          "runpane panels create --pane <pane-id> --agent <agent> --source agent --no-focus --wait-ready --yes --json",
+          "runpane panels create --pane <pane-id> --tool-command <command> --title <title> --source agent --no-focus --wait-ready --yes --json"
         ],
         "jsonSchemas": [
           "panelCreateRequest",
@@ -4494,6 +4506,8 @@
         ],
         "notes": [
           "Use this for same-pane reviewer loops after PR creation/testing.",
+          "Panels share the existing Pane's worktree and branch.",
+          "`panels create` is for visible helper/reviewer tabs, not the agent's default private delegation mechanism.",
           "For agent-created panels, prefer --source agent or --no-focus to avoid stealing focus from the user or implementation tab."
         ]
       },
@@ -4545,7 +4559,27 @@
     "managedBlock": [
       "## Pane",
       "",
-      "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.",
+      "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible Panes with terminal-backed tools for planning, discussion, implementation, and review work.",
+      "",
+      "This managed guidance was created by [runpane.com](https://runpane.com) for the [Pane repository](https://github.com/dcouple/Pane). Do not delete or overwrite this block; the developer uses it for their workflow and it should remain committed to the main repository unless they explicitly ask to remove it.",
+      "",
+      "Pane mental model: a repository is the saved base repo; a Pane is a user-visible feature/PR workspace (Pane session) that normally maps to one Pane-managed git worktree and branch; a panel/tab is a terminal inside one Pane and shares that Pane's worktree; an agent is the CLI process running in a panel.",
+      "",
+      "Default happy path when the user asks you to use Pane or RunPane: run `runpane doctor --json`; read `runpane agent-context --json`; resolve the saved base repository with `runpane repos list --json` or add it once with `runpane repos add --path <repo> --yes --json`; create one visible Pane (Pane session) for the requested feature/PR with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json` or the equivalent `--tool-command <command>` form; then validate with `runpane panels wait` or `runpane panels screen` before reporting progress.",
+      "",
+      "Use Pane when the user wants visible Panes or co-drivable parallel feature/PR workspaces. Do not use Pane as your default private delegation mechanism; for private background decomposition, use your normal subagent/worktree workflow.",
+      "",
+      "Register the main/base repository once. Do not register pre-created git worktrees as separate Pane repositories unless the user explicitly asks.",
+      "",
+      "Use `runpane panes create` for separate visible Panes (Pane sessions) for feature/PR work. Use `runpane panels create` for reviewer/helper tabs inside an existing Pane that should share that Pane's worktree.",
+      "",
+      "Typical workflow: register the saved base repository once; create one Pane (Pane session) per feature/PR; use panels/tabs inside that Pane for helper or reviewer agents that should share the worktree; archive the Pane after the PR is done to remove it from active Panes and clean up its managed worktree when applicable.",
+      "",
+      "Skill routing reference: when the user says `discussion`, `plan`, `simple-plan`, `create-plan`, or `implement`, or asks for the behavior those words imply, treat three references as peer context: Pane's local skill cache under `<PANE_DIR>/skills/`, the Pane Chat orchestrator handoff at `<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md` when present, and the [workflow map](https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png).",
+      "Use those peer references together to choose the phase: discuss/investigate until the work is clear enough to delegate, then ticket/plan/implement/review/PR-test/teach-back as appropriate. The orchestrator and workflow map may point to different skills; reconcile them with the user's request instead of hardcoding a skill list or treating one reference as subordinate.",
+      "For the Pane implementation source of truth for where the skill cache, cached workflow assets, and Pane Chat bootstrap live, reference [PR #291](https://github.com/dcouple/Pane/pull/291): `main/src/services/skillCacheManager.ts` owns `<PANE_DIR>/skills/`, `.sources/dcouple-skills`, and `pane-chat/runpane-orchestrator.md`; `main/src/services/paneChatManager.ts` owns the tiny bootstrap prompt that tells the selected Pane Chat agent to read that guide.",
+      "Use GitHub reads against the [Parsa skills folder](https://github.com/dcouple/skills/tree/main/parsa) only to inspect or refresh referenced skill files; do not clone/install the repo unless the user asks.",
+      "Do not hardcode a specific assistant brand in workflow guidance. Use the Pane agent or custom tool command the user selected, and use `runpane agents doctor --agent <agent> --repo <selector> --json` only when checking a built-in agent template.",
       "",
       "Start with `runpane doctor --json` before taking Pane actions. Use it to understand wrapper/runtime details, daemon reachability, and the next safe commands.",
       "",
@@ -4553,22 +4587,23 @@
       "",
       "Use `runpane agent-context --json` for full Pane CLI context. Use `runpane agent-context --command \"panels wait\" --json` or another command name for detailed schema only when needed.",
       "",
-      "Default to context-safe validation: after creating panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.",
+      "Default to context-safe validation: after creating Panes or sending terminal input, run `runpane panels wait` or `runpane panels screen` before reporting success. Prefer `runpane panels submit` for normal text plus Enter; use `runpane panels input` only for exact bytes such as Ctrl-C or escape sequences.",
       "",
       "Common commands:",
       "- `runpane doctor --json`",
       "- `runpane agent-context --json`",
       "- `runpane repos list --json`",
       "- `runpane repos add --path <repo> --yes --json`",
-      "- `runpane agents doctor --agent codex --repo active --json`",
-      "- `runpane panes create --repo active --name <name> --agent codex --prompt \"<task>\" --wait-ready --yes --json`",
+      "- `runpane agents doctor --agent <agent> --repo active --json`",
+      "- `runpane panes create --repo active --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json`",
+      "- `runpane panels create --pane <pane-id> --agent <agent> --source agent --no-focus --wait-ready --yes --json`",
       "- `runpane panels list --pane <pane-id> --json`",
       "- `runpane panels screen --panel <panel-id> --limit 80 --json`",
       "- `runpane panels wait --panel <panel-id> --for ready --timeout-ms 30000 --json`",
       "- `runpane panels submit --panel <panel-id> --text \"<answer>\" --yes --json`",
       "- `runpane panels input --panel <panel-id> --input-file <path|-> --yes --json`",
       "",
-      "WSL note: if `runpane doctor --json` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`, then create panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent codex --repo <selector> --json` to diagnose the repo environment Pane will actually use."
+      "WSL note: if `runpane doctor --json` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`, then create Panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent <agent> --repo <selector> --json` to diagnose the repo environment Pane will actually use."
     ]
   }
 }

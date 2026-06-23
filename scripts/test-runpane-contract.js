@@ -992,6 +992,24 @@ function compareAgentContextParity() {
   assert.deepStrictEqual(pyBrief, nodeBrief);
   assert.strictEqual(nodeBrief.mode, 'brief');
   assert.ok(nodeBrief.rules.some((rule) => rule.includes('runpane doctor --json')));
+  assert.ok(nodeBrief.summary.includes('Pane-managed git worktree'));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('Happy path for any user request to use Pane/RunPane')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('read `runpane agent-context --json`')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('runpane panes create --repo <repo> --name <name> --agent <agent> --prompt')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('`--tool-command <command>` instead of `--agent <agent>`')));
+  assert.ok(!nodeBrief.rules.some((rule) => rule.includes('with `panes create --source agent --no-focus --wait-ready --yes --json`')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes("user's visible cockpit")));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('do not register a pre-created worktree')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('normal subagent/worktree mechanism')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('treat three references as peer context')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes("Pane's local skill cache under `<PANE_DIR>/skills/`")));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('https://github.com/dcouple/Pane/pull/291')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('Use GitHub reads against https://github.com/dcouple/skills/tree/main/parsa only to inspect or refresh referenced skill files')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('https://github.com/dcouple/skills/tree/main/parsa')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('do not clone or install it unless the user asks')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('creates Panes or panels')));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'doctor'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes create'));
 
@@ -1000,6 +1018,52 @@ function compareAgentContextParity() {
   assert.deepStrictEqual(pyDetail, nodeDetail);
   assert.strictEqual(nodeDetail.mode, 'command');
   assert.strictEqual(nodeDetail.command.name, 'panes create');
+  assert.ok(nodeDetail.command.summary.includes('Pane-managed worktrees'));
+  assert.ok(nodeDetail.command.details.includes('do not pre-create a git worktree'));
+  assert.ok(nodeDetail.command.notes.some((note) => note.includes("not the agent's default private delegation mechanism")));
+  assert.ok(nodeDetail.command.notes.some((note) => note.includes('panels create')));
+
+  const nodePanelsDetail = JSON.parse(runNode(['agent-context', '--command', 'panels create', '--json']));
+  const pyPanelsDetail = JSON.parse(runPython(['agent-context', '--command', 'panels create', '--json']));
+  assert.deepStrictEqual(pyPanelsDetail, nodePanelsDetail);
+  assert.strictEqual(nodePanelsDetail.command.name, 'panels create');
+  assert.ok(nodePanelsDetail.command.details.includes("shares the existing Pane's worktree"));
+  assert.ok(nodePanelsDetail.command.notes.some((note) => note.includes("share the existing Pane's worktree")));
+
+  const managedBlock = nodeBrief.source === 'runpane-contract'
+    ? require(path.join(rootDir, 'packages', 'runpane', 'dist', 'generated', 'contract.js')).RUNPANE_CONTRACT.agentContext.managedBlock.join('\n')
+    : '';
+  assert.ok(managedBlock.includes('Typical workflow: register the saved base repository once'));
+  assert.ok(managedBlock.includes('one Pane (Pane session) per feature/PR'));
+  assert.ok(managedBlock.includes('clean up its managed worktree when applicable'));
+  assert.ok(managedBlock.includes('created by [runpane.com](https://runpane.com)'));
+  assert.ok(managedBlock.includes('[Pane repository](https://github.com/dcouple/Pane)'));
+  assert.ok(managedBlock.includes('Do not delete or overwrite this block'));
+  assert.ok(managedBlock.includes('Default happy path when the user asks you to use Pane or RunPane'));
+  assert.ok(managedBlock.includes('resolve the saved base repository'));
+  assert.ok(managedBlock.includes('runpane panes create --repo <repo> --name <name> --agent <agent> --prompt'));
+  assert.ok(managedBlock.includes('equivalent `--tool-command <command>` form'));
+  assert.ok(!managedBlock.includes('with `runpane panes create --source agent --no-focus --wait-ready --yes --json`'));
+  assert.ok(managedBlock.includes('Skill routing reference:'));
+  assert.ok(managedBlock.includes('treat three references as peer context'));
+  assert.ok(managedBlock.includes("Pane's local skill cache under `<PANE_DIR>/skills/`"));
+  assert.ok(managedBlock.includes('<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md'));
+  assert.ok(managedBlock.includes('Pane Chat orchestrator handoff'));
+  assert.ok(managedBlock.includes('[Parsa skills folder](https://github.com/dcouple/skills/tree/main/parsa)'));
+  assert.ok(managedBlock.includes('[workflow map](https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png)'));
+  assert.ok(managedBlock.includes('Use those peer references together to choose the phase'));
+  assert.ok(managedBlock.includes('orchestrator and workflow map may point to different skills'));
+  assert.ok(managedBlock.includes('reconcile them with the user'));
+  assert.ok(managedBlock.includes('[PR #291](https://github.com/dcouple/Pane/pull/291)'));
+  assert.ok(managedBlock.includes('main/src/services/skillCacheManager.ts'));
+  assert.ok(managedBlock.includes('main/src/services/paneChatManager.ts'));
+  assert.ok(managedBlock.includes('owns `<PANE_DIR>/skills/`, `.sources/dcouple-skills`, and `pane-chat/runpane-orchestrator.md`'));
+  assert.ok(managedBlock.includes('tiny bootstrap prompt that tells the selected Pane Chat agent to read that guide'));
+  assert.ok(managedBlock.includes('Use GitHub reads against the [Parsa skills folder]'));
+  assert.ok(managedBlock.includes('only to inspect or refresh referenced skill files'));
+  assert.ok(managedBlock.includes('Do not hardcode a specific assistant brand'));
+  assert.ok(managedBlock.includes('Pane agent or custom tool command the user selected'));
+  assert.ok(managedBlock.includes('do not clone/install the repo unless the user asks'));
 
   const nodeDottedDetail = JSON.parse(runNode(['agent-context', '--command', 'panes.create', '--json']));
   const pyDottedDetail = JSON.parse(runPython(['agent-context', '--command', 'panes.create', '--json']));
