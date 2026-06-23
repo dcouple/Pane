@@ -39,6 +39,7 @@ type TerminalUnderTest = {
   pty: {
     pause: ReturnType<typeof vi.fn>;
     resume: ReturnType<typeof vi.fn>;
+    write: ReturnType<typeof vi.fn>;
   };
   isPtyHost: boolean;
   panelId: string;
@@ -77,11 +78,25 @@ type SnapshotAccess = {
   getTerminalSnapshot(panelId: string): ReturnType<TerminalPanelManager['getTerminalSnapshot']>;
 };
 
+type InitialInputAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  sendInitialInputOnce(panelId: string): void;
+};
+
+type LaunchCommandAccess = {
+  resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: Record<string, unknown>): {
+    commandToRun: string;
+    customState: Record<string, unknown>;
+    isCliCommand: boolean;
+  };
+};
+
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
   return {
     pty: {
       pause: vi.fn(),
       resume: vi.fn(),
+      write: vi.fn(),
     },
     isPtyHost: false,
     panelId: 'panel-1',
@@ -111,10 +126,17 @@ function createConfigManagerStub(): ConfigManager {
   } as ConfigManager;
 }
 
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 describe('TerminalPanelManager hidden output delivery', () => {
   afterEach(() => {
     resetPaneRuntimeForTests();
     vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+    vi.useRealTimers();
   });
 
   it('keeps visible terminal output on the combined runtime sink', () => {
@@ -326,6 +348,103 @@ describe('TerminalPanelManager hidden output delivery', () => {
       agentType: 'codex',
       agentSessionId: 'agent-session-1',
     });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('submits Codex initial input through the composer sequence', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+    const panel = {
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal' as const,
+      title: 'Codex',
+      state: {
+        isActive: true,
+        customState: {
+          initialInput: 'Read the Pane Chat guide and initialize yourself.',
+          initialInputSubmitStrategy: 'codex-ctrl-enter' as const,
+          agentType: 'codex' as const,
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    };
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+
+    manager.sendInitialInputOnce(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).toHaveBeenCalledWith('Read the Pane Chat guide and initialize yourself.');
+    expect(terminal.pty.write).not.toHaveBeenCalledWith('\x1b[13;5u\r');
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(terminal.pty.write).toHaveBeenCalledWith('\x1b[13;5u\r');
+    expect(panelManager.updatePanel).toHaveBeenCalledWith(terminal.panelId, {
+      state: expect.objectContaining({
+        customState: expect.objectContaining({
+          initialInputSentAt: expect.any(String),
+          initialInputError: undefined,
+        }),
+      }),
+    });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('passes fresh Codex initial input as a startup prompt argument', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'codex --yolo', {
+      agentType: 'codex',
+      initialInputMode: 'argument',
+      initialInput: 'Read "the guide" and initialize `Pane Chat`.',
+    });
+
+    expect(result).toMatchObject({
+      commandToRun: 'codex --yolo "Read \\"the guide\\" and initialize \\`Pane Chat\\`."',
+      isCliCommand: true,
+      customState: {
+        agentType: 'codex',
+        isCliPanel: true,
+        isCliReady: false,
+        initialInputSentAt: expect.any(String),
+        initialInputError: undefined,
+      },
+    });
+  });
+
+  it('keeps Enter as the default initial input submit strategy', async () => {
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+    vi.mocked(panelManager.getPanel).mockReturnValue({
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal',
+      title: 'Tool',
+      state: {
+        isActive: true,
+        customState: {
+          initialInput: 'hello tool',
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    });
+
+    manager.sendInitialInputOnce(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).toHaveBeenCalledWith('hello tool\r');
     disposeFlowControlRecord(terminal.flowControl);
   });
 });

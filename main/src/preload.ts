@@ -450,6 +450,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   paneChat: {
     getOrCreate: (): Promise<IPCResponse> => invokeIpc('pane-chat:get-or-create'),
+    setAgent: (agent: 'claude' | 'codex'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
   },
 
   // Session management

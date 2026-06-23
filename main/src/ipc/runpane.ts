@@ -570,6 +570,8 @@ async function createTerminalPanelForSession(
   const initialState: TerminalPanelState = {
     initialCommand: tool.command,
     initialInput: tool.initialInput,
+    ...(tool.agent === 'codex' ? { initialInputMode: 'argument' as const } : {}),
+    initialInputSubmitStrategy: 'enter',
     agentType: tool.agent,
     isCliPanel: Boolean(tool.agent),
   };

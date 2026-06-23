@@ -74,6 +74,7 @@ const PROMPT_CHANNELS = [
 
 const PANE_CHAT_CHANNELS = [
   'pane-chat:get-or-create',
+  'pane-chat:set-agent',
 ] as const;
 
 const PERMISSION_CHANNELS = [

@@ -25,7 +25,7 @@ import type {
   PanePermissionResponse,
 } from '../../../shared/types/daemon';
 import type { ToolPanel } from '../../../shared/types/panels';
-import type { PaneChatState } from '../../../shared/types/paneChat';
+import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -89,6 +89,7 @@ interface ElectronAPI {
 
   paneChat: {
     getOrCreate: () => Promise<IPCResponse<PaneChatState<Session>>>;
+    setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
   };
 
   // Session management

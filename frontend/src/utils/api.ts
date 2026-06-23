@@ -3,7 +3,7 @@ import type { CreateSessionRequest, Session } from '../types/session';
 import type { Project } from '../types/project';
 import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
-import type { PaneChatState } from '../../../shared/types/paneChat';
+import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type {
   RemoteDaemonClientRecord,
   RemoteDaemonConnectionPair,
@@ -62,6 +62,10 @@ export class API {
     async getOrCreate(): Promise<IPCResponse<PaneChatState<Session>>> {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.paneChat.getOrCreate();
+    },
+    async setAgent(agent: PaneChatAgent): Promise<IPCResponse<PaneChatState<Session>>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.paneChat.setAgent(agent);
     },
   };
 

@@ -74,7 +74,7 @@ runpane setup</code></pre>
 <br />
 <br />
 
-[Installation](#installation) · [What Flying Feels Like](#what-flying-feels-like) · [Remote Pane](#remote-pane) · [Agent-Operable CLI](#agent-operable-cli) · [Keyboard Shortcuts](#keyboard-shortcuts) · [Building from Source](#building-from-source)
+[Installation](#installation) · [What Flying Feels Like](#what-flying-feels-like) · [Remote Pane](#remote-pane) · [Pane Chat](#pane-chat) · [Agent-Operable CLI](#agent-operable-cli) · [Keyboard Shortcuts](#keyboard-shortcuts) · [Building from Source](#building-from-source)
 
 </div>
 
@@ -104,6 +104,7 @@ Each of these is a small thing. Together they compound fast.
 
 | Feature | | |
 |---|---|---|
+| **Pane Chat** | A global orchestrator terminal that starts in the Pane data directory, loads local Pane orchestration skills, and can coordinate Claude or Codex across repositories, panes, tabs, worktrees, and review loops. | <a href="#pane-chat">Details</a> |
 | **Remote Pane** | Run panes, worktrees, terminals, files, git state, and approval prompts on a self-hosted remote machine while controlling them from desktop Pane or the browser app at [runpane.com/app](https://runpane.com/app/). | <a href="#remote-pane">Setup</a> |
 | **Agent-Operable CLI** | Pane ships with `runpane agent-context`, `runpane repos add`, and `runpane panes create`, so a coding agent can discover Pane's command schema, register a repo, and open follow-up panes for issues or tasks. | [Contract](docs/RUNPANE_CLI_CONTRACT.md) |
 | **@mention Terminals** | Type `@` in any terminal to pull the last 500 lines from another pane's terminal directly into your context, no copy-paste required. | <img src="images/qol-at-mention.png" alt="Cross-terminal @mention picker" width="420"> |
@@ -169,6 +170,31 @@ Windows PowerShell:
 ```
 
 The CLI setup command prints the same connection code and, for SSH mode, the forwarding command. See the [Remote Daemon docs](https://runpane.com/docs/remote-daemon) for the full step-by-step setup, mobile install instructions, API key notes, and security model.
+
+---
+
+## Pane Chat
+
+Pane Chat is the global orchestrator terminal for a Pane workspace. It is not tied to a repository or worktree. It starts from the Pane data directory, reads a generated local runtime context, and uses the `runpane` CLI to inspect and operate the workspace.
+
+Use it for the work that spans panes:
+
+```text
+Add this repo, create three worktree panes for the next features, start Codex in each one, and keep a separate review tab ready for every PR.
+```
+
+Pane Chat keeps the human discussion at the orchestrator level, distills that into concrete briefs, then delegates planning, implementation, review, and PR testing to Claude or Codex panels through RunPane. This keeps the agent doing the work in the right isolated worktree while Pane Chat watches state with `runpane panels wait`, `runpane panels screen`, and `runpane panels output`.
+
+The prompt stays small because Pane writes local project-level skills into the Pane data directory:
+
+- `.codex/skills/pane-orchestrator/SKILL.md`
+- `.claude/skills/pane-orchestrator/SKILL.md`
+- `skills/pane-chat/runpane-orchestrator.md`
+- `skills/pane-chat/runtime-context.md`
+
+Pane also caches the important workflow skills from the Pane skills repository, including discussion, plan/simple-plan, implement, implementation-reviewer, PR test automation, prepare-pr, investigate, and commit. The generated orchestrator skill tells Pane Chat to load the workflow map and local skill cache before it coordinates work, so broad or greenfield requests follow the intended discuss -> plan -> implement -> review loop instead of treating a loose prompt as a plan.
+
+The top-right toggle switches Pane Chat between Claude and Codex and persists the default orchestrator agent in Pane settings. Both agents share the same local orchestration contract; only the terminal command changes.
 
 ---
 

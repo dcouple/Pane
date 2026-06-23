@@ -475,6 +475,7 @@ describe('runpane IPC handlers', () => {
       initialState: {
         initialCommand: RUNPANE_CONTRACT.agentTemplates.claude.command,
         initialInput: '/review',
+        initialInputSubmitStrategy: 'enter',
         agentType: 'claude',
         isCliPanel: true,
       },
@@ -1116,6 +1117,8 @@ describe('runpane IPC handlers', () => {
       initialState: {
         initialCommand: RUNPANE_CONTRACT.agentTemplates.codex.command,
         initialInput: '$discussion https://github.com/dcouple/Pane/issues/252',
+        initialInputMode: 'argument',
+        initialInputSubmitStrategy: 'enter',
         agentType: 'codex',
         isCliPanel: true,
       },

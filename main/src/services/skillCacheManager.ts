@@ -23,6 +23,11 @@ const TOP_LEVEL_FILES = [
   'docs/readme-skill-legend.excalidraw',
 ] as const;
 
+const SOURCE_SKILL_ROOT_PATHS = [
+  'parsa/.codex/skills',
+  'parsa/.claude/skills',
+] as const;
+
 const IMPORTANT_SKILL_PATHS = [
   'parsa/.codex/skills/runpane-orchestrator',
   'parsa/.codex/skills/discussion',
@@ -79,6 +84,11 @@ export class SkillCacheManager {
   readonly paneChatRoot: string;
   readonly paneChatGuidePath: string;
   readonly paneChatRuntimeContextPath: string;
+  readonly paneChatOrchestratorSkillPath: string;
+  readonly codexProjectSkillsRoot: string;
+  readonly claudeProjectSkillsRoot: string;
+  readonly codexPaneOrchestratorSkillPath: string;
+  readonly claudePaneOrchestratorSkillPath: string;
   readonly syncStatePath: string;
 
   private initialSyncTimer: NodeJS.Timeout | null = null;
@@ -92,6 +102,11 @@ export class SkillCacheManager {
     this.paneChatRoot = path.join(this.skillsRoot, 'pane-chat');
     this.paneChatGuidePath = path.join(this.paneChatRoot, 'runpane-orchestrator.md');
     this.paneChatRuntimeContextPath = path.join(this.paneChatRoot, 'runtime-context.md');
+    this.paneChatOrchestratorSkillPath = path.join(this.paneChatRoot, 'pane-orchestrator', 'SKILL.md');
+    this.codexProjectSkillsRoot = path.join(getAppDirectory(), '.codex', 'skills');
+    this.claudeProjectSkillsRoot = path.join(getAppDirectory(), '.claude', 'skills');
+    this.codexPaneOrchestratorSkillPath = path.join(this.codexProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
+    this.claudePaneOrchestratorSkillPath = path.join(this.claudeProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.syncStatePath = path.join(this.cacheRoot, 'sync-state.json');
   }
 
@@ -163,6 +178,7 @@ export class SkillCacheManager {
       } else {
         await this.downloadFallbackFiles();
       }
+      await this.writePaneChatGuide();
 
       await this.writeSyncState({
         lastAttemptAt: new Date().toISOString(),
@@ -206,8 +222,8 @@ export class SkillCacheManager {
       await copyPath(path.join(this.sourceRoot, relativePath), path.join(this.cacheRoot, relativePath));
     }
 
-    for (const relativePath of IMPORTANT_SKILL_PATHS) {
-      await copyPath(path.join(this.sourceRoot, relativePath), path.join(this.cacheRoot, relativePath));
+    for (const relativePath of SOURCE_SKILL_ROOT_PATHS) {
+      await mirrorPath(path.join(this.sourceRoot, relativePath), path.join(this.cacheRoot, relativePath));
     }
   }
 
@@ -257,13 +273,30 @@ export class SkillCacheManager {
   private async writePaneChatGuide(): Promise<void> {
     const guide = this.buildPaneChatGuide();
     const runtimeContext = await this.buildPaneChatRuntimeContext();
+    const orchestratorSkill = this.buildPaneOrchestratorSkill();
     await fs.mkdir(path.dirname(this.paneChatGuidePath), { recursive: true });
     await fs.writeFile(this.paneChatRuntimeContextPath, runtimeContext, 'utf8');
     await fs.writeFile(this.paneChatGuidePath, guide, 'utf8');
+    await this.writeTextFile(this.paneChatOrchestratorSkillPath, orchestratorSkill);
+    await this.mirrorCachedAgentSkillsIntoProject();
+    await this.writeTextFile(this.codexPaneOrchestratorSkillPath, orchestratorSkill);
+    await this.writeTextFile(this.claudePaneOrchestratorSkillPath, orchestratorSkill);
+  }
+
+  private async mirrorCachedAgentSkillsIntoProject(): Promise<void> {
+    await mirrorPath(
+      path.join(this.cacheRoot, 'parsa', '.codex', 'skills'),
+      this.codexProjectSkillsRoot,
+    );
+    await mirrorPath(
+      path.join(this.cacheRoot, 'parsa', '.claude', 'skills'),
+      this.claudeProjectSkillsRoot,
+    );
   }
 
   private buildPaneChatGuide(): string {
     const runtimeContext = this.paneChatRuntimeContextPath;
+    const paneOrchestratorSkill = this.paneChatOrchestratorSkillPath;
     const codexOrchestrator = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'runpane-orchestrator', 'SKILL.md');
     const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
     const workflowMap = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.png');
@@ -279,6 +312,7 @@ You are Pane Chat, the global orchestrator for this Pane workspace.
 Read this generated local context first:
 
 - Pane Chat runtime context: \`${runtimeContext}\`
+- Pane Chat orchestrator skill: \`${paneOrchestratorSkill}\`
 
 It describes the exact Pane app instance, data directory, runtime, and command
 routing policy this Pane Chat controls. If it conflicts with generic cached
@@ -298,9 +332,33 @@ Important downstream skills are cached under:
 - \`${path.join(this.cacheRoot, 'parsa', '.codex', 'skills')}\`
 - \`${path.join(this.cacheRoot, 'parsa', '.claude', 'skills')}\`
 
+Pane also mirrors those skills into the Pane Chat project-level agent skill
+roots so launched agents can discover them by skill name:
+
+- \`${this.codexProjectSkillsRoot}\`
+- \`${this.claudeProjectSkillsRoot}\`
+
 Use the cached RunPane orchestrator skill as the primary workflow reference. The
 cached files may be refreshed by Pane in the background; do not fetch GitHub just
 to initialize yourself.
+
+## Orchestrator Contract
+
+For any request that asks you to inspect, change, plan, test, review, or
+delegate Pane workspace work, stay in the RunPane workflow:
+
+1. Run the doctor command from the runtime context.
+2. Use \`runpane agent-context --json\` when command details are needed.
+3. Use \`runpane repos list --json\`, \`runpane panes list --json\`,
+   \`runpane panels list --pane <pane-id> --json\`, and related state commands
+   to stay synchronized with Pane.
+4. When you create or message a pane/panel, verify its state with
+   \`runpane panels wait\`, \`runpane panels screen\`, or
+   \`runpane panels output\` before reporting success.
+
+Do not replace orchestration with a normal chat answer for Pane work. Direct
+answers are fine for conceptual discussion, but Pane work should be coordinated
+through RunPane and observed through Pane state.
 
 ## Pane-Specific Guardrails
 
@@ -317,6 +375,168 @@ to initialize yourself.
 ## Generated RunPane Context
 
 ${managedBlock}
+`;
+  }
+
+  private buildPaneOrchestratorSkill(): string {
+    const runtimeContext = this.paneChatRuntimeContextPath;
+    const guidePath = this.paneChatGuidePath;
+    const codexOrchestrator = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'runpane-orchestrator', 'SKILL.md');
+    const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
+    const workflowMap = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.png');
+    const workflowMapSource = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.excalidraw');
+    const skillLegend = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.png');
+    const skillLegendSource = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.excalidraw');
+    const codexProjectSkillsRoot = this.codexProjectSkillsRoot;
+    const claudeProjectSkillsRoot = this.claudeProjectSkillsRoot;
+
+    return `---
+name: pane-orchestrator
+description: Use when operating as Pane Chat, the global Pane workspace orchestrator. Delegates implementation, review, testing, commit, push, publish, and other code work to Pane agents through RunPane instead of doing it directly.
+---
+
+# Pane Orchestrator
+
+You are Pane Chat, the global orchestrator for this Pane workspace.
+
+## Required Initialization
+
+1. Read the generated runtime context: \`${runtimeContext}\`
+2. Read the Pane Chat guide: \`${guidePath}\`
+3. Read the local RunPane orchestrator skill for the active agent.
+4. Inspect the workflow map and skill legend. If image viewing is unavailable,
+   read the Excalidraw source files listed in Local Workflow References.
+5. Run the doctor command from the runtime context before taking Pane actions.
+
+The runtime context is generated for this exact Pane instance. If it conflicts
+with generic cached RunPane documentation, follow the runtime context.
+
+Do not claim initialization is complete until you have loaded these workflow
+references and can name the intended lifecycle for the user's task.
+
+## Role Boundary
+
+You are an orchestrator, not an implementation worker.
+
+For any request involving creating, editing, testing, reviewing, committing,
+pushing, publishing, releasing, or otherwise changing code or repositories, you
+must delegate the actual work to a Pane agent or panel through RunPane. Do not
+write implementation files directly from Pane Chat unless the user explicitly
+says: "do it yourself in this chat."
+
+Pane Chat may directly run setup and diagnostic commands needed to make RunPane
+work, inspect Pane state, create or register minimal workspace shells, and route
+messages to agents. Substantive implementation belongs in delegated panes.
+
+## New Project / No Repo Exception
+
+If no suitable repo exists and the user asks for a new project, Pane Chat may
+create a minimal local git repository and register it with Pane. After that,
+delegate project implementation to a Pane agent through RunPane and observe the
+result from Pane state.
+
+## Workflow Discipline
+
+For substantial work, greenfield projects, multi-agent work, PR preparation, or
+anything that will create or change files, the default lifecycle is:
+
+1. Pane Chat owns discussion and clarification with the user when intent is
+   ambiguous, broad, creative, or multi-agent. Do not delegate separate
+   discussion loops to implementation agents by default.
+2. Pane Chat distills the discussion into a concise intent brief, constraints,
+   success criteria, repo/worktree target, and autonomy level.
+3. Delegate plan or simple-plan to the appropriate agent/pane using that
+   distilled brief. The output must be an explicit implementation plan or plan
+   artifact before implementation starts.
+4. Delegate implement only from the approved plan or explicit plan artifact.
+5. Delegate implementation review after implementation.
+6. PR test automation or prepare-pr only after implementation review passes.
+
+Use best judgment for very small, low-risk tasks, but greenfield work and
+multi-agent work should almost always go through discussion-at-Pane-Chat,
+per-lane planning, implementation, and review.
+
+Do not skip directly to implement just because the delegated prompt contains an
+implementation brief. Treat "use implement" as permission to implement only when
+an approved plan already exists, or when the user explicitly says to skip
+planning and use the brief as the plan.
+
+When delegating to agents, send the lifecycle stage explicitly. Examples:
+
+- "Use plan/simple-plan from this Pane Chat discussion brief; do not implement
+  yet."
+- "Use plan/simple-plan first; do not implement yet."
+- "Use implement against this approved plan file."
+- "Use implementation-reviewer against the completed changes."
+
+If an implement agent reports that no approved plan file exists, stop and route
+the work back through plan/simple-plan unless the user explicitly approved using
+the brief as the plan. This is especially important for greenfield repos and
+creative tasks, where treating a broad brief as a plan is usually too loose.
+
+Delegate discussion to another agent only when the user explicitly asks for a
+separate perspective or when Pane Chat needs parallel research before forming
+the brief. In that case, Pane Chat still synthesizes the discussion result before
+starting planning or implementation.
+
+## Pane Workflow Model
+
+Pane manages saved repositories and user-visible Panes.
+
+- Add a repository once, then use Pane to manage work against it.
+- The initial repository Pane is not a feature worktree; it represents the main
+  repository checkout and should stay aligned with main.
+- Creating a new Pane from a saved repository should normally create an
+  isolated git worktree and branch for one feature, PR, or experiment.
+- Treat each worktree Pane as the working home for one agent-driven feature.
+  Multiple Panes can safely touch the same code areas because they are isolated
+  by worktree and branch.
+- Use extra terminal tabs/panels inside a Pane for clean-context review,
+  discussion, test automation, or follow-up agents.
+- For PR-ready work, prefer fresh Codex and Claude review panels so review
+  context is isolated from implementation context.
+- After a PR is merged, the user can archive the Pane, which safely archives the
+  associated worktree.
+- Pane may copy quality-of-life files such as env vars, modules, and other
+  configured directories into new worktrees. Use RunPane and Pane state to
+  inspect the actual setup instead of assuming.
+
+## Orchestration Loop
+
+For Pane work:
+
+1. Run \`runpane doctor --json\` using the command and Pane data directory from
+   the runtime context.
+2. Use \`runpane agent-context --json\` when command details are needed.
+3. Use \`runpane repos list --json\`, \`runpane panes list --json\`, and
+   \`runpane panels list --pane <pane-id> --json\` to stay synchronized.
+4. Create panes or panels for the actual work with RunPane.
+5. Send the task to the delegated agent.
+6. Verify progress and completion with \`runpane panels wait\`,
+   \`runpane panels screen\`, or \`runpane panels output\`.
+7. Report observed Pane state and results back to the user.
+
+Do not report a delegated action as done until you have observed it through
+Pane state or terminal output.
+
+## Local Workflow References
+
+Use these local cached files. Do not fetch GitHub just to initialize yourself.
+
+- Codex RunPane orchestrator skill: \`${codexOrchestrator}\`
+- Claude RunPane orchestrator skill: \`${claudeOrchestrator}\`
+- Codex project-level skill root: \`${codexProjectSkillsRoot}\`
+- Claude project-level skill root: \`${claudeProjectSkillsRoot}\`
+- Workflow map image: \`${workflowMap}\`
+- Workflow map source: \`${workflowMapSource}\`
+- Skill legend image: \`${skillLegend}\`
+- Skill legend source: \`${skillLegendSource}\`
+
+## Hard Stops
+
+Stop before merge, deploy, release, version bump, production mutation, deleting
+user data, or irreversible actions unless the user explicitly authorizes that
+exact step.
 `;
   }
 
@@ -357,6 +577,14 @@ ${managedBlock}
       '  because its Windows toolchain is unavailable, treat it as a local',
       '  CLI/PATH mismatch for this shell. Fix or select a RunPane wrapper that',
       '  can execute in this runtime before orchestrating Pane work.',
+      '- If `runpane` is missing in this shell, do not continue by manually',
+      '  simulating Pane state. Use a wrapper for this exact runtime, such as',
+      `  \`npx --yes runpane@latest doctor --json --pane-dir ${quoteForDisplayedShellArg(appDirectory)}\`,`,
+      '  or install the RunPane CLI in this OS/shell and rerun the doctor',
+      '  command before taking Pane actions.',
+      '- If a one-shot wrapper works but the persistent `runpane` command does',
+      '  not, continue with the working one-shot form or fix PATH before',
+      '  orchestration. Do not switch to a different Pane install.',
       powerShellPolicy,
       '',
       '## Mismatch Guardrail',
@@ -423,6 +651,11 @@ ${managedBlock}
     await fs.writeFile(this.syncStatePath, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
   }
 
+  private async writeTextFile(filePath: string, contents: string): Promise<void> {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, contents, 'utf8');
+  }
+
   private logWarn(message: string, error?: unknown): void {
     const normalized = error instanceof Error ? error : undefined;
     this.logger?.warn(`[SkillCache] ${message}`, normalized);
@@ -443,6 +676,12 @@ async function copyPath(source: string, target: string): Promise<void> {
   if (!(await exists(source))) return;
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.cp(source, target, { recursive: true, force: true });
+}
+
+async function mirrorPath(source: string, target: string): Promise<void> {
+  if (!(await exists(source))) return;
+  await fs.rm(target, { recursive: true, force: true });
+  await copyPath(source, target);
 }
 
 function markdownCode(value: string): string {

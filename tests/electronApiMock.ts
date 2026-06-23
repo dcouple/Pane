@@ -108,18 +108,20 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       archived: false,
       isHidden: true,
     };
-    const paneChatPanel = {
-      id: '__pane_chat_terminal__',
+    const createPaneChatPanel = (agent: 'claude' | 'codex') => ({
+      id: agent === 'codex' ? '__pane_chat_terminal_codex__' : '__pane_chat_terminal__',
       sessionId: '__pane_chat_session__',
       type: 'terminal',
-      title: 'Pane Chat',
+      title: agent === 'codex' ? 'Pane Chat - Codex' : 'Pane Chat',
       state: {
         isActive: true,
         hasBeenViewed: false,
         customState: {
-          initialCommand: 'claude --dangerously-skip-permissions',
-          initialInput: 'Read the Pane Chat guide at /tmp/.pane/skills/pane-chat/runpane-orchestrator.md and initialize yourself as Pane Chat.',
-          agentType: 'claude',
+          initialCommand: agent === 'codex' ? 'codex' : 'claude --dangerously-skip-permissions',
+          initialInput: 'Use the pane-orchestrator skill and initialize yourself as Pane Chat.',
+          initialInputMode: 'argument',
+          initialInputSubmitStrategy: 'enter',
+          agentType: agent,
           isCliPanel: true,
           isCliReady: false,
         },
@@ -127,9 +129,20 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       metadata: {
         createdAt: new Date(0).toISOString(),
         lastActiveAt: new Date(0).toISOString(),
-        position: 0,
+        position: agent === 'codex' ? 1 : 0,
         permanent: true,
       },
+    });
+    const createPaneChatState = () => {
+      const agent = configState.defaultOrchestratorAgent === 'codex' ? 'codex' : 'claude';
+      return {
+        session: clone(paneChatSession),
+        panel: clone(createPaneChatPanel(agent)),
+        agent,
+        cwd: '/tmp/.pane',
+        guidePath: '/tmp/.pane/skills/pane-chat/runpane-orchestrator.md',
+        started: false,
+      };
     };
     let mockSessions: Array<Record<string, unknown>> = [];
     let cloudDisconnectError: string | null = null;
@@ -324,14 +337,11 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         supportProject: () => success({}),
       }),
       paneChat: namespace({
-        getOrCreate: () => success({
-          session: clone(paneChatSession),
-          panel: clone(paneChatPanel),
-          agent: configState.defaultOrchestratorAgent === 'codex' ? 'codex' : 'claude',
-          cwd: '/tmp/.pane',
-          guidePath: '/tmp/.pane/skills/pane-chat/runpane-orchestrator.md',
-          started: false,
-        }),
+        getOrCreate: () => success(createPaneChatState()),
+        setAgent: (agent: 'claude' | 'codex') => {
+          configState.defaultOrchestratorAgent = agent === 'codex' ? 'codex' : 'claude';
+          return success(createPaneChatState());
+        },
       }),
       panels: namespace({
         getSessionPanels: () => success([]),
