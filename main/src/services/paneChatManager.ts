@@ -99,14 +99,17 @@ export class PaneChatManager {
   }
 
   private async updatePanelLaunchState(panel: ToolPanel, agent: PaneChatAgent, guidePath: string): Promise<void> {
-    panel.state.customState = {
-      ...(panel.state.customState as TerminalPanelState | undefined),
-      ...this.buildTerminalState(agent, guidePath),
-      initialInputSentAt: undefined,
-      initialInputError: undefined,
+    const nextState = {
+      ...panel.state,
+      customState: {
+        ...(panel.state.customState as TerminalPanelState | undefined),
+        ...this.buildTerminalState(agent, guidePath),
+        initialInputSentAt: undefined,
+        initialInputError: undefined,
+      },
     };
 
-    await panelManager.updatePanel(panel.id, { state: panel.state });
+    await panelManager.updatePanel(panel.id, { state: nextState });
   }
 
   private buildTerminalState(agent: PaneChatAgent, guidePath: string): TerminalPanelState {

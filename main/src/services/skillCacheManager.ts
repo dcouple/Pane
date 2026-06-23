@@ -13,6 +13,7 @@ const UPSTREAM_REPO_URL = 'https://github.com/dcouple/skills.git';
 const RAW_BASE_URL = 'https://raw.githubusercontent.com/dcouple/skills/main';
 const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const INITIAL_SYNC_DELAY_MS = 15 * 1000;
+const MAX_DOWNLOAD_REDIRECTS = 5;
 
 const TOP_LEVEL_FILES = [
   'README.md',
@@ -47,13 +48,21 @@ const IMPORTANT_SKILL_PATHS = [
   'parsa/.claude/skills/commit',
 ] as const;
 
-const FALLBACK_RAW_FILES = [
+const REQUIRED_FALLBACK_RAW_FILES = [
   ...TOP_LEVEL_FILES,
   ...IMPORTANT_SKILL_PATHS.map(skillPath => `${skillPath}/SKILL.md`),
+] as const;
+
+const OPTIONAL_FALLBACK_RAW_FILES = [
   'parsa/.codex/skills/plan/plan_base.md',
   'parsa/.codex/skills/pr-test-automation/agents/openai.yaml',
   'parsa/.codex/skills/teach-back/agents/openai.yaml',
   'parsa/.claude/skills/create-plan/plan_base.md',
+] as const;
+
+const FALLBACK_RAW_FILES = [
+  ...REQUIRED_FALLBACK_RAW_FILES,
+  ...OPTIONAL_FALLBACK_RAW_FILES,
 ] as const;
 
 interface SkillSyncState {
@@ -202,6 +211,7 @@ export class SkillCacheManager {
 
   private async downloadFallbackFiles(): Promise<void> {
     await fs.mkdir(this.cacheRoot, { recursive: true });
+    const failures: string[] = [];
 
     for (const relativePath of FALLBACK_RAW_FILES) {
       try {
@@ -210,8 +220,26 @@ export class SkillCacheManager {
         await fs.mkdir(path.dirname(target), { recursive: true });
         await fs.writeFile(target, bytes);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(`${relativePath}: ${message}`);
         this.logWarn(`Failed to download skill cache file ${relativePath}`, error);
       }
+    }
+
+    const missingRequiredFiles: string[] = [];
+    for (const relativePath of REQUIRED_FALLBACK_RAW_FILES) {
+      if (!(await exists(path.join(this.cacheRoot, relativePath)))) {
+        missingRequiredFiles.push(relativePath);
+      }
+    }
+
+    if (missingRequiredFiles.length > 0) {
+      const failureSummary = failures.length > 0
+        ? ` Failed downloads: ${failures.slice(0, 5).join('; ')}${failures.length > 5 ? '; ...' : ''}`
+        : '';
+      throw new Error(
+        `Skill cache fallback missing required files: ${missingRequiredFiles.join(', ')}.${failureSummary}`,
+      );
     }
   }
 
@@ -316,13 +344,18 @@ function encodeURIPath(relativePath: string): string {
   return relativePath.split('/').map(encodeURIComponent).join('/');
 }
 
-function downloadBuffer(url: string): Promise<Buffer> {
+function downloadBuffer(url: string, redirectsRemaining = MAX_DOWNLOAD_REDIRECTS): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     https.get(url, response => {
+      response.on('error', reject);
       if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         response.resume();
+        if (redirectsRemaining <= 0) {
+          reject(new Error(`GET ${url} exceeded redirect limit`));
+          return;
+        }
         const redirectUrl = new URL(response.headers.location, url).toString();
-        downloadBuffer(redirectUrl).then(resolve, reject);
+        downloadBuffer(redirectUrl, redirectsRemaining - 1).then(resolve, reject);
         return;
       }
 
