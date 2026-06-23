@@ -1510,11 +1510,11 @@ export class DatabaseService {
 
     if (!hasIsHiddenColumn) {
       this.db.prepare("ALTER TABLE sessions ADD COLUMN is_hidden BOOLEAN DEFAULT 0").run();
-      this.db
-        .prepare("CREATE INDEX IF NOT EXISTS idx_sessions_hidden ON sessions(is_hidden)")
-        .run();
       console.log("[Database] Added is_hidden column to sessions table");
     }
+    this.db
+      .prepare("CREATE INDEX IF NOT EXISTS idx_sessions_hidden ON sessions(is_hidden)")
+      .run();
 
     // Add commit mode settings columns to projects table if they don't exist
     const projectsTableInfoCommit = this.db

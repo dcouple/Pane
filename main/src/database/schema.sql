@@ -65,5 +65,4 @@ CREATE INDEX IF NOT EXISTS idx_session_outputs_timestamp ON session_outputs(time
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session_id ON conversation_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_timestamp ON conversation_messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_hidden ON sessions(is_hidden);
 CREATE INDEX IF NOT EXISTS idx_session_git_status_cache_updated_at ON session_git_status_cache(updated_at);
