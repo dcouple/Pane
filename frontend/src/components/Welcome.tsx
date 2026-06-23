@@ -33,7 +33,7 @@ export default function Welcome({ isOpen, onClose }: WelcomeProps) {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="sm">
-      <div className="px-6 pt-6 pb-2 flex flex-col items-center text-center">
+      <div className="px-6 pt-6 pb-2 flex flex-col items-start text-left">
         <img src={paneLogo} alt="Pane" className="h-12 w-12 mb-4" />
         <h1 className="text-lg font-semibold text-text-primary">Welcome to Pane</h1>
         <p className="text-sm text-text-tertiary mt-1">
