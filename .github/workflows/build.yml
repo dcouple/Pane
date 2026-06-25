@@ -159,7 +159,6 @@ jobs:
     - uses: actions/setup-node@v6
       with:
         node-version: '22.15.1'
-        registry-url: 'https://registry.npmjs.org'
         cache: 'pnpm'
     - name: Ensure npm supports trusted publishing
       run: npm install -g npm@^11.5.1
@@ -168,9 +167,9 @@ jobs:
     - name: Publish runpane to npm with token fallback
       if: ${{ env.NPM_TOKEN != '' }}
       working-directory: packages/runpane
-      env:
-        NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
-      run: npm publish --access public
+      run: |
+        echo "//registry.npmjs.org/:_authToken=${{ env.NPM_TOKEN }}" > .npmrc
+        npm publish --access public
     - name: Publish runpane to npm with trusted publishing
       if: ${{ env.NPM_TOKEN == '' }}
       working-directory: packages/runpane
