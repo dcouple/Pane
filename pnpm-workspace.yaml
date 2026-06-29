@@ -4,3 +4,12 @@ packages:
   - 'packages/runpane'
   - 'shared'
 minimumReleaseAge: 10080
+supportedArchitectures:
+  os:
+    - current
+    - darwin
+    - linux
+    - win32
+  cpu:
+    - x64
+    - arm64
