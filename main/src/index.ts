@@ -1322,6 +1322,13 @@ if (launchRemoteSetup) {
   }, 10_000);
 
   try {
+    if (paneDaemonHost?.paneDaemonServer) {
+      logToFile('Stopping local daemon server early');
+      console.log('[Main] Stopping local daemon server early...');
+      await paneDaemonHost.paneDaemonServer.stop();
+      console.log('[Main] Local daemon server stopped');
+    }
+
     // Stop resource monitoring
     resourceMonitorService.stop();
 

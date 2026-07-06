@@ -222,9 +222,15 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const remoteTransportController = new PaneRemoteTransportController(commandRegistry, configManager, analyticsManager);
   try {
     paneDaemonServer = new PaneDaemonServer(commandRegistry, getAppDirectory());
+    const endpoint = paneDaemonServer.getEndpoint();
+    logger.info(`[Pane daemon] Starting local daemon server on ${endpoint.transport}:${endpoint.path}`);
     await paneDaemonServer.start();
+    logger.info(`[Pane daemon] Local daemon server listening on ${endpoint.transport}:${endpoint.path}`);
   } catch (error) {
-    console.error('[Pane daemon] Failed to start local daemon server; continuing with renderer-only runtime events', error);
+    logger.error(
+      '[Pane daemon] Failed to start local daemon server; continuing with renderer-only runtime events',
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 
   if (startRemoteTransport) {

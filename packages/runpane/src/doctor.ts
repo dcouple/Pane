@@ -1,4 +1,5 @@
 import type { ParsedArgs } from './commands';
+import fs from 'node:fs';
 import {
   getPaneDaemonEndpoint,
   invokeDaemon,
@@ -192,9 +193,21 @@ async function collectDaemonHealth(paneDir: string | undefined, endpoint: PaneDa
       reachable: false,
       endpoint,
       error: errorMessage(error),
-      nextCommand: 'Open Pane, then rerun runpane doctor --json',
+      nextCommand: resolveDaemonRecoveryCommand(endpoint, error),
     };
   }
+}
+
+function resolveDaemonRecoveryCommand(endpoint: PaneDaemonEndpoint, error: unknown): string {
+  const message = errorMessage(error);
+  if (
+    endpoint.transport === 'unix'
+    && (message.includes('ECONNREFUSED') || fs.existsSync(endpoint.path))
+  ) {
+    return 'Quit Pane completely, reopen Pane, then rerun runpane doctor --json';
+  }
+
+  return 'Open Pane, then rerun runpane doctor --json';
 }
 
 function renderDoctorText(report: DoctorReport): void {

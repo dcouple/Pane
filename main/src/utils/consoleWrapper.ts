@@ -12,6 +12,20 @@ const originalConsole = {
   debug: console.debug
 };
 
+function isBrokenPipeError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === 'EPIPE';
+}
+
+function writeOriginalConsole(method: (...args: unknown[]) => void, args: unknown[]): void {
+  try {
+    method(...args);
+  } catch (error) {
+    if (!isBrokenPipeError(error)) {
+      throw error;
+    }
+  }
+}
+
 // Helper to check if a message should be logged
 function shouldLog(level: 'log' | 'info' | 'debug', args: unknown[]): boolean {
   if (args.length === 0) return false;
@@ -53,25 +67,29 @@ function shouldLog(level: 'log' | 'info' | 'debug', args: unknown[]): boolean {
 export function setupConsoleWrapper() {
   console.log = (...args: unknown[]) => {
     if (shouldLog('log', args)) {
-      originalConsole.log(...args);
+      writeOriginalConsole(originalConsole.log, args);
     }
   };
   
   console.info = (...args: unknown[]) => {
     if (shouldLog('info', args)) {
-      originalConsole.info(...args);
+      writeOriginalConsole(originalConsole.info, args);
     }
   };
   
   console.debug = (...args: unknown[]) => {
     if (shouldLog('debug', args)) {
-      originalConsole.debug(...args);
+      writeOriginalConsole(originalConsole.debug, args);
     }
   };
   
   // Always log warnings and errors
-  console.warn = originalConsole.warn;
-  console.error = originalConsole.error;
+  console.warn = (...args: unknown[]) => {
+    writeOriginalConsole(originalConsole.warn, args);
+  };
+  console.error = (...args: unknown[]) => {
+    writeOriginalConsole(originalConsole.error, args);
+  };
 }
 
 // Export original console for critical logging
