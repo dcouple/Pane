@@ -2107,7 +2107,7 @@ export const RUNPANE_CONTRACT = {
                 ],
                 "properties": {
                   "ok": {
-                    "const": true
+                    "type": "boolean"
                   },
                   "index": {
                     "type": "number"
@@ -2243,6 +2243,87 @@ export const RUNPANE_CONTRACT = {
                             "type": "string"
                           },
                           "suggestedCommand": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "nextCommand": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "initialInput": {
+                    "type": "object",
+                    "required": [
+                      "delivered",
+                      "submitted",
+                      "inputBytes"
+                    ],
+                    "properties": {
+                      "delivered": {
+                        "type": "boolean"
+                      },
+                      "submitted": {
+                        "type": "boolean"
+                      },
+                      "inputBytes": {
+                        "type": "number"
+                      },
+                      "strategy": {
+                        "enum": [
+                          "codex-ctrl-enter",
+                          "enter",
+                          "argument"
+                        ]
+                      },
+                      "sequenceName": {
+                        "enum": [
+                          "codex-ctrl-enter-cr",
+                          "enter-cr",
+                          "argument"
+                        ]
+                      },
+                      "verifiedSubmitted": {
+                        "type": "boolean"
+                      },
+                      "sentAt": {
+                        "type": "string"
+                      },
+                      "blocked": {
+                        "type": "object",
+                        "required": [
+                          "kind",
+                          "message"
+                        ],
+                        "properties": {
+                          "kind": {
+                            "enum": [
+                              "codex-update",
+                              "agent-prompt",
+                              "unknown"
+                            ]
+                          },
+                          "message": {
+                            "type": "string"
+                          },
+                          "suggestedCommand": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "error": {
+                        "type": "object",
+                        "required": [
+                          "message"
+                        ],
+                        "properties": {
+                          "message": {
+                            "type": "string"
+                          },
+                          "code": {
                             "type": "string"
                           }
                         },
@@ -2750,6 +2831,9 @@ export const RUNPANE_CONTRACT = {
             }
           },
           "additionalProperties": false
+        },
+        "initialInput": {
+          "$ref": "#/jsonSchemas/paneCreateResult/properties/items/items/oneOf/0/properties/initialInput"
         },
         "nextCommand": {
           "type": "string"

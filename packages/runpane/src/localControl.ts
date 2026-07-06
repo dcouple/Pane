@@ -78,8 +78,22 @@ interface PaneCreateResult {
     worktreePath?: string;
     nextCommand?: string;
     readiness?: PanelReadiness;
+    initialInput?: InitialInputDeliveryResult;
     error?: { message: string; code?: string };
   }>;
+}
+
+interface InitialInputDeliveryResult {
+  delivered: boolean;
+  submitted: boolean;
+  inputBytes: number;
+  strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
+  sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
+  verifiedSubmitted?: boolean;
+  sentAt?: string;
+  blocked?: PanelBlockedState;
+  error?: { message: string; code?: string };
+  nextCommand?: string;
 }
 
 interface PaneSummary {
@@ -147,6 +161,7 @@ interface PanelCreateResult {
     agent?: RunpaneAgent;
   };
   readiness?: PanelReadiness;
+  initialInput?: InitialInputDeliveryResult;
   nextCommand?: string;
 }
 
@@ -899,15 +914,17 @@ function printPaneListResult(result: PaneListResult): void {
 
 function printPaneCreateResult(result: PaneCreateResult): void {
   for (const item of result.items) {
-    if (item.ok) {
+    if (item.sessionId || item.panelId) {
       const worktree = item.worktreePath ? ` at ${item.worktreePath}` : '';
-      console.log(`Created ${item.name ?? `pane ${item.index}`}: session ${item.sessionId ?? 'unknown'} panel ${item.panelId ?? 'unknown'}${worktree}`);
+      const status = item.ok ? 'Created' : 'Created with follow-up needed';
+      console.log(`${status} ${item.name ?? `pane ${item.index}`}: session ${item.sessionId ?? 'unknown'} panel ${item.panelId ?? 'unknown'}${worktree}`);
       if (item.readiness) {
         console.log(`  Ready: ${item.readiness.ok ? 'yes' : item.readiness.timedOut ? 'timed out' : 'blocked'} after ${item.readiness.elapsedMs}ms`);
         if (item.readiness.blocked) {
           console.log(`  Blocked: ${item.readiness.blocked.message}`);
         }
       }
+      printInitialInputDelivery(item.initialInput, '  ');
       if (item.nextCommand) {
         console.log(`  Next: ${item.nextCommand}`);
       }
@@ -925,8 +942,29 @@ function printPanelCreateResult(result: PanelCreateResult): void {
       console.log(`Blocked: ${result.readiness.blocked.message}`);
     }
   }
+  printInitialInputDelivery(result.initialInput);
   if (result.nextCommand) {
     console.log(`Next: ${result.nextCommand}`);
+  }
+}
+
+function printInitialInputDelivery(initialInput: InitialInputDeliveryResult | undefined, prefix = ''): void {
+  if (!initialInput) {
+    return;
+  }
+
+  const status = initialInput.submitted
+    ? 'submitted'
+    : initialInput.delivered
+      ? 'delivered but not verified submitted'
+      : 'not delivered';
+  const strategy = initialInput.sequenceName ? ` via ${initialInput.sequenceName}` : '';
+  console.log(`${prefix}Initial input: ${status}${strategy}`);
+  if (initialInput.blocked) {
+    console.log(`${prefix}Initial input blocked: ${initialInput.blocked.message}`);
+  }
+  if (initialInput.error) {
+    console.log(`${prefix}Initial input error: ${initialInput.error.message}`);
   }
 }
 

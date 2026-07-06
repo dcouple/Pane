@@ -18,6 +18,7 @@ import type {
   RunpaneAgentDoctorRequest,
   RunpaneAgentDoctorResult,
   RunpaneDoctorResult,
+  RunpaneInitialInputDeliveryResult,
   RunpanePaneListRequest,
   RunpanePaneListResult,
   RunpanePaneCreateFailureItem,
@@ -280,14 +281,14 @@ export function registerRunpaneHandlers(
       const normalized = parsePanelCreateRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
       const tool = resolveToolSpec(normalized.tool);
-      const { panel, readiness } = await createTerminalPanelForSession(services, pane, tool, {
+      const { panel, readiness, initialInput } = await createTerminalPanelForSession(services, pane, tool, {
         activate: resolvePanelCreateActivation(normalized, tool),
         waitReady: normalized.waitReady,
         readyTimeoutMs: normalized.readyTimeoutMs,
       });
 
       return {
-        ok: !readiness || readiness.ok,
+        ok: Boolean((!readiness || readiness.ok) && (!initialInput || initialInput.submitted)),
         paneId: pane.id,
         panelId: panel.id,
         title: panel.title,
@@ -295,7 +296,8 @@ export function registerRunpaneHandlers(
         focused: Boolean(panel.state.isActive),
         tool: describeTool(tool),
         readiness,
-        nextCommand: readiness?.nextCommand ?? panelOutputCommand(panel.id),
+        initialInput,
+        nextCommand: initialInput?.nextCommand ?? readiness?.nextCommand ?? panelOutputCommand(panel.id),
       };
     }, result => ({
       paneId: result.paneId,
@@ -431,24 +433,7 @@ export function registerRunpaneHandlers(
         throw new Error(`Terminal panel ${panel.id} is not initialized`);
       }
 
-      const beforeScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
-      const state = beforeScreen.state;
-      const submit = resolveComposerSubmit(normalized.strategy, state.agentType);
-      terminalPanelManager.writeToTerminal(panel.id, submit.input);
-      const verification = await verifyComposerSubmitted(panel, beforeScreen);
-
-      return {
-        ok: verification.ok,
-        panelId: panel.id,
-        paneId: panel.sessionId,
-        inputBytes: Buffer.byteLength(submit.input, 'utf8'),
-        strategy: submit.strategy,
-        sequenceName: submit.sequenceName,
-        verifiedSubmitted: verification.verifiedSubmitted,
-        sentAt: new Date().toISOString(),
-        blocked: verification.blocked,
-        nextCommand: verification.blocked?.suggestedCommand ?? panelWaitCommand(panel.id),
-      };
+      return submitComposerForPanel(panel, normalized.strategy);
     }, result => ({
       paneId: result.paneId,
       panelId: result.panelId,
@@ -559,6 +544,7 @@ interface TerminalPanelCreateOptions {
 interface TerminalPanelCreateResult {
   panel: ToolPanel;
   readiness?: RunpanePaneReadiness;
+  initialInput?: RunpaneInitialInputDeliveryResult;
 }
 
 async function createTerminalPanelForSession(
@@ -567,11 +553,20 @@ async function createTerminalPanelForSession(
   tool: RunpaneResolvedTool,
   options: TerminalPanelCreateOptions,
 ): Promise<TerminalPanelCreateResult> {
+  const shouldCreateSubmitInitialInput = Boolean(
+    options.waitReady &&
+    tool.agent &&
+    tool.agent !== 'codex' &&
+    tool.initialInput,
+  );
   const initialState: TerminalPanelState = {
     initialCommand: tool.command,
     initialInput: tool.initialInput,
     ...(tool.agent === 'codex' ? { initialInputMode: 'argument' as const } : {}),
     initialInputSubmitStrategy: 'enter',
+    ...(shouldCreateSubmitInitialInput ? {
+      initialInputSentAt: new Date().toISOString(),
+    } : {}),
     agentType: tool.agent,
     isCliPanel: Boolean(tool.agent),
   };
@@ -603,7 +598,62 @@ async function createTerminalPanelForSession(
     }))
     : undefined;
 
-  return { panel, readiness };
+  const initialInput = readiness ? await submitCreateInitialInput(panel, tool, readiness) : undefined;
+
+  return { panel, readiness, initialInput };
+}
+
+async function submitCreateInitialInput(
+  panel: ToolPanel,
+  tool: RunpaneResolvedTool,
+  readiness?: RunpanePaneReadiness,
+): Promise<RunpaneInitialInputDeliveryResult | undefined> {
+  if (!tool.initialInput) {
+    return undefined;
+  }
+
+  if (tool.agent === 'codex') {
+    return {
+      delivered: true,
+      submitted: true,
+      inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
+      strategy: 'argument',
+      sequenceName: 'argument',
+      verifiedSubmitted: true,
+      sentAt: new Date().toISOString(),
+      nextCommand: readiness?.nextCommand ?? panelWaitCommand(panel.id),
+    };
+  }
+
+  if (!tool.agent || !readiness) {
+    return undefined;
+  }
+
+  if (!readiness.ok) {
+    return {
+      delivered: false,
+      submitted: false,
+      inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
+      error: { message: 'Initial input was not sent because the terminal panel did not become ready.' },
+      nextCommand: readiness.nextCommand ?? panelWaitCommand(panel.id),
+    };
+  }
+
+  terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
+  await sleep(300);
+  const submit = await submitComposerForPanel(panel, 'auto');
+
+  return {
+    delivered: true,
+    submitted: submit.ok && submit.verifiedSubmitted,
+    inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
+    strategy: submit.strategy,
+    sequenceName: submit.sequenceName,
+    verifiedSubmitted: submit.verifiedSubmitted,
+    sentAt: submit.sentAt,
+    blocked: submit.blocked,
+    nextCommand: submit.nextCommand,
+  };
 }
 
 async function createPaneItem(
@@ -634,25 +684,27 @@ async function createPaneItem(
       throw new Error(`Created session ${sessionResult.sessionId} was not found`);
     }
 
-    const { panel, readiness } = await createTerminalPanelForSession(services, session, tool, {
+    const { panel, readiness, initialInput } = await createTerminalPanelForSession(services, session, tool, {
       activate: options.activate,
       waitReady: options.waitReady,
       readyTimeoutMs: options.readyTimeoutMs,
     });
 
+    const itemOk = Boolean((!readiness || readiness.ok) && (!initialInput || initialInput.submitted));
     return {
-      ok: true,
+      ok: itemOk,
       index,
       name: item.name,
       sessionId: session.id,
       paneId: session.id,
       panelId: panel.id,
       worktreePath: session.worktreePath,
-      nextCommand: readiness?.nextCommand ?? panelOutputCommand(panel.id),
+      nextCommand: initialInput?.nextCommand ?? readiness?.nextCommand ?? panelOutputCommand(panel.id),
       tool: describeTool(tool),
       active: Boolean(panel.state.isActive),
       focused: Boolean(panel.state.isActive),
       readiness,
+      initialInput,
     };
   } catch (error) {
     return createFailureItem(index, item, error);
@@ -660,7 +712,7 @@ async function createPaneItem(
 }
 
 function isPaneCreateItemSuccessful(item: RunpanePaneCreateResultItem): boolean {
-  return item.ok && (!item.readiness || item.readiness.ok);
+  return item.ok && (!item.readiness || item.readiness.ok) && (!('initialInput' in item) || !item.initialInput || item.initialInput.submitted);
 }
 
 function resolvePaneCreateActivation(
@@ -961,6 +1013,30 @@ function resolveComposerSubmit(
     strategy: 'enter',
     sequenceName: 'enter-cr',
     input: '\r',
+  };
+}
+
+async function submitComposerForPanel(
+  panel: ToolPanel,
+  strategy: RunpanePanelSubmitComposerStrategy | undefined,
+): Promise<RunpanePanelSubmitComposerResult> {
+  const beforeScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+  const state = beforeScreen.state;
+  const submit = resolveComposerSubmit(strategy, state.agentType);
+  terminalPanelManager.writeToTerminal(panel.id, submit.input);
+  const verification = await verifyComposerSubmitted(panel, beforeScreen);
+
+  return {
+    ok: verification.ok,
+    panelId: panel.id,
+    paneId: panel.sessionId,
+    inputBytes: Buffer.byteLength(submit.input, 'utf8'),
+    strategy: submit.strategy,
+    sequenceName: submit.sequenceName,
+    verifiedSubmitted: verification.verifiedSubmitted,
+    sentAt: new Date().toISOString(),
+    blocked: verification.blocked,
+    nextCommand: verification.blocked?.suggestedCommand ?? panelWaitCommand(panel.id),
   };
 }
 

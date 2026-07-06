@@ -1247,4 +1247,164 @@ describe('runpane IPC handlers', () => {
       }],
     });
   });
+
+  it('auto-submits Claude initial input during wait-ready pane creation', async () => {
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      id: 'panel-1',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Claude Code',
+      state: {},
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce({
+        initialized: true,
+        scrollbackBuffer: 'claude ready\n',
+        alternateScreenBuffer: '',
+        isAlternateScreen: false,
+        activityStatus: 'idle',
+        lastActivityTime: '2026-01-01T00:02:00.000Z',
+        currentCommand: 'claude',
+        isCliPanel: true,
+        isCliReady: true,
+        agentType: 'claude',
+      })
+      .mockReturnValueOnce({
+        initialized: true,
+        scrollbackBuffer: 'claude ready\n',
+        alternateScreenBuffer: '',
+        isAlternateScreen: false,
+        activityStatus: 'idle',
+        lastActivityTime: '2026-01-01T00:02:00.000Z',
+        currentCommand: 'claude',
+        isCliPanel: true,
+        isCliReady: true,
+        agentType: 'claude',
+      })
+      .mockReturnValueOnce({
+        initialized: true,
+        scrollbackBuffer: '[Pasted Content 64 chars]\n',
+        alternateScreenBuffer: '',
+        isAlternateScreen: false,
+        activityStatus: 'idle',
+        lastActivityTime: '2026-01-01T00:02:01.000Z',
+        currentCommand: 'claude',
+        isCliPanel: true,
+        isCliReady: true,
+        agentType: 'claude',
+      })
+      .mockReturnValueOnce({
+        initialized: true,
+        scrollbackBuffer: 'working on task\n',
+        alternateScreenBuffer: '',
+        isAlternateScreen: false,
+        activityStatus: 'active',
+        lastActivityTime: '2026-01-01T00:02:02.000Z',
+        currentCommand: 'claude',
+        isCliPanel: true,
+        isCliReady: false,
+        agentType: 'claude',
+      });
+
+    const registry = createRegistry(createServices());
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{
+        name: 'issue-302',
+        tool: {
+          agent: 'claude',
+          initialInput: 'Please start issue 302',
+        },
+      }],
+    }]);
+
+    expect(panelManager.createPanel).toHaveBeenCalledWith(expect.objectContaining({
+      initialState: expect.objectContaining({
+        initialCommand: RUNPANE_CONTRACT.agentTemplates.claude.command,
+        initialInput: 'Please start issue 302',
+        initialInputSentAt: expect.any(String),
+        initialInputSubmitStrategy: 'enter',
+        agentType: 'claude',
+      }),
+    }));
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, 'panel-1', 'Please start issue 302');
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, 'panel-1', '\r');
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        panelId: 'panel-1',
+        initialInput: {
+          delivered: true,
+          submitted: true,
+          strategy: 'enter',
+          sequenceName: 'enter-cr',
+          verifiedSubmitted: true,
+        },
+      }],
+    });
+  });
+
+  it('marks pane creation unsuccessful when Claude initial input submission is unverified', async () => {
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      id: 'panel-1',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Claude Code',
+      state: {},
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: '',
+      alternateScreenBuffer: '',
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'claude',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'claude',
+    });
+
+    const registry = createRegistry(createServices());
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{
+        name: 'issue-302',
+        tool: {
+          agent: 'claude',
+          initialInput: 'Please start issue 302',
+        },
+      }],
+    }]);
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, 'panel-1', 'Please start issue 302');
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, 'panel-1', '\r');
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        panelId: 'panel-1',
+        initialInput: {
+          delivered: true,
+          submitted: false,
+          strategy: 'enter',
+          sequenceName: 'enter-cr',
+          verifiedSubmitted: false,
+        },
+      }],
+    });
+  });
 });

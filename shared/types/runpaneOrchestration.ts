@@ -139,8 +139,21 @@ export interface RunpanePaneReadiness {
   nextCommand?: string;
 }
 
+export interface RunpaneInitialInputDeliveryResult {
+  delivered: boolean;
+  submitted: boolean;
+  inputBytes: number;
+  strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
+  sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
+  verifiedSubmitted?: boolean;
+  sentAt?: string;
+  blocked?: RunpanePanelBlockedState;
+  error?: RunpaneErrorPayload;
+  nextCommand?: string;
+}
+
 export interface RunpanePaneCreateSuccessItem {
-  ok: true;
+  ok: boolean;
   index: number;
   name: string;
   sessionId?: string;
@@ -156,6 +169,7 @@ export interface RunpanePaneCreateSuccessItem {
   active?: boolean;
   focused?: boolean;
   readiness?: RunpanePaneReadiness;
+  initialInput?: RunpaneInitialInputDeliveryResult;
 }
 
 export interface RunpanePaneCreateFailureItem {
@@ -250,6 +264,7 @@ export interface RunpanePanelCreateResult {
     agent?: RunpaneAgentId;
   };
   readiness?: RunpanePaneReadiness;
+  initialInput?: RunpaneInitialInputDeliveryResult;
   nextCommand?: string;
 }
 
