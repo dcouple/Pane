@@ -25,7 +25,14 @@ export function getPaneVersion(executablePath: string): string | undefined {
   if (process.platform === 'win32') {
     return getWindowsFileVersion(executablePath);
   }
+  if (process.platform === 'darwin') {
+    return getMacBundleVersion(executablePath);
+  }
 
+  return getExecutableVersion(executablePath);
+}
+
+function getExecutableVersion(executablePath: string): string | undefined {
   try {
     const result = childProcess.spawnSync(executablePath, ['--version'], {
       encoding: 'utf8',
@@ -41,6 +48,37 @@ export function getPaneVersion(executablePath: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function getMacBundleVersion(executablePath: string): string | undefined {
+  const infoPlistPath = resolveMacInfoPlistPath(executablePath);
+  if (!infoPlistPath) {
+    return undefined;
+  }
+
+  try {
+    const plist = fs.readFileSync(infoPlistPath, 'utf8');
+    return readPlistString(plist, 'CFBundleShortVersionString')
+      ?? readPlistString(plist, 'CFBundleVersion');
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveMacInfoPlistPath(executablePath: string): string | undefined {
+  const appIndex = executablePath.indexOf('.app');
+  if (appIndex === -1) {
+    return undefined;
+  }
+
+  const appPath = executablePath.slice(0, appIndex + '.app'.length);
+  return path.join(appPath, 'Contents', 'Info.plist');
+}
+
+function readPlistString(plist: string, key: string): string | undefined {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = plist.match(new RegExp(`<key>\\s*${escapedKey}\\s*<\\/key>\\s*<string>([^<]*)<\\/string>`));
+  return match?.[1]?.trim() || undefined;
 }
 
 function getWindowsFileVersion(executablePath: string): string | undefined {

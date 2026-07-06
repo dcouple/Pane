@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import plistlib
 import subprocess
 import sys
 from importlib import metadata
@@ -26,7 +27,13 @@ def print_version(pane_path: object = None) -> int:
 def pane_version(executable_path: str) -> Optional[str]:
     if sys.platform == "win32":
         return _windows_file_version(executable_path)
+    if sys.platform == "darwin":
+        return _mac_bundle_version(executable_path)
 
+    return _executable_version(executable_path)
+
+
+def _executable_version(executable_path: str) -> Optional[str]:
     try:
         result = subprocess.run(
             [executable_path, "--version"],
@@ -38,6 +45,31 @@ def pane_version(executable_path: str) -> Optional[str]:
         return None
     output = (result.stdout + result.stderr).strip()
     return output or None
+
+
+def _mac_bundle_version(executable_path: str) -> Optional[str]:
+    info_plist_path = _mac_info_plist_path(executable_path)
+    if not info_plist_path:
+        return None
+
+    try:
+        with open(info_plist_path, "rb") as info_plist:
+            plist = plistlib.load(info_plist)
+    except (OSError, plistlib.InvalidFileException):
+        return None
+
+    version = plist.get("CFBundleShortVersionString") or plist.get("CFBundleVersion")
+    return str(version).strip() if version else None
+
+
+def _mac_info_plist_path(executable_path: str) -> Optional[str]:
+    app_marker = ".app"
+    app_index = executable_path.find(app_marker)
+    if app_index == -1:
+        return None
+
+    app_path = executable_path[: app_index + len(app_marker)]
+    return os.path.join(app_path, "Contents", "Info.plist")
 
 
 def _windows_file_version(executable_path: str) -> Optional[str]:

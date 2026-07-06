@@ -23,6 +23,19 @@ runpane setup
 The wizard can install Pane on this machine, configure this machine as a remote
 host, update Pane, or run diagnostics.
 
+## Developing This Repository
+
+When debugging RunPane from a Pane repository checkout, prefer the built local
+wrapper over `npx --yes runpane@latest` so diagnostics exercise local changes:
+
+```bash
+PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json
+```
+
+`doctor` remains the first diagnostic command before local-control actions. On
+macOS it reads installed app bundle metadata and must not launch
+`Pane.app/Contents/MacOS/Pane --version`.
+
 ## Advanced
 
 ### Explicit Commands

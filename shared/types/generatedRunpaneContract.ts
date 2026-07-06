@@ -1315,7 +1315,7 @@ export const RUNPANE_CONTRACT = {
       "The wrapper must stream Pane stdout/stderr without reformatting because `pane --remote-setup` prints the one-time `pane-remote://...` connection code.",
       "`runpane update` uses the same release resolution and installer path as `install client`.",
       "`runpane version` prints only wrapper package metadata and does not contact, launch, or focus the Pane app or daemon.",
-      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state.",
+      "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state. Installed app version detection must be best-effort and must not launch, focus, or configure Pane; macOS wrappers read app bundle metadata instead of executing `Pane --version`.",
       "`runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.",
       "`runpane agent-context --command \"panes create\"` prints the detailed definition for one command. Add `--json` for machine-readable output.",
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
@@ -1329,7 +1329,7 @@ export const RUNPANE_CONTRACT = {
       "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
-    "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
+    "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -3383,6 +3383,7 @@ export const RUNPANE_CONTRACT = {
       "summary": "Pane lets a developer manage repositories and user-visible terminal panes. Agents can use runpane to create panes, inspect compact terminal state, wait for readiness, and submit interactive input.",
       "rules": [
         "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
+        "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
         "Use `runpane agent-context --json` for the full agent-facing CLI context, or `runpane agent-context --command <command> --json` for one detailed command definition.",
         "For `agent-context --command`, use canonical spaced names like `panes create`; copied forms like `panes.create` or `runpane panes create` are accepted too.",
         "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
@@ -4493,6 +4494,8 @@ export const RUNPANE_CONTRACT = {
       "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible panes with terminal-backed tools for planning, discussion, implementation, and review work.",
       "",
       "Start with `runpane doctor --json` before taking Pane actions. Use it to understand wrapper/runtime details, daemon reachability, and the next safe commands.",
+      "",
+      "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22: `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
       "",
       "Use `runpane agent-context --json` for full Pane CLI context. Use `runpane agent-context --command \"panels wait\" --json` or another command name for detailed schema only when needed.",
       "",
