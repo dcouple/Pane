@@ -10,6 +10,7 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { useSessionPreferencesStore, type SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { generatePaneName, sanitizePaneName } from '../utils/paneName';
 
 // Interface for branch information
 interface BranchInfo {
@@ -136,16 +137,8 @@ export function CreateSessionDialog({
                 setFormData(prev => ({ ...prev, baseBranch: defaultBranch.name }));
                 // Auto-populate session name from default branch if user hasn't edited
                 if (!initialSessionName && !userEditedNameRef.current) {
-                  const baseName = defaultBranch.name.replace(/^[^/]+\//, '');
                   const existingNames = new Set(existingSessions.map(s => s.name));
-                  let autoName = baseName;
-                  if (existingNames.has(baseName)) {
-                    let suffix = 1;
-                    while (existingNames.has(`${baseName}-${suffix}`)) {
-                      suffix++;
-                    }
-                    autoName = `${baseName}-${suffix}`;
-                  }
+                  const autoName = generatePaneName(defaultBranch.name, existingNames, branchesResponse.data);
                   setSessionName(autoName);
                 }
               }
@@ -211,21 +204,8 @@ export function CreateSessionDialog({
   }, [highlightedBranchIndex, isBranchDropdownOpen]);
 
   const generateSessionName = useCallback((branchName: string): string => {
-    // Strip remote prefix (e.g. "origin/feature-x" -> "feature-x")
-    const baseName = branchName.replace(/^[^/]+\//, '');
-    const existingNames = new Set(existingSessions.map(s => s.name));
-
-    if (!existingNames.has(baseName)) {
-      return baseName;
-    }
-
-    // Find next available suffix
-    let suffix = 1;
-    while (existingNames.has(`${baseName}-${suffix}`)) {
-      suffix++;
-    }
-    return `${baseName}-${suffix}`;
-  }, [existingSessions]);
+    return generatePaneName(branchName, new Set(existingSessions.map(s => s.name)), branches);
+  }, [branches, existingSessions]);
 
   const selectBranch = useCallback((branchName: string) => {
     setFormData(prev => ({ ...prev, baseBranch: branchName }));
@@ -311,16 +291,6 @@ export function CreateSessionDialog({
   }, [isOpen]);
 
   if (!isOpen) return null;
-
-  const sanitizePaneName = (name: string): string => {
-    return name
-      // Strip git-invalid characters and slashes
-      .replace(/[~^:?*\[\]\\/]/g, '')
-      // Collapse consecutive dots into a single dot
-      .replace(/\.{2,}/g, '.')
-      // Strip leading/trailing dots
-      .replace(/^\.+|\.+$/g, '');
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

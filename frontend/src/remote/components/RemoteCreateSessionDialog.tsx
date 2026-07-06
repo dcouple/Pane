@@ -1,5 +1,6 @@
 import { ChevronDown, GitBranch, GitFork, Pin, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { generatePaneName, sanitizePaneName } from '../../utils/paneName';
 import type { RemoteBranchInfo, RemoteProjectWithSessions, RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
 
 /**
@@ -52,9 +53,9 @@ export function RemoteCreateSessionDialog({
     setBranchOpen(false);
     setBranchSearch('');
     if (!userEditedName) {
-      setPaneName(generatePaneName(branchName, existingNames));
+      setPaneName(generatePaneName(branchName, existingNames, branches));
     }
-  }, [existingNames, userEditedName]);
+  }, [branches, existingNames, userEditedName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,7 +78,7 @@ export function RemoteCreateSessionDialog({
 
         if (fallbackBranchName) {
           setBaseBranch(fallbackBranchName);
-          setPaneName(generatePaneName(fallbackBranchName, existingNames));
+          setPaneName(generatePaneName(fallbackBranchName, existingNames, branchList));
         }
       } catch (loadError) {
         if (!cancelled) {
@@ -318,26 +319,6 @@ export function RemoteCreateSessionDialog({
   );
 }
 
-function generatePaneName(branchName: string, existingNames: Set<string>): string {
-  const baseName = sanitizePaneName(branchName.replace(/^[^/]+\//, '')) || 'pane';
-  if (!existingNames.has(baseName)) {
-    return baseName;
-  }
-
-  let suffix = 1;
-  while (existingNames.has(`${baseName}-${suffix}`)) {
-    suffix += 1;
-  }
-  return `${baseName}-${suffix}`;
-}
-
-function sanitizePaneName(name: string): string {
-  return name
-    .replace(/[~^:?*[\]\\/]/g, '')
-    .replace(/\.{2,}/g, '.')
-    .replace(/^\.+|\.+$/g, '')
-    .trim();
-}
 
 function loadRemoteStartPinnedPreference(): boolean {
   try {
