@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
@@ -43,9 +45,13 @@ def build_doctor_report(parsed, source: str) -> Dict[str, Any]:
         )
         daemon = daemon_future.result()
     installed_pane = collect_installed_pane(parsed.pane_path)
+    remote_setup = collect_remote_setup_check(
+        platform_result.get("platform") if platform_result["ok"] else None,
+        release.get("format"),
+    )
 
     return {
-        "ok": bool(release["ok"] and daemon["reachable"]),
+        "ok": bool(release["ok"] and daemon["reachable"] and remote_setup["ready"]),
         "source": source,
         "wrapper": {
             "runtime": "python",
@@ -57,12 +63,86 @@ def build_doctor_report(parsed, source: str) -> Dict[str, Any]:
         "release": release,
         "installedPane": installed_pane,
         "daemon": daemon,
+        "remoteSetup": remote_setup,
         "nextCommands": [
             "runpane agent-context --json",
             "runpane agent-context --command \"<command>\" --json",
             "runpane repos list --json",
         ],
     }
+
+
+def collect_remote_setup_check(
+    platform: Optional[PanePlatform],
+    release_format: Optional[str],
+    probe_overrides: Optional[Dict[str, bool]] = None,
+) -> Dict[str, Any]:
+    if not platform or platform.os != "linux":
+        return {
+            "ready": True,
+            "displayAvailable": True,
+            "headlessEnvironmentApplied": False,
+            "diagnostics": [],
+        }
+
+    probes = {
+        "displayAvailable": bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")),
+        "hasFuseRuntime": has_linux_fuse_runtime(),
+        "isRoot": hasattr(os, "getuid") and os.getuid() == 0,
+        "unprivilegedUserNamespaceDisabled": unprivileged_user_namespace_disabled(),
+        "hasSystemctl": shutil.which("systemctl") is not None,
+    }
+    probes.update(probe_overrides or {})
+
+    diagnostics = []
+    if release_format == "appimage" and not probes["hasFuseRuntime"]:
+        diagnostics.append({
+            "code": "PANE_APPIMAGE_FUSE_MISSING",
+            "severity": "error",
+            "message": "The selected AppImage may not start because Pane could not find /dev/fuse and a FUSE mount helper.",
+            "recoveryCommand": "Install FUSE for this Linux distribution, or rerun with --format deb on a Debian-based host.",
+        })
+
+    if probes["isRoot"]:
+        diagnostics.append({
+            "code": "PANE_ELECTRON_SANDBOX_ROOT",
+            "severity": "error",
+            "message": "The Pane Electron runtime should not be launched as root with its sandbox enabled.",
+            "recoveryCommand": "Run runpane install daemon as a non-root user.",
+        })
+    elif probes["unprivilegedUserNamespaceDisabled"]:
+        diagnostics.append({
+            "code": "PANE_ELECTRON_SANDBOX_UNAVAILABLE",
+            "severity": "error",
+            "message": "Unprivileged user namespaces are disabled, so the Electron sandbox may not start.",
+            "recoveryCommand": "Enable unprivileged user namespaces for this host, or explicitly use --no-sandbox only if you accept the security tradeoff.",
+        })
+
+    if not probes["hasSystemctl"]:
+        diagnostics.append({
+            "code": "PANE_USER_SERVICE_UNAVAILABLE",
+            "severity": "warning",
+            "message": "systemctl is unavailable; setup will print a manual daemon command instead of installing a user service.",
+        })
+
+    return {
+        "ready": all(item["severity"] != "error" for item in diagnostics),
+        "displayAvailable": probes["displayAvailable"],
+        "headlessEnvironmentApplied": True,
+        "diagnostics": diagnostics,
+    }
+
+
+def has_linux_fuse_runtime() -> bool:
+    return os.path.exists("/dev/fuse") and bool(shutil.which("fusermount") or shutil.which("fusermount3"))
+
+
+def unprivileged_user_namespace_disabled() -> bool:
+    try:
+        with open("/proc/sys/kernel/unprivileged_userns_clone", "r", encoding="utf-8") as handle:
+            return handle.read().strip() == "0"
+    except OSError:
+        return False
 
 
 def collect_platform() -> Dict[str, Any]:
@@ -156,6 +236,16 @@ def render_doctor_text(report: Dict[str, Any]) -> None:
         print(f"Pane daemon: reachable ({repo_count} repos)")
     else:
         print(f"Pane daemon: unreachable - {daemon.get('error') or 'unknown error'}")
+
+    remote_setup = report["remoteSetup"]
+    print(f"Remote setup preflight: {'ready' if remote_setup['ready'] else 'action required'}")
+    if (report.get("platform") or {}).get("os") == "linux":
+        display_status = "yes" if remote_setup["displayAvailable"] else "no (headless mode will be applied)"
+        print(f"  Display available: {display_status}")
+    for diagnostic in remote_setup["diagnostics"]:
+        print(f"  {diagnostic['code']}: {diagnostic['message']}")
+        if diagnostic.get("recoveryCommand"):
+            print(f"  Recovery: {diagnostic['recoveryCommand']}")
 
     print('Agent discovery: run "runpane doctor --json" before Pane actions, then "runpane agent-context --json" for full CLI context.')
     print('Remote setup: run "runpane setup" for guided setup, or "runpane install daemon --label <name>" for scripting.')

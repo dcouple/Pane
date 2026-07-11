@@ -61,6 +61,19 @@ Packaged Pane builds can run the same setup path without opening a window:
 pane --remote-setup --label "VM"
 ```
 
+On displayless Linux hosts, prefer `runpane install daemon`; the npm and PyPI
+wrappers set Electron's required headless environment automatically. For a
+direct packaged launch, set it explicitly:
+
+```bash
+ELECTRON_OZONE_PLATFORM_HINT=headless pane --remote-setup --label "VM"
+```
+
+The wrappers are lightweight installers and configurators. They currently
+download the packaged Pane runtime because the daemon is not distributed as a
+separate binary. AppImage installs therefore require FUSE; on Debian-based
+hosts, `--format deb` avoids the AppImage/FUSE requirement.
+
 If Pane is already installed on the host, this is the most direct command:
 
 ```bash
@@ -218,6 +231,25 @@ Recommended checks after connecting:
 7. Run an approve-mode command and confirm the permission dialog appears on the client.
 
 ## Troubleshooting
+
+Start with machine-readable environment diagnostics:
+
+```bash
+runpane doctor --json
+```
+
+The `remoteSetup` section reports stable diagnostic codes and recovery commands
+for missing AppImage/FUSE support, Electron sandbox restrictions, and missing
+user service management. `runpane install daemon` automatically supplies the
+Linux headless launch environment. Pane never disables the Electron sandbox
+automatically; use `--no-sandbox` only when the host requires it and you accept
+the security tradeoff.
+
+### Remote setup exits because X11 or `$DISPLAY` is missing
+
+Use `runpane install daemon`, or prefix a direct packaged launch with
+`ELECTRON_OZONE_PLATFORM_HINT=headless`. This failure occurs before Tailscale
+setup and does not mean the daemon requires a graphical session.
 
 ### The headless daemon starts but remote connect fails
 

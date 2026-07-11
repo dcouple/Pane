@@ -579,6 +579,67 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), expected);
 }
 
+function compareDaemonLaunchEnvironmentParity() {
+  const { buildPaneDaemonEnvironment } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js'));
+  const baseEnvironment = { PATH: '/test/bin', DISPLAY: '' };
+
+  assert.deepStrictEqual(buildPaneDaemonEnvironment('linux', baseEnvironment), {
+    ...baseEnvironment,
+    ELECTRON_OZONE_PLATFORM_HINT: 'headless'
+  });
+  assert.deepStrictEqual(buildPaneDaemonEnvironment('darwin', baseEnvironment), baseEnvironment);
+
+  const pythonOutput = runPythonSnippet(`
+import json
+from runpane.installers import build_pane_daemon_environment
+
+base = {"PATH": "/test/bin", "DISPLAY": ""}
+print(json.dumps({
+    "linux": build_pane_daemon_environment("Linux", base),
+    "darwin": build_pane_daemon_environment("Darwin", base),
+}))
+`);
+  const pythonJson = JSON.parse(pythonOutput.split(/\r?\n/).filter(Boolean).pop());
+  assert.deepStrictEqual(pythonJson.linux, buildPaneDaemonEnvironment('linux', baseEnvironment));
+  assert.deepStrictEqual(pythonJson.darwin, baseEnvironment);
+}
+
+function compareRemoteSetupDiagnosticParity() {
+  const { collectRemoteSetupCheck } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'doctor.js'));
+  const probes = {
+    displayAvailable: false,
+    hasFuseRuntime: false,
+    isRoot: false,
+    unprivilegedUserNamespaceDisabled: true,
+    hasSystemctl: false
+  };
+  const nodeResult = collectRemoteSetupCheck({ os: 'linux', arch: 'x64' }, 'appimage', probes);
+  assert.strictEqual(nodeResult.ready, false);
+  assert.strictEqual(nodeResult.displayAvailable, false);
+  assert.strictEqual(nodeResult.headlessEnvironmentApplied, true);
+  assert.deepStrictEqual(nodeResult.diagnostics.map((item) => item.code), [
+    'PANE_APPIMAGE_FUSE_MISSING',
+    'PANE_ELECTRON_SANDBOX_UNAVAILABLE',
+    'PANE_USER_SERVICE_UNAVAILABLE'
+  ]);
+
+  const pythonOutput = runPythonSnippet(`
+import json
+from runpane.doctor import collect_remote_setup_check
+from runpane.platforms import PanePlatform
+
+probes = {
+    "displayAvailable": False,
+    "hasFuseRuntime": False,
+    "isRoot": False,
+    "unprivilegedUserNamespaceDisabled": True,
+    "hasSystemctl": False,
+}
+print(json.dumps(collect_remote_setup_check(PanePlatform(os="linux", arch="x64"), "appimage", probes)))
+`);
+  assert.deepStrictEqual(JSON.parse(pythonOutput.split(/\r?\n/).filter(Boolean).pop()), nodeResult);
+}
+
 function checkPlatformMatchingEdgeCases() {
   const { findArtifact } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'releases.js'));
   const nodeArtifact = findArtifact(platformEdgeRelease, { os: 'win32', arch: 'x64' }, 'zip').name;
@@ -992,6 +1053,8 @@ async function runChecks() {
   await checkPreferredDownloadUrls();
   compareWrapperTelemetrySanitizers();
   compareExistingReusePolicy();
+  compareDaemonLaunchEnvironmentParity();
+  compareRemoteSetupDiagnosticParity();
   checkPlatformMatchingEdgeCases();
   await checkExistingDaemonShortCircuit();
   checkWindowsPaneVersionDoesNotLaunchExecutable();

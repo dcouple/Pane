@@ -1,4 +1,5 @@
 import type { ParsedArgs } from './commands';
+import childProcess from 'node:child_process';
 import fs from 'node:fs';
 import {
   getPaneDaemonEndpoint,
@@ -79,7 +80,22 @@ interface DoctorReport {
   release: DoctorReleaseCheck;
   installedPane: DoctorInstalledPaneCheck;
   daemon: DoctorDaemonCheck;
+  remoteSetup: RemoteSetupDoctorCheck;
   nextCommands: string[];
+}
+
+interface RemoteSetupDiagnostic {
+  code: string;
+  severity: 'warning' | 'error';
+  message: string;
+  recoveryCommand?: string;
+}
+
+interface RemoteSetupDoctorCheck {
+  ready: boolean;
+  displayAvailable: boolean;
+  headlessEnvironmentApplied: boolean;
+  diagnostics: RemoteSetupDiagnostic[];
 }
 
 export async function runDoctor(parsed: ParsedArgs, source: 'npm' | 'pip' = 'npm'): Promise<number> {
@@ -104,9 +120,13 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
   const installedPane = collectInstalledPane(parsed.panePath);
   const daemonPromise = collectDaemonHealth(parsed.paneDir, endpoint);
   const [release, daemon] = await Promise.all([releasePromise, daemonPromise]);
+  const remoteSetup = collectRemoteSetupCheck(
+    platform.ok ? platform.platform : undefined,
+    'format' in release ? release.format : undefined
+  );
 
   return {
-    ok: release.ok && daemon.reachable,
+    ok: release.ok && daemon.reachable && remoteSetup.ready,
     source,
     wrapper: {
       runtime: 'node',
@@ -118,12 +138,105 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
     release,
     installedPane,
     daemon,
+    remoteSetup,
     nextCommands: [
       'runpane agent-context --json',
       'runpane agent-context --command "<command>" --json',
       'runpane repos list --json',
     ],
   };
+}
+
+interface RemoteSetupProbes {
+  displayAvailable: boolean;
+  hasFuseRuntime: boolean;
+  isRoot: boolean;
+  unprivilegedUserNamespaceDisabled: boolean;
+  hasSystemctl: boolean;
+}
+
+export function collectRemoteSetupCheck(
+  platform: PanePlatform | undefined,
+  releaseFormat: string | undefined,
+  probeOverrides: Partial<RemoteSetupProbes> = {}
+): RemoteSetupDoctorCheck {
+  if (platform?.os !== 'linux') {
+    return {
+      ready: true,
+      displayAvailable: true,
+      headlessEnvironmentApplied: false,
+      diagnostics: [],
+    };
+  }
+
+  const probes: RemoteSetupProbes = {
+    displayAvailable: Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY),
+    hasFuseRuntime: hasLinuxFuseRuntime(),
+    isRoot: typeof process.getuid === 'function' && process.getuid() === 0,
+    unprivilegedUserNamespaceDisabled: isUnprivilegedUserNamespaceDisabled(),
+    hasSystemctl: commandExists('systemctl'),
+    ...probeOverrides,
+  };
+  const diagnostics: RemoteSetupDiagnostic[] = [];
+  if (releaseFormat === 'appimage' && !probes.hasFuseRuntime) {
+    diagnostics.push({
+      code: 'PANE_APPIMAGE_FUSE_MISSING',
+      severity: 'error',
+      message: 'The selected AppImage may not start because Pane could not find /dev/fuse and a FUSE mount helper.',
+      recoveryCommand: 'Install FUSE for this Linux distribution, or rerun with --format deb on a Debian-based host.',
+    });
+  }
+
+  if (probes.isRoot) {
+    diagnostics.push({
+      code: 'PANE_ELECTRON_SANDBOX_ROOT',
+      severity: 'error',
+      message: 'The Pane Electron runtime should not be launched as root with its sandbox enabled.',
+      recoveryCommand: 'Run runpane install daemon as a non-root user.',
+    });
+  } else if (probes.unprivilegedUserNamespaceDisabled) {
+    diagnostics.push({
+      code: 'PANE_ELECTRON_SANDBOX_UNAVAILABLE',
+      severity: 'error',
+      message: 'Unprivileged user namespaces are disabled, so the Electron sandbox may not start.',
+      recoveryCommand: 'Enable unprivileged user namespaces for this host, or explicitly use --no-sandbox only if you accept the security tradeoff.',
+    });
+  }
+
+  if (!probes.hasSystemctl) {
+    diagnostics.push({
+      code: 'PANE_USER_SERVICE_UNAVAILABLE',
+      severity: 'warning',
+      message: 'systemctl is unavailable; setup will print a manual daemon command instead of installing a user service.',
+    });
+  }
+
+  return {
+    ready: diagnostics.every((diagnostic) => diagnostic.severity !== 'error'),
+    displayAvailable: probes.displayAvailable,
+    headlessEnvironmentApplied: true,
+    diagnostics,
+  };
+}
+
+function hasLinuxFuseRuntime(): boolean {
+  return fs.existsSync('/dev/fuse') && (commandExists('fusermount') || commandExists('fusermount3'));
+}
+
+function isUnprivilegedUserNamespaceDisabled(): boolean {
+  try {
+    return fs.readFileSync('/proc/sys/kernel/unprivileged_userns_clone', 'utf8').trim() === '0';
+  } catch {
+    return false;
+  }
+}
+
+function commandExists(command: string): boolean {
+  const result = childProcess.spawnSync('sh', ['-lc', `command -v ${command}`], {
+    stdio: 'ignore',
+    timeout: 2_000,
+  });
+  return result.status === 0;
 }
 
 function collectPlatform(): { ok: true; platform: PanePlatform } | { ok: false; error: string } {
@@ -237,6 +350,17 @@ function renderDoctorText(report: DoctorReport): void {
     console.log(`Pane daemon: reachable (${report.daemon.result?.repos.count ?? 0} repos)`);
   } else {
     console.log(`Pane daemon: unreachable - ${report.daemon.error ?? 'unknown error'}`);
+  }
+
+  console.log(`Remote setup preflight: ${report.remoteSetup.ready ? 'ready' : 'action required'}`);
+  if (report.platform?.os === 'linux') {
+    console.log(`  Display available: ${report.remoteSetup.displayAvailable ? 'yes' : 'no (headless mode will be applied)'}`);
+  }
+  for (const diagnostic of report.remoteSetup.diagnostics) {
+    console.log(`  ${diagnostic.code}: ${diagnostic.message}`);
+    if (diagnostic.recoveryCommand) {
+      console.log(`  Recovery: ${diagnostic.recoveryCommand}`);
+    }
   }
 
   console.log('Agent discovery: run "runpane doctor --json" before Pane actions, then "runpane agent-context --json" for full CLI context.');

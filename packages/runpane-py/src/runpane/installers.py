@@ -75,10 +75,20 @@ def install_pane_artifact(
 
 def spawn_pane(executable_path: str, args: List[str]) -> int:
     try:
-        return subprocess.call([executable_path, *args])
+        return subprocess.call([executable_path, *args], env=build_pane_daemon_environment())
     except OSError as error:
         print(f"Failed to launch Pane: {error}")
         return 1
+
+
+def build_pane_daemon_environment(
+    system_name: Optional[str] = None,
+    base_environment: Optional[dict] = None,
+) -> dict:
+    environment = dict(os.environ if base_environment is None else base_environment)
+    if (system_name or platform.system()).lower() == "linux":
+        environment["ELECTRON_OZONE_PLATFORM_HINT"] = "headless"
+    return environment
 
 
 def launch_pane_client(executable_path: str) -> None:

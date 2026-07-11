@@ -61,7 +61,8 @@ export function spawnPane(executablePath: string, args: string[]): Promise<numbe
   return new Promise((resolve) => {
     const child = childProcess.spawn(executablePath, args, {
       stdio: 'inherit',
-      shell: false
+      shell: false,
+      env: buildPaneDaemonEnvironment()
     });
     child.on('close', (code) => resolve(code ?? 1));
     child.on('error', (error) => {
@@ -69,6 +70,20 @@ export function spawnPane(executablePath: string, args: string[]): Promise<numbe
       resolve(1);
     });
   });
+}
+
+export function buildPaneDaemonEnvironment(
+  platform = process.platform,
+  baseEnvironment: NodeJS.ProcessEnv = process.env
+): NodeJS.ProcessEnv {
+  if (platform !== 'linux') {
+    return { ...baseEnvironment };
+  }
+
+  return {
+    ...baseEnvironment,
+    ELECTRON_OZONE_PLATFORM_HINT: 'headless'
+  };
 }
 
 export function launchPaneClient(executablePath: string): void {

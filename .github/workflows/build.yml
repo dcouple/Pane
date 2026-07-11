@@ -75,6 +75,13 @@ jobs:
 
     - run: ls -la dist-electron/
 
+    - name: Verify packaged headless remote setup
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        appimage="$(find dist-electron -maxdepth 1 -name '*.AppImage' -print -quit)"
+        scripts/test-packaged-headless-remote-setup.sh "$appimage"
+
     - uses: actions/upload-artifact@v7
       with:
         name: pane-${{ matrix.os }}-${{ github.ref_name }}

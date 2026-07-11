@@ -1682,6 +1682,7 @@ export const RUNPANE_CONTRACT = {
         "release",
         "installedPane",
         "daemon",
+        "remoteSetup",
         "nextCommands"
       ],
       "properties": {
@@ -1822,6 +1823,61 @@ export const RUNPANE_CONTRACT = {
             },
             "nextCommand": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "remoteSetup": {
+          "type": "object",
+          "required": [
+            "ready",
+            "displayAvailable",
+            "headlessEnvironmentApplied",
+            "diagnostics"
+          ],
+          "properties": {
+            "ready": {
+              "type": "boolean"
+            },
+            "displayAvailable": {
+              "type": "boolean"
+            },
+            "headlessEnvironmentApplied": {
+              "type": "boolean"
+            },
+            "diagnostics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "severity",
+                  "message"
+                ],
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "PANE_APPIMAGE_FUSE_MISSING",
+                      "PANE_ELECTRON_SANDBOX_ROOT",
+                      "PANE_ELECTRON_SANDBOX_UNAVAILABLE",
+                      "PANE_USER_SERVICE_UNAVAILABLE"
+                    ]
+                  },
+                  "severity": {
+                    "enum": [
+                      "warning",
+                      "error"
+                    ]
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "recoveryCommand": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
             }
           },
           "additionalProperties": false
