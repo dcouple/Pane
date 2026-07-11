@@ -79,7 +79,12 @@ jobs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        appimage="$(find dist-electron -maxdepth 1 -name '*.AppImage' -print -quit)"
+        case "$(uname -m)" in
+          x86_64) appimage_pattern='*x86_64.AppImage' ;;
+          aarch64|arm64) appimage_pattern='*arm64.AppImage' ;;
+          *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 2 ;;
+        esac
+        appimage="$(find dist-electron -maxdepth 1 -name "$appimage_pattern" -print -quit)"
         scripts/test-packaged-headless-remote-setup.sh "$appimage"
 
     - uses: actions/upload-artifact@v7
