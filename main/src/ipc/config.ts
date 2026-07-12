@@ -55,7 +55,7 @@ export function registerConfigHandlers(
       const managedAgentsMdChanged = updates.agentContext?.managedAgentsMd !== undefined
         && updates.agentContext.managedAgentsMd !== oldConfig.agentContext?.managedAgentsMd;
 
-      await configManager.updateConfig(updates);
+      const updatedConfig = await configManager.updateConfig(updates);
 
       if (updates.autoStartOnBoot !== undefined) {
         syncAutoStartOnBoot(app, updates.autoStartOnBoot !== false);
@@ -104,7 +104,7 @@ export function registerConfigHandlers(
         }
       }
 
-      return { success: true };
+      return { success: true, data: updatedConfig };
     } catch (error) {
       console.error('Failed to update config:', error);
       return { success: false, error: 'Failed to update config' };

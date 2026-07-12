@@ -32,7 +32,7 @@ export default function Welcome({ isOpen, onClose }: WelcomeProps) {
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} size="sm" ariaLabel="Welcome to Pane">
       <div className="px-6 pt-6 pb-2 flex flex-col items-start text-left">
         <img src={paneLogo} alt="Pane" className="h-12 w-12 mb-4" />
         <h1 className="text-lg font-semibold text-text-primary">Welcome to Pane</h1>

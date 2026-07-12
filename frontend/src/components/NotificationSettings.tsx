@@ -1,157 +1,102 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Bell, BellOff, Shield } from 'lucide-react';
 import { Button } from './ui/Button';
-import { ToggleField } from './ui/Toggle';
-import { CollapsibleCard } from './ui/CollapsibleCard';
 import { SettingsSection } from './ui/SettingsSection';
-import { Bell, BellOff, Volume2, VolumeX, Zap, Shield } from 'lucide-react';
+import { SettingRow, SettingsPage } from './settings/SettingRow';
+import { ImmediateToggle } from './settings/SettingsControls';
+import type { SettingsPersistence } from './settings/useSettingsPersistence';
 
-interface NotificationSettings {
-  playSound: boolean;
-  enabled: boolean;
-}
-
-interface NotificationSettingsProps {
-  settings: NotificationSettings;
-  onUpdateSettings: (settings: Partial<NotificationSettings>) => void;
-}
-
-export function NotificationSettings({ settings, onUpdateSettings }: NotificationSettingsProps) {
-  const [permissionStatus, setPermissionStatus] = useState<string>('unknown');
+export function NotificationSettings({ persistence }: { persistence: SettingsPersistence }) {
+  const config = persistence.config!;
+  const notifications = config.notifications ?? { playSound: true, enabled: true };
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission | 'unsupported'>('default');
+  const [actionResult, setActionResult] = useState<string | null>(null);
 
   useEffect(() => {
-    if ('Notification' in window) {
-      setPermissionStatus(Notification.permission);
-    }
+    setPermissionStatus('Notification' in window ? Notification.permission : 'unsupported');
   }, []);
 
   const requestPermission = async () => {
     if (!('Notification' in window)) {
-      alert('This browser does not support notifications');
+      setActionResult('Desktop notifications are not supported in this environment.');
       return;
     }
-
     const permission = await Notification.requestPermission();
     setPermissionStatus(permission);
+    setActionResult(permission === 'granted' ? 'Notification access enabled.' : 'Notification access was not granted.');
   };
 
   const testNotification = () => {
-    if (Notification.permission === 'granted') {
-      new Notification('Pane is ready to ping you', {
-        body: 'You will see notifications like this when a terminal panel finishes',
-        icon: '/favicon.ico',
-      });
-    } else {
-      alert('Please enable notifications first');
+    if (Notification.permission !== 'granted') {
+      setActionResult('Enable notification access before sending a test.');
+      return;
     }
+    new Notification('Pane is ready to ping you', {
+      body: 'You will see notifications like this when a terminal panel finishes.',
+      icon: '/favicon.ico',
+    });
+    setActionResult('Test notification sent.');
   };
 
-  const getPermissionIcon = () => {
-    switch (permissionStatus) {
-      case 'granted': return <Bell className="w-4 h-4 text-status-success" />;
-      case 'denied': return <BellOff className="w-4 h-4 text-status-error" />;
-      default: return <Shield className="w-4 h-4 text-status-warning" />;
-    }
-  };
-
-  const getPermissionStatus = () => {
-    switch (permissionStatus) {
-      case 'granted': return { text: 'Enabled', color: 'text-status-success' };
-      case 'denied': return { text: 'Denied', color: 'text-status-error' };
-      default: return { text: 'Not requested', color: 'text-status-warning' };
-    }
-  };
-
-  const status = getPermissionStatus();
+  const permissionLabel = permissionStatus === 'granted'
+    ? 'Enabled'
+    : permissionStatus === 'denied'
+      ? 'Denied by the operating system'
+      : permissionStatus === 'unsupported'
+        ? 'Unsupported'
+        : 'Not requested';
+  const PermissionIcon = permissionStatus === 'granted' ? Bell : permissionStatus === 'denied' ? BellOff : Shield;
 
   return (
-    <div className="space-y-6">
-      {/* Browser Permissions */}
-      <CollapsibleCard
-        title="Browser Permissions"
-        subtitle="Allow Pane to show desktop notifications"
-        icon={getPermissionIcon()}
-        defaultExpanded={true}
-      >
-        <SettingsSection
-          title="Notification Access"
-          description="Pane needs browser permission to show notifications when your sessions update"
-          icon={getPermissionIcon()}
+    <SettingsPage title="Notifications" description="Application-wide desktop alerts and sound.">
+      <SettingsSection title="Permission">
+        <SettingRow
+          settingId="notification-permission"
+          label="Desktop notification access"
+          description={actionResult ?? permissionLabel}
         >
-          <div className="flex items-center justify-between p-4 bg-surface-secondary rounded-lg border border-border-secondary">
-            <div className="flex items-center gap-3">
-              {getPermissionIcon()}
-              <div>
-                <span className="text-sm font-medium text-text-primary">Permission Status</span>
-                <p className={`text-sm ${status.color} font-medium`}>
-                  {status.text}
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {permissionStatus !== 'granted' && (
-                <Button
-                  onClick={requestPermission}
-                  size="sm"
-                  variant="primary"
-                >
-                  Enable Notifications
-                </Button>
-              )}
-              {permissionStatus === 'granted' && (
-                <Button
-                  onClick={testNotification}
-                  size="sm"
-                  variant="secondary"
-                >
-                  Test Notification
-                </Button>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <PermissionIcon className="h-4 w-4 text-text-tertiary" />
+            {permissionStatus !== 'granted' && permissionStatus !== 'unsupported' && (
+              <Button type="button" size="sm" onClick={requestPermission}>Enable</Button>
+            )}
+            {permissionStatus === 'granted' && (
+              <Button type="button" variant="secondary" size="sm" onClick={testNotification}>Test</Button>
+            )}
           </div>
-          {permissionStatus === 'denied' && (
-            <div className="mt-3 p-3 bg-status-error/10 border border-status-error/20 rounded-lg">
-              <p className="text-xs text-status-error">
-                Notifications are blocked. Please enable them in your browser settings and refresh Pane.
-              </p>
-            </div>
-          )}
-        </SettingsSection>
-      </CollapsibleCard>
+        </SettingRow>
+      </SettingsSection>
 
-      {/* Notification Preferences */}
-      <CollapsibleCard
-        title="Notification Preferences"
-        subtitle="Customize when and how you receive notifications"
-        icon={<Bell className="w-5 h-5" />}
-        defaultExpanded={true}
-      >
-        <SettingsSection
-          title="Sound & Audio"
-          description="Control notification sounds"
-          icon={settings.playSound ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+      <SettingsSection title="Alerts">
+        <SettingRow
+          settingId="desktop-notifications"
+          label="Desktop notifications"
+          description="Notify when a pane finishes while Pane is in the background."
+          saveState={persistence.saveStates['desktop-notifications']}
         >
-          <ToggleField
-            label="Play notification sounds"
-            description="Play a subtle sound when notifications appear"
-            checked={settings.playSound}
-            onChange={(checked) => onUpdateSettings({ playSound: checked })}
-          />
-        </SettingsSection>
-
-        <SettingsSection
-          title="Activity Alerts"
-          description="When a terminal panel goes idle, Pane can ping you with a desktop notification"
-          icon={<Zap className="w-4 h-4" />}
-          spacing="sm"
-        >
-          <ToggleField
+          <ImmediateToggle
             label="Desktop notifications"
-            description="Ping me when a panel finishes while Pane is in the background. Stays quiet while Pane is focused."
-            checked={settings.enabled}
-            onChange={(checked) => onUpdateSettings({ enabled: checked })}
+            value={notifications.enabled}
+            onSave={(enabled) => persistence.saveConfig('desktop-notifications', {
+              notifications: { ...notifications, enabled },
+            })}
           />
-        </SettingsSection>
-      </CollapsibleCard>
-    </div>
+        </SettingRow>
+        <SettingRow
+          settingId="notification-sound"
+          label="Play notification sounds"
+          description="Play a short sound when Pane sends a desktop notification."
+          saveState={persistence.saveStates['notification-sound']}
+        >
+          <ImmediateToggle
+            label="Play notification sounds"
+            value={notifications.playSound}
+            onSave={(playSound) => persistence.saveConfig('notification-sound', {
+              notifications: { ...notifications, playSound },
+            })}
+          />
+        </SettingRow>
+      </SettingsSection>
+    </SettingsPage>
   );
 }

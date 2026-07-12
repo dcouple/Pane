@@ -116,7 +116,10 @@ describe('config IPC handlers', () => {
     const updateConfig = ipcMain.handlers.get('config:update');
     expect(updateConfig).toBeDefined();
 
-    await expect(updateConfig?.({}, { agentContext: { managedAgentsMd: false } })).resolves.toEqual({ success: true });
+    await expect(updateConfig?.({}, { agentContext: { managedAgentsMd: false } })).resolves.toEqual({
+      success: true,
+      data: { agentContext: { managedAgentsMd: false } },
+    });
 
     const activeContent = await fs.readFile(activeAgentsPath, 'utf8');
     const inactiveContent = await fs.readFile(inactiveAgentsPath, 'utf8');

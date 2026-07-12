@@ -126,7 +126,7 @@ export default function AnalyticsConsentDialog({
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={() => {}} size="md" closeOnOverlayClick={false} closeOnEscape={false} showCloseButton={false}>
+    <Modal isOpen={isOpen} onClose={() => {}} size="md" closeOnOverlayClick={false} closeOnEscape={false} showCloseButton={false} ariaLabel="Help Improve Pane">
       {/* Header */}
       <div className="p-6 border-b border-border-primary">
         <div className="flex items-center">

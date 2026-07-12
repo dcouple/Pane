@@ -234,7 +234,7 @@ interface ElectronAPI {
   // Configuration
   config: {
     get: () => Promise<IPCResponse<AppConfig>>;
-    update: (updates: UpdateConfigRequest) => Promise<IPCResponse>;
+    update: (updates: UpdateConfigRequest) => Promise<IPCResponse<AppConfig>>;
     getSessionPreferences: () => Promise<IPCResponse>;
     updateSessionPreferences: (preferences: SessionCreationPreferences) => Promise<IPCResponse>;
     getAvailableShells: () => Promise<IPCResponse>;

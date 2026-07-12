@@ -12,6 +12,7 @@ interface ToggleProps {
   id?: string;
   variant?: 'default' | 'warning';
   title?: string;
+  'aria-label'?: string;
   children?: React.ReactNode;
 }
 
@@ -47,6 +48,7 @@ export const Toggle: React.FC<ToggleProps> = ({
   id,
   variant = 'default',
   title,
+  'aria-label': ariaLabel,
   children
 }) => {
   const sizes = sizeClasses[size];
@@ -66,6 +68,7 @@ export const Toggle: React.FC<ToggleProps> = ({
         id={id}
         type="button"
         title={title}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => !disabled && handleChange(!isPressed)}
         className={cn(
@@ -93,6 +96,7 @@ export const Toggle: React.FC<ToggleProps> = ({
       type="button"
       role="switch"
       title={title}
+      aria-label={ariaLabel}
       aria-checked={isPressed}
       onClick={() => !disabled && handleChange(!isPressed)}
       disabled={disabled}

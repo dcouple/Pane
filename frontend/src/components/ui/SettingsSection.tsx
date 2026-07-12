@@ -25,17 +25,17 @@ export function SettingsSection({
   };
 
   return (
-    <div className={cn('space-y-4', className)}>
-      <div className="flex items-start gap-3">
+    <section className={cn('space-y-1', className)}>
+      <div className="flex items-start gap-2 border-b border-border-secondary pb-2">
         {icon && (
-          <div className="flex-shrink-0 mt-0.5 text-interactive">
+          <div className="mt-0.5 flex-shrink-0 text-text-tertiary">
             {icon}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <h4 className="text-sm font-semibold text-text-primary">
+          <h3 className="text-sm font-semibold text-text-primary">
             {title}
-          </h4>
+          </h3>
           {description && (
             <p className="text-xs text-text-tertiary mt-1 leading-relaxed">
               {description}
@@ -43,9 +43,9 @@ export function SettingsSection({
           )}
         </div>
       </div>
-      <div className={cn('ml-6', spacingClasses[spacing])}>
+      <div className={cn('divide-y divide-border-secondary/70', spacingClasses[spacing])}>
         {children}
       </div>
-    </div>
+    </section>
   );
 }

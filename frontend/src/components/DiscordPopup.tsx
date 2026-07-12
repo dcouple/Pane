@@ -94,7 +94,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="md">
+    <Modal isOpen={isOpen} onClose={handleClose} size="md" ariaLabel="Join the Pane Community">
       <div className="relative overflow-hidden -m-6 mb-0">
         <div className="absolute inset-0 bg-gradient-to-r from-[#5865F2] to-[#7289DA] opacity-90" />
         <div className="relative px-6 py-8 text-center">

@@ -49,7 +49,7 @@ export function ConfirmDialog({
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="sm">
+    <Modal isOpen={isOpen} onClose={onClose} size="sm" ariaLabel={title}>
       <div className="p-6 pt-2">
         <div className="flex items-start gap-3 mb-4">
           {icon && <div className="flex-shrink-0">{icon}</div>}

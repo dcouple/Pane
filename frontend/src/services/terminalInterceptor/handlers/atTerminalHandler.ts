@@ -5,6 +5,7 @@ import type {
   TerminalSuggestion,
 } from '../types';
 import { LINE_COUNT_PRESETS } from '../types';
+import { SETTINGS_PREFERENCE_KEYS } from '../../../types/settings';
 
 interface AtTerminalHandlerOptions {
   sessionId: string;
@@ -83,8 +84,8 @@ export function createAtTerminalHandler(
 
       // Load persisted preferences (fire-and-forget)
       Promise.all([
-        getPreference('at_terminal_paste_mode'),
-        getPreference('at_terminal_line_count'),
+        getPreference(SETTINGS_PREFERENCE_KEYS.atTerminalPasteMode),
+        getPreference(SETTINGS_PREFERENCE_KEYS.atTerminalLineCount),
       ]).then(([savedMode, savedLineCount]) => {
         let changed = false;
         if (savedMode === 'raw' || savedMode === 'embed') {
@@ -148,7 +149,7 @@ export function createAtTerminalHandler(
           const newPresetIndex = Math.max(0, state.lineCountPresetIndex - 1);
           const newLineCount = LINE_COUNT_PRESETS[newPresetIndex];
           state = { ...state, lineCountPresetIndex: newPresetIndex, lineCount: newLineCount };
-          setPreference('at_terminal_line_count', String(newLineCount));
+          setPreference(SETTINGS_PREFERENCE_KEYS.atTerminalLineCount, String(newLineCount));
           onStateChange();
           return { type: 'consume' };
         }
@@ -161,7 +162,7 @@ export function createAtTerminalHandler(
           );
           const newLC = LINE_COUNT_PRESETS[newPresetIndex];
           state = { ...state, lineCountPresetIndex: newPresetIndex, lineCount: newLC };
-          setPreference('at_terminal_line_count', String(newLC));
+          setPreference(SETTINGS_PREFERENCE_KEYS.atTerminalLineCount, String(newLC));
           onStateChange();
           return { type: 'consume' };
         }
@@ -170,7 +171,7 @@ export function createAtTerminalHandler(
           // Tab — toggle paste mode between raw and embed
           const newMode = state.pasteMode === 'raw' ? 'embed' : 'raw';
           state = { ...state, pasteMode: newMode };
-          setPreference('at_terminal_paste_mode', newMode);
+          setPreference(SETTINGS_PREFERENCE_KEYS.atTerminalPasteMode, newMode);
           onStateChange();
           return { type: 'consume' };
         }

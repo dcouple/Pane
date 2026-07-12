@@ -55,13 +55,13 @@ async function openSettings(page: Page) {
 }
 
 async function openRemotePaneSettings(page: Page) {
-  const remotePaneSectionButton = page.getByRole('button', { name: /Advanced Remote Pane/i });
-  await expect(remotePaneSectionButton).toBeVisible({ timeout: 5000 });
-  await clickDomNode(remotePaneSectionButton);
+  const remoteAccessButton = page.getByRole('button', { name: 'Remote Access', exact: true });
+  await expect(remoteAccessButton).toBeVisible({ timeout: 5000 });
+  await clickDomNode(remoteAccessButton);
 }
 
 async function openAdvancedRemoteSetup(page: Page) {
-  const advancedRemoteSetupButton = page.getByRole('button', { name: /Advanced Remote Setup/i });
+  const advancedRemoteSetupButton = page.getByTestId('settings-content').getByRole('button', { name: 'Advanced', exact: true });
   await expect(advancedRemoteSetupButton).toBeVisible({ timeout: 5000 });
   await clickDomNode(advancedRemoteSetupButton);
 }
@@ -114,13 +114,13 @@ test.describe('Smoke Tests', () => {
 
     await openSettings(page);
 
-    const worktreeFileSyncButton = page.getByRole('button', { name: /Worktree File Sync/i });
+    const worktreeFileSyncButton = page.getByRole('button', { name: 'Worktrees & Git', exact: true });
     await expect(worktreeFileSyncButton).toBeVisible({ timeout: 5000 });
     await clickDomNode(worktreeFileSyncButton);
 
     await clickDomNode(page.getByRole('button', { name: 'Add Entry' }));
 
-    const customPathInput = page.getByPlaceholder('e.g. .myconfig').last();
+    const customPathInput = page.getByPlaceholder('e.g. .env').last();
     await expect(customPathInput).toBeVisible();
     await customPathInput.pressSequentially('./venv/*');
 
@@ -137,13 +137,13 @@ test.describe('Smoke Tests', () => {
     await openRemotePaneSettings(page);
     await openAdvancedRemoteSetup(page);
 
-    await expect(page.getByText('Using local runtime').first()).toBeVisible();
-
     await setInputValue(page.getByLabel('Connection Label', { exact: true }), 'Office Mac mini');
     await setInputValue(page.getByLabel('Remote Base URL', { exact: true }), 'http://127.0.0.1:42137');
     await clickDomNode(page.getByRole('button', { name: 'Create Paired Profile' }));
 
     await expect(page.getByText('Latest generated remote token')).toBeVisible();
+    await clickDomNode(page.getByRole('button', { name: 'Back to Remote Access' }));
+    await clickDomNode(page.getByRole('button', { name: 'Connections', exact: true }));
     await expect(page.getByText('Office Mac mini').first()).toBeVisible();
 
     await clickDomNode(page.getByRole('button', { name: 'Connect', exact: true }).first());
@@ -172,6 +172,8 @@ test.describe('Smoke Tests', () => {
     await setInputValue(page.getByLabel('Existing Remote Token'), 'shared-host-token');
     await clickDomNode(page.getByRole('button', { name: 'Save Remote Profile' }));
 
+    await clickDomNode(page.getByRole('button', { name: 'Back to Remote Access' }));
+    await clickDomNode(page.getByRole('button', { name: 'Connections', exact: true }));
     await expect(page.getByText('Tunnel from laptop').first()).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings } from './Settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
@@ -47,9 +46,7 @@ function CollapsedProjectTooltip({ project, sessionCount }: { project: Project; 
 interface SidebarProps {
   onAboutClick: () => void;
   onSettingsClick: () => void;
-  isSettingsOpen: boolean;
-  onSettingsClose: () => void;
-  settingsInitialSection?: string;
+  onRemoteSettingsClick: () => void;
   width: number;
   onResize: (e: React.MouseEvent) => void;
   collapsed?: boolean;
@@ -77,7 +74,7 @@ const HelpCircleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSettingsClose, settingsInitialSection, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick }: SidebarProps) {
+export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick }: SidebarProps) {
   const paneLogo = usePaneLogo();
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
@@ -499,7 +496,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
             <Tooltip content={remoteFooterTooltip} side="right" interactive delay={250}>
               <button
                 type="button"
-                onClick={onSettingsClick}
+                onClick={onRemoteSettingsClick}
                 aria-label={remoteFooterStatus.ariaLabel}
                 className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover transition-colors"
               >
@@ -525,7 +522,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
           </div>
         </div>
 
-        <Settings isOpen={isSettingsOpen} onClose={onSettingsClose} initialSection={settingsInitialSection} />
         {showCreateDialog && activeProject && (
           <CreateSessionDialog
             isOpen={showCreateDialog}
@@ -659,7 +655,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
             <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250} className="block">
               <button
                 type="button"
-                onClick={onSettingsClick}
+                onClick={onRemoteSettingsClick}
                 aria-label={remoteFooterStatus.ariaLabel}
                 className="flex w-full items-center justify-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors truncate"
               >
@@ -690,7 +686,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, isSettingsOpen, onSetti
         </div>
     </div>
 
-      <Settings isOpen={isSettingsOpen} onClose={onSettingsClose} initialSection={settingsInitialSection} />
       {showResourcePopover && createPortal(
         <div
           ref={resourcePopoverRef}

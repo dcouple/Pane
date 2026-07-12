@@ -3,7 +3,7 @@ import { Play, Square, Loader2, Cloud, Monitor, Terminal } from 'lucide-react';
 import { createDefaultCloudVmState } from '../../../shared/types/cloud';
 import { useCloudStore } from '../stores/cloudStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { panelApi } from '../services/panelApi';
+import { openCloudSetupTerminal } from '../services/cloudSetupTerminal';
 
 const DEFAULT_CLOUD_STATE = createDefaultCloudVmState();
 
@@ -48,7 +48,7 @@ export function CloudWidget() {
     if (explicitlyOff && showCloudView) {
       setShowCloudView(false);
     }
-  }, [vmState?.status, showCloudView, setShowCloudView]);
+  }, [vmState, showCloudView, setShowCloudView]);
 
   const handleStart = useCallback(async () => {
     setLoading(true);
@@ -144,27 +144,13 @@ export function CloudWidget() {
 
     setSetupLoading(true);
     try {
-      // Create a terminal panel with the setup script command
-      // The script handles both first-time setup AND reconnection (with gcloud auth)
-      const panel = await panelApi.createPanel({
-        sessionId: activeSessionId,
-        type: 'terminal',
-        title: 'Cloud Setup',
-        initialState: {
-          customState: {
-            initialCommand: 'bash cloud/scripts/setup-cloud.sh'
-          }
-        }
-      });
-
-      // Set it as active so user sees it immediately
-      await panelApi.setActivePanel(activeSessionId, panel.id);
+      await openCloudSetupTerminal(activeSessionId);
     } catch (err) {
       console.error('[CloudWidget] Failed to create setup terminal:', err);
     } finally {
       setSetupLoading(false);
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, setVmState, vmState]);
 
   // Hide widget entirely if cloud is not provisioned — only show once user
   // has configured cloud through Settings

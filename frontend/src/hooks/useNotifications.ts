@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
+import { useConfigStore } from '../stores/configStore';
 import { ToolPanel } from '../../../shared/types/panels';
 
 // Extend window interface for webkit audio context compatibility
@@ -23,11 +24,10 @@ interface NotificationSettings {
 const NOTIFICATION_DEBOUNCE_MS = 60_000;
 
 export function useNotifications() {
-  const [settings, setSettings] = useState<NotificationSettings>({
+  const settings = useConfigStore((state) => state.config?.notifications) ?? {
     playSound: true,
     enabled: true,
-  });
-  const settingsLoaded = useRef(false);
+  } satisfies NotificationSettings;
 
   // Mirror settings into a ref so the Zustand subscription callback reads the
   // latest value without needing to re-subscribe every time a toggle changes.
@@ -278,30 +278,12 @@ export function useNotifications() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- subscription must be created once; maybeNotifyPanelIdle reads live state via refs
   }, []);
 
-  // Load settings on first mount
   useEffect(() => {
-    if (!settingsLoaded.current) {
-      settingsLoaded.current = true;
-
-      API.config.get().then((response) => {
-        if (response.success && response.data?.notifications) {
-          setSettings(response.data.notifications);
-        }
-      }).catch((error) => {
-        console.error('Failed to load notification settings:', error);
-      });
-
-      requestPermission();
-    }
+    void requestPermission();
   }, [requestPermission]);
-
-  const updateSettings = useCallback((newSettings: Partial<NotificationSettings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }));
-  }, []);
 
   return {
     settings,
-    updateSettings,
     requestPermission,
     showNotification,
   };

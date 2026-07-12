@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal,
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
+import { SETTINGS_PREFERENCE_KEYS, normalizeSidebarPaneRowLayout, type SidebarPaneRowLayout } from '../types/settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { AddProjectDialog } from './AddProjectDialog';
 import { Dropdown } from './ui/Dropdown';
@@ -26,13 +27,6 @@ const SIDEBAR_ROW_PADDING = 'px-4';
 const SIDEBAR_ROW_GAP = 'gap-2.5';
 const SIDEBAR_SECTION_ROW = 'mt-2 flex w-full items-center justify-between gap-2 pl-3.5 pr-2 pt-1 pb-1';
 const SIDEBAR_SECTION_LABEL = 'truncate text-[13px] font-semibold uppercase leading-4 text-text-tertiary';
-const SIDEBAR_PANE_ROW_LAYOUT_PREFERENCE = 'sidebar_pane_row_layout';
-
-type SidebarPaneRowLayout = 'single' | 'two-row';
-
-function normalizeSidebarPaneRowLayout(value: unknown): SidebarPaneRowLayout {
-  return value === 'two-row' ? 'two-row' : 'single';
-}
 
 interface ProjectSessionListProps {
   sessionSortAscending: boolean;
@@ -115,7 +109,7 @@ export function ProjectSessionList({
       try {
         const result = await window.electron?.invoke(
           'preferences:get',
-          SIDEBAR_PANE_ROW_LAYOUT_PREFERENCE
+          SETTINGS_PREFERENCE_KEYS.sidebarPaneRowLayout
         ) as { success?: boolean; data?: string } | undefined;
         if (!cancelled) {
           setSidebarPaneRowLayout(normalizeSidebarPaneRowLayout(result?.data));

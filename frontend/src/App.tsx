@@ -36,6 +36,7 @@ import { ContextMenuProvider } from './contexts/ContextMenuContext';
 import { CommandPalette } from './components/CommandPalette';
 import { CloudOverlay } from './components/CloudOverlay';
 import { CloudWidget } from './components/CloudWidget';
+import { Settings } from './components/Settings';
 import { CreateSessionDialog } from './components/CreateSessionDialog';
 import { AddProjectDialog } from './components/AddProjectDialog';
 import { useNavigationStore } from './stores/navigationStore';
@@ -54,6 +55,7 @@ import type { VersionUpdateInfo } from './types/session';
 import type { AnalyticsIdentity, TerminalShortcut } from './types/config';
 import type { ResumableSession } from '../../shared/types/panels';
 import type { Project } from './types/project';
+import type { SettingsCategoryId, SettingsOpenRequest, SettingsTarget } from './types/settings';
 import type {
   PanePermissionRequest,
   PanePermissionResolvedEvent,
@@ -100,9 +102,11 @@ function App() {
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategoryId>('general');
+  const [settingsOpenRequest, setSettingsOpenRequest] = useState<SettingsOpenRequest>();
+  const settingsRequestNonce = useRef(0);
   const [resumableSessions, setResumableSessions] = useState<ResumableSession[]>([]);
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
-  const [settingsInitialSection, setSettingsInitialSection] = useState<string | undefined>();
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
@@ -124,6 +128,19 @@ function App() {
   const { fetchConfig, config: appConfig } = useConfigStore();
   const terminalShortcuts = appConfig?.terminalShortcuts ?? EMPTY_TERMINAL_SHORTCUTS;
   const { isVisible: shortcutHintsVisible } = useShortcutHintsOverlay();
+
+  const openSettings = useCallback((target?: SettingsTarget) => {
+    if (target) {
+      settingsRequestNonce.current += 1;
+      setSettingsOpenRequest({ target, nonce: settingsRequestNonce.current });
+    }
+    setIsSettingsOpen(true);
+  }, []);
+
+  const closeSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+    setSettingsOpenRequest(undefined);
+  }, []);
 
   const { width: sidebarWidth, startResize } = useResizable({
     defaultWidth: 352,
@@ -192,7 +209,7 @@ function App() {
     label: 'Open Settings',
     keys: 'mod+,',
     category: 'navigation',
-    action: () => setIsSettingsOpen(true),
+    action: () => openSettings(),
   });
 
   useHotkey({
@@ -211,8 +228,7 @@ function App() {
     keys: 'mod+alt+/',
     category: 'shortcuts',
     action: () => {
-      setSettingsInitialSection('terminal-shortcuts');
-      setIsSettingsOpen(true);
+      openSettings({ category: 'shortcuts', setting: 'terminal-shortcuts' });
     },
   });
 
@@ -789,10 +805,8 @@ function App() {
         >
           <Sidebar
             onAboutClick={() => setIsAboutOpen(true)}
-            onSettingsClick={() => setIsSettingsOpen(true)}
-            isSettingsOpen={isSettingsOpen}
-            onSettingsClose={() => { setIsSettingsOpen(false); setSettingsInitialSection(undefined); }}
-            settingsInitialSection={settingsInitialSection}
+            onSettingsClick={() => openSettings()}
+            onRemoteSettingsClick={() => openSettings({ category: 'remote-access' })}
             width={sidebarWidth}
             onResize={startResize}
             collapsed={sidebarCollapsed}
@@ -804,6 +818,14 @@ function App() {
         <SessionView />
         <CloudOverlay />
         <CloudWidget />
+        <Settings
+          isOpen={isSettingsOpen}
+          onClose={closeSettings}
+          category={settingsCategory}
+          onCategoryChange={setSettingsCategory}
+          openRequest={settingsOpenRequest}
+          onOpenRequestHandled={() => setSettingsOpenRequest(undefined)}
+        />
         <AnalyticsConsentDialog
           isOpen={isAnalyticsConsentOpen}
           onClose={() => setIsAnalyticsConsentOpen(false)}

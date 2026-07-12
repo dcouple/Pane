@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
-import { API } from '../utils/api';
 
 type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
 
@@ -29,7 +28,7 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { config } = useConfigStore();
+  const { config, updateConfig } = useConfigStore();
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = localStorage.getItem('theme');
     if (saved && isValidTheme(saved)) {
@@ -37,14 +36,12 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return 'light-rounded';
   });
-  const [configLoaded, setConfigLoaded] = useState(false);
 
   // Sync theme from config when it loads
   useEffect(() => {
     if (config?.theme && isValidTheme(config.theme)) {
       setTheme(config.theme);
       localStorage.setItem('theme', config.theme);
-      setConfigLoaded(true);
     }
   }, [config?.theme]);
 
@@ -62,15 +59,21 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     localStorage.setItem('theme', theme);
 
-    if (configLoaded) {
-      API.config.update({ theme }).catch(err => {
-        console.error('Failed to save theme to config:', err);
-      });
-    }
-  }, [theme, configLoaded]);
+  }, [theme]);
+
+  const updateTheme = (nextTheme: Theme) => {
+    const previousTheme = theme;
+    setTheme(nextTheme);
+    localStorage.setItem('theme', nextTheme);
+    void updateConfig({ theme: nextTheme }).catch((error) => {
+      console.error('Failed to save theme to config:', error);
+      setTheme(previousTheme);
+      localStorage.setItem('theme', previousTheme);
+    });
+  };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme: updateTheme }}>
       {children}
     </ThemeContext.Provider>
   );

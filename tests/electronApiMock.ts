@@ -9,11 +9,20 @@ type ElectronApiMockOptions = {
   analyticsConsentShown?: boolean;
   analyticsIdentity?: Record<string, unknown>;
   initialConfig?: Record<string, unknown>;
+  initialPreferences?: Record<string, string>;
+  platform?: 'darwin' | 'linux' | 'win32';
+  availableShells?: Array<Record<string, string>>;
+  configReadDelayMs?: number;
+  configGetFailures?: number;
+  notificationsSupported?: boolean;
   mainAnalyticsEvents?: AnalyticsMainEvent[];
 };
 
 export async function installElectronApiMock(page: Page, options: ElectronApiMockOptions = {}) {
   await page.addInitScript((mockOptions: ElectronApiMockOptions) => {
+    if (mockOptions.notificationsSupported === false) {
+      Reflect.deleteProperty(window, 'Notification');
+    }
     const success = (data: unknown = null) => Promise.resolve({ success: true, data });
     const unsubscribe = () => undefined;
     const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
@@ -21,6 +30,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
     const preferences: Record<string, string> = {
       analytics_consent_shown: mockOptions.analyticsConsentShown === false ? 'false' : 'true',
+      ...clone(mockOptions.initialPreferences ?? {}),
     };
     const defaultAnalyticsIdentity = {
       distinctId: 'test',
@@ -147,6 +157,11 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     let mockSessions: Array<Record<string, unknown>> = [];
     let cloudDisconnectError: string | null = null;
     let configGetCount = 0;
+    let nextConfigUpdateError: string | null = null;
+    let nextPreferenceSetError: string | null = null;
+    let remainingConfigGetFailures = mockOptions.configGetFailures ?? 0;
+    const configUpdates: Array<Record<string, unknown>> = [];
+    const preferenceWrites: Array<{ key: string; value: string }> = [];
     let sessionsGetCount = 0;
 
     const subscribe = (channel: string, callback: (...args: unknown[]) => void) => {
@@ -216,10 +231,19 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         return success(key ? preferences[key] ?? 'true' : 'true');
       }
       if (channel === 'preferences:set') {
+        if (nextPreferenceSetError) {
+          const error = nextPreferenceSetError;
+          nextPreferenceSetError = null;
+          return Promise.resolve({ success: false, error });
+        }
         if (key) {
           preferences[key] = value ?? '';
+          preferenceWrites.push({ key, value: value ?? '' });
         }
         return success();
+      }
+      if (channel === 'preferences:get-all') {
+        return success(clone(preferences));
       }
       if (channel === 'archive:get-progress') {
         return success(null);
@@ -233,7 +257,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       window: {
         isFocused: () => Promise.resolve(true),
       },
-      getPlatform: () => Promise.resolve('linux'),
+      getPlatform: () => Promise.resolve(mockOptions.platform ?? 'linux'),
       getVersionInfo: () => success({
         version: 'test',
         current: 'test',
@@ -308,15 +332,28 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         stopPolling: () => success(),
       }),
       config: namespace({
-        get: () => {
+        get: async () => {
           configGetCount += 1;
+          if (mockOptions.configReadDelayMs) {
+            await new Promise((resolve) => setTimeout(resolve, mockOptions.configReadDelayMs));
+          }
+          if (remainingConfigGetFailures > 0) {
+            remainingConfigGetFailures -= 1;
+            return { success: false, error: 'Mock config read failed' };
+          }
           return success(clone(configState));
         },
         update: (updates: Record<string, unknown>) => {
+          if (nextConfigUpdateError) {
+            const error = nextConfigUpdateError;
+            nextConfigUpdateError = null;
+            return Promise.resolve({ success: false, error });
+          }
           Object.assign(configState, updates);
-          return success();
+          configUpdates.push(clone(updates));
+          return success(clone(configState));
         },
-        getAvailableShells: () => success([]),
+        getAvailableShells: () => success(clone(mockOptions.availableShells ?? [])),
         getMonospaceFonts: () => success([]),
         getSessionPreferences: () => success({}),
       }),
@@ -610,6 +647,21 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getPreferences() {
           return clone(preferences);
+        },
+        getConfigUpdates() {
+          return clone(configUpdates);
+        },
+        getPreferenceWrites() {
+          return clone(preferenceWrites);
+        },
+        failNextConfigUpdate(error: string) {
+          nextConfigUpdateError = error;
+        },
+        failNextPreferenceSet(error: string) {
+          nextPreferenceSetError = error;
+        },
+        setConfigGetFailures(count: number) {
+          remainingConfigGetFailures = count;
         },
         emitPermissionRequest(request: Record<string, unknown>) {
           pendingPermissions.push(request);

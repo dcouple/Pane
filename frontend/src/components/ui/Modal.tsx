@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useId, useRef } from 'react';
 import { cn } from '../../utils/cn';
 import { X } from 'lucide-react';
 
@@ -10,8 +10,14 @@ export interface ModalProps {
   closeOnOverlayClick?: boolean;
   closeOnEscape?: boolean;
   showCloseButton?: boolean;
+  ariaLabel?: string;
   className?: string;
 }
+
+const ModalTitleContext = createContext<string | undefined>(undefined);
+const modalStack: HTMLDivElement[] = [];
+let openModalCount = 0;
+let originalBodyOverflow = '';
 
 export const Modal: React.FC<ModalProps> = ({
   isOpen,
@@ -21,17 +27,20 @@ export const Modal: React.FC<ModalProps> = ({
   closeOnOverlayClick = true,
   closeOnEscape = true,
   showCloseButton = true,
+  ariaLabel,
   className,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const mouseDownTargetRef = useRef<EventTarget | null>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
   
   // Handle escape key
   useEffect(() => {
     if (!isOpen || !closeOnEscape) return;
     
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.defaultPrevented && modalStack.at(-1) === modalRef.current) {
         onClose();
       }
     };
@@ -42,27 +51,62 @@ export const Modal: React.FC<ModalProps> = ({
   
   // Lock body scroll when modal is open
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    
+    if (!isOpen) return;
+    if (openModalCount === 0) originalBodyOverflow = document.body.style.overflow;
+    openModalCount += 1;
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = '';
+      openModalCount = Math.max(0, openModalCount - 1);
+      if (openModalCount === 0) document.body.style.overflow = originalBodyOverflow;
     };
   }, [isOpen]);
   
-  // Focus management
+  // Focus management and restoration.
   useEffect(() => {
     if (!isOpen) return;
-    
-    // Focus the modal when it opens
+
+    previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const modal = modalRef.current;
+    const previousModal = modalStack.at(-1);
+    if (previousModal) {
+      previousModal.inert = true;
+      previousModal.setAttribute('aria-hidden', 'true');
+    }
+    if (modal) modalStack.push(modal);
+    const keepFocusInTopModal = (event: FocusEvent) => {
+      const target = event.target;
+      if (
+        !modal
+        || modalStack.at(-1) !== modal
+        || !(target instanceof HTMLElement)
+        || modal.contains(target)
+        || target.closest('[data-radix-popper-content-wrapper]')
+      ) return;
+      const firstFocusable = modal.querySelector<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      (firstFocusable ?? modal).focus();
+    };
+    document.addEventListener('focusin', keepFocusInTopModal);
     const timer = setTimeout(() => {
-      modalRef.current?.focus();
+      const firstFocusable = modalRef.current?.querySelector<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      (firstFocusable ?? modalRef.current)?.focus();
     }, 50);
-    
-    return () => clearTimeout(timer);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('focusin', keepFocusInTopModal);
+      const index = modal ? modalStack.lastIndexOf(modal) : -1;
+      if (index >= 0) modalStack.splice(index, 1);
+      const nextModal = modalStack.at(-1);
+      if (nextModal) {
+        nextModal.inert = false;
+        nextModal.removeAttribute('aria-hidden');
+      }
+      window.setTimeout(() => previouslyFocusedRef.current?.focus(), 0);
+    };
   }, [isOpen]);
   
   if (!isOpen) return null;
@@ -101,6 +145,27 @@ export const Modal: React.FC<ModalProps> = ({
     // Reset the ref after handling
     mouseDownTargetRef.current = null;
   };
+
+  const handleModalKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab' || modalStack.at(-1) !== modalRef.current) return;
+    const focusable = Array.from(modalRef.current?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? []).filter((element) => element.offsetParent !== null);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      modalRef.current?.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
   
   return (
     <div
@@ -116,7 +181,10 @@ export const Modal: React.FC<ModalProps> = ({
         ref={modalRef}
         role="dialog"
         aria-modal="true"
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabel ? undefined : titleId}
         tabIndex={-1}
+        onKeyDown={handleModalKeyDown}
         className={cn(
           'relative bg-bg-primary rounded-modal shadow-modal w-full max-h-[90vh] overflow-hidden flex flex-col',
           sizeClasses[size],
@@ -136,7 +204,7 @@ export const Modal: React.FC<ModalProps> = ({
             </button>
           </div>
         )}
-        {children}
+        <ModalTitleContext.Provider value={titleId}>{children}</ModalTitleContext.Provider>
       </div>
     </div>
   );
@@ -154,6 +222,7 @@ export interface ModalHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const ModalHeader = React.forwardRef<HTMLDivElement, ModalHeaderProps>(
   ({ className, title, icon, onClose, children, ...props }, ref) => {
+    const titleId = useContext(ModalTitleContext);
     return (
       <div
         ref={ref}
@@ -165,13 +234,14 @@ export const ModalHeader = React.forwardRef<HTMLDivElement, ModalHeaderProps>(
       >
         <div className="flex items-center gap-2">
           {icon && <div className="text-text-secondary">{icon}</div>}
-          <h2 className="text-heading-2 text-text-primary">
+          <h2 id={titleId} className="text-heading-2 text-text-primary">
             {title || children}
           </h2>
         </div>
         {onClose && (
           <button
             type="button"
+            aria-label="Close modal"
             onClick={onClose}
             className="text-text-tertiary hover:text-text-secondary transition-colors"
           >
