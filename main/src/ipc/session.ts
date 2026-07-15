@@ -137,7 +137,7 @@ export function registerSessionHandlers(
       const worktreeName = dbSession.worktree_name || '';
       const projectId = dbSession.project_id;
       const worktreePath = dbSession.worktree_path || '';
-      if (worktreeName && projectId && !dbSession.is_main_repo && worktreePath && existsSync(worktreePath)) {
+      if (worktreeName && projectId && !dbSession.is_main_repo && worktreePath) {
         const project = databaseService.getProject(projectId);
         const ctx = sessionManager.getProjectContextByProjectId(projectId);
         if (project && ctx) {
