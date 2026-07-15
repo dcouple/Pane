@@ -3161,6 +3161,78 @@ export class DatabaseService {
     return result.changes > 0;
   }
 
+  private tableExists(tableName: string): boolean {
+    const row = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .get(tableName);
+    return row !== undefined;
+  }
+
+  private deleteSessionOwnedRows(sessionId: string): void {
+    const panelRows = this.db
+      .prepare("SELECT id FROM tool_panels WHERE session_id = ?")
+      .all(sessionId) as Array<{ id: string }>;
+
+    if (panelRows.length > 0 && this.tableExists("claude_panel_settings")) {
+      const deletePanelSettings = this.db.prepare(
+        "DELETE FROM claude_panel_settings WHERE panel_id = ?",
+      );
+      for (const panel of panelRows) {
+        deletePanelSettings.run(panel.id);
+      }
+    }
+
+    this.db.prepare("DELETE FROM execution_diffs WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM prompt_markers WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM conversation_messages WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM session_outputs WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM session_git_status_cache WHERE session_id = ?").run(sessionId);
+    this.db.prepare("DELETE FROM tool_panels WHERE session_id = ?").run(sessionId);
+  }
+
+  deleteArchivedSessionPermanently(id: string): boolean {
+    return this.transaction(() => {
+      const archivedSession = this.db
+        .prepare("SELECT id FROM sessions WHERE id = ? AND archived = 1")
+        .get(id);
+      if (!archivedSession) {
+        return false;
+      }
+
+      this.deleteSessionOwnedRows(id);
+      const result = this.db
+        .prepare("DELETE FROM sessions WHERE id = ? AND archived = 1")
+        .run(id);
+      return result.changes > 0;
+    });
+  }
+
+  deleteArchivedSessionsPermanently(): number {
+    return this.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `
+          SELECT id FROM sessions
+          WHERE archived = 1
+            AND (is_main_repo = 0 OR is_main_repo IS NULL)
+            AND (is_hidden = 0 OR is_hidden IS NULL)
+        `,
+        )
+        .all() as Array<{ id: string }>;
+
+      let deletedCount = 0;
+      for (const row of rows) {
+        this.deleteSessionOwnedRows(row.id);
+        const result = this.db
+          .prepare("DELETE FROM sessions WHERE id = ? AND archived = 1")
+          .run(row.id);
+        deletedCount += result.changes;
+      }
+
+      return deletedCount;
+    });
+  }
+
   // Session output operations
   addSessionOutput(
     sessionId: string,

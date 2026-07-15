@@ -451,6 +451,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           sessionDeleteCalls.push(sessionId);
           return success();
         },
+        permanentDelete: () => success(),
+        permanentDeleteArchived: () => success({ deletedCount: 0 }),
         toggleFavorite: (sessionId: string) => {
           sessionFavoriteToggleCalls.push(sessionId);
           return success();

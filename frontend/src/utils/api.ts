@@ -106,6 +106,16 @@ export class API {
       return window.electronAPI.sessions.delete(sessionId);
     },
 
+    async permanentDelete(sessionId: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.sessions.permanentDelete(sessionId);
+    },
+
+    async permanentDeleteArchived() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.sessions.permanentDeleteArchived();
+    },
+
     async sendInput(sessionId: string, input: string) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.sessions.sendInput(sessionId, input);

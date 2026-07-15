@@ -802,7 +802,12 @@ export function ArchivedSessions() {
   const [hasLoadedArchived, setHasLoadedArchived] = useState(false);
 
   const setActiveSession = useSessionStore(s => s.setActiveSession);
+  const activeSessionId = useSessionStore(s => s.activeSessionId);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
+  const archivedSessionCount = useMemo(
+    () => archivedProjects.reduce((sum, project) => sum + project.sessions.length, 0),
+    [archivedProjects],
+  );
 
   const loadArchivedSessions = useCallback(async () => {
     try {
@@ -847,6 +852,56 @@ export function ArchivedSessions() {
     }
   };
 
+  const handlePermanentDeleteSession = async (session: Session) => {
+    const sessionName = session.name || 'Untitled';
+    const confirmed = window.confirm(
+      `Permanently delete archived pane "${sessionName}"?\n\nThis removes it from Pane history and cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await API.sessions.permanentDelete(session.id);
+      if (!response.success) {
+        console.error('Failed to permanently delete session:', response.error);
+        return;
+      }
+      if (activeSessionId === session.id) {
+        await setActiveSession(null);
+        navigateToSessions();
+      }
+      loadArchivedSessions();
+    } catch (e) {
+      console.error('Failed to permanently delete session:', e);
+    }
+  };
+
+  const handlePermanentDeleteAllArchived = async () => {
+    if (archivedSessionCount === 0) return;
+
+    const confirmed = window.confirm(
+      `Permanently delete all ${archivedSessionCount} archived panes?\n\nThis removes them from Pane history and cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      const response = await API.sessions.permanentDeleteArchived();
+      if (!response.success) {
+        console.error('Failed to permanently delete archived sessions:', response.error);
+        return;
+      }
+      const deletedActiveSession = archivedProjects.some(project =>
+        project.sessions.some(session => session.id === activeSessionId),
+      );
+      if (deletedActiveSession) {
+        await setActiveSession(null);
+        navigateToSessions();
+      }
+      loadArchivedSessions();
+    } catch (e) {
+      console.error('Failed to permanently delete archived sessions:', e);
+    }
+  };
+
   const handleSessionClick = (sessionId: string) => {
     setActiveSession(sessionId);
     navigateToSessions();
@@ -854,26 +909,39 @@ export function ArchivedSessions() {
 
   return (
     <div className="border-t border-border-primary">
-      <button
-        type="button"
-        onClick={toggleArchived}
-        aria-expanded={showArchived}
-        aria-controls={archivedContentId}
-        className="w-full flex items-center gap-2 px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary hover:bg-surface-hover transition-colors"
-      >
-        {showArchived ? (
-          <ChevronDown className="w-3 h-3 flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-3 h-3 flex-shrink-0" />
+      <div className="group/archived-header flex items-center hover:bg-surface-hover focus-within:bg-surface-hover transition-colors">
+        <button
+          type="button"
+          onClick={toggleArchived}
+          aria-expanded={showArchived}
+          aria-controls={archivedContentId}
+          className="min-w-0 flex-1 flex items-center gap-2 py-2 pl-3 pr-1 text-[11px] font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
+        >
+          {showArchived ? (
+            <ChevronDown className="w-3 h-3 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3 h-3 flex-shrink-0" />
+          )}
+          <Archive className="w-3 h-3 flex-shrink-0" />
+          <span>Archived</span>
+        </button>
+        {hasLoadedArchived && archivedSessionCount > 0 && (
+          <button
+            type="button"
+            onClick={handlePermanentDeleteAllArchived}
+            className="flex-shrink-0 p-1 rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/archived-header:opacity-100 group-focus-within/archived-header:opacity-100"
+            title="Permanently delete all archived panes"
+            aria-label="Permanently delete all archived panes"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
         )}
-        <Archive className="w-3 h-3 flex-shrink-0" />
-        <span>Archived</span>
-        {hasLoadedArchived && archivedProjects.length > 0 && (
-          <span className="ml-auto text-[10px] text-text-muted font-normal tabular-nums">
-            {archivedProjects.reduce((sum, p) => sum + p.sessions.length, 0)}
+        {hasLoadedArchived && archivedSessionCount > 0 && (
+          <span className="w-8 pr-3 text-right text-[10px] text-text-muted font-normal tabular-nums">
+            {archivedSessionCount}
           </span>
         )}
-      </button>
+      </div>
 
       {showArchived && (
         <div id={archivedContentId} className="pb-2 max-h-[40vh] overflow-y-auto">
@@ -884,7 +952,7 @@ export function ArchivedSessions() {
               ))}
             </div>
           ) : archivedProjects.length === 0 ? (
-            <div className="px-6 py-3 text-xs text-text-tertiary">
+            <div className="px-5 py-3 text-xs text-text-tertiary">
               No archived panes
             </div>
           ) : (
@@ -897,7 +965,7 @@ export function ArchivedSessions() {
                     onClick={() => toggleArchivedProject(project.id)}
                     aria-expanded={isExpanded}
                     aria-controls={`archived-project-${project.id}`}
-                    className="w-full flex items-center gap-2 px-6 py-1.5 text-xs text-text-tertiary hover:text-text-secondary hover:bg-surface-hover transition-colors"
+                    className="w-full flex items-center gap-2 pl-5 pr-4 py-1.5 text-xs text-text-tertiary hover:text-text-secondary hover:bg-surface-hover transition-colors"
                   >
                     {isExpanded ? (
                       <ChevronDown className="w-3 h-3 flex-shrink-0" />
@@ -910,7 +978,7 @@ export function ArchivedSessions() {
                   {isExpanded && <div id={`archived-project-${project.id}`}>{project.sessions.map(session => (
                     <div
                       key={session.id}
-                      className="group/archived relative flex items-center gap-1 pl-10 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
+                      className="group/archived relative flex items-center gap-1 pl-8 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
                     >
                       <button
                         type="button"
@@ -930,9 +998,19 @@ export function ArchivedSessions() {
                         type="button"
                         onClick={(e) => { e.stopPropagation(); handleRestoreSession(session.id); }}
                         className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-success hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
+                        title={`Restore ${session.name || 'Untitled'}`}
                         aria-label={`Restore ${session.name || 'Untitled'}`}
                       >
                         <ArchiveRestore className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); handlePermanentDeleteSession(session); }}
+                        className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
+                        title={`Permanently delete ${session.name || 'Untitled'}`}
+                        aria-label={`Permanently delete ${session.name || 'Untitled'}`}
+                      >
+                        <Trash2 className="w-3 h-3" />
                       </button>
                     </div>
                   ))}</div>}

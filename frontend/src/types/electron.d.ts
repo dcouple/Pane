@@ -101,6 +101,8 @@ interface ElectronAPI {
     get: (sessionId: string) => Promise<IPCResponse>;
     create: (request: CreateSessionRequest) => Promise<IPCResponse>;
     delete: (sessionId: string) => Promise<IPCResponse>;
+    permanentDelete: (sessionId: string) => Promise<IPCResponse>;
+    permanentDeleteArchived: () => Promise<IPCResponse<{ deletedCount: number }>>;
     sendInput: (sessionId: string, input: string) => Promise<IPCResponse>;
     continue: (sessionId: string, prompt?: string, model?: string) => Promise<IPCResponse>;
     getOutput: (sessionId: string, limit?: number) => Promise<IPCResponse>;

@@ -158,6 +158,8 @@ const SESSION_CHANNELS = [
   'sessions:get-archived-with-projects',
   'sessions:create',
   'sessions:delete',
+  'sessions:permanent-delete',
+  'sessions:permanent-delete-archived',
   'sessions:input',
   'sessions:get-or-create-main-repo',
   'sessions:continue',

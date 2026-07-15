@@ -35,6 +35,8 @@ const DAEMON_SESSION_CHANNELS = [
   'sessions:get-archived-with-projects',
   'sessions:create',
   'sessions:delete',
+  'sessions:permanent-delete',
+  'sessions:permanent-delete-archived',
   'sessions:input',
   'sessions:get-or-create-main-repo',
   'sessions:continue',
@@ -69,6 +71,17 @@ const DAEMON_SESSION_PANEL_CHANNELS = [
   'panels:send-input',
   'panels:continue',
 ] as const;
+
+type DatabaseSession = {
+  id: string;
+  name?: string | null;
+  archived?: boolean | number | null;
+  worktree_name?: string | null;
+  worktree_path?: string | null;
+  project_id?: number | null;
+  is_main_repo?: boolean | number | null;
+  created_at?: string | null;
+};
 
 export function registerSessionHandlers(
   ipcMain: IpcMain,
@@ -109,6 +122,74 @@ export function registerSessionHandlers(
   const attachCachedGitStatus = (session: Session): Session => {
     const cached = gitStatusManager.getCachedStatus(session.id)?.status;
     return cached ? { ...session, gitStatus: cached } : session;
+  };
+
+  const cleanupPermanentDeleteFiles = async (dbSession: DatabaseSession) => {
+    const sessionId = dbSession.id;
+
+    try {
+      await runCommandManager.stopRunCommands(sessionId);
+    } catch (err) {
+      console.error(`[Session IPC] stopRunCommands failed during permanent delete for ${sessionId}:`, err);
+    }
+
+    try {
+      const worktreeName = dbSession.worktree_name || '';
+      const projectId = dbSession.project_id;
+      const worktreePath = dbSession.worktree_path || '';
+      if (worktreeName && projectId && !dbSession.is_main_repo && worktreePath && existsSync(worktreePath)) {
+        const project = databaseService.getProject(projectId);
+        const ctx = sessionManager.getProjectContextByProjectId(projectId);
+        if (project && ctx) {
+          const sessionCreatedAt = dbSession.created_at ? new Date(dbSession.created_at) : undefined;
+          console.log(`[WorktreeAudit] remove_requested source="session-delete" permanentDelete=true sessionId=${JSON.stringify(sessionId)} projectId=${projectId} projectPath=${JSON.stringify(project.path)} worktreeName=${JSON.stringify(worktreeName)} worktreePath=${JSON.stringify(worktreePath)}`);
+          await worktreeManager.removeWorktree(
+            project.path,
+            worktreeName,
+            project.worktree_folder || undefined,
+            sessionCreatedAt,
+            ctx.pathResolver,
+            ctx.commandRunner,
+            {
+              source: 'session-delete',
+              sessionId,
+              projectId,
+            },
+          );
+        } else {
+          console.warn(`[WorktreeAudit] remove_skipped source="session-delete" permanentDelete=true sessionId=${JSON.stringify(sessionId)} projectId=${projectId} worktreeName=${JSON.stringify(worktreeName)} reason="missing_project_or_context"`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Session IPC] Failed to remove worktree during permanent delete for ${sessionId}:`, err);
+    }
+
+    const artifactsDir = getAppSubdirectory('artifacts', sessionId);
+    if (existsSync(artifactsDir)) {
+      try {
+        await fs.rm(artifactsDir, { recursive: true, force: true });
+      } catch (err) {
+        console.error(`[Session IPC] Failed to remove artifacts during permanent delete for ${sessionId}:`, err);
+      }
+    }
+
+    for (const subdir of ['images', 'files'] as const) {
+      const dir = getAppSubdirectory(subdir);
+      if (!existsSync(dir)) continue;
+
+      try {
+        const allFiles = await fs.readdir(dir);
+        const sessionPrefix = `${sessionId}_`;
+        const sessionFiles = allFiles.filter(file => file.startsWith(sessionPrefix));
+        for (const file of sessionFiles) {
+          await fs.unlink(path.join(dir, file)).catch(() => {});
+        }
+      } catch (err) {
+        console.error(`[Session IPC] Failed to remove ${subdir} during permanent delete for ${sessionId}:`, err);
+      }
+    }
+
+    sessionImageCounters.delete(sessionId);
   };
 
   // Session management handlers
@@ -532,6 +613,74 @@ export function registerSessionHandlers(
     } catch (error) {
       console.error('Failed to delete session:', error);
       return { success: false, error: 'Failed to delete session' };
+    }
+  });
+
+  commandRegistry.register('sessions:permanent-delete', async (sessionId: string) => {
+    try {
+      const session = databaseService.getSession(sessionId);
+      if (!session) {
+        return { success: false, error: 'Session not found' };
+      }
+
+      if (!session.archived) {
+        return { success: false, error: 'Session must be archived before permanent deletion' };
+      }
+
+      try {
+        gitStatusManager.clearSessionCache(sessionId);
+      } catch (err) {
+        console.error(`[Session IPC] clearSessionCache failed for permanently deleted session ${sessionId}:`, err);
+      }
+
+      try {
+        await panelManager.cleanupSessionPanelsInMemory(sessionId);
+      } catch (err) {
+        console.error(`[Session IPC] cleanupSessionPanelsInMemory failed for permanently deleted session ${sessionId}:`, err);
+      }
+
+      await cleanupPermanentDeleteFiles(session as unknown as DatabaseSession);
+
+      const deleted = databaseService.deleteArchivedSessionPermanently(sessionId);
+      if (!deleted) {
+        return { success: false, error: 'Session not found or not archived' };
+      }
+
+      const allSessions = sessionManager.getAllSessions();
+      sessionManager.emit('sessions-loaded', allSessions);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to permanently delete session:', error);
+      return { success: false, error: 'Failed to permanently delete session' };
+    }
+  });
+
+  commandRegistry.register('sessions:permanent-delete-archived', async () => {
+    try {
+      const archivedSessions = databaseService.getArchivedSessions();
+      for (const session of archivedSessions) {
+        try {
+          gitStatusManager.clearSessionCache(session.id);
+        } catch (err) {
+          console.error(`[Session IPC] clearSessionCache failed for permanently deleted session ${session.id}:`, err);
+        }
+
+        try {
+          await panelManager.cleanupSessionPanelsInMemory(session.id);
+        } catch (err) {
+          console.error(`[Session IPC] cleanupSessionPanelsInMemory failed for permanently deleted session ${session.id}:`, err);
+        }
+
+        await cleanupPermanentDeleteFiles(session as unknown as DatabaseSession);
+      }
+
+      const deletedCount = databaseService.deleteArchivedSessionsPermanently();
+      const allSessions = sessionManager.getAllSessions();
+      sessionManager.emit('sessions-loaded', allSessions);
+      return { success: true, data: { deletedCount } };
+    } catch (error) {
+      console.error('Failed to permanently delete archived sessions:', error);
+      return { success: false, error: 'Failed to permanently delete archived sessions' };
     }
   });
 

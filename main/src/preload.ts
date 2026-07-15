@@ -462,6 +462,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:get', sessionId),
     create: (request: CreateSessionRequest): Promise<IPCResponse> => invokeIpc('sessions:create', request),
     delete: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:delete', sessionId),
+    permanentDelete: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:permanent-delete', sessionId),
+    permanentDeleteArchived: (): Promise<IPCResponse> => invokeIpc('sessions:permanent-delete-archived'),
     sendInput: (sessionId: string, input: string): Promise<IPCResponse> => invokeIpc('sessions:input', sessionId, input),
     continue: (sessionId: string, prompt?: string, model?: string): Promise<IPCResponse> => invokeIpc('sessions:continue', sessionId, prompt, model),
     getOutput: (sessionId: string, limit?: number): Promise<IPCResponse> => invokeIpc('sessions:get-output', sessionId, limit),

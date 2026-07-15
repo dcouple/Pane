@@ -64,3 +64,88 @@ describe('hidden sessions', () => {
     db.close();
   });
 });
+
+describe('permanent archived session deletion', () => {
+  it('only permanently deletes sessions after they are archived', () => {
+    const { db, tempDir } = createTestDatabase();
+    const project = db.createProject('Repo', path.join(tempDir, 'repo'));
+
+    db.createSession({
+      id: 'active-session',
+      name: 'Active Session',
+      initial_prompt: '',
+      worktree_name: 'active',
+      worktree_path: path.join(tempDir, 'repo-active'),
+      project_id: project.id,
+      tool_type: 'claude',
+    });
+    db.addSessionOutput('active-session', 'stdout', 'still here');
+
+    expect(db.deleteArchivedSessionPermanently('active-session')).toBe(false);
+    expect(db.getSession('active-session')).toBeDefined();
+    expect(db.getSessionOutputs('active-session')).toHaveLength(1);
+
+    db.archiveSession('active-session');
+
+    expect(db.deleteArchivedSessionPermanently('active-session')).toBe(true);
+    expect(db.getSession('active-session')).toBeUndefined();
+    expect(db.getSessionOutputs('active-session')).toHaveLength(0);
+
+    db.close();
+  });
+
+  it('bulk deletes visible archived sessions without deleting hidden archived sessions or active sessions', () => {
+    const { db, tempDir } = createTestDatabase();
+    const project = db.createProject('Repo', path.join(tempDir, 'repo'));
+
+    db.createSession({
+      id: 'archived-one',
+      name: 'Archived One',
+      initial_prompt: '',
+      worktree_name: 'archived-one',
+      worktree_path: path.join(tempDir, 'repo-archived-one'),
+      project_id: project.id,
+      tool_type: 'claude',
+    });
+    db.createSession({
+      id: 'archived-two',
+      name: 'Archived Two',
+      initial_prompt: '',
+      worktree_name: 'archived-two',
+      worktree_path: path.join(tempDir, 'repo-archived-two'),
+      project_id: project.id,
+      tool_type: 'claude',
+    });
+    db.createSession({
+      id: 'active-session',
+      name: 'Active Session',
+      initial_prompt: '',
+      worktree_name: 'active',
+      worktree_path: path.join(tempDir, 'repo-active'),
+      project_id: project.id,
+      tool_type: 'claude',
+    });
+    db.createSession({
+      id: 'hidden-archived',
+      name: 'Hidden Archived',
+      initial_prompt: '',
+      worktree_name: 'hidden',
+      worktree_path: tempDir,
+      project_id: null,
+      tool_type: 'none',
+      is_hidden: true,
+    });
+
+    db.archiveSession('archived-one');
+    db.archiveSession('archived-two');
+    db.archiveSession('hidden-archived');
+
+    expect(db.deleteArchivedSessionsPermanently()).toBe(2);
+    expect(db.getSession('archived-one')).toBeUndefined();
+    expect(db.getSession('archived-two')).toBeUndefined();
+    expect(db.getSession('active-session')).toBeDefined();
+    expect(db.getSession('hidden-archived')).toBeDefined();
+
+    db.close();
+  });
+});
