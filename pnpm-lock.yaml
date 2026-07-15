@@ -20,6 +20,12 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.16.0
+      '@xterm/addon-serialize':
+        specifier: ^0.14.0
+        version: 0.14.0
+      '@xterm/headless':
+        specifier: ^6.0.0
+        version: 6.0.0
       better-sqlite3-multiple-ciphers:
         specifier: ^12.6.2
         version: 12.6.2
