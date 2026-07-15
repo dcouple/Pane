@@ -386,10 +386,10 @@ export function registerRunpaneHandlers(
   });
 
   commandRegistry.register('runpane:panels:screen', async (request: unknown): Promise<RunpanePanelScreenResult> => {
-    return withRunpaneAction(services, 'panels:screen', {}, () => {
+    return withRunpaneAction(services, 'panels:screen', {}, async () => {
       const normalized = parsePanelScreenRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
-      return buildPanelScreenResult(panel, normalized.limit ?? DEFAULT_PANEL_SCREEN_LIMIT);
+      return await buildPanelScreenResult(panel, normalized.limit ?? DEFAULT_PANEL_SCREEN_LIMIT);
     }, result => ({
       paneId: result.paneId,
       panelId: result.panelId,
@@ -774,7 +774,8 @@ function resolveTerminalPanel(panelId: string): ToolPanel {
   return panel;
 }
 
-function buildPanelScreenResult(panel: ToolPanel, limit: number): RunpanePanelScreenResult {
+async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<RunpanePanelScreenResult> {
+  await terminalPanelManager.waitForTerminalState(panel.id);
   const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
   const customState = getTerminalCustomState(panel);
   const state = panelStateSummary(panel, liveSnapshot, customState);
@@ -800,6 +801,12 @@ function selectPanelScreenText(
   customState: TerminalPanelState,
 ): { source: RunpanePanelScreenSource; rawText: string } {
   if (snapshot) {
+    if (snapshot.screenText !== undefined) {
+      return {
+        source: snapshot.isAlternateScreen ? 'alternateScreen' : 'scrollback',
+        rawText: snapshot.screenText,
+      };
+    }
     if (snapshot.isAlternateScreen && snapshot.alternateScreenBuffer) {
       return { source: 'alternateScreen', rawText: snapshot.alternateScreenBuffer };
     }
@@ -877,11 +884,11 @@ async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest):
   const startedAt = Date.now();
   const timeoutMs = request.timeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS;
   const intervalMs = request.intervalMs ?? DEFAULT_PANEL_WAIT_INTERVAL_MS;
-  let lastScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+  let lastScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
   let condition = request.condition ?? defaultWaitCondition(lastScreen.state);
 
   while (Date.now() - startedAt <= timeoutMs) {
-    lastScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    lastScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
     condition = request.condition ?? defaultWaitCondition(lastScreen.state);
     const blocked = detectPanelBlocker(lastScreen.text, lastScreen.state.agentType, panel.id);
     const matched = isWaitConditionMatched(condition, lastScreen, request.contains, blocked);
@@ -1020,7 +1027,7 @@ async function submitComposerForPanel(
   panel: ToolPanel,
   strategy: RunpanePanelSubmitComposerStrategy | undefined,
 ): Promise<RunpanePanelSubmitComposerResult> {
-  const beforeScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+  const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
   const state = beforeScreen.state;
   const submit = resolveComposerSubmit(strategy, state.agentType);
   terminalPanelManager.writeToTerminal(panel.id, submit.input);
@@ -1057,7 +1064,7 @@ async function verifyComposerSubmitted(
 
   while (Date.now() - startedAt <= DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS) {
     await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
-    latestScreen = buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    latestScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
 
     if (latestScreen.state.activityStatus === 'active') {
       return { ok: true, verifiedSubmitted: true };

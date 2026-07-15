@@ -21,6 +21,7 @@ import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
+import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
 import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
@@ -153,6 +154,17 @@ function waitForNextPaint(): Promise<void> {
  * UNMOUNT (session switch / panel close): serialize a final snapshot, then
  * dispose WebGL, addons, and the xterm instance. Remounts restore from
  * `terminal:getState` (capped payload) and replay once into a fresh xterm.
+ * This differs intentionally from terminal clients that retain every renderer
+ * and its DOM node for every session: Pane bounds renderer memory, listeners,
+ * WebGL resources, and duplicate output parsing to the mounted top-level Pane
+ * session. Tool tabs inside that session are still kept mounted as described
+ * above. The main-process PTY and headless emulator remain authoritative, so
+ * background agents keep running and local-control screen reads remain correct
+ * without a renderer per session. The tradeoff is that remounting exposes
+ * foreground-TUI redraw assumptions hidden by retained-DOM designs. Restoring
+ * cells recreates terminal state but cannot make the application recompute its
+ * layout, which is why activation finishes with a timed real PTY size
+ * transition and return.
  */
 export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
   renderLog('[TerminalPanel] Component rendering, panel:', panel.id, 'isActive:', isActive);
@@ -489,7 +501,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     onStep,
   } = useTerminalSearch(xtermRef);
 
-  const resizePtyToFit = useCallback(() => {
+  const resizePtyToFit = useCallback(async (force = false): Promise<void> => {
     if (!fitAddonRef.current || !terminalRef.current) return;
     // Guard before fit(): the renderer grid is the damage point, not just the IPC.
     // Width only: wrap junk is a cols problem, and a stacked pane at Allotment's
@@ -503,12 +515,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       Number.isInteger(dimensions.cols) && Number.isInteger(dimensions.rows) &&
       dimensions.cols >= MIN_PTY_COLS && dimensions.rows >= MIN_PTY_ROWS
     ) {
-      window.electronAPI.invoke('terminal:resize', panel.id, dimensions.cols, dimensions.rows);
+      await window.electronAPI.invoke(
+        'terminal:resize',
+        panel.id,
+        dimensions.cols,
+        dimensions.rows,
+        { force },
+      );
     }
   }, [panel.id]);
 
-  // Full-depth refresh: normal shells reset+replay main's raw scrollback at the
-  // settled width; live TUIs (alt-screen) repaint via resize instead. Runs on
+  // Full-depth refresh: normal buffers reset+replay main's raw scrollback at the
+  // settled width; alternate buffers preserve their live model. Both paths end
+  // with a forced PTY resize so foreground applications redraw even when the
+  // dimensions did not change. Runs on
   // every panel activation (load-bearing for paint correctness across the
   // hide→show renderer swap — see the component lifecycle doc), on battery-
   // saver activations, after sustained-blur WebGL teardown, and from the manual
@@ -546,7 +566,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
       const state = await window.electronAPI.invoke('terminal:getState', panel.id);
       if (state?.isAlternateScreen) {
-        resizePtyToFit();
+        // Renderer refresh alone cannot repair an application frame that was
+        // restored before the visible grid settled. Main turns this forced resize
+        // into a one-column transition and back so the foreground app receives a
+        // real resize notification even when the settled dimensions are unchanged.
+        await resizePtyToFit(true);
         if (terminal.rows > 0) {
           terminal.refresh(0, terminal.rows - 1);
         }
@@ -555,13 +579,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       }
 
       // Fit first so reset+replay lands at the settled width, not a stale/tiny grid
-      resizePtyToFit();
+      await resizePtyToFit();
       terminal.reset();
-      const finishRefresh = () => {
+      const finishRefresh = async () => {
         restoreScrollPosition();
         // The old post-replay fit() invalidated WebGL via a dims change; after reordering
         // that fit is a same-size no-op, so an explicit refresh is needed for WebGL redraw
         if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
+        // Claude's default renderer can remain in the normal buffer while still
+        // needing the same application redraw as a fullscreen alternate-buffer TUI.
+        await resizePtyToFit(true);
       };
 
       if (state?.scrollbackBuffer) {
@@ -571,16 +598,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             ? state.scrollbackBuffer.join('\n')
             : '';
         if (content) {
-          await new Promise<void>(resolve => {
+          await new Promise<void>((resolve, reject) => {
             terminal.write(content, () => {
-              finishRefresh();
-              resolve();
+              void finishRefresh().then(resolve, reject);
             });
           });
           return;
         }
       }
-      finishRefresh();
+      await finishRefresh();
     } catch (e) {
       console.warn('[TerminalPanel] Failed to refresh terminal:', e);
     }
@@ -598,7 +624,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     const buffer = terminal.buffer.active;
     const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
     const wasNearBottom = isNearBottomRef.current || distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_ROWS;
-    resizePtyToFit();
+    void resizePtyToFit();
     if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
     if (wasNearBottom) {
       terminal.scrollToBottom();
@@ -686,9 +712,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // Terminal is already initialized, get its state to restore scrollback
           console.log('[TerminalPanel] Restoring terminal state from backend...');
           const terminalState = await window.electronAPI.invoke('terminal:getState', panel.id);
-          if (terminalState && (terminalState.scrollbackBuffer || terminalState.serializedBuffer)) {
+          if (terminalState && selectTerminalRestoreContent(terminalState)) {
             // We'll restore this to the terminal after it's created
-            console.log('[TerminalPanel] Found restore state — scrollback:', !!terminalState.scrollbackBuffer, 'serialized:', !!terminalState.serializedBuffer);
+            console.log('[TerminalPanel] Found terminal restore state');
             // Store for restoration after terminal is created - LOCAL to this initialization
             terminalStateForThisPanel = terminalState;
           }
@@ -1014,33 +1040,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // 30 s interval was removed to stop hidden panels from doing a full
           // buffer walk + IPC payload once per half-minute for no visible gain.
 
-          // Restore scrollback if we have saved state FOR THIS PANEL
-          // When the PTY is alive (initialized === true), always prefer raw scrollback
-          // because it accumulates all PTY output in real-time — the serialized snapshot
-          // is frozen at the moment the component last unmounted and misses any output
-          // that arrived while the panel wasn't displayed.
-          // The serialized snapshot is only more valuable for app restart scenarios
-          // (PTY gone, raw buffer lost) where it preserves formatting.
+          // Restore the active buffer for this panel. Full-screen TUIs render in
+          // xterm's alternate buffer, so normal shell scrollback is not a valid
+          // representation while alternate-screen mode is active.
           if (terminalStateForThisPanel) {
-            // Raw scrollback: always current when PTY is alive, contains full ANSI codes
-            if (terminalStateForThisPanel.scrollbackBuffer) {
-              let restoredContent: string;
-              if (typeof terminalStateForThisPanel.scrollbackBuffer === 'string') {
-                restoredContent = terminalStateForThisPanel.scrollbackBuffer;
-                console.log('[TerminalPanel] Restoring', restoredContent.length, 'chars of scrollback (raw, live PTY)');
-              } else if (Array.isArray(terminalStateForThisPanel.scrollbackBuffer)) {
-                restoredContent = terminalStateForThisPanel.scrollbackBuffer.join('\n');
-                console.log('[TerminalPanel] Restoring', terminalStateForThisPanel.scrollbackBuffer.length, 'lines of scrollback (raw, live PTY)');
-              } else {
-                restoredContent = '';
-              }
-              if (restoredContent) {
-                terminal.write(restoredContent);
-              }
-            } else if (terminalStateForThisPanel.serializedBuffer) {
-              // Fallback: serialized snapshot (for when raw scrollback is empty/unavailable)
-              console.log('[TerminalPanel] Restoring serialized snapshot for panel', panel.id);
-              terminal.write(terminalStateForThisPanel.serializedBuffer);
+            const restore = selectTerminalRestoreContent(terminalStateForThisPanel);
+            if (restore) {
+              console.log('[TerminalPanel] Restoring', restore.content.length, 'chars from', restore.source);
+              terminal.write(restore.content);
             }
             // Force WebGL renderer to redraw after buffer content changes.
             // Without this, macOS WebGL canvas shows stale/stuttered content until
@@ -1481,7 +1488,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const debouncedResize = () => {
             if (resizeTimer) clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-              if (!disposed) resizePtyToFit();
+              if (!disposed) void resizePtyToFit();
             }, 150);
           };
 

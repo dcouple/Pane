@@ -135,6 +135,7 @@ The following packages are licensed under the MIT license:
   - @xterm/addon-unicode11 (0.9.0) - The xterm.js authors
   - @xterm/addon-web-links (0.12.0) - The xterm.js authors
   - @xterm/addon-webgl (0.19.0) - The xterm.js authors
+  - @xterm/headless (6.0.0)
   - @xterm/xterm (6.0.0)
   - 7zip-bin (5.2.0)
   - accepts (2.0.0)
@@ -6386,7 +6387,7 @@ For more information, please refer to <http://unlicense.org>
 ================================================================================
 
 Package: Pane
-Version: 2.4.22
+Version: 2.4.26
 Author: [object Object]
 License: AGPL-3.0
 

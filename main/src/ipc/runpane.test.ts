@@ -22,6 +22,7 @@ vi.mock('../services/terminalPanelManager', () => ({
     initializeTerminal: vi.fn(),
     isTerminalInitialized: vi.fn(),
     getTerminalSnapshot: vi.fn(),
+    waitForTerminalState: vi.fn(),
     getTerminalScrollback: vi.fn(),
     writeToTerminal: vi.fn(),
   },
@@ -867,7 +868,8 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
       initialized: true,
       scrollbackBuffer: 'old\n',
-      alternateScreenBuffer: 'one\ntwo\nthree',
+      alternateScreenBuffer: '\x1b[Hstale cursor-addressed bytes',
+      screenText: 'one\ntwo\nthree',
       isAlternateScreen: true,
       activityStatus: 'idle',
       lastActivityTime: '2026-01-01T00:02:00.000Z',

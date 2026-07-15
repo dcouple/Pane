@@ -17,6 +17,7 @@ import {
   onAck as flowControlOnAck,
   onPtyBytes as flowControlOnPtyBytes,
 } from '../ptyHost/flowControl';
+import { TerminalStateEmulator } from './terminalStateEmulator';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -26,6 +27,10 @@ const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 30_000; // 30s — mark panel idle after no PTY output
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
+const MIN_PTY_COLS = 20;
+const MIN_PTY_ROWS = 5;
+const FORCED_REDRAW_TRANSITION_MS = 50;
+const FORCED_REDRAW_SETTLE_MS = 80;
 // Formal ceiling for the raw-ANSI scrollback shipped on restore/getState replay. Peer consensus:
 // Orca (TERMINAL_SCROLLBACK_REPLAY_BYTE_LIMIT) and Superset (MAX_HISTORY_SCROLLBACK_BYTES) both use
 // 512 * 1024. Above the 500KB live trim, so it does not reduce today's payload — the measurable win
@@ -44,6 +49,8 @@ export interface TerminalPanelSnapshot {
   initialized: true;
   scrollbackBuffer: string;
   alternateScreenBuffer: string;
+  /** Plain text for the current emulated viewport. */
+  screenText?: string;
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
   lastActivityTime: string;
@@ -157,6 +164,8 @@ interface TerminalProcess {
   sessionId: string;
   scrollbackBuffer: string;
   alternateScreenBuffer: string;
+  /** Authoritative xterm-compatible model of the live PTY byte stream. */
+  screenEmulator?: TerminalStateEmulator;
   commandHistory: string[];
   currentCommand: string;
   lastActivity: Date;
@@ -897,6 +906,7 @@ export class TerminalPanelManager {
       sessionId: panel.sessionId,
       scrollbackBuffer: '',
       alternateScreenBuffer: '',
+      screenEmulator: new TerminalStateEmulator(spawnCols, spawnRows),
       commandHistory: [],
       currentCommand: '',
       lastActivity: new Date(),
@@ -1132,6 +1142,7 @@ export class TerminalPanelManager {
       // Strip \x1b[2J inside DEC 2026 sync blocks before xterm.js sees the data
       const filtered = this.filterSyncBlockClears(terminal, data);
       this.captureCodexSessionId(terminal, filtered);
+      terminal.screenEmulator?.write(filtered);
 
       // Keep TUI redraw traffic separate from durable shell scrollback. Full-screen
       // apps emit high-volume cursor/clear sequences that are useful only as a
@@ -1217,6 +1228,7 @@ export class TerminalPanelManager {
       );
 
       // Clean up
+      terminal.screenEmulator?.dispose();
       this.terminals.delete(terminal.panelId);
       this.visibleViewersByPanel.delete(terminal.panelId);
 
@@ -1279,7 +1291,12 @@ export class TerminalPanelManager {
     terminal.lastActivity = new Date();
   }
   
-  resizeTerminal(panelId: string, cols: number, rows: number): void {
+  async resizeTerminal(
+    panelId: string,
+    cols: number,
+    rows: number,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
     const terminal = this.terminals.get(panelId);
     if (!terminal) {
       console.warn(`[TerminalPanelManager] Terminal ${panelId} not found for resize`);
@@ -1287,18 +1304,40 @@ export class TerminalPanelManager {
     }
 
     // Reject non-integers (NaN/Infinity/floats) and mid-layout garbage
-    if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || rows < 5) {
+    if (
+      !Number.isInteger(cols) ||
+      !Number.isInteger(rows) ||
+      cols < MIN_PTY_COLS ||
+      rows < MIN_PTY_ROWS
+    ) {
       console.warn(`[TerminalPanelManager] Rejecting invalid resize ${cols}x${rows} for ${panelId}`);
       return;
     }
 
-    // Dedupe: avoids ConPTY repaints and redundant WINCH redraws
-    if (terminal.pty.cols === cols && terminal.pty.rows === rows) {
+    const isSameSize = terminal.pty.cols === cols && terminal.pty.rows === rows;
+    // Normal layout traffic stays deduplicated. A forced redraw must make the
+    // kernel observe an actual size transition; repeating TIOCSWINSZ with the
+    // same dimensions is not guaranteed to signal the foreground process group.
+    if (!options.force && isSameSize) {
       return;
     }
 
     try {
+      if (options.force && isSameSize) {
+        const redrawCols = cols > MIN_PTY_COLS ? cols - 1 : cols + 1;
+        terminal.pty.resize(redrawCols, rows);
+        // Give the foreground process time to observe the intermediate grid.
+        // Back-to-back TIOCSWINSZ calls can collapse into a single pending signal.
+        await new Promise(resolve => setTimeout(resolve, FORCED_REDRAW_TRANSITION_MS));
+      }
       terminal.pty.resize(cols, rows);
+      terminal.screenEmulator?.resize(cols, rows);
+      if (options.force) {
+        // Let the final application redraw reach our output batch before the
+        // renderer removes its activation mask.
+        await new Promise(resolve => setTimeout(resolve, FORCED_REDRAW_SETTLE_MS));
+        this.flushOutputBuffer(terminal);
+      }
     } catch (err) {
       // A resize failure does not mean the pty died; onExit owns cleanup
       console.warn(`[TerminalPanelManager] Failed to resize terminal ${panelId}:`, err);
@@ -1326,6 +1365,8 @@ export class TerminalPanelManager {
     
     const panel = panelManager.getPanel(panelId);
     if (!panel) return;
+
+    await terminal.screenEmulator?.waitForIdle();
     
     // Get current working directory (if possible)
     let cwd = (panel.state.customState && 'cwd' in panel.state.customState) ? panel.state.customState.cwd : undefined;
@@ -1351,11 +1392,13 @@ export class TerminalPanelManager {
       cwd: cwd,
       scrollbackBuffer: terminal.scrollbackBuffer,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
-      isAlternateScreen: terminal.isAlternateScreen,
+      isAlternateScreen: terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
-      serializedBuffer: this.serializedBuffers.get(panelId),
+      serializedBuffer: terminal.screenEmulator?.isAlternateScreen
+        ? terminal.screenEmulator.serializeForRestore()
+        : this.serializedBuffers.get(panelId),
       ...(terminal.codexAgentSessionId
         ? { agentType: 'codex' as const, agentSessionId: terminal.codexAgentSessionId }
         : {})
@@ -1427,25 +1470,36 @@ export class TerminalPanelManager {
     }
   }
   
-  getTerminalState(panelId: string): TerminalPanelState | null {
+  async getTerminalState(panelId: string): Promise<TerminalPanelState | null> {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return null;
 
+    await terminal.screenEmulator?.waitForIdle();
+
     const cappedScrollback = this.trimAnsiSafe(terminal.scrollbackBuffer, MAX_RESTORE_PAYLOAD_SIZE);
+    const isAlternateScreen = terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen;
     return {
       isInitialized: true,
       cwd: process.cwd(), // Simplified - would need platform-specific implementation
       shellType: process.env.SHELL || 'bash',
       scrollbackBuffer: cappedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
-      isAlternateScreen: terminal.isAlternateScreen,
+      isAlternateScreen,
       commandHistory: terminal.commandHistory,
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
-      // Omit the serialized snapshot when raw scrollback exists — the frontend prefers raw whenever
-      // the PTY is alive; the snapshot is only consulted on app-restart (empty raw scrollback).
-      serializedBuffer: cappedScrollback.length > 0 ? undefined : this.serializedBuffers.get(panelId)
+      // An active alternate screen cannot be reconstructed from normal shell
+      // scrollback. Serialize the authoritative live model for renderer remounts.
+      serializedBuffer: isAlternateScreen
+        ? terminal.screenEmulator?.serializeForRestore()
+        : cappedScrollback.length > 0
+          ? undefined
+          : this.serializedBuffers.get(panelId)
     };
+  }
+
+  async waitForTerminalState(panelId: string): Promise<void> {
+    await this.terminals.get(panelId)?.screenEmulator?.waitForIdle();
   }
 
   getTerminalSnapshot(panelId: string): TerminalPanelSnapshot | null {
@@ -1460,7 +1514,8 @@ export class TerminalPanelManager {
       initialized: true,
       scrollbackBuffer: terminal.scrollbackBuffer,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
-      isAlternateScreen: terminal.isAlternateScreen,
+      screenText: terminal.screenEmulator?.getScreenText(),
+      isAlternateScreen: terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen,
       activityStatus: terminal.activityStatus,
       lastActivityTime: terminal.lastActivity.toISOString(),
       currentCommand: terminal.currentCommand,
@@ -1475,6 +1530,7 @@ export class TerminalPanelManager {
     const terminal = this.terminals.get(panelId);
     if (terminal) {
       terminal.scrollbackBuffer = '';
+      terminal.screenEmulator?.clearScrollback();
     }
     this.serializedBuffers.delete(panelId);
 
@@ -1520,6 +1576,7 @@ export class TerminalPanelManager {
       terminal.idleTimer = null;
     }
     this.flushOutputBuffer(terminal);
+    terminal.screenEmulator?.dispose();
 
     // Kill the PTY process
     try {
@@ -1618,6 +1675,7 @@ export class TerminalPanelManager {
       const panel = panelManager.getPanel(panelId);
       if (!panel) {
         console.warn(`[ptyHost] respawnAll: panel ${panelId} no longer exists, skipping`);
+        terminal.screenEmulator?.dispose();
         this.terminals.delete(panelId);
         this.visibleViewersByPanel.delete(panelId);
         continue;
@@ -1654,6 +1712,7 @@ export class TerminalPanelManager {
         clearTimeout(terminal.idleTimer);
         terminal.idleTimer = null;
       }
+      terminal.screenEmulator?.dispose();
       this.terminals.delete(panelId);
       this.visibleViewersByPanel.delete(panelId);
     }
@@ -1699,7 +1758,9 @@ export class TerminalPanelManager {
   getAltScreenState(panelId: string): { isAlternateScreen: boolean } | null {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return null;
-    return { isAlternateScreen: terminal.isAlternateScreen };
+    return {
+      isAlternateScreen: terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen,
+    };
   }
 
   saveSerializedSnapshot(panelId: string, serializedData: string): void {
@@ -1762,6 +1823,7 @@ export class TerminalPanelManager {
           terminal.idleTimer = null;
         }
         this.flushOutputBuffer(terminal);
+        terminal.screenEmulator?.dispose();
 
         terminal.pty.kill();
       } catch (error) {

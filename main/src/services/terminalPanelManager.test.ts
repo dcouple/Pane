@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigManager } from './configManager';
 import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import { createFlowControlRecord, disposeFlowControlRecord, type FlowControlRecord } from '../ptyHost/flowControl';
+import { TerminalStateEmulator } from './terminalStateEmulator';
 
 vi.mock('@lydell/node-pty', () => ({}));
 
@@ -37,8 +38,11 @@ import { panelManager } from './panelManager';
 
 type TerminalUnderTest = {
   pty: {
+    cols: number;
+    rows: number;
     pause: ReturnType<typeof vi.fn>;
     resume: ReturnType<typeof vi.fn>;
+    resize: ReturnType<typeof vi.fn>;
     write: ReturnType<typeof vi.fn>;
   };
   isPtyHost: boolean;
@@ -46,6 +50,7 @@ type TerminalUnderTest = {
   sessionId: string;
   scrollbackBuffer: string;
   alternateScreenBuffer: string;
+  screenEmulator?: TerminalStateEmulator;
   commandHistory: string[];
   currentCommand: string;
   lastActivity: Date;
@@ -76,6 +81,17 @@ type VisibilityAccess = {
 type SnapshotAccess = {
   terminals: Map<string, TerminalUnderTest>;
   getTerminalSnapshot(panelId: string): ReturnType<TerminalPanelManager['getTerminalSnapshot']>;
+  getTerminalState(panelId: string): ReturnType<TerminalPanelManager['getTerminalState']>;
+};
+
+type ResizeAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  resizeTerminal(
+    panelId: string,
+    cols: number,
+    rows: number,
+    options?: { force?: boolean },
+  ): Promise<void>;
 };
 
 type InitialInputAccess = {
@@ -94,8 +110,11 @@ type LaunchCommandAccess = {
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
   return {
     pty: {
+      cols: 80,
+      rows: 24,
       pause: vi.fn(),
       resume: vi.fn(),
+      resize: vi.fn(),
       write: vi.fn(),
     },
     isPtyHost: false,
@@ -119,6 +138,33 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
     ...overrides,
   };
 }
+
+describe('TerminalPanelManager terminal resize', () => {
+  afterEach(() => {
+    vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+    vi.useRealTimers();
+  });
+
+  it('deduplicates ordinary same-size resizes but holds an actual redraw transition', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as ResizeAccess;
+    const terminal = createTerminal({ outputBuffer: '' });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    await manager.resizeTerminal(terminal.panelId, 80, 24);
+    expect(terminal.pty.resize).not.toHaveBeenCalled();
+
+    const redraw = manager.resizeTerminal(terminal.panelId, 80, 24, { force: true });
+    expect(terminal.pty.resize).toHaveBeenNthCalledWith(1, 79, 24);
+    expect(terminal.pty.resize).toHaveBeenCalledTimes(1);
+
+    await vi.runAllTimersAsync();
+    await redraw;
+    expect(terminal.pty.resize).toHaveBeenNthCalledWith(2, 80, 24);
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+});
 
 function createConfigManagerStub(): ConfigManager {
   return {
@@ -303,11 +349,15 @@ describe('TerminalPanelManager hidden output delivery', () => {
     disposeFlowControlRecord(terminal.flowControl);
   });
 
-  it('returns live terminal snapshots for daemon reads', () => {
+  it('returns emulated live screen and restore state for daemon and renderer reads', async () => {
     const manager = new TerminalPanelManager() as unknown as SnapshotAccess;
+    const screenEmulator = new TerminalStateEmulator(40, 5);
+    screenEmulator.write('\x1b[?1049h\x1b[Hagent screen');
+    await screenEmulator.waitForIdle();
     const terminal = createTerminal({
       scrollbackBuffer: 'scrollback',
       alternateScreenBuffer: 'screen',
+      screenEmulator,
       isAlternateScreen: true,
       activityStatus: 'active',
       currentCommand: 'codex',
@@ -340,6 +390,7 @@ describe('TerminalPanelManager hidden output delivery', () => {
       initialized: true,
       scrollbackBuffer: 'scrollback',
       alternateScreenBuffer: 'screen',
+      screenText: 'agent screen',
       isAlternateScreen: true,
       activityStatus: 'active',
       currentCommand: 'codex',
@@ -348,6 +399,13 @@ describe('TerminalPanelManager hidden output delivery', () => {
       agentType: 'codex',
       agentSessionId: 'agent-session-1',
     });
+    const restoreState = await manager.getTerminalState(terminal.panelId);
+    expect(restoreState).toMatchObject({
+      isAlternateScreen: true,
+      scrollbackBuffer: 'scrollback',
+    });
+    expect(restoreState?.serializedBuffer).toContain('\x1b[?1049h');
+    screenEmulator.dispose();
     disposeFlowControlRecord(terminal.flowControl);
   });
 

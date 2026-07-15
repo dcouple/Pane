@@ -602,8 +602,13 @@ export function registerPanelHandlers(
     return terminalPanelManager.writeToTerminal(panelId, data);
   });
   
-  commandRegistry.register('terminal:resize', async (panelId: string, cols: number, rows: number) => {
-    return terminalPanelManager.resizeTerminal(panelId, cols, rows);
+  commandRegistry.register('terminal:resize', async (
+    panelId: string,
+    cols: number,
+    rows: number,
+    options?: { force?: boolean },
+  ) => {
+    return terminalPanelManager.resizeTerminal(panelId, cols, rows, options);
   });
   
   commandRegistry.register('terminal:getState', async (panelId: string) => {
