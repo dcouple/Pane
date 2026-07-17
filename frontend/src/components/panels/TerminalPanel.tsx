@@ -61,6 +61,7 @@ const DEFAULT_TERMINAL_FONT_SIZE = 14;
 const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
 const REFOCUS_DELAYED_REFRESH_MS = 300;
 const TERMINAL_ACTIVATION_MASK_AFTER_PAINT_MS = 200;
+const FORCED_REDRAW_TRANSITION_MS = 50;
 const TERMINAL_VISIBILITY_REFRESH_MS = 60_000;
 const SNAPSHOT_MIN_INTERVAL_MS = 10_000;
 const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-layout (Allotment minSize is 120)
@@ -121,22 +122,20 @@ function waitForNextPaint(): Promise<void> {
  * reports hidden — main stops renderer delivery — so its buffer genuinely
  * goes stale while inactive.
  *
- * ACTIVATION (tab shown and window focused — `activationVisible`): every
- * panel activation runs the full masked reset+replay from `terminal:getState`
- * (`handleRefreshTerminal`), and battery saver always does. This is
- * LOAD-BEARING for paint correctness, not just a buffer re-sync: the
- * hide→show renderer swap (WebGL disposed on hide, recreated on show) can
- * carry stale frames or shared-texture-atlas state across, and only a full
- * rebuild reliably clears it. Two shipped attempts to lighten this — a
- * fit+repaint activation (v2.4.11) and keep-alive WebGL contexts with an
- * atlas clear (v2.4.14) — produced ghosted rows and garbage-glyph atlas
- * corruption (xterm terminals with the same font/theme SHARE a texture
- * atlas; clearing it from one terminal poisons the others). Only a short
- * performance-mode window refocus where WebGL stayed attached takes the
- * light silent `repaintTerminal` path. A sustained blur detaches WebGL and
- * arms the same full path used for panel renderer swaps. A delayed backstop
- * re-runs the chosen depth once (REFOCUS_DELAYED_REFRESH_MS). The manual
- * Refresh button always runs the full path.
+ * ACTIVATION (tab shown and window focused — `activationVisible`): initial
+ * construction, remounts/session switches, battery saver, sustained-blur
+ * recovery, and manual Refresh run the full masked reset+replay from
+ * `terminal:getState` (`handleRefreshTerminal`). A narrowly eligible same-
+ * session hot activation may instead preserve the continuously updated mounted
+ * xterm and perform masked fit/reconcile/refresh. This is intentionally gated:
+ * two shipped attempts to broadly lighten activation — a fit+repaint activation
+ * (v2.4.11) and keep-alive WebGL contexts with an atlas clear (v2.4.14) —
+ * produced ghosted rows and garbage-glyph atlas corruption (xterm terminals
+ * with the same font/theme SHARE a texture atlas; clearing it from one terminal
+ * poisons the others). A short performance-mode window refocus where WebGL
+ * stayed attached takes the light silent `repaintTerminal` path. A sustained
+ * blur invalidates hot eligibility and arms full recovery. A delayed backstop
+ * re-runs the chosen depth once (REFOCUS_DELAYED_REFRESH_MS).
  *
  * WEBGL: one context per VISIBLE terminal. Detached immediately on panel
  * hide, kept through short app blurs, detached after a sustained blur
@@ -208,6 +207,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   // artifacts. A short performance-mode refocus leaves both the buffer and
   // renderer live, so a light repaint is enough there.
   const needsFullActivationRefreshRef = useRef(true);
+  // Fast activation is only safe after this exact mounted xterm has completed a
+  // full refresh and has remained on the ungated performance-mode output path.
+  // A fresh mount starts false so it cannot skip its initial reset/replay.
+  const hotActivationEligibleRef = useRef(false);
+  const hotActivationPendingRef = useRef(false);
   const [webglAllowed, setWebglAllowed] = useState(panelVisible);
   const blurDetachTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -415,7 +419,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     if (!isInitialized) return;
     window.electronAPI.invoke('terminal:setVisibility', panel.id, effectiveVisible, TERMINAL_VISIBILITY_VIEWER_ID);
 
-    if (!effectiveVisible) return;
+    if (!effectiveVisible) {
+      hotActivationEligibleRef.current = false;
+      hotActivationPendingRef.current = false;
+      return;
+    }
     const refreshTimer = setInterval(() => {
       window.electronAPI.invoke('terminal:setVisibility', panel.id, true, TERMINAL_VISIBILITY_VIEWER_ID);
     }, TERMINAL_VISIBILITY_REFRESH_MS);
@@ -433,6 +441,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     }
 
     if (!panelVisible) {
+      // Capture eligibility before detaching WebGL. The xterm remains mounted and
+      // performance mode continues delivering output while this panel is hidden.
+      hotActivationPendingRef.current = hotActivationEligibleRef.current && !useBatterySaverTerminalVisibility;
+      if (!hotActivationPendingRef.current) {
+        needsFullActivationRefreshRef.current = true;
+      }
       setWebglAllowed(false);
       disposeWebglRenderer('panel-hidden');
       return;
@@ -447,6 +461,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     blurDetachTimerRef.current = setTimeout(() => {
       blurDetachTimerRef.current = null;
       needsFullActivationRefreshRef.current = true;
+      hotActivationEligibleRef.current = false;
+      hotActivationPendingRef.current = false;
       setWebglAllowed(false);
       disposeWebglRenderer('app-blur-timeout');
     }, WEBGL_APP_BLUR_DETACH_DELAY_MS);
@@ -457,7 +473,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         blurDetachTimerRef.current = null;
       }
     };
-  }, [panelVisible, windowFocused, disposeWebglRenderer]);
+  }, [panelVisible, windowFocused, useBatterySaverTerminalVisibility, disposeWebglRenderer]);
 
   useEffect(() => {
     if (!isInitialized || !xtermRef.current) return;
@@ -511,10 +527,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     fitAddonRef.current.fit();
     const dimensions = fitAddonRef.current.proposeDimensions();
     if (
-      dimensions &&
-      Number.isInteger(dimensions.cols) && Number.isInteger(dimensions.rows) &&
-      dimensions.cols >= MIN_PTY_COLS && dimensions.rows >= MIN_PTY_ROWS
+      !dimensions ||
+      !Number.isInteger(dimensions.cols) || !Number.isInteger(dimensions.rows) ||
+      dimensions.cols < MIN_PTY_COLS || dimensions.rows < MIN_PTY_ROWS
     ) {
+      return;
+    }
+
+    if (!force) {
       await window.electronAPI.invoke(
         'terminal:resize',
         panel.id,
@@ -522,18 +542,47 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         dimensions.rows,
         { force },
       );
+      return;
+    }
+
+    const terminal = xtermRef.current;
+    if (!terminal) return;
+    const redrawCols = dimensions.cols > MIN_PTY_COLS ? dimensions.cols - 1 : dimensions.cols + 1;
+
+    try {
+      // Keep renderer and PTY geometry synchronized throughout the forced redraw.
+      // Full recovery/manual refresh already run under the opaque spinner mask.
+      terminal.resize(redrawCols, dimensions.rows);
+      await window.electronAPI.invoke(
+        'terminal:resize',
+        panel.id,
+        redrawCols,
+        dimensions.rows,
+      );
+      await new Promise(resolve => setTimeout(resolve, FORCED_REDRAW_TRANSITION_MS));
+      terminal.resize(dimensions.cols, dimensions.rows);
+      await window.electronAPI.invoke(
+        'terminal:resize',
+        panel.id,
+        dimensions.cols,
+        dimensions.rows,
+        { force },
+      );
+    } finally {
+      // An IPC failure must not strand the renderer at the redraw dimensions.
+      if (terminal.cols !== dimensions.cols || terminal.rows !== dimensions.rows) {
+        terminal.resize(dimensions.cols, dimensions.rows);
+      }
     }
   }, [panel.id]);
 
   // Full-depth refresh: normal buffers reset+replay main's raw scrollback at the
   // settled width; alternate buffers preserve their live model. Both paths end
   // with a forced PTY resize so foreground applications redraw even when the
-  // dimensions did not change. Runs on
-  // every panel activation (load-bearing for paint correctness across the
-  // hide→show renderer swap — see the component lifecycle doc), on battery-
-  // saver activations, after sustained-blur WebGL teardown, and from the manual
-  // Refresh button. Only a short refocus with WebGL still attached uses the
-  // lighter repaintTerminal path.
+  // dimensions did not change. Runs on initial construction, remount/session
+  // switch, battery-saver activation, sustained-blur recovery, and manual
+  // Refresh. Eligible same-session hot activations use reconcileMountedTerminal
+  // instead and never enter this function.
   const handleRefreshTerminal = useCallback(async () => {
     const terminal = xtermRef.current;
     if (!terminal) return;
@@ -567,9 +616,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       const state = await window.electronAPI.invoke('terminal:getState', panel.id);
       if (state?.isAlternateScreen) {
         // Renderer refresh alone cannot repair an application frame that was
-        // restored before the visible grid settled. Main turns this forced resize
-        // into a one-column transition and back so the foreground app receives a
-        // real resize notification even when the settled dimensions are unchanged.
+        // restored before the visible grid settled. Move xterm and the PTY through
+        // the same one-column transition so the foreground app receives a real
+        // resize notification without a renderer/PTY geometry mismatch.
         await resizePtyToFit(true);
         if (terminal.rows > 0) {
           terminal.refresh(0, terminal.rows - 1);
@@ -612,26 +661,47 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     }
   }, [panel.id, resizePtyToFit]);
 
+  const handleManualRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await handleRefreshTerminal();
+      await waitForNextPaint();
+      await new Promise(resolve => setTimeout(resolve, TERMINAL_ACTIVATION_MASK_AFTER_PAINT_MS));
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [handleRefreshTerminal]);
+
   // Light repaint for pure-refocus activations (buffer is live, only pixels are
   // stale). Pattern: the theme effect's guarded refresh minus its unconditional
   // scrollToBottom. Snapshot/restore scroll around the fit, mirroring
   // handleRefreshTerminal's alt-screen path: fit() is a no-op when dims are
   // unchanged, but a refocus coinciding with a window resize reflows the buffer
   // and would otherwise shift a scrolled-up shell.
-  const repaintTerminal = useCallback(() => {
+  const reconcileMountedTerminal = useCallback(async (): Promise<void> => {
     const terminal = xtermRef.current;
     if (!terminal) return;
     const buffer = terminal.buffer.active;
     const distanceFromBottom = Math.max(0, buffer.baseY - buffer.viewportY);
     const wasNearBottom = isNearBottomRef.current || distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_ROWS;
-    void resizePtyToFit();
+
+    await resizePtyToFit();
     if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
+
     if (wasNearBottom) {
       terminal.scrollToBottom();
+      isNearBottomRef.current = true;
+      setShowScrollDown(false);
     } else {
       terminal.scrollToLine(Math.max(0, terminal.buffer.active.baseY - distanceFromBottom));
+      isNearBottomRef.current = false;
+      setShowScrollDown(true);
     }
   }, [resizePtyToFit]);
+
+  const repaintTerminal = useCallback(() => {
+    void reconcileMountedTerminal();
+  }, [reconcileMountedTerminal]);
 
   // Open search on Ctrl/Cmd+F from the container div
   const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -1272,6 +1342,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // content before the fit() render completes (visible as a stutter on macOS).
           await new Promise(resolve => setTimeout(resolve, 30));
           if (disposed) return;
+          hotActivationEligibleRef.current = false;
+          hotActivationPendingRef.current = false;
           setIsInitialized(true);
           console.log('[TerminalPanel] Terminal initialization complete, isInitialized set to true');
 
@@ -1534,6 +1606,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     // Not when just switching tabs
     return () => {
       disposed = true;
+      hotActivationEligibleRef.current = false;
+      hotActivationPendingRef.current = false;
 
       // Synchronously push hidden cadence so backgrounded-session unmount
       // and unmount-during-init both reliably reach main. The inner cleanup
@@ -1603,33 +1677,37 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   }, [panel.id]); // Only depend on panel.id to prevent re-initialization on session switch
 
   // Shared activation refresh for both power modes: fires on tab activation and
-  // window refocus (activationVisible = panelVisible && windowFocused). Depth is
-  // chosen by cause — a full reset+replay (overlay + autoFocus) on every panel
-  // activation or sustained-blur WebGL teardown (either renderer swap can leave
-  // stale frames/atlas state only a full rebuild reliably clears), and always
-  // in battery saver; a light repaint (silent, no focus move) only on a short
-  // performance-mode refocus where WebGL stayed attached. Declared after the
-  // WebGL policy effects so the delayed backstop covers the re-attach race.
+  // window refocus (activationVisible = panelVisible && windowFocused). Initial,
+  // remounted, output-gated, and recovery activations stay on full reset+replay.
+  // A same-session activation can use masked fit/reconcile/refresh only when this
+  // exact mounted xterm previously completed the full path and output remained
+  // ungated. Short performance-mode refocus stays a silent repaint. Declared
+  // after WebGL policy effects so the delayed backstop covers re-attach races.
   useLayoutEffect(() => {
     if (!isInitialized || !fitAddonRef.current || !xtermRef.current) return;
     if (!activationVisible) {
-      // Re-arm full depth when the panel itself hides, or whenever battery saver
-      // is active (its PTY output is cadence-gated while not effectively visible).
-      // Sustained-blur WebGL teardown arms this ref in the timer callback above.
-      if (!panelVisible || useBatterySaverTerminalVisibility) {
+      // Battery saver gates output and sustained blur separately invalidates the
+      // mounted renderer. Panel hides may retain a hot-path candidate captured by
+      // the WebGL policy effect when this exact xterm stayed live.
+      if (useBatterySaverTerminalVisibility) {
         needsFullActivationRefreshRef.current = true;
+        hotActivationEligibleRef.current = false;
+        hotActivationPendingRef.current = false;
       }
       return;
     }
 
-    // Battery saver is ALWAYS full: its PTY output is cadence-gated while not
-    // effectively visible, so the buffer may be stale on any activation (this
-    // also covers a performance→batterySaver toggle mid-session, which re-runs
-    // this effect without an intervening hide).
-    const fullRefresh = useBatterySaverTerminalVisibility || needsFullActivationRefreshRef.current;
+    // A hot activation is narrowly limited to panel hide/show in performance
+    // mode after this mounted xterm previously completed a full refresh. Initial
+    // construction, remounts, output gating, and recovery paths remain full.
+    const hotActivation = !useBatterySaverTerminalVisibility
+      && hotActivationPendingRef.current
+      && hotActivationEligibleRef.current;
+    hotActivationPendingRef.current = false;
+    const fullRefresh = !hotActivation && (useBatterySaverTerminalVisibility || needsFullActivationRefreshRef.current);
 
-    // Overlay masks the reset+replay flicker; the light refocus path needs no mask.
-    if (fullRefresh) setIsRefreshing(true);
+    // Both full and hot panel activations stay behind the existing opaque mask.
+    if (fullRefresh || hotActivation) setIsRefreshing(true);
 
     let lastWidth = 0;
     let retries = 0;
@@ -1669,24 +1747,38 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // bail or an activate-then-blur cancellation leaves it armed.
           needsFullActivationRefreshRef.current = false;
           await handleRefreshTerminal();
+          hotActivationEligibleRef.current = !useBatterySaverTerminalVisibility;
+        } else if (hotActivation) {
+          await reconcileMountedTerminal();
         } else {
           repaintTerminal();
         }
         await waitForNextPaint();
         if (cancelled) return;
 
-        if (autoFocus && fullRefresh) {
+        if (autoFocus && (fullRefresh || hotActivation)) {
           xtermRef.current?.focus();
         }
 
         delayedRefreshTimer = setTimeout(() => {
-          if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
-          forwardToMainLog('info', `[TerminalPanel] Delayed activation refresh for panel ${panel.id}`);
-          if (fullRefresh) void handleRefreshTerminal();
-          else repaintTerminal();
+          void (async () => {
+            if (cancelled || !fitAddonRef.current || !xtermRef.current || !terminalRef.current) return;
+            forwardToMainLog('info', `[TerminalPanel] Delayed activation refresh for panel ${panel.id}`);
+            if (fullRefresh) await handleRefreshTerminal();
+            else if (hotActivation) await reconcileMountedTerminal();
+            else repaintTerminal();
+            if (!hotActivation) return;
+            await waitForNextPaint();
+            if (cancelled) return;
+            hideOverlayTimer = setTimeout(() => {
+              if (!cancelled) setIsRefreshing(false);
+            }, TERMINAL_ACTIVATION_MASK_AFTER_PAINT_MS);
+          })();
         }, REFOCUS_DELAYED_REFRESH_MS);
 
         if (fullRefresh) {
+          // Full refresh keeps the historical mask timing. Hot activation keeps
+          // the mask through its delayed fit/reconcile/refresh backstop above.
           hideOverlayTimer = setTimeout(() => {
             if (!cancelled) setIsRefreshing(false);
           }, TERMINAL_ACTIVATION_MASK_AFTER_PAINT_MS);
@@ -1704,7 +1796,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       if (hideOverlayTimer) clearTimeout(hideOverlayTimer);
       setIsRefreshing(false);
     };
-  }, [activationVisible, panelVisible, useBatterySaverTerminalVisibility, panel.id, isInitialized, autoFocus, handleRefreshTerminal, repaintTerminal, forwardToMainLog]);
+  }, [activationVisible, panelVisible, useBatterySaverTerminalVisibility, panel.id, isInitialized, autoFocus, handleRefreshTerminal, reconcileMountedTerminal, repaintTerminal, forwardToMainLog]);
 
   useEffect(() => {
     if (!xtermRef.current) {
@@ -1760,7 +1852,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       {isInitialized && (
         <div className="absolute top-2 right-5 z-30 flex items-center gap-0.5 opacity-0 pointer-events-none group-hover/terminal:opacity-100 group-hover/terminal:pointer-events-auto transition-opacity">
           <button
-            onClick={handleRefreshTerminal}
+            onClick={() => { void handleManualRefresh(); }}
             className="p-0.5 rounded bg-surface-secondary/60 hover:bg-surface-tertiary/80 text-text-tertiary hover:text-text-secondary transition-colors"
             title="Refresh terminal"
           >
