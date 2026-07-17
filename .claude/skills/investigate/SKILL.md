@@ -67,6 +67,34 @@ Use these in order of effectiveness:
 4. **Trace data flow across boundaries** — follow data transformations across service/component boundaries (API → service → repository, or parent → child → grandchild)
 5. **Check git blame/log** — find the commit that introduced or changed the broken behavior
 
+### Falsifiable Experiment Loop
+
+When inspection alone cannot prove the cause and the real runtime surface is available, turn each hypothesis into a controlled experiment:
+
+1. **State one falsifiable claim** — describe the exact cause or behavior the experiment will support or refute.
+2. **Define the signal first** — name the observable pass/fail metric: screenshot state, log sequence, raw buffer marker count, persisted row, network response, process state, or another concrete output.
+3. **Isolate the runtime** — use a fresh profile, database, temporary repository, port, or process namespace so existing state cannot contaminate the result.
+4. **Capture the baseline** — reproduce the failure and save the same evidence that will be collected after the experiment.
+5. **Change one variable** — use the smallest diagnostic or implementation change that distinguishes this hypothesis from the alternatives.
+6. **Drive the real surface** — exercise the application through the CLI, socket, browser, desktop window, or TUI rather than calling an internal function directly.
+7. **Capture multiple layers** — combine user-visible evidence with logs and authoritative raw or persisted state when available.
+8. **Classify the result** — mark the hypothesis supported, refuted, or inconclusive and state why the evidence reaches that conclusion.
+9. **Revert failed experiments immediately** — do not stack unproven changes or let an inconclusive attempt become part of the next experiment.
+10. **Update the experiment ledger** — record the hypothesis, single variable, command or driver, evidence paths, and verdict before starting the next loop.
+
+If implementation changes have not been authorized, limit experiments to diagnostics or disposable external fixtures and report the candidate change instead of keeping it.
+
+#### Freeze the First Reliable Result
+
+Once a candidate passes the original reproduction:
+
+- Record the exact diff or checkpoint that passed.
+- Rerun the original flow from fresh isolated state.
+- Probe the nearest regression surfaces and one negative or stress case.
+- Preserve that known-good checkpoint before optional hardening.
+- Treat each hardening change as a new hypothesis with its own measurable failure signal and revert it if the runtime evidence regresses.
+- Stop expanding the solution when the stated acceptance criteria and adjacent probes pass; move broader architecture work into a separate follow-up.
+
 ### What to Look For
 
 - **What's wrong** — the specific code causing the incorrect behavior
@@ -142,6 +170,8 @@ Stop and reassess if you notice yourself doing any of these:
 - Investigating code that has nothing to do with the reported symptoms
 - Testing variations of the same failed hypothesis instead of forming a new one
 - Saying "let's just try changing X and see if it works"
+- Stacking multiple experimental changes without measuring each one independently
+- Continuing to harden after a reliable result without preserving the known-good checkpoint
 - Spending excessive time without reporting intermediate findings to the user
 
 Bug to investigate: $ARGUMENTS
