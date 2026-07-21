@@ -159,6 +159,8 @@ function createTempGitRepo(name = 'repo'): string {
   const repoPath = path.join(parent, name);
   fs.mkdirSync(repoPath);
   execFileSync('git', ['init'], { cwd: repoPath, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.name', 'Pane Test'], { cwd: repoPath, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'pane-test@example.invalid'], { cwd: repoPath, stdio: 'ignore' });
   return repoPath;
 }
 
