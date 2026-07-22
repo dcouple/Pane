@@ -18,6 +18,7 @@ import {
   onPtyBytes as flowControlOnPtyBytes,
 } from '../ptyHost/flowControl';
 import { TerminalStateEmulator } from './terminalStateEmulator';
+import type { RunpaneAgentActivity } from '../../../shared/types/runpaneOrchestration';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -25,6 +26,7 @@ const OUTPUT_BATCH_SIZE = 131072; // 128KB — timer-based flush preferred; size
 const OUTPUT_BATCH_SIZE_HIDDEN = 80_000; // 80KB — cap hidden flush size to avoid foreground backpressure churn
 const MAX_CONCURRENT_SPAWNS = 3;
 const IDLE_THRESHOLD_MS = 30_000; // 30s — mark panel idle after no PTY output
+const DEFAULT_AGENT_IDLE_DEBOUNCE_MS = 60_000;
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
 const MIN_PTY_COLS = 20;
@@ -45,6 +47,12 @@ function isValidUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
+export function normalizeAgentIdleDebounceMs(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0
+    ? value
+    : DEFAULT_AGENT_IDLE_DEBOUNCE_MS;
+}
+
 export interface TerminalPanelSnapshot {
   initialized: true;
   scrollbackBuffer: string;
@@ -59,6 +67,11 @@ export interface TerminalPanelSnapshot {
   isCliReady?: boolean;
   agentType?: CliAgentType;
   agentSessionId?: string;
+  agentActivity: RunpaneAgentActivity;
+  terminalReady: boolean;
+  lastMeaningfulEventAt: string;
+  outputGeneration: number;
+  outputGenerationAtQuiescence: number;
 }
 
 /**
@@ -195,6 +208,12 @@ interface TerminalProcess {
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
   idleTimer: ReturnType<typeof setTimeout> | null;
+  agentActivity: RunpaneAgentActivity;
+  agentIdleTimer: ReturnType<typeof setTimeout> | null;
+  lastMeaningfulEventAt: string;
+  outputGenerationAtQuiescence: number;
+  exitEventHandled: boolean;
+  suppressSemanticExitPersistence: boolean;
   // DEC Mode 2026 synchronized-output block tracking — persists across chunks
   inSyncBlock: boolean;
   codexAgentSessionId?: string;
@@ -912,7 +931,16 @@ export class TerminalPanelManager {
       });
     }
 
+    const freshCustomState = {
+      ...((panel.state.customState || {}) as TerminalPanelState),
+      exitedAt: undefined,
+      exitCode: undefined,
+      exitSignal: undefined,
+    } satisfies TerminalPanelState;
+    panel.state = { ...panel.state, customState: freshCustomState };
+
     // Create terminal process object
+    const initializedAt = new Date();
     const terminalProcess: TerminalProcess = {
       pty: ptyProcess,
       ptyId: ptyHostId,
@@ -924,7 +952,7 @@ export class TerminalPanelManager {
       screenEmulator: new TerminalStateEmulator(spawnCols, spawnRows),
       commandHistory: [],
       currentCommand: '',
-      lastActivity: new Date(),
+      lastActivity: initializedAt,
       outputGeneration: 0,
       isWSL: !!(wslContext && process.platform === 'win32'),
       // Capture wslContext so `respawnAll` can re-inject the same WSLENV /
@@ -938,6 +966,12 @@ export class TerminalPanelManager {
       isAlternateScreen: false,
       activityStatus: 'idle',
       idleTimer: null,
+      agentActivity: 'starting',
+      agentIdleTimer: null,
+      lastMeaningfulEventAt: initializedAt.toISOString(),
+      outputGenerationAtQuiescence: 0,
+      exitEventHandled: false,
+      suppressSemanticExitPersistence: false,
       inSyncBlock: false,
       codexResumeOutputBuffer: ''
     };
@@ -1004,6 +1038,11 @@ export class TerminalPanelManager {
             if (cliReadySignaled) return;
             cliReadySignaled = true;
             if (onCliOutput) onCliOutput.dispose();
+
+            const currentTerminal = this.terminals.get(panelId);
+            if (currentTerminal === terminalProcess) {
+              this.stampMeaningfulEvent(currentTerminal);
+            }
 
             // Persist isCliReady on panel state (best-effort, fire-and-forget)
             const currentPanel = panelManager.getPanel(panelId);
@@ -1123,9 +1162,27 @@ export class TerminalPanelManager {
     terminal.pty.onData((data: string) => {
       // Update last activity
       const outputAt = new Date();
-      terminal.lastActivity = outputAt;
-      terminal.lastOutputAt = outputAt;
-      terminal.outputGeneration += 1;
+      if (this.terminals.get(terminal.panelId) === terminal) {
+        terminal.lastActivity = outputAt;
+        terminal.lastOutputAt = outputAt;
+        terminal.outputGeneration += 1;
+
+        if (terminal.agentActivity !== 'active') {
+          terminal.agentActivity = 'active';
+          this.stampMeaningfulEvent(terminal, outputAt);
+        }
+        this.clearAgentIdleTimer(terminal);
+        const agentIdleDebounceMs = normalizeAgentIdleDebounceMs(
+          getRuntimeConfigManager().getConfig().agentIdleDebounceMs,
+        );
+        terminal.agentIdleTimer = setTimeout(() => {
+          if (this.terminals.get(terminal.panelId) !== terminal) return;
+          terminal.agentActivity = 'idle';
+          terminal.outputGenerationAtQuiescence = terminal.outputGeneration;
+          terminal.agentIdleTimer = null;
+          this.stampMeaningfulEvent(terminal);
+        }, agentIdleDebounceMs);
+      }
 
       // Activity status transition: mark active on first byte after idle
       if (terminal.activityStatus !== 'active') {
@@ -1225,6 +1282,17 @@ export class TerminalPanelManager {
     
     // Handle terminal exit
     terminal.pty.onExit((exitCode: { exitCode: number; signal?: number }) => {
+      const currentTerminal = this.terminals.get(terminal.panelId);
+      if (currentTerminal && currentTerminal !== terminal) return;
+      if (terminal.exitEventHandled) return;
+      terminal.exitEventHandled = true;
+      if (!terminal.suppressSemanticExitPersistence) {
+        this.markTerminalExited(terminal, {
+          exitCode: exitCode.exitCode,
+          exitSignal: exitCode.signal,
+        });
+      }
+
       // Clear idle timer and mark as idle on exit
       if (terminal.idleTimer) {
         clearTimeout(terminal.idleTimer);
@@ -1311,6 +1379,7 @@ export class TerminalPanelManager {
     } catch (err) {
       // PTY may have exited between the map lookup and the write call
       console.warn(`[TerminalPanelManager] Failed to write to terminal ${panelId}:`, err);
+      this.markTerminalExited(terminal);
       this.terminals.delete(panelId);
       this.visibleViewersByPanel.delete(panelId);
       return;
@@ -1544,6 +1613,11 @@ export class TerminalPanelManager {
       screenText: terminal.screenEmulator?.getScreenText(),
       isAlternateScreen: terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen,
       activityStatus: terminal.activityStatus,
+      agentActivity: terminal.agentActivity,
+      terminalReady: customState.isCliPanel ? customState.isCliReady === true : true,
+      lastMeaningfulEventAt: terminal.lastMeaningfulEventAt,
+      outputGeneration: terminal.outputGeneration,
+      outputGenerationAtQuiescence: terminal.outputGenerationAtQuiescence,
       lastActivityTime: terminal.lastActivity.toISOString(),
       currentCommand: terminal.currentCommand,
       isCliPanel: customState.isCliPanel,
@@ -1583,6 +1657,51 @@ export class TerminalPanelManager {
     });
   }
 
+  private stampMeaningfulEvent(terminal: TerminalProcess, at: Date = new Date()): void {
+    terminal.lastMeaningfulEventAt = at.toISOString();
+  }
+
+  private clearAgentIdleTimer(terminal: TerminalProcess): void {
+    if (terminal.agentIdleTimer) {
+      clearTimeout(terminal.agentIdleTimer);
+      terminal.agentIdleTimer = null;
+    }
+  }
+
+  private persistExitFacts(
+    panelId: string,
+    facts: { exitedAt: string; exitCode?: number; exitSignal?: number },
+  ): void {
+    const panel = panelManager.getPanel(panelId);
+    if (!panel) return;
+    const customState = (panel.state.customState || {}) as TerminalPanelState;
+    const state = {
+      ...panel.state,
+      customState: {
+        ...customState,
+        exitedAt: customState.exitedAt ?? facts.exitedAt,
+        exitCode: facts.exitCode ?? customState.exitCode,
+        exitSignal: facts.exitSignal ?? customState.exitSignal,
+      } satisfies TerminalPanelState,
+    };
+    panel.state = state;
+    panelManager.updatePanel(panelId, { state }).catch((error: unknown) => {
+      console.warn(`[TerminalPanelManager] Failed to persist exit facts for panel ${panelId}:`, error);
+    });
+  }
+
+  private markTerminalExited(
+    terminal: TerminalProcess,
+    facts: { exitCode?: number; exitSignal?: number } = {},
+  ): void {
+    this.clearAgentIdleTimer(terminal);
+    terminal.agentActivity = 'exited';
+    terminal.outputGenerationAtQuiescence = terminal.outputGeneration;
+    const exitedAt = new Date();
+    this.stampMeaningfulEvent(terminal, exitedAt);
+    this.persistExitFacts(terminal.panelId, { exitedAt: exitedAt.toISOString(), ...facts });
+  }
+
   destroyTerminal(panelId: string): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) {
@@ -1602,6 +1721,7 @@ export class TerminalPanelManager {
       clearTimeout(terminal.idleTimer);
       terminal.idleTimer = null;
     }
+    this.markTerminalExited(terminal);
     this.flushOutputBuffer(terminal);
     terminal.screenEmulator?.dispose();
 
@@ -1702,7 +1822,9 @@ export class TerminalPanelManager {
       const panel = panelManager.getPanel(panelId);
       if (!panel) {
         console.warn(`[ptyHost] respawnAll: panel ${panelId} no longer exists, skipping`);
+        terminal.suppressSemanticExitPersistence = true;
         terminal.screenEmulator?.dispose();
+        this.clearAgentIdleTimer(terminal);
         this.terminals.delete(panelId);
         this.visibleViewersByPanel.delete(panelId);
         continue;
@@ -1739,6 +1861,8 @@ export class TerminalPanelManager {
         clearTimeout(terminal.idleTimer);
         terminal.idleTimer = null;
       }
+      this.clearAgentIdleTimer(terminal);
+      terminal.suppressSemanticExitPersistence = true;
       terminal.screenEmulator?.dispose();
       this.terminals.delete(panelId);
       this.visibleViewersByPanel.delete(panelId);
@@ -1849,9 +1973,11 @@ export class TerminalPanelManager {
           clearTimeout(terminal.idleTimer);
           terminal.idleTimer = null;
         }
+        this.clearAgentIdleTimer(terminal);
         this.flushOutputBuffer(terminal);
         terminal.screenEmulator?.dispose();
 
+        terminal.suppressSemanticExitPersistence = true;
         terminal.pty.kill();
       } catch (error) {
         console.error(`[TerminalPanelManager] Error killing terminal ${panelId}:`, error);

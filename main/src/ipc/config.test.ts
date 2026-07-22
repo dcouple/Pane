@@ -97,6 +97,18 @@ describe('config IPC handlers', () => {
     }
   });
 
+  it('round-trips agentIdleDebounceMs through config:update', async () => {
+    const ipcMain = createIpcMainStub();
+    registerConfigHandlers(ipcMain as unknown as IpcMain, createServicesStub([]));
+
+    const updateConfig = ipcMain.handlers.get('config:update');
+    expect(updateConfig).toBeDefined();
+    await expect(updateConfig?.({}, { agentIdleDebounceMs: 12_345 })).resolves.toEqual({
+      success: true,
+      data: expect.objectContaining({ agentIdleDebounceMs: 12_345 }),
+    });
+  });
+
   it('removes managed AGENTS blocks from all saved projects when disabled', async () => {
     const activeProject = await createTempProject(1);
     const inactiveProject = await createTempProject(2);

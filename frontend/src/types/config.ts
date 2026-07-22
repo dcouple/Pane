@@ -77,6 +77,8 @@ export interface AppConfig {
   autoStartOnBoot?: boolean;
   // Keep the computer awake while any session is active
   keepAwakeWhileSessionsActive?: boolean;
+  // Silence interval before agent activity is considered idle
+  agentIdleDebounceMs?: number;
   // Stravu MCP integration
   stravuApiKey?: string;
   stravuServerUrl?: string;
@@ -167,6 +169,7 @@ export interface UpdateConfigRequest {
   autoCheckUpdates?: boolean;
   autoStartOnBoot?: boolean;
   keepAwakeWhileSessionsActive?: boolean;
+  agentIdleDebounceMs?: number;
   stravuApiKey?: string;
   stravuServerUrl?: string;
   theme?: AppConfig['theme'];

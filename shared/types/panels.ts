@@ -63,6 +63,9 @@ export interface TerminalPanelState {
   // CLI tool init state
   isCliPanel?: boolean;              // True if this terminal runs a CLI tool (claude/codex)
   isCliReady?: boolean;              // True after the CLI tool has started responding
+  exitedAt?: string;                 // Last process exit time, retained after live cleanup
+  exitCode?: number;                 // Last process exit code when available
+  exitSignal?: number;               // Last process exit signal when available
 }
 
 export interface DiffPanelState {

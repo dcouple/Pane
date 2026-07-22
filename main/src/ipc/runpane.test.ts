@@ -84,6 +84,7 @@ function terminalSnapshot(
   activityStatus: 'active' | 'idle',
   agentType: 'claude' | 'codex' = 'codex',
   lastActivityTime = '2026-01-01T00:02:00.000Z',
+  isCliReady = true,
 ) {
   return {
     initialized: true,
@@ -95,8 +96,13 @@ function terminalSnapshot(
     lastActivityTime,
     currentCommand: agentType,
     isCliPanel: true,
-    isCliReady: true,
+    isCliReady,
     agentType,
+    agentActivity: activityStatus,
+    terminalReady: isCliReady,
+    lastMeaningfulEventAt: lastActivityTime,
+    outputGeneration: 3,
+    outputGenerationAtQuiescence: activityStatus === 'idle' ? 3 : 2,
   } as const;
 }
 
@@ -981,6 +987,56 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('AC1 reports terminal readiness and active agent activity as distinct screen fields', async () => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('agent is still working\n', 'active'),
+    );
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:screen', [{
+      panelId: terminalPanel.id,
+      limit: 80,
+    }]);
+
+    expect(result).toMatchObject({
+      state: {
+        terminalReady: true,
+        agentActivity: 'active',
+        hasNewOutput: true,
+        outputGeneration: 3,
+      },
+    });
+  });
+
+  it('detects blockers independently of a small screen limit', async () => {
+    const text = [
+      'Codex update available',
+      '2. Skip',
+      ...Array.from({ length: 10 }, (_, index) => `later line ${index}`),
+    ].join('\n');
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot(text, 'idle'),
+    );
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:screen', [{
+      panelId: terminalPanel.id,
+      limit: 5,
+    }]);
+
+    expect(result).toMatchObject({
+      returnedLineCount: 5,
+      state: {
+        blocked: true,
+        inputRequired: true,
+      },
+      blocked: {
+        kind: 'codex-update',
+      },
+    });
+    expect(result.text).not.toContain('update available');
+  });
+
   it('waits for ready terminal state with bounded screen output', async () => {
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
       initialized: true,
@@ -1010,6 +1066,31 @@ describe('runpane IPC handlers', () => {
       screen: {
         source: 'scrollback',
         text: 'agent ready\n',
+      },
+      nextCommand: `runpane panels screen --panel ${terminalPanel.id} --limit 80 --json`,
+    });
+  });
+
+  it('D2 freeze keeps wait --for ready matched while semantic activity is active', async () => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('agent is still working\n', 'active'),
+    );
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:wait', [{
+      panelId: terminalPanel.id,
+      condition: 'ready',
+      timeoutMs: 10,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      matched: true,
+      timedOut: false,
+      blocked: undefined,
+      state: {
+        terminalReady: true,
+        agentActivity: 'active',
       },
       nextCommand: `runpane panels screen --panel ${terminalPanel.id} --limit 80 --json`,
     });

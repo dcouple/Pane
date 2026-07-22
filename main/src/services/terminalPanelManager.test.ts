@@ -3,8 +3,10 @@ import type { ConfigManager } from './configManager';
 import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import { createFlowControlRecord, disposeFlowControlRecord, type FlowControlRecord } from '../ptyHost/flowControl';
 import { TerminalStateEmulator } from './terminalStateEmulator';
+import type { ToolPanel } from '../../../shared/types/panels';
 
-vi.mock('@lydell/node-pty', () => ({}));
+const ptySpawn = vi.hoisted(() => vi.fn());
+vi.mock('@lydell/node-pty', () => ({ spawn: ptySpawn }));
 
 vi.mock('./panelManager', () => ({
   panelManager: {
@@ -34,8 +36,10 @@ vi.mock('../utils/attribution', () => ({
   getGitAttributionEnv: vi.fn(() => ({})),
 }));
 
-import { TerminalPanelManager } from './terminalPanelManager';
+import { normalizeAgentIdleDebounceMs, TerminalPanelManager } from './terminalPanelManager';
 import { panelManager } from './panelManager';
+
+type ExitEvent = { exitCode: number; signal?: number };
 
 type TerminalUnderTest = {
   pty: {
@@ -45,7 +49,13 @@ type TerminalUnderTest = {
     resume: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
     write: ReturnType<typeof vi.fn>;
+    kill: ReturnType<typeof vi.fn>;
+    onData(listener: (data: string) => void): { dispose(): void };
+    onExit(listener: (event: ExitEvent) => void): { dispose(): void };
+    emitData(data: string): void;
+    emitExit(event: ExitEvent): void;
   };
+  ptyId?: string;
   isPtyHost: boolean;
   panelId: string;
   sessionId: string;
@@ -57,6 +67,7 @@ type TerminalUnderTest = {
   lastActivity: Date;
   lastOutputAt?: Date;
   outputGeneration: number;
+  isWSL?: boolean;
   wslContext: null;
   flowControl: FlowControlRecord;
   outputBuffer: string;
@@ -65,6 +76,12 @@ type TerminalUnderTest = {
   isAlternateScreen: boolean;
   activityStatus: 'active' | 'idle';
   idleTimer: ReturnType<typeof setTimeout> | null;
+  agentActivity: 'unknown' | 'starting' | 'active' | 'idle' | 'exited';
+  agentIdleTimer: ReturnType<typeof setTimeout> | null;
+  lastMeaningfulEventAt: string;
+  outputGenerationAtQuiescence: number;
+  exitEventHandled: boolean;
+  suppressSemanticExitPersistence: boolean;
   inSyncBlock: boolean;
   codexResumeOutputBuffer: string;
   codexAgentSessionId?: string;
@@ -113,7 +130,21 @@ type LaunchCommandAccess = {
   };
 };
 
+type SemanticStateAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  setupTerminalHandlers(terminal: TerminalUnderTest): void;
+  stampMeaningfulEvent(terminal: TerminalUnderTest, at?: Date): void;
+  getTerminalSnapshot(panelId: string): ReturnType<TerminalPanelManager['getTerminalSnapshot']>;
+  writeToTerminal(panelId: string, data: string): void;
+  destroyTerminal(panelId: string): void;
+  destroyAllTerminals(): void;
+  respawnAll(): Promise<void>;
+  initializeTerminal: TerminalPanelManager['initializeTerminal'];
+};
+
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
+  const dataListeners = new Set<(data: string) => void>();
+  const exitListeners = new Set<(event: ExitEvent) => void>();
   return {
     pty: {
       cols: 80,
@@ -122,6 +153,21 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
       resume: vi.fn(),
       resize: vi.fn(),
       write: vi.fn(),
+      kill: vi.fn(),
+      onData(listener) {
+        dataListeners.add(listener);
+        return { dispose: () => dataListeners.delete(listener) };
+      },
+      onExit(listener) {
+        exitListeners.add(listener);
+        return { dispose: () => exitListeners.delete(listener) };
+      },
+      emitData(data) {
+        for (const listener of [...dataListeners]) listener(data);
+      },
+      emitExit(event) {
+        for (const listener of [...exitListeners]) listener(event);
+      },
     },
     isPtyHost: false,
     panelId: 'panel-1',
@@ -140,6 +186,12 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
     isAlternateScreen: false,
     activityStatus: 'idle',
     idleTimer: null,
+    agentActivity: 'starting',
+    agentIdleTimer: null,
+    lastMeaningfulEventAt: new Date().toISOString(),
+    outputGenerationAtQuiescence: 0,
+    exitEventHandled: false,
+    suppressSemanticExitPersistence: false,
     inSyncBlock: false,
     codexResumeOutputBuffer: '',
     ...overrides,
@@ -173,16 +225,397 @@ describe('TerminalPanelManager terminal resize', () => {
   });
 });
 
-function createConfigManagerStub(): ConfigManager {
+function createConfigManagerStub(agentIdleDebounceMs?: unknown): ConfigManager {
   return {
     getUsePtyHost: () => false,
+    getPreferredShell: () => 'auto',
+    getConfig: () => ({ agentIdleDebounceMs }),
   } as ConfigManager;
+}
+
+function createPanel(customState: Record<string, unknown> = {}): ToolPanel {
+  return {
+    id: 'panel-1',
+    sessionId: 'session-1',
+    type: 'terminal',
+    title: 'Terminal',
+    state: { isActive: true, customState },
+    metadata: {
+      createdAt: '2026-01-01T00:00:00.000Z',
+      lastActiveAt: '2026-01-01T00:00:00.000Z',
+      position: 0,
+    },
+  };
+}
+
+function installRuntime(agentIdleDebounceMs?: unknown): { send: ReturnType<typeof vi.fn> } {
+  const eventSink = { send: vi.fn() };
+  setPaneRuntime({
+    eventSink,
+    daemonEventSink: { send: vi.fn() },
+    getConfigManager: () => createConfigManagerStub(agentIdleDebounceMs),
+    getPtyHostRuntime: () => null,
+    getWebviewContextMap: () => new Map(),
+  });
+  return eventSink;
 }
 
 async function flushPromises(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
 }
+
+describe('TerminalPanelManager semantic agent state', () => {
+  afterEach(() => {
+    resetPaneRuntimeForTests();
+    vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+    ptySpawn.mockReset();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+  });
+
+  it.each([1_000, 45_000])(
+    'AC2/AC3 transitions active to idle at configured debounce %dms, not N-1',
+    async (debounceMs) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+      installRuntime(debounceMs);
+      const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+      const terminal = createTerminal({ outputBuffer: '' });
+      manager.terminals.set(terminal.panelId, terminal);
+      manager.setupTerminalHandlers(terminal);
+
+      terminal.pty.emitData('working');
+      const activeAt = terminal.lastMeaningfulEventAt;
+      expect(terminal.agentActivity).toBe('active');
+
+      await vi.advanceTimersByTimeAsync(debounceMs - 1);
+      expect(terminal.agentActivity).toBe('active');
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(terminal.agentActivity).toBe('idle');
+      expect(terminal.lastMeaningfulEventAt).not.toBe(activeAt);
+      expect(terminal.outputGenerationAtQuiescence).toBe(1);
+      disposeFlowControlRecord(terminal.flowControl);
+    },
+  );
+
+  it.each([undefined, -1, 0, 1.5, Number.NaN, '60000'])(
+    'normalizes invalid agent idle debounce %s to 60000',
+    (value) => {
+      expect(normalizeAgentIdleDebounceMs(value)).toBe(60_000);
+    },
+  );
+
+  it('preserves output freshness across output, real readiness latch, quiescence, and exit', async () => {
+    vi.useFakeTimers();
+    installRuntime(1_000);
+    const panel = createPanel({
+      initialCommand: 'codex',
+      isCliPanel: true,
+      isCliReady: false,
+      agentType: 'codex',
+    });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const spawnedPty = createTerminal({ outputBuffer: '' }).pty;
+    ptySpawn.mockReturnValue(spawnedPty);
+
+    await manager.initializeTerminal(panel, process.cwd());
+    const terminal = manager.terminals.get(panel.id);
+    expect(terminal).toBeDefined();
+    const hasNewOutput = () => terminal!.outputGeneration > terminal!.outputGenerationAtQuiescence;
+
+    expect(hasNewOutput()).toBe(false);
+    terminal!.pty.emitData('$ ');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(terminal!.pty.write).toHaveBeenCalledWith('codex\r');
+    expect(hasNewOutput()).toBe(true);
+    const beforeReady = terminal!.lastMeaningfulEventAt;
+    terminal!.pty.emitData('codex first frame');
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    expect(panel.state.customState).toMatchObject({ isCliReady: true });
+    expect(terminal!.lastMeaningfulEventAt).not.toBe(beforeReady);
+    expect(hasNewOutput()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(hasNewOutput()).toBe(false);
+    terminal!.pty.emitData('three');
+    expect(hasNewOutput()).toBe(true);
+    terminal!.pty.emitExit({ exitCode: 0 });
+    expect(hasNewOutput()).toBe(false);
+    disposeFlowControlRecord(terminal!.flowControl);
+  });
+
+  it('AC4 persists exited activity without an intermediate semantic idle and preserves the legacy idle edge', () => {
+    vi.useFakeTimers();
+    const eventSink = installRuntime(5_000);
+    const panel = createPanel({ isCliPanel: true, isCliReady: true });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const terminal = createTerminal({
+      outputBuffer: '',
+      activityStatus: 'active',
+      agentActivity: 'active',
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+    manager.setupTerminalHandlers(terminal);
+
+    terminal.pty.emitExit({ exitCode: 7, signal: 15 });
+
+    expect(terminal.agentActivity).toBe('exited');
+    expect(terminal.outputGenerationAtQuiescence).toBe(terminal.outputGeneration);
+    expect(manager.terminals.has(terminal.panelId)).toBe(false);
+    expect(panel.state.customState).toMatchObject({
+      exitedAt: expect.any(String),
+      exitCode: 7,
+      exitSignal: 15,
+    });
+    expect(eventSink.send).toHaveBeenCalledWith('panel:activityStatus', expect.objectContaining({
+      status: 'idle',
+    }));
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('ignores a late exit callback from a replaced process', () => {
+    installRuntime();
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const stale = createTerminal({ agentActivity: 'active' });
+    const replacement = createTerminal({ agentActivity: 'starting' });
+    manager.terminals.set(stale.panelId, stale);
+    manager.setupTerminalHandlers(stale);
+    manager.terminals.set(replacement.panelId, replacement);
+
+    stale.pty.emitExit({ exitCode: 9 });
+
+    expect(manager.terminals.get(stale.panelId)).toBe(replacement);
+    expect(stale.agentActivity).toBe('active');
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    disposeFlowControlRecord(stale.flowControl);
+    disposeFlowControlRecord(replacement.flowControl);
+  });
+
+  it('MF-1 ignores late output after removal instead of arming a semantic idle timer', async () => {
+    vi.useFakeTimers();
+    installRuntime(100);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const terminal = createTerminal({ outputBuffer: '' });
+    manager.terminals.set(terminal.panelId, terminal);
+    manager.setupTerminalHandlers(terminal);
+    manager.terminals.delete(terminal.panelId);
+
+    terminal.pty.emitData('late WSL shutdown output');
+
+    expect(terminal.agentActivity).toBe('starting');
+    expect(terminal.outputGeneration).toBe(0);
+    expect(terminal.agentIdleTimer).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(terminal.agentActivity).toBe('starting');
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('MF-1 ignores late output from a replaced process instead of mutating stale semantic state', async () => {
+    vi.useFakeTimers();
+    installRuntime(100);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const stale = createTerminal({ outputBuffer: '' });
+    const replacement = createTerminal({ outputBuffer: '', agentActivity: 'starting' });
+    manager.terminals.set(stale.panelId, stale);
+    manager.setupTerminalHandlers(stale);
+    manager.terminals.set(replacement.panelId, replacement);
+
+    stale.pty.emitData('late stale output');
+
+    expect(stale.agentActivity).toBe('starting');
+    expect(stale.outputGeneration).toBe(0);
+    expect(stale.agentIdleTimer).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(stale.agentActivity).toBe('starting');
+    expect(manager.terminals.get(stale.panelId)).toBe(replacement);
+    disposeFlowControlRecord(stale.flowControl);
+    disposeFlowControlRecord(replacement.flowControl);
+  });
+
+  it('MF-2 suppresses old exit persistence while respawn replacement initialization is pending', async () => {
+    installRuntime();
+    const panel = createPanel({ cwd: process.cwd() });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const stale = createTerminal({ isPtyHost: true, ptyId: 'pty-restart', agentActivity: 'active' });
+    manager.terminals.set(stale.panelId, stale);
+    manager.setupTerminalHandlers(stale);
+    let rejectReplacement!: (error: Error) => void;
+    manager.initializeTerminal = vi.fn().mockImplementation(() => new Promise<void>((_resolve, reject) => {
+      rejectReplacement = reject;
+    }));
+
+    const respawn = manager.respawnAll();
+    stale.pty.emitExit({ exitCode: 1, signal: 15 });
+    await flushPromises();
+
+    expect(panel.state.customState).not.toMatchObject({ exitedAt: expect.any(String) });
+    expect(panel.state.customState).not.toHaveProperty('exitCode');
+    expect(panel.state.customState).not.toHaveProperty('exitSignal');
+    rejectReplacement(new Error('replacement spawn failed'));
+    await respawn;
+    expect(panel.state.customState).not.toMatchObject({ exitedAt: expect.any(String) });
+    disposeFlowControlRecord(stale.flowControl);
+  });
+
+  it('MF-2 suppresses old exit persistence on respawnAll when the panel no longer exists', async () => {
+    installRuntime();
+    vi.mocked(panelManager.getPanel).mockReturnValue(undefined);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const missing = createTerminal({ isPtyHost: true, ptyId: 'pty-missing', agentActivity: 'active' });
+    manager.terminals.set(missing.panelId, missing);
+    manager.setupTerminalHandlers(missing);
+
+    await manager.respawnAll();
+    missing.pty.emitExit({ exitCode: 1, signal: 15 });
+    await flushPromises();
+
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    disposeFlowControlRecord(missing.flowControl);
+  });
+
+  it('re-initializing a previously exited panel clears exit facts and starts semantic activity', async () => {
+    installRuntime();
+    const panel = createPanel({
+      exitedAt: '2025-12-31T00:00:00.000Z',
+      exitCode: 1,
+      exitSignal: 9,
+    });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const spawnedPty = createTerminal({ outputBuffer: '' }).pty;
+    ptySpawn.mockReturnValue(spawnedPty);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+
+    await manager.initializeTerminal(panel, process.cwd());
+
+    expect(panel.state.customState).toMatchObject({
+      exitedAt: undefined,
+      exitCode: undefined,
+      exitSignal: undefined,
+    });
+    expect(manager.getTerminalSnapshot(panel.id)?.agentActivity).toBe('starting');
+    manager.destroyAllTerminals();
+  });
+
+  it('clears semantic timers armed by output across all six terminal-map removal paths', async () => {
+    vi.useFakeTimers();
+    installRuntime(60_000);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+
+    const naturalManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const natural = createTerminal({ outputBuffer: '' });
+    vi.mocked(panelManager.getPanel).mockReturnValue(createPanel());
+    naturalManager.terminals.set(natural.panelId, natural);
+    naturalManager.setupTerminalHandlers(natural);
+    natural.pty.emitData('working');
+    expect(natural.agentIdleTimer).not.toBeNull();
+    natural.pty.emitExit({ exitCode: 0 });
+    expect(natural.agentIdleTimer).toBeNull();
+
+    const writeManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const failedWrite = createTerminal({ outputBuffer: '' });
+    failedWrite.pty.write.mockImplementation(() => { throw new Error('dead'); });
+    writeManager.terminals.set(failedWrite.panelId, failedWrite);
+    writeManager.setupTerminalHandlers(failedWrite);
+    failedWrite.pty.emitData('working');
+    expect(failedWrite.agentIdleTimer).not.toBeNull();
+    writeManager.writeToTerminal(failedWrite.panelId, 'x');
+    expect(failedWrite.agentIdleTimer).toBeNull();
+
+    const destroyManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const destroyed = createTerminal({ outputBuffer: '' });
+    destroyManager.terminals.set(destroyed.panelId, destroyed);
+    destroyManager.setupTerminalHandlers(destroyed);
+    destroyed.pty.emitData('working');
+    expect(destroyed.agentIdleTimer).not.toBeNull();
+    destroyManager.destroyTerminal(destroyed.panelId);
+    expect(destroyed.agentIdleTimer).toBeNull();
+
+    const missingManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const missing = createTerminal({ isPtyHost: true, ptyId: 'pty-1', outputBuffer: '' });
+    vi.mocked(panelManager.getPanel).mockReturnValue(undefined);
+    missingManager.terminals.set(missing.panelId, missing);
+    missingManager.setupTerminalHandlers(missing);
+    missing.pty.emitData('working');
+    expect(missing.agentIdleTimer).not.toBeNull();
+    await missingManager.respawnAll();
+    expect(missing.agentIdleTimer).toBeNull();
+
+    const staleManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const stale = createTerminal({ isPtyHost: true, ptyId: 'pty-2', outputBuffer: '' });
+    vi.mocked(panelManager.getPanel).mockReturnValue(createPanel({ cwd: process.cwd() }));
+    staleManager.initializeTerminal = vi.fn().mockResolvedValue(undefined);
+    staleManager.terminals.set(stale.panelId, stale);
+    staleManager.setupTerminalHandlers(stale);
+    stale.pty.emitData('working');
+    expect(stale.agentIdleTimer).not.toBeNull();
+    await staleManager.respawnAll();
+    expect(stale.agentIdleTimer).toBeNull();
+
+    const allManager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const all = createTerminal({ outputBuffer: '' });
+    const shutdownPanel = createPanel();
+    vi.mocked(panelManager.getPanel).mockReturnValue(shutdownPanel);
+    allManager.terminals.set(all.panelId, all);
+    allManager.setupTerminalHandlers(all);
+    all.pty.emitData('working');
+    expect(all.agentIdleTimer).not.toBeNull();
+    all.pty.kill.mockImplementation(() => all.pty.emitExit({ exitCode: 0 }));
+    allManager.destroyAllTerminals();
+    expect(all.agentIdleTimer).toBeNull();
+    expect(shutdownPanel.state.customState).not.toMatchObject({ exitedAt: expect.any(String) });
+
+    for (const terminal of [natural, failedWrite, destroyed, missing, stale, all]) {
+      disposeFlowControlRecord(terminal.flowControl);
+    }
+  });
+
+  it('destroyTerminal persists exited state for WSL and ignores late shutdown output while merging deferred exit facts', async () => {
+    vi.useFakeTimers();
+    installRuntime(60_000);
+    const panel = createPanel();
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const terminal = createTerminal({ isWSL: true, agentActivity: 'active', outputBuffer: '' });
+    manager.terminals.set(terminal.panelId, terminal);
+    manager.setupTerminalHandlers(terminal);
+
+    manager.destroyTerminal(terminal.panelId);
+    terminal.pty.emitData('logout');
+
+    expect(panel.state.customState).toMatchObject({ exitedAt: expect.any(String) });
+    expect(terminal.agentActivity).toBe('exited');
+    expect(terminal.agentIdleTimer).toBeNull();
+    expect(manager.terminals.has(terminal.panelId)).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(terminal.pty.kill).toHaveBeenCalled();
+    terminal.pty.emitExit({ exitCode: 0, signal: 15 });
+    await flushPromises();
+    expect(panel.state.customState).toMatchObject({
+      exitCode: 0,
+      exitSignal: 15,
+    });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+});
 
 describe('TerminalPanelManager hidden output delivery', () => {
   afterEach(() => {

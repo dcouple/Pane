@@ -109,6 +109,7 @@ export interface RunpaneErrorPayload {
 }
 
 export type RunpanePanelActivityStatus = 'active' | 'idle';
+export type RunpaneAgentActivity = 'unknown' | 'starting' | 'active' | 'idle' | 'exited';
 export type RunpanePanelScreenSource = 'alternateScreen' | 'scrollback' | 'persistedOutput' | 'empty';
 export type RunpanePanelWaitCondition = 'initialized' | 'ready' | 'idle' | 'text';
 export type RunpanePanelBlockerKind =
@@ -125,6 +126,13 @@ export interface RunpanePanelStateSummary {
   isCliPanel?: boolean;
   agentType?: RunpaneAgentId;
   lastActivity?: string;
+  terminalReady?: boolean;
+  agentActivity?: RunpaneAgentActivity;
+  inputRequired?: boolean;
+  blocked?: boolean;
+  hasNewOutput?: boolean;
+  outputGeneration?: number;
+  lastMeaningfulEventAt?: string;
 }
 
 export interface RunpanePanelBlockedState {
@@ -377,6 +385,7 @@ export interface RunpanePanelScreenResult {
   hasMore: boolean;
   text: string;
   state: RunpanePanelStateSummary;
+  blocked?: RunpanePanelBlockedState;
   nextCommand?: string;
 }
 

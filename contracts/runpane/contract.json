@@ -3266,12 +3266,65 @@
             },
             "lastActivity": {
               "type": "string"
+            },
+            "terminalReady": {
+              "type": "boolean"
+            },
+            "agentActivity": {
+              "enum": [
+                "unknown",
+                "starting",
+                "active",
+                "idle",
+                "exited"
+              ]
+            },
+            "inputRequired": {
+              "type": "boolean"
+            },
+            "blocked": {
+              "type": "boolean",
+              "description": "Whether any blocker is detected. This state boolean is distinct from the top-level blocked object, which carries structured blocker details."
+            },
+            "hasNewOutput": {
+              "type": "boolean"
+            },
+            "outputGeneration": {
+              "type": "number"
+            },
+            "lastMeaningfulEventAt": {
+              "type": "string"
             }
           },
           "additionalProperties": false
         },
         "initialInput": {
           "$ref": "#/jsonSchemas/paneCreateResult/properties/items/items/oneOf/0/properties/initialInput"
+        },
+        "blocked": {
+          "type": "object",
+          "description": "Structured blocker details. This object is distinct from state.blocked, which is only a boolean.",
+          "required": [
+            "kind",
+            "message"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "codex-update",
+                "agent-prompt",
+                "submission_unverified",
+                "unknown"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         },
         "nextCommand": {
           "type": "string"
@@ -3400,12 +3453,41 @@
             },
             "lastActivity": {
               "type": "string"
+            },
+            "terminalReady": {
+              "type": "boolean"
+            },
+            "agentActivity": {
+              "enum": [
+                "unknown",
+                "starting",
+                "active",
+                "idle",
+                "exited"
+              ]
+            },
+            "inputRequired": {
+              "type": "boolean"
+            },
+            "blocked": {
+              "type": "boolean",
+              "description": "Whether any blocker is detected. This state boolean is distinct from the top-level blocked object, which carries structured blocker details."
+            },
+            "hasNewOutput": {
+              "type": "boolean"
+            },
+            "outputGeneration": {
+              "type": "number"
+            },
+            "lastMeaningfulEventAt": {
+              "type": "string"
             }
           },
           "additionalProperties": false
         },
         "blocked": {
           "type": "object",
+          "description": "Structured blocker details. This object is distinct from state.blocked, which is only a boolean.",
           "required": [
             "kind",
             "message"

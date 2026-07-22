@@ -1027,8 +1027,15 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   await terminalPanelManager.waitForTerminalState(panel.id);
   const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
   const customState = getTerminalCustomState(panel);
-  const state = panelStateSummary(panel, liveSnapshot, customState);
+  const baseState = panelStateSummary(panel, liveSnapshot, customState);
   const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
+  const blockerWindow = boundSanitizedLines(rawText, DEFAULT_PANEL_SCREEN_LIMIT);
+  const blocked = detectPanelBlocker(blockerWindow.text, baseState.agentType, panel.id);
+  const state: RunpanePanelStateSummary = {
+    ...baseState,
+    blocked: blocked !== undefined,
+    inputRequired: blocked?.kind === 'agent-prompt' || blocked?.kind === 'codex-update',
+  };
   const bounded = boundSanitizedLines(rawText, limit);
 
   return {
@@ -1041,6 +1048,7 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
     hasMore: bounded.hasMore,
     text: bounded.text,
     state,
+    blocked,
     nextCommand: bounded.hasMore ? panelOutputCommand(panel.id) : panelWaitCommand(panel.id),
   };
 }
@@ -1087,6 +1095,8 @@ function panelStateSummary(
     ? customState.agentType as RunpaneAgentId
     : undefined;
   const hasLiveTerminal = Boolean(snapshot || terminalPanelManager.isTerminalInitialized(panel.id));
+  const agentActivity = snapshot?.agentActivity
+    ?? (customState.exitedAt ? 'exited' : 'unknown');
 
   return {
     initialized: hasLiveTerminal,
@@ -1096,6 +1106,13 @@ function panelStateSummary(
     isCliPanel: snapshot?.isCliPanel ?? customState.isCliPanel,
     agentType: snapshot?.agentType ?? customAgentType,
     lastActivity: snapshot?.lastActivityTime ?? customState.lastActivityTime ?? toIsoString(panel.metadata.lastActiveAt),
+    terminalReady: snapshot?.terminalReady,
+    agentActivity,
+    hasNewOutput: snapshot
+      ? snapshot.outputGeneration > snapshot.outputGenerationAtQuiescence
+      : false,
+    outputGeneration: snapshot?.outputGeneration,
+    lastMeaningfulEventAt: snapshot?.lastMeaningfulEventAt ?? customState.exitedAt,
   };
 }
 
@@ -1139,7 +1156,7 @@ async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest):
   while (Date.now() - startedAt <= timeoutMs) {
     lastScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
     condition = request.condition ?? defaultWaitCondition(lastScreen.state);
-    const blocked = detectPanelBlocker(lastScreen.text, lastScreen.state.agentType, panel.id);
+    const blocked = lastScreen.blocked;
     const matched = isWaitConditionMatched(condition, lastScreen, request.contains, blocked);
 
     if (matched) {
