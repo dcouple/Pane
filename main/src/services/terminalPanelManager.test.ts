@@ -478,6 +478,30 @@ describe('TerminalPanelManager hidden output delivery', () => {
     });
   });
 
+  it('escapes shell-sensitive startup prompt arguments without changing ordinary prompts', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+    const unsafeCommandSubstitution = manager.resolveCliLaunchCommand('panel-1', 'codex --yolo', {
+      agentType: 'codex',
+      initialInputMode: 'argument',
+      initialInput: 'BACKSLASH\\$(touch /tmp/pwned)',
+    });
+    const escapedShellSyntax = manager.resolveCliLaunchCommand('panel-2', 'codex --yolo', {
+      agentType: 'codex',
+      initialInputMode: 'argument',
+      initialInput: 'plain $value and `cmd`',
+    });
+    const ordinaryPrompt = manager.resolveCliLaunchCommand('panel-3', 'codex --yolo', {
+      agentType: 'codex',
+      initialInputMode: 'argument',
+      initialInput: 'Read the guide and initialize Pane Chat.',
+    });
+
+    expect(unsafeCommandSubstitution.commandToRun).toBe('codex --yolo "BACKSLASH\\\\\\$(touch /tmp/pwned)"');
+    expect(unsafeCommandSubstitution.commandToRun).not.toMatch(/(^|[^\\])(?:\\\\)*\$\(/);
+    expect(escapedShellSyntax.commandToRun).toBe('codex --yolo "plain \\$value and \\`cmd\\`"');
+    expect(ordinaryPrompt.commandToRun).toBe('codex --yolo "Read the guide and initialize Pane Chat."');
+  });
+
   it('passes fresh Claude slash input as a quoted startup argument', () => {
     const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
 

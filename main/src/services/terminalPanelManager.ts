@@ -218,7 +218,7 @@ export class TerminalPanelManager {
   }
 
   private quoteCommandArgument(value: string): string {
-    return `"${value.replace(/(["$`])/g, '\\$1')}"`;
+    return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
   }
 
   private resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: TerminalPanelState): {

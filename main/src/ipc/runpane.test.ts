@@ -15,6 +15,7 @@ vi.mock('../services/panelManager', () => ({
     createPanel: vi.fn(),
     getPanel: vi.fn(),
     getPanelsForSession: vi.fn(),
+    updatePanel: vi.fn(),
   },
 }));
 
@@ -79,6 +80,7 @@ function terminalSnapshot(
   text: string,
   activityStatus: 'active' | 'idle',
   agentType: 'claude' | 'codex' = 'codex',
+  lastActivityTime = '2026-01-01T00:02:00.000Z',
 ) {
   return {
     initialized: true,
@@ -87,7 +89,7 @@ function terminalSnapshot(
     alternateScreenBuffer: '',
     isAlternateScreen: false,
     activityStatus,
-    lastActivityTime: '2026-01-01T00:02:00.000Z',
+    lastActivityTime,
     currentCommand: agentType,
     isCliPanel: true,
     isCliReady: true,
@@ -223,6 +225,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.createPanel).mockReset();
     vi.mocked(panelManager.getPanel).mockReset();
     vi.mocked(panelManager.getPanelsForSession).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
@@ -1609,6 +1612,7 @@ describe('runpane IPC handlers', () => {
 
   it('retries a swallowed Codex slash command only after stable staged evidence', async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:01:59.000Z'));
     const codexPanel = {
       ...terminalPanel,
       state: { isActive: false, customState: { agentType: 'codex', isCliPanel: true } },
@@ -1658,6 +1662,43 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('does not retry on stale staged frames when no output arrives after submit', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:02:00.000Z'));
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('› /do TM-x', 'idle', 'codex', '2026-01-01T00:01:59.000Z'),
+    );
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledTimes(2);
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, codexPanel.id, '/do TM-x');
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, codexPanel.id, '\x1b[13;5u\r');
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          submitted: false,
+          verifiedSubmitted: false,
+          staged: false,
+          attempts: 1,
+          blocked: { kind: 'submission_unverified' },
+        },
+      }],
+    });
+  });
+
   it('cancels retry when a staged frame transitions before confirmation', async () => {
     vi.useFakeTimers();
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
@@ -1698,11 +1739,12 @@ describe('runpane IPC handlers', () => {
 
   it('returns a bounded blocker after three confirmed staged submit attempts', async () => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:01:59.000Z'));
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
-    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
-      terminalSnapshot('› /do TM-x', 'idle'),
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() =>
+      terminalSnapshot('› /do TM-x', 'idle', 'codex', new Date(Date.now() + 1).toISOString()),
     );
     const startedAt = Date.now();
 
@@ -1729,6 +1771,71 @@ describe('runpane IPC handlers', () => {
           attempts: 3,
           blocked: { kind: 'submission_unverified' },
           nextCommand: `runpane panels screen --panel ${codexPanel.id} --limit 80 --json`,
+        },
+      }],
+    });
+  });
+
+  it('clears the composer premark when wait-ready times out before staging initial input', async () => {
+    const createdPanel: ToolPanel = {
+      ...terminalPanel,
+      state: {
+        customState: {
+          agentType: 'codex',
+          isCliPanel: true,
+          initialInput: '/do TM-x',
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+          initialInputSubmitStrategy: 'codex-ctrl-enter',
+        },
+      },
+    };
+    vi.mocked(panelManager.createPanel).mockImplementation(async (request) => ({
+      ...createdPanel,
+      state: {
+        customState: {
+          ...createdPanel.state.customState,
+          ...request.initialState,
+        },
+      },
+    }));
+    vi.mocked(panelManager.getPanel).mockImplementation(() => ({
+      ...createdPanel,
+      state: {
+        customState: {
+          ...createdPanel.state.customState,
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+        },
+      },
+    }));
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      ...terminalSnapshot('codex booting', 'idle'),
+      isCliReady: false,
+    });
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+
+    expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
+    expect(panelManager.updatePanel).toHaveBeenCalledWith(createdPanel.id, {
+      state: expect.objectContaining({
+        customState: expect.not.objectContaining({
+          initialInputSentAt: expect.any(String),
+        }),
+      }),
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          delivered: false,
+          submitted: false,
+          error: { message: 'Initial input was not sent because the terminal panel did not become ready.' },
+          nextCommand: expect.stringContaining(`runpane panels wait --panel ${createdPanel.id}`),
         },
       }],
     });

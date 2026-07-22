@@ -760,6 +760,7 @@ async function submitCreateInitialInput(
   }
 
   if (!readiness.ok) {
+    await clearInitialInputSentPremark(panel);
     return {
       delivered: false,
       submitted: false,
@@ -772,6 +773,24 @@ async function submitCreateInitialInput(
   terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
   await sleep(300);
   return submitCreateComposerInput(panel, tool);
+}
+
+async function clearInitialInputSentPremark(panel: ToolPanel): Promise<void> {
+  const currentPanel = panelManager.getPanel(panel.id) ?? panel;
+  const state = currentPanel.state ?? {};
+  const customState = isRecord(state.customState) ? state.customState : {};
+  if (!Object.prototype.hasOwnProperty.call(customState, 'initialInputSentAt')) {
+    return;
+  }
+
+  const nextCustomState = { ...customState };
+  delete nextCustomState.initialInputSentAt;
+  await panelManager.updatePanel(panel.id, {
+    state: {
+      ...state,
+      customState: nextCustomState,
+    },
+  });
 }
 
 function shouldUseArgumentDelivery(tool: RunpaneResolvedTool): boolean {
@@ -795,6 +814,7 @@ async function submitCreateComposerInput(
   for (let attempt = 1; attempt <= MAX_CREATE_SUBMIT_ATTEMPTS; attempt += 1) {
     attempts = attempt;
     const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    const submitWriteStartedAt = Date.now();
     terminalPanelManager.writeToTerminal(panel.id, submit.input);
     const attemptStartedAt = Date.now();
     let retryConfirmed = false;
@@ -827,6 +847,12 @@ async function submitCreateComposerInput(
         continue;
       }
 
+      const afterScreenHasFreshActivity = panelStateHasActivityAfter(afterScreen.state, submitWriteStartedAt);
+      if (!afterScreenHasFreshActivity) {
+        lastVerdict = 'unknown';
+        continue;
+      }
+
       await sleep(CREATE_SUBMIT_CONFIRMATION_DELAY_MS);
       const confirmationScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
       const confirmationVerdict = assessComposerEvidence({
@@ -839,9 +865,13 @@ async function submitCreateComposerInput(
         afterText: confirmationScreen.text,
         stagedText: input,
       }) === 'staged';
+      const confirmationScreenHasFreshActivity = panelStateHasActivityAfter(
+        confirmationScreen.state,
+        submitWriteStartedAt,
+      );
       lastVerdict = confirmationVerdict;
 
-      if (confirmationVerdict === 'staged' && unchangedSinceFirstSample) {
+      if (confirmationVerdict === 'staged' && unchangedSinceFirstSample && confirmationScreenHasFreshActivity) {
         retryConfirmed = true;
         break;
       }
@@ -869,6 +899,14 @@ async function submitCreateComposerInput(
     },
     nextCommand,
   };
+}
+
+function panelStateHasActivityAfter(state: RunpanePanelStateSummary, timestampMs: number): boolean {
+  if (!state.lastActivity) {
+    return false;
+  }
+  const lastActivityMs = Date.parse(state.lastActivity);
+  return Number.isFinite(lastActivityMs) && lastActivityMs > timestampMs;
 }
 
 async function createPaneItem(
