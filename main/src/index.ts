@@ -37,9 +37,12 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('gtk-version', '3');
 
   if (launchHeadlessDaemon || launchRemoteSetup) {
-    // Best-effort fallback. Packaged no-display Linux launches need
-    // ELECTRON_OZONE_PLATFORM_HINT=headless in the parent environment.
-    app.commandLine.appendSwitch('ozone-platform', 'headless');
+    // Ozone has already picked its platform by the time this script runs, so
+    // appending --ozone-platform here cannot select headless: no-display Linux
+    // launches must pass `--ozone-platform=headless` as argv. (Before Electron
+    // 38, ELECTRON_OZONE_PLATFORM_HINT=headless did that for us; the variable
+    // was removed in 38 and is a no-op from 39 on.) --disable-gpu is still read
+    // late enough to take effect here.
     app.commandLine.appendSwitch('disable-gpu');
   }
 }

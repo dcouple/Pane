@@ -13,10 +13,10 @@ trap 'rm -rf "$pane_dir" "$output_file"' EXIT
 
 set +e
 env -u DISPLAY \
-  ELECTRON_OZONE_PLATFORM_HINT=headless \
   "$appimage" \
   --appimage-extract-and-run \
   --no-sandbox \
+  --ozone-platform=headless \
   --remote-setup \
   --label "Headless CI" \
   --pane-dir "$pane_dir" \

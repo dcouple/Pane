@@ -62,12 +62,16 @@ pane --remote-setup --label "VM"
 ```
 
 On displayless Linux hosts, prefer `runpane install daemon`; the npm and PyPI
-wrappers set Electron's required headless environment automatically. For a
-direct packaged launch, set it explicitly:
+wrappers pass Electron's required headless flags automatically. For a direct
+packaged launch, pass them explicitly:
 
 ```bash
-ELECTRON_OZONE_PLATFORM_HINT=headless pane --remote-setup --label "VM"
+pane --ozone-platform=headless --disable-gpu --remote-setup --label "VM"
 ```
+
+These must be command-line arguments: Electron picks its Ozone platform before
+the app starts, so the environment variable `ELECTRON_OZONE_PLATFORM_HINT` no
+longer works (removed in Electron 38, ignored from 39 on).
 
 The wrappers are lightweight installers and configurators. They currently
 download the packaged Pane runtime because the daemon is not distributed as a
@@ -247,9 +251,11 @@ the security tradeoff.
 
 ### Remote setup exits because X11 or `$DISPLAY` is missing
 
-Use `runpane install daemon`, or prefix a direct packaged launch with
-`ELECTRON_OZONE_PLATFORM_HINT=headless`. This failure occurs before Tailscale
-setup and does not mean the daemon requires a graphical session.
+Use `runpane install daemon`, or add `--ozone-platform=headless --disable-gpu`
+to a direct packaged launch. This failure occurs before Tailscale setup and does
+not mean the daemon requires a graphical session. If you previously relied on
+`ELECTRON_OZONE_PLATFORM_HINT=headless`, switch to the flags: Electron removed
+that variable in 38 and ignores it from 39 on.
 
 ### The headless daemon starts but remote connect fails
 

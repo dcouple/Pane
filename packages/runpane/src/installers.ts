@@ -59,7 +59,7 @@ export async function installPaneArtifact(
 
 export function spawnPane(executablePath: string, args: string[]): Promise<number> {
   return new Promise((resolve) => {
-    const child = childProcess.spawn(executablePath, args, {
+    const child = childProcess.spawn(executablePath, buildPaneDaemonArgs(args), {
       stdio: 'inherit',
       shell: false,
       env: buildPaneDaemonEnvironment()
@@ -70,6 +70,18 @@ export function spawnPane(executablePath: string, args: string[]): Promise<numbe
       resolve(1);
     });
   });
+}
+
+// Ozone resolves its platform before the app's main script runs, so headless
+// selection must arrive as argv. ELECTRON_OZONE_PLATFORM_HINT (below) was
+// removed in Electron 38 and is a no-op from 39 on; it is kept only so older
+// Pane builds keep working.
+export function buildPaneDaemonArgs(args: string[], platform = process.platform): string[] {
+  if (platform !== 'linux') {
+    return [...args];
+  }
+
+  return ['--ozone-platform=headless', '--disable-gpu', ...args];
 }
 
 export function buildPaneDaemonEnvironment(

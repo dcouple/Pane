@@ -573,21 +573,25 @@ function buildHeadlessDaemonCommand(paneDir: string): string {
     if (process.platform === 'win32') {
       return `cd /d ${quoteForWindows(sourceRoot)} && set "PANE_DIR=${paneDir}" && pnpm daemon:headless -- --pane-dir ${quoteForWindows(paneDir)}`;
     }
-    return `cd ${quoteForPosix(sourceRoot)} && ${buildPosixHeadlessEnvironment(paneDir)} pnpm daemon:headless -- --pane-dir ${quoteForPosix(paneDir)}`;
+    return `cd ${quoteForPosix(sourceRoot)} && ${buildPosixHeadlessEnvironment(paneDir)} pnpm daemon:headless --${buildLinuxHeadlessFlags()} --pane-dir ${quoteForPosix(paneDir)}`;
   }
 
   if (process.platform === 'win32') {
     return `${quoteForWindows(process.execPath)} --daemon-headless --pane-dir ${quoteForWindows(paneDir)}`;
   }
 
-  return `${buildPosixHeadlessEnvironment(paneDir)} ${quoteForPosix(process.execPath)} --daemon-headless --pane-dir ${quoteForPosix(paneDir)}`;
+  return `${buildPosixHeadlessEnvironment(paneDir)} ${quoteForPosix(process.execPath)}${buildLinuxHeadlessFlags()} --daemon-headless --pane-dir ${quoteForPosix(paneDir)}`;
+}
+
+// Ozone selects its platform before the app's main script runs, so this must be
+// passed as argv — app.commandLine.appendSwitch() is too late, and
+// ELECTRON_OZONE_PLATFORM_HINT was removed in Electron 38 (no-op since 39).
+function buildLinuxHeadlessFlags(): string {
+  return process.platform === 'linux' ? ' --ozone-platform=headless --disable-gpu' : '';
 }
 
 function buildPosixHeadlessEnvironment(paneDir: string): string {
   const entries = [`PANE_DIR=${quoteForPosix(paneDir)}`];
-  if (process.platform === 'linux') {
-    entries.push('ELECTRON_OZONE_PLATFORM_HINT=headless');
-  }
   return entries.join(' ');
 }
 

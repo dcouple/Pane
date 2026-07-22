@@ -75,10 +75,23 @@ def install_pane_artifact(
 
 def spawn_pane(executable_path: str, args: List[str]) -> int:
     try:
-        return subprocess.call([executable_path, *args], env=build_pane_daemon_environment())
+        return subprocess.call(
+            [executable_path, *build_pane_daemon_args(args)],
+            env=build_pane_daemon_environment(),
+        )
     except OSError as error:
         print(f"Failed to launch Pane: {error}")
         return 1
+
+
+def build_pane_daemon_args(args: List[str], system_name: Optional[str] = None) -> List[str]:
+    """Ozone resolves its platform before the app's main script runs, so headless
+    selection must arrive as argv. ELECTRON_OZONE_PLATFORM_HINT (below) was removed
+    in Electron 38 and is a no-op from 39 on; it is kept only so older Pane builds
+    keep working."""
+    if (system_name or platform.system()).lower() != "linux":
+        return list(args)
+    return ["--ozone-platform=headless", "--disable-gpu", *args]
 
 
 def build_pane_daemon_environment(

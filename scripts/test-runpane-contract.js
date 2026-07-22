@@ -604,6 +604,34 @@ print(json.dumps({
   assert.deepStrictEqual(pythonJson.darwin, baseEnvironment);
 }
 
+function compareDaemonLaunchArgsParity() {
+  const { buildPaneDaemonArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'installers.js'));
+  const baseArgs = ['--remote-setup', '--label', 'VM'];
+
+  // Ozone reads its platform from argv before the app boots, so the headless
+  // flags must lead the argument list on Linux and be absent elsewhere.
+  assert.deepStrictEqual(buildPaneDaemonArgs(baseArgs, 'linux'), [
+    '--ozone-platform=headless',
+    '--disable-gpu',
+    ...baseArgs
+  ]);
+  assert.deepStrictEqual(buildPaneDaemonArgs(baseArgs, 'darwin'), baseArgs);
+
+  const pythonOutput = runPythonSnippet(`
+import json
+from runpane.installers import build_pane_daemon_args
+
+base = ["--remote-setup", "--label", "VM"]
+print(json.dumps({
+    "linux": build_pane_daemon_args(base, "Linux"),
+    "darwin": build_pane_daemon_args(base, "Darwin"),
+}))
+`);
+  const pythonJson = JSON.parse(pythonOutput.split(/\r?\n/).filter(Boolean).pop());
+  assert.deepStrictEqual(pythonJson.linux, buildPaneDaemonArgs(baseArgs, 'linux'));
+  assert.deepStrictEqual(pythonJson.darwin, buildPaneDaemonArgs(baseArgs, 'darwin'));
+}
+
 function compareRemoteSetupDiagnosticParity() {
   const { collectRemoteSetupCheck } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'doctor.js'));
   const probes = {
@@ -1255,6 +1283,7 @@ async function runChecks() {
   compareWrapperTelemetrySanitizers();
   compareExistingReusePolicy();
   compareDaemonLaunchEnvironmentParity();
+  compareDaemonLaunchArgsParity();
   compareRemoteSetupDiagnosticParity();
   checkPlatformMatchingEdgeCases();
   await checkExistingDaemonShortCircuit();
