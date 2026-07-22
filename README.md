@@ -183,7 +183,7 @@ Use it for the work that spans panes:
 Add this repo, create three worktree panes for the next features, start Codex in each one, and keep a separate review tab ready for every PR.
 ```
 
-Pane Chat keeps the human discussion at the orchestrator level, distills that into concrete briefs, then delegates planning, implementation, review, and PR testing to Claude or Codex panels through RunPane. This keeps the agent doing the work in the right isolated worktree while Pane Chat watches state with `runpane panels wait`, `runpane panels screen`, and `runpane panels output`.
+Pane Chat keeps the human discussion at the orchestrator level, distills that into concrete briefs when needed, then delegates authorized lifecycle stages to Claude or Codex panels through RunPane. The active agent's cached `runpane-orchestrator` is the canonical source for the software-work lifecycle, authorization ledger, review-feedback interrupts, current-head evidence rules, and `ready_to_merge` predicate. Pane's generated layer stays focused on the local Pane runtime, skill cache paths, pane/panel/worktree mechanics, and preserving the user's focus.
 
 The prompt stays small because Pane writes local project-level skills into the Pane data directory:
 
@@ -192,9 +192,9 @@ The prompt stays small because Pane writes local project-level skills into the P
 - `skills/pane-chat/runpane-orchestrator.md`
 - `skills/pane-chat/runtime-context.md`
 
-Pane also caches the important workflow skills from the Pane skills repository, including discussion, plan/simple-plan, implement, implementation-reviewer, PR test automation, prepare-pr, investigate, and commit. The generated orchestrator skill tells Pane Chat to load the workflow map and local skill cache before it coordinates work, so broad or greenfield requests follow the intended discuss -> plan -> implement -> review loop instead of treating a loose prompt as a plan.
+Pane also caches the important workflow skills from the Pane skills repository, including discussion, plan/simple-plan, implement, implementation-reviewer, PR test automation, prepare-pr, `gh-address-comments`, investigate, and commit. The generated orchestrator skill tells Pane Chat to load the workflow map and local skill cache before it coordinates work, while deferring lifecycle policy to the cached active-agent `runpane-orchestrator` so Pane does not maintain a second, drifting copy of the workflow.
 
-The top-right toggle switches Pane Chat between Claude and Codex and persists the default orchestrator agent in Pane settings. Both agents share the same local orchestration contract; only the terminal command changes.
+The top-right toggle switches Pane Chat between Claude and Codex and persists the default orchestrator agent in Pane settings. Both agents share the same Pane-specific orchestration contract, then follow their own cached downstream skills where the Codex and Claude skill surfaces differ.
 
 ---
 

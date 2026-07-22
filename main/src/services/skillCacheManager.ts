@@ -37,6 +37,7 @@ const IMPORTANT_SKILL_PATHS = [
   'parsa/.codex/skills/implementation-reviewer',
   'parsa/.codex/skills/pr-test-automation',
   'parsa/.codex/skills/prepare-pr',
+  'parsa/.codex/skills/gh-address-comments',
   'parsa/.codex/skills/teach-back',
   'parsa/.codex/skills/investigate',
   'parsa/.codex/skills/codebase-explorer',
@@ -48,6 +49,8 @@ const IMPORTANT_SKILL_PATHS = [
   'parsa/.claude/skills/implement',
   'parsa/.claude/skills/pr-test-automation',
   'parsa/.claude/skills/prepare-pr',
+  'parsa/.claude/skills/gh-address-comments',
+  'parsa/.claude/skills/review',
   'parsa/.claude/skills/teach-back',
   'parsa/.claude/skills/investigate',
   'parsa/.claude/skills/commit',
@@ -56,11 +59,15 @@ const IMPORTANT_SKILL_PATHS = [
 const REQUIRED_FALLBACK_RAW_FILES = [
   ...TOP_LEVEL_FILES,
   ...IMPORTANT_SKILL_PATHS.map(skillPath => `${skillPath}/SKILL.md`),
+  'parsa/.codex/skills/gh-address-comments/agents/openai.yaml',
+  'parsa/.codex/skills/pr-test-automation/agents/openai.yaml',
+  'parsa/.claude/skills/gh-address-comments/agents/openai.yaml',
+  'parsa/.claude/skills/pr-test-automation/agents/openai.yaml',
+  'parsa/.claude/skills/review/CRITERIA.md',
 ] as const;
 
 const OPTIONAL_FALLBACK_RAW_FILES = [
   'parsa/.codex/skills/plan/plan_base.md',
-  'parsa/.codex/skills/pr-test-automation/agents/openai.yaml',
   'parsa/.codex/skills/teach-back/agents/openai.yaml',
   'parsa/.codex/skills/pane-work-recap/SKILL.md',
   'parsa/.codex/skills/pane-work-recap/agents/openai.yaml',
@@ -75,6 +82,8 @@ const FALLBACK_RAW_FILES = [
   ...REQUIRED_FALLBACK_RAW_FILES,
   ...OPTIONAL_FALLBACK_RAW_FILES,
 ] as const;
+
+const REQUIRED_FALLBACK_RAW_FILE_SET = new Set<string>(REQUIRED_FALLBACK_RAW_FILES);
 
 interface SkillSyncState {
   lastAttemptAt?: string;
@@ -236,6 +245,7 @@ export class SkillCacheManager {
   private async downloadFallbackFiles(): Promise<void> {
     await fs.mkdir(this.cacheRoot, { recursive: true });
     const failures: string[] = [];
+    const requiredDownloadFailures: string[] = [];
 
     for (const relativePath of FALLBACK_RAW_FILES) {
       try {
@@ -246,6 +256,9 @@ export class SkillCacheManager {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         failures.push(`${relativePath}: ${message}`);
+        if (REQUIRED_FALLBACK_RAW_FILE_SET.has(relativePath)) {
+          requiredDownloadFailures.push(`${relativePath}: ${message}`);
+        }
         this.logWarn(`Failed to download skill cache file ${relativePath}`, error);
       }
     }
@@ -257,12 +270,18 @@ export class SkillCacheManager {
       }
     }
 
-    if (missingRequiredFiles.length > 0) {
+    if (requiredDownloadFailures.length > 0 || missingRequiredFiles.length > 0) {
       const failureSummary = failures.length > 0
         ? ` Failed downloads: ${failures.slice(0, 5).join('; ')}${failures.length > 5 ? '; ...' : ''}`
         : '';
+      const failedRequiredSummary = requiredDownloadFailures.length > 0
+        ? ` Required download failures: ${requiredDownloadFailures.slice(0, 5).join('; ')}${requiredDownloadFailures.length > 5 ? '; ...' : ''}`
+        : '';
+      const missingRequiredSummary = missingRequiredFiles.length > 0
+        ? ` Missing required files: ${missingRequiredFiles.join(', ')}.`
+        : '';
       throw new Error(
-        `Skill cache fallback missing required files: ${missingRequiredFiles.join(', ')}.${failureSummary}`,
+        `Skill cache fallback failed for required files.${missingRequiredSummary}${failedRequiredSummary}${failureSummary}`,
       );
     }
   }
@@ -344,9 +363,24 @@ roots so launched agents can discover them by skill name:
 - \`${this.codexProjectSkillsRoot}\`
 - \`${this.claudeProjectSkillsRoot}\`
 
-Use the cached RunPane orchestrator skill as the primary workflow reference. The
-cached files may be refreshed by Pane in the background; do not fetch GitHub just
-to initialize yourself.
+## Contract Precedence
+
+Use one unambiguous hierarchy:
+
+1. The generated runtime context is authoritative for this exact Pane install,
+   data directory, shell/runtime, and RunPane command routing.
+2. The generated Pane Chat orchestrator skill is authoritative for Pane-specific
+   role boundaries, focus preservation, pane/panel/worktree mechanics, cache
+   paths, and delegation through RunPane.
+3. The active agent's cached RunPane orchestrator skill is authoritative for the
+   software-work lifecycle, persistent authorization ledger, stage transitions,
+   review-feedback interrupts, current-head evidence invalidation, and
+   \`ready_to_merge\` predicate.
+4. Agent-specific downstream skills are authoritative for how each lifecycle
+   stage is performed.
+
+The cached files may be refreshed by Pane in the background; do not fetch GitHub
+just to initialize yourself.
 
 For read-only work questions, use \`pane-work-recap\` when the user asks what
 they worked on and \`pane-work-prioritizer\` when they ask what to work on next.
@@ -380,8 +414,10 @@ through RunPane and observed through Pane state.
 - Prefer RunPane state and wait commands over guessing from static sleeps.
 - Create background panes or panels by default when delegating work so the user
   keeps focus in Pane Chat unless they ask otherwise.
-- Stop before merge, deploy, release, version bump, production mutation, or any
-  irreversible action unless the user explicitly authorizes that exact step.
+- Stop before merge, deploy, release creation, publishing, version changes,
+  production or destructive mutation, deleting user data, scope expansion, or
+  other irreversible actions unless the user explicitly authorizes that exact
+  step.
 
 ## Generated RunPane Context
 
@@ -450,49 +486,52 @@ create a minimal local git repository and register it with Pane. After that,
 delegate project implementation to a Pane agent through RunPane and observe the
 result from Pane state.
 
+## Contract Precedence
+
+Use one unambiguous hierarchy:
+
+1. The generated runtime context is authoritative for this exact Pane install,
+   data directory, shell/runtime, and RunPane command routing.
+2. This generated Pane Chat orchestrator skill is authoritative for Pane-specific
+   role boundaries, focus preservation, pane/panel/worktree mechanics, cache
+   paths, and delegation through RunPane.
+3. The active agent's cached RunPane orchestrator skill is authoritative for the
+   software-work lifecycle, persistent authorization ledger, stage transitions,
+   review-feedback interrupts, current-head evidence invalidation, and
+   \`ready_to_merge\` predicate.
+4. Agent-specific downstream skills are authoritative for how each lifecycle
+   stage is performed.
+
+If layers appear to conflict, preserve the more specific authority above instead
+of merging both instructions into a new lifecycle.
+
 ## Workflow Discipline
 
 For substantial work, greenfield projects, multi-agent work, PR preparation, or
-anything that will create or change files, the default lifecycle is:
+anything that will create or change files, load the active agent's cached
+\`runpane-orchestrator\` and follow its lifecycle contract. Do not maintain a
+second Pane-generated copy of that lifecycle.
 
-1. Pane Chat owns discussion and clarification with the user when intent is
-   ambiguous, broad, creative, or multi-agent. Do not delegate separate
-   discussion loops to implementation agents by default.
-2. Pane Chat distills the discussion into a concise intent brief, constraints,
-   success criteria, repo/worktree target, and autonomy level.
-3. Delegate plan or simple-plan to the appropriate agent/pane using that
-   distilled brief. The output must be an explicit implementation plan or plan
-   artifact before implementation starts.
-4. Delegate implement only from the approved plan or explicit plan artifact.
-5. Delegate implementation review after implementation.
-6. PR test automation or prepare-pr only after implementation review passes.
+Pane Chat owns discussion and clarification with the user when intent is
+ambiguous, broad, creative, or multi-agent. It may distill that conversation
+into concise briefs, constraints, success criteria, repo/worktree targets, and
+autonomy boundaries before delegating the next lifecycle stage through RunPane.
 
-Use best judgment for very small, low-risk tasks, but greenfield work and
-multi-agent work should almost always go through discussion-at-Pane-Chat,
-per-lane planning, implementation, and review.
+When delegating to agents, name the intended lifecycle stage and the relevant
+source artifact or brief. The active agent's cached \`runpane-orchestrator\`
+decides how already-authorized reversible stages advance through investigation,
+planning, implementation, implementation review, PR preparation, review feedback
+handling, PR QA, CI/re-review, and \`ready_to_merge\`.
 
-Do not skip directly to implement just because the delegated prompt contains an
-implementation brief. Treat "use implement" as permission to implement only when
-an approved plan already exists, or when the user explicitly says to skip
-planning and use the brief as the plan.
-
-When delegating to agents, send the lifecycle stage explicitly. Examples:
-
-- "Use plan/simple-plan from this Pane Chat discussion brief; do not implement
-  yet."
-- "Use plan/simple-plan first; do not implement yet."
-- "Use implement against this approved plan file."
-- "Use implementation-reviewer against the completed changes."
-
-If an implement agent reports that no approved plan file exists, stop and route
-the work back through plan/simple-plan unless the user explicitly approved using
-the brief as the plan. This is especially important for greenfield repos and
-creative tasks, where treating a broad brief as a plan is usually too loose.
+Treat review feedback as an interrupt owned by the upstream lifecycle. When it
+routes to \`gh-address-comments\`, use the implementation authority for source
+fixes, separate source-edit grants from external-write grants, and rerun stale
+current-head evidence after any head-changing fix.
 
 Delegate discussion to another agent only when the user explicitly asks for a
 separate perspective or when Pane Chat needs parallel research before forming
 the brief. In that case, Pane Chat still synthesizes the discussion result before
-starting planning or implementation.
+advancing the upstream lifecycle.
 
 ## Pane Workflow Model
 
@@ -549,9 +588,10 @@ Use these local cached files. Do not fetch GitHub just to initialize yourself.
 
 ## Hard Stops
 
-Stop before merge, deploy, release, version bump, production mutation, deleting
-user data, or irreversible actions unless the user explicitly authorizes that
-exact step.
+Stop before merge, deploy, release creation, publishing, version changes,
+production or destructive mutation, deleting user data, scope expansion, or
+other irreversible actions unless the user explicitly authorizes that exact
+step.
 `;
   }
 
