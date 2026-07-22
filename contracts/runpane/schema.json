@@ -141,9 +141,16 @@
         },
         "agents": {
           "$ref": "#/$defs/stringList"
+        },
+        "eventSelectors": {
+          "$ref": "#/$defs/stringList"
         }
       },
       "additionalProperties": false
+    },
+    "eventSelectorMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
     },
     "agentTemplates": {
       "type": "object",
@@ -283,6 +290,13 @@
         },
         "jsonSchemas": {
           "$ref": "#/$defs/stringList"
+        },
+        "outputMode": {
+          "enum": ["jsonl"]
+        },
+        "exitCodes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       },
       "additionalProperties": false
@@ -361,6 +375,9 @@
         "panels submit",
         "panels submit-composer",
         "panels wait",
+        "panels events",
+        "panels watch",
+        "panels await",
         "agent-context"
       ],
       "properties": {
@@ -434,6 +451,15 @@
           "$ref": "#/$defs/helpLines"
         },
         "panels wait": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels events": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels watch": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels await": {
           "$ref": "#/$defs/helpLines"
         },
         "agent-context": {

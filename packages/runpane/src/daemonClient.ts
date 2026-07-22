@@ -50,6 +50,13 @@ interface InvokeOptions {
   timeoutMs?: number;
 }
 
+export interface RetainedDaemonConnection {
+  request<T = unknown>(channel: string, args?: unknown[], timeoutMs?: number): Promise<T>;
+  onSemanticEvent(listener: (payload: unknown) => void): () => void;
+  onError(listener: (error: Error) => void): () => void;
+  close(): void;
+}
+
 const FRAME_DELIMITER = '\n';
 const UNIX_SOCKET_BASE_DIRECTORY = '/tmp';
 const DAEMON_SOCKET_FILENAME = 'daemon.sock';
@@ -161,6 +168,108 @@ export async function invokeDaemon<T = unknown>(
       }
     });
   });
+}
+
+export async function openRetainedDaemonConnection(options: InvokeOptions = {}): Promise<RetainedDaemonConnection> {
+  const endpoint = getPaneDaemonEndpoint(resolvePaneDirectory(options.paneDir));
+  const socket = net.createConnection(endpoint.path);
+  const decoder = new PaneDaemonFrameDecoder();
+  const semanticListeners = new Set<(payload: unknown) => void>();
+  const errorListeners = new Set<(error: Error) => void>();
+  const pending = new Map<number, {
+    resolve(value: unknown): void;
+    reject(error: Error): void;
+    timer: ReturnType<typeof setTimeout>;
+  }>();
+  let nextRequestId = 1;
+  let closed = false;
+
+  const fail = (error: Error) => {
+    if (closed) return;
+    for (const entry of pending.values()) {
+      clearTimeout(entry.timer);
+      entry.reject(error);
+    }
+    pending.clear();
+    for (const listener of errorListeners) listener(error);
+  };
+
+  socket.on('data', (chunk) => {
+    try {
+      for (const frame of decoder.push(chunk)) {
+        if (frame.type === 'event' && frame.channel === 'panel:semanticEvent') {
+          for (const listener of semanticListeners) listener(frame.args[0]);
+          continue;
+        }
+        if (frame.type !== 'response') continue;
+        const entry = pending.get(frame.id);
+        if (!entry) continue;
+        pending.delete(frame.id);
+        clearTimeout(entry.timer);
+        if (frame.ok) entry.resolve(frame.result);
+        else entry.reject(new PaneDaemonClientError(frame.error.message, frame.error.code));
+      }
+    } catch (error) {
+      fail(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+  socket.once('error', (error: NodeJS.ErrnoException) => {
+    fail(new PaneDaemonClientError(
+      `Could not connect to Pane daemon at ${endpoint.path}: ${error.message}`,
+      error.code ?? 'ERR_RUNPANE_DAEMON_CONNECT_FAILED',
+    ));
+  });
+  socket.once('close', () => {
+    if (!closed) fail(new PaneDaemonClientError(
+      `Pane daemon closed the retained connection at ${endpoint.path}`,
+      'ERR_RUNPANE_DAEMON_CLOSED',
+    ));
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', resolve);
+    socket.once('error', reject);
+  });
+
+  return {
+    request<T>(channel: string, args: unknown[] = [], timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS): Promise<T> {
+      if (closed) return Promise.reject(new PaneDaemonClientError('Pane daemon connection is closed', 'ERR_RUNPANE_DAEMON_CLOSED'));
+      const id = nextRequestId++;
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new PaneDaemonClientError(`Timed out waiting for Pane daemon response on ${endpoint.path}`, 'ERR_RUNPANE_DAEMON_TIMEOUT'));
+        }, timeoutMs);
+        pending.set(id, {
+          resolve: (value) => resolve(value as T),
+          reject,
+          timer,
+        });
+        socket.write(encodePaneDaemonFrame({ type: 'request', id, channel, args }));
+      });
+    },
+    onSemanticEvent(listener) {
+      semanticListeners.add(listener);
+      return () => semanticListeners.delete(listener);
+    },
+    onError(listener) {
+      errorListeners.add(listener);
+      return () => errorListeners.delete(listener);
+    },
+    close() {
+      if (closed) return;
+      closed = true;
+      for (const entry of pending.values()) {
+        clearTimeout(entry.timer);
+        entry.reject(new PaneDaemonClientError('Pane daemon connection closed', 'ERR_RUNPANE_DAEMON_CLOSED'));
+      }
+      pending.clear();
+      semanticListeners.clear();
+      errorListeners.clear();
+      socket.removeAllListeners();
+      if (!socket.destroyed) socket.destroy();
+    },
+  };
 }
 
 function resolveAppDirectory(appDirectory: string, platform: NodeJS.Platform): string {

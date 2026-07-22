@@ -27,6 +27,9 @@ from .local_control import (
     run_panels_submit,
     run_panels_submit_composer,
     run_panels_wait,
+    run_panels_events,
+    run_panels_watch,
+    run_panels_await,
     run_panes_archive,
     run_panes_create,
     run_panes_list,
@@ -118,6 +121,10 @@ class ParsedArgs:
     pinned: bool = False
     composer_strategy: Optional[str] = None
     force: bool = False
+    event_selector: Optional[str] = None
+    since: Optional[str] = None
+    jsonl: bool = False
+    heartbeat_ms: Optional[float] = None
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -195,6 +202,12 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panels_submit_composer(parsed)
     if parsed.command == "panels wait":
         return run_panels_wait(parsed)
+    if parsed.command == "panels events":
+        return run_panels_events(parsed)
+    if parsed.command == "panels watch":
+        return run_panels_watch(parsed)
+    if parsed.command == "panels await":
+        return run_panels_await(parsed)
     if parsed.command == "agents doctor":
         return run_agents_doctor(parsed)
     if parsed.command in {"install", "update"}:
@@ -382,6 +395,10 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         parsed.target = "client"
 
     parse_flags(args, parsed)
+    if parsed.jsonl and parsed.command != "panels watch":
+        raise ValueError("--jsonl is only valid with panels watch.")
+    if parsed.command == "panels await" and (not parsed.panel_id or not parsed.event_selector):
+        raise ValueError("panels await requires --panel and --event.")
     return parsed
 
 
@@ -476,6 +493,9 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
         return
     if flag == "--force":
         parsed.force = True
+        return
+    if flag == "--jsonl":
+        parsed.jsonl = True
         return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
@@ -594,6 +614,24 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             raise ValueError("--strategy must be one of: auto, codex-ctrl-enter, enter.")
         parsed.composer_strategy = value
         return
+    if flag == "--event":
+        selectors = set(RUNPANE_CONTRACT["enums"]["eventSelectors"])
+        if value not in selectors:
+            raise ValueError(f"Invalid --event {value}. Expected one of: {', '.join(sorted(selectors))}")
+        parsed.event_selector = value
+        return
+    if flag == "--since":
+        parsed.since = value
+        return
+    if flag == "--heartbeat-ms":
+        try:
+            heartbeat_ms = float(value)
+        except ValueError as error:
+            raise ValueError("--heartbeat-ms must be a positive number.") from error
+        if heartbeat_ms <= 0:
+            raise ValueError("--heartbeat-ms must be a positive number.")
+        parsed.heartbeat_ms = heartbeat_ms
+        return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
 
@@ -615,6 +653,9 @@ def is_runpane_local_command(command: str) -> bool:
         "panels submit",
         "panels submit-composer",
         "panels wait",
+        "panels events",
+        "panels watch",
+        "panels await",
         "agents doctor",
     }
 

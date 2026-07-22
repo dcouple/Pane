@@ -10,6 +10,10 @@ import type { AppServices } from './types';
 import type { CreatePanelRequest, ToolPanel } from '../../../shared/types/panels';
 import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration';
 
+const semanticEventAppend = vi.hoisted(() => vi.fn());
+const semanticEventReplay = vi.hoisted(() => vi.fn());
+const semanticCurrentCursor = vi.hoisted(() => vi.fn(() => 'epoch:0'));
+
 vi.mock('../services/panelManager', () => ({
   panelManager: {
     createPanel: vi.fn(),
@@ -31,6 +35,10 @@ vi.mock('../services/terminalPanelManager', () => ({
     getOutputGeneration: vi.fn(),
     deliverPendingInitialInput: vi.fn(),
   },
+}));
+
+vi.mock('../core/runtime', () => ({
+  getRuntimeRunpaneEventLog: () => ({ append: semanticEventAppend, replaySince: semanticEventReplay, currentCursor: semanticCurrentCursor }),
 }));
 
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
@@ -229,6 +237,9 @@ function registerSessionsDeleteStub(
 
 describe('runpane IPC handlers', () => {
   beforeEach(() => {
+    semanticEventAppend.mockReset();
+    semanticEventReplay.mockReset();
+    semanticCurrentCursor.mockReturnValue('epoch:0');
     session.isFavorite = undefined;
     session.favoritePinnedAt = undefined;
     vi.mocked(panelManager.createPanel).mockReset();
@@ -296,6 +307,20 @@ describe('runpane IPC handlers', () => {
       },
     });
     expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
+  });
+
+  it('AC2/AC3 replays each compact semantic transition strictly after the requested cursor with no screen text', async () => {
+    const registry = createRegistry();
+    const event = {
+      id: 'epoch:2', cursor: 'epoch:2', type: 'agent_idle', at: '2026-01-01T00:00:00.000Z',
+      paneId: 'session-1', panelId: 'panel-1', state: { initialized: true, agentActivity: 'idle' },
+    };
+    semanticEventReplay.mockReturnValue({ ok: true, events: [event], cursor: 'epoch:2' });
+    const result = await registry.invoke('runpane:panels:events', [{ since: 'epoch:1', panelId: 'panel-1' }]);
+    expect(semanticEventReplay).toHaveBeenCalledWith('epoch:1');
+    expect(result).toEqual({ ok: true, events: [event], cursor: 'epoch:2' });
+    expect(JSON.stringify(result)).not.toContain('screen');
+    expect(semanticEventAppend).not.toHaveBeenCalled();
   });
 
   it('lists saved Pane repositories with session counts', async () => {

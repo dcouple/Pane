@@ -6,6 +6,7 @@ import { TerminalStateEmulator } from './terminalStateEmulator';
 import type { ToolPanel } from '../../../shared/types/panels';
 
 const ptySpawn = vi.hoisted(() => vi.fn());
+const semanticAppend = vi.hoisted(() => vi.fn());
 vi.mock('@lydell/node-pty', () => ({ spawn: ptySpawn }));
 
 vi.mock('./panelManager', () => ({
@@ -82,6 +83,9 @@ type TerminalUnderTest = {
   outputGenerationAtQuiescence: number;
   exitEventHandled: boolean;
   suppressSemanticExitPersistence: boolean;
+  lastKnownBlocker?: { kind: 'agent-prompt' | 'codex-update' | 'submission_unverified' | 'unknown'; message: string };
+  blockerScanTimer: ReturnType<typeof setTimeout> | null;
+  lastBlockerScanAt: number;
   inSyncBlock: boolean;
   codexResumeOutputBuffer: string;
   codexAgentSessionId?: string;
@@ -192,6 +196,8 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
     outputGenerationAtQuiescence: 0,
     exitEventHandled: false,
     suppressSemanticExitPersistence: false,
+    blockerScanTimer: null,
+    lastBlockerScanAt: 0,
     inSyncBlock: false,
     codexResumeOutputBuffer: '',
     ...overrides,
@@ -253,6 +259,7 @@ function installRuntime(agentIdleDebounceMs?: unknown): { send: ReturnType<typeo
   setPaneRuntime({
     eventSink,
     daemonEventSink: { send: vi.fn() },
+    getRunpaneEventLog: () => ({ append: semanticAppend }) as never,
     getConfigManager: () => createConfigManagerStub(agentIdleDebounceMs),
     getPtyHostRuntime: () => null,
     getWebviewContextMap: () => new Map(),
@@ -271,6 +278,7 @@ describe('TerminalPanelManager semantic agent state', () => {
     vi.mocked(panelManager.getPanel).mockReset();
     vi.mocked(panelManager.updatePanel).mockReset();
     ptySpawn.mockReset();
+    semanticAppend.mockReset();
     vi.clearAllTimers();
     vi.useRealTimers();
   });
@@ -378,6 +386,28 @@ describe('TerminalPanelManager semantic agent state', () => {
     expect(eventSink.send).toHaveBeenCalledWith('panel:activityStatus', expect.objectContaining({
       status: 'idle',
     }));
+    expect(semanticAppend).toHaveBeenCalledTimes(1);
+    expect(semanticAppend).toHaveBeenCalledWith('panel_exited', panel, { paneId: 'session-1' });
+    terminal.pty.emitExit({ exitCode: 7, signal: 15 });
+    expect(semanticAppend).toHaveBeenCalledTimes(1);
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('AC2/AC3 detects a hidden-panel blocker on the trailing scan and emits edge-only events', async () => {
+    vi.useFakeTimers(); installRuntime();
+    const panel = createPanel({ agentType: 'codex' });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const terminal = createTerminal({ outputBuffer: '', isVisible: false, screenEmulator: new TerminalStateEmulator(80, 24) });
+    manager.terminals.set(terminal.panelId, terminal); manager.setupTerminalHandlers(terminal);
+    terminal.pty.emitData('Press Enter to continue');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(semanticAppend.mock.calls.map(call => call[0])).toContain('blocked');
+    expect(semanticAppend.mock.calls.map(call => call[0])).toContain('input_required');
+    const count = semanticAppend.mock.calls.filter(call => call[0] === 'blocked' || call[0] === 'input_required').length;
+    terminal.pty.emitData('\rPress Enter to continue');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(semanticAppend.mock.calls.filter(call => call[0] === 'blocked' || call[0] === 'input_required')).toHaveLength(count);
     disposeFlowControlRecord(terminal.flowControl);
   });
 

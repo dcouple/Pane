@@ -280,6 +280,43 @@
       "auto",
       "--yes",
       "--json"
+    ],
+    [
+      "panels",
+      "events",
+      "--panel",
+      "panel-1",
+      "--event",
+      "agent-idle",
+      "--since",
+      "epoch:1",
+      "--json"
+    ],
+    [
+      "panels",
+      "watch",
+      "--panel",
+      "panel-1",
+      "--event",
+      "blocked",
+      "--since",
+      "epoch:2",
+      "--heartbeat-ms",
+      "1000",
+      "--jsonl"
+    ],
+    [
+      "panels",
+      "await",
+      "--panel",
+      "panel-1",
+      "--event",
+      "agent-idle",
+      "--timeout-ms",
+      "5000",
+      "--heartbeat-ms",
+      "500",
+      "--json"
     ]
   ],
   "help": {
@@ -304,6 +341,9 @@
       "runpane panels submit",
       "runpane panels submit-composer",
       "runpane panels wait",
+      "runpane panels events",
+      "runpane panels watch",
+      "runpane panels await",
       "runpane doctor --json",
       "runpane agent-context --json",
       "Agent discovery:",

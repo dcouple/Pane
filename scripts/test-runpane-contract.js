@@ -1118,6 +1118,9 @@ function checkHelpOutput() {
     assertIncludes(output, 'runpane panels create');
     assertIncludes(output, 'runpane panels submit-composer');
     assertIncludes(output, 'runpane panels wait');
+    assertIncludes(output, 'runpane panels events');
+    assertIncludes(output, 'runpane panels watch');
+    assertIncludes(output, 'runpane panels await');
   }
 }
 

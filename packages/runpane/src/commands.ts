@@ -53,6 +53,10 @@ export interface ParsedArgs {
   pinned?: boolean;
   composerStrategy?: string;
   force?: boolean;
+  eventSelector?: string;
+  since?: string;
+  jsonl?: boolean;
+  heartbeatMs?: number;
   remoteSetupArgs: string[];
 }
 
@@ -138,6 +142,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   }
 
   parseFlags(args, parsed);
+  validateEventCommandFlags(parsed);
   return parsed;
 }
 
@@ -269,6 +274,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
   }
   if (flag === '--force') {
     parsed.force = true;
+    return;
+  }
+  if (flag === '--jsonl') {
+    parsed.jsonl = true;
     return;
   }
 
@@ -408,6 +417,23 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     parsed.composerStrategy = value;
     return;
   }
+  if (flag === '--event') {
+    if (!(RUNPANE_CONTRACT.enums.eventSelectors as readonly string[]).includes(value)) {
+      throw new Error(`Invalid --event "${value}". Expected one of: ${RUNPANE_CONTRACT.enums.eventSelectors.join(', ')}`);
+    }
+    parsed.eventSelector = value;
+    return;
+  }
+  if (flag === '--since') {
+    parsed.since = value;
+    return;
+  }
+  if (flag === '--heartbeat-ms') {
+    const heartbeatMs = Number(value);
+    if (!Number.isFinite(heartbeatMs) || heartbeatMs <= 0) throw new Error('--heartbeat-ms must be a positive number.');
+    parsed.heartbeatMs = heartbeatMs;
+    return;
+  }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
 }
@@ -429,7 +455,17 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panels submit'
     || command === 'panels submit-composer'
     || command === 'panels wait'
+    || command === 'panels events'
+    || command === 'panels watch'
+    || command === 'panels await'
     || command === 'agents doctor';
+}
+
+function validateEventCommandFlags(parsed: ParsedArgs): void {
+  if (parsed.jsonl && parsed.command !== 'panels watch') throw new Error('--jsonl is only valid with panels watch.');
+  if (parsed.command === 'panels await' && (!parsed.panelId || !parsed.eventSelector)) {
+    throw new Error('panels await requires --panel and --event.');
+  }
 }
 
 function appendRemoteArg(parsed: ParsedArgs, flag: string, value?: string): void {

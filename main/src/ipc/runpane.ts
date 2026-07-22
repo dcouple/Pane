@@ -11,6 +11,9 @@ import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/te
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { fastCheckWorkingDirectory, fastGetAheadBehind } from '../services/gitPlumbingCommands';
 import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEvidence';
+import { boundSanitizedLines, detectPanelBlocker } from '../services/runpaneBlockerDetection';
+import { getTerminalCustomState, panelStateSummary } from '../services/runpanePanelState';
+import { getRuntimeRunpaneEventLog } from '../core/runtime';
 import type { ArchiveProgressManager, SerializedArchiveTask } from '../services/archiveProgressManager';
 import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
@@ -68,7 +71,10 @@ import type {
   RunpaneResolvedTool,
   RunpaneToolSpec,
   RunpaneWorktreeCleanupState,
+  RunpanePanelsEventsRequest,
+  RunpanePanelsEventsResponse,
 } from '../../../shared/types/runpaneOrchestration';
+import { RUNPANE_EVENT_SELECTOR_TO_TYPE } from '../../../shared/types/runpaneOrchestration';
 
 const RUNPANE_CHANNELS = [
   'runpane:doctor',
@@ -86,6 +92,7 @@ const RUNPANE_CHANNELS = [
   'runpane:panels:submit',
   'runpane:panels:submit-composer',
   'runpane:panels:wait',
+  'runpane:panels:events',
   'runpane:agents:doctor',
 ] as const;
 
@@ -139,6 +146,25 @@ export function registerRunpaneHandlers(
         },
       };
     }, result => ({ resultCount: result.repos.count }));
+  });
+
+  commandRegistry.register('runpane:panels:events', (request: unknown): RunpanePanelsEventsResponse => {
+    const normalized = parsePanelsEventsRequest(request);
+    const log = getRuntimeRunpaneEventLog();
+    const replay = log.replaySince(normalized.since ?? log.currentCursor());
+    if (!replay.ok) {
+      return normalized.panelId
+        ? { ...replay, error: { ...replay.error, reconcileCommand: panelScreenCommand(normalized.panelId) } }
+        : replay;
+    }
+    const eventType = normalized.event ? RUNPANE_EVENT_SELECTOR_TO_TYPE[normalized.event] : undefined;
+    return {
+      ...replay,
+      events: replay.events.filter((event) =>
+        (!normalized.panelId || event.panelId === normalized.panelId) &&
+        (!eventType || event.type === eventType)
+      ),
+    };
   });
 
   commandRegistry.register('runpane:repos:list', async (): Promise<RunpaneRepoListResult> => {
@@ -738,6 +764,9 @@ async function submitCreateInitialInput(
     const sentAt = optionalString(customState.initialInputSentAt);
     const deliveryError = optionalString(customState.initialInputError);
     const delivered = Boolean(sentAt) && !deliveryError;
+    if (delivered && currentPanel) {
+      getRuntimeRunpaneEventLog().append('prompt_submitted', currentPanel, { paneId: panel.sessionId });
+    }
     return {
       delivered,
       submitted: delivered,
@@ -772,6 +801,7 @@ async function submitCreateInitialInput(
   }
 
   terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
+  getRuntimeRunpaneEventLog().append('prompt_staged', panel, { paneId: panel.sessionId });
   await sleep(300);
   return submitCreateComposerInput(panel, tool);
 }
@@ -830,6 +860,7 @@ async function submitCreateComposerInput(
       });
 
       if (lastVerdict === 'cleared' && afterScreen.state.activityStatus === 'active') {
+        getRuntimeRunpaneEventLog().append('prompt_submitted', panel, { paneId: panel.sessionId });
         return {
           delivered: true,
           submitted: true,
@@ -1031,11 +1062,7 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
   const blockerWindow = boundSanitizedLines(rawText, DEFAULT_PANEL_SCREEN_LIMIT);
   const blocked = detectPanelBlocker(blockerWindow.text, baseState.agentType, panel.id);
-  const state: RunpanePanelStateSummary = {
-    ...baseState,
-    blocked: blocked !== undefined,
-    inputRequired: blocked?.kind === 'agent-prompt' || blocked?.kind === 'codex-update',
-  };
+  const state = panelStateSummary(panel, liveSnapshot, customState, blocked);
   const bounded = boundSanitizedLines(rawText, limit);
 
   return {
@@ -1086,40 +1113,6 @@ function selectPanelScreenText(
   return { source: 'empty', rawText: '' };
 }
 
-function panelStateSummary(
-  panel: ToolPanel,
-  snapshot: TerminalPanelSnapshot | null,
-  customState: TerminalPanelState = getTerminalCustomState(panel),
-): RunpanePanelStateSummary {
-  const customAgentType = typeof customState.agentType === 'string' && AGENT_IDS.has(customState.agentType)
-    ? customState.agentType as RunpaneAgentId
-    : undefined;
-  const hasLiveTerminal = Boolean(snapshot || terminalPanelManager.isTerminalInitialized(panel.id));
-  const agentActivity = snapshot?.agentActivity
-    ?? (customState.exitedAt ? 'exited' : 'unknown');
-
-  return {
-    initialized: hasLiveTerminal,
-    isAlternateScreen: snapshot?.isAlternateScreen ?? customState.isAlternateScreen,
-    activityStatus: snapshot?.activityStatus,
-    isCliReady: snapshot?.isCliReady ?? (hasLiveTerminal ? customState.isCliReady : undefined),
-    isCliPanel: snapshot?.isCliPanel ?? customState.isCliPanel,
-    agentType: snapshot?.agentType ?? customAgentType,
-    lastActivity: snapshot?.lastActivityTime ?? customState.lastActivityTime ?? toIsoString(panel.metadata.lastActiveAt),
-    terminalReady: snapshot?.terminalReady,
-    agentActivity,
-    hasNewOutput: snapshot
-      ? snapshot.outputGeneration > snapshot.outputGenerationAtQuiescence
-      : false,
-    outputGeneration: snapshot?.outputGeneration,
-    lastMeaningfulEventAt: snapshot?.lastMeaningfulEventAt ?? customState.exitedAt,
-  };
-}
-
-function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
-  return (isRecord(panel.state.customState) ? panel.state.customState : {}) as TerminalPanelState;
-}
-
 function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
   if (typeof value === 'string') {
     return value;
@@ -1128,22 +1121,6 @@ function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']
     return value.join('\n');
   }
   return '';
-}
-
-function boundSanitizedLines(rawText: string, limit: number): { text: string; hasMore: boolean; returnedLineCount: number } {
-  const stripped = sanitizeTerminalOutput(rawText);
-  if (!stripped) {
-    return { text: '', hasMore: false, returnedLineCount: 0 };
-  }
-
-  const allLines = stripped.split('\n');
-  const hasMore = allLines.length > limit;
-  const lines = hasMore ? allLines.slice(-limit) : allLines;
-  return {
-    text: lines.join('\n'),
-    hasMore,
-    returnedLineCount: lines.length,
-  };
 }
 
 async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest): Promise<RunpanePanelWaitResult> {
@@ -1223,36 +1200,6 @@ function panelWaitResult(
   };
 }
 
-function detectPanelBlocker(
-  text: string,
-  agentType: RunpaneAgentId | undefined,
-  panelId: string,
-): RunpanePanelBlockedState | undefined {
-  if (!text) return undefined;
-
-  if (
-    (agentType === 'codex' || /codex/i.test(text)) &&
-    /update available/i.test(text) &&
-    (/skip/i.test(text) || /npm install -g @openai\/codex/i.test(text))
-  ) {
-    return {
-      kind: 'codex-update',
-      message: 'Codex is showing an update prompt instead of accepting the task prompt.',
-      suggestedCommand: `runpane panels submit --panel ${panelId} --text "2" --yes --json`,
-    };
-  }
-
-  if (/press enter to continue/i.test(text)) {
-    return {
-      kind: 'agent-prompt',
-      message: 'The terminal is waiting at an interactive prompt.',
-      suggestedCommand: panelScreenCommand(panelId),
-    };
-  }
-
-  return undefined;
-}
-
 function ensureSubmitEnter(input: string): string {
   if (input.endsWith('\r\n')) {
     return `${input.slice(0, -2)}\r`;
@@ -1298,6 +1245,9 @@ async function submitComposerForPanel(
   const submit = resolveComposerSubmit(strategy, state.agentType);
   terminalPanelManager.writeToTerminal(panel.id, submit.input);
   const verification = await verifyComposerSubmitted(panel, beforeScreen);
+  if (verification.verifiedSubmitted) {
+    getRuntimeRunpaneEventLog().append('prompt_submitted', panel, { paneId: panel.sessionId });
+  }
 
   return {
     ok: verification.ok,
@@ -1732,6 +1682,21 @@ function parsePanelWaitRequest(value: unknown): RunpanePanelWaitRequest {
     contains,
     timeoutMs: parsePositiveInteger(value.timeoutMs, 'timeoutMs'),
     intervalMs: parsePositiveInteger(value.intervalMs, 'intervalMs'),
+  };
+}
+
+function parsePanelsEventsRequest(value: unknown): RunpanePanelsEventsRequest {
+  if (!isRecord(value)) throw new Error('Panel events request must be an object');
+  const panelId = optionalString(value.panelId)?.trim();
+  const since = optionalString(value.since)?.trim();
+  const event = optionalString(value.event)?.trim();
+  if (event && !Object.prototype.hasOwnProperty.call(RUNPANE_EVENT_SELECTOR_TO_TYPE, event)) {
+    throw new Error(`Unknown panel event selector: ${event}`);
+  }
+  return {
+    panelId: panelId || undefined,
+    since: since || undefined,
+    event: event as RunpanePanelsEventsRequest['event'],
   };
 }
 

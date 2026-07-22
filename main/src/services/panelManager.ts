@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { ToolPanel, CreatePanelRequest, PanelEventType, ToolPanelState, ToolPanelMetadata, ToolPanelType, LogsPanelState } from '../../../shared/types/panels';
-import { getPaneEventSink, getPaneWebviewContextMap } from '../core/runtime';
+import { getPaneEventSink, getPaneWebviewContextMap, getRuntimeRunpaneEventLog } from '../core/runtime';
 import { databaseService } from './database';
 import { panelEventBus } from './panelEventBus';
 import { withLock } from '../utils/mutex';
@@ -145,6 +145,9 @@ export class PanelManager {
       
       // Emit IPC event to notify frontend
       this.sendRendererEvent('panel:created', panel);
+      if (panel.type === 'terminal') {
+        getRuntimeRunpaneEventLog().append('panel_created', panel, { paneId: panel.sessionId });
+      }
 
       // Track terminal panel creation analytics (only for new panels, not restoration)
       if (request.type === 'terminal' && this.analyticsManager) {

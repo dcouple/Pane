@@ -23,6 +23,9 @@ import {
   runPanelsSubmit,
   runPanelsSubmitComposer,
   runPanelsWait,
+  runPanelsEvents,
+  runPanelsWatch,
+  runPanelsAwait,
   runPanesArchive,
   runPanesCreate,
   runPanesList,
@@ -149,6 +152,9 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
   if (parsed.command === 'panels wait') {
     return runPanelsWait(parsed);
   }
+  if (parsed.command === 'panels events') return runPanelsEvents(parsed);
+  if (parsed.command === 'panels watch') return runPanelsWatch(parsed);
+  if (parsed.command === 'panels await') return runPanelsAwait(parsed);
 
   if (parsed.command === 'agents doctor') {
     return runAgentsDoctor(parsed);
