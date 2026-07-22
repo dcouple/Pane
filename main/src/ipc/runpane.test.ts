@@ -197,6 +197,8 @@ function registerSessionsDeleteStub(
 
 describe('runpane IPC handlers', () => {
   beforeEach(() => {
+    session.isFavorite = undefined;
+    session.favoritePinnedAt = undefined;
     vi.mocked(panelManager.createPanel).mockReset();
     vi.mocked(panelManager.getPanel).mockReset();
     vi.mocked(panelManager.getPanelsForSession).mockReset();
@@ -436,6 +438,7 @@ describe('runpane IPC handlers', () => {
         repoId: project.id,
         repoName: project.name,
         panelCount: 1,
+        pinned: false,
         createdAt: '2026-01-01T00:00:00.000Z',
       }],
     });
@@ -1152,6 +1155,7 @@ describe('runpane IPC handlers', () => {
       projectId: project.id,
       baseBranch: 'main',
       toolType: 'none',
+      startPinned: undefined,
       activateOnCreate: false,
     }, { timeoutMs: 1234 });
     expect(panelManager.createPanel).toHaveBeenCalledWith({
@@ -1185,6 +1189,165 @@ describe('runpane IPC handlers', () => {
         nextCommand: 'runpane panels output --panel panel-1 --limit 200 --json',
       }],
     });
+  });
+
+  it('creates a pinned pane without focusing it', async () => {
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      ...terminalPanel,
+      state: { ...terminalPanel.state, isActive: false },
+    });
+    const databaseRow = {
+      id: session.id,
+      is_favorite: 0,
+      favorite_pinned_at: null as string | null,
+    };
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        getSession: vi.fn(() => databaseRow),
+      } as never,
+      taskQueue: {
+        createSessionAndWait: vi.fn(async (request: { startPinned?: boolean }) => {
+          databaseRow.is_favorite = request.startPinned ? 1 : 0;
+          databaseRow.favorite_pinned_at = request.startPinned ? '2026-07-21 12:00:00' : null;
+          session.isFavorite = request.startPinned;
+          session.favoritePinnedAt = databaseRow.favorite_pinned_at ?? undefined;
+          return { sessionId: session.id };
+        }),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: 'active',
+      noFocus: true,
+      panes: [{
+        name: 'pinned-background-pane',
+        pinned: true,
+        tool: { agent: 'codex' },
+      }],
+    }]);
+
+    expect(services.taskQueue?.createSessionAndWait).toHaveBeenCalledWith(
+      expect.objectContaining({ startPinned: true, activateOnCreate: false }),
+      expect.any(Object),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{ pinned: true, focused: false }],
+    });
+    expect(databaseRow.is_favorite).toBe(1);
+    expect(databaseRow.favorite_pinned_at).not.toBeNull();
+  });
+
+  it('sets pinned state declaratively and idempotently', async () => {
+    const databaseRow = {
+      id: session.id,
+      is_favorite: 0,
+      favorite_pinned_at: null as string | null,
+    };
+    const setSessionFavorite = vi.fn((_id: string, pinned: boolean) => {
+      databaseRow.is_favorite = pinned ? 1 : 0;
+      databaseRow.favorite_pinned_at = pinned
+        ? databaseRow.favorite_pinned_at ?? '2026-07-21 12:00:00'
+        : null;
+      return databaseRow;
+    });
+    const emit = vi.fn();
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        setSessionFavorite,
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        emit,
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const firstPin = await registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: true }]);
+    const pinTimestamp = databaseRow.favorite_pinned_at;
+    const secondPin = await registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: true }]);
+    const listedPinned = await registry.invoke('runpane:panes:list', [{ repo: 'active' }]);
+
+    expect(firstPin).toEqual({
+      ok: true,
+      paneId: session.id,
+      pinned: true,
+      favoritePinnedAt: pinTimestamp,
+    });
+    expect(secondPin).toEqual(firstPin);
+    expect(databaseRow.favorite_pinned_at).toBe(pinTimestamp);
+    expect(listedPinned).toMatchObject({ panes: [{ paneId: session.id, pinned: true }] });
+
+    const firstUnpin = await registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: false }]);
+    const secondUnpin = await registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: false }]);
+
+    expect(firstUnpin).toEqual({ ok: true, paneId: session.id, pinned: false, favoritePinnedAt: undefined });
+    expect(secondUnpin).toEqual(firstUnpin);
+    expect(databaseRow).toMatchObject({ is_favorite: 0, favorite_pinned_at: null });
+    expect(setSessionFavorite).toHaveBeenCalledTimes(4);
+    expect(emit).toHaveBeenCalledTimes(4);
+    expect(emit).toHaveBeenLastCalledWith('session-updated', expect.objectContaining({
+      id: session.id,
+      isFavorite: false,
+      favoritePinnedAt: undefined,
+    }));
+  });
+
+  it('dry-runs pinned state changes without mutating or emitting', async () => {
+    session.isFavorite = false;
+    session.favoritePinnedAt = undefined;
+    const databaseRow = {
+      id: session.id,
+      is_favorite: 0,
+      favorite_pinned_at: null as string | null,
+    };
+    const setSessionFavorite = vi.fn((_id: string, pinned: boolean) => {
+      databaseRow.is_favorite = pinned ? 1 : 0;
+      databaseRow.favorite_pinned_at = pinned ? '2026-07-21 12:00:00' : null;
+      return databaseRow;
+    });
+    const emit = vi.fn();
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        setSessionFavorite,
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        emit,
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panes:pin', [{
+      paneId: session.id,
+      pinned: true,
+      dryRun: true,
+    }]);
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      paneId: session.id,
+      pinned: true,
+      favoritePinnedAt: undefined,
+    });
+    expect(databaseRow).toMatchObject({ is_favorite: 0, favorite_pinned_at: null });
+    expect(session.isFavorite).toBe(false);
+    expect(setSessionFavorite).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('rejects missing and non-boolean pinned state', async () => {
+    const registry = createRegistry();
+
+    await expect(registry.invoke('runpane:panes:pin', [{ paneId: session.id }]))
+      .rejects.toThrow('pinned as a boolean');
+    await expect(registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: 'yes' }]))
+      .rejects.toThrow('pinned as a boolean');
   });
 
   it('serializes multi-pane session creation before enqueueing the next pane', async () => {

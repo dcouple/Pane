@@ -29,6 +29,8 @@ import type {
   RunpanePaneArchiveSuccessResult,
   RunpanePaneListRequest,
   RunpanePaneListResult,
+  RunpanePanePinRequest,
+  RunpanePanePinResult,
   RunpanePaneCreateFailureItem,
   RunpanePaneCreateItem,
   RunpanePaneCreateRequest,
@@ -73,6 +75,7 @@ const RUNPANE_CHANNELS = [
   'runpane:repos:add',
   'runpane:panes:list',
   'runpane:panes:create',
+  'runpane:panes:pin',
   'runpane:panes:archive',
   'runpane:panels:create',
   'runpane:panels:list',
@@ -233,6 +236,38 @@ export function registerRunpaneHandlers(
     }, result => ({ repoId: result.repo?.id, resultCount: result.panes.length }));
   });
 
+  commandRegistry.register('runpane:panes:pin', async (request: unknown): Promise<RunpanePanePinResult> => {
+    return withRunpaneAction(services, 'panes:pin', {}, () => {
+      const normalized = parsePanePinRequest(request);
+      const pane = resolvePane(sessionManager, normalized.paneId);
+      if (normalized.dryRun) {
+        return {
+          ok: true,
+          dryRun: true,
+          paneId: normalized.paneId,
+          pinned: normalized.pinned,
+          favoritePinnedAt: pane.favoritePinnedAt,
+        };
+      }
+
+      const updatedSession = databaseService.setSessionFavorite(normalized.paneId, normalized.pinned);
+      if (!updatedSession) {
+        throw new Error(`Failed to update pinned state for Pane ${normalized.paneId}`);
+      }
+
+      pane.isFavorite = Boolean(updatedSession.is_favorite);
+      pane.favoritePinnedAt = updatedSession.favorite_pinned_at ?? undefined;
+      sessionManager.emit('session-updated', pane);
+
+      return {
+        ok: true,
+        paneId: normalized.paneId,
+        pinned: Boolean(updatedSession.is_favorite),
+        favoritePinnedAt: updatedSession.favorite_pinned_at ?? undefined,
+      };
+    }, result => ({ paneId: result.paneId }));
+  });
+
   commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
     return withRunpaneAction(services, 'panes:create', {}, async () => {
       const normalized = parsePaneCreateRequest(request);
@@ -247,6 +282,7 @@ export function registerRunpaneHandlers(
             ok: true,
             index,
             name: pane.name,
+            pinned: Boolean(pane.pinned),
             tool: describeTool(resolveToolSpec(pane.tool)),
           })),
         };
@@ -574,6 +610,7 @@ function sessionToPaneSummary(session: Session, project: Project) {
     repoId: project.id,
     repoName: project.name,
     panelCount: panelManager.getPanelsForSession(session.id).length,
+    pinned: Boolean(session.isFavorite),
     createdAt: toIsoString(session.createdAt),
     lastActivity: toIsoString(session.lastActivity),
     archived: session.archived || undefined,
@@ -751,6 +788,7 @@ async function createPaneItem(
       projectId: repo.id,
       baseBranch: item.baseBranch,
       toolType: 'none',
+      startPinned: item.pinned,
       activateOnCreate: options.activate !== false,
     }, { timeoutMs: options.timeoutMs });
 
@@ -770,6 +808,7 @@ async function createPaneItem(
       ok: itemOk,
       index,
       name: item.name,
+      pinned: Boolean(session.isFavorite),
       sessionId: session.id,
       paneId: session.id,
       panelId: panel.id,
@@ -1745,6 +1784,26 @@ function parsePaneArchiveRequest(value: unknown): RunpanePaneArchiveRequest {
   };
 }
 
+function parsePanePinRequest(value: unknown): RunpanePanePinRequest {
+  if (!isRecord(value)) {
+    throw new Error('Pane pin request must be an object');
+  }
+
+  const paneId = optionalString(value.paneId)?.trim();
+  if (!paneId) {
+    throw new Error('Pane pin request must include a paneId');
+  }
+  if (typeof value.pinned !== 'boolean') {
+    throw new Error('Pane pin request must include pinned as a boolean');
+  }
+
+  return {
+    paneId,
+    pinned: value.pinned,
+    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+  };
+}
+
 function resolvePanel(panelId: string): ToolPanel {
   const panel = panelManager.getPanel(panelId);
   if (!panel) {
@@ -1767,6 +1826,7 @@ function parsePaneCreateItem(value: unknown, index: number): RunpanePaneCreateIt
     worktreeName: optionalString(value.worktreeName),
     baseBranch: optionalString(value.baseBranch),
     sessionPrompt: optionalString(value.sessionPrompt),
+    pinned: typeof value.pinned === 'boolean' ? value.pinned : undefined,
     tool: parseRunpaneToolSpec(value.tool, `Pane create item ${index}`),
   };
 }

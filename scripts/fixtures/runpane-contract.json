@@ -116,6 +116,7 @@
       "Kick off discussion",
       "--source",
       "agent",
+      "--pinned",
       "--dry-run",
       "--yes",
       "--json"
@@ -136,6 +137,22 @@
       "--force",
       "--source",
       "agent",
+      "--yes",
+      "--json"
+    ],
+    [
+      "panes",
+      "pin",
+      "--pane",
+      "session-1",
+      "--yes",
+      "--json"
+    ],
+    [
+      "panes",
+      "unpin",
+      "--pane",
+      "session-1",
       "--yes",
       "--json"
     ],

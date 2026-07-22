@@ -829,6 +829,7 @@ async function checkFromJsonAcceptsBom() {
     repo: 'active',
     panes: [{
       name: 'bom-test',
+      pinned: true,
       tool: {
         command: 'echo hello'
       }
@@ -857,6 +858,7 @@ async function checkFromJsonAcceptsBom() {
     assert.strictEqual(code, 0);
     assert.strictEqual(capturedNodeRequest.repo, 'active');
     assert.strictEqual(capturedNodeRequest.panes[0].name, 'bom-test');
+    assert.strictEqual(capturedNodeRequest.panes[0].pinned, true);
     assert.strictEqual(capturedNodeRequest.dryRun, true);
   } finally {
     daemonClient.invokeDaemon = originalInvokeDaemon;
@@ -875,6 +877,7 @@ payload = {
     "repo": "active",
     "panes": [{
         "name": "bom-test",
+        "pinned": True,
         "tool": {"command": "echo hello"},
     }],
 }
@@ -903,6 +906,7 @@ finally:
       repo: 'active',
       panes: [{
         name: 'bom-test',
+        pinned: true,
         tool: {
           command: 'echo hello'
         }
@@ -910,6 +914,120 @@ finally:
       dryRun: true
     }
   });
+}
+
+async function checkPanePinParity() {
+  const daemonClient = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const { runPanesCreate, runPanesPin } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'localControl.js'));
+  const originalInvokeDaemon = daemonClient.invokeDaemon;
+  const originalConsoleLog = console.log;
+  const calls = [];
+  const stdout = [];
+
+  daemonClient.invokeDaemon = async (channel, args) => {
+    calls.push({ channel, request: args[0] });
+    if (channel === 'runpane:panes:create') {
+      return { ok: true, repo: {}, items: [] };
+    }
+    return { ok: true, paneId: args[0].paneId, pinned: args[0].pinned };
+  };
+  console.log = (line) => stdout.push(String(line));
+
+  try {
+    await runPanesPin(parseRunpaneArgs(['panes', 'pin', '--pane', 'session-1', '--yes', '--json']), true);
+    await runPanesPin(parseRunpaneArgs(['panes', 'unpin', '--pane', 'session-1', '--yes', '--json']), false);
+    await runPanesPin(parseRunpaneArgs(['panes', 'pin', '--pane', 'session-1', '--dry-run', '--json']), true);
+    await runPanesPin(parseRunpaneArgs(['panes', 'unpin', '--pane', 'session-1', '--dry-run', '--json']), false);
+    await assert.rejects(
+      runPanesPin(parseRunpaneArgs(['panes', 'pin', '--pane', 'session-1']), true),
+      /Rerun with --yes in non-interactive shells/,
+    );
+    await runPanesCreate(parseRunpaneArgs([
+      'panes', 'create', '--repo', 'active', '--name', 'pinned-pane', '--agent', 'codex',
+      '--pinned', '--dry-run', '--yes', '--json'
+    ]));
+  } finally {
+    daemonClient.invokeDaemon = originalInvokeDaemon;
+    console.log = originalConsoleLog;
+  }
+
+  assert.deepStrictEqual(calls.slice(0, 2), [{
+    channel: 'runpane:panes:pin',
+    request: { paneId: 'session-1', pinned: true }
+  }, {
+    channel: 'runpane:panes:pin',
+    request: { paneId: 'session-1', pinned: false }
+  }]);
+  assert.deepStrictEqual(calls.slice(2, 4), [{
+    channel: 'runpane:panes:pin',
+    request: { paneId: 'session-1', pinned: true, dryRun: true }
+  }, {
+    channel: 'runpane:panes:pin',
+    request: { paneId: 'session-1', pinned: false, dryRun: true }
+  }]);
+  assert.strictEqual(calls[4].channel, 'runpane:panes:create');
+  assert.strictEqual(calls[4].request.panes[0].pinned, true);
+  assert.deepStrictEqual(stdout.slice(0, 4).map(line => JSON.parse(line)), [{
+    ok: true,
+    paneId: 'session-1',
+    pinned: true
+  }, {
+    ok: true,
+    paneId: 'session-1',
+    pinned: false
+  }, {
+    ok: true,
+    paneId: 'session-1',
+    pinned: true
+  }, {
+    ok: true,
+    paneId: 'session-1',
+    pinned: false
+  }]);
+
+  const pythonOutput = runPythonSnippet(`
+import contextlib
+import io
+import json
+import runpane.local_control as local_control
+from runpane.cli import parse_args
+
+calls = []
+def fake_invoke(channel, args, **kwargs):
+    calls.append({"channel": channel, "request": args[0]})
+    if channel == "runpane:panes:create":
+        return {"ok": True, "repo": {}, "items": []}
+    return {"ok": True, "paneId": args[0]["paneId"], "pinned": args[0]["pinned"]}
+
+local_control.invoke_daemon = fake_invoke
+stdout = io.StringIO()
+with contextlib.redirect_stdout(stdout):
+    local_control.run_panes_pin(parse_args(["panes", "pin", "--pane", "session-1", "--yes", "--json"]), True)
+    local_control.run_panes_pin(parse_args(["panes", "unpin", "--pane", "session-1", "--yes", "--json"]), False)
+    local_control.run_panes_pin(parse_args(["panes", "pin", "--pane", "session-1", "--dry-run", "--json"]), True)
+    local_control.run_panes_pin(parse_args(["panes", "unpin", "--pane", "session-1", "--dry-run", "--json"]), False)
+    local_control.run_panes_create(parse_args([
+        "panes", "create", "--repo", "active", "--name", "pinned-pane", "--agent", "codex",
+        "--pinned", "--dry-run", "--yes", "--json"
+    ]))
+
+refused = False
+try:
+    local_control.run_panes_pin(parse_args(["panes", "pin", "--pane", "session-1"]), True)
+except ValueError as error:
+    refused = "Rerun with --yes in non-interactive shells" in str(error)
+
+print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "refused": refused}))
+`);
+  const python = JSON.parse(pythonOutput);
+  assert.deepStrictEqual(python.calls, JSON.parse(JSON.stringify(calls)));
+  const pythonJsonResults = JSON.parse(`[${python.stdout.join('\n').replace(/}\n{/g, '},{')}]`);
+  assert.deepStrictEqual(
+    pythonJsonResults.slice(0, 4),
+    stdout.slice(0, 4).map(line => JSON.parse(line)),
+  );
+  assert.strictEqual(python.refused, true);
 }
 
 function checkHelpOutput() {
@@ -963,6 +1081,8 @@ function checkHelpOutput() {
     assertIncludes(output, 'Pane session commands.');
     assertIncludes(output, 'runpane panes list');
     assertIncludes(output, 'runpane panes create');
+    assertIncludes(output, 'runpane panes pin');
+    assertIncludes(output, 'runpane panes unpin');
   }
 
   for (const output of [nodePanelsHelp, pyPanelsHelp]) {
@@ -1012,6 +1132,9 @@ function compareAgentContextParity() {
   assert.ok(nodeBrief.rules.some((rule) => rule.includes('creates Panes or panels')));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'doctor'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes create'));
+  assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes pin'));
+  assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes unpin'));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('`--pinned`')));
 
   const nodeDetail = JSON.parse(runNode(['agent-context', '--command', 'panes create', '--json']));
   const pyDetail = JSON.parse(runPython(['agent-context', '--command', 'panes create', '--json']));
@@ -1022,6 +1145,20 @@ function compareAgentContextParity() {
   assert.ok(nodeDetail.command.details.includes('do not pre-create a git worktree'));
   assert.ok(nodeDetail.command.notes.some((note) => note.includes("not the agent's default private delegation mechanism")));
   assert.ok(nodeDetail.command.notes.some((note) => note.includes('panels create')));
+  assert.ok(nodeDetail.command.arguments.some((argument) => argument.name === '--pinned'));
+
+  const nodePinDetail = JSON.parse(runNode(['agent-context', '--command', 'panes pin', '--json']));
+  const pyPinDetail = JSON.parse(runPython(['agent-context', '--command', 'panes pin', '--json']));
+  assert.deepStrictEqual(pyPinDetail, nodePinDetail);
+  assert.strictEqual(nodePinDetail.command.name, 'panes pin');
+  assert.ok(nodePinDetail.command.details.includes('idempotent'));
+  assert.ok(nodePinDetail.command.arguments.some((argument) => argument.name === '--dry-run'));
+
+  const nodeUnpinDetail = JSON.parse(runNode(['agent-context', '--command', 'panes unpin', '--json']));
+  const pyUnpinDetail = JSON.parse(runPython(['agent-context', '--command', 'panes unpin', '--json']));
+  assert.deepStrictEqual(pyUnpinDetail, nodeUnpinDetail);
+  assert.strictEqual(nodeUnpinDetail.command.name, 'panes unpin');
+  assert.ok(nodeUnpinDetail.command.arguments.some((argument) => argument.name === '--dry-run'));
 
   const nodePanelsDetail = JSON.parse(runNode(['agent-context', '--command', 'panels create', '--json']));
   const pyPanelsDetail = JSON.parse(runPython(['agent-context', '--command', 'panels create', '--json']));
@@ -1123,6 +1260,7 @@ async function runChecks() {
   await checkExistingDaemonShortCircuit();
   checkWindowsPaneVersionDoesNotLaunchExecutable();
   await checkFromJsonAcceptsBom();
+  await checkPanePinParity();
   checkHelpOutput();
   compareAgentContextParity();
   await checkNodeReleaseTimeout();

@@ -50,6 +50,7 @@ export interface ParsedArgs {
   source?: string;
   noFocus?: boolean;
   focus?: boolean;
+  pinned?: boolean;
   composerStrategy?: string;
   force?: boolean;
   remoteSetupArgs: string[];
@@ -262,6 +263,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
     parsed.focus = true;
     return;
   }
+  if (flag === '--pinned') {
+    parsed.pinned = true;
+    return;
+  }
   if (flag === '--force') {
     parsed.force = true;
     return;
@@ -414,6 +419,8 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panes list'
     || command === 'panes create'
     || command === 'panes archive'
+    || command === 'panes pin'
+    || command === 'panes unpin'
     || command === 'panels create'
     || command === 'panels list'
     || command === 'panels output'

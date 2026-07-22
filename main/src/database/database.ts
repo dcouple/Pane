@@ -3129,6 +3129,20 @@ export class DatabaseService {
     return this.getSession(id);
   }
 
+  setSessionFavorite(id: string, pinned: boolean): Session | undefined {
+    this.db.prepare(`
+      UPDATE sessions SET
+        is_favorite = @pinned,
+        favorite_pinned_at = CASE WHEN @pinned
+          THEN COALESCE(favorite_pinned_at, CURRENT_TIMESTAMP)
+          ELSE NULL END,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `).run({ id, pinned: pinned ? 1 : 0 });
+
+    return this.getSession(id);
+  }
+
   markSessionAsViewed(id: string): Session | undefined {
     this.db
       .prepare(

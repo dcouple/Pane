@@ -197,6 +197,30 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "panes pin",
+      "summary": "Declaratively pin a Pane; pinned is the Pane UI's favorite/pin star and repeated requests are idempotent.",
+      "usage": [
+        "runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "panePinRequest",
+        "panePinResult"
+      ]
+    },
+    {
+      "name": "panes unpin",
+      "summary": "Declaratively unpin a Pane; pinned is the Pane UI's favorite/pin star and repeated requests are idempotent.",
+      "usage": [
+        "runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "panePinRequest",
+        "panePinResult"
+      ]
+    },
+    {
       "name": "panels create",
       "summary": "Create a terminal-backed tool panel inside an existing Pane session.",
       "usage": [
@@ -523,6 +547,10 @@ export const RUNPANE_CONTRACT = {
         "description": "Explicitly focus the created pane or panel."
       },
       {
+        "name": "--pinned",
+        "description": "Create the pane already pinned (the UI's favorite/pin star)."
+      },
+      {
         "name": "--force",
         "description": "Archive even if the pane's branch has uncommitted, untracked, or unpushed changes."
       }
@@ -690,8 +718,10 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
+        "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
+        "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
         "",
-        "Run \"runpane help panes list\", \"runpane help panes create\", or \"runpane help panes archive\" for command-specific options."
+        "Run \"runpane help panes <command>\" for command-specific options."
       ],
       "panes list": [
         "Usage:",
@@ -730,6 +760,7 @@ export const RUNPANE_CONTRACT = {
         "  --source <user|agent>          Mark mutation source; agent implies background creation",
         "  --no-focus                     Create in the background without stealing focus",
         "  --focus                        Explicitly focus the created pane",
+        "  --pinned                       Create already pinned (the UI's favorite/pin star)",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -747,6 +778,32 @@ export const RUNPANE_CONTRACT = {
         "  --force                        Archive even if the pane has uncommitted, untracked, or unpushed changes",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
+        "  --yes                          Skip confirmation for mutating commands"
+      ],
+      "panes pin": [
+        "Usage:",
+        "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
+        "",
+        "Declaratively pins a Pane using the Pane UI's favorite/pin star. Repeating the command is idempotent and never changes focus. Use --dry-run to validate and preview without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>               Pane/session id to pin",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without pinning the pane",
+        "  --yes                          Skip confirmation for mutating commands"
+      ],
+      "panes unpin": [
+        "Usage:",
+        "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
+        "",
+        "Declaratively unpins a Pane using the Pane UI's favorite/pin star. Repeating the command is idempotent and never changes focus. Use --dry-run to validate and preview without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>               Pane/session id to unpin",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without unpinning the pane",
         "  --yes                          Skip confirmation for mutating commands"
       ],
       "panels": [
@@ -1059,8 +1116,10 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
+        "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
+        "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
         "",
-        "Run \"runpane help panes list\", \"runpane help panes create\", or \"runpane help panes archive\" for command-specific options."
+        "Run \"runpane help panes <command>\" for command-specific options."
       ],
       "panes list": [
         "Usage:",
@@ -1099,6 +1158,7 @@ export const RUNPANE_CONTRACT = {
         "  --source <user|agent>          Mark mutation source; agent implies background creation",
         "  --no-focus                     Create in the background without stealing focus",
         "  --focus                        Explicitly focus the created pane",
+        "  --pinned                       Create already pinned (the UI's favorite/pin star)",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -1116,6 +1176,32 @@ export const RUNPANE_CONTRACT = {
         "  --force",
         "  --pane-dir <path>",
         "  --json",
+        "  --yes"
+      ],
+      "panes pin": [
+        "Usage:",
+        "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
+        "",
+        "Declaratively pins a Pane using the Pane UI's favorite/pin star. Repeating the command is idempotent and never changes focus. Use --dry-run to validate and preview without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --dry-run",
+        "  --yes"
+      ],
+      "panes unpin": [
+        "Usage:",
+        "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
+        "",
+        "Declaratively unpins a Pane using the Pane UI's favorite/pin star. Repeating the command is idempotent and never changes focus. Use --dry-run to validate and preview without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --dry-run",
         "  --yes"
       ],
       "panels": [
@@ -1513,6 +1599,7 @@ export const RUNPANE_CONTRACT = {
         "Kick off discussion",
         "--source",
         "agent",
+        "--pinned",
         "--dry-run",
         "--yes",
         "--json"
@@ -1533,6 +1620,22 @@ export const RUNPANE_CONTRACT = {
         "--force",
         "--source",
         "agent",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panes",
+        "pin",
+        "--pane",
+        "session-1",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panes",
+        "unpin",
+        "--pane",
+        "session-1",
         "--yes",
         "--json"
       ],
@@ -2121,6 +2224,9 @@ export const RUNPANE_CONTRACT = {
               "sessionPrompt": {
                 "type": "string"
               },
+              "pinned": {
+                "type": "boolean"
+              },
               "tool": {
                 "oneOf": [
                   {
@@ -2221,7 +2327,8 @@ export const RUNPANE_CONTRACT = {
                 "required": [
                   "ok",
                   "index",
-                  "name"
+                  "name",
+                  "pinned"
                 ],
                 "properties": {
                   "ok": {
@@ -2232,6 +2339,9 @@ export const RUNPANE_CONTRACT = {
                   },
                   "name": {
                     "type": "string"
+                  },
+                  "pinned": {
+                    "type": "boolean"
                   },
                   "sessionId": {
                     "type": "string"
@@ -2521,7 +2631,8 @@ export const RUNPANE_CONTRACT = {
               "status",
               "worktreePath",
               "repoId",
-              "panelCount"
+              "panelCount",
+              "pinned"
             ],
             "properties": {
               "id": {
@@ -2547,6 +2658,9 @@ export const RUNPANE_CONTRACT = {
               },
               "panelCount": {
                 "type": "number"
+              },
+              "pinned": {
+                "type": "boolean"
               },
               "createdAt": {
                 "type": "string"
@@ -2581,6 +2695,51 @@ export const RUNPANE_CONTRACT = {
             "user",
             "agent"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "panePinRequest": {
+      "type": "object",
+      "required": [
+        "paneId",
+        "pinned"
+      ],
+      "properties": {
+        "paneId": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "panePinResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "paneId",
+        "pinned"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "dryRun": {
+          "const": true
+        },
+        "favoritePinnedAt": {
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -3655,14 +3814,14 @@ export const RUNPANE_CONTRACT = {
       "rules": [
         "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
         "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
-        "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json` (or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
+        "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --pinned --no-focus --wait-ready --yes --json` when it should stay visible (or omit `--pinned`, or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
         "Treat Pane as the user's visible cockpit for watching/co-driving work. Do not create Panes or panels for private delegation unless the user asked for visible Pane orchestration or the result should appear in the Pane app.",
         "Register the saved base repository once with `repos add`; do not register a pre-created worktree as a separate repo unless the user explicitly asks.",
         "Use `panes create` for separate visible Panes (Pane sessions) for feature/PR work. Pane creates and owns the worktree/branch for each new Pane.",
         "Use `panels create` for reviewer/helper/clean-context tabs that should stay inside an existing Pane and share that Pane's worktree.",
         "For private background decomposition, use your normal subagent/worktree mechanism instead of Pane.",
         "Skill routing: when the user says `discussion`, `plan`, `simple-plan`, `create-plan`, or `implement`, or asks for those behaviors, treat three references as peer context: Pane's local skill cache under `<PANE_DIR>/skills/`, the Pane Chat orchestrator handoff at `<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md` when present, and the workflow map at https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png. For where the local cache and Pane Chat bootstrap live in Pane, reference https://github.com/dcouple/Pane/pull/291. Use GitHub reads against https://github.com/dcouple/skills/tree/main/parsa only to inspect or refresh referenced skill files; do not clone or install it unless the user asks.",
-        "When an agent creates Panes or panels, pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved.",
+        "When an agent creates Panes or panels, pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; add `--pinned` when declaring a Pane that should remain in the UI's favorite/pin set.",
         "Use `runpane agent-context --json` for the full agent-facing CLI context, or `runpane agent-context --command <command> --json` for one detailed command definition.",
         "For `agent-context --command`, use canonical spaced names like `panes create`; copied forms like `panes.create` or `runpane panes create` are accepted too.",
         "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
@@ -3743,6 +3902,7 @@ export const RUNPANE_CONTRACT = {
             "--initial-input-file <path|->",
             "--from-json <path|->",
             "--source <user|agent>",
+            "--pinned",
             "--no-focus",
             "--focus",
             "--wait-ready",
@@ -3760,6 +3920,26 @@ export const RUNPANE_CONTRACT = {
             "--source <user|agent>",
             "--force",
             "--yes",
+            "--json"
+          ]
+        },
+        {
+          "name": "panes pin",
+          "summary": "Declaratively pin a Pane (the Pane UI's favorite/pin star) without changing focus.",
+          "arguments": [
+            "--pane <pane-id>",
+            "--yes",
+            "--dry-run",
+            "--json"
+          ]
+        },
+        {
+          "name": "panes unpin",
+          "summary": "Declaratively unpin a Pane (the Pane UI's favorite/pin star) without changing focus.",
+          "arguments": [
+            "--pane <pane-id>",
+            "--yes",
+            "--dry-run",
             "--json"
           ]
         },
@@ -4251,9 +4431,19 @@ export const RUNPANE_CONTRACT = {
             "description": "Explicitly focus the created pane."
           },
           {
+            "name": "--pinned",
+            "required": false,
+            "description": "Create the pane already pinned (the Pane UI's favorite/pin star); does not imply focus."
+          },
+          {
             "name": "--yes",
             "required": false,
             "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and preview without mutating."
           },
           {
             "name": "--json",
@@ -4292,7 +4482,7 @@ export const RUNPANE_CONTRACT = {
           "`panes create` is for user-visible Pane orchestration, not the agent's default private delegation mechanism.",
           "Register the saved base repository once. Pane creates and owns the worktree/branch for each new Pane.",
           "Use `panels create` instead when a reviewer/helper should share an existing Pane's worktree.",
-          "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved.",
+          "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; add `--pinned` when the Pane should remain in the UI's favorite/pin set.",
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
           "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
@@ -4351,6 +4541,90 @@ export const RUNPANE_CONTRACT = {
           "If the result has ok:false with a blocked field, the pane was NOT archived; inspect blocked.code and rerun with --force if discarding the flagged work is intentional.",
           "A successful archive waits for the Pane-managed worktree to be removed before returning; check worktreeCleanup in the result for the final outcome.",
           "Archiving a main-repo Pane (no Pane-managed worktree) always succeeds immediately since nothing is deleted from disk."
+        ]
+      },
+      "panes pin": {
+        "name": "panes pin",
+        "summary": "Declaratively pin a Pane; pinned is the Pane UI's favorite/pin star.",
+        "details": "Sets the requested pinned state to true without reading and toggling it. Repeating the command is idempotent and pinning never changes focus.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane/session id to pin."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and preview without mutating."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panes pin --pane <pane-id> --yes --json",
+          "runpane panes pin --pane <pane-id> --dry-run --json"
+        ],
+        "jsonSchemas": [
+          "panePinRequest",
+          "panePinResult"
+        ],
+        "notes": [
+          "This is a declarative set, not a toggle: retries leave an already-pinned Pane pinned.",
+          "Pinning does not focus the Pane."
+        ]
+      },
+      "panes unpin": {
+        "name": "panes unpin",
+        "summary": "Declaratively unpin a Pane; pinned is the Pane UI's favorite/pin star.",
+        "details": "Sets the requested pinned state to false without reading and toggling it. Repeating the command is idempotent and unpinning never changes focus.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane/session id to unpin."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and preview without mutating."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panes unpin --pane <pane-id> --yes --json",
+          "runpane panes unpin --pane <pane-id> --dry-run --json"
+        ],
+        "jsonSchemas": [
+          "panePinRequest",
+          "panePinResult"
+        ],
+        "notes": [
+          "This is a declarative set, not a toggle: retries leave an already-unpinned Pane unpinned.",
+          "Unpinning does not focus the Pane."
         ]
       },
       "panels list": {

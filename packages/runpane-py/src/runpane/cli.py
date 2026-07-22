@@ -30,6 +30,7 @@ from .local_control import (
     run_panes_archive,
     run_panes_create,
     run_panes_list,
+    run_panes_pin,
     run_repos_add,
     run_repos_list,
 )
@@ -114,6 +115,7 @@ class ParsedArgs:
     source: Optional[str] = None
     no_focus: bool = False
     focus: bool = False
+    pinned: bool = False
     composer_strategy: Optional[str] = None
     force: bool = False
     help_topic: Optional[str] = None
@@ -173,6 +175,10 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panes_create(parsed)
     if parsed.command == "panes archive":
         return run_panes_archive(parsed)
+    if parsed.command == "panes pin":
+        return run_panes_pin(parsed, True)
+    if parsed.command == "panes unpin":
+        return run_panes_pin(parsed, False)
     if parsed.command == "panels list":
         return run_panels_list(parsed)
     if parsed.command == "panels create":
@@ -465,6 +471,9 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
     if flag == "--focus":
         parsed.focus = True
         return
+    if flag == "--pinned":
+        parsed.pinned = True
+        return
     if flag == "--force":
         parsed.force = True
         return
@@ -596,6 +605,8 @@ def is_runpane_local_command(command: str) -> bool:
         "panes list",
         "panes create",
         "panes archive",
+        "panes pin",
+        "panes unpin",
         "panels create",
         "panels list",
         "panels output",

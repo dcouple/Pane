@@ -350,6 +350,8 @@
         "panes list",
         "panes create",
         "panes archive",
+        "panes pin",
+        "panes unpin",
         "panels",
         "panels create",
         "panels list",
@@ -399,6 +401,12 @@
           "$ref": "#/$defs/helpLines"
         },
         "panes archive": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panes pin": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panes unpin": {
           "$ref": "#/$defs/helpLines"
         },
         "panels": {

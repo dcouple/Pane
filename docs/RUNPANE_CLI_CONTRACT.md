@@ -187,6 +187,8 @@ Brief tools:
 - `panes list`: List Pane sessions, optionally scoped to a saved repository.
 - `panes create`: Create user-visible Panes (Pane sessions) backed by Pane-managed worktrees for feature/PR work and open terminal-backed tool tabs.
 - `panes archive`: Archive a Pane exactly like the UI Archive action, including safe removal of its Pane-managed git worktree.
+- `panes pin`: Declaratively pin a Pane (the Pane UI's favorite/pin star) without changing focus.
+- `panes unpin`: Declaratively unpin a Pane (the Pane UI's favorite/pin star) without changing focus.
 - `panels create`: Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.
 - `panels list`: List tool panels inside a Pane session.
 - `panels output`: Read recent terminal output from a panel.
@@ -298,6 +300,7 @@ These flags are consumed by local daemon-control commands:
 --wait-ready
 --no-focus
 --focus
+--pinned
 --force
 ```
 

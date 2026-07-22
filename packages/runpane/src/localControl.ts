@@ -59,6 +59,7 @@ interface PaneCreateItem {
   worktreeName?: string;
   baseBranch?: string;
   sessionPrompt?: string;
+  pinned?: boolean;
   tool: PaneToolSpec;
 }
 
@@ -73,6 +74,7 @@ interface PaneCreateResult {
     ok: boolean;
     index: number;
     name?: string;
+    pinned: boolean;
     sessionId?: string;
     panelId?: string;
     worktreePath?: string;
@@ -105,6 +107,7 @@ interface PaneSummary {
   repoId: number;
   repoName?: string;
   panelCount: number;
+  pinned: boolean;
   createdAt?: string;
   lastActivity?: string;
   archived?: boolean;
@@ -120,6 +123,20 @@ interface PaneArchiveRequest {
   paneId: string;
   force?: boolean;
   source?: 'user' | 'agent';
+}
+
+interface PanePinRequest {
+  paneId: string;
+  pinned: boolean;
+  dryRun?: boolean;
+}
+
+interface PanePinResult {
+  ok: true;
+  paneId: string;
+  pinned: boolean;
+  dryRun?: true;
+  favoritePinnedAt?: string;
 }
 
 interface PaneArchiveSafetyCheck {
@@ -425,6 +442,31 @@ export async function runPanesArchive(parsed: ParsedArgs): Promise<number> {
   return result.ok ? 0 : 1;
 }
 
+export async function runPanesPin(parsed: ParsedArgs, pinned: boolean): Promise<number> {
+  if (!parsed.paneId) {
+    throw new Error(`runpane panes ${pinned ? 'pin' : 'unpin'} requires --pane.`);
+  }
+
+  const request: PanePinRequest = {
+    paneId: parsed.paneId,
+    pinned,
+    ...(parsed.dryRun ? { dryRun: true } : {}),
+  };
+  await confirmPanePin(parsed, request);
+
+  const result = await invokeDaemon<PanePinResult>('runpane:panes:pin', [request], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+  } else {
+    console.log(`${result.pinned ? 'Pinned' : 'Unpinned'} ${result.paneId}`);
+  }
+
+  return 0;
+}
+
 export async function runPanelsList(parsed: ParsedArgs): Promise<number> {
   if (!parsed.paneId) {
     throw new Error('runpane panels list requires --pane.');
@@ -692,6 +734,9 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     if (parsed.concurrency !== undefined) {
       request.concurrency = parsed.concurrency;
     }
+    if (parsed.pinned) {
+      request.panes = request.panes.map(item => ({ ...item, pinned: true }));
+    }
     applyPaneFocusOptions(parsed, request);
     return request;
   }
@@ -714,6 +759,7 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
       name: parsed.name,
       worktreeName: parsed.worktreeName,
       baseBranch: parsed.baseBranch,
+      pinned: parsed.pinned || undefined,
       tool,
     }],
     dryRun: parsed.dryRun || undefined,
@@ -846,6 +892,27 @@ async function confirmPaneArchive(parsed: ParsedArgs, request: PaneArchiveReques
   try {
     const suffix = request.force ? ' (including any uncommitted or unpushed work)' : '';
     const answer = (await rl.question(`Archive pane ${request.paneId}${suffix}? [y/N] `)).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('Cancelled.');
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function confirmPanePin(parsed: ParsedArgs, request: PanePinRequest): Promise<void> {
+  if (parsed.dryRun || parsed.yes) {
+    return;
+  }
+
+  const command = request.pinned ? 'pin' : 'unpin';
+  if (!isInteractiveShell()) {
+    throw new Error(`runpane panes ${command} mutates Pane state. Rerun with --yes in non-interactive shells.`);
+  }
+
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`${request.pinned ? 'Pin' : 'Unpin'} pane ${request.paneId}? [y/N] `)).trim().toLowerCase();
     if (answer !== 'y' && answer !== 'yes') {
       throw new Error('Cancelled.');
     }
@@ -993,7 +1060,8 @@ function printPaneListResult(result: PaneListResult): void {
 
   for (const pane of result.panes) {
     const repo = pane.repoName ? ` ${pane.repoName}` : '';
-    console.log(`${pane.id}\t${pane.name}\t${pane.status}\t${pane.panelCount} panels\t${pane.worktreePath}${repo}`);
+    const pinned = pane.pinned ? ' pinned' : '';
+    console.log(`${pane.id}\t${pane.name}\t${pane.status}${pinned}\t${pane.panelCount} panels\t${pane.worktreePath}${repo}`);
   }
 }
 
@@ -1175,6 +1243,7 @@ function parsePaneCreateItemPayload(value: unknown, index: number): PaneCreateIt
     worktreeName: optionalString(value.worktreeName),
     baseBranch: optionalString(value.baseBranch),
     sessionPrompt: optionalString(value.sessionPrompt),
+    pinned: typeof value.pinned === 'boolean' ? value.pinned : undefined,
     tool: parsePaneToolSpecPayload(value.tool, index),
   };
 }

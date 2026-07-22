@@ -86,6 +86,7 @@ export interface RunpanePaneCreateItem {
   worktreeName?: string;
   baseBranch?: string;
   sessionPrompt?: string;
+  pinned?: boolean;
   tool: RunpaneToolSpec;
 }
 
@@ -156,6 +157,7 @@ export interface RunpanePaneCreateSuccessItem {
   ok: boolean;
   index: number;
   name: string;
+  pinned: boolean;
   sessionId?: string;
   paneId?: string;
   panelId?: string;
@@ -198,6 +200,7 @@ export interface RunpanePaneSummary {
   repoId: number;
   repoName?: string;
   panelCount: number;
+  pinned: boolean;
   createdAt?: string;
   lastActivity?: string;
   archived?: boolean;
@@ -211,6 +214,20 @@ export interface RunpanePaneListResult {
   ok: true;
   repo?: RunpaneRepoSummary;
   panes: RunpanePaneSummary[];
+}
+
+export interface RunpanePanePinRequest {
+  paneId: string;
+  pinned: boolean;
+  dryRun?: boolean;
+}
+
+export interface RunpanePanePinResult {
+  ok: true;
+  paneId: string;
+  pinned: boolean;
+  dryRun?: true;
+  favoritePinnedAt?: string;
 }
 
 export interface RunpanePaneArchiveRequest {

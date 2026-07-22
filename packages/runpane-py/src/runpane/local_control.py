@@ -99,6 +99,31 @@ def run_panes_archive(parsed: Any) -> int:
     return 0 if result.get("ok") else 1
 
 
+def run_panes_pin(parsed: Any, pinned: bool) -> int:
+    command = "pin" if pinned else "unpin"
+    if not parsed.pane_id:
+        raise ValueError(f"runpane panes {command} requires --pane.")
+
+    request = {
+        "paneId": parsed.pane_id,
+        "pinned": pinned,
+        **optional_value("dryRun", True if parsed.dry_run else None),
+    }
+    confirm_pane_pin(parsed, request)
+    result = invoke_daemon(
+        "runpane:panes:pin",
+        [request],
+        pane_dir=parsed.pane_dir,
+    )
+
+    if parsed.json:
+        print_json(result)
+    else:
+        print(f"{'Pinned' if result.get('pinned') else 'Unpinned'} {result.get('paneId')}")
+
+    return 0
+
+
 def run_panels_list(parsed: Any) -> int:
     if not parsed.pane_id:
         raise ValueError("runpane panels list requires --pane.")
@@ -319,6 +344,11 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             payload["readyTimeoutMs"] = parsed.ready_timeout_ms
         if parsed.concurrency is not None:
             payload["concurrency"] = parsed.concurrency
+        if parsed.pinned:
+            payload["panes"] = [
+                {**item, "pinned": True} if isinstance(item, dict) else item
+                for item in payload.get("panes", [])
+            ]
         apply_pane_focus_options(parsed, payload)
         return payload
 
@@ -335,6 +365,7 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             "name": parsed.name,
             **optional_value("worktreeName", parsed.worktree_name),
             **optional_value("baseBranch", parsed.base_branch),
+            **optional_value("pinned", True if parsed.pinned else None),
             "tool": build_tool_spec(parsed),
         }],
         **optional_value("dryRun", True if parsed.dry_run else None),
@@ -428,6 +459,19 @@ def confirm_pane_archive(parsed: Any, request: Dict[str, Any]) -> None:
 
     suffix = " (including any uncommitted or unpushed work)" if request.get("force") else ""
     answer = input(f"Archive pane {request.get('paneId')}{suffix}? [y/N] ").strip().lower()
+    if answer not in {"y", "yes"}:
+        raise ValueError("Cancelled.")
+
+
+def confirm_pane_pin(parsed: Any, request: Dict[str, Any]) -> None:
+    if parsed.dry_run or parsed.yes:
+        return
+    command = "pin" if request.get("pinned") else "unpin"
+    if not is_interactive_shell():
+        raise ValueError(f"runpane panes {command} mutates Pane state. Rerun with --yes in non-interactive shells.")
+
+    action = "Pin" if request.get("pinned") else "Unpin"
+    answer = input(f"{action} pane {request.get('paneId')}? [y/N] ").strip().lower()
     if answer not in {"y", "yes"}:
         raise ValueError("Cancelled.")
 
@@ -529,7 +573,8 @@ def print_pane_list_result(result: Dict[str, Any]) -> None:
 
     for pane in panes:
         repo = f" {pane.get('repoName')}" if pane.get("repoName") else ""
-        print(f"{pane.get('id')}\t{pane.get('name')}\t{pane.get('status')}\t{pane.get('panelCount')} panels\t{pane.get('worktreePath')}{repo}")
+        pinned = " pinned" if pane.get("pinned") else ""
+        print(f"{pane.get('id')}\t{pane.get('name')}\t{pane.get('status')}{pinned}\t{pane.get('panelCount')} panels\t{pane.get('worktreePath')}{repo}")
 
 
 def print_pane_create_result(result: Dict[str, Any]) -> None:
