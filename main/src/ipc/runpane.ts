@@ -815,7 +815,7 @@ async function submitCreateComposerInput(
   for (let attempt = 1; attempt <= MAX_CREATE_SUBMIT_ATTEMPTS; attempt += 1) {
     attempts = attempt;
     const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
-    const submitWriteStartedAt = Date.now();
+    const outputGenerationBeforeSubmit = terminalPanelManager.getOutputGeneration(panel.id);
     terminalPanelManager.writeToTerminal(panel.id, submit.input);
     const attemptStartedAt = Date.now();
     let retryConfirmed = false;
@@ -848,7 +848,7 @@ async function submitCreateComposerInput(
         continue;
       }
 
-      const afterScreenHasFreshOutput = panelHasOutputAfter(panel.id, submitWriteStartedAt);
+      const afterScreenHasFreshOutput = panelHasFreshOutputSince(panel.id, outputGenerationBeforeSubmit);
       if (!afterScreenHasFreshOutput) {
         lastVerdict = 'unknown';
         continue;
@@ -866,7 +866,7 @@ async function submitCreateComposerInput(
         afterText: confirmationScreen.text,
         stagedText: input,
       }) === 'staged';
-      const confirmationScreenHasFreshOutput = panelHasOutputAfter(panel.id, submitWriteStartedAt);
+      const confirmationScreenHasFreshOutput = panelHasFreshOutputSince(panel.id, outputGenerationBeforeSubmit);
       lastVerdict = confirmationVerdict;
 
       if (confirmationVerdict === 'staged' && unchangedSinceFirstSample && confirmationScreenHasFreshOutput) {
@@ -899,13 +899,8 @@ async function submitCreateComposerInput(
   };
 }
 
-function panelHasOutputAfter(panelId: string, timestampMs: number): boolean {
-  const lastOutputAt = terminalPanelManager.getLastOutputAt(panelId);
-  if (!lastOutputAt) {
-    return false;
-  }
-  const lastOutputMs = Date.parse(lastOutputAt);
-  return Number.isFinite(lastOutputMs) && lastOutputMs > timestampMs;
+function panelHasFreshOutputSince(panelId: string, generation: number): boolean {
+  return terminalPanelManager.getOutputGeneration(panelId) > generation;
 }
 
 async function createPaneItem(

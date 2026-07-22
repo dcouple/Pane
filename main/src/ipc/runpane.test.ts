@@ -28,6 +28,7 @@ vi.mock('../services/terminalPanelManager', () => ({
     getTerminalScrollback: vi.fn(),
     writeToTerminal: vi.fn(),
     getLastOutputAt: vi.fn(),
+    getOutputGeneration: vi.fn(),
     deliverPendingInitialInput: vi.fn(),
   },
 }));
@@ -234,7 +235,9 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReset();
     vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReset();
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReset();
     vi.mocked(terminalPanelManager.deliverPendingInitialInput).mockReset();
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(0);
 
     vi.mocked(panelManager.getPanel).mockImplementation((panelId: string) =>
       panelId === terminalPanel.id ? terminalPanel : undefined
@@ -1614,7 +1617,7 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('retries a swallowed Codex slash command only after stable staged evidence', async () => {
+  it('retries a same-millisecond swallowed Codex slash command after output generation advances', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:01:59.000Z'));
     const codexPanel = {
@@ -1623,9 +1626,12 @@ describe('runpane IPC handlers', () => {
     };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
-    vi.mocked(terminalPanelManager.getLastOutputAt)
-      .mockReturnValueOnce('2026-01-01T00:02:00.000Z')
-      .mockReturnValueOnce('2026-01-01T00:02:00.000Z');
+    vi.mocked(terminalPanelManager.getOutputGeneration)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(1)
+      .mockReturnValueOnce(1)
+      .mockReturnValue(1);
+    vi.mocked(terminalPanelManager.getLastOutputAt).mockReturnValue('2026-01-01T00:01:59.300Z');
     vi.mocked(terminalPanelManager.getTerminalSnapshot)
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
@@ -1676,6 +1682,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReturnValue(undefined);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(0);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
       terminalSnapshot('› /do TM-x', 'idle', 'codex', '2026-01-01T00:01:59.000Z'),
     );
@@ -1751,9 +1758,17 @@ describe('runpane IPC handlers', () => {
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
-    vi.mocked(terminalPanelManager.getLastOutputAt).mockImplementation(() =>
-      new Date(Date.now() + 1).toISOString()
-    );
+    vi.mocked(terminalPanelManager.getOutputGeneration)
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(1)
+      .mockReturnValueOnce(1)
+      .mockReturnValueOnce(1)
+      .mockReturnValueOnce(2)
+      .mockReturnValueOnce(2)
+      .mockReturnValueOnce(2)
+      .mockReturnValueOnce(3)
+      .mockReturnValueOnce(3)
+      .mockReturnValue(3);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() =>
       terminalSnapshot('› /do TM-x', 'idle', 'codex', new Date(Date.now() + 1).toISOString()),
     );

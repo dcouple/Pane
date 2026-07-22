@@ -56,6 +56,7 @@ type TerminalUnderTest = {
   currentCommand: string;
   lastActivity: Date;
   lastOutputAt?: Date;
+  outputGeneration: number;
   wslContext: null;
   flowControl: FlowControlRecord;
   outputBuffer: string;
@@ -101,6 +102,7 @@ type InitialInputAccess = {
   sendInitialInputOnce(panelId: string): void;
   deliverPendingInitialInput(panelId: string): void;
   getLastOutputAt(panelId: string): string | undefined;
+  getOutputGeneration(panelId: string): number;
 };
 
 type LaunchCommandAccess = {
@@ -129,6 +131,7 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
     commandHistory: [],
     currentCommand: '',
     lastActivity: new Date(),
+    outputGeneration: 0,
     wslContext: null,
     flowControl: createFlowControlRecord(),
     outputBuffer: 'hello from terminal',
@@ -468,6 +471,7 @@ describe('TerminalPanelManager hidden output delivery', () => {
 
     expect(terminal.pty.write).toHaveBeenCalledWith('typed input');
     expect(manager.getLastOutputAt(terminal.panelId)).toBeUndefined();
+    expect(manager.getOutputGeneration(terminal.panelId)).toBe(0);
     disposeFlowControlRecord(terminal.flowControl);
   });
 

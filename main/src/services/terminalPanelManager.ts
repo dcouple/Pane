@@ -170,6 +170,7 @@ interface TerminalProcess {
   currentCommand: string;
   lastActivity: Date;
   lastOutputAt?: Date;
+  outputGeneration: number;
   isWSL?: boolean;
   /**
    * WSL context captured at spawn time. Stored so `respawnAll` can re-inject
@@ -924,6 +925,7 @@ export class TerminalPanelManager {
       commandHistory: [],
       currentCommand: '',
       lastActivity: new Date(),
+      outputGeneration: 0,
       isWSL: !!(wslContext && process.platform === 'win32'),
       // Capture wslContext so `respawnAll` can re-inject the same WSLENV /
       // distro / user settings after a ptyHost supervisor restart without
@@ -1123,6 +1125,7 @@ export class TerminalPanelManager {
       const outputAt = new Date();
       terminal.lastActivity = outputAt;
       terminal.lastOutputAt = outputAt;
+      terminal.outputGeneration += 1;
 
       // Activity status transition: mark active on first byte after idle
       if (terminal.activityStatus !== 'active') {
@@ -1290,6 +1293,10 @@ export class TerminalPanelManager {
 
   getLastOutputAt(panelId: string): string | undefined {
     return this.terminals.get(panelId)?.lastOutputAt?.toISOString();
+  }
+
+  getOutputGeneration(panelId: string): number {
+    return this.terminals.get(panelId)?.outputGeneration ?? 0;
   }
   
   writeToTerminal(panelId: string, data: string): void {
