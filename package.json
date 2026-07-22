@@ -20,8 +20,12 @@
       "better-sqlite3-multiple-ciphers",
       "@lydell/node-pty",
       "esbuild",
-      "msgpackr-extract"
-    ]
+      "msgpackr-extract",
+      "electron-winstaller"
+    ],
+    "overrides": {
+      "prebuild-install>node-abi": "^4.33.0"
+    }
   },
   "scripts": {
     "dev": "node scripts/pane-run-script.js",
@@ -78,7 +82,7 @@
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
-    "better-sqlite3-multiple-ciphers": "^12.6.2",
+    "better-sqlite3-multiple-ciphers": "12.11.1",
     "bull": "^4.16.3",
     "chokidar": "^5.0.0",
     "dotenv": "^16.4.7",
@@ -90,13 +94,14 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.10.2",
-    "@electron/rebuild": "^4.0.1",
+    "@electron/rebuild": "4.2.0",
     "@playwright/test": "^1.52.0",
     "concurrently": "^9.1.0",
-    "electron": "^37.6.0",
-    "electron-builder": "^26.0.20",
+    "electron": "41.10.3",
+    "electron-builder": "26.7.0",
+    "electron-builder-squirrel-windows": "26.7.0",
     "icns-lib": "^1.0.1",
-    "node-abi": "^4.14.0",
+    "node-abi": "^4.33.0",
     "playwright": "^1.52.0",
     "png-to-ico": "^3.0.1",
     "png2icons": "^2.0.1",

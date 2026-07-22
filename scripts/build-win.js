@@ -181,6 +181,8 @@ function copyNodeAddonApi() {
  * Find the better-sqlite3-multiple-ciphers package directory
  */
 function findBetterSqliteDir() {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+  const expectedVersion = packageJson.dependencies?.['better-sqlite3-multiple-ciphers']?.replace(/^[~^]/, '');
   const betterSqlitePattern = path.join(
     NODE_MODULES,
     '.pnpm',
@@ -195,8 +197,13 @@ function findBetterSqliteDir() {
     return null;
   }
 
+  const matchingVersion = expectedVersion
+    ? matches.find(match => path.basename(match).startsWith(`better-sqlite3-multiple-ciphers@${expectedVersion}`))
+    : undefined;
+  const packageDir = matchingVersion || matches[0];
+
   return path.join(
-    matches[0],
+    packageDir,
     'node_modules',
     'better-sqlite3-multiple-ciphers'
   );
@@ -228,7 +235,7 @@ function downloadBetterSqlitePrebuiltForArch(targetArch) {
 
   // Get Electron version from package.json
   const packageJson = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
-  const electronVersion = packageJson.devDependencies?.electron?.replace('^', '') || '37.6.0';
+  const electronVersion = packageJson.devDependencies?.electron?.replace('^', '') || '41.10.3';
 
   console.log(`  📦 Electron version: ${electronVersion}, arch: ${targetArch}`);
 
@@ -236,7 +243,7 @@ function downloadBetterSqlitePrebuiltForArch(targetArch) {
 
   try {
     execSync(
-      `npx prebuild-install --runtime electron --target ${electronVersion} --arch ${targetArch} --verbose`,
+      `npx prebuild-install --runtime electron --target ${electronVersion} --platform win32 --arch ${targetArch} --verbose`,
       {
         cwd: betterSqliteDir,
         stdio: 'inherit',

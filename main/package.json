@@ -23,7 +23,7 @@
     "@modelcontextprotocol/sdk": "^1.12.1",
     "@xterm/addon-serialize": "^0.14.0",
     "@xterm/headless": "^6.0.0",
-    "better-sqlite3-multiple-ciphers": "^12.6.2",
+    "better-sqlite3-multiple-ciphers": "12.11.1",
     "bull": "^4.16.3",
     "chokidar": "^5.0.0",
     "dotenv": "^16.4.7",
@@ -35,7 +35,7 @@
     "ws": "^8.20.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.1",
+    "@electron/rebuild": "4.2.0",
     "@types/bull": "^4.10.0",
     "@types/glob": "^9.0.0",
     "@types/js-yaml": "^4.0.9",
@@ -44,7 +44,7 @@
     "@typescript-eslint/eslint-plugin": "^8.19.0",
     "@typescript-eslint/parser": "^8.19.0",
     "@vitest/coverage-v8": "^2.1.8",
-    "electron": "^37.6.0",
+    "electron": "41.10.3",
     "eslint": "^9.17.0",
     "mkdirp": "^3.0.1",
     "rimraf": "^6.0.1",

@@ -127,8 +127,8 @@ cp -r "node_modules/.pnpm/node-addon-api@*/node_modules/node-addon-api/"* \
 # Navigate to the better-sqlite3-multiple-ciphers package directory
 cd node_modules/.pnpm/better-sqlite3-multiple-ciphers@*/node_modules/better-sqlite3-multiple-ciphers
 
-# Download the Electron-compatible prebuilt (replace 37.6.0 with your Electron version)
-npx prebuild-install --runtime electron --target 37.6.0 --arch x64 --verbose
+# Download the Electron-compatible prebuilt (replace 41.10.3 with your Electron version)
+npx prebuild-install --runtime electron --target 41.10.3 --arch x64 --verbose
 
 # Return to project root
 cd -
@@ -166,7 +166,7 @@ pnpm exec electron-builder --win --x64 --publish never --config.npmRebuild=false
 The better-sqlite3 native module was built for Node.js instead of Electron. Run the prebuild-install step:
 ```bash
 cd node_modules/.pnpm/better-sqlite3-multiple-ciphers@*/node_modules/better-sqlite3-multiple-ciphers
-npx prebuild-install --runtime electron --target 37.6.0 --arch x64 --verbose
+npx prebuild-install --runtime electron --target 41.10.3 --arch x64 --verbose
 ```
 
 ### Native modules not working at runtime
@@ -189,7 +189,7 @@ For most users, the x64 build is recommended as it works on all Windows machines
 
 The following native modules are used:
 - `better-sqlite3-multiple-ciphers` - SQLite database (has Windows Electron prebuilts)
-- `@lydell/node-pty` - Terminal emulation (has Windows x64 prebuilts, works with Electron 37)
+- `@lydell/node-pty` - Terminal emulation (has Windows x64 prebuilts, validate after each Electron major upgrade)
 
 Both modules have prebuilt binaries that work on Windows without compilation.
 

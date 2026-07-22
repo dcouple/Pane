@@ -4,6 +4,8 @@ packages:
   - 'packages/runpane'
   - 'shared'
 minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - electron
 supportedArchitectures:
   os:
     - current
