@@ -142,6 +142,8 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 `runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.
 
+For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.
+
 `runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.
 
 `runpane panels list` lists tool panels inside one Pane session.
@@ -151,6 +153,8 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 `runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.
 
 `runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.
+
+If composer submission cannot be verified without risking a duplicate, the create item is unsuccessful with `initialInput.staged`, `initialInput.attempts`, `initialInput.blocked.kind: submission_unverified`, and an actionable `nextCommand`. The CLI-facing `--prompt` alias maps to this canonical `initialInput` result.
 
 When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.
 

@@ -10,6 +10,7 @@ import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { fastCheckWorkingDirectory, fastGetAheadBehind } from '../services/gitPlumbingCommands';
+import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEvidence';
 import type { ArchiveProgressManager, SerializedArchiveTask } from '../services/archiveProgressManager';
 import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
@@ -96,6 +97,8 @@ const DEFAULT_PANEL_WAIT_TIMEOUT_MS = 30_000;
 const DEFAULT_PANEL_WAIT_INTERVAL_MS = 500;
 const DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS = 3_000;
 const DEFAULT_COMPOSER_VERIFY_INTERVAL_MS = 100;
+const MAX_CREATE_SUBMIT_ATTEMPTS = 3;
+const CREATE_SUBMIT_CONFIRMATION_DELAY_MS = 400;
 const DEFAULT_ARCHIVE_CLEANUP_TIMEOUT_MS = 30_000;
 const DEFAULT_ARCHIVE_CLEANUP_POLL_INTERVAL_MS = 200;
 
@@ -665,17 +668,20 @@ async function createTerminalPanelForSession(
   tool: RunpaneResolvedTool,
   options: TerminalPanelCreateOptions,
 ): Promise<TerminalPanelCreateResult> {
+  const useArgumentDelivery = shouldUseArgumentDelivery(tool);
   const shouldCreateSubmitInitialInput = Boolean(
     options.waitReady &&
     tool.agent &&
-    tool.agent !== 'codex' &&
-    tool.initialInput,
+    tool.initialInput &&
+    !useArgumentDelivery,
   );
   const initialState: TerminalPanelState = {
     initialCommand: tool.command,
     initialInput: tool.initialInput,
-    ...(tool.agent === 'codex' ? { initialInputMode: 'argument' as const } : {}),
-    initialInputSubmitStrategy: 'enter',
+    ...(useArgumentDelivery ? { initialInputMode: 'argument' as const } : {}),
+    initialInputSubmitStrategy: tool.agent === 'codex' && !useArgumentDelivery
+      ? 'codex-ctrl-enter'
+      : 'enter',
     ...(shouldCreateSubmitInitialInput ? {
       initialInputSentAt: new Date().toISOString(),
     } : {}),
@@ -724,15 +730,27 @@ async function submitCreateInitialInput(
     return undefined;
   }
 
-  if (tool.agent === 'codex') {
+  if (shouldUseArgumentDelivery(tool)) {
+    const currentPanel = panelManager.getPanel(panel.id);
+    const customState = currentPanel && isRecord(currentPanel.state.customState)
+      ? currentPanel.state.customState
+      : {};
+    const sentAt = optionalString(customState.initialInputSentAt);
+    const deliveryError = optionalString(customState.initialInputError);
+    const delivered = Boolean(sentAt) && !deliveryError;
     return {
-      delivered: true,
-      submitted: true,
+      delivered,
+      submitted: delivered,
       inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
       strategy: 'argument',
       sequenceName: 'argument',
-      verifiedSubmitted: true,
-      sentAt: new Date().toISOString(),
+      verifiedSubmitted: delivered,
+      sentAt,
+      ...(delivered ? {} : {
+        error: {
+          message: deliveryError ?? 'Initial input was not attached to the agent launch command.',
+        },
+      }),
       nextCommand: readiness?.nextCommand ?? panelWaitCommand(panel.id),
     };
   }
@@ -753,18 +771,103 @@ async function submitCreateInitialInput(
 
   terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
   await sleep(300);
-  const submit = await submitComposerForPanel(panel, 'auto');
+  return submitCreateComposerInput(panel, tool);
+}
+
+function shouldUseArgumentDelivery(tool: RunpaneResolvedTool): boolean {
+  return Boolean(
+    tool.initialInput &&
+    (tool.agent === 'claude' ||
+      (tool.agent === 'codex' && !isSlashCommandInput(tool.initialInput))),
+  );
+}
+
+async function submitCreateComposerInput(
+  panel: ToolPanel,
+  tool: RunpaneResolvedTool,
+): Promise<RunpaneInitialInputDeliveryResult> {
+  const input = tool.initialInput ?? '';
+  const submit = resolveComposerSubmit('auto', tool.agent);
+  const nextCommand = panelScreenCommand(panel.id);
+  let lastVerdict: ReturnType<typeof assessComposerEvidence> = 'unknown';
+  let attempts = 0;
+
+  for (let attempt = 1; attempt <= MAX_CREATE_SUBMIT_ATTEMPTS; attempt += 1) {
+    attempts = attempt;
+    const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    terminalPanelManager.writeToTerminal(panel.id, submit.input);
+    const attemptStartedAt = Date.now();
+    let retryConfirmed = false;
+
+    while (Date.now() - attemptStartedAt <= DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS) {
+      await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
+      const afterScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+      lastVerdict = assessComposerEvidence({
+        beforeText: beforeScreen.text,
+        afterText: afterScreen.text,
+        stagedText: input,
+      });
+
+      if (lastVerdict === 'cleared' && afterScreen.state.activityStatus === 'active') {
+        return {
+          delivered: true,
+          submitted: true,
+          inputBytes: Buffer.byteLength(input, 'utf8'),
+          strategy: submit.strategy,
+          sequenceName: submit.sequenceName,
+          verifiedSubmitted: true,
+          staged: false,
+          attempts,
+          sentAt: new Date().toISOString(),
+          nextCommand,
+        };
+      }
+
+      if (lastVerdict !== 'staged') {
+        continue;
+      }
+
+      await sleep(CREATE_SUBMIT_CONFIRMATION_DELAY_MS);
+      const confirmationScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+      const confirmationVerdict = assessComposerEvidence({
+        beforeText: beforeScreen.text,
+        afterText: confirmationScreen.text,
+        stagedText: input,
+      });
+      const unchangedSinceFirstSample = assessComposerEvidence({
+        beforeText: afterScreen.text,
+        afterText: confirmationScreen.text,
+        stagedText: input,
+      }) === 'staged';
+      lastVerdict = confirmationVerdict;
+
+      if (confirmationVerdict === 'staged' && unchangedSinceFirstSample) {
+        retryConfirmed = true;
+        break;
+      }
+    }
+
+    if (!retryConfirmed || attempt === MAX_CREATE_SUBMIT_ATTEMPTS) {
+      break;
+    }
+  }
 
   return {
     delivered: true,
-    submitted: submit.ok && submit.verifiedSubmitted,
-    inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
+    submitted: false,
+    inputBytes: Buffer.byteLength(input, 'utf8'),
     strategy: submit.strategy,
     sequenceName: submit.sequenceName,
-    verifiedSubmitted: submit.verifiedSubmitted,
-    sentAt: submit.sentAt,
-    blocked: submit.blocked,
-    nextCommand: submit.nextCommand,
+    verifiedSubmitted: false,
+    staged: lastVerdict === 'staged',
+    attempts,
+    sentAt: new Date().toISOString(),
+    blocked: {
+      kind: 'submission_unverified',
+      message: `Pane could not verify composer submission after ${attempts} attempt${attempts === 1 ? '' : 's'}; no further submit was sent without stable staged-text evidence.`,
+      suggestedCommand: nextCommand,
+    },
+    nextCommand,
   };
 }
 

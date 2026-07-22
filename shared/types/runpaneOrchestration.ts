@@ -111,7 +111,11 @@ export interface RunpaneErrorPayload {
 export type RunpanePanelActivityStatus = 'active' | 'idle';
 export type RunpanePanelScreenSource = 'alternateScreen' | 'scrollback' | 'persistedOutput' | 'empty';
 export type RunpanePanelWaitCondition = 'initialized' | 'ready' | 'idle' | 'text';
-export type RunpanePanelBlockerKind = 'codex-update' | 'agent-prompt' | 'unknown';
+export type RunpanePanelBlockerKind =
+  | 'codex-update'
+  | 'agent-prompt'
+  | 'submission_unverified'
+  | 'unknown';
 
 export interface RunpanePanelStateSummary {
   initialized: boolean;
@@ -147,6 +151,8 @@ export interface RunpaneInitialInputDeliveryResult {
   strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
   sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
   verifiedSubmitted?: boolean;
+  staged?: boolean;
+  attempts?: number;
   sentAt?: string;
   blocked?: RunpanePanelBlockedState;
   error?: RunpaneErrorPayload;

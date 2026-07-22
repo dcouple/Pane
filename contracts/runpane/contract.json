@@ -1455,11 +1455,13 @@
       "`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.",
       "`runpane panes list` lists Pane sessions, optionally scoped to one saved repository.",
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.",
+      "For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.",
       "`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.",
       "`runpane panels list` lists tool panels inside one Pane session.",
       "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
       "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
       "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.",
+      "If composer submission cannot be verified without risking a duplicate, the create item is unsuccessful with `initialInput.staged`, `initialInput.attempts`, `initialInput.blocked.kind: submission_unverified`, and an actionable `nextCommand`. The CLI-facing `--prompt` alias maps to this canonical `initialInput` result.",
       "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
@@ -2462,6 +2464,7 @@
                             "enum": [
                               "codex-update",
                               "agent-prompt",
+                              "submission_unverified",
                               "unknown"
                             ]
                           },
@@ -2514,6 +2517,12 @@
                       "verifiedSubmitted": {
                         "type": "boolean"
                       },
+                      "staged": {
+                        "type": "boolean"
+                      },
+                      "attempts": {
+                        "type": "number"
+                      },
                       "sentAt": {
                         "type": "string"
                       },
@@ -2528,6 +2537,7 @@
                             "enum": [
                               "codex-update",
                               "agent-prompt",
+                              "submission_unverified",
                               "unknown"
                             ]
                           },
@@ -3405,6 +3415,7 @@
               "enum": [
                 "codex-update",
                 "agent-prompt",
+                "submission_unverified",
                 "unknown"
               ]
             },
@@ -3690,6 +3701,7 @@
                   "enum": [
                     "codex-update",
                     "agent-prompt",
+                    "submission_unverified",
                     "unknown"
                   ]
                 },
@@ -3786,6 +3798,7 @@
               "enum": [
                 "codex-update",
                 "agent-prompt",
+                "submission_unverified",
                 "unknown"
               ]
             },
@@ -4483,6 +4496,8 @@
           "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; add `--pinned` when the Pane should remain in the UI's favorite/pin set.",
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
           "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
+          "With --wait-ready, verifiedSubmitted is earned from delivery evidence; routing initial input alone does not imply verified submission.",
+          "If initialInput.blocked.kind is submission_unverified, do not submit again automatically. Inspect initialInput.staged and attempts, then run nextCommand to resolve the ambiguous composer state.",
           "When the JSON result includes nextCommand, run it to validate that the terminal produced output before reporting success.",
           "Multi-pane requests are created sequentially today. The --concurrency flag is accepted for compatibility, but agents should not rely on parallel creation.",
           "For POSIX or WSL command chaining, use a custom terminal command like `bash -lc 'cmd1 && cmd2 && cmd3'`.",

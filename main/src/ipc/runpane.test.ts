@@ -7,7 +7,8 @@ import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { Project } from '../database/models';
 import type { Session } from '../types/session';
 import type { AppServices } from './types';
-import type { ToolPanel } from '../../../shared/types/panels';
+import type { CreatePanelRequest, ToolPanel } from '../../../shared/types/panels';
+import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration';
 
 vi.mock('../services/panelManager', () => ({
   panelManager: {
@@ -73,6 +74,26 @@ const terminalPanel: ToolPanel = {
     position: 0,
   },
 };
+
+function terminalSnapshot(
+  text: string,
+  activityStatus: 'active' | 'idle',
+  agentType: 'claude' | 'codex' = 'codex',
+) {
+  return {
+    initialized: true,
+    scrollbackBuffer: text,
+    screenText: text,
+    alternateScreenBuffer: '',
+    isAlternateScreen: false,
+    activityStatus,
+    lastActivityTime: '2026-01-01T00:02:00.000Z',
+    currentCommand: agentType,
+    isCliPanel: true,
+    isCliReady: true,
+    agentType,
+  } as const;
+}
 
 function createServices(overrides: Partial<AppServices> = {}): AppServices {
   return {
@@ -220,6 +241,7 @@ describe('runpane IPC handlers', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     while (tempDirs.length > 0) {
       const dir = tempDirs.pop();
       if (dir) {
@@ -521,6 +543,7 @@ describe('runpane IPC handlers', () => {
       initialState: {
         initialCommand: RUNPANE_CONTRACT.agentTemplates.claude.command,
         initialInput: '/review',
+        initialInputMode: 'argument',
         initialInputSubmitStrategy: 'enter',
         agentType: 'claude',
         isCliPanel: true,
@@ -1455,66 +1478,35 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('auto-submits Claude initial input during wait-ready pane creation', async () => {
-    vi.mocked(panelManager.createPanel).mockResolvedValue({
+  it('reports earned Claude argument delivery during wait-ready pane creation', async () => {
+    const claudePanel = {
       id: 'panel-1',
       sessionId: session.id,
       type: 'terminal',
       title: 'Claude Code',
-      state: {},
+      state: {
+        customState: {
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+        },
+      },
       metadata: {},
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-    } as never);
-    vi.mocked(terminalPanelManager.getTerminalSnapshot)
-      .mockReturnValueOnce({
-        initialized: true,
-        scrollbackBuffer: 'claude ready\n',
-        alternateScreenBuffer: '',
-        isAlternateScreen: false,
-        activityStatus: 'idle',
-        lastActivityTime: '2026-01-01T00:02:00.000Z',
-        currentCommand: 'claude',
-        isCliPanel: true,
-        isCliReady: true,
-        agentType: 'claude',
-      })
-      .mockReturnValueOnce({
-        initialized: true,
-        scrollbackBuffer: 'claude ready\n',
-        alternateScreenBuffer: '',
-        isAlternateScreen: false,
-        activityStatus: 'idle',
-        lastActivityTime: '2026-01-01T00:02:00.000Z',
-        currentCommand: 'claude',
-        isCliPanel: true,
-        isCliReady: true,
-        agentType: 'claude',
-      })
-      .mockReturnValueOnce({
-        initialized: true,
-        scrollbackBuffer: '[Pasted Content 64 chars]\n',
-        alternateScreenBuffer: '',
-        isAlternateScreen: false,
-        activityStatus: 'idle',
-        lastActivityTime: '2026-01-01T00:02:01.000Z',
-        currentCommand: 'claude',
-        isCliPanel: true,
-        isCliReady: true,
-        agentType: 'claude',
-      })
-      .mockReturnValueOnce({
-        initialized: true,
-        scrollbackBuffer: 'working on task\n',
-        alternateScreenBuffer: '',
-        isAlternateScreen: false,
-        activityStatus: 'active',
-        lastActivityTime: '2026-01-01T00:02:02.000Z',
-        currentCommand: 'claude',
-        isCliPanel: true,
-        isCliReady: false,
-        agentType: 'claude',
-      });
+    } as never;
+    vi.mocked(panelManager.createPanel).mockResolvedValue(claudePanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(claudePanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
+      initialized: true,
+      scrollbackBuffer: 'claude ready\n',
+      alternateScreenBuffer: '',
+      isAlternateScreen: false,
+      activityStatus: 'idle',
+      lastActivityTime: '2026-01-01T00:02:00.000Z',
+      currentCommand: 'claude',
+      isCliPanel: true,
+      isCliReady: true,
+      agentType: 'claude',
+    });
 
     const registry = createRegistry(createServices());
 
@@ -1535,13 +1527,12 @@ describe('runpane IPC handlers', () => {
       initialState: expect.objectContaining({
         initialCommand: RUNPANE_CONTRACT.agentTemplates.claude.command,
         initialInput: 'Please start issue 302',
-        initialInputSentAt: expect.any(String),
+        initialInputMode: 'argument',
         initialInputSubmitStrategy: 'enter',
         agentType: 'claude',
       }),
     }));
-    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, 'panel-1', 'Please start issue 302');
-    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, 'panel-1', '\r');
+    expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       ok: true,
       items: [{
@@ -1550,16 +1541,16 @@ describe('runpane IPC handlers', () => {
         initialInput: {
           delivered: true,
           submitted: true,
-          strategy: 'enter',
-          sequenceName: 'enter-cr',
+          strategy: 'argument',
+          sequenceName: 'argument',
           verifiedSubmitted: true,
         },
       }],
     });
   });
 
-  it('marks pane creation unsuccessful when Claude initial input submission is unverified', async () => {
-    vi.mocked(panelManager.createPanel).mockResolvedValue({
+  it('marks pane creation unsuccessful when Claude argument delivery is unverified', async () => {
+    const claudePanel = {
       id: 'panel-1',
       sessionId: session.id,
       type: 'terminal',
@@ -1568,7 +1559,9 @@ describe('runpane IPC handlers', () => {
       metadata: {},
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-    } as never);
+    } as never;
+    vi.mocked(panelManager.createPanel).mockResolvedValue(claudePanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(claudePanel);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue({
       initialized: true,
       scrollbackBuffer: '',
@@ -1597,22 +1590,277 @@ describe('runpane IPC handlers', () => {
       }],
     }]);
 
-    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, 'panel-1', 'Please start issue 302');
-    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, 'panel-1', '\r');
+    expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       ok: false,
       items: [{
         ok: false,
         panelId: 'panel-1',
         initialInput: {
-          delivered: true,
           submitted: false,
-          strategy: 'enter',
-          sequenceName: 'enter-cr',
+          delivered: false,
+          strategy: 'argument',
+          sequenceName: 'argument',
           verifiedSubmitted: false,
         },
       }],
     });
+  });
+
+  it('retries a swallowed Codex slash command only after stable staged evidence', async () => {
+    vi.useFakeTimers();
+    const codexPanel = {
+      ...terminalPanel,
+      state: { isActive: false, customState: { agentType: 'codex', isCliPanel: true } },
+    };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('Working on TM-x\n›', 'active'));
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(panelManager.createPanel).toHaveBeenCalledWith(expect.objectContaining({
+      initialState: expect.objectContaining({
+        initialInput: '/do TM-x',
+        initialInputSentAt: expect.any(String),
+        initialInputSubmitStrategy: 'codex-ctrl-enter',
+      }),
+    }));
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledTimes(3);
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, codexPanel.id, '/do TM-x');
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(2, codexPanel.id, '\x1b[13;5u\r');
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(3, codexPanel.id, '\x1b[13;5u\r');
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        initialInput: {
+          submitted: true,
+          verifiedSubmitted: true,
+          staged: false,
+          attempts: 2,
+        },
+      }],
+    });
+  });
+
+  it('cancels retry when a staged frame transitions before confirmation', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› /frobnicate x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /frobnicate x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /frobnicate x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /frobnicate x', 'idle'))
+      .mockReturnValue(terminalSnapshot('You ran /frobnicate x\nWorking\n›', 'active'));
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/frobnicate x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledTimes(2);
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(1, codexPanel.id, '/frobnicate x');
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        initialInput: {
+          submitted: false,
+          verifiedSubmitted: false,
+          staged: expect.any(Boolean),
+          attempts: 1,
+          blocked: { kind: 'submission_unverified' },
+          nextCommand: `runpane panels screen --panel ${codexPanel.id} --limit 80 --json`,
+        },
+      }],
+    });
+  });
+
+  it('returns a bounded blocker after three confirmed staged submit attempts', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('› /do TM-x', 'idle'),
+    );
+    const startedAt = Date.now();
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(Date.now() - startedAt).toBeLessThanOrEqual(3 * (3_000 + 500));
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledTimes(4);
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          delivered: true,
+          submitted: false,
+          verifiedSubmitted: false,
+          staged: true,
+          attempts: 3,
+          blocked: { kind: 'submission_unverified' },
+          nextCommand: `runpane panels screen --panel ${codexPanel.id} --limit 80 --json`,
+        },
+      }],
+    });
+  });
+
+  it('never retries when the composer clears without activity', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValue(terminalSnapshot('›', 'idle'));
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      waitReady: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{ initialInput: { submitted: false, staged: false, attempts: 1 } }],
+    });
+  });
+
+  it('routes every agent, readiness, and input-shape combination consistently', async () => {
+    vi.useFakeTimers();
+    const toolKinds = ['claude', 'codex', 'custom'] as const;
+    const shapes = [
+      { name: 'slash', input: '/do TM-x' },
+      { name: 'prose', input: 'Please implement this' },
+      { name: 'multiline', input: 'First line\nSecond line' },
+    ] as const;
+
+    for (const toolKind of toolKinds) {
+      for (const waitReady of [false, true]) {
+        for (const shape of shapes) {
+          vi.mocked(panelManager.createPanel).mockReset();
+          vi.mocked(panelManager.getPanel).mockReset();
+          vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
+          vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
+          let createRequest: CreatePanelRequest | undefined;
+          let createdPanel: ToolPanel | undefined;
+          vi.mocked(panelManager.createPanel).mockImplementation(async (request) => {
+            createRequest = request;
+            const initialState = request.initialState ?? {};
+            createdPanel = {
+              id: 'panel-1',
+              sessionId: session.id,
+              type: 'terminal',
+              title: request.title,
+              state: {
+                isActive: false,
+                customState: {
+                  ...initialState,
+                  ...(initialState.initialInputMode === 'argument'
+                    ? { initialInputSentAt: '2026-01-01T00:02:00.000Z' }
+                    : {}),
+                },
+              },
+              metadata: {},
+            };
+            return createdPanel;
+          });
+          vi.mocked(panelManager.getPanel).mockImplementation(() => createdPanel);
+          let snapshotCalls = 0;
+          vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+            snapshotCalls += 1;
+            if (toolKind === 'custom') {
+              return {
+                ...terminalSnapshot('', 'idle'),
+                isCliPanel: false,
+                isCliReady: false,
+                agentType: undefined,
+                currentCommand: 'echo',
+              };
+            }
+            if (toolKind === 'codex' && shape.name === 'slash' && snapshotCalls >= 4) {
+              return terminalSnapshot('Working\n›', 'active');
+            }
+            return terminalSnapshot(
+              toolKind === 'codex' && shape.name === 'slash' ? `› ${shape.input}` : 'ready',
+              'idle',
+              toolKind,
+            );
+          });
+          const tool: RunpaneToolSpec = toolKind === 'custom'
+            ? { command: 'echo tool', initialInput: shape.input }
+            : { agent: toolKind, initialInput: shape.input };
+
+          const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+            repo: { id: project.id },
+            waitReady,
+            readyTimeoutMs: 100,
+            panes: [{ name: `${toolKind}-${shape.name}`, tool }],
+          }]);
+          await vi.runAllTimersAsync();
+          const result = await resultPromise;
+          const initialState = createRequest?.initialState;
+          const useArgument = toolKind === 'claude' || (toolKind === 'codex' && shape.name !== 'slash');
+          const premarkedComposer = waitReady && toolKind === 'codex' && shape.name === 'slash';
+
+          expect(initialState?.initialInputMode, `${toolKind}/${waitReady}/${shape.name} mode`).toBe(
+            useArgument ? 'argument' : undefined,
+          );
+          expect(initialState?.initialInputSubmitStrategy, `${toolKind}/${waitReady}/${shape.name} strategy`).toBe(
+            toolKind === 'codex' && shape.name === 'slash' ? 'codex-ctrl-enter' : 'enter',
+          );
+          expect(Boolean(initialState?.initialInputSentAt), `${toolKind}/${waitReady}/${shape.name} premark`).toBe(
+            premarkedComposer,
+          );
+          expect(Boolean(result.items[0]?.initialInput), `${toolKind}/${waitReady}/${shape.name} result`).toBe(
+            waitReady && toolKind !== 'custom',
+          );
+          if (waitReady && toolKind !== 'custom' && shape.name !== 'slash') {
+            expect(result.items[0], `${toolKind}/${waitReady}/${shape.name} verified result`).toMatchObject({
+              ok: true,
+              initialInput: {
+                verifiedSubmitted: true,
+              },
+            });
+          }
+        }
+      }
+    }
   });
 
   describe('runpane:panes:archive', () => {

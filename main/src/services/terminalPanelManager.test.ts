@@ -478,6 +478,70 @@ describe('TerminalPanelManager hidden output delivery', () => {
     });
   });
 
+  it('passes fresh Claude slash input as a quoted startup argument', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand(
+      '11111111-1111-4111-8111-111111111111',
+      'claude --dangerously-skip-permissions',
+      {
+        agentType: 'claude',
+        initialInputMode: 'argument',
+        initialInput: '/do TM-x',
+      },
+    );
+
+    expect(result).toMatchObject({
+      commandToRun: 'claude --dangerously-skip-permissions --session-id 11111111-1111-4111-8111-111111111111 "/do TM-x"',
+      isCliCommand: true,
+      customState: {
+        initialInputSentAt: expect.any(String),
+        initialInputError: undefined,
+      },
+    });
+  });
+
+  it('preserves multiline Claude input in the quoted startup argument', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+    const input = 'First line\nSecond line with $value';
+
+    const result = manager.resolveCliLaunchCommand(
+      '11111111-1111-4111-8111-111111111111',
+      'claude --dangerously-skip-permissions',
+      {
+        agentType: 'claude',
+        initialInputMode: 'argument',
+        initialInput: input,
+      },
+    );
+
+    expect(result.commandToRun).toBe(
+      'claude --dangerously-skip-permissions --session-id 11111111-1111-4111-8111-111111111111 "First line\nSecond line with \\$value"',
+    );
+    expect(result.customState.initialInputSentAt).toEqual(expect.any(String));
+  });
+
+  it('keeps resumed Claude input composer-bound', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand(
+      '11111111-1111-4111-8111-111111111111',
+      'claude --dangerously-skip-permissions',
+      {
+        agentType: 'claude',
+        hasClaudeSessionId: true,
+        agentSessionId: '22222222-2222-4222-8222-222222222222',
+        initialInputMode: 'argument',
+        initialInput: '/do TM-x',
+      },
+    );
+
+    expect(result.commandToRun).toBe(
+      'claude --resume 22222222-2222-4222-8222-222222222222 --dangerously-skip-permissions',
+    );
+    expect(result.customState).not.toHaveProperty('initialInputSentAt');
+  });
+
   it('keeps Enter as the default initial input submit strategy', async () => {
     const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
     const terminal = createTerminal();

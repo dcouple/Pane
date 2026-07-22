@@ -92,6 +92,8 @@ interface InitialInputDeliveryResult {
   strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
   sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
   verifiedSubmitted?: boolean;
+  staged?: boolean;
+  attempts?: number;
   sentAt?: string;
   blocked?: PanelBlockedState;
   error?: { message: string; code?: string };
@@ -261,7 +263,7 @@ interface PanelStateSummary {
 }
 
 interface PanelBlockedState {
-  kind: 'codex-update' | 'agent-prompt' | 'unknown';
+  kind: 'codex-update' | 'agent-prompt' | 'submission_unverified' | 'unknown';
   message: string;
   suggestedCommand?: string;
 }
@@ -1122,7 +1124,9 @@ function printInitialInputDelivery(initialInput: InitialInputDeliveryResult | un
       ? 'delivered but not verified submitted'
       : 'not delivered';
   const strategy = initialInput.sequenceName ? ` via ${initialInput.sequenceName}` : '';
-  console.log(`${prefix}Initial input: ${status}${strategy}`);
+  const attempts = initialInput.attempts === undefined ? '' : ` after ${initialInput.attempts} attempt${initialInput.attempts === 1 ? '' : 's'}`;
+  const staged = initialInput.staged === undefined ? '' : `; staged: ${initialInput.staged ? 'yes' : 'no'}`;
+  console.log(`${prefix}Initial input: ${status}${strategy}${attempts}${staged}`);
   if (initialInput.blocked) {
     console.log(`${prefix}Initial input blocked: ${initialInput.blocked.message}`);
   }
