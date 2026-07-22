@@ -543,7 +543,8 @@ export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
   if (parsed.json) {
     printJson(result);
   } else {
-    const verb = result.ok ? 'Submitted' : 'Could not verify';
+    const succeeded = result.ok && result.verifiedSubmitted !== false;
+    const verb = succeeded ? 'Submitted' : 'Could not verify';
     const verified = result.verifiedSubmitted === undefined ? '' : (result.verifiedSubmitted ? ' verified' : ' unverified');
     console.log(`${verb} ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} with Enter to panel ${result.panelId}.${verified}`);
     if (result.blocked) {
@@ -554,7 +555,7 @@ export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
     }
   }
 
-  return result.ok ? 0 : 1;
+  return result.ok && result.verifiedSubmitted !== false ? 0 : 1;
 }
 
 export async function runPanelsSubmitComposer(parsed: ParsedArgs): Promise<number> {

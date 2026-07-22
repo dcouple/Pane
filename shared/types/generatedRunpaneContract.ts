@@ -2505,7 +2505,7 @@ export const RUNPANE_CONTRACT = {
       ],
       "properties": {
         "ok": {
-          "type": "boolean"
+          "const": true
         },
         "repo": {
           "$ref": "#/jsonSchemas/repoListResult/properties/repos/items"
@@ -3139,7 +3139,7 @@ export const RUNPANE_CONTRACT = {
       ],
       "properties": {
         "ok": {
-          "const": true
+          "type": "boolean"
         },
         "panelId": {
           "type": "string"

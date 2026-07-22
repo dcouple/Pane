@@ -197,7 +197,8 @@ def run_panels_submit(parsed: Any) -> int:
     else:
         input_bytes = result.get("inputBytes", 0)
         suffix = "" if input_bytes == 1 else "s"
-        verb = "Submitted" if result.get("ok") else "Could not verify"
+        succeeded = bool(result.get("ok")) and result.get("verifiedSubmitted") is not False
+        verb = "Submitted" if succeeded else "Could not verify"
         verified = ""
         if "verifiedSubmitted" in result:
             verified = " verified" if result.get("verifiedSubmitted") else " unverified"
@@ -206,7 +207,7 @@ def run_panels_submit(parsed: Any) -> int:
             print(f"Blocked: {result['blocked'].get('message')}")
         if result.get("nextCommand"):
             print(f"Next: {result.get('nextCommand')}")
-    return 0 if result.get("ok") else 1
+    return 0 if result.get("ok") and result.get("verifiedSubmitted") is not False else 1
 
 
 def run_panels_submit_composer(parsed: Any) -> int:
