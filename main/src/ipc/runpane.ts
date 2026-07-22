@@ -474,11 +474,16 @@ export function registerRunpaneHandlers(
   });
 
   commandRegistry.register('runpane:panels:submit', async (request: unknown): Promise<RunpanePanelSubmitResult> => {
-    return withRunpaneAction(services, 'panels:submit', {}, () => {
+    return withRunpaneAction(services, 'panels:submit', {}, async () => {
       const normalized = parsePanelSubmitRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
       if (!terminalPanelManager.isTerminalInitialized(panel.id)) {
         throw new Error(`Terminal panel ${panel.id} is not initialized`);
+      }
+
+      const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+      if (beforeScreen.state.agentType === 'claude') {
+        return submitTextThroughClaudeComposer(panel, normalized.input);
       }
 
       const input = ensureSubmitEnter(normalized.input);
@@ -714,16 +719,14 @@ async function submitCreateInitialInput(
     };
   }
 
-  terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
-  await sleep(300);
-  const submit = await submitComposerForPanel(panel, 'auto');
+  const submit = await submitTextThroughClaudeComposer(panel, tool.initialInput);
 
   return {
     delivered: true,
-    submitted: submit.ok && submit.verifiedSubmitted,
+    submitted: submit.ok && Boolean(submit.verifiedSubmitted),
     inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
-    strategy: submit.strategy,
-    sequenceName: submit.sequenceName,
+    strategy: 'enter',
+    sequenceName: 'enter-cr',
     verifiedSubmitted: submit.verifiedSubmitted,
     sentAt: submit.sentAt,
     blocked: submit.blocked,
@@ -1063,16 +1066,20 @@ function detectPanelBlocker(
 }
 
 function ensureSubmitEnter(input: string): string {
+  return `${submitTextPayload(input)}\r`;
+}
+
+function submitTextPayload(input: string): string {
   if (input.endsWith('\r\n')) {
-    return `${input.slice(0, -2)}\r`;
+    return input.slice(0, -2);
   }
   if (input.endsWith('\r')) {
-    return input;
+    return input.slice(0, -1);
   }
   if (input.endsWith('\n')) {
-    return `${input.slice(0, -1)}\r`;
+    return input.slice(0, -1);
   }
-  return `${input}\r`;
+  return input;
 }
 
 function resolveComposerSubmit(
@@ -1095,6 +1102,30 @@ function resolveComposerSubmit(
     strategy: 'enter',
     sequenceName: 'enter-cr',
     input: '\r',
+  };
+}
+
+async function submitTextThroughClaudeComposer(
+  panel: ToolPanel,
+  text: string,
+): Promise<RunpanePanelSubmitResult> {
+  const payload = submitTextPayload(text);
+  terminalPanelManager.writeToTerminal(panel.id, payload);
+  await sleep(300);
+  const submit = await submitComposerForPanel(panel, 'auto');
+
+  return {
+    ok: submit.ok,
+    panelId: panel.id,
+    paneId: panel.sessionId,
+    inputBytes: Buffer.byteLength(payload, 'utf8') + Buffer.byteLength('\r', 'utf8'),
+    enter: 'cr',
+    strategy: 'enter',
+    sequenceName: 'enter-cr',
+    verifiedSubmitted: submit.verifiedSubmitted,
+    sentAt: submit.sentAt,
+    blocked: submit.blocked,
+    nextCommand: submit.nextCommand,
   };
 }
 

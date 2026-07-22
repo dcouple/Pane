@@ -274,11 +274,15 @@ interface PanelScreenResult {
 }
 
 interface PanelSubmitResult {
-  ok: true;
+  ok: boolean;
   panelId: string;
   paneId?: string;
   inputBytes: number;
   enter: 'cr';
+  strategy?: 'enter';
+  sequenceName?: 'enter-cr';
+  verifiedSubmitted?: boolean;
+  blocked?: PanelBlockedState;
   sentAt: string;
   nextCommand?: string;
 }
@@ -539,13 +543,19 @@ export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
   if (parsed.json) {
     printJson(result);
   } else {
-    console.log(`Submitted ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} with Enter to panel ${result.panelId}.`);
+    const succeeded = result.ok && result.verifiedSubmitted !== false;
+    const verb = succeeded ? 'Submitted' : 'Could not verify';
+    const verified = result.verifiedSubmitted === undefined ? '' : (result.verifiedSubmitted ? ' verified' : ' unverified');
+    console.log(`${verb} ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} with Enter to panel ${result.panelId}.${verified}`);
+    if (result.blocked) {
+      console.log(`Blocked: ${result.blocked.message}`);
+    }
     if (result.nextCommand) {
       console.log(`Next: ${result.nextCommand}`);
     }
   }
 
-  return 0;
+  return result.ok && result.verifiedSubmitted !== false ? 0 : 1;
 }
 
 export async function runPanelsSubmitComposer(parsed: ParsedArgs): Promise<number> {

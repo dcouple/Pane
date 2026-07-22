@@ -377,11 +377,15 @@ export interface RunpanePanelSubmitRequest {
 }
 
 export interface RunpanePanelSubmitResult {
-  ok: true;
+  ok: boolean;
   panelId: string;
   paneId?: string;
   inputBytes: number;
   enter: 'cr';
+  strategy?: 'enter';
+  sequenceName?: 'enter-cr';
+  verifiedSubmitted?: boolean;
+  blocked?: RunpanePanelBlockedState;
   sentAt: string;
   nextCommand?: string;
 }

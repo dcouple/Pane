@@ -3139,7 +3139,7 @@ export const RUNPANE_CONTRACT = {
       ],
       "properties": {
         "ok": {
-          "const": true
+          "type": "boolean"
         },
         "panelId": {
           "type": "string"
@@ -3152,6 +3152,38 @@ export const RUNPANE_CONTRACT = {
         },
         "enter": {
           "const": "cr"
+        },
+        "strategy": {
+          "const": "enter"
+        },
+        "sequenceName": {
+          "const": "enter-cr"
+        },
+        "verifiedSubmitted": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "object",
+          "required": [
+            "kind",
+            "message"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "codex-update",
+                "agent-prompt",
+                "unknown"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         },
         "sentAt": {
           "type": "string"
@@ -3540,6 +3572,87 @@ export const RUNPANE_CONTRACT = {
                   "type": "string"
                 },
                 "suggestedCommand": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "nextCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        "initialInput": {
+          "type": "object",
+          "required": [
+            "delivered",
+            "submitted",
+            "inputBytes"
+          ],
+          "properties": {
+            "delivered": {
+              "type": "boolean"
+            },
+            "submitted": {
+              "type": "boolean"
+            },
+            "inputBytes": {
+              "type": "number"
+            },
+            "strategy": {
+              "enum": [
+                "codex-ctrl-enter",
+                "enter",
+                "argument"
+              ]
+            },
+            "sequenceName": {
+              "enum": [
+                "codex-ctrl-enter-cr",
+                "enter-cr",
+                "argument"
+              ]
+            },
+            "verifiedSubmitted": {
+              "type": "boolean"
+            },
+            "sentAt": {
+              "type": "string"
+            },
+            "blocked": {
+              "type": "object",
+              "required": [
+                "kind",
+                "message"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "codex-update",
+                    "agent-prompt",
+                    "unknown"
+                  ]
+                },
+                "message": {
+                  "type": "string"
+                },
+                "suggestedCommand": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "error": {
+              "type": "object",
+              "required": [
+                "message"
+              ],
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "code": {
                   "type": "string"
                 }
               },
