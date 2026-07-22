@@ -55,6 +55,7 @@ type TerminalUnderTest = {
   commandHistory: string[];
   currentCommand: string;
   lastActivity: Date;
+  lastOutputAt?: Date;
   wslContext: null;
   flowControl: FlowControlRecord;
   outputBuffer: string;
@@ -98,6 +99,8 @@ type ResizeAccess = {
 type InitialInputAccess = {
   terminals: Map<string, TerminalUnderTest>;
   sendInitialInputOnce(panelId: string): void;
+  deliverPendingInitialInput(panelId: string): void;
+  getLastOutputAt(panelId: string): string | undefined;
 };
 
 type LaunchCommandAccess = {
@@ -453,6 +456,131 @@ describe('TerminalPanelManager hidden output delivery', () => {
         }),
       }),
     });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('does not treat input writes as output freshness', () => {
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess & TerminalPanelManager;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+
+    manager.writeToTerminal(terminal.panelId, 'typed input');
+
+    expect(terminal.pty.write).toHaveBeenCalledWith('typed input');
+    expect(manager.getLastOutputAt(terminal.panelId)).toBeUndefined();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('delivers pending ready initial input with the panel submit strategy', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+    vi.mocked(panelManager.getPanel).mockReturnValue({
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal',
+      title: 'Codex',
+      state: {
+        isActive: true,
+        customState: {
+          isCliReady: true,
+          initialInput: '/do TM-x',
+          initialInputSubmitStrategy: 'codex-ctrl-enter' as const,
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    });
+
+    manager.deliverPendingInitialInput(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).toHaveBeenCalledTimes(1);
+    expect(terminal.pty.write).toHaveBeenNthCalledWith(1, '/do TM-x');
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(terminal.pty.write).toHaveBeenCalledTimes(2);
+    expect(terminal.pty.write).toHaveBeenNthCalledWith(2, '\x1b[13;5u\r');
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('delivers after a premark clear when the cliReady path already skipped', async () => {
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+    const panel = {
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal' as const,
+      title: 'Codex',
+      state: {
+        isActive: true,
+        customState: {
+          isCliReady: true,
+          initialInput: '/do TM-x',
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+          initialInputSubmitStrategy: 'enter' as const,
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    };
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+
+    manager.sendInitialInputOnce(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).not.toHaveBeenCalled();
+    delete panel.state.customState.initialInputSentAt;
+
+    manager.deliverPendingInitialInput(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).toHaveBeenCalledTimes(1);
+    expect(terminal.pty.write).toHaveBeenCalledWith('/do TM-x\r');
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('delivers initial input exactly once when cliReady and explicit triggers race', async () => {
+    const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
+    const terminal = createTerminal();
+    manager.terminals.set(terminal.panelId, terminal);
+    const panel = {
+      id: terminal.panelId,
+      sessionId: terminal.sessionId,
+      type: 'terminal' as const,
+      title: 'Codex',
+      state: {
+        isActive: true,
+        customState: {
+          isCliReady: true,
+          initialInput: '/do TM-x',
+          initialInputSubmitStrategy: 'enter' as const,
+        },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    };
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+
+    manager.sendInitialInputOnce(terminal.panelId);
+    manager.deliverPendingInitialInput(terminal.panelId);
+    await flushPromises();
+
+    expect(terminal.pty.write).toHaveBeenCalledTimes(1);
+    expect(terminal.pty.write).toHaveBeenCalledWith('/do TM-x\r');
+    expect(panelManager.updatePanel).toHaveBeenCalledTimes(1);
     disposeFlowControlRecord(terminal.flowControl);
   });
 

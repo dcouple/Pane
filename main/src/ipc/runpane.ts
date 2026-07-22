@@ -761,6 +761,7 @@ async function submitCreateInitialInput(
 
   if (!readiness.ok) {
     await clearInitialInputSentPremark(panel);
+    terminalPanelManager.deliverPendingInitialInput(panel.id);
     return {
       delivered: false,
       submitted: false,
@@ -847,8 +848,8 @@ async function submitCreateComposerInput(
         continue;
       }
 
-      const afterScreenHasFreshActivity = panelStateHasActivityAfter(afterScreen.state, submitWriteStartedAt);
-      if (!afterScreenHasFreshActivity) {
+      const afterScreenHasFreshOutput = panelHasOutputAfter(panel.id, submitWriteStartedAt);
+      if (!afterScreenHasFreshOutput) {
         lastVerdict = 'unknown';
         continue;
       }
@@ -865,13 +866,10 @@ async function submitCreateComposerInput(
         afterText: confirmationScreen.text,
         stagedText: input,
       }) === 'staged';
-      const confirmationScreenHasFreshActivity = panelStateHasActivityAfter(
-        confirmationScreen.state,
-        submitWriteStartedAt,
-      );
+      const confirmationScreenHasFreshOutput = panelHasOutputAfter(panel.id, submitWriteStartedAt);
       lastVerdict = confirmationVerdict;
 
-      if (confirmationVerdict === 'staged' && unchangedSinceFirstSample && confirmationScreenHasFreshActivity) {
+      if (confirmationVerdict === 'staged' && unchangedSinceFirstSample && confirmationScreenHasFreshOutput) {
         retryConfirmed = true;
         break;
       }
@@ -901,12 +899,13 @@ async function submitCreateComposerInput(
   };
 }
 
-function panelStateHasActivityAfter(state: RunpanePanelStateSummary, timestampMs: number): boolean {
-  if (!state.lastActivity) {
+function panelHasOutputAfter(panelId: string, timestampMs: number): boolean {
+  const lastOutputAt = terminalPanelManager.getLastOutputAt(panelId);
+  if (!lastOutputAt) {
     return false;
   }
-  const lastActivityMs = Date.parse(state.lastActivity);
-  return Number.isFinite(lastActivityMs) && lastActivityMs > timestampMs;
+  const lastOutputMs = Date.parse(lastOutputAt);
+  return Number.isFinite(lastOutputMs) && lastOutputMs > timestampMs;
 }
 
 async function createPaneItem(

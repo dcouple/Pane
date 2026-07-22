@@ -27,6 +27,8 @@ vi.mock('../services/terminalPanelManager', () => ({
     waitForTerminalState: vi.fn(),
     getTerminalScrollback: vi.fn(),
     writeToTerminal: vi.fn(),
+    getLastOutputAt: vi.fn(),
+    deliverPendingInitialInput: vi.fn(),
   },
 }));
 
@@ -231,6 +233,8 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReset();
     vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
+    vi.mocked(terminalPanelManager.getLastOutputAt).mockReset();
+    vi.mocked(terminalPanelManager.deliverPendingInitialInput).mockReset();
 
     vi.mocked(panelManager.getPanel).mockImplementation((panelId: string) =>
       panelId === terminalPanel.id ? terminalPanel : undefined
@@ -1619,6 +1623,9 @@ describe('runpane IPC handlers', () => {
     };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getLastOutputAt)
+      .mockReturnValueOnce('2026-01-01T00:02:00.000Z')
+      .mockReturnValueOnce('2026-01-01T00:02:00.000Z');
     vi.mocked(terminalPanelManager.getTerminalSnapshot)
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
@@ -1668,6 +1675,7 @@ describe('runpane IPC handlers', () => {
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getLastOutputAt).mockReturnValue(undefined);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
       terminalSnapshot('› /do TM-x', 'idle', 'codex', '2026-01-01T00:01:59.000Z'),
     );
@@ -1743,6 +1751,9 @@ describe('runpane IPC handlers', () => {
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
     vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
     vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getLastOutputAt).mockImplementation(() =>
+      new Date(Date.now() + 1).toISOString()
+    );
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() =>
       terminalSnapshot('› /do TM-x', 'idle', 'codex', new Date(Date.now() + 1).toISOString()),
     );
@@ -1820,6 +1831,7 @@ describe('runpane IPC handlers', () => {
     }]);
 
     expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
+    expect(terminalPanelManager.deliverPendingInitialInput).toHaveBeenCalledWith(createdPanel.id);
     expect(panelManager.updatePanel).toHaveBeenCalledWith(createdPanel.id, {
       state: expect.objectContaining({
         customState: expect.not.objectContaining({
