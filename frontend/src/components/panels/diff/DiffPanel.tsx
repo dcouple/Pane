@@ -99,12 +99,6 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
     setReviewDefaultMode(mode);
   }, []);
 
-  useEffect(() => {
-    if (effectiveReviewMode !== reviewMode) {
-      setReviewModeState(effectiveReviewMode);
-    }
-  }, [effectiveReviewMode, reviewMode]);
-
   // Listen for file change events from other panels
   useEffect(() => {
     const handlePanelEvent = (event: CustomEvent) => {

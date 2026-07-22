@@ -10,6 +10,13 @@ describe('getEffectiveReviewMode', () => {
     expect(getEffectiveReviewMode('github', true)).toBe('github');
   });
 
+  it('restores GitHub mode when a PR URL becomes available later', () => {
+    const savedMode = 'github';
+
+    expect(getEffectiveReviewMode(savedMode, false)).toBe('local');
+    expect(getEffectiveReviewMode(savedMode, true)).toBe('github');
+  });
+
   it('keeps explicit local mode regardless of PR URL availability', () => {
     expect(getEffectiveReviewMode('local', false)).toBe('local');
     expect(getEffectiveReviewMode('local', true)).toBe('local');
