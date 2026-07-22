@@ -15,6 +15,10 @@ export function getReviewDefaultMode(): ReviewMode {
   return isReviewMode(stored) ? stored : 'github';
 }
 
+export function getEffectiveReviewMode(mode: ReviewMode, hasReviewUrl: boolean): ReviewMode {
+  return mode === 'github' && !hasReviewUrl ? 'local' : mode;
+}
+
 export function setReviewDefaultMode(mode: ReviewMode): void {
   window.localStorage.setItem(REVIEW_MODE_STORAGE_KEY, mode);
   window.dispatchEvent(new CustomEvent(REVIEW_MODE_CHANGED_EVENT, { detail: { mode } }));
