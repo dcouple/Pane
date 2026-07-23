@@ -52,6 +52,9 @@ interface PaneCreateRequest {
   noFocus?: boolean;
   focus?: boolean;
   source?: 'user' | 'agent';
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 interface PaneCreateItem {
@@ -702,8 +705,55 @@ export async function runPanelsEvents(parsed: ParsedArgs): Promise<number> {
   return 0;
 }
 
-export async function runPanelsWatch(parsed: ParsedArgs): Promise<number> {
+export async function runPanesStatus(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.paneId) throw new Error('runpane panes status requires --pane.');
+  const result = await invokeDaemon<{ ok: true; paneId: string; panels: Array<{ panelId: string; paneId: string; state: PanelStateSummary }>; cursor: string }>(
+    'runpane:panes:status',
+    [{ paneId: parsed.paneId, changedSince: parsed.changedSince }],
+    { paneDir: parsed.paneDir },
+  );
+  if (parsed.json) printJson(result);
+  else for (const panel of result.panels) console.log(`${panel.panelId}\t${panel.state.agentActivity ?? 'unknown'}`);
+  return 0;
+}
+
+export async function runPanesWatch(parsed: ParsedArgs): Promise<number> {
   const stream = await SemanticEventStream.open(parsed);
+  await stream.captureBaseline();
+  const scoped = await resolveMultiTargetPanels(parsed, parsed.includeFuturePanels === true, stream);
+  return runPanelsWatch(scoped, stream);
+}
+
+export async function runPanelsAwaitAny(parsed: ParsedArgs): Promise<number> {
+  const stream = await SemanticEventStream.open(parsed);
+  await stream.captureBaseline();
+  const scoped = await resolveMultiTargetPanels(parsed, false, stream);
+  return runPanelsAwait(scoped, stream);
+}
+
+async function resolveMultiTargetPanels(
+  parsed: ParsedArgs,
+  retainPaneTargets: boolean,
+  stream?: SemanticEventStream,
+): Promise<ParsedArgs> {
+  const panelIds = new Set(parsed.panelIds ?? []);
+  for (const paneId of parsed.paneIds ?? []) {
+    const result = stream
+      ? await stream.request<PanelListResult>('runpane:panels:list', [{ paneId }])
+      : await invokeDaemon<PanelListResult>('runpane:panels:list', [{ paneId }], { paneDir: parsed.paneDir });
+    for (const panel of result.panels) panelIds.add(panel.id);
+  }
+  return {
+    ...parsed,
+    panelId: undefined,
+    paneId: undefined,
+    panelIds: [...panelIds],
+    paneIds: retainPaneTargets ? [...(parsed.paneIds ?? [])] : [],
+  };
+}
+
+export async function runPanelsWatch(parsed: ParsedArgs, retainedStream?: SemanticEventStream): Promise<number> {
+  const stream = retainedStream ?? await SemanticEventStream.open(parsed);
   let transportFailed = false;
   let terminalErrorCode = 1;
   let stopped = false;
@@ -747,9 +797,9 @@ export async function runPanelsWatch(parsed: ParsedArgs): Promise<number> {
   return finish(transportFailed ? terminalErrorCode : 0);
 }
 
-export async function runPanelsAwait(parsed: ParsedArgs): Promise<number> {
-  if (!parsed.panelId || !parsed.eventSelector) throw new Error('runpane panels await requires --panel and --event.');
-  const stream = await SemanticEventStream.open(parsed);
+export async function runPanelsAwait(parsed: ParsedArgs, retainedStream?: SemanticEventStream): Promise<number> {
+  if ((!parsed.panelId && (parsed.panelIds?.length ?? 0) === 0) || !parsed.eventSelector) throw new Error('runpane panels await requires --panel and --event.');
+  const stream = retainedStream ?? await SemanticEventStream.open(parsed);
   let matched: { event: SemanticEvent; resolvedBy: 'event' | 'reconciliation' } | undefined;
   let transportError: Error | undefined;
   stream.onTransportError((error) => { transportError = error; });
@@ -770,16 +820,7 @@ export async function runPanelsAwait(parsed: ParsedArgs): Promise<number> {
     if (now >= nextHeartbeat) {
       try {
         await stream.replay('reconciliation');
-        if (!matched && isStateBackedSelector(parsed.eventSelector)) {
-          const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId: parsed.panelId }]);
-          const reconciledType = matchState(parsed.eventSelector, screen.state);
-          if (reconciledType) {
-            matched = {
-              resolvedBy: 'reconciliation',
-              event: syntheticEvent(parsed.panelId, screen.paneId, reconciledType, screen.state, stream.processedCursor),
-            };
-          }
-        }
+        if (!matched && isStateBackedSelector(parsed.eventSelector)) matched = await reconcileTargetStates(stream, parsed);
       } catch (error) {
         stream.close();
         return handleStreamError(error);
@@ -807,7 +848,8 @@ export async function runPanelsAwait(parsed: ParsedArgs): Promise<number> {
     return 0;
   }
   try {
-    const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId: parsed.panelId }]);
+    const targetPanelId = parsed.panelId ?? parsed.panelIds?.[0];
+    const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId: targetPanelId }]);
     stream.close();
     console.log(JSON.stringify({ ok: false, timedOut: true, state: screen.state }));
     return 2;
@@ -850,6 +892,13 @@ class SemanticEventStream {
   onTransportError(listener: (error: Error) => void): void { this.transportListener = listener; }
   noteEmitted(cursor: string): void { this.emittedCursor = cursor; }
   request<T>(channel: string, args: unknown[]): Promise<T> { return this.connection.request<T>(channel, args); }
+
+  async captureBaseline(): Promise<void> {
+    if (this.initialSince) return;
+    const response = await this.connection.request<EventsResponse>('runpane:panels:events', [{ since: this.initialSince }]);
+    if (!response.ok) throw new CursorExpiredError(response);
+    this.processedCursor = response.cursor;
+  }
 
   async replay(resolvedBy: 'event' | 'reconciliation'): Promise<void> {
     this.buffering = true;
@@ -903,9 +952,30 @@ function splitCursor(cursor: string): { epoch: string; n: number } {
 }
 function matchesParsedEvent(parsed: ParsedArgs, event: SemanticEvent, awaitMode: boolean): boolean {
   if (parsed.panelId && event.panelId !== parsed.panelId) return false;
+  const panelIds = parsed.panelIds ?? [];
+  const paneIds = parsed.paneIds ?? [];
+  const hasMultiTargets = panelIds.length > 0 || paneIds.length > 0;
+  const panelMatches = panelIds.includes(event.panelId);
+  const paneMatches = Boolean(event.paneId && paneIds.includes(event.paneId));
+  if (hasMultiTargets && !panelMatches && !paneMatches) return false;
   if (!parsed.eventSelector) return true;
   if (awaitMode && parsed.eventSelector === 'agent-idle') return ['agent_idle', 'input_required', 'blocked', 'panel_exited'].includes(event.type);
   return EVENT_SELECTOR_TYPES[parsed.eventSelector] === event.type;
+}
+async function reconcileTargetStates(
+  stream: SemanticEventStream,
+  parsed: ParsedArgs,
+): Promise<{ event: SemanticEvent; resolvedBy: 'reconciliation' } | undefined> {
+  const targets = parsed.panelId ? [parsed.panelId] : (parsed.panelIds ?? []);
+  for (const panelId of targets) {
+    const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId }]);
+    const reconciledType = matchState(parsed.eventSelector ?? '', screen.state);
+    if (reconciledType) return {
+      resolvedBy: 'reconciliation',
+      event: syntheticEvent(panelId, screen.paneId, reconciledType, screen.state, stream.processedCursor),
+    };
+  }
+  return undefined;
 }
 function isStateBackedSelector(selector: string): boolean {
   return ['terminal-ready', 'agent-active', 'agent-idle', 'input-required', 'blocked', 'unblocked', 'panel-exited'].includes(selector);
@@ -1060,6 +1130,9 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     noFocus: !parsed.focus && (parsed.noFocus || source === 'agent' || Boolean(parsed.agent)) ? true : undefined,
     focus: parsed.focus || undefined,
     source,
+    startAgent: parsed.startAgent || undefined,
+    waitActive: parsed.waitActive || undefined,
+    handleKnownInterstitials: parsed.handleKnownInterstitials === 'safe' ? 'safe' : undefined,
   };
 
   return request;

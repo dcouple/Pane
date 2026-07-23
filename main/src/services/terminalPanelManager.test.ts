@@ -358,6 +358,82 @@ describe('TerminalPanelManager semantic agent state', () => {
     disposeFlowControlRecord(terminal!.flowControl);
   });
 
+  it('MF-1: CLI-ready callback does not blindly write a premarked create initial input', async () => {
+    vi.useFakeTimers();
+    installRuntime(1_000);
+    const panel = createPanel({
+      initialCommand: 'codex',
+      initialInput: '/do TM-x',
+      initialInputSubmitStrategy: 'codex-ctrl-enter',
+      initialInputSentAt: '2026-01-01T00:02:00.000Z',
+      isCliPanel: true,
+      isCliReady: false,
+      agentType: 'codex',
+    });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const spawnedPty = createTerminal({ outputBuffer: '' }).pty;
+    ptySpawn.mockReturnValue(spawnedPty);
+
+    await manager.initializeTerminal(panel, process.cwd());
+    const terminal = manager.terminals.get(panel.id);
+    expect(terminal).toBeDefined();
+    terminal!.pty.emitData('$ ');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(terminal!.pty.write).toHaveBeenCalledWith('codex\r');
+    terminal!.pty.write.mockClear();
+
+    terminal!.pty.emitData('Do you trust this directory?\n1. Yes\n2. No\n');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await flushPromises();
+
+    expect(terminal!.pty.write).not.toHaveBeenCalledWith('/do TM-x');
+    expect(terminal!.pty.write).not.toHaveBeenCalledWith('\x1b[13;5u\r');
+    expect(terminal!.pty.write).not.toHaveBeenCalled();
+    disposeFlowControlRecord(terminal!.flowControl);
+  });
+
+  it('MF-7: delayed CLI-ready callback refuses RunPane create-owned initial input after readiness failure', async () => {
+    vi.useFakeTimers();
+    installRuntime(1_000);
+    const panel = createPanel({
+      initialCommand: 'codex',
+      initialInput: '/do TM-x',
+      initialInputSubmitStrategy: 'codex-ctrl-enter',
+      initialInputDeliveryOwner: 'runpane-create',
+      isCliPanel: true,
+      isCliReady: false,
+      agentType: 'codex',
+    });
+    vi.mocked(panelManager.getPanel).mockReturnValue(panel);
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined);
+    const manager = new TerminalPanelManager() as unknown as SemanticStateAccess;
+    const spawnedPty = createTerminal({ outputBuffer: '' }).pty;
+    ptySpawn.mockReturnValue(spawnedPty);
+
+    await manager.initializeTerminal(panel, process.cwd());
+    const terminal = manager.terminals.get(panel.id);
+    expect(terminal).toBeDefined();
+    terminal!.pty.emitData('$ ');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(terminal!.pty.write).toHaveBeenCalledWith('codex\r');
+    terminal!.pty.write.mockClear();
+
+    terminal!.pty.emitData('Do you trust this directory?\n1. Yes\n2. No\n');
+    await vi.advanceTimersByTimeAsync(300);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(500);
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await flushPromises();
+
+    expect(terminal!.pty.write).not.toHaveBeenCalledWith('/do TM-x');
+    expect(terminal!.pty.write).not.toHaveBeenCalledWith('\x1b[13;5u\r');
+    expect(terminal!.pty.write).not.toHaveBeenCalled();
+    disposeFlowControlRecord(terminal!.flowControl);
+  });
+
   it('AC4 persists exited activity without an intermediate semantic idle and preserves the legacy idle edge', () => {
     vi.useFakeTimers();
     const eventSink = installRuntime(5_000);

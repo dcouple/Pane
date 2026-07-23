@@ -317,6 +317,38 @@
       "--heartbeat-ms",
       "500",
       "--json"
+    ],
+    [
+      "panels",
+      "await-any",
+      "--panel",
+      "panel-1",
+      "--panel",
+      "panel-2",
+      "--pane",
+      "pane-1",
+      "--pane",
+      "pane-2",
+      "--event",
+      "agent-idle",
+      "--json"
+    ],
+    [
+      "panes",
+      "status",
+      "--pane",
+      "pane-1",
+      "--changed-since",
+      "epoch:4",
+      "--json"
+    ],
+    [
+      "panes",
+      "watch",
+      "--pane",
+      "pane-1",
+      "--include-future-panels",
+      "--jsonl"
     ]
   ],
   "help": {

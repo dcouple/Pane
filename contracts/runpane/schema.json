@@ -344,6 +344,9 @@
         },
         "description": {
           "type": "string"
+        },
+        "repeatable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -366,6 +369,8 @@
         "panes archive",
         "panes pin",
         "panes unpin",
+        "panes status",
+        "panes watch",
         "panels",
         "panels create",
         "panels list",
@@ -378,6 +383,7 @@
         "panels events",
         "panels watch",
         "panels await",
+        "panels await-any",
         "agent-context"
       ],
       "properties": {
@@ -426,6 +432,8 @@
         "panes unpin": {
           "$ref": "#/$defs/helpLines"
         },
+        "panes status": { "$ref": "#/$defs/helpLines" },
+        "panes watch": { "$ref": "#/$defs/helpLines" },
         "panels": {
           "$ref": "#/$defs/helpLines"
         },
@@ -462,6 +470,7 @@
         "panels await": {
           "$ref": "#/$defs/helpLines"
         },
+        "panels await-any": { "$ref": "#/$defs/helpLines" },
         "agent-context": {
           "$ref": "#/$defs/helpLines"
         }

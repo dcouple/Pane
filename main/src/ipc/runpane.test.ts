@@ -13,6 +13,7 @@ import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration
 const semanticEventAppend = vi.hoisted(() => vi.fn());
 const semanticEventReplay = vi.hoisted(() => vi.fn());
 const semanticCurrentCursor = vi.hoisted(() => vi.fn(() => 'epoch:0'));
+const semanticPanelIdsChangedSince = vi.hoisted(() => vi.fn());
 
 vi.mock('../services/panelManager', () => ({
   panelManager: {
@@ -34,11 +35,17 @@ vi.mock('../services/terminalPanelManager', () => ({
     getLastOutputAt: vi.fn(),
     getOutputGeneration: vi.fn(),
     deliverPendingInitialInput: vi.fn(),
+    getLastKnownBlocker: vi.fn(),
   },
 }));
 
 vi.mock('../core/runtime', () => ({
-  getRuntimeRunpaneEventLog: () => ({ append: semanticEventAppend, replaySince: semanticEventReplay, currentCursor: semanticCurrentCursor }),
+  getRuntimeRunpaneEventLog: () => ({
+    append: semanticEventAppend,
+    replaySince: semanticEventReplay,
+    currentCursor: semanticCurrentCursor,
+    panelIdsChangedSince: semanticPanelIdsChangedSince,
+  }),
 }));
 
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
@@ -239,6 +246,7 @@ describe('runpane IPC handlers', () => {
   beforeEach(() => {
     semanticEventAppend.mockReset();
     semanticEventReplay.mockReset();
+    semanticPanelIdsChangedSince.mockReset();
     semanticCurrentCursor.mockReturnValue('epoch:0');
     session.isFavorite = undefined;
     session.favoritePinnedAt = undefined;
@@ -254,7 +262,9 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReset();
     vi.mocked(terminalPanelManager.getOutputGeneration).mockReset();
     vi.mocked(terminalPanelManager.deliverPendingInitialInput).mockReset();
+    vi.mocked(terminalPanelManager.getLastKnownBlocker).mockReset();
     vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(0);
+    vi.mocked(terminalPanelManager.getLastKnownBlocker).mockReturnValue(undefined);
 
     vi.mocked(panelManager.getPanel).mockImplementation((panelId: string) =>
       panelId === terminalPanel.id ? terminalPanel : undefined
@@ -321,6 +331,48 @@ describe('runpane IPC handlers', () => {
     expect(result).toEqual({ ok: true, events: [event], cursor: 'epoch:2' });
     expect(JSON.stringify(result)).not.toContain('screen');
     expect(semanticEventAppend).not.toHaveBeenCalled();
+  });
+
+  it('phase3 AC3: panes status changed-since filters changed panels and takes cursor after state read', async () => {
+    const secondPanel: ToolPanel = {
+      ...terminalPanel,
+      id: 'panel-2',
+      title: 'Codex 2',
+    };
+    let stateWasRead = false;
+    vi.mocked(panelManager.getPanelsForSession).mockReturnValue([terminalPanel, secondPanel]);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation((panelId: string) => {
+      if (panelId === secondPanel.id) stateWasRead = true;
+      return terminalSnapshot(`${panelId} ready\n`, panelId === secondPanel.id ? 'idle' : 'active');
+    });
+    semanticPanelIdsChangedSince.mockImplementation(() => {
+      expect(stateWasRead).toBe(true);
+      return new Set([secondPanel.id]);
+    });
+    semanticCurrentCursor.mockImplementation(() => {
+      expect(stateWasRead).toBe(true);
+      return 'epoch:2';
+    });
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panes:status', [{
+      paneId: session.id,
+      changedSince: 'epoch:1',
+    }]);
+
+    expect(semanticPanelIdsChangedSince).toHaveBeenCalledWith('epoch:1');
+    expect(result).toMatchObject({
+      ok: true,
+      paneId: session.id,
+      cursor: 'epoch:2',
+      panels: [{
+        panelId: secondPanel.id,
+        paneId: session.id,
+        state: {
+          agentActivity: 'idle',
+        },
+      }],
+    });
   });
 
   it('lists saved Pane repositories with session counts', async () => {
@@ -586,6 +638,7 @@ describe('runpane IPC handlers', () => {
         initialInput: '/review',
         initialInputMode: 'argument',
         initialInputSubmitStrategy: 'enter',
+        initialInputDeliveryOwner: 'runpane-create',
         agentType: 'claude',
         isCliPanel: true,
       },
@@ -1306,6 +1359,7 @@ describe('runpane IPC handlers', () => {
         initialInput: '$discussion https://github.com/dcouple/Pane/issues/252',
         initialInputMode: 'argument',
         initialInputSubmitStrategy: 'enter',
+        initialInputDeliveryOwner: 'runpane-create',
         agentType: 'codex',
         isCliPanel: true,
       },
@@ -1665,6 +1719,159 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('phase4 AC1: high-level start ok includes verifiedSubmitted true and active agentActivity', async () => {
+    vi.mocked(terminalPanelManager.getOutputGeneration)
+      .mockReturnValueOnce(1)
+      .mockReturnValueOnce(2);
+    const claudePanel = {
+      id: 'panel-1',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Claude Code',
+      state: {
+        customState: {
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+        },
+      },
+      metadata: {},
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as never;
+    vi.mocked(panelManager.createPanel).mockResolvedValue(claudePanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(claudePanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('Claude is working\n', 'active', 'claude'),
+    );
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      waitActive: true,
+      readyTimeoutMs: 100,
+      panes: [{
+        name: 'issue-302',
+        tool: {
+          agent: 'claude',
+          initialInput: 'Please start issue 302',
+        },
+      }],
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        verifiedSubmitted: true,
+        agentActivity: 'active',
+        initialInput: {
+          submitted: true,
+          verifiedSubmitted: true,
+        },
+      }],
+    });
+    expect(terminalPanelManager.getOutputGeneration).toHaveBeenCalled();
+  });
+
+  it('MF-2: argument-delivery start blocks directory trust instead of treating active output as success', async () => {
+    const codexPanel = {
+      ...terminalPanel,
+      state: {
+        customState: {
+          agentType: 'codex',
+          isCliPanel: true,
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+        },
+      },
+    };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('Do you trust this directory?\n1. Yes\n2. No\n', 'active'),
+    );
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(2);
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{
+        name: 'issue-302',
+        tool: {
+          agent: 'codex',
+          initialInput: 'Please start issue 302',
+        },
+      }],
+    }]);
+
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', codexPanel, { paneId: session.id });
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        verifiedSubmitted: false,
+        agentActivity: 'active',
+        initialInput: {
+          delivered: true,
+          submitted: false,
+          verifiedSubmitted: false,
+          strategy: 'argument',
+          blocked: { kind: 'unknown', message: expect.stringContaining('Directory trust') },
+        },
+      }],
+    });
+    expect(semanticEventAppend).not.toHaveBeenCalledWith('prompt_submitted', expect.anything(), expect.anything());
+  });
+
+  it('MF-2: argument-delivery start reclassifies late trust prompt during active wait before prompt_submitted', async () => {
+    const codexPanel = {
+      ...terminalPanel,
+      state: {
+        customState: {
+          agentType: 'codex',
+          isCliPanel: true,
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+        },
+      },
+    };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration)
+      .mockReturnValueOnce(1)
+      .mockReturnValue(2);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('Codex starting\n', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('Codex starting\n', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('Codex starting\n', 'idle'))
+      .mockReturnValue(terminalSnapshot('Do you trust this directory?\n1. Yes\n2. No\n', 'active'));
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{
+        name: 'issue-302',
+        tool: {
+          agent: 'codex',
+          initialInput: 'Please start issue 302',
+        },
+      }],
+    }]);
+
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', codexPanel, { paneId: session.id });
+    expect(semanticEventAppend).not.toHaveBeenCalledWith('prompt_submitted', expect.anything(), expect.anything());
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          submitted: false,
+          verifiedSubmitted: false,
+          blocked: { kind: 'unknown', message: expect.stringContaining('Directory trust') },
+        },
+      }],
+    });
+  });
+
   it('marks pane creation unsuccessful when Claude argument delivery is unverified', async () => {
     const claudePanel = {
       id: 'panel-1',
@@ -1739,6 +1946,9 @@ describe('runpane IPC handlers', () => {
       .mockReturnValue(1);
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReturnValue('2026-01-01T00:01:59.300Z');
     vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
       .mockReturnValueOnce(terminalSnapshot('› /do TM-x', 'idle'))
@@ -1858,7 +2068,7 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('returns a bounded blocker after three confirmed staged submit attempts', async () => {
+  it('phase4 AC2: create returns submission_unverified with attempt count after bounded staged retries', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-01-01T00:01:59.000Z'));
     const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex' } } };
@@ -1908,7 +2118,313 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('clears the composer premark when wait-ready times out before staging initial input', async () => {
+  it('phase4 AC3: safe allowlisted interstitial is handled before the original prompt is submitted exactly once', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(0);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      if (!writes.includes('2\r')) {
+        return terminalSnapshot('Update available! 0.136.0 -> 0.141.0\n2. Skip\nPress enter to continue\n', 'idle');
+      }
+      if (!writes.includes('/do delete obsolete migration files')) {
+        return terminalSnapshot('›', 'idle');
+      }
+      if (!writes.includes('\x1b[13;5u\r')) {
+        return terminalSnapshot('› /do delete obsolete migration files', 'idle');
+      }
+      return terminalSnapshot('Working on cleanup\n›', 'active');
+    });
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      handleKnownInterstitials: 'safe',
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do delete obsolete migration files' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+
+    expect(writes.filter(input => input === '/do delete obsolete migration files')).toHaveLength(1);
+    expect(writes).toEqual(['2\r', '/do delete obsolete migration files', '\x1b[13;5u\r']);
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        initialInput: {
+          submitted: true,
+          verifiedSubmitted: true,
+          handledInterstitials: [{ kind: 'codex-update', response: '2' }],
+        },
+      }],
+    });
+  });
+
+  it('MF-6: staged-input exclusion preserves a separate real interstitial sharing the staged substring', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockReturnValue(1);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      if (!writes.includes('/permission')) {
+        return terminalSnapshot('›', 'idle');
+      }
+      return terminalSnapshot('Review /permission before continuing\n› /permission', 'idle');
+    });
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/permission' } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+
+    expect(writes.filter(input => input === '/permission')).toHaveLength(1);
+    expect(writes).not.toContain('\x1b[13;5u\r');
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', codexPanel, { paneId: session.id });
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        initialInput: {
+          submitted: false,
+          verifiedSubmitted: false,
+          blocked: { kind: 'unknown', message: expect.stringContaining('permission') },
+        },
+      }],
+    });
+  });
+
+  it('MF-9: multiline staged prompts with deny words are removed as one composer region before classification', async () => {
+    vi.useFakeTimers();
+    const initialInput = '/do\nDelete obsolete migration files';
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      return writes.includes('\x1b[13;5u\r') ? 1 : 0;
+    });
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      if (!writes.includes(initialInput)) {
+        return terminalSnapshot('›', 'idle');
+      }
+      if (!writes.includes('\x1b[13;5u\r')) {
+        return terminalSnapshot('› /do\nDelete obsolete migration files', 'idle');
+      }
+      return terminalSnapshot('Working on cleanup\n›', 'active');
+    });
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+
+    expect(writes.filter(input => input === initialInput)).toHaveLength(1);
+    expect(writes.filter(input => input === '\x1b[13;5u\r')).toHaveLength(1);
+    expect(semanticEventAppend).not.toHaveBeenCalledWith('input_required', expect.anything(), expect.anything());
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        initialInput: {
+          submitted: true,
+          verifiedSubmitted: true,
+        },
+      }],
+    });
+  });
+
+  it('MF-9: visually wrapped staged prompts with deny words are removed as one composer region before classification', async () => {
+    vi.useFakeTimers();
+    const initialInput = '/do Delete obsolete migration files';
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      return writes.includes('\x1b[13;5u\r') ? 1 : 0;
+    });
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      if (!writes.includes(initialInput)) {
+        return terminalSnapshot('›', 'idle');
+      }
+      if (!writes.includes('\x1b[13;5u\r')) {
+        return terminalSnapshot('› /do Delete obsolete\nmigration files', 'idle');
+      }
+      return terminalSnapshot('Working on cleanup\n›', 'active');
+    });
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+
+    expect(writes.filter(input => input === initialInput)).toHaveLength(1);
+    expect(writes.filter(input => input === '\x1b[13;5u\r')).toHaveLength(1);
+    expect(semanticEventAppend).not.toHaveBeenCalledWith('input_required', expect.anything(), expect.anything());
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{
+        ok: true,
+        initialInput: {
+          submitted: true,
+          verifiedSubmitted: true,
+        },
+      }],
+    });
+  });
+
+  it('MF-8: composer verification reclassifies a late directory-trust prompt before accepting cleared input', async () => {
+    vi.useFakeTimers();
+    const initialInput = '/do TM-x';
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getOutputGeneration).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      return writes.includes('\x1b[13;5u\r') ? 1 : 0;
+    });
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockImplementation(() => {
+      const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+      if (!writes.includes(initialInput)) {
+        return terminalSnapshot('›', 'idle');
+      }
+      if (!writes.includes('\x1b[13;5u\r')) {
+        return terminalSnapshot('› /do TM-x', 'idle');
+      }
+      return terminalSnapshot('Do you trust this directory?\n1. Yes\n2. No\n', 'active');
+    });
+
+    const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput } }],
+    }]);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+    const writes = vi.mocked(terminalPanelManager.writeToTerminal).mock.calls.map(call => call[1]);
+
+    expect(writes).toEqual([initialInput, '\x1b[13;5u\r']);
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', codexPanel, { paneId: session.id });
+    expect(semanticEventAppend).not.toHaveBeenCalledWith('prompt_submitted', expect.anything(), expect.anything());
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          submitted: false,
+          verifiedSubmitted: false,
+          blocked: { kind: 'unknown', message: expect.stringContaining('Directory trust') },
+        },
+      }],
+    });
+  });
+
+  it('MF-1: no-wait Codex slash create premarks input and routes trust screen through classifier without PTY write', async () => {
+    vi.useFakeTimers();
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockImplementation(async (request) => ({
+      ...codexPanel,
+      state: {
+        ...codexPanel.state,
+        customState: {
+          ...codexPanel.state.customState,
+          ...request.initialState,
+        },
+      },
+    }));
+    vi.mocked(panelManager.getPanel).mockImplementation(() => ({
+      ...codexPanel,
+      state: {
+        ...codexPanel.state,
+        customState: {
+          ...codexPanel.state.customState,
+          initialInput: '/do TM-x',
+          initialInputSentAt: '2026-01-01T00:02:00.000Z',
+          initialInputSubmitStrategy: 'codex-ctrl-enter',
+        },
+      },
+    }));
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('Do you trust this directory?\n1. Yes\n2. No\n', 'idle'),
+    );
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+    await vi.runAllTimersAsync();
+
+    expect(panelManager.createPanel).toHaveBeenCalledWith(expect.objectContaining({
+      initialState: expect.objectContaining({
+        initialInput: '/do TM-x',
+        initialInputSentAt: expect.any(String),
+      }),
+    }));
+    expect(result).toMatchObject({ ok: true, items: [{ ok: true, initialInput: undefined }] });
+    expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', expect.objectContaining({ id: codexPanel.id }), { paneId: session.id });
+  });
+
+  it('phase4 AC4: directory-trust interstitial with safe flag emits input_required and performs no PTY write', async () => {
+    const codexPanel = { ...terminalPanel, state: { customState: { agentType: 'codex', isCliPanel: true } } };
+    vi.mocked(panelManager.createPanel).mockResolvedValue(codexPanel);
+    vi.mocked(panelManager.getPanel).mockReturnValue(codexPanel);
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('Do you trust this directory?\n1. Yes\n2. No\n', 'idle'),
+    );
+
+    const result = await createRegistry(createServices()).invoke('runpane:panes:create', [{
+      repo: { id: project.id },
+      startAgent: true,
+      handleKnownInterstitials: 'safe',
+      readyTimeoutMs: 100,
+      panes: [{ name: 'issue-358', tool: { agent: 'codex', initialInput: '/do TM-x' } }],
+    }]);
+
+    expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
+    expect(semanticEventAppend).toHaveBeenCalledWith('input_required', codexPanel, { paneId: session.id });
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        initialInput: {
+          delivered: false,
+          submitted: false,
+          verifiedSubmitted: false,
+          blocked: {
+            kind: 'unknown',
+            message: expect.stringContaining('Directory trust'),
+            suggestedCommand: `runpane panels screen --panel ${codexPanel.id} --json`,
+          },
+        },
+      }],
+    });
+  });
+
+  it('MF-7: readiness failure preserves the RunPane create premark and owner marker', async () => {
     const createdPanel: ToolPanel = {
       ...terminalPanel,
       state: {
@@ -1952,14 +2468,15 @@ describe('runpane IPC handlers', () => {
     }]);
 
     expect(terminalPanelManager.writeToTerminal).not.toHaveBeenCalled();
-    expect(terminalPanelManager.deliverPendingInitialInput).toHaveBeenCalledWith(createdPanel.id);
-    expect(panelManager.updatePanel).toHaveBeenCalledWith(createdPanel.id, {
-      state: expect.objectContaining({
-        customState: expect.not.objectContaining({
-          initialInputSentAt: expect.any(String),
-        }),
+    expect(terminalPanelManager.deliverPendingInitialInput).not.toHaveBeenCalled();
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    expect(panelManager.createPanel).toHaveBeenCalledWith(expect.objectContaining({
+      initialState: expect.objectContaining({
+        initialInput: '/do TM-x',
+        initialInputDeliveryOwner: 'runpane-create',
+        initialInputSentAt: expect.any(String),
       }),
-    });
+    }));
     expect(result).toMatchObject({
       ok: false,
       items: [{
@@ -2076,7 +2593,7 @@ describe('runpane IPC handlers', () => {
           const result = await resultPromise;
           const initialState = createRequest?.initialState;
           const useArgument = toolKind === 'claude' || (toolKind === 'codex' && shape.name !== 'slash');
-          const premarkedComposer = waitReady && toolKind === 'codex' && shape.name === 'slash';
+          const premarkedComposer = toolKind === 'codex' && shape.name === 'slash';
 
           expect(initialState?.initialInputMode, `${toolKind}/${waitReady}/${shape.name} mode`).toBe(
             useArgument ? 'argument' : undefined,

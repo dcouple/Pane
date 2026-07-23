@@ -14,6 +14,7 @@ import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEv
 import { boundSanitizedLines, detectPanelBlocker } from '../services/runpaneBlockerDetection';
 import { getTerminalCustomState, panelStateSummary } from '../services/runpanePanelState';
 import { getRuntimeRunpaneEventLog } from '../core/runtime';
+import { classifyRunpaneInterstitial } from '../services/runpaneInterstitials';
 import type { ArchiveProgressManager, SerializedArchiveTask } from '../services/archiveProgressManager';
 import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
@@ -73,6 +74,8 @@ import type {
   RunpaneWorktreeCleanupState,
   RunpanePanelsEventsRequest,
   RunpanePanelsEventsResponse,
+  RunpanePaneStatusRequest,
+  RunpanePaneStatusResult,
 } from '../../../shared/types/runpaneOrchestration';
 import { RUNPANE_EVENT_SELECTOR_TO_TYPE } from '../../../shared/types/runpaneOrchestration';
 
@@ -83,6 +86,7 @@ const RUNPANE_CHANNELS = [
   'runpane:panes:list',
   'runpane:panes:create',
   'runpane:panes:pin',
+  'runpane:panes:status',
   'runpane:panes:archive',
   'runpane:panels:create',
   'runpane:panels:list',
@@ -165,6 +169,31 @@ export function registerRunpaneHandlers(
         (!eventType || event.type === eventType)
       ),
     };
+  });
+
+  commandRegistry.register('runpane:panes:status', (request: unknown): RunpanePaneStatusResult => {
+    const normalized = parsePaneStatusRequest(request);
+    const pane = resolvePane(sessionManager, normalized.paneId);
+    const log = getRuntimeRunpaneEventLog();
+    const panelStates = panelManager.getPanelsForSession(pane.id)
+      .filter(panel => panel.type === 'terminal')
+      .map(panel => ({
+        paneId: pane.id,
+        panelId: panel.id,
+        state: panelStateSummary(
+          panel,
+          terminalPanelManager.getTerminalSnapshot(panel.id),
+          undefined,
+          terminalPanelManager.getLastKnownBlocker(panel.id),
+        ),
+      }));
+    const cursor = log.currentCursor();
+    const changed = normalized.changedSince ? log.panelIdsChangedSince(normalized.changedSince) : null;
+    if (normalized.changedSince && changed === null) {
+      throw new Error('changedSince cursor is expired; take a fresh panes status snapshot.');
+    }
+    const panels = changed ? panelStates.filter(panel => changed.has(panel.panelId)) : panelStates;
+    return { ok: true, paneId: pane.id, panels, cursor };
   });
 
   commandRegistry.register('runpane:repos:list', async (): Promise<RunpaneRepoListResult> => {
@@ -328,6 +357,9 @@ export function registerRunpaneHandlers(
           waitReady: normalized.waitReady,
           readyTimeoutMs: normalized.readyTimeoutMs,
           activate: resolvePaneCreateActivation(normalized, item),
+          startAgent: normalized.startAgent,
+          waitActive: normalized.waitActive,
+          handleKnownInterstitials: normalized.handleKnownInterstitials,
         }),
       );
 
@@ -674,12 +706,17 @@ interface PaneCreateItemOptions {
   waitReady?: boolean;
   readyTimeoutMs?: number;
   activate?: boolean;
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 interface TerminalPanelCreateOptions {
   activate?: boolean;
   waitReady?: boolean;
   readyTimeoutMs?: number;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 interface TerminalPanelCreateResult {
@@ -696,7 +733,6 @@ async function createTerminalPanelForSession(
 ): Promise<TerminalPanelCreateResult> {
   const useArgumentDelivery = shouldUseArgumentDelivery(tool);
   const shouldCreateSubmitInitialInput = Boolean(
-    options.waitReady &&
     tool.agent &&
     tool.initialInput &&
     !useArgumentDelivery,
@@ -705,6 +741,7 @@ async function createTerminalPanelForSession(
     initialCommand: tool.command,
     initialInput: tool.initialInput,
     ...(useArgumentDelivery ? { initialInputMode: 'argument' as const } : {}),
+    ...(tool.initialInput && tool.agent ? { initialInputDeliveryOwner: 'runpane-create' as const } : {}),
     initialInputSubmitStrategy: tool.agent === 'codex' && !useArgumentDelivery
       ? 'codex-ctrl-enter'
       : 'enter',
@@ -733,6 +770,18 @@ async function createTerminalPanelForSession(
     context?.commandRunner.wslContext ?? null,
   );
 
+  const guard = new CreateInputGuard(panel, tool, options.handleKnownInterstitials);
+  if (options.handleKnownInterstitials && tool.initialInput && tool.agent && !shouldUseArgumentDelivery(tool)) {
+    const gate = await guard.ensureClear();
+    if (gate.blocked) {
+      return {
+        panel,
+        readiness: undefined,
+        initialInput: blockedInitialInput(tool.initialInput, gate.blocked, guard.handledInterstitials()),
+      };
+    }
+  }
+
   const readiness = options.waitReady
     ? toPaneReadiness(await waitForPanel(panel, {
       panelId: panel.id,
@@ -742,7 +791,15 @@ async function createTerminalPanelForSession(
     }))
     : undefined;
 
-  const initialInput = readiness ? await submitCreateInitialInput(panel, tool, readiness) : undefined;
+  if (!readiness && tool.initialInput && tool.agent && !useArgumentDelivery) {
+    void deliverCreateInitialInputWhenReady(panel, tool, options, guard).catch((error: unknown) => {
+      console.warn(`RunPane failed to deliver guarded initial input for panel ${panel.id}:`, error);
+    });
+  }
+
+  const initialInput = readiness
+    ? await submitCreateInitialInput(panel, tool, readiness, options, guard)
+    : undefined;
 
   return { panel, readiness, initialInput };
 }
@@ -751,6 +808,8 @@ async function submitCreateInitialInput(
   panel: ToolPanel,
   tool: RunpaneResolvedTool,
   readiness?: RunpanePaneReadiness,
+  options: Pick<TerminalPanelCreateOptions, 'waitActive' | 'readyTimeoutMs' | 'handleKnownInterstitials'> = {},
+  guard = new CreateInputGuard(panel, tool, options.handleKnownInterstitials),
 ): Promise<RunpaneInitialInputDeliveryResult | undefined> {
   if (!tool.initialInput) {
     return undefined;
@@ -764,20 +823,32 @@ async function submitCreateInitialInput(
     const sentAt = optionalString(customState.initialInputSentAt);
     const deliveryError = optionalString(customState.initialInputError);
     const delivered = Boolean(sentAt) && !deliveryError;
-    if (delivered && currentPanel) {
+    if (delivered) {
+      const gate = await guard.ensureClear();
+      if (gate.blocked) return blockedArgumentInitialInput(tool.initialInput, gate.blocked, guard.handledInterstitials(), sentAt);
+    }
+    const baselineGeneration = terminalPanelManager.getOutputGeneration(panel.id);
+    const activeResult = delivered && options.waitActive
+      ? await waitForAgentActiveAfter(panel, options, guard, baselineGeneration)
+      : { active: delivered };
+    if (activeResult.blocked) {
+      return blockedArgumentInitialInput(tool.initialInput, activeResult.blocked, guard.handledInterstitials(), sentAt);
+    }
+    const active = activeResult.active;
+    if (active && currentPanel) {
       getRuntimeRunpaneEventLog().append('prompt_submitted', currentPanel, { paneId: panel.sessionId });
     }
     return {
       delivered,
-      submitted: delivered,
+      submitted: active,
       inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
       strategy: 'argument',
       sequenceName: 'argument',
-      verifiedSubmitted: delivered,
+      verifiedSubmitted: active,
       sentAt,
-      ...(delivered ? {} : {
+      ...(active ? {} : {
         error: {
-          message: deliveryError ?? 'Initial input was not attached to the agent launch command.',
+          message: deliveryError ?? (delivered ? 'Initial input was attached, but agent activity did not begin.' : 'Initial input was not attached to the agent launch command.'),
         },
       }),
       nextCommand: readiness?.nextCommand ?? panelWaitCommand(panel.id),
@@ -788,40 +859,203 @@ async function submitCreateInitialInput(
     return undefined;
   }
 
-  if (!readiness.ok) {
-    await clearInitialInputSentPremark(panel);
-    terminalPanelManager.deliverPendingInitialInput(panel.id);
+  let effectiveReadiness = readiness;
+  if (!effectiveReadiness.ok && options.handleKnownInterstitials) {
+    const gate = await guard.ensureClear();
+    if (gate.blocked) return blockedInitialInput(tool.initialInput, gate.blocked, guard.handledInterstitials());
+    effectiveReadiness = toPaneReadiness(await waitForPanel(panel, {
+      panelId: panel.id,
+      condition: 'ready',
+      timeoutMs: options.readyTimeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS,
+      intervalMs: DEFAULT_PANEL_WAIT_INTERVAL_MS,
+    }));
+  }
+
+  if (!effectiveReadiness.ok) {
     return {
       delivered: false,
       submitted: false,
       inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
       error: { message: 'Initial input was not sent because the terminal panel did not become ready.' },
-      nextCommand: readiness.nextCommand ?? panelWaitCommand(panel.id),
+      nextCommand: effectiveReadiness.nextCommand ?? panelWaitCommand(panel.id),
     };
   }
 
-  terminalPanelManager.writeToTerminal(panel.id, tool.initialInput);
+  const stage = await guard.write(tool.initialInput);
+  if (stage.blocked) return blockedInitialInput(tool.initialInput, stage.blocked, guard.handledInterstitials());
   getRuntimeRunpaneEventLog().append('prompt_staged', panel, { paneId: panel.sessionId });
   await sleep(300);
-  return submitCreateComposerInput(panel, tool);
+  return submitCreateComposerInput(panel, tool, guard);
 }
 
-async function clearInitialInputSentPremark(panel: ToolPanel): Promise<void> {
-  const currentPanel = panelManager.getPanel(panel.id) ?? panel;
-  const state = currentPanel.state ?? {};
-  const customState = isRecord(state.customState) ? state.customState : {};
-  if (!Object.prototype.hasOwnProperty.call(customState, 'initialInputSentAt')) {
-    return;
+async function deliverCreateInitialInputWhenReady(
+  panel: ToolPanel,
+  tool: RunpaneResolvedTool,
+  options: Pick<TerminalPanelCreateOptions, 'waitActive' | 'readyTimeoutMs' | 'handleKnownInterstitials'>,
+  guard: CreateInputGuard,
+): Promise<void> {
+  const readiness = toPaneReadiness(await waitForPanel(panel, {
+    panelId: panel.id,
+    condition: 'ready',
+    timeoutMs: options.readyTimeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS,
+    intervalMs: DEFAULT_PANEL_WAIT_INTERVAL_MS,
+  }));
+  await submitCreateInitialInput(panel, tool, readiness, options, guard);
+}
+
+async function waitForAgentActiveAfter(
+  panel: ToolPanel,
+  options: Pick<TerminalPanelCreateOptions, 'readyTimeoutMs' | 'handleKnownInterstitials'>,
+  guard: CreateInputGuard,
+  baselineGeneration: number,
+): Promise<{ active: boolean; blocked?: RunpanePanelBlockedState }> {
+  const timeoutMs = options.readyTimeoutMs ?? DEFAULT_PANEL_WAIT_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const current = panelManager.getPanel(panel.id) ?? panel;
+    const screen = await buildPanelScreenResult(current, DEFAULT_PANEL_SCREEN_LIMIT);
+    const state = screen.state;
+    if (terminalPanelManager.getOutputGeneration(panel.id) > baselineGeneration) {
+      const gate = await guard.ensureScreenClear(screen.text, current);
+      if (gate.blocked) return { active: false, blocked: gate.blocked };
+      if (state.agentActivity === 'active') return { active: true };
+    }
+    if (state.agentActivity === 'exited') return { active: false };
+    await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
+  }
+  return { active: false };
+}
+
+function classifyCreateInterstitial(text: string, tool: RunpaneResolvedTool, panelId: string): ReturnType<typeof classifyRunpaneInterstitial> {
+  return classifyRunpaneInterstitial(textWithoutKnownStagedInput(text, tool.initialInput), tool.agent, panelId);
+}
+
+class CreateInputGuard {
+  private readonly handledKinds = new Set<string>();
+
+  constructor(
+    private readonly panel: ToolPanel,
+    private readonly tool: RunpaneResolvedTool,
+    private readonly mode: 'safe' | undefined,
+  ) {}
+
+  handledInterstitials(): Array<{ kind: string; response: string }> {
+    return [...this.handledKinds].map(kind => ({ kind, response: '2' }));
   }
 
-  const nextCustomState = { ...customState };
-  delete nextCustomState.initialInputSentAt;
-  await panelManager.updatePanel(panel.id, {
-    state: {
-      ...state,
-      customState: nextCustomState,
-    },
+  async write(input: string, panel: ToolPanel = this.panel): Promise<{ blocked?: RunpanePanelBlockedState }> {
+    const gate = await this.ensureClear(panel);
+    if (gate.blocked) return gate;
+    terminalPanelManager.writeToTerminal(panel.id, input);
+    return {};
+  }
+
+  async ensureClear(panel: ToolPanel = this.panel): Promise<{ blocked?: RunpanePanelBlockedState }> {
+    const screen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    return this.ensureScreenClear(screen.text, panel);
+  }
+
+  async ensureScreenClear(text: string, panel: ToolPanel = this.panel): Promise<{ blocked?: RunpanePanelBlockedState }> {
+    const classification = classifyCreateInterstitial(text, this.tool, panel.id);
+    if (classification.disposition === 'clear') return {};
+    if (classification.disposition === 'allow' && this.mode === 'safe' && !this.handledKinds.has(classification.kind)) {
+      this.handledKinds.add(classification.kind);
+      terminalPanelManager.writeToTerminal(panel.id, `${classification.response}\r`);
+      const deadline = Date.now() + DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
+        const nextScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+        const next = classifyCreateInterstitial(nextScreen.text, this.tool, panel.id);
+        if (next.disposition !== 'allow') return this.ensureClear(panel);
+      }
+    }
+    const blocker = classification.disposition === 'allow'
+      ? { kind: 'codex-update' as const, message: 'The optional Codex update prompt requires opt-in safe handling.', suggestedCommand: panelScreenCommand(panel.id) }
+      : classification.blocker;
+    getRuntimeRunpaneEventLog().append('input_required', panel, { paneId: panel.sessionId });
+    return { blocked: blocker };
+  }
+}
+
+function textWithoutKnownStagedInput(text: string, stagedInput: string | undefined): string {
+  const trimmed = stagedInput?.trim();
+  if (!trimmed) return text;
+  const lines = text.split('\n');
+  const stagedLines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  if (stagedLines.length === 0) return text;
+  const stagedFlat = stagedLines.join(' ');
+  const start = lines.findIndex((line) => {
+    const strippedLine = stripComposerStagingPrefix(line);
+    return looksLikeComposerStagingLine(line) &&
+      (line.includes(stagedLines[0]) || (Boolean(strippedLine) && stagedFlat.includes(strippedLine)));
   });
+  if (start < 0) return text;
+  const nextLines = [...lines];
+  const compactStaged = stagedFlat.replace(/\s+/g, '');
+  let compactRemoved = '';
+  let stagedIndex = 0;
+  for (let index = start; index < nextLines.length; index += 1) {
+    const strippedLine = stripComposerStagingPrefix(nextLines[index]);
+    if (stagedIndex < stagedLines.length && nextLines[index].includes(stagedLines[stagedIndex])) {
+      nextLines[index] = nextLines[index].split(stagedLines[stagedIndex]).join('');
+      compactRemoved += stagedLines[stagedIndex].replace(/\s+/g, '');
+      stagedIndex += 1;
+      if (stagedIndex >= stagedLines.length) break;
+      continue;
+    }
+    if (strippedLine && stagedFlat.includes(strippedLine)) {
+      nextLines[index] = '';
+      compactRemoved += strippedLine.replace(/\s+/g, '');
+      if (compactRemoved.length >= compactStaged.length) break;
+      continue;
+    }
+    if (compactRemoved) break;
+  }
+  return nextLines.join('\n');
+}
+
+function stripComposerStagingPrefix(line: string): string {
+  return line.trim().replace(/^[›>]\s*/, '').trim();
+}
+
+function looksLikeComposerStagingLine(line: string): boolean {
+  return /^[›>]\s*/.test(line.trim()) ||
+    /(?:press\s+)?(?:ctrl|control)\+enter\s+to\s+submit/i.test(line) ||
+    /\[Pasted Content[^\]]*\]/i.test(line);
+}
+
+type HandledCreateInterstitial = { kind: string; response: string };
+
+function blockedInitialInput(input: string, blocked: RunpanePanelBlockedState, handledInterstitials: HandledCreateInterstitial[]): RunpaneInitialInputDeliveryResult {
+  return {
+    delivered: false,
+    submitted: false,
+    verifiedSubmitted: false,
+    inputBytes: Buffer.byteLength(input, 'utf8'),
+    blocked,
+    handledInterstitials,
+    nextCommand: blocked.suggestedCommand,
+  };
+}
+
+function blockedArgumentInitialInput(
+  input: string,
+  blocked: RunpanePanelBlockedState,
+  handledInterstitials: HandledCreateInterstitial[],
+  sentAt: string | undefined,
+): RunpaneInitialInputDeliveryResult {
+  return {
+    delivered: true,
+    submitted: false,
+    verifiedSubmitted: false,
+    inputBytes: Buffer.byteLength(input, 'utf8'),
+    strategy: 'argument',
+    sequenceName: 'argument',
+    sentAt,
+    blocked,
+    handledInterstitials,
+    nextCommand: blocked.suggestedCommand,
+  };
 }
 
 function shouldUseArgumentDelivery(tool: RunpaneResolvedTool): boolean {
@@ -835,24 +1069,31 @@ function shouldUseArgumentDelivery(tool: RunpaneResolvedTool): boolean {
 async function submitCreateComposerInput(
   panel: ToolPanel,
   tool: RunpaneResolvedTool,
+  guard: CreateInputGuard,
 ): Promise<RunpaneInitialInputDeliveryResult> {
   const input = tool.initialInput ?? '';
   const submit = resolveComposerSubmit('auto', tool.agent);
   const nextCommand = panelScreenCommand(panel.id);
   let lastVerdict: ReturnType<typeof assessComposerEvidence> = 'unknown';
+  let observedStaged = false;
   let attempts = 0;
 
   for (let attempt = 1; attempt <= MAX_CREATE_SUBMIT_ATTEMPTS; attempt += 1) {
     attempts = attempt;
     const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
     const outputGenerationBeforeSubmit = terminalPanelManager.getOutputGeneration(panel.id);
-    terminalPanelManager.writeToTerminal(panel.id, submit.input);
+    const submitWrite = await guard.write(submit.input);
+    if (submitWrite.blocked) return blockedInitialInput(input, submitWrite.blocked, guard.handledInterstitials());
     const attemptStartedAt = Date.now();
     let retryConfirmed = false;
 
     while (Date.now() - attemptStartedAt <= DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS) {
       await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
       const afterScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+      if (panelHasFreshOutputSince(panel.id, outputGenerationBeforeSubmit)) {
+        const gate = await guard.ensureScreenClear(afterScreen.text, panel);
+        if (gate.blocked) return blockedInitialInput(input, gate.blocked, guard.handledInterstitials());
+      }
       lastVerdict = assessComposerEvidence({
         beforeText: beforeScreen.text,
         afterText: afterScreen.text,
@@ -872,6 +1113,7 @@ async function submitCreateComposerInput(
           attempts,
           sentAt: new Date().toISOString(),
           nextCommand,
+          handledInterstitials: guard.handledInterstitials(),
         };
       }
 
@@ -880,6 +1122,7 @@ async function submitCreateComposerInput(
       }
 
       const afterScreenHasFreshOutput = panelHasFreshOutputSince(panel.id, outputGenerationBeforeSubmit);
+      observedStaged ||= lastVerdict === 'staged' && afterScreenHasFreshOutput;
       if (!afterScreenHasFreshOutput) {
         lastVerdict = 'unknown';
         continue;
@@ -899,6 +1142,7 @@ async function submitCreateComposerInput(
       }) === 'staged';
       const confirmationScreenHasFreshOutput = panelHasFreshOutputSince(panel.id, outputGenerationBeforeSubmit);
       lastVerdict = confirmationVerdict;
+      observedStaged ||= confirmationVerdict === 'staged' && confirmationScreenHasFreshOutput;
 
       if (confirmationVerdict === 'staged' && unchangedSinceFirstSample && confirmationScreenHasFreshOutput) {
         retryConfirmed = true;
@@ -918,7 +1162,7 @@ async function submitCreateComposerInput(
     strategy: submit.strategy,
     sequenceName: submit.sequenceName,
     verifiedSubmitted: false,
-    staged: lastVerdict === 'staged',
+    staged: observedStaged || lastVerdict === 'staged',
     attempts,
     sentAt: new Date().toISOString(),
     blocked: {
@@ -927,6 +1171,7 @@ async function submitCreateComposerInput(
       suggestedCommand: nextCommand,
     },
     nextCommand,
+    handledInterstitials: guard.handledInterstitials(),
   };
 }
 
@@ -965,11 +1210,16 @@ async function createPaneItem(
 
     const { panel, readiness, initialInput } = await createTerminalPanelForSession(services, session, tool, {
       activate: options.activate,
-      waitReady: options.waitReady,
+      waitReady: options.waitReady || options.startAgent || options.waitActive,
       readyTimeoutMs: options.readyTimeoutMs,
+      waitActive: options.waitActive || options.startAgent,
+      handleKnownInterstitials: options.handleKnownInterstitials,
     });
 
-    const itemOk = Boolean((!readiness || readiness.ok) && (!initialInput || initialInput.submitted));
+    const state = panelStateSummary(panelManager.getPanel(panel.id) ?? panel, terminalPanelManager.getTerminalSnapshot(panel.id));
+    const verifiedSubmitted = initialInput?.verifiedSubmitted;
+    const itemOk = Boolean((!readiness || readiness.ok) && (!initialInput || initialInput.submitted)
+      && (!options.startAgent || (verifiedSubmitted === true && state.agentActivity === 'active')));
     return {
       ok: itemOk,
       index,
@@ -985,6 +1235,8 @@ async function createPaneItem(
       focused: Boolean(panel.state.isActive),
       readiness,
       initialInput,
+      verifiedSubmitted,
+      agentActivity: state.agentActivity,
     };
   } catch (error) {
     return createFailureItem(index, item, error);
@@ -1519,6 +1771,9 @@ function parsePaneCreateRequest(value: unknown): RunpanePaneCreateRequest {
     noFocus: typeof value.noFocus === 'boolean' ? value.noFocus : undefined,
     focus: typeof value.focus === 'boolean' ? value.focus : undefined,
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
+    startAgent: typeof value.startAgent === 'boolean' ? value.startAgent : undefined,
+    waitActive: typeof value.waitActive === 'boolean' ? value.waitActive : undefined,
+    handleKnownInterstitials: value.handleKnownInterstitials === 'safe' ? 'safe' : undefined,
   };
 }
 
@@ -1698,6 +1953,13 @@ function parsePanelsEventsRequest(value: unknown): RunpanePanelsEventsRequest {
     since: since || undefined,
     event: event as RunpanePanelsEventsRequest['event'],
   };
+}
+
+function parsePaneStatusRequest(value: unknown): RunpanePaneStatusRequest {
+  if (!isRecord(value)) throw new Error('Pane status request must be an object');
+  const paneId = optionalString(value.paneId)?.trim();
+  if (!paneId) throw new Error('Pane status request must include paneId');
+  return { paneId, changedSince: optionalString(value.changedSince) };
 }
 
 function parseAgentDoctorRequest(value: unknown): RunpaneAgentDoctorRequest {

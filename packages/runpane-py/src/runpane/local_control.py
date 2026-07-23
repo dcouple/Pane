@@ -286,6 +286,53 @@ def run_panels_events(parsed: Any) -> int:
     return 0
 
 
+def run_panes_status(parsed: Any) -> int:
+    if not parsed.pane_id:
+        raise ValueError("runpane panes status requires --pane.")
+    result = invoke_daemon("runpane:panes:status", [{"paneId": parsed.pane_id, "changedSince": parsed.changed_since}], pane_dir=parsed.pane_dir)
+    if parsed.json:
+        print_json(result)
+    else:
+        for panel in result.get("panels", []):
+            print(f"{panel.get('panelId')}\t{(panel.get('state') or {}).get('agentActivity', 'unknown')}")
+    return 0
+
+
+def _resolve_multi_target_panels(parsed: Any, retain_panes: bool, stream: Optional["EventStream"] = None) -> None:
+    panel_ids = set(parsed.panel_ids)
+    for pane_id in parsed.pane_ids:
+        if stream:
+            result = stream.connection.request("runpane:panels:list", [{"paneId": pane_id}])
+        else:
+            result = invoke_daemon("runpane:panels:list", [{"paneId": pane_id}], pane_dir=parsed.pane_dir)
+        panel_ids.update(panel.get("id") for panel in result.get("panels", []) if panel.get("id"))
+    parsed.panel_id = None
+    parsed.pane_id = None
+    parsed.panel_ids = list(panel_ids)
+    if not retain_panes:
+        parsed.pane_ids = []
+
+
+def run_panes_watch(parsed: Any) -> int:
+    stream = EventStream(parsed)
+    baseline_error = stream.capture_baseline()
+    if baseline_error is not None:
+        stream.close()
+        return baseline_error
+    _resolve_multi_target_panels(parsed, parsed.include_future_panels, stream)
+    return run_panels_watch(parsed, stream)
+
+
+def run_panels_await_any(parsed: Any) -> int:
+    stream = EventStream(parsed)
+    baseline_error = stream.capture_baseline()
+    if baseline_error is not None:
+        stream.close()
+        return baseline_error
+    _resolve_multi_target_panels(parsed, False, stream)
+    return run_panels_await(parsed, stream)
+
+
 class EventStream:
     def __init__(self, parsed: Any) -> None:
         self.connection = RetainedDaemonConnection(parsed.pane_dir)
@@ -321,9 +368,21 @@ class EventStream:
     def close(self) -> None:
         self.connection.close()
 
+    def capture_baseline(self) -> Optional[int]:
+        if self.initial_since:
+            return None
+        response = self.connection.request("runpane:panels:events", [{"since": self.initial_since}])
+        if not response.get("ok"):
+            print(json.dumps(response, separators=(",", ":")), file=sys.stderr)
+            return 3
+        cursor = response.get("cursor")
+        if cursor:
+            self.processed_cursor = cursor
+        return None
 
-def run_panels_watch(parsed: Any) -> int:
-    stream = EventStream(parsed)
+
+def run_panels_watch(parsed: Any, stream: Optional[EventStream] = None) -> int:
+    stream = stream or EventStream(parsed)
     stopped = False
     def stop(_signum: int, _frame: Any) -> None:
         nonlocal stopped
@@ -362,10 +421,10 @@ def run_panels_watch(parsed: Any) -> int:
         stream.close()
 
 
-def run_panels_await(parsed: Any) -> int:
-    if not parsed.panel_id or not parsed.event_selector:
+def run_panels_await(parsed: Any, stream: Optional[EventStream] = None) -> int:
+    if (not parsed.panel_id and not parsed.panel_ids) or not parsed.event_selector:
         raise ValueError("runpane panels await requires --panel and --event.")
-    stream = EventStream(parsed)
+    stream = stream or EventStream(parsed)
     match: Optional[Dict[str, Any]] = None
     resolved = "event"
     def emit(event: Dict[str, Any], resolved_by: str) -> None:
@@ -393,16 +452,18 @@ def run_panels_await(parsed: Any) -> int:
                 if code is not None:
                     return code
                 if match is None and is_state_backed(parsed.event_selector):
-                    screen = stream.connection.request("runpane:panels:screen", [{"panelId": parsed.panel_id}])
-                    event_type = match_state(parsed.event_selector, screen.get("state") or {})
-                    if event_type:
-                        match = {"id": stream.processed_cursor, "cursor": stream.processed_cursor, "type": event_type, "at": "", "paneId": screen.get("paneId"), "panelId": parsed.panel_id, "state": screen.get("state") or {}}
-                        resolved = "reconciliation"
+                    for panel_id in ([parsed.panel_id] if parsed.panel_id else parsed.panel_ids):
+                        screen = stream.connection.request("runpane:panels:screen", [{"panelId": panel_id}])
+                        event_type = match_state(parsed.event_selector, screen.get("state") or {})
+                        if event_type:
+                            match = {"id": stream.processed_cursor, "cursor": stream.processed_cursor, "type": event_type, "at": "", "paneId": screen.get("paneId"), "panelId": panel_id, "state": screen.get("state") or {}}
+                            resolved = "reconciliation"
+                            break
                 next_heartbeat += heartbeat
         if match is not None:
             print(json.dumps({"ok": True, "timedOut": False, "matchedEvent": match["type"], "resolvedBy": resolved, "event": match, "state": match["state"]}, separators=(",", ":")))
             return 0
-        screen = stream.connection.request("runpane:panels:screen", [{"panelId": parsed.panel_id}])
+        screen = stream.connection.request("runpane:panels:screen", [{"panelId": parsed.panel_id or parsed.panel_ids[0]}])
         print(json.dumps({"ok": False, "timedOut": True, "state": screen.get("state") or {}}, separators=(",", ":")))
         return 2
     finally:
@@ -422,6 +483,7 @@ def validate_event(event: Any) -> None:
         raise ValueError("Malformed semantic event envelope")
 def matches_event(parsed: Any, event: Dict[str, Any], await_mode: bool) -> bool:
     if parsed.panel_id and event.get("panelId") != parsed.panel_id: return False
+    if (parsed.panel_ids or parsed.pane_ids) and event.get("panelId") not in parsed.panel_ids and event.get("paneId") not in parsed.pane_ids: return False
     if not parsed.event_selector: return True
     if await_mode and parsed.event_selector == "agent-idle": return event.get("type") in {"agent_idle", "input_required", "blocked", "panel_exited"}
     return EVENT_TYPES.get(parsed.event_selector) == event.get("type")
@@ -547,6 +609,9 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
         **optional_value("noFocus", True if not parsed.focus and (parsed.no_focus or parsed.source == "agent" or bool(parsed.agent)) else None),
         **optional_value("focus", True if parsed.focus else None),
         **optional_value("source", parsed.source),
+        **optional_value("startAgent", True if parsed.start_agent else None),
+        **optional_value("waitActive", True if parsed.wait_active else None),
+        **optional_value("handleKnownInterstitials", parsed.handle_known_interstitials),
     }
 
 

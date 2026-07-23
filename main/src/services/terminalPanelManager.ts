@@ -360,7 +360,11 @@ export class TerminalPanelManager {
 
     const state = currentPanel.state;
     const customState = (state.customState || {}) as TerminalPanelState;
-    if (!customState.initialInput || customState.initialInputSentAt) {
+    if (
+      !customState.initialInput ||
+      customState.initialInputSentAt ||
+      customState.initialInputDeliveryOwner === 'runpane-create'
+    ) {
       return null;
     }
 

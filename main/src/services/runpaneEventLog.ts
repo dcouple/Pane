@@ -67,6 +67,11 @@ export class RunpaneEventLog {
     };
   }
 
+  panelIdsChangedSince(cursor: string): Set<string> | null {
+    const replay = this.replaySince(cursor);
+    return replay.ok ? new Set(replay.events.map(event => event.panelId)) : null;
+  }
+
   private parseCursor(cursor: string): { epoch: string; n: number } | null {
     const separator = cursor.lastIndexOf(':');
     if (separator <= 0) return null;

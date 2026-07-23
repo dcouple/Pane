@@ -145,6 +145,8 @@ function compareParserParity() {
       repo: parsed.repo ?? null,
       paneId: parsed.paneId ?? null,
       panelId: parsed.panelId ?? null,
+      paneIds: parsed.paneIds,
+      panelIds: parsed.panelIds,
       repoPath: parsed.repoPath ?? null,
       name: parsed.name ?? null,
       worktreeName: parsed.worktreeName ?? null,
@@ -169,6 +171,8 @@ function compareParserParity() {
       noFocus: parsed.noFocus ?? false,
       focus: parsed.focus ?? false,
       composerStrategy: parsed.composerStrategy ?? null,
+      changedSince: parsed.changedSince ?? null,
+      includeFuturePanels: parsed.includeFuturePanels ?? false,
       remoteSetupArgs: parsed.remoteSetupArgs
     };
   });
@@ -200,6 +204,8 @@ for args in samples:
         "repo": parsed.repo,
         "paneId": parsed.pane_id,
         "panelId": parsed.panel_id,
+        "paneIds": parsed.pane_ids,
+        "panelIds": parsed.panel_ids,
         "repoPath": parsed.repo_path,
         "name": parsed.name,
         "worktreeName": parsed.worktree_name,
@@ -224,6 +230,8 @@ for args in samples:
         "noFocus": parsed.no_focus,
         "focus": parsed.focus,
         "composerStrategy": parsed.composer_strategy,
+        "changedSince": parsed.changed_since,
+        "includeFuturePanels": parsed.include_future_panels,
         "remoteSetupArgs": parsed.remote_setup_args,
     })
 print(json.dumps(normalized))

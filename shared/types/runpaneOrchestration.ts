@@ -101,6 +101,9 @@ export interface RunpanePaneCreateRequest {
   noFocus?: boolean;
   focus?: boolean;
   source?: RunpanePanelCreateSource;
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 export interface RunpaneErrorPayload {
@@ -219,6 +222,24 @@ export interface RunpanePanelsAwaitTimeoutResult {
   state: RunpanePanelStateSummary;
 }
 
+export interface RunpanePaneStatusRequest {
+  paneId: string;
+  changedSince?: string;
+}
+
+export interface RunpanePaneStatusPanel {
+  paneId: string;
+  panelId: string;
+  state: RunpanePanelStateSummary;
+}
+
+export interface RunpanePaneStatusResult {
+  ok: true;
+  paneId: string;
+  panels: RunpanePaneStatusPanel[];
+  cursor: string;
+}
+
 export interface RunpanePaneReadiness {
   ok: boolean;
   condition: RunpanePanelWaitCondition;
@@ -243,6 +264,7 @@ export interface RunpaneInitialInputDeliveryResult {
   blocked?: RunpanePanelBlockedState;
   error?: RunpaneErrorPayload;
   nextCommand?: string;
+  handledInterstitials?: Array<{ kind: string; response: string }>;
 }
 
 export interface RunpanePaneCreateSuccessItem {
@@ -264,6 +286,8 @@ export interface RunpanePaneCreateSuccessItem {
   focused?: boolean;
   readiness?: RunpanePaneReadiness;
   initialInput?: RunpaneInitialInputDeliveryResult;
+  verifiedSubmitted?: boolean;
+  agentActivity?: RunpaneAgentActivity;
 }
 
 export interface RunpanePaneCreateFailureItem {
