@@ -23,6 +23,9 @@ const isValidTheme = (t: string): t is Theme => VALID_THEMES.includes(t as Theme
 interface ThemeContextType {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  // Read-only here: the Appearance settings toggle writes it through
+  // persistence.saveConfig, and it flows back via the config sync effect.
+  highContrast: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -36,6 +39,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return 'light-rounded';
   });
+  const [highContrast, setHighContrast] = useState<boolean>(() => localStorage.getItem('high-contrast') === 'true');
 
   // Sync theme from config when it loads
   useEffect(() => {
@@ -44,6 +48,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('theme', config.theme);
     }
   }, [config?.theme]);
+
+  // Sync high contrast from config when it loads
+  useEffect(() => {
+    if (typeof config?.highContrast === 'boolean') {
+      setHighContrast(config.highContrast);
+      localStorage.setItem('high-contrast', String(config.highContrast));
+    }
+  }, [config?.highContrast]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -57,9 +69,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.classList.add(...themeClasses);
     body.classList.add(...themeClasses);
 
+    // High contrast is additive on top of the theme classes
+    root.classList.remove('high-contrast');
+    body.classList.remove('high-contrast');
+    if (highContrast) {
+      root.classList.add('high-contrast');
+      body.classList.add('high-contrast');
+    }
+
     localStorage.setItem('theme', theme);
 
-  }, [theme]);
+  }, [theme, highContrast]);
 
   const updateTheme = (nextTheme: Theme) => {
     const previousTheme = theme;
@@ -73,7 +93,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: updateTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme: updateTheme, highContrast }}>
       {children}
     </ThemeContext.Provider>
   );

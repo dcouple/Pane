@@ -38,8 +38,8 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
     label: 'Appearance',
     description: 'Theme, scale, and sidebar presentation.',
     icon: Monitor,
-    settingIds: ['theme', 'ui-scale', 'sidebar-pane-rows'],
-    aliases: ['theme', 'display', 'sidebar', 'zoom'],
+    settingIds: ['theme', 'high-contrast', 'ui-scale', 'sidebar-pane-rows'],
+    aliases: ['theme', 'display', 'sidebar', 'zoom', 'contrast', 'accessibility'],
   },
   {
     id: 'terminal',

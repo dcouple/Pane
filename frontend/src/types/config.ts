@@ -82,6 +82,9 @@ export interface AppConfig {
   stravuServerUrl?: string;
   // Theme preference
   theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
+  // Opt-in high contrast mode: raises muted chrome text to AAA and the terminal's
+  // minimumContrastRatio so dim CLI output stays legible
+  highContrast?: boolean;
   // UI scale factor (0.75 to 1.5, default 1.0)
   uiScale?: number;
   // Notification settings
@@ -167,6 +170,7 @@ export interface UpdateConfigRequest {
   stravuApiKey?: string;
   stravuServerUrl?: string;
   theme?: AppConfig['theme'];
+  highContrast?: boolean;
   uiScale?: number;
   notifications?: AppConfig['notifications'];
   devMode?: boolean;

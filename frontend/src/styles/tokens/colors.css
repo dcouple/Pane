@@ -185,7 +185,7 @@
   --color-text-primary: rgb(230 237 243);        /* GitHub #e6edf3 */
   --color-text-secondary: rgb(200 208 217);       /* Brighter secondary */
   --color-text-tertiary: rgb(125 133 144);        /* GitHub #7d8590 */
-  --color-text-muted: rgb(110 118 129);           /* GitHub #6e7681 */
+  --color-text-muted: rgb(114 122 133);  /* #727a85 — 4.7:1 on bg-primary (AA) */
   --color-text-disabled: rgb(72 79 88);
 
   /* Semantic Tokens - Borders */
@@ -221,7 +221,7 @@
   --color-interactive-border-hover: rgba(var(--color-interactive-rgb), 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: rgb(110 118 129);
+  --color-text-interactive-muted: rgb(114 122 133);  /* #727a85 — 4.7:1 on bg-primary (AA) */
 
   /* Focus ring variations */
   --color-focus-ring-subtle: rgba(var(--color-interactive-rgb), 0.4);
@@ -285,10 +285,10 @@
 
   --color-text-navigation-primary: rgb(200 208 217);
   --color-text-navigation-secondary: rgb(125 133 144);
-  --color-text-navigation-muted: rgb(110 118 129);
+  --color-text-navigation-muted: rgb(114 122 133);  /* #727a85 — 4.7:1 on bg-primary (AA) */
   --color-text-navigation-selected: rgb(230 237 243);
   --color-text-navigation-hover: rgb(230 237 243);
-  --color-text-navigation-section: rgb(110 118 129);
+  --color-text-navigation-section: rgb(114 122 133);  /* #727a85 — 4.7:1 on bg-primary (AA) */
   --color-text-navigation-brand: rgb(125 133 144);
 
   --color-border-navigation: rgba(255, 255, 255, 0.06);
@@ -341,7 +341,7 @@
   --color-text-primary: rgb(31 35 40);            /* GitHub #1f2328 */
   --color-text-secondary: rgb(93 101 110);          /* #5d656e — 5.3:1 on white */
   --color-text-tertiary: rgb(101 109 118);          /* #656d76 — 4.75:1 on white */
-  --color-text-muted: rgb(107 114 128);             /* gray-500 — 4.6:1 on white (AA) */
+  --color-text-muted: rgb(107 114 128);             /* gray-500 — 4.83:1 on white (AA) */
   --color-text-disabled: rgb(156 163 175);           /* gray-400 — 3.0:1 on white (AA large text) */
 
   /* Semantic Tokens - Borders — visible like GitHub */
@@ -569,7 +569,7 @@
   --color-text-primary: var(--dusk-100);
   --color-text-secondary: var(--dusk-300);
   --color-text-tertiary: var(--dusk-400);
-  --color-text-muted: var(--dusk-500);
+  --color-text-muted: #7c8492;  /* 4.7:1 on --dusk-900 (AA) */
   --color-text-disabled: var(--dusk-600);
 
   /* Borders */
@@ -605,7 +605,7 @@
   --color-interactive-border-hover: rgba(59, 130, 246, 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--dusk-500);
+  --color-text-interactive-muted: #7c8492;  /* 4.7:1 on --dusk-900 (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(59, 130, 246, 0.4);
@@ -656,10 +656,10 @@
   --color-surface-navigation-selected-hover: rgba(59, 130, 246, 0.2);
   --color-text-navigation-primary: var(--dusk-300);
   --color-text-navigation-secondary: var(--dusk-400);
-  --color-text-navigation-muted: var(--dusk-500);
+  --color-text-navigation-muted: #7c8492;  /* 4.7:1 on --dusk-900 (AA) */
   --color-text-navigation-selected: var(--dusk-100);
   --color-text-navigation-hover: var(--dusk-100);
-  --color-text-navigation-section: var(--dusk-500);
+  --color-text-navigation-section: #7c8492;  /* 4.7:1 on --dusk-900 (AA) */
   --color-text-navigation-brand: var(--dusk-400);
   --color-border-navigation: rgba(255, 255, 255, 0.06);
   --color-divider-navigation: rgba(255, 255, 255, 0.05);
@@ -703,7 +703,7 @@
   --color-text-primary: var(--dusk-100);
   --color-text-secondary: var(--dusk-300);
   --color-text-tertiary: var(--dusk-400);
-  --color-text-muted: var(--dusk-500);
+  --color-text-muted: #7c8492;  /* 5.6:1 on pure black (AA) */
   --color-text-disabled: var(--dusk-600);
 
   /* Borders */
@@ -739,7 +739,7 @@
   --color-interactive-border-hover: rgba(59, 130, 246, 0.75);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--dusk-500);
+  --color-text-interactive-muted: #7c8492;  /* 5.6:1 on pure black (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(59, 130, 246, 0.45);
@@ -790,10 +790,10 @@
   --color-surface-navigation-selected-hover: rgba(59, 130, 246, 0.24);
   --color-text-navigation-primary: var(--dusk-300);
   --color-text-navigation-secondary: var(--dusk-400);
-  --color-text-navigation-muted: var(--dusk-500);
+  --color-text-navigation-muted: #7c8492;  /* 5.6:1 on pure black (AA) */
   --color-text-navigation-selected: var(--dusk-100);
   --color-text-navigation-hover: var(--dusk-100);
-  --color-text-navigation-section: var(--dusk-500);
+  --color-text-navigation-section: #7c8492;  /* 5.6:1 on pure black (AA) */
   --color-text-navigation-brand: var(--dusk-400);
   --color-border-navigation: rgba(255, 255, 255, 0.08);
   --color-divider-navigation: rgba(255, 255, 255, 0.06);
@@ -836,7 +836,7 @@
   --color-text-primary: var(--forge-gray12);
   --color-text-secondary: var(--forge-gray11);
   --color-text-tertiary: var(--forge-gray9);
-  --color-text-muted: var(--forge-gray7);
+  --color-text-muted: #93979d;  /* 4.7:1 on --forge-gray2 (AA) */
   --color-text-disabled: var(--forge-gray6);
 
   /* Borders — near-invisible, depth via color */
@@ -872,7 +872,7 @@
   --color-interactive-border-hover: rgba(53, 116, 240, 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--forge-gray7);
+  --color-text-interactive-muted: #93979d;  /* 4.7:1 on --forge-gray2 (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(53, 116, 240, 0.4);
@@ -933,10 +933,10 @@
   --color-surface-navigation-selected-hover: rgba(53, 116, 240, 0.2);
   --color-text-navigation-primary: var(--forge-gray11);
   --color-text-navigation-secondary: var(--forge-gray9);
-  --color-text-navigation-muted: var(--forge-gray7);
+  --color-text-navigation-muted: #93979d;  /* 4.7:1 on --forge-gray2 (AA) */
   --color-text-navigation-selected: var(--forge-gray12);
   --color-text-navigation-hover: var(--forge-gray12);
-  --color-text-navigation-section: var(--forge-gray7);
+  --color-text-navigation-section: #93979d;  /* 4.7:1 on --forge-gray2 (AA) */
   --color-text-navigation-brand: var(--forge-gray9);
   --color-border-navigation: var(--forge-gray3);
   --color-divider-navigation: var(--forge-gray3);
@@ -1266,7 +1266,7 @@
   --color-text-primary: var(--owl-100);
   --color-text-secondary: var(--owl-200);
   --color-text-tertiary: var(--owl-300);
-  --color-text-muted: var(--owl-400);
+  --color-text-muted: #9f7275;  /* 4.7:1 on --owl-900 (AA) */
   --color-text-disabled: var(--owl-500);
 
   /* Borders */
@@ -1302,7 +1302,7 @@
   --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--owl-400);
+  --color-text-interactive-muted: #9f7275;  /* 4.7:1 on --owl-900 (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(196, 92, 92, 0.4);
@@ -1363,10 +1363,10 @@
   --color-surface-navigation-selected-hover: rgba(196, 92, 92, 0.2);
   --color-text-navigation-primary: var(--owl-200);
   --color-text-navigation-secondary: var(--owl-300);
-  --color-text-navigation-muted: var(--owl-400);
+  --color-text-navigation-muted: #9f7275;  /* 4.7:1 on --owl-900 (AA) */
   --color-text-navigation-selected: var(--owl-100);
   --color-text-navigation-hover: var(--owl-100);
-  --color-text-navigation-section: var(--owl-400);
+  --color-text-navigation-section: #9f7275;  /* 4.7:1 on --owl-900 (AA) */
   --color-text-navigation-brand: var(--owl-300);
   --color-border-navigation: var(--owl-700);
   --color-divider-navigation: var(--owl-800);
@@ -1424,7 +1424,7 @@
   --color-text-primary: var(--owl-100);
   --color-text-secondary: var(--owl-200);
   --color-text-tertiary: var(--owl-300);
-  --color-text-muted: var(--owl-400);
+  --color-text-muted: #9f7275;  /* 5.1:1 on pure black (AA) */
   --color-text-disabled: var(--owl-500);
 
   /* Borders — slightly brighter on pure black */
@@ -1460,7 +1460,7 @@
   --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--owl-400);
+  --color-text-interactive-muted: #9f7275;  /* 5.1:1 on pure black (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(196, 92, 92, 0.4);
@@ -1521,10 +1521,10 @@
   --color-surface-navigation-selected-hover: rgba(196, 92, 92, 0.2);
   --color-text-navigation-primary: var(--owl-200);
   --color-text-navigation-secondary: var(--owl-300);
-  --color-text-navigation-muted: var(--owl-400);
+  --color-text-navigation-muted: #9f7275;  /* 5.1:1 on pure black (AA) */
   --color-text-navigation-selected: var(--owl-100);
   --color-text-navigation-hover: var(--owl-100);
-  --color-text-navigation-section: var(--owl-400);
+  --color-text-navigation-section: #9f7275;  /* 5.1:1 on pure black (AA) */
   --color-text-navigation-brand: var(--owl-300);
   --color-border-navigation: rgba(196, 92, 92, 0.10);
   --color-divider-navigation: rgba(196, 92, 92, 0.06);
@@ -1582,7 +1582,7 @@
   --color-text-primary: var(--terra-100);
   --color-text-secondary: var(--terra-200);
   --color-text-tertiary: var(--terra-300);
-  --color-text-muted: var(--terra-400);
+  --color-text-muted: #9c7762;  /* 4.7:1 on --terra-900 (AA) */
   --color-text-disabled: var(--terra-500);
 
   /* Borders */
@@ -1618,7 +1618,7 @@
   --color-interactive-border-hover: rgba(192, 112, 80, 0.7);
 
   /* Interactive text tokens */
-  --color-text-interactive-muted: var(--terra-400);
+  --color-text-interactive-muted: #9c7762;  /* 4.7:1 on --terra-900 (AA) */
 
   /* Focus ring */
   --color-focus-ring-subtle: rgba(192, 112, 80, 0.4);
@@ -1679,10 +1679,10 @@
   --color-surface-navigation-selected-hover: rgba(192, 112, 80, 0.2);
   --color-text-navigation-primary: var(--terra-200);
   --color-text-navigation-secondary: var(--terra-300);
-  --color-text-navigation-muted: var(--terra-400);
+  --color-text-navigation-muted: #9c7762;  /* 4.7:1 on --terra-900 (AA) */
   --color-text-navigation-selected: var(--terra-100);
   --color-text-navigation-hover: var(--terra-100);
-  --color-text-navigation-section: var(--terra-400);
+  --color-text-navigation-section: #9c7762;  /* 4.7:1 on --terra-900 (AA) */
   --color-text-navigation-brand: var(--terra-300);
   --color-border-navigation: var(--terra-700);
   --color-divider-navigation: var(--terra-800);
@@ -1729,4 +1729,102 @@
   --color-surface-navigation: var(--gh-light-50);
   --color-surface-navigation-hover: var(--gh-light-100);
   --color-surface-navigation-active: rgb(220 230 236);
+}
+
+/* ==========================================================================
+   High Contrast — opt-in AAA overrides (Settings → Appearance → High contrast)
+   Stamped as an additive `high-contrast` class on <html>/<body> alongside the
+   theme classes. Each block raises the muted text family to ~7:1 against that
+   theme's --color-bg-primary while preserving the theme's hue. Ordering mirrors
+   the theme blocks above so OLED/derived variants still win over their parent.
+   --color-text-disabled is deliberately NOT raised: WCAG 1.4.3 exempts disabled
+   controls and lifting it would destroy the disabled affordance.
+   ========================================================================== */
+
+/* Light + Light Rounded (both carry the `light` class) */
+:root.high-contrast.light {
+  --color-text-muted: #545964;              /* 7.0:1 on white */
+  --color-text-interactive-muted: #545964;  /* 7.0:1 on white */
+  --color-text-navigation-muted: #545964;   /* 7.0:1 on white */
+  --color-text-navigation-section: #525a62; /* 7.0:1 on white */
+}
+
+/* Dark (base) */
+:root.high-contrast.dark {
+  --color-text-muted: #9198a1;              /* 7.1:1 on --gh-black */
+  --color-text-interactive-muted: #9198a1;
+  --color-text-navigation-muted: #9198a1;
+  --color-text-navigation-section: #9198a1;
+}
+
+/* OLED */
+:root.high-contrast.oled {
+  --color-text-muted: #8f969f;              /* 7.0:1 on pure black */
+  --color-text-interactive-muted: #8f969f;
+  --color-text-navigation-muted: #8f969f;
+  --color-text-navigation-section: #8f969f;
+}
+
+/* Dusk */
+:root.high-contrast.dusk {
+  --color-text-muted: #9ea3ae;              /* 7.0:1 on --dusk-900 */
+  --color-text-interactive-muted: #9ea3ae;
+  --color-text-navigation-muted: #9ea3ae;
+  --color-text-navigation-section: #9ea3ae;
+}
+
+/* Dusk OLED */
+:root.high-contrast.dusk-oled {
+  --color-text-muted: #9096a2;              /* 7.1:1 on pure black */
+  --color-text-interactive-muted: #9096a2;
+  --color-text-navigation-muted: #9096a2;
+  --color-text-navigation-section: #9096a2;
+}
+
+/* Forge */
+:root.high-contrast.forge {
+  --color-text-muted: #b6b9bd;              /* 7.0:1 on --forge-gray2 */
+  --color-text-interactive-muted: #b6b9bd;
+  --color-text-navigation-muted: #b6b9bd;
+  --color-text-navigation-section: #b6b9bd;
+}
+
+/* Ember */
+:root.high-contrast.ember {
+  --color-text-muted: #b194d3;              /* 7.1:1 on ember bg */
+  --color-text-interactive-muted: #b194d3;
+  --color-text-navigation-muted: #b194d3;
+  --color-text-navigation-section: #b194d3;
+}
+
+/* Aurora */
+:root.high-contrast.aurora {
+  --color-text-muted: #afacc1;              /* 7.1:1 on aurora bg */
+  --color-text-interactive-muted: #afacc1;
+  --color-text-navigation-muted: #afacc1;
+  --color-text-navigation-section: #afacc1;
+}
+
+/* Night Owl */
+:root.high-contrast.night-owl {
+  --color-text-muted: #b69496;              /* 7.1:1 on --owl-900 */
+  --color-text-interactive-muted: #b69496;
+  --color-text-navigation-muted: #b69496;
+  --color-text-navigation-section: #b69496;
+}
+
+/* Night Owl OLED */
+:root.high-contrast.night-owl-oled {
+  --color-text-muted: #b18c8e;              /* 7.0:1 on pure black */
+  --color-text-interactive-muted: #b18c8e;
+  --color-text-navigation-muted: #b18c8e;
+  --color-text-navigation-section: #b18c8e;
+}
+
+/* Terracotta */
+:root.high-contrast.terracotta {
+  --color-text-muted: #b59888;              /* 7.0:1 on --terra-900 */
+  --color-text-interactive-muted: #b59888;
+  --color-text-navigation-muted: #b59888;
+  --color-text-navigation-section: #b59888;
 }

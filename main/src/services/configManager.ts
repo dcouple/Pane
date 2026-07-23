@@ -48,6 +48,7 @@ export class ConfigManager extends EventEmitter {
       systemPromptAppend: undefined,
       runScript: undefined,
       theme: 'light-rounded',
+      highContrast: false,
       terminalFontFamily: 'Geist Mono',
       terminalFontSize: 14,
       terminalPowerMode: 'performance',

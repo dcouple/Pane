@@ -11,7 +11,7 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
       const themeClasses = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -22,16 +22,22 @@
         'forge': ['dark', 'forge'],
         'ember': ['dark', 'ember'],
         'aurora': ['dark', 'aurora'],
+        'night-owl': ['dark', 'night-owl'],
+        'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
+        'terracotta': ['dark', 'terracotta'],
       };
       const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
       document.documentElement.classList.add(...themeClasses[theme]);
+      if (localStorage.getItem('high-contrast') === 'true') {
+        document.documentElement.classList.add('high-contrast');
+      }
     </script>
   </head>
   <body>
     <script>
       // Also apply to body (mirrors the head script logic)
       const t = localStorage.getItem('theme');
-      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora'];
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
       const tc = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -42,9 +48,15 @@
         'forge': ['dark', 'forge'],
         'ember': ['dark', 'ember'],
         'aurora': ['dark', 'aurora'],
+        'night-owl': ['dark', 'night-owl'],
+        'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
+        'terracotta': ['dark', 'terracotta'],
       };
       const bt = vt.includes(t) ? t : 'light-rounded';
       document.body.classList.add(...tc[bt]);
+      if (localStorage.getItem('high-contrast') === 'true') {
+        document.body.classList.add('high-contrast');
+      }
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

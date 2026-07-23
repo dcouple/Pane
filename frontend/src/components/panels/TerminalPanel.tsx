@@ -68,6 +68,22 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
+
+// xterm halves the configured ratio for dim (SGR 2) cells, so 9 is what gets dim
+// CLI output (Claude Code / Codex) to 4.5:1 AA. Off-state stays a modest safety
+// floor so the deliberate muted grays in the dark themes survive.
+const HIGH_CONTRAST_MIN_RATIO = 9;   // dim cells get ratio/2 = 4.5 (AA)
+const LIGHT_MIN_RATIO = 4.5;
+const DARK_MIN_RATIO = 3;
+
+// Takes highContrast as an argument rather than reading the `high-contrast`
+// class: that class is stamped by ThemeProvider's effect, and React flushes
+// passive effects child-first, so this component's effect would observe the
+// previous value and leave the terminal one toggle behind.
+const getMinimumContrastRatio = (highContrast: boolean): number => {
+  if (highContrast) return HIGH_CONTRAST_MIN_RATIO;
+  return document.documentElement.classList.contains('light') ? LIGHT_MIN_RATIO : DARK_MIN_RATIO;
+};
 const TERMINAL_VISIBILITY_VIEWER_ID = getTerminalVisibilityViewerId();
 
 function getTerminalVisibilityViewerId(): string {
@@ -298,7 +314,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const sessionContext = useSession();
   const sessionId = sessionContext?.sessionId;
   const workingDirectory = sessionContext?.workingDirectory;
-  const { theme } = useTheme();
+  const { theme, highContrast } = useTheme();
   
   if (sessionContext) {
     devLog.debug('[TerminalPanel] Session context:', sessionContext);
@@ -826,7 +842,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           altClickMovesCursor: true,
           drawBoldTextInBrightColors: true,
           rescaleOverlappingGlyphs: true,
-          minimumContrastRatio: document.documentElement.classList.contains('light') ? 4.5 : 1,
+          minimumContrastRatio: getMinimumContrastRatio(highContrast),
           macOptionIsMeta: false,
           linkHandler: {
             activate: (_event, uri) => {
@@ -1804,15 +1820,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     }
     const newTheme = getTerminalTheme();
     xtermRef.current.options.theme = newTheme;
-    xtermRef.current.options.minimumContrastRatio =
-      document.documentElement.classList.contains('light') ? 4.5 : 1;
+    xtermRef.current.options.minimumContrastRatio = getMinimumContrastRatio(highContrast);
     const rows = xtermRef.current.rows;
     if (rows > 0) {
       xtermRef.current.refresh(0, rows - 1);
       // After refresh, restore scroll to bottom to prevent flicker-to-top
       xtermRef.current.scrollToBottom();
     }
-  }, [theme]);
+  }, [theme, highContrast]);
 
 
   // Handle missing session context (show after all hooks have been called)

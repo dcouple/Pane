@@ -19,6 +19,7 @@ export type SettingsSettingId =
   | 'start-on-login'
   | 'keep-awake'
   | 'theme'
+  | 'high-contrast'
   | 'ui-scale'
   | 'sidebar-pane-rows'
   | 'terminal-font-family'

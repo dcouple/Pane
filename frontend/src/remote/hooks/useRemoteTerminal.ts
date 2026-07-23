@@ -63,6 +63,9 @@ export function useRemoteTerminal({
       fontFamily: 'Menlo, Monaco, Consolas, "Liberation Mono", monospace',
       fontSize: 13,
       scrollback: 10_000,
+      // Static AA floor: the remote PWA is browser-served with no AppConfig transport,
+      // so the desktop high-contrast setting cannot be plumbed here.
+      minimumContrastRatio: 4.5,
       theme: {
         background: '#010409',
         foreground: '#e6edf3',

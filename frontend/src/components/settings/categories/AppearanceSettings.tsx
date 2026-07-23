@@ -9,7 +9,7 @@ import {
 } from '../../ui/Select';
 import { SettingsSection } from '../../ui/SettingsSection';
 import { SettingRow, SettingsPage } from '../SettingRow';
-import { SegmentedControl } from '../SettingsControls';
+import { ImmediateToggle, SegmentedControl } from '../SettingsControls';
 import type { SettingsPersistence } from '../useSettingsPersistence';
 import type { AppConfig } from '../../../types/config';
 
@@ -54,6 +54,18 @@ export function AppearanceSettings({ persistence }: { persistence: SettingsPersi
               </SelectContent>
             </Select>
           </div>
+        </SettingRow>
+        <SettingRow
+          settingId="high-contrast"
+          label="High contrast"
+          description="Raise text and terminal contrast to AAA. Helps with CLI output that renders too dim."
+          saveState={persistence.saveStates['high-contrast']}
+        >
+          <ImmediateToggle
+            label="High contrast"
+            value={config.highContrast === true}
+            onSave={(value) => persistence.saveConfig('high-contrast', { highContrast: value })}
+          />
         </SettingRow>
         <SettingRow
           settingId="ui-scale"
