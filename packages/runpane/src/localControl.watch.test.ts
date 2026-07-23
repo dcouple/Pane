@@ -4,9 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { parseRunpaneArgs, type ParsedArgs } from './commands';
 import { getPaneDaemonEndpoint } from './daemonClient';
-import { runPanelsAwait, runPanelsAwaitAny, runPanelsEvents, runPanelsWatch, runPanesStatus, runPanesWatch } from './localControl';
-import type { ParsedArgs } from './commands';
+import { runPanelsAwait, runPanelsAwaitAny, runPanelsEvents, runPanelsWatch, runPanesCreate, runPanesStatus, runPanesWatch } from './localControl';
 
 type EventType = 'panel_created' | 'terminal_ready' | 'prompt_staged' | 'prompt_submitted' | 'agent_active'
   | 'agent_idle' | 'input_required' | 'blocked' | 'unblocked' | 'panel_exited' | 'panel_archived';
@@ -27,6 +27,7 @@ class FakeDaemon {
   ]);
   statusResponse?: { ok: true; paneId: string; panels: Array<{ panelId: string; paneId: string; state: ReturnType<typeof panelState> }>; cursor: string };
   statusRequests: Array<Record<string, unknown>> = [];
+  paneCreateRequests: Array<Record<string, unknown>> = [];
   duringPanelList?: ReturnType<typeof semanticEvent>;
 
   async start(): Promise<void> {
@@ -99,6 +100,11 @@ class FakeDaemon {
       });
       return;
     }
+    if (request.channel === 'runpane:panes:create') {
+      this.paneCreateRequests.push(request.args[0] ?? {});
+      this.writeResponse(socket, request.id, { ok: true, repo: {}, items: [] });
+      return;
+    }
     if (request.channel !== 'runpane:panels:events') throw new Error(`Unexpected channel ${request.channel}`);
     this.eventRequests += 1;
     if (this.expire) {
@@ -152,6 +158,66 @@ let daemon: FakeDaemon | undefined;
 afterEach(() => { daemon?.close(); daemon = undefined; vi.restoreAllMocks(); });
 
 describe('semantic event wrapper', () => {
+  it('P1-C npm: --from-json carries startup guarantee flags', async () => {
+    daemon = new FakeDaemon();
+    await daemon.start();
+    const payloadPath = path.join(daemon.paneDir, 'create.json');
+    fs.writeFileSync(payloadPath, JSON.stringify({
+      repo: 'active',
+      panes: [{ name: 'json-pane', tool: { command: 'echo ready' } }],
+      startAgent: false,
+      waitActive: false,
+    }));
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const args = parseRunpaneArgs([
+      'panes', 'create',
+      '--from-json', payloadPath,
+      '--start-agent',
+      '--wait-active',
+      '--handle-known-interstitials', 'safe',
+      '--pane-dir', daemon.paneDir,
+      '--yes',
+      '--json',
+    ]);
+
+    expect(await runPanesCreate(args)).toBe(0);
+    expect(daemon.paneCreateRequests).toContainEqual(expect.objectContaining({
+      startAgent: true,
+      waitActive: true,
+      handleKnownInterstitials: 'safe',
+    }));
+  });
+
+  it('P1-C Python: --from-json carries startup guarantee flags', async () => {
+    daemon = new FakeDaemon();
+    await daemon.start();
+    const payloadPath = path.join(daemon.paneDir, 'create-python.json');
+    fs.writeFileSync(payloadPath, JSON.stringify({
+      repo: 'active',
+      panes: [{ name: 'json-pane', tool: { command: 'echo ready' } }],
+      startAgent: false,
+      waitActive: false,
+    }));
+
+    const result = await runPython(daemon.paneDir, [
+      'panes', 'create',
+      '--from-json', payloadPath,
+      '--start-agent',
+      '--wait-active',
+      '--handle-known-interstitials', 'safe',
+      '--yes',
+      '--json',
+    ]);
+
+    expect(result.code).toBe(0);
+    expect(daemon.paneCreateRequests).toContainEqual(expect.objectContaining({
+      startAgent: true,
+      waitActive: true,
+      handleKnownInterstitials: 'safe',
+    }));
+  }, 30_000);
+
   it('phase3 AC1: await-any identifies the winning panelId and paneId', async () => {
     daemon = new FakeDaemon();
     daemon.panelsByPane.set('pane-2', [{ id: 'panel-2', paneId: 'pane-2', type: 'terminal' }]);

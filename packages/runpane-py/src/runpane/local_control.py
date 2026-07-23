@@ -577,6 +577,12 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             payload["readyTimeoutMs"] = parsed.ready_timeout_ms
         if parsed.concurrency is not None:
             payload["concurrency"] = parsed.concurrency
+        if parsed.start_agent:
+            payload["startAgent"] = True
+        if parsed.wait_active:
+            payload["waitActive"] = True
+        if parsed.handle_known_interstitials == "safe":
+            payload["handleKnownInterstitials"] = "safe"
         if parsed.pinned:
             payload["panes"] = [
                 {**item, "pinned": True} if isinstance(item, dict) else item

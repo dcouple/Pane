@@ -1094,6 +1094,15 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     if (parsed.concurrency !== undefined) {
       request.concurrency = parsed.concurrency;
     }
+    if (parsed.startAgent) {
+      request.startAgent = true;
+    }
+    if (parsed.waitActive) {
+      request.waitActive = true;
+    }
+    if (parsed.handleKnownInterstitials === 'safe') {
+      request.handleKnownInterstitials = 'safe';
+    }
     if (parsed.pinned) {
       request.panes = request.panes.map(item => ({ ...item, pinned: true }));
     }

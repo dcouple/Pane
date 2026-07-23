@@ -871,6 +871,11 @@ async function submitCreateInitialInput(
     }));
   }
 
+  if (!effectiveReadiness.ok && effectiveReadiness.blocked) {
+    const gate = await guard.ensureClear();
+    if (gate.blocked) return blockedInitialInput(tool.initialInput, gate.blocked, guard.handledInterstitials());
+  }
+
   if (!effectiveReadiness.ok) {
     return {
       delivered: false,
