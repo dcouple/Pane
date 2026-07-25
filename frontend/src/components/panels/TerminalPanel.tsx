@@ -131,6 +131,16 @@ function isClipboardImagePlaceholderText(text: string): boolean {
   return text.trim() === '[Image]';
 }
 
+// xterm renders the selection on the GPU via the WebGL addon, so it never becomes
+// a DOM selection and the browser's native copy has nothing to act on. Copying has
+// to be driven explicitly from terminal.getSelection().
+function copyTerminalSelection(text: string): void {
+  if (!text) return;
+  navigator.clipboard.writeText(text).catch((error: unknown) => {
+    console.error('[TerminalPanel] Failed to copy selection to clipboard:', error);
+  });
+}
+
 function waitForNextPaint(): Promise<void> {
   return new Promise(resolve => {
     requestAnimationFrame(() => {
@@ -238,6 +248,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   const keyboardShortcutsEnabledRef = useRef(keyboardShortcutsEnabled);
   const useBatterySaverTerminalVisibility = terminalPowerMode === 'batterySaver';
+  // Mirrored into a ref because the selection handler is created once, inside the
+  // terminal init effect, and would otherwise capture a stale value.
+  const copyOnSelect = useConfigStore((state) => state.config?.terminalCopyOnSelect ?? false);
+  const copyOnSelectRef = useRef(copyOnSelect);
+  useEffect(() => {
+    copyOnSelectRef.current = copyOnSelect;
+  }, [copyOnSelect]);
   const panelVisible = isActive;
   const effectiveVisible = useBatterySaverTerminalVisibility ? panelVisible && windowFocused : true;
   // Drives the shared activation refresh: fires on tab activation and window
@@ -930,6 +947,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             return false;
           }
 
+          // Ctrl/Cmd+Shift+C: copy the selection. Must run before
+          // resolveTerminalKeyHandling, which passes every key straight through to
+          // xterm while a fullscreen TUI is active. Plain Ctrl+C is deliberately
+          // left alone so it keeps delivering SIGINT to the foreground process.
+          if (ctrlOrMeta && e.shiftKey && e.key.toLowerCase() === 'c') {
+            if (e.type === 'keydown' && terminal?.hasSelection()) {
+              copyTerminalSelection(terminal.getSelection());
+            }
+            return false;
+          }
+
           const terminalKeyDecision = resolveTerminalKeyHandling(e, {
             isTuiActive: tuiActiveRef.current,
             isCliPanel: isCliPanelRef.current,
@@ -1124,6 +1152,14 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           // wheel sometimes stops 1-2 lines short of baseY, leaving the prompt just
           // out of view. Snapping within a small threshold fixes the "can't reach input" feel.
           const terminalInstance = terminal;
+
+          // Opt-in copy-on-select. Off by default because it overwrites the
+          // clipboard on every drag.
+          const selectionDisposable = terminalInstance.onSelectionChange(() => {
+            if (!copyOnSelectRef.current) return;
+            copyTerminalSelection(terminalInstance.getSelection());
+          });
+
           const SNAP_THRESHOLD = NEAR_BOTTOM_THRESHOLD_ROWS; // lines — for the "can't reach input" snap fix
           let prevDistFromBottom = 0;
           const scrollDisposable = terminalInstance.onScroll(() => {
@@ -1666,6 +1702,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             unsubscribeFontUpdate();
             inputDisposable.dispose();
             scrollDisposable.dispose();
+            selectionDisposable.dispose();
             terminalElement?.removeEventListener('paste', handlePaste, { capture: true });
             terminalElement?.removeEventListener('dragover', handleDragOver);
             terminalElement?.removeEventListener('drop', handleDrop);

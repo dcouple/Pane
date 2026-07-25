@@ -24,6 +24,7 @@ export type SettingsSettingId =
   | 'sidebar-pane-rows'
   | 'terminal-font-family'
   | 'terminal-font-size'
+  | 'terminal-copy-on-select'
   | 'terminal-power-mode'
   | 'terminal-reference-paste-mode'
   | 'terminal-reference-line-count'

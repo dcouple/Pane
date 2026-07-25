@@ -150,6 +150,9 @@ export interface AppConfig {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
+  // Copy the terminal selection to the clipboard as soon as it is made.
+  // Off by default: it overwrites the clipboard on every drag.
+  terminalCopyOnSelect?: boolean;
 }
 
 export type PreferredShell = NonNullable<AppConfig['preferredShell']>;
@@ -196,4 +199,7 @@ export interface UpdateConfigRequest {
   cloud?: CloudVmConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
+  // Copy the terminal selection to the clipboard as soon as it is made.
+  // Off by default: it overwrites the clipboard on every drag.
+  terminalCopyOnSelect?: boolean;
 }
