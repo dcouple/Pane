@@ -101,6 +101,9 @@ export interface RunpanePaneCreateRequest {
   noFocus?: boolean;
   focus?: boolean;
   source?: RunpanePanelCreateSource;
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 export interface RunpaneErrorPayload {
@@ -109,6 +112,7 @@ export interface RunpaneErrorPayload {
 }
 
 export type RunpanePanelActivityStatus = 'active' | 'idle';
+export type RunpaneAgentActivity = 'unknown' | 'starting' | 'active' | 'idle' | 'exited';
 export type RunpanePanelScreenSource = 'alternateScreen' | 'scrollback' | 'persistedOutput' | 'empty';
 export type RunpanePanelWaitCondition = 'initialized' | 'ready' | 'idle' | 'text';
 export type RunpanePanelBlockerKind =
@@ -125,12 +129,115 @@ export interface RunpanePanelStateSummary {
   isCliPanel?: boolean;
   agentType?: RunpaneAgentId;
   lastActivity?: string;
+  terminalReady?: boolean;
+  agentActivity?: RunpaneAgentActivity;
+  inputRequired?: boolean;
+  blocked?: boolean;
+  hasNewOutput?: boolean;
+  outputGeneration?: number;
+  lastMeaningfulEventAt?: string;
 }
 
 export interface RunpanePanelBlockedState {
   kind: RunpanePanelBlockerKind;
   message: string;
   suggestedCommand?: string;
+}
+
+export const RUNPANE_EVENT_SELECTOR_TO_TYPE = {
+  'panel-created': 'panel_created',
+  'terminal-ready': 'terminal_ready',
+  'prompt-staged': 'prompt_staged',
+  'prompt-submitted': 'prompt_submitted',
+  'agent-active': 'agent_active',
+  'agent-idle': 'agent_idle',
+  'input-required': 'input_required',
+  blocked: 'blocked',
+  unblocked: 'unblocked',
+  'panel-exited': 'panel_exited',
+  'panel-archived': 'panel_archived',
+} as const;
+
+export type RunpaneSemanticEventSelector = keyof typeof RUNPANE_EVENT_SELECTOR_TO_TYPE;
+export type RunpaneSemanticEventType = typeof RUNPANE_EVENT_SELECTOR_TO_TYPE[RunpaneSemanticEventSelector];
+
+export interface RunpaneSemanticEvent {
+  id: string;
+  cursor: string;
+  type: RunpaneSemanticEventType;
+  at: string;
+  paneId?: string;
+  panelId: string;
+  state: RunpanePanelStateSummary;
+  resolvedBy?: 'event' | 'reconciliation';
+}
+
+export interface RunpaneCursorExpiredError {
+  code: 'cursor_expired';
+  earliestCursor: string;
+  reconcileCommand: string;
+}
+
+export interface RunpanePanelsEventsRequest {
+  panelId?: string;
+  event?: RunpaneSemanticEventSelector;
+  since?: string;
+}
+
+export interface RunpanePanelsEventsResult {
+  ok: true;
+  events: RunpaneSemanticEvent[];
+  cursor: string;
+}
+
+export interface RunpanePanelsEventsErrorResult {
+  ok: false;
+  error: RunpaneCursorExpiredError;
+}
+
+export type RunpanePanelsEventsResponse = RunpanePanelsEventsResult | RunpanePanelsEventsErrorResult;
+
+export interface RunpanePanelsWatchRequest extends RunpanePanelsEventsRequest {
+  heartbeatMs?: number;
+}
+
+export interface RunpanePanelsAwaitRequest extends RunpanePanelsWatchRequest {
+  panelId: string;
+  event: RunpaneSemanticEventSelector;
+  timeoutMs?: number;
+}
+
+export interface RunpanePanelsAwaitResult {
+  ok: true;
+  timedOut: false;
+  matchedEvent: RunpaneSemanticEventType;
+  resolvedBy: 'event' | 'reconciliation';
+  event?: RunpaneSemanticEvent;
+  state: RunpanePanelStateSummary;
+}
+
+export interface RunpanePanelsAwaitTimeoutResult {
+  ok: false;
+  timedOut: true;
+  state: RunpanePanelStateSummary;
+}
+
+export interface RunpanePaneStatusRequest {
+  paneId: string;
+  changedSince?: string;
+}
+
+export interface RunpanePaneStatusPanel {
+  paneId: string;
+  panelId: string;
+  state: RunpanePanelStateSummary;
+}
+
+export interface RunpanePaneStatusResult {
+  ok: true;
+  paneId: string;
+  panels: RunpanePaneStatusPanel[];
+  cursor: string;
 }
 
 export interface RunpanePaneReadiness {
@@ -157,6 +264,7 @@ export interface RunpaneInitialInputDeliveryResult {
   blocked?: RunpanePanelBlockedState;
   error?: RunpaneErrorPayload;
   nextCommand?: string;
+  handledInterstitials?: Array<{ kind: string; response: string }>;
 }
 
 export interface RunpanePaneCreateSuccessItem {
@@ -178,6 +286,8 @@ export interface RunpanePaneCreateSuccessItem {
   focused?: boolean;
   readiness?: RunpanePaneReadiness;
   initialInput?: RunpaneInitialInputDeliveryResult;
+  verifiedSubmitted?: boolean;
+  agentActivity?: RunpaneAgentActivity;
 }
 
 export interface RunpanePaneCreateFailureItem {
@@ -377,6 +487,7 @@ export interface RunpanePanelScreenResult {
   hasMore: boolean;
   text: string;
   state: RunpanePanelStateSummary;
+  blocked?: RunpanePanelBlockedState;
   nextCommand?: string;
 }
 

@@ -77,6 +77,8 @@ export interface AppConfig {
   autoStartOnBoot?: boolean;
   // Prevent idle sleep while Pane sessions are active
   keepAwakeWhileSessionsActive?: boolean;
+  // Silence interval before agent activity is considered idle
+  agentIdleDebounceMs?: number;
   // Stravu MCP integration
   stravuApiKey?: string;
   stravuServerUrl?: string;
@@ -163,6 +165,7 @@ export interface UpdateConfigRequest {
   autoCheckUpdates?: boolean;
   autoStartOnBoot?: boolean;
   keepAwakeWhileSessionsActive?: boolean;
+  agentIdleDebounceMs?: number;
   stravuApiKey?: string;
   stravuServerUrl?: string;
   theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';

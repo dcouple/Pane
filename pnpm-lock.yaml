@@ -416,6 +416,9 @@ importers:
       typescript-eslint:
         specifier: ^8.19.0
         version: 8.37.0(eslint@9.31.0(jiti@2.6.0))(typescript@5.8.3)
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.16.5)
 
   shared: {}
 

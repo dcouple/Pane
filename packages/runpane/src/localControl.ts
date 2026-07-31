@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
-import { invokeDaemon } from './daemonClient';
+import { invokeDaemon, openRetainedDaemonConnection, type RetainedDaemonConnection } from './daemonClient';
 import { RUNPANE_CONTRACT } from './generated/contract';
 import type { ParsedArgs, RunpaneAgent } from './commands';
 
@@ -52,6 +52,9 @@ interface PaneCreateRequest {
   noFocus?: boolean;
   focus?: boolean;
   source?: 'user' | 'agent';
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: 'safe';
 }
 
 interface PaneCreateItem {
@@ -260,7 +263,48 @@ interface PanelStateSummary {
   isCliPanel?: boolean;
   agentType?: RunpaneAgent;
   lastActivity?: string;
+  terminalReady?: boolean;
+  agentActivity?: 'unknown' | 'starting' | 'active' | 'idle' | 'exited';
+  inputRequired?: boolean;
+  blocked?: boolean;
+  hasNewOutput?: boolean;
+  outputGeneration?: number;
+  lastMeaningfulEventAt?: string;
 }
+
+type SemanticEventType = 'panel_created' | 'terminal_ready' | 'prompt_staged' | 'prompt_submitted'
+  | 'agent_active' | 'agent_idle' | 'input_required' | 'blocked' | 'unblocked'
+  | 'panel_exited' | 'panel_archived';
+
+interface SemanticEvent {
+  id: string;
+  cursor: string;
+  type: SemanticEventType;
+  at: string;
+  paneId?: string;
+  panelId: string;
+  state: PanelStateSummary;
+}
+
+interface EventsResult {
+  ok: true;
+  events: SemanticEvent[];
+  cursor: string;
+}
+
+interface EventsErrorResult {
+  ok: false;
+  error: { code: 'cursor_expired'; earliestCursor: string; reconcileCommand: string };
+}
+
+type EventsResponse = EventsResult | EventsErrorResult;
+
+const EVENT_SELECTOR_TYPES: Record<string, SemanticEventType> = {
+  'panel-created': 'panel_created', 'terminal-ready': 'terminal_ready', 'prompt-staged': 'prompt_staged',
+  'prompt-submitted': 'prompt_submitted', 'agent-active': 'agent_active', 'agent-idle': 'agent_idle',
+  'input-required': 'input_required', blocked: 'blocked', unblocked: 'unblocked',
+  'panel-exited': 'panel_exited', 'panel-archived': 'panel_archived',
+};
 
 interface PanelBlockedState {
   kind: 'codex-update' | 'agent-prompt' | 'submission_unverified' | 'unknown';
@@ -646,6 +690,320 @@ export async function runPanelsWait(parsed: ParsedArgs): Promise<number> {
   return result.ok ? 0 : 1;
 }
 
+export async function runPanelsEvents(parsed: ParsedArgs): Promise<number> {
+  const result = await invokeDaemon<EventsResponse>('runpane:panels:events', [{
+    panelId: parsed.panelId,
+    event: parsed.eventSelector,
+    since: parsed.since,
+  }], { paneDir: parsed.paneDir });
+  if (!result.ok) {
+    console.error(JSON.stringify(result));
+    return 3;
+  }
+  if (parsed.json) printJson(result);
+  else for (const event of result.events) console.log(`${event.cursor}\t${event.type}\t${event.panelId}`);
+  return 0;
+}
+
+export async function runPanesStatus(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.paneId) throw new Error('runpane panes status requires --pane.');
+  const result = await invokeDaemon<{ ok: true; paneId: string; panels: Array<{ panelId: string; paneId: string; state: PanelStateSummary }>; cursor: string }>(
+    'runpane:panes:status',
+    [{ paneId: parsed.paneId, changedSince: parsed.changedSince }],
+    { paneDir: parsed.paneDir },
+  );
+  if (parsed.json) printJson(result);
+  else for (const panel of result.panels) console.log(`${panel.panelId}\t${panel.state.agentActivity ?? 'unknown'}`);
+  return 0;
+}
+
+export async function runPanesWatch(parsed: ParsedArgs): Promise<number> {
+  const stream = await SemanticEventStream.open(parsed);
+  await stream.captureBaseline();
+  const scoped = await resolveMultiTargetPanels(parsed, parsed.includeFuturePanels === true, stream);
+  return runPanelsWatch(scoped, stream);
+}
+
+export async function runPanelsAwaitAny(parsed: ParsedArgs): Promise<number> {
+  const stream = await SemanticEventStream.open(parsed);
+  await stream.captureBaseline();
+  const scoped = await resolveMultiTargetPanels(parsed, false, stream);
+  return runPanelsAwait(scoped, stream);
+}
+
+async function resolveMultiTargetPanels(
+  parsed: ParsedArgs,
+  retainPaneTargets: boolean,
+  stream?: SemanticEventStream,
+): Promise<ParsedArgs> {
+  const panelIds = new Set(parsed.panelIds ?? []);
+  for (const paneId of parsed.paneIds ?? []) {
+    const result = stream
+      ? await stream.request<PanelListResult>('runpane:panels:list', [{ paneId }])
+      : await invokeDaemon<PanelListResult>('runpane:panels:list', [{ paneId }], { paneDir: parsed.paneDir });
+    for (const panel of result.panels) panelIds.add(panel.id);
+  }
+  return {
+    ...parsed,
+    panelId: undefined,
+    paneId: undefined,
+    panelIds: [...panelIds],
+    paneIds: retainPaneTargets ? [...(parsed.paneIds ?? [])] : [],
+  };
+}
+
+export async function runPanelsWatch(parsed: ParsedArgs, retainedStream?: SemanticEventStream): Promise<number> {
+  const stream = retainedStream ?? await SemanticEventStream.open(parsed);
+  let transportFailed = false;
+  let terminalErrorCode = 1;
+  let stopped = false;
+  let heartbeatInFlight = false;
+  const heartbeatRef: { current?: ReturnType<typeof setInterval> } = {};
+  const finish = (code: number): number => {
+    stopped = true;
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    process.off('SIGINT', stopCleanly);
+    process.off('SIGTERM', stopCleanly);
+    stream.close();
+    return code;
+  };
+  const stopCleanly = () => { stopped = true; };
+  process.once('SIGINT', stopCleanly);
+  process.once('SIGTERM', stopCleanly);
+  stream.onTransportError(() => { transportFailed = true; });
+  stream.onEvent((event, resolvedBy) => {
+    if (matchesParsedEvent(parsed, event, false)) {
+      process.stdout.write(`${JSON.stringify({ ...event, resolvedBy })}\n`);
+      stream.noteEmitted(event.cursor);
+    }
+  });
+  try {
+    await stream.replay('event');
+  } catch (error) {
+    return finish(handleStreamError(error));
+  }
+  heartbeatRef.current = setInterval(() => {
+    if (heartbeatInFlight || stopped) return;
+    heartbeatInFlight = true;
+    void stream.replay('reconciliation').catch((error: unknown) => {
+      transportFailed = true;
+      if (error instanceof CursorExpiredError) {
+        terminalErrorCode = 3;
+        console.error(JSON.stringify(error.payload));
+      }
+    }).finally(() => { heartbeatInFlight = false; });
+  }, parsed.heartbeatMs ?? 30_000);
+  while (!stopped && !transportFailed) await delay(20);
+  return finish(transportFailed ? terminalErrorCode : 0);
+}
+
+export async function runPanelsAwait(parsed: ParsedArgs, retainedStream?: SemanticEventStream): Promise<number> {
+  if ((!parsed.panelId && (parsed.panelIds?.length ?? 0) === 0) || !parsed.eventSelector) throw new Error('runpane panels await requires --panel and --event.');
+  const stream = retainedStream ?? await SemanticEventStream.open(parsed);
+  let matched: { event: SemanticEvent; resolvedBy: 'event' | 'reconciliation' } | undefined;
+  let transportError: Error | undefined;
+  stream.onTransportError((error) => { transportError = error; });
+  stream.onEvent((event, resolvedBy) => {
+    if (!matched && matchesParsedEvent(parsed, event, true)) matched = { event, resolvedBy };
+  });
+  try {
+    await stream.replay('event');
+  } catch (error) {
+    stream.close();
+    return handleStreamError(error);
+  }
+  const timeoutAt = Date.now() + (parsed.timeoutMs ?? 30_000);
+  const heartbeatMs = parsed.heartbeatMs ?? 30_000;
+  let nextHeartbeat = Date.now() + heartbeatMs;
+  while (!matched && !transportError && Date.now() < timeoutAt) {
+    const now = Date.now();
+    if (now >= nextHeartbeat) {
+      try {
+        await stream.replay('reconciliation');
+        if (!matched && isStateBackedSelector(parsed.eventSelector)) matched = await reconcileTargetStates(stream, parsed);
+      } catch (error) {
+        stream.close();
+        return handleStreamError(error);
+      }
+      nextHeartbeat += heartbeatMs;
+    }
+    if (!matched && !transportError) await delay(Math.min(20, Math.max(timeoutAt - Date.now(), 1)));
+  }
+  if (transportError) {
+    stream.close();
+    console.error(transportError.message);
+    return 1;
+  }
+  if (matched) {
+    const result = {
+      ok: true,
+      timedOut: false,
+      matchedEvent: matched.event.type,
+      resolvedBy: matched.resolvedBy,
+      event: matched.event,
+      state: matched.event.state,
+    };
+    stream.close();
+    console.log(JSON.stringify(result));
+    return 0;
+  }
+  try {
+    const targetPanelId = parsed.panelId ?? parsed.panelIds?.[0];
+    const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId: targetPanelId }]);
+    stream.close();
+    console.log(JSON.stringify({ ok: false, timedOut: true, state: screen.state }));
+    return 2;
+  } catch (error) {
+    stream.close();
+    console.error(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+}
+
+class CursorExpiredError extends Error {
+  constructor(readonly payload: EventsErrorResult) {
+    super('RunPane event cursor expired');
+  }
+}
+
+class SemanticEventStream {
+  private buffered: SemanticEvent[] = [];
+  private buffering = true;
+  private eventListener?: (event: SemanticEvent, resolvedBy: 'event' | 'reconciliation') => void;
+  private transportListener?: (error: Error) => void;
+  processedCursor = '';
+  emittedCursor = '';
+
+  private constructor(private readonly connection: RetainedDaemonConnection, private readonly initialSince?: string) {
+    connection.onSemanticEvent((payload) => {
+      const event = parseSemanticEvent(payload);
+      if (this.buffering) this.buffered.push(event);
+      else this.deliver(event, 'event');
+    });
+    connection.onError((error) => this.transportListener?.(error));
+  }
+
+  static async open(parsed: ParsedArgs): Promise<SemanticEventStream> {
+    const connection = await openRetainedDaemonConnection({ paneDir: parsed.paneDir });
+    return new SemanticEventStream(connection, parsed.since);
+  }
+
+  onEvent(listener: (event: SemanticEvent, resolvedBy: 'event' | 'reconciliation') => void): void { this.eventListener = listener; }
+  onTransportError(listener: (error: Error) => void): void { this.transportListener = listener; }
+  noteEmitted(cursor: string): void { this.emittedCursor = cursor; }
+  request<T>(channel: string, args: unknown[]): Promise<T> { return this.connection.request<T>(channel, args); }
+
+  async captureBaseline(): Promise<void> {
+    if (this.initialSince) return;
+    const response = await this.connection.request<EventsResponse>('runpane:panels:events', [{ since: this.initialSince }]);
+    if (!response.ok) throw new CursorExpiredError(response);
+    this.processedCursor = response.cursor;
+  }
+
+  async replay(resolvedBy: 'event' | 'reconciliation'): Promise<void> {
+    this.buffering = true;
+    const since = this.processedCursor || this.initialSince;
+    const response = await this.connection.request<EventsResponse>('runpane:panels:events', [{ since }]);
+    if (!response.ok) throw new CursorExpiredError(response);
+    for (const event of [...response.events].sort(compareEvents)) this.deliver(event, resolvedBy);
+    const buffered = this.buffered.splice(0).sort(compareEvents);
+    for (const event of buffered) this.deliver(event, resolvedBy === 'reconciliation' ? 'reconciliation' : 'event');
+    if (!this.processedCursor || compareCursors(this.processedCursor, response.cursor) < 0) this.processedCursor = response.cursor;
+    this.buffering = false;
+  }
+
+  close(): void { this.connection.close(); }
+
+  private deliver(event: SemanticEvent, resolvedBy: 'event' | 'reconciliation'): void {
+    if (this.processedCursor && compareCursors(event.cursor, this.processedCursor) <= 0) return;
+    this.processedCursor = event.cursor;
+    this.eventListener?.(event, resolvedBy);
+  }
+}
+
+function parseSemanticEvent(value: unknown): SemanticEvent {
+  if (!isObject(value)) throw new Error('Malformed semantic event: expected an object');
+  const state = value.state;
+  if (typeof value.id !== 'string' || typeof value.cursor !== 'string' || typeof value.type !== 'string'
+    || !Object.values(EVENT_SELECTOR_TYPES).includes(value.type as SemanticEventType)
+    || value.id !== value.cursor || typeof value.at !== 'string' || typeof value.panelId !== 'string'
+    || (value.paneId !== undefined && typeof value.paneId !== 'string')
+    || !isObject(state) || typeof state.initialized !== 'boolean') {
+    throw new Error('Malformed semantic event envelope');
+  }
+  return value as unknown as SemanticEvent;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function compareEvents(left: SemanticEvent, right: SemanticEvent): number { return compareCursors(left.cursor, right.cursor); }
+function compareCursors(left: string, right: string): number {
+  const l = splitCursor(left); const r = splitCursor(right);
+  if (l.epoch !== r.epoch) throw new Error('Cannot compare semantic event cursors from different epochs');
+  return l.n - r.n;
+}
+function splitCursor(cursor: string): { epoch: string; n: number } {
+  const index = cursor.lastIndexOf(':');
+  const n = Number(cursor.slice(index + 1));
+  if (index <= 0 || !Number.isSafeInteger(n) || n < 0) throw new Error(`Malformed semantic event cursor: ${cursor}`);
+  return { epoch: cursor.slice(0, index), n };
+}
+function matchesParsedEvent(parsed: ParsedArgs, event: SemanticEvent, awaitMode: boolean): boolean {
+  if (parsed.panelId && event.panelId !== parsed.panelId) return false;
+  const panelIds = parsed.panelIds ?? [];
+  const paneIds = parsed.paneIds ?? [];
+  const hasMultiTargets = panelIds.length > 0 || paneIds.length > 0;
+  const panelMatches = panelIds.includes(event.panelId);
+  const paneMatches = Boolean(event.paneId && paneIds.includes(event.paneId));
+  if (hasMultiTargets && !panelMatches && !paneMatches) return false;
+  if (!parsed.eventSelector) return true;
+  if (awaitMode && parsed.eventSelector === 'agent-idle') return ['agent_idle', 'input_required', 'blocked', 'panel_exited'].includes(event.type);
+  return EVENT_SELECTOR_TYPES[parsed.eventSelector] === event.type;
+}
+async function reconcileTargetStates(
+  stream: SemanticEventStream,
+  parsed: ParsedArgs,
+): Promise<{ event: SemanticEvent; resolvedBy: 'reconciliation' } | undefined> {
+  const targets = parsed.panelId ? [parsed.panelId] : (parsed.panelIds ?? []);
+  for (const panelId of targets) {
+    const screen = await stream.request<PanelScreenResult>('runpane:panels:screen', [{ panelId }]);
+    const reconciledType = matchState(parsed.eventSelector ?? '', screen.state);
+    if (reconciledType) return {
+      resolvedBy: 'reconciliation',
+      event: syntheticEvent(panelId, screen.paneId, reconciledType, screen.state, stream.processedCursor),
+    };
+  }
+  return undefined;
+}
+function isStateBackedSelector(selector: string): boolean {
+  return ['terminal-ready', 'agent-active', 'agent-idle', 'input-required', 'blocked', 'unblocked', 'panel-exited'].includes(selector);
+}
+function matchState(selector: string, state: PanelStateSummary): SemanticEventType | undefined {
+  if (selector === 'terminal-ready' && state.terminalReady) return 'terminal_ready';
+  if (selector === 'agent-active' && state.agentActivity === 'active') return 'agent_active';
+  if (selector === 'agent-idle') {
+    if (state.agentActivity === 'exited') return 'panel_exited';
+    if (state.blocked) return state.inputRequired ? 'input_required' : 'blocked';
+    if (state.agentActivity === 'idle') return 'agent_idle';
+  }
+  if (selector === 'input-required' && state.inputRequired) return 'input_required';
+  if (selector === 'blocked' && state.blocked) return 'blocked';
+  if (selector === 'unblocked' && state.blocked === false) return 'unblocked';
+  if (selector === 'panel-exited' && state.agentActivity === 'exited') return 'panel_exited';
+  return undefined;
+}
+function syntheticEvent(panelId: string, paneId: string | undefined, type: SemanticEventType, state: PanelStateSummary, cursor: string): SemanticEvent {
+  return { id: cursor, cursor, type, at: new Date().toISOString(), paneId, panelId, state };
+}
+function handleStreamError(error: unknown): number {
+  if (error instanceof CursorExpiredError) { console.error(JSON.stringify(error.payload)); return 3; }
+  console.error(error instanceof Error ? error.message : String(error));
+  return 1;
+}
+function delay(ms: number): Promise<void> { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
 export async function runAgentsDoctor(parsed: ParsedArgs): Promise<number> {
   if (!parsed.agent) {
     throw new Error('runpane agents doctor requires --agent codex|claude.');
@@ -736,6 +1094,15 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     if (parsed.concurrency !== undefined) {
       request.concurrency = parsed.concurrency;
     }
+    if (parsed.startAgent) {
+      request.startAgent = true;
+    }
+    if (parsed.waitActive) {
+      request.waitActive = true;
+    }
+    if (parsed.handleKnownInterstitials === 'safe') {
+      request.handleKnownInterstitials = 'safe';
+    }
     if (parsed.pinned) {
       request.panes = request.panes.map(item => ({ ...item, pinned: true }));
     }
@@ -772,6 +1139,9 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     noFocus: !parsed.focus && (parsed.noFocus || source === 'agent' || Boolean(parsed.agent)) ? true : undefined,
     focus: parsed.focus || undefined,
     source,
+    startAgent: parsed.startAgent || undefined,
+    waitActive: parsed.waitActive || undefined,
+    handleKnownInterstitials: parsed.handleKnownInterstitials === 'safe' ? 'safe' : undefined,
   };
 
   return request;

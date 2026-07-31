@@ -23,7 +23,13 @@ import {
   runPanelsSubmit,
   runPanelsSubmitComposer,
   runPanelsWait,
+  runPanelsEvents,
+  runPanelsWatch,
+  runPanelsAwait,
+  runPanelsAwaitAny,
   runPanesArchive,
+  runPanesStatus,
+  runPanesWatch,
   runPanesCreate,
   runPanesList,
   runPanesPin,
@@ -117,6 +123,8 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
   if (parsed.command === 'panes unpin') {
     return runPanesPin(parsed, false);
   }
+  if (parsed.command === 'panes status') return runPanesStatus(parsed);
+  if (parsed.command === 'panes watch') return runPanesWatch(parsed);
 
   if (parsed.command === 'panels list') {
     return runPanelsList(parsed);
@@ -149,6 +157,10 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
   if (parsed.command === 'panels wait') {
     return runPanelsWait(parsed);
   }
+  if (parsed.command === 'panels events') return runPanelsEvents(parsed);
+  if (parsed.command === 'panels watch') return runPanelsWatch(parsed);
+  if (parsed.command === 'panels await') return runPanelsAwait(parsed);
+  if (parsed.command === 'panels await-any') return runPanelsAwaitAny(parsed);
 
   if (parsed.command === 'agents doctor') {
     return runAgentsDoctor(parsed);
@@ -333,6 +345,8 @@ function createParsedArgs(command: ParsedArgs['command'], overrides: Partial<Par
     yes: false,
     verbose: false,
     json: false,
+    paneIds: [],
+    panelIds: [],
     remoteSetupArgs: [],
     ...overrides
   };

@@ -141,9 +141,16 @@
         },
         "agents": {
           "$ref": "#/$defs/stringList"
+        },
+        "eventSelectors": {
+          "$ref": "#/$defs/stringList"
         }
       },
       "additionalProperties": false
+    },
+    "eventSelectorMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
     },
     "agentTemplates": {
       "type": "object",
@@ -283,6 +290,13 @@
         },
         "jsonSchemas": {
           "$ref": "#/$defs/stringList"
+        },
+        "outputMode": {
+          "enum": ["jsonl"]
+        },
+        "exitCodes": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
         }
       },
       "additionalProperties": false
@@ -330,6 +344,9 @@
         },
         "description": {
           "type": "string"
+        },
+        "repeatable": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -352,6 +369,8 @@
         "panes archive",
         "panes pin",
         "panes unpin",
+        "panes status",
+        "panes watch",
         "panels",
         "panels create",
         "panels list",
@@ -361,6 +380,10 @@
         "panels submit",
         "panels submit-composer",
         "panels wait",
+        "panels events",
+        "panels watch",
+        "panels await",
+        "panels await-any",
         "agent-context"
       ],
       "properties": {
@@ -409,6 +432,8 @@
         "panes unpin": {
           "$ref": "#/$defs/helpLines"
         },
+        "panes status": { "$ref": "#/$defs/helpLines" },
+        "panes watch": { "$ref": "#/$defs/helpLines" },
         "panels": {
           "$ref": "#/$defs/helpLines"
         },
@@ -436,6 +461,16 @@
         "panels wait": {
           "$ref": "#/$defs/helpLines"
         },
+        "panels events": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels watch": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels await": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panels await-any": { "$ref": "#/$defs/helpLines" },
         "agent-context": {
           "$ref": "#/$defs/helpLines"
         }

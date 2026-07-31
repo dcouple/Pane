@@ -27,6 +27,7 @@ import {
 } from '../utils/sessionValidation';
 import type { SerializedArchiveTask } from '../services/archiveProgressManager';
 import { detectProjectConfig } from '../services/projectConfigDetector';
+import { getRuntimeRunpaneEventLog } from '../core/runtime';
 
 const DAEMON_SESSION_CHANNELS = [
   'sessions:get-all',
@@ -405,6 +406,7 @@ export function registerSessionHandlers(
       for (const panel of panels) {
         try {
           if (panel.type === 'terminal') {
+            getRuntimeRunpaneEventLog().append('panel_archived', panel, { paneId: sessionId });
             terminalPanelManager.destroyTerminal(panel.id);
           }
         } catch (panelError) {

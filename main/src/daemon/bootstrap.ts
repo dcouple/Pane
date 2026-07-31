@@ -35,6 +35,7 @@ import { setupEventListeners } from '../events';
 import { getAppDirectory } from '../utils/appDirectory';
 import { resourceMonitorService } from '../services/resourceMonitorService';
 import type { PaneCommandRegistry } from './commandRegistry';
+import { RunpaneEventLog } from '../services/runpaneEventLog';
 
 interface PaneDaemonHostOptions {
   app: App;
@@ -65,11 +66,13 @@ function installPaneRuntime(
   getPtyHostRuntime: () => PtyHostRuntime | null,
   getWebviewContextMap: () => Map<number, PaneWebviewContext>,
   daemonEventSink?: PaneEventSink,
+  runpaneEventLog = new RunpaneEventLog(),
 ): void {
   setPaneRuntime({
     eventSink,
     daemonEventSink,
     getConfigManager: () => configManager,
+    getRunpaneEventLog: () => runpaneEventLog,
     getPtyHostRuntime,
     getWebviewContextMap,
   });
@@ -93,10 +96,11 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   const rendererEventSink = options.rendererEventSink ?? noopPaneEventSink;
   const headlessWebviewContextMap = new Map<number, PaneWebviewContext>();
   const getWebviewContextMap = options.getWebviewContextMap ?? (() => headlessWebviewContextMap);
+  const runpaneEventLog = new RunpaneEventLog();
 
   const configManager = new ConfigManager();
   await configManager.initialize();
-  installPaneRuntime(rendererEventSink, configManager, options.getPtyHostRuntime, getWebviewContextMap);
+  installPaneRuntime(rendererEventSink, configManager, options.getPtyHostRuntime, getWebviewContextMap, undefined, runpaneEventLog);
 
   const logger = new Logger(configManager);
   console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
@@ -256,6 +260,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     options.getPtyHostRuntime,
     getWebviewContextMap,
     createFanoutEventSink(daemonSinks),
+    runpaneEventLog,
   );
 
   setupEventListeners(services);

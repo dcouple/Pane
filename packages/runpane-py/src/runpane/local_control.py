@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import os
 import sys
+import queue
+import signal
+import time
 from typing import Any, Dict, Optional
 
-from .daemon_client import invoke_daemon
+from .daemon_client import invoke_daemon, RetainedDaemonConnection
 from .generated_contract import RUNPANE_CONTRACT
 
 
@@ -270,6 +273,236 @@ def run_panels_wait(parsed: Any) -> int:
     return 0 if result.get("ok") else 1
 
 
+def run_panels_events(parsed: Any) -> int:
+    result = invoke_daemon("runpane:panels:events", [{"panelId": parsed.panel_id, "event": parsed.event_selector, "since": parsed.since}], pane_dir=parsed.pane_dir)
+    if not result.get("ok"):
+        print(json.dumps(result, separators=(",", ":")), file=sys.stderr)
+        return 3
+    if parsed.json:
+        print_json(result)
+    else:
+        for event in result.get("events", []):
+            print(f"{event.get('cursor')}\t{event.get('type')}\t{event.get('panelId')}")
+    return 0
+
+
+def run_panes_status(parsed: Any) -> int:
+    if not parsed.pane_id:
+        raise ValueError("runpane panes status requires --pane.")
+    result = invoke_daemon("runpane:panes:status", [{"paneId": parsed.pane_id, "changedSince": parsed.changed_since}], pane_dir=parsed.pane_dir)
+    if parsed.json:
+        print_json(result)
+    else:
+        for panel in result.get("panels", []):
+            print(f"{panel.get('panelId')}\t{(panel.get('state') or {}).get('agentActivity', 'unknown')}")
+    return 0
+
+
+def _resolve_multi_target_panels(parsed: Any, retain_panes: bool, stream: Optional["EventStream"] = None) -> None:
+    panel_ids = set(parsed.panel_ids)
+    for pane_id in parsed.pane_ids:
+        if stream:
+            result = stream.connection.request("runpane:panels:list", [{"paneId": pane_id}])
+        else:
+            result = invoke_daemon("runpane:panels:list", [{"paneId": pane_id}], pane_dir=parsed.pane_dir)
+        panel_ids.update(panel.get("id") for panel in result.get("panels", []) if panel.get("id"))
+    parsed.panel_id = None
+    parsed.pane_id = None
+    parsed.panel_ids = list(panel_ids)
+    if not retain_panes:
+        parsed.pane_ids = []
+
+
+def run_panes_watch(parsed: Any) -> int:
+    stream = EventStream(parsed)
+    baseline_error = stream.capture_baseline()
+    if baseline_error is not None:
+        stream.close()
+        return baseline_error
+    _resolve_multi_target_panels(parsed, parsed.include_future_panels, stream)
+    return run_panels_watch(parsed, stream)
+
+
+def run_panels_await_any(parsed: Any) -> int:
+    stream = EventStream(parsed)
+    baseline_error = stream.capture_baseline()
+    if baseline_error is not None:
+        stream.close()
+        return baseline_error
+    _resolve_multi_target_panels(parsed, False, stream)
+    return run_panels_await(parsed, stream)
+
+
+class EventStream:
+    def __init__(self, parsed: Any) -> None:
+        self.connection = RetainedDaemonConnection(parsed.pane_dir)
+        self.initial_since = parsed.since
+        self.processed_cursor = ""
+        self.emitted_cursor = ""
+
+    def replay(self, resolved_by: str, emit: Any) -> Optional[int]:
+        response = self.connection.request("runpane:panels:events", [{"since": self.processed_cursor or self.initial_since}])
+        if not response.get("ok"):
+            print(json.dumps(response, separators=(",", ":")), file=sys.stderr)
+            return 3
+        for event in sorted(response.get("events", []), key=cursor_number):
+            self.deliver(event, resolved_by, emit)
+        while True:
+            try:
+                event = self.connection.events.get_nowait()
+            except queue.Empty:
+                break
+            self.deliver(event, resolved_by, emit)
+        cursor = response.get("cursor")
+        if cursor and (not self.processed_cursor or cursor_number(cursor) > cursor_number(self.processed_cursor)):
+            self.processed_cursor = cursor
+        return None
+
+    def deliver(self, event: Any, resolved_by: str, emit: Any) -> None:
+        validate_event(event)
+        if self.processed_cursor and cursor_number(event["cursor"]) <= cursor_number(self.processed_cursor):
+            return
+        self.processed_cursor = event["cursor"]
+        emit(event, resolved_by)
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def capture_baseline(self) -> Optional[int]:
+        if self.initial_since:
+            return None
+        response = self.connection.request("runpane:panels:events", [{"since": self.initial_since}])
+        if not response.get("ok"):
+            print(json.dumps(response, separators=(",", ":")), file=sys.stderr)
+            return 3
+        cursor = response.get("cursor")
+        if cursor:
+            self.processed_cursor = cursor
+        return None
+
+
+def run_panels_watch(parsed: Any, stream: Optional[EventStream] = None) -> int:
+    stream = stream or EventStream(parsed)
+    stopped = False
+    def stop(_signum: int, _frame: Any) -> None:
+        nonlocal stopped
+        stopped = True
+    previous_int = signal.signal(signal.SIGINT, stop)
+    previous_term = signal.signal(signal.SIGTERM, stop)
+    def emit(event: Dict[str, Any], resolved_by: str) -> None:
+        if matches_event(parsed, event, False):
+            print(json.dumps({**event, "resolvedBy": resolved_by}, separators=(",", ":")), flush=True)
+            stream.emitted_cursor = event["cursor"]
+    try:
+        code = stream.replay("event", emit)
+        if code is not None:
+            return code
+        heartbeat = (parsed.heartbeat_ms or 30_000) / 1000
+        next_heartbeat = time.monotonic() + heartbeat
+        while not stopped:
+            if not stream.connection.errors.empty():
+                error = stream.connection.errors.get_nowait()
+                print(str(error), file=sys.stderr)
+                return 1
+            try:
+                event = stream.connection.events.get(timeout=min(0.05, max(next_heartbeat - time.monotonic(), 0.001)))
+                stream.deliver(event, "event", emit)
+            except queue.Empty:
+                pass
+            if time.monotonic() >= next_heartbeat:
+                code = stream.replay("reconciliation", emit)
+                if code is not None:
+                    return code
+                next_heartbeat += heartbeat
+        return 0
+    finally:
+        signal.signal(signal.SIGINT, previous_int)
+        signal.signal(signal.SIGTERM, previous_term)
+        stream.close()
+
+
+def run_panels_await(parsed: Any, stream: Optional[EventStream] = None) -> int:
+    if (not parsed.panel_id and not parsed.panel_ids) or not parsed.event_selector:
+        raise ValueError("runpane panels await requires --panel and --event.")
+    stream = stream or EventStream(parsed)
+    match: Optional[Dict[str, Any]] = None
+    resolved = "event"
+    def emit(event: Dict[str, Any], resolved_by: str) -> None:
+        nonlocal match, resolved
+        if match is None and matches_event(parsed, event, True):
+            match, resolved = event, resolved_by
+    try:
+        code = stream.replay("event", emit)
+        if code is not None:
+            return code
+        deadline = time.monotonic() + (parsed.timeout_ms or 30_000) / 1000
+        heartbeat = (parsed.heartbeat_ms or 30_000) / 1000
+        next_heartbeat = time.monotonic() + heartbeat
+        while match is None and time.monotonic() < deadline:
+            if not stream.connection.errors.empty():
+                print(str(stream.connection.errors.get_nowait()), file=sys.stderr)
+                return 1
+            try:
+                event = stream.connection.events.get(timeout=min(0.05, max(deadline - time.monotonic(), 0.001)))
+                stream.deliver(event, "event", emit)
+            except queue.Empty:
+                pass
+            if match is None and time.monotonic() >= next_heartbeat:
+                code = stream.replay("reconciliation", emit)
+                if code is not None:
+                    return code
+                if match is None and is_state_backed(parsed.event_selector):
+                    for panel_id in ([parsed.panel_id] if parsed.panel_id else parsed.panel_ids):
+                        screen = stream.connection.request("runpane:panels:screen", [{"panelId": panel_id}])
+                        event_type = match_state(parsed.event_selector, screen.get("state") or {})
+                        if event_type:
+                            match = {"id": stream.processed_cursor, "cursor": stream.processed_cursor, "type": event_type, "at": "", "paneId": screen.get("paneId"), "panelId": panel_id, "state": screen.get("state") or {}}
+                            resolved = "reconciliation"
+                            break
+                next_heartbeat += heartbeat
+        if match is not None:
+            print(json.dumps({"ok": True, "timedOut": False, "matchedEvent": match["type"], "resolvedBy": resolved, "event": match, "state": match["state"]}, separators=(",", ":")))
+            return 0
+        screen = stream.connection.request("runpane:panels:screen", [{"panelId": parsed.panel_id or parsed.panel_ids[0]}])
+        print(json.dumps({"ok": False, "timedOut": True, "state": screen.get("state") or {}}, separators=(",", ":")))
+        return 2
+    finally:
+        stream.close()
+
+
+EVENT_TYPES = {"panel-created":"panel_created", "terminal-ready":"terminal_ready", "prompt-staged":"prompt_staged", "prompt-submitted":"prompt_submitted", "agent-active":"agent_active", "agent-idle":"agent_idle", "input-required":"input_required", "blocked":"blocked", "unblocked":"unblocked", "panel-exited":"panel_exited", "panel-archived":"panel_archived"}
+def cursor_number(value: Any) -> int:
+    if isinstance(value, dict): value = value.get("cursor")
+    if not isinstance(value, str) or ":" not in value: raise ValueError("Malformed semantic event cursor")
+    return int(value.rsplit(":", 1)[1])
+def validate_event(event: Any) -> None:
+    if (not isinstance(event, dict) or not all(isinstance(event.get(key), str) for key in ("id", "cursor", "type", "at", "panelId"))
+            or event.get("id") != event.get("cursor") or event.get("type") not in set(EVENT_TYPES.values())
+            or (event.get("paneId") is not None and not isinstance(event.get("paneId"), str))
+            or not isinstance(event.get("state"), dict) or not isinstance(event["state"].get("initialized"), bool)):
+        raise ValueError("Malformed semantic event envelope")
+def matches_event(parsed: Any, event: Dict[str, Any], await_mode: bool) -> bool:
+    if parsed.panel_id and event.get("panelId") != parsed.panel_id: return False
+    if (parsed.panel_ids or parsed.pane_ids) and event.get("panelId") not in parsed.panel_ids and event.get("paneId") not in parsed.pane_ids: return False
+    if not parsed.event_selector: return True
+    if await_mode and parsed.event_selector == "agent-idle": return event.get("type") in {"agent_idle", "input_required", "blocked", "panel_exited"}
+    return EVENT_TYPES.get(parsed.event_selector) == event.get("type")
+def is_state_backed(selector: str) -> bool:
+    return selector in {"terminal-ready", "agent-active", "agent-idle", "input-required", "blocked", "unblocked", "panel-exited"}
+def match_state(selector: str, state: Dict[str, Any]) -> Optional[str]:
+    if selector == "terminal-ready" and state.get("terminalReady"): return "terminal_ready"
+    if selector == "agent-active" and state.get("agentActivity") == "active": return "agent_active"
+    if selector == "agent-idle":
+        if state.get("agentActivity") == "exited": return "panel_exited"
+        if state.get("blocked"): return "input_required" if state.get("inputRequired") else "blocked"
+        if state.get("agentActivity") == "idle": return "agent_idle"
+    if selector == "input-required" and state.get("inputRequired"): return "input_required"
+    if selector == "blocked" and state.get("blocked"): return "blocked"
+    if selector == "unblocked" and state.get("blocked") is False: return "unblocked"
+    if selector == "panel-exited" and state.get("agentActivity") == "exited": return "panel_exited"
+    return None
+
+
 def run_agents_doctor(parsed: Any) -> int:
     if not parsed.agent:
         raise ValueError("runpane agents doctor requires --agent codex|claude.")
@@ -344,6 +577,12 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             payload["readyTimeoutMs"] = parsed.ready_timeout_ms
         if parsed.concurrency is not None:
             payload["concurrency"] = parsed.concurrency
+        if parsed.start_agent:
+            payload["startAgent"] = True
+        if parsed.wait_active:
+            payload["waitActive"] = True
+        if parsed.handle_known_interstitials == "safe":
+            payload["handleKnownInterstitials"] = "safe"
         if parsed.pinned:
             payload["panes"] = [
                 {**item, "pinned": True} if isinstance(item, dict) else item
@@ -376,6 +615,9 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
         **optional_value("noFocus", True if not parsed.focus and (parsed.no_focus or parsed.source == "agent" or bool(parsed.agent)) else None),
         **optional_value("focus", True if parsed.focus else None),
         **optional_value("source", parsed.source),
+        **optional_value("startAgent", True if parsed.start_agent else None),
+        **optional_value("waitActive", True if parsed.wait_active else None),
+        **optional_value("handleKnownInterstitials", parsed.handle_known_interstitials),
     }
 
 

@@ -7,7 +7,9 @@ import os
 import posixpath
 import socket
 import sys
-from typing import Any, Dict, List, Optional
+import queue
+import threading
+from typing import Any, BinaryIO, Dict, List, Optional
 
 FRAME_DELIMITER = b"\n"
 UNIX_SOCKET_BASE_DIRECTORY = "/tmp"
@@ -19,6 +21,80 @@ class PaneDaemonClientError(RuntimeError):
     def __init__(self, message: str, code: Optional[str] = None) -> None:
         super().__init__(message)
         self.code = code
+
+
+class RetainedDaemonConnection:
+    def __init__(self, pane_dir: Optional[str] = None) -> None:
+        endpoint = get_pane_daemon_endpoint(resolve_pane_directory(pane_dir))
+        self._endpoint = endpoint
+        self._socket: Optional[socket.socket] = None
+        self._pipe: Optional[BinaryIO] = None
+        self._decoder = PaneDaemonFrameDecoder()
+        self._pending: Dict[int, queue.Queue[Any]] = {}
+        self.events: queue.Queue[Any] = queue.Queue()
+        self.errors: queue.Queue[Exception] = queue.Queue()
+        self._next_id = 1
+        self._closed = False
+        if endpoint["transport"] == "pipe":
+            self._pipe = open(endpoint["path"], "r+b", buffering=0)
+        else:
+            self._socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self._socket.connect(endpoint["path"])
+        self._thread = threading.Thread(target=self._read_loop, daemon=True)
+        self._thread.start()
+
+    def request(self, channel: str, args: Optional[List[Any]] = None, timeout_ms: float = DEFAULT_TIMEOUT_MS) -> Any:
+        request_id = self._next_id
+        self._next_id += 1
+        response_queue: queue.Queue[Any] = queue.Queue(maxsize=1)
+        self._pending[request_id] = response_queue
+        self._write(encode_frame({"type": "request", "id": request_id, "channel": channel, "args": args or []}))
+        try:
+            response = response_queue.get(timeout=timeout_ms / 1000)
+        except queue.Empty as error:
+            self._pending.pop(request_id, None)
+            raise PaneDaemonClientError("Timed out waiting for Pane daemon response", "ERR_RUNPANE_DAEMON_TIMEOUT") from error
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    def close(self) -> None:
+        self._closed = True
+        if self._socket:
+            self._socket.close()
+        if self._pipe:
+            self._pipe.close()
+
+    def _write(self, data: bytes) -> None:
+        if self._socket:
+            self._socket.sendall(data)
+        elif self._pipe:
+            self._pipe.write(data)
+
+    def _read_loop(self) -> None:
+        try:
+            while not self._closed:
+                chunk = self._socket.recv(65536) if self._socket else self._pipe.read(65536) if self._pipe else b""
+                if not chunk:
+                    raise PaneDaemonClientError("Pane daemon closed the retained connection", "ERR_RUNPANE_DAEMON_CLOSED")
+                for frame in self._decoder.push(chunk):
+                    if frame.get("type") == "event" and frame.get("channel") == "panel:semanticEvent":
+                        args = frame.get("args")
+                        self.events.put(args[0] if isinstance(args, list) and args else None)
+                    elif frame.get("type") == "response":
+                        target = self._pending.pop(frame.get("id"), None)
+                        if target:
+                            if frame.get("ok") is True:
+                                target.put(frame.get("result"))
+                            else:
+                                payload = frame.get("error") or {}
+                                target.put(PaneDaemonClientError(payload.get("message", "Pane daemon request failed"), payload.get("code")))
+        except Exception as error:
+            if not self._closed:
+                self.errors.put(error)
+                for target in self._pending.values():
+                    target.put(error)
+                self._pending.clear()
 
 
 def resolve_pane_directory(pane_dir: Optional[str] = None) -> str:

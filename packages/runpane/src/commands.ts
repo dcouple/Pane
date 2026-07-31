@@ -27,6 +27,8 @@ export interface ParsedArgs {
   repo?: string;
   paneId?: string;
   panelId?: string;
+  paneIds: string[];
+  panelIds: string[];
   repoPath?: string;
   name?: string;
   worktreeName?: string;
@@ -53,6 +55,15 @@ export interface ParsedArgs {
   pinned?: boolean;
   composerStrategy?: string;
   force?: boolean;
+  eventSelector?: string;
+  since?: string;
+  jsonl?: boolean;
+  heartbeatMs?: number;
+  changedSince?: string;
+  includeFuturePanels?: boolean;
+  startAgent?: boolean;
+  waitActive?: boolean;
+  handleKnownInterstitials?: string;
   remoteSetupArgs: string[];
 }
 
@@ -79,6 +90,8 @@ const DEFAULTS: Omit<ParsedArgs, 'command'> = {
   yes: RUNPANE_CONTRACT.defaults.yes,
   verbose: RUNPANE_CONTRACT.defaults.verbose,
   json: false,
+  paneIds: [],
+  panelIds: [],
   remoteSetupArgs: []
 };
 
@@ -122,6 +135,8 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = {
     command: matched.name as RunpaneCommand,
     ...DEFAULTS,
+    paneIds: [],
+    panelIds: [],
     remoteSetupArgs: []
   };
 
@@ -138,6 +153,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   }
 
   parseFlags(args, parsed);
+  validateEventCommandFlags(parsed);
   return parsed;
 }
 
@@ -271,6 +287,16 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
     parsed.force = true;
     return;
   }
+  if (flag === '--jsonl') {
+    parsed.jsonl = true;
+    return;
+  }
+  if (flag === '--include-future-panels') {
+    parsed.includeFuturePanels = true;
+    return;
+  }
+  if (flag === '--start-agent') { parsed.startAgent = true; return; }
+  if (flag === '--wait-active') { parsed.waitActive = true; return; }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
 }
@@ -286,10 +312,12 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
   }
   if (flag === '--pane') {
     parsed.paneId = value;
+    parsed.paneIds.push(value);
     return;
   }
   if (flag === '--panel') {
     parsed.panelId = value;
+    parsed.panelIds.push(value);
     return;
   }
   if (flag === '--path') {
@@ -408,6 +436,32 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     parsed.composerStrategy = value;
     return;
   }
+  if (flag === '--event') {
+    if (!(RUNPANE_CONTRACT.enums.eventSelectors as readonly string[]).includes(value)) {
+      throw new Error(`Invalid --event "${value}". Expected one of: ${RUNPANE_CONTRACT.enums.eventSelectors.join(', ')}`);
+    }
+    parsed.eventSelector = value;
+    return;
+  }
+  if (flag === '--since') {
+    parsed.since = value;
+    return;
+  }
+  if (flag === '--changed-since') {
+    parsed.changedSince = value;
+    return;
+  }
+  if (flag === '--handle-known-interstitials') {
+    if (value !== 'safe') throw new Error('--handle-known-interstitials must be safe.');
+    parsed.handleKnownInterstitials = value;
+    return;
+  }
+  if (flag === '--heartbeat-ms') {
+    const heartbeatMs = Number(value);
+    if (!Number.isFinite(heartbeatMs) || heartbeatMs <= 0) throw new Error('--heartbeat-ms must be a positive number.');
+    parsed.heartbeatMs = heartbeatMs;
+    return;
+  }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
 }
@@ -421,6 +475,8 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panes archive'
     || command === 'panes pin'
     || command === 'panes unpin'
+    || command === 'panes status'
+    || command === 'panes watch'
     || command === 'panels create'
     || command === 'panels list'
     || command === 'panels output'
@@ -429,7 +485,23 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panels submit'
     || command === 'panels submit-composer'
     || command === 'panels wait'
+    || command === 'panels events'
+    || command === 'panels watch'
+    || command === 'panels await'
+    || command === 'panels await-any'
     || command === 'agents doctor';
+}
+
+function validateEventCommandFlags(parsed: ParsedArgs): void {
+  if (parsed.jsonl && parsed.command !== 'panels watch' && parsed.command !== 'panes watch') throw new Error('--jsonl is only valid with panels watch or panes watch.');
+  if (parsed.command === 'panels await' && (!parsed.panelId || !parsed.eventSelector)) {
+    throw new Error('panels await requires --panel and --event.');
+  }
+  if (parsed.command === 'panels await-any' && (parsed.panelIds.length + parsed.paneIds.length === 0 || !parsed.eventSelector)) {
+    throw new Error('panels await-any requires at least one --panel or --pane and --event.');
+  }
+  if (parsed.command === 'panes watch' && parsed.paneIds.length === 0) throw new Error('panes watch requires --pane.');
+  if (parsed.command === 'panes status' && !parsed.paneId) throw new Error('panes status requires --pane.');
 }
 
 function appendRemoteArg(parsed: ParsedArgs, flag: string, value?: string): void {

@@ -27,7 +27,13 @@ from .local_control import (
     run_panels_submit,
     run_panels_submit_composer,
     run_panels_wait,
+    run_panels_events,
+    run_panels_watch,
+    run_panels_await,
+    run_panels_await_any,
     run_panes_archive,
+    run_panes_status,
+    run_panes_watch,
     run_panes_create,
     run_panes_list,
     run_panes_pin,
@@ -92,6 +98,8 @@ class ParsedArgs:
     repo: Optional[str] = None
     pane_id: Optional[str] = None
     panel_id: Optional[str] = None
+    pane_ids: List[str] = field(default_factory=list)
+    panel_ids: List[str] = field(default_factory=list)
     repo_path: Optional[str] = None
     name: Optional[str] = None
     worktree_name: Optional[str] = None
@@ -118,6 +126,15 @@ class ParsedArgs:
     pinned: bool = False
     composer_strategy: Optional[str] = None
     force: bool = False
+    event_selector: Optional[str] = None
+    since: Optional[str] = None
+    jsonl: bool = False
+    heartbeat_ms: Optional[float] = None
+    changed_since: Optional[str] = None
+    include_future_panels: bool = False
+    start_agent: bool = False
+    wait_active: bool = False
+    handle_known_interstitials: Optional[str] = None
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -179,6 +196,10 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panes_pin(parsed, True)
     if parsed.command == "panes unpin":
         return run_panes_pin(parsed, False)
+    if parsed.command == "panes status":
+        return run_panes_status(parsed)
+    if parsed.command == "panes watch":
+        return run_panes_watch(parsed)
     if parsed.command == "panels list":
         return run_panels_list(parsed)
     if parsed.command == "panels create":
@@ -195,6 +216,14 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panels_submit_composer(parsed)
     if parsed.command == "panels wait":
         return run_panels_wait(parsed)
+    if parsed.command == "panels events":
+        return run_panels_events(parsed)
+    if parsed.command == "panels watch":
+        return run_panels_watch(parsed)
+    if parsed.command == "panels await":
+        return run_panels_await(parsed)
+    if parsed.command == "panels await-any":
+        return run_panels_await_any(parsed)
     if parsed.command == "agents doctor":
         return run_agents_doctor(parsed)
     if parsed.command in {"install", "update"}:
@@ -382,6 +411,16 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         parsed.target = "client"
 
     parse_flags(args, parsed)
+    if parsed.jsonl and parsed.command not in {"panels watch", "panes watch"}:
+        raise ValueError("--jsonl is only valid with panels watch or panes watch.")
+    if parsed.command == "panels await" and (not parsed.panel_id or not parsed.event_selector):
+        raise ValueError("panels await requires --panel and --event.")
+    if parsed.command == "panels await-any" and (not parsed.panel_ids and not parsed.pane_ids or not parsed.event_selector):
+        raise ValueError("panels await-any requires at least one --panel or --pane and --event.")
+    if parsed.command == "panes watch" and not parsed.pane_ids:
+        raise ValueError("panes watch requires --pane.")
+    if parsed.command == "panes status" and not parsed.pane_id:
+        raise ValueError("panes status requires --pane.")
     return parsed
 
 
@@ -477,6 +516,18 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
     if flag == "--force":
         parsed.force = True
         return
+    if flag == "--jsonl":
+        parsed.jsonl = True
+        return
+    if flag == "--include-future-panels":
+        parsed.include_future_panels = True
+        return
+    if flag == "--start-agent":
+        parsed.start_agent = True
+        return
+    if flag == "--wait-active":
+        parsed.wait_active = True
+        return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
 
@@ -489,9 +540,11 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
         return
     if flag == "--pane":
         parsed.pane_id = value
+        parsed.pane_ids.append(value)
         return
     if flag == "--panel":
         parsed.panel_id = value
+        parsed.panel_ids.append(value)
         return
     if flag == "--path":
         parsed.repo_path = value
@@ -594,6 +647,32 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             raise ValueError("--strategy must be one of: auto, codex-ctrl-enter, enter.")
         parsed.composer_strategy = value
         return
+    if flag == "--event":
+        selectors = set(RUNPANE_CONTRACT["enums"]["eventSelectors"])
+        if value not in selectors:
+            raise ValueError(f"Invalid --event {value}. Expected one of: {', '.join(sorted(selectors))}")
+        parsed.event_selector = value
+        return
+    if flag == "--since":
+        parsed.since = value
+        return
+    if flag == "--changed-since":
+        parsed.changed_since = value
+        return
+    if flag == "--handle-known-interstitials":
+        if value != "safe":
+            raise ValueError("--handle-known-interstitials must be safe.")
+        parsed.handle_known_interstitials = value
+        return
+    if flag == "--heartbeat-ms":
+        try:
+            heartbeat_ms = float(value)
+        except ValueError as error:
+            raise ValueError("--heartbeat-ms must be a positive number.") from error
+        if heartbeat_ms <= 0:
+            raise ValueError("--heartbeat-ms must be a positive number.")
+        parsed.heartbeat_ms = heartbeat_ms
+        return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
 
@@ -607,6 +686,8 @@ def is_runpane_local_command(command: str) -> bool:
         "panes archive",
         "panes pin",
         "panes unpin",
+        "panes status",
+        "panes watch",
         "panels create",
         "panels list",
         "panels output",
@@ -615,6 +696,10 @@ def is_runpane_local_command(command: str) -> bool:
         "panels submit",
         "panels submit-composer",
         "panels wait",
+        "panels events",
+        "panels watch",
+        "panels await",
+        "panels await-any",
         "agents doctor",
     }
 

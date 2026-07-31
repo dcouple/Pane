@@ -33,6 +33,7 @@ export interface TerminalPanelState {
   initialInput?: string;         // First input to send once the initial command is ready
   initialInputMode?: 'stdin' | 'argument'; // How initialInput is delivered to the initial command
   initialInputSubmitStrategy?: 'enter' | 'codex-ctrl-enter'; // How stdin initialInput should be submitted
+  initialInputDeliveryOwner?: 'runpane-create'; // Owner for create-time guarded delivery; generic callbacks must not deliver this input
   initialInputDeliveryVersion?: number; // Bumps when a feature changes delivery semantics
   initialInputSentAt?: string;   // Set after initialInput has been written once
   initialInputError?: string;    // Best-effort error if initialInput could not be written
@@ -63,6 +64,9 @@ export interface TerminalPanelState {
   // CLI tool init state
   isCliPanel?: boolean;              // True if this terminal runs a CLI tool (claude/codex)
   isCliReady?: boolean;              // True after the CLI tool has started responding
+  exitedAt?: string;                 // Last process exit time, retained after live cleanup
+  exitCode?: number;                 // Last process exit code when available
+  exitSignal?: number;               // Last process exit signal when available
 }
 
 export interface DiffPanelState {

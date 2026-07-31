@@ -1,6 +1,7 @@
 import type { ConfigManager } from '../services/configManager';
 import type { PtyHostSpawnOpts } from '../ptyHost/types';
 import { noopPaneEventSink, type PaneEventSink } from './eventSink';
+import type { RunpaneEventLog } from '../services/runpaneEventLog';
 
 export interface PaneWebviewContext {
   panelId: string;
@@ -53,6 +54,7 @@ export interface PaneRuntime {
    */
   daemonEventSink?: PaneEventSink;
   getConfigManager(): ConfigManager;
+  getRunpaneEventLog(): RunpaneEventLog;
   getPtyHostRuntime(): PtyHostRuntime | null;
   getWebviewContextMap(): Map<number, PaneWebviewContext>;
 }
@@ -81,6 +83,10 @@ export function getPaneDaemonEventSink(): PaneEventSink {
 
 export function getRuntimeConfigManager(): ConfigManager {
   return getPaneRuntime().getConfigManager();
+}
+
+export function getRuntimeRunpaneEventLog(): RunpaneEventLog {
+  return getPaneRuntime().getRunpaneEventLog();
 }
 
 export function getPtyHostRuntime(): PtyHostRuntime | null {

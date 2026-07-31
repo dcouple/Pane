@@ -57,6 +57,7 @@ export class ConfigManager extends EventEmitter {
       defaultOrchestratorAgent: DEFAULT_PANE_CHAT_AGENT,
       autoStartOnBoot: true,
       keepAwakeWhileSessionsActive: true,
+      agentIdleDebounceMs: 60_000,
       stravuApiKey: undefined,
       stravuServerUrl: '', // Stravu integration disabled
       notifications: {

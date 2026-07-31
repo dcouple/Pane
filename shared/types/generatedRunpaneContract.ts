@@ -48,7 +48,33 @@ export const RUNPANE_CONTRACT = {
     "agents": [
       "codex",
       "claude"
+    ],
+    "eventSelectors": [
+      "panel-created",
+      "terminal-ready",
+      "prompt-staged",
+      "prompt-submitted",
+      "agent-active",
+      "agent-idle",
+      "input-required",
+      "blocked",
+      "unblocked",
+      "panel-exited",
+      "panel-archived"
     ]
+  },
+  "eventSelectorMap": {
+    "panel-created": "panel_created",
+    "terminal-ready": "terminal_ready",
+    "prompt-staged": "prompt_staged",
+    "prompt-submitted": "prompt_submitted",
+    "agent-active": "agent_active",
+    "agent-idle": "agent_idle",
+    "input-required": "input_required",
+    "blocked": "blocked",
+    "unblocked": "unblocked",
+    "panel-exited": "panel_exited",
+    "panel-archived": "panel_archived"
   },
   "agentTemplates": {
     "codex": {
@@ -221,6 +247,33 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "panes status",
+      "summary": "Read a compact semantic-state snapshot for a Pane.",
+      "usage": [
+        "runpane panes status --pane <pane-id> [--changed-since <cursor>] [--json]"
+      ],
+      "jsonSchemas": [
+        "panelStateSummary"
+      ]
+    },
+    {
+      "name": "panes watch",
+      "summary": "Stream semantic events for panels in a Pane.",
+      "usage": [
+        "runpane panes watch --pane <pane-id> [--include-future-panels] [--event <selector>] [--since <cursor>] [--jsonl]"
+      ],
+      "outputMode": "jsonl",
+      "exitCodes": {
+        "0": "clean stop",
+        "1": "transport or other error",
+        "3": "cursor expired"
+      },
+      "jsonSchemas": [
+        "semanticEvent",
+        "cursorExpiredError"
+      ]
+    },
+    {
       "name": "panels create",
       "summary": "Create a terminal-backed tool panel inside an existing Pane session.",
       "usage": [
@@ -307,6 +360,72 @@ export const RUNPANE_CONTRACT = {
       ],
       "jsonSchemas": [
         "panelWaitResult"
+      ]
+    },
+    {
+      "name": "panels events",
+      "summary": "Replay retained semantic panel events after a cursor.",
+      "usage": [
+        "runpane panels events [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--json]"
+      ],
+      "exitCodes": {
+        "0": "success",
+        "1": "transport or other error",
+        "3": "cursor expired"
+      },
+      "jsonSchemas": [
+        "panelEventsResult"
+      ]
+    },
+    {
+      "name": "panels watch",
+      "summary": "Stream semantic panel events as compact JSONL.",
+      "usage": [
+        "runpane panels watch [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--heartbeat-ms <ms>] [--jsonl]"
+      ],
+      "outputMode": "jsonl",
+      "exitCodes": {
+        "0": "clean stop",
+        "1": "transport or other error",
+        "3": "cursor expired"
+      },
+      "jsonSchemas": [
+        "semanticEvent",
+        "cursorExpiredError"
+      ]
+    },
+    {
+      "name": "panels await",
+      "summary": "Wait for the first matching semantic panel event.",
+      "usage": [
+        "runpane panels await --panel <panel-id> --event <selector> [--since <cursor>] [--timeout-ms <ms>] [--heartbeat-ms <ms>] [--json]"
+      ],
+      "exitCodes": {
+        "0": "matched",
+        "1": "transport or other error",
+        "2": "timed out",
+        "3": "cursor expired"
+      },
+      "jsonSchemas": [
+        "panelAwaitResult",
+        "cursorExpiredError"
+      ]
+    },
+    {
+      "name": "panels await-any",
+      "summary": "Wait for the first matching event across panels or Panes.",
+      "usage": [
+        "runpane panels await-any (--panel <panel-id>|--pane <pane-id>)... --event <selector> [--timeout-ms <ms>] [--json]"
+      ],
+      "exitCodes": {
+        "0": "matched",
+        "1": "transport or other error",
+        "2": "timed out",
+        "3": "cursor expired"
+      },
+      "jsonSchemas": [
+        "panelAwaitResult",
+        "cursorExpiredError"
       ]
     }
   ],
@@ -413,11 +532,13 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--pane",
         "value": "<pane-id>",
+        "repeatable": true,
         "description": "Pane/session id to inspect."
       },
       {
         "name": "--panel",
         "value": "<panel-id>",
+        "repeatable": true,
         "description": "Tool panel id to inspect or control."
       },
       {
@@ -509,6 +630,31 @@ export const RUNPANE_CONTRACT = {
         "description": "Polling interval for panels wait."
       },
       {
+        "name": "--event",
+        "value": "<selector>",
+        "description": "Semantic event selector in kebab-case."
+      },
+      {
+        "name": "--since",
+        "value": "<cursor>",
+        "description": "Replay events strictly after this cursor."
+      },
+      {
+        "name": "--changed-since",
+        "value": "<cursor>",
+        "description": "Return panels with semantic transitions after this lifecycle cursor."
+      },
+      {
+        "name": "--heartbeat-ms",
+        "value": "<milliseconds>",
+        "description": "Periodic event-log and state reconciliation interval."
+      },
+      {
+        "name": "--handle-known-interstitials",
+        "value": "<safe>",
+        "description": "Opt in to the explicit reversible interstitial allowlist."
+      },
+      {
         "name": "--text",
         "value": "<text>",
         "description": "Text bytes to send to a terminal panel."
@@ -553,6 +699,22 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--force",
         "description": "Archive even if the pane's branch has uncommitted, untracked, or unpushed changes."
+      },
+      {
+        "name": "--jsonl",
+        "description": "Print one compact JSON object per line (panels watch always uses JSONL)."
+      },
+      {
+        "name": "--include-future-panels",
+        "description": "Keep watching panels created in the selected Pane after the stream starts."
+      },
+      {
+        "name": "--start-agent",
+        "description": "Require verified initial prompt submission and active agent work."
+      },
+      {
+        "name": "--wait-active",
+        "description": "Wait for agent activity after initial prompt delivery."
       }
     ]
   },
@@ -581,6 +743,9 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
         "  runpane panels submit-composer --panel <panel-id> [--strategy auto|codex-ctrl-enter|enter] --yes [--json]",
         "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--json]",
+        "  runpane panels events [--panel <panel-id>] [--since <cursor>] [--json]",
+        "  runpane panels watch [--panel <panel-id>] [--event <selector>] [--jsonl]",
+        "  runpane panels await --panel <panel-id> --event <selector> [--json]",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -821,6 +986,9 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
         "  runpane panels submit-composer --panel <panel-id> [--strategy auto|codex-ctrl-enter|enter] --yes [--json]",
         "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--json]",
+        "  runpane panels events [--panel <panel-id>] [--since <cursor>] [--json]",
+        "  runpane panels watch [--panel <panel-id>] [--event <selector>] [--jsonl]",
+        "  runpane panels await --panel <panel-id> --event <selector> [--json]",
         "",
         "Run \"runpane help panels create\" or another command-specific topic for options."
       ],
@@ -931,6 +1099,48 @@ export const RUNPANE_CONTRACT = {
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output"
       ],
+      "panels events": [
+        "Usage:",
+        "  runpane panels events [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--json]",
+        "",
+        "Replays retained semantic events strictly after a cursor.",
+        "",
+        "Exit codes: 0 success, 3 cursor expired, 1 transport/error."
+      ],
+      "panes status": [
+        "Usage:",
+        "  runpane panes status --pane <pane-id> [--changed-since <cursor>] [--json]",
+        "",
+        "Returns compact per-panel semantic state and a race-free snapshot cursor."
+      ],
+      "panes watch": [
+        "Usage:",
+        "  runpane panes watch --pane <pane-id> [--include-future-panels] [--event <selector>] [--since <cursor>] [--jsonl]",
+        "",
+        "Streams semantic events for a Pane."
+      ],
+      "panels watch": [
+        "Usage:",
+        "  runpane panels watch [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--heartbeat-ms <ms>] [--jsonl]",
+        "",
+        "Streams one compact semantic event JSON object per stdout line.",
+        "",
+        "Exit codes: 0 clean stop, 3 cursor expired, 1 transport/error."
+      ],
+      "panels await": [
+        "Usage:",
+        "  runpane panels await --panel <panel-id> --event <selector> [--timeout-ms <ms>] [--heartbeat-ms <ms>] [--json]",
+        "",
+        "Waits for a matching semantic event and periodically reconciles state.",
+        "",
+        "Exit codes: 0 matched, 2 timed out, 3 cursor expired, 1 transport/error."
+      ],
+      "panels await-any": [
+        "Usage:",
+        "  runpane panels await-any (--panel <id>|--pane <id>)... --event <selector> [--timeout-ms <ms>] [--json]",
+        "",
+        "Waits for the first matching event across all selected targets."
+      ],
       "panels create": [
         "Create a terminal-backed tool panel inside an existing Pane session.",
         "",
@@ -990,6 +1200,9 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
         "  runpane panels submit-composer --panel <panel-id> [--strategy auto|codex-ctrl-enter|enter] --yes [--json]",
         "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--json]",
+        "  runpane panels events [--panel <panel-id>] [--since <cursor>] [--json]",
+        "  runpane panels watch [--panel <panel-id>] [--event <selector>] [--jsonl]",
+        "  runpane panels await --panel <panel-id> --event <selector> [--json]",
         "  runpane help [command]",
         "",
         "Quick start:",
@@ -1219,6 +1432,9 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]",
         "  runpane panels submit-composer --panel <panel-id> [--strategy auto|codex-ctrl-enter|enter] --yes [--json]",
         "  runpane panels wait --panel <panel-id> [--for initialized|ready|idle|text] [--json]",
+        "  runpane panels events [--panel <panel-id>] [--since <cursor>] [--json]",
+        "  runpane panels watch [--panel <panel-id>] [--event <selector>] [--jsonl]",
+        "  runpane panels await --panel <panel-id> --event <selector> [--json]",
         "",
         "Run \"runpane help panels create\" or another command-specific topic for options."
       ],
@@ -1328,6 +1544,42 @@ export const RUNPANE_CONTRACT = {
         "  --interval-ms <milliseconds>   Poll interval; defaults to 500",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output"
+      ],
+      "panes status": [
+        "Usage:",
+        "  python -m runpane panes status --pane <pane-id> [--changed-since <cursor>] [--json]",
+        "",
+        "Returns compact per-panel semantic state and a race-free snapshot cursor."
+      ],
+      "panes watch": [
+        "Usage:",
+        "  python -m runpane panes watch --pane <pane-id> [--include-future-panels] [--event <selector>] [--since <cursor>] [--jsonl]",
+        "",
+        "Streams semantic events for a Pane."
+      ],
+      "panels events": [
+        "Usage:",
+        "  python -m runpane panels events [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--json]",
+        "",
+        "Replays retained semantic events strictly after a cursor."
+      ],
+      "panels watch": [
+        "Usage:",
+        "  python -m runpane panels watch [--panel <panel-id>] [--event <selector>] [--since <cursor>] [--heartbeat-ms <ms>] [--jsonl]",
+        "",
+        "Streams one compact semantic event JSON object per stdout line."
+      ],
+      "panels await": [
+        "Usage:",
+        "  python -m runpane panels await --panel <panel-id> --event <selector> [--timeout-ms <ms>] [--heartbeat-ms <ms>] [--json]",
+        "",
+        "Waits for a matching semantic event and periodically reconciles state."
+      ],
+      "panels await-any": [
+        "Usage:",
+        "  python -m runpane panels await-any (--panel <id>|--pane <id>)... --event <selector> [--timeout-ms <ms>] [--json]",
+        "",
+        "Waits for the first matching event across all selected targets."
       ],
       "panels create": [
         "Create a terminal-backed tool panel inside an existing Pane session.",
@@ -1765,6 +2017,75 @@ export const RUNPANE_CONTRACT = {
         "auto",
         "--yes",
         "--json"
+      ],
+      [
+        "panels",
+        "events",
+        "--panel",
+        "panel-1",
+        "--event",
+        "agent-idle",
+        "--since",
+        "epoch:1",
+        "--json"
+      ],
+      [
+        "panels",
+        "watch",
+        "--panel",
+        "panel-1",
+        "--event",
+        "blocked",
+        "--since",
+        "epoch:2",
+        "--heartbeat-ms",
+        "1000",
+        "--jsonl"
+      ],
+      [
+        "panels",
+        "await",
+        "--panel",
+        "panel-1",
+        "--event",
+        "agent-idle",
+        "--timeout-ms",
+        "5000",
+        "--heartbeat-ms",
+        "500",
+        "--json"
+      ],
+      [
+        "panels",
+        "await-any",
+        "--panel",
+        "panel-1",
+        "--panel",
+        "panel-2",
+        "--pane",
+        "pane-1",
+        "--pane",
+        "pane-2",
+        "--event",
+        "agent-idle",
+        "--json"
+      ],
+      [
+        "panes",
+        "status",
+        "--pane",
+        "pane-1",
+        "--changed-since",
+        "epoch:4",
+        "--json"
+      ],
+      [
+        "panes",
+        "watch",
+        "--pane",
+        "pane-1",
+        "--include-future-panels",
+        "--jsonl"
       ]
     ],
     "topLevelHelpIncludes": [
@@ -1788,6 +2109,9 @@ export const RUNPANE_CONTRACT = {
       "runpane panels submit",
       "runpane panels submit-composer",
       "runpane panels wait",
+      "runpane panels events",
+      "runpane panels watch",
+      "runpane panels await",
       "runpane doctor --json",
       "runpane agent-context --json",
       "Agent discovery:",
@@ -2302,6 +2626,17 @@ export const RUNPANE_CONTRACT = {
             "user",
             "agent"
           ]
+        },
+        "startAgent": {
+          "type": "boolean"
+        },
+        "waitActive": {
+          "type": "boolean"
+        },
+        "handleKnownInterstitials": {
+          "enum": [
+            "safe"
+          ]
         }
       },
       "additionalProperties": false
@@ -2387,6 +2722,18 @@ export const RUNPANE_CONTRACT = {
                   },
                   "focused": {
                     "type": "boolean"
+                  },
+                  "verifiedSubmitted": {
+                    "type": "boolean"
+                  },
+                  "agentActivity": {
+                    "enum": [
+                      "unknown",
+                      "starting",
+                      "active",
+                      "idle",
+                      "exited"
+                    ]
                   },
                   "readiness": {
                     "type": "object",
@@ -2481,6 +2828,25 @@ export const RUNPANE_CONTRACT = {
                       },
                       "nextCommand": {
                         "type": "string"
+                      },
+                      "handledInterstitials": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "kind",
+                            "response"
+                          ],
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "response": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": false
+                        }
                       }
                     },
                     "additionalProperties": false
@@ -3268,12 +3634,65 @@ export const RUNPANE_CONTRACT = {
             },
             "lastActivity": {
               "type": "string"
+            },
+            "terminalReady": {
+              "type": "boolean"
+            },
+            "agentActivity": {
+              "enum": [
+                "unknown",
+                "starting",
+                "active",
+                "idle",
+                "exited"
+              ]
+            },
+            "inputRequired": {
+              "type": "boolean"
+            },
+            "blocked": {
+              "type": "boolean",
+              "description": "Whether any blocker is detected. This state boolean is distinct from the top-level blocked object, which carries structured blocker details."
+            },
+            "hasNewOutput": {
+              "type": "boolean"
+            },
+            "outputGeneration": {
+              "type": "number"
+            },
+            "lastMeaningfulEventAt": {
+              "type": "string"
             }
           },
           "additionalProperties": false
         },
         "initialInput": {
           "$ref": "#/jsonSchemas/paneCreateResult/properties/items/items/oneOf/0/properties/initialInput"
+        },
+        "blocked": {
+          "type": "object",
+          "description": "Structured blocker details. This object is distinct from state.blocked, which is only a boolean.",
+          "required": [
+            "kind",
+            "message"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "codex-update",
+                "agent-prompt",
+                "submission_unverified",
+                "unknown"
+              ]
+            },
+            "message": {
+              "type": "string"
+            },
+            "suggestedCommand": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
         },
         "nextCommand": {
           "type": "string"
@@ -3327,6 +3746,172 @@ export const RUNPANE_CONTRACT = {
         },
         "nextCommand": {
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "semanticEvent": {
+      "type": "object",
+      "required": [
+        "id",
+        "cursor",
+        "type",
+        "at",
+        "panelId",
+        "state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "panel_created",
+            "terminal_ready",
+            "prompt_staged",
+            "prompt_submitted",
+            "agent_active",
+            "agent_idle",
+            "input_required",
+            "blocked",
+            "unblocked",
+            "panel_exited",
+            "panel_archived"
+          ]
+        },
+        "at": {
+          "type": "string"
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/jsonSchemas/panelWaitResult/properties/state"
+        },
+        "resolvedBy": {
+          "enum": [
+            "event",
+            "reconciliation"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "cursorExpiredError": {
+      "type": "object",
+      "required": [
+        "code",
+        "earliestCursor",
+        "reconcileCommand"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "cursor_expired"
+          ]
+        },
+        "earliestCursor": {
+          "type": "string"
+        },
+        "reconcileCommand": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "panelEventsResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "events",
+            "cursor"
+          ],
+          "properties": {
+            "ok": {
+              "enum": [
+                true
+              ]
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "$ref": "#/jsonSchemas/semanticEvent"
+              }
+            },
+            "cursor": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "error"
+          ],
+          "properties": {
+            "ok": {
+              "enum": [
+                false
+              ]
+            },
+            "error": {
+              "$ref": "#/jsonSchemas/cursorExpiredError"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "panelAwaitResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "timedOut",
+        "state"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "timedOut": {
+          "type": "boolean"
+        },
+        "matchedEvent": {
+          "enum": [
+            "panel_created",
+            "terminal_ready",
+            "prompt_staged",
+            "prompt_submitted",
+            "agent_active",
+            "agent_idle",
+            "input_required",
+            "blocked",
+            "unblocked",
+            "panel_exited",
+            "panel_archived"
+          ]
+        },
+        "resolvedBy": {
+          "enum": [
+            "event",
+            "reconciliation"
+          ]
+        },
+        "event": {
+          "$ref": "#/jsonSchemas/semanticEvent"
+        },
+        "state": {
+          "$ref": "#/jsonSchemas/panelWaitResult/properties/state"
         }
       },
       "additionalProperties": false
@@ -3402,12 +3987,41 @@ export const RUNPANE_CONTRACT = {
             },
             "lastActivity": {
               "type": "string"
+            },
+            "terminalReady": {
+              "type": "boolean"
+            },
+            "agentActivity": {
+              "enum": [
+                "unknown",
+                "starting",
+                "active",
+                "idle",
+                "exited"
+              ]
+            },
+            "inputRequired": {
+              "type": "boolean"
+            },
+            "blocked": {
+              "type": "boolean",
+              "description": "Whether any blocker is detected. This state boolean is distinct from the top-level blocked object, which carries structured blocker details."
+            },
+            "hasNewOutput": {
+              "type": "boolean"
+            },
+            "outputGeneration": {
+              "type": "number"
+            },
+            "lastMeaningfulEventAt": {
+              "type": "string"
             }
           },
           "additionalProperties": false
         },
         "blocked": {
           "type": "object",
+          "description": "Structured blocker details. This object is distinct from state.blocked, which is only a boolean.",
           "required": [
             "kind",
             "message"
@@ -4046,6 +4660,39 @@ export const RUNPANE_CONTRACT = {
             "--json",
             "--pane-dir <path>"
           ]
+        },
+        {
+          "name": "panels events",
+          "summary": "Replay semantic panel events after a cursor.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--event <selector>",
+            "--since <cursor>",
+            "--json"
+          ]
+        },
+        {
+          "name": "panels watch",
+          "summary": "Stream semantic panel events as JSONL.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--event <selector>",
+            "--since <cursor>",
+            "--heartbeat-ms <ms>",
+            "--jsonl"
+          ]
+        },
+        {
+          "name": "panels await",
+          "summary": "Wait for a matching semantic panel event.",
+          "arguments": [
+            "--panel <panel-id>",
+            "--event <selector>",
+            "--since <cursor>",
+            "--timeout-ms <ms>",
+            "--heartbeat-ms <ms>",
+            "--json"
+          ]
         }
       ]
     },
@@ -4642,6 +5289,66 @@ export const RUNPANE_CONTRACT = {
           "Unpinning does not focus the Pane."
         ]
       },
+      "panes status": {
+        "name": "panes status",
+        "summary": "Read semantic state for a Pane.",
+        "details": "Returns a compact pull snapshot and lifecycle cursor.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane to inspect."
+          },
+          {
+            "name": "--changed-since",
+            "value": "<cursor>",
+            "required": false,
+            "description": "Only panels changed after this cursor."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panes status --pane <pane-id> --json"
+        ],
+        "notes": []
+      },
+      "panes watch": {
+        "name": "panes watch",
+        "summary": "Stream semantic events for a Pane.",
+        "details": "Filters the semantic event stream by Pane and can include panels created later.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane to watch; repeatable."
+          },
+          {
+            "name": "--include-future-panels",
+            "required": false,
+            "description": "Include panels created after watch starts."
+          },
+          {
+            "name": "--event",
+            "value": "<selector>",
+            "required": false,
+            "description": "Optional event filter."
+          }
+        ],
+        "examples": [
+          "runpane panes watch --pane <pane-id> --include-future-panels --jsonl"
+        ],
+        "notes": []
+      },
       "panels list": {
         "name": "panels list",
         "summary": "List tool panels inside a Pane session.",
@@ -4980,6 +5687,180 @@ export const RUNPANE_CONTRACT = {
           "If blocked is present, do not assume success. Use blocked.suggestedCommand or inspect `panels screen`.",
           "The default timeout and screen are intentionally small for agent context safety."
         ]
+      },
+      "panels events": {
+        "name": "panels events",
+        "summary": "Replay retained semantic panel events after a cursor.",
+        "details": "Request/response pull surface for the bounded semantic event ring.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": false,
+            "description": "Optional panel filter."
+          },
+          {
+            "name": "--event",
+            "value": "<selector>",
+            "required": false,
+            "description": "Optional semantic event selector."
+          },
+          {
+            "name": "--since",
+            "value": "<cursor>",
+            "required": false,
+            "description": "Exclusive replay cursor."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panels events --since <cursor> --json"
+        ],
+        "jsonSchemas": [
+          "panelEventsResult"
+        ],
+        "notes": [
+          "Exit code 3 means cursor_expired; reconcile from the command in the error."
+        ]
+      },
+      "panels watch": {
+        "name": "panels watch",
+        "summary": "Stream semantic panel events as JSONL.",
+        "details": "Uses replay then live delivery on one retained daemon connection with periodic reconciliation.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": false,
+            "description": "Optional panel filter."
+          },
+          {
+            "name": "--event",
+            "value": "<selector>",
+            "required": false,
+            "description": "Optional semantic event selector."
+          },
+          {
+            "name": "--since",
+            "value": "<cursor>",
+            "required": false,
+            "description": "Exclusive replay cursor."
+          },
+          {
+            "name": "--heartbeat-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Reconciliation interval."
+          },
+          {
+            "name": "--jsonl",
+            "required": false,
+            "description": "Describes the always-JSONL output."
+          }
+        ],
+        "examples": [
+          "runpane panels watch --panel <panel-id> --jsonl"
+        ],
+        "jsonSchemas": [
+          "semanticEvent",
+          "cursorExpiredError"
+        ],
+        "notes": [
+          "Stdout contains compact JSON records only. Exit codes: 0 clean stop, 1 transport error, 3 cursor expired."
+        ]
+      },
+      "panels await": {
+        "name": "panels await",
+        "summary": "Wait for the first matching semantic event.",
+        "details": "Exit-on-first-match sugar over watch with periodic state reconciliation.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": true,
+            "description": "Panel to await."
+          },
+          {
+            "name": "--event",
+            "value": "<selector>",
+            "required": true,
+            "description": "Semantic event selector."
+          },
+          {
+            "name": "--since",
+            "value": "<cursor>",
+            "required": false,
+            "description": "Exclusive replay cursor."
+          },
+          {
+            "name": "--timeout-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Wait timeout."
+          },
+          {
+            "name": "--heartbeat-ms",
+            "value": "<ms>",
+            "required": false,
+            "description": "Reconciliation interval."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panels await --panel <panel-id> --event agent-idle --json"
+        ],
+        "jsonSchemas": [
+          "panelAwaitResult",
+          "cursorExpiredError"
+        ],
+        "notes": [
+          "Exit codes: 0 matched, 1 transport error, 2 timed out, 3 cursor expired."
+        ]
+      },
+      "panels await-any": {
+        "name": "panels await-any",
+        "summary": "Wait across multiple panels or Panes.",
+        "details": "Resolves Pane targets to their terminal panels and exits on the first matching event.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": false,
+            "description": "Panel target; repeatable."
+          },
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": false,
+            "description": "Pane target; repeatable."
+          },
+          {
+            "name": "--event",
+            "value": "<selector>",
+            "required": true,
+            "description": "Semantic event selector."
+          }
+        ],
+        "examples": [
+          "runpane panels await-any --panel p1 --panel p2 --event agent-idle --json"
+        ],
+        "notes": []
       },
       "panels create": {
         "name": "panels create",
