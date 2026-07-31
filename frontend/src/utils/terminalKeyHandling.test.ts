@@ -7,9 +7,19 @@ import {
 
 const key = (overrides: Partial<TerminalKeyLike>): TerminalKeyLike => ({
   key: 'a',
+  code: 'KeyA',
   shiftKey: false,
   ctrlKey: false,
   metaKey: false,
+  altKey: false,
+  getModifierState: () => false,
+  ...overrides,
+});
+
+const tui = (overrides: Partial<{ isTuiActive: boolean; isCliPanel: boolean; isMac: boolean }> = {}) => ({
+  isTuiActive: true,
+  isCliPanel: true,
+  isMac: false,
   ...overrides,
 });
 
@@ -17,49 +27,107 @@ describe('resolveTerminalKeyHandling', () => {
   it('sends the multiline sequence for Shift+Enter outside TUI mode', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'Enter', shiftKey: true }),
-      { isTuiActive: false, isCliPanel: false },
+      tui({ isTuiActive: false, isCliPanel: false }),
     )).toEqual({ action: 'send-input', input: TERMINAL_MULTILINE_NEWLINE_SEQUENCE });
   });
 
   it('sends the multiline sequence for CLI agent panels in TUI mode', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'Enter', shiftKey: true }),
-      { isTuiActive: true, isCliPanel: true },
+      tui(),
     )).toEqual({ action: 'send-input', input: TERMINAL_MULTILINE_NEWLINE_SEQUENCE });
   });
 
   it('passes Shift+Enter through for ordinary TUI apps', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'Enter', shiftKey: true }),
-      { isTuiActive: true, isCliPanel: false },
+      tui({ isCliPanel: false }),
     )).toEqual({ action: 'pass-through' });
   });
 
   it('does not swallow Ctrl+Shift+Enter chords', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'Enter', shiftKey: true, ctrlKey: true }),
-      { isTuiActive: true, isCliPanel: true },
+      tui(),
     )).toEqual({ action: 'pass-through' });
   });
 
   it('blocks Cmd/Ctrl+V in TUI mode so native paste can run', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'v', metaKey: true }),
-      { isTuiActive: true, isCliPanel: true },
+      tui(),
     )).toEqual({ action: 'block' });
   });
 
   it('passes Ctrl+C through in TUI mode so fullscreen apps can handle interrupts', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'c', ctrlKey: true }),
-      { isTuiActive: true, isCliPanel: true },
+      tui(),
     )).toEqual({ action: 'pass-through' });
   });
 
   it('continues to later terminal shortcut handling outside TUI mode', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: '1', metaKey: true }),
-      { isTuiActive: false, isCliPanel: true },
+      tui({ isTuiActive: false }),
     )).toEqual({ action: 'continue' });
+  });
+
+  it.each([
+    ['focus groups', key({ key: 'ArrowRight', code: 'ArrowRight', ctrlKey: true, altKey: true })],
+    ['switch sessions', key({ key: 'Tab', code: 'Tab', ctrlKey: true })],
+    ['switch group tabs', key({ key: '!', code: 'Digit1', ctrlKey: true, shiftKey: true })],
+    ['add tools', key({ key: '1', code: 'Digit1', ctrlKey: true, altKey: true })],
+    ['zoom groups', key({ key: 'Z', code: 'KeyZ', ctrlKey: true, shiftKey: true })],
+    ['split groups', key({ key: '\\', code: 'Backslash', ctrlKey: true })],
+  ])('releases Pane %s shortcuts while a TUI is active', (_label, event) => {
+    expect(resolveTerminalKeyHandling(event, tui())).toEqual({ action: 'release-to-app' });
+  });
+
+  it('releases Cmd+Backslash but preserves Ctrl+Backslash on macOS', () => {
+    expect(resolveTerminalKeyHandling(
+      key({ key: '\\', code: 'Backslash', metaKey: true }),
+      tui({ isMac: true }),
+    )).toEqual({ action: 'release-to-app' });
+    expect(resolveTerminalKeyHandling(
+      key({ key: '\\', code: 'Backslash', ctrlKey: true }),
+      tui({ isMac: true }),
+    )).toEqual({ action: 'pass-through' });
+  });
+
+  it.each(['a', 'd', 'w', 'p', 'n', 'b', 'f'])(
+    'preserves Ctrl+%s for the active TUI',
+    (letter) => {
+      expect(resolveTerminalKeyHandling(
+        key({ key: letter, code: `Key${letter.toUpperCase()}`, ctrlKey: true }),
+        tui(),
+      )).toEqual({ action: 'pass-through' });
+    },
+  );
+
+  it('does not treat AltGr digits as Pane shortcuts', () => {
+    expect(resolveTerminalKeyHandling(
+      key({
+        key: '1',
+        code: 'Digit1',
+        ctrlKey: true,
+        altKey: true,
+        getModifierState: (modifier) => modifier === 'AltGraph',
+      }),
+      tui(),
+    )).toEqual({ action: 'pass-through' });
+  });
+
+  it('does not swallow navigation-like chords with unsupported extra modifiers', () => {
+    expect(resolveTerminalKeyHandling(
+      key({
+        key: 'ArrowRight',
+        code: 'ArrowRight',
+        ctrlKey: true,
+        altKey: true,
+        shiftKey: true,
+      }),
+      tui(),
+    )).toEqual({ action: 'pass-through' });
   });
 });

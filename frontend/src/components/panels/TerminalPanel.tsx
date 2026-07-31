@@ -878,6 +878,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const terminalKeyDecision = resolveTerminalKeyHandling(e, {
             isTuiActive: tuiActiveRef.current,
             isCliPanel: isCliPanelRef.current,
+            isMac: isMac(),
           });
 
           // Shift+Enter sends the same ESC+CR sequence as Alt+Enter for CLI
@@ -890,6 +891,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             return false;
           }
           if (terminalKeyDecision.action === 'block') return false;
+          if (terminalKeyDecision.action === 'release-to-app') return false;
           if (terminalKeyDecision.action === 'pass-through') return true;
 
           // Ctrl/Cmd+1-9: switch sessions
