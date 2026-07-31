@@ -27,17 +27,24 @@ function isPaneNavigationShortcut(
   event: TerminalKeyLike,
   state: TerminalKeyHandlingState,
 ): boolean {
-  const ctrlOrMeta = event.ctrlKey || event.metaKey;
-  if (!ctrlOrMeta) return false;
+  const primaryModifier = state.isMac ? event.metaKey : event.ctrlKey;
+  if (!primaryModifier) return false;
 
   const isAltGr = event.getModifierState('AltGraph');
+  const digitMatch = event.code.match(/^Digit([1-9])$/);
+  const isUnreportedAltGrDigit = !state.isMac
+    && event.ctrlKey
+    && event.altKey
+    && digitMatch
+    && event.key !== digitMatch[1];
   if (
     event.altKey
     && !isAltGr
+    && !isUnreportedAltGrDigit
     && !event.shiftKey
     && (
       ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)
-      || /^Digit[1-9]$/.test(event.code)
+      || digitMatch
     )
   ) {
     return true;
@@ -48,7 +55,7 @@ function isPaneNavigationShortcut(
   if (!event.altKey && event.shiftKey && event.key.toLowerCase() === 'z') return true;
 
   const isBackslash = event.code === 'Backslash' || event.code === 'IntlBackslash';
-  return !event.altKey && isBackslash && (state.isMac ? event.metaKey : event.ctrlKey);
+  return !event.altKey && isBackslash;
 }
 
 export function resolveTerminalKeyHandling(

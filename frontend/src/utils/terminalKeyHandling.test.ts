@@ -95,6 +95,17 @@ describe('resolveTerminalKeyHandling', () => {
     )).toEqual({ action: 'pass-through' });
   });
 
+  it('requires Cmd instead of Ctrl for Pane shortcuts on macOS', () => {
+    expect(resolveTerminalKeyHandling(
+      key({ key: 'ArrowRight', code: 'ArrowRight', ctrlKey: true, altKey: true }),
+      tui({ isMac: true }),
+    )).toEqual({ action: 'pass-through' });
+    expect(resolveTerminalKeyHandling(
+      key({ key: 'ArrowRight', code: 'ArrowRight', metaKey: true, altKey: true }),
+      tui({ isMac: true }),
+    )).toEqual({ action: 'release-to-app' });
+  });
+
   it.each(['a', 'd', 'w', 'p', 'n', 'b', 'f'])(
     'preserves Ctrl+%s for the active TUI',
     (letter) => {
@@ -113,6 +124,18 @@ describe('resolveTerminalKeyHandling', () => {
         ctrlKey: true,
         altKey: true,
         getModifierState: (modifier) => modifier === 'AltGraph',
+      }),
+      tui(),
+    )).toEqual({ action: 'pass-through' });
+  });
+
+  it('does not treat modified AltGr digit output as a Pane shortcut when AltGraph is unavailable', () => {
+    expect(resolveTerminalKeyHandling(
+      key({
+        key: '@',
+        code: 'Digit2',
+        ctrlKey: true,
+        altKey: true,
       }),
       tui(),
     )).toEqual({ action: 'pass-through' });
