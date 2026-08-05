@@ -31,10 +31,11 @@ const MIN_PTY_COLS = 20;
 const MIN_PTY_ROWS = 5;
 const FORCED_REDRAW_TRANSITION_MS = 50;
 const FORCED_REDRAW_SETTLE_MS = 80;
-// Formal ceiling for the raw-ANSI scrollback shipped on restore/getState replay. Peer consensus:
+// Formal ceiling for the restore/getState replay payload (now the emulator
+// serialization for normal buffers, raw ANSI log otherwise). Peer consensus:
 // Orca (TERMINAL_SCROLLBACK_REPLAY_BYTE_LIMIT) and Superset (MAX_HISTORY_SCROLLBACK_BYTES) both use
-// 512 * 1024. Above the 500KB live trim, so it does not reduce today's payload — the measurable win
-// is omitting the up-to-8MB serialized snapshot from getState when raw scrollback exists.
+// 512 * 1024. The 2500-line emulator serialization sits well under this in
+// practice; the cap is a backstop against pathological payloads.
 const MAX_RESTORE_PAYLOAD_SIZE = 512 * 1024;
 
 type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
@@ -1413,13 +1414,22 @@ export class TerminalPanelManager {
     
     // Save state to panel
     const state = panel.state;
+    const savedIsAlternateScreen =
+      terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen;
+    // Same source as getTerminalState: persist the rendered emulator model for
+    // normal buffers so restarts replay a duplicate-free snapshot, not the raw
+    // append log with its accumulated repaint traffic.
+    const savedScrollback =
+      !savedIsAlternateScreen && terminal.screenEmulator
+        ? this.trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
+        : terminal.scrollbackBuffer;
     state.customState = {
       ...state.customState,
       isInitialized: true,
       cwd: cwd,
-      scrollbackBuffer: terminal.scrollbackBuffer,
+      scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
-      isAlternateScreen: terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen,
+      isAlternateScreen: savedIsAlternateScreen,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
@@ -1503,8 +1513,16 @@ export class TerminalPanelManager {
 
     await terminal.screenEmulator?.waitForIdle();
 
-    const cappedScrollback = this.trimAnsiSafe(terminal.scrollbackBuffer, MAX_RESTORE_PAYLOAD_SIZE);
     const isAlternateScreen = terminal.screenEmulator?.isAlternateScreen ?? terminal.isAlternateScreen;
+    // Normal-buffer restore content comes from the rendered emulator model, not
+    // the raw append log: the log accumulates repaint traffic (forced activation
+    // redraws re-emit the current frame), which a reset+replay renders as
+    // duplicated rows. The emulator consumed those bytes like a live terminal —
+    // repaints overwrite in place — so its serialization is duplicate-free.
+    const cappedScrollback =
+      !isAlternateScreen && terminal.screenEmulator
+        ? this.trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
+        : this.trimAnsiSafe(terminal.scrollbackBuffer, MAX_RESTORE_PAYLOAD_SIZE);
     return {
       isInitialized: true,
       cwd: process.cwd(), // Simplified - would need platform-specific implementation

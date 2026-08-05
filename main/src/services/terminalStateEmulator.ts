@@ -59,11 +59,18 @@ export class TerminalStateEmulator {
       : this.terminal.buffer.active.type === 'alternate';
   }
 
-  /** Serialize the visible normal buffer and, when active, the alternate buffer. */
-  serializeForRestore(): string {
+  /**
+   * Serialize the visible normal buffer and, when active, the alternate buffer.
+   * Pass includeScrollback to also serialize normal-buffer scrollback history —
+   * the restore source for normal buffers, since this model rendered every PTY
+   * byte and therefore contains no repaint duplication.
+   */
+  serializeForRestore(includeScrollback = false): string {
     return this.disposed
       ? this.finalSerializedBuffer
-      : this.serializeAddon.serialize({ scrollback: 0 });
+      : this.serializeAddon.serialize({
+          scrollback: includeScrollback ? HEADLESS_SCROLLBACK_LINES : 0,
+        });
   }
 
   /** Return plain text for the currently visible viewport. */
@@ -91,7 +98,10 @@ export class TerminalStateEmulator {
   dispose(): void {
     if (this.disposed) return;
     this.finalIsAlternateScreen = this.isAlternateScreen;
-    this.finalSerializedBuffer = this.serializeForRestore();
+    // Capture WITH scrollback: destroyTerminal fires saveTerminalState without
+    // awaiting it, so the save usually reads this snapshot after disposal — a
+    // viewport-only capture would silently drop the session's history.
+    this.finalSerializedBuffer = this.serializeForRestore(true);
     this.finalScreenText = this.getScreenText();
     this.disposed = true;
     this.terminal.dispose();

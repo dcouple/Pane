@@ -48,6 +48,24 @@ describe('TerminalStateEmulator', () => {
     emulator.dispose();
   });
 
+  it('retains scrollback history in the post-dispose serialization snapshot', async () => {
+    const emulator = new TerminalStateEmulator(40, 3);
+    // 10 lines through a 3-row viewport: the early lines live only in scrollback
+    for (let i = 1; i <= 10; i++) {
+      emulator.write(`history-line-${String(i).padStart(2, '0')}\r\n`);
+    }
+    await emulator.waitForIdle();
+
+    emulator.dispose();
+
+    // destroyTerminal fires saveTerminalState without awaiting it, so the save
+    // reads this snapshot after disposal — it must still include scrollback,
+    // or closing a terminal silently truncates its persisted history.
+    const serialized = emulator.serializeForRestore(true);
+    expect(serialized).toContain('history-line-01');
+    expect(serialized).toContain('history-line-10');
+  });
+
   it('includes active input modes in restore serialization', async () => {
     const emulator = new TerminalStateEmulator(20, 5);
     emulator.write('\x1b[?1h\x1b[?1004h\x1b[?2004h');

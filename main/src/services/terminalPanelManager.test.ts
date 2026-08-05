@@ -416,6 +416,34 @@ describe('TerminalPanelManager hidden output delivery', () => {
     disposeFlowControlRecord(terminal.flowControl);
   });
 
+  it('serves normal-buffer restore content from the rendered emulator, not the raw append log', async () => {
+    const manager = new TerminalPanelManager() as unknown as SnapshotAccess;
+    const screenEmulator = new TerminalStateEmulator(40, 5);
+    const frame = 'PR #363 state unchanged';
+    // Live stream: the frame prints once, then forced-redraw repaints re-emit it
+    // after cursor-home — the traffic that duplicated rows when the raw log was
+    // replayed. The emulator overwrites in place, like a live terminal.
+    const initial = `${frame}\r\n`;
+    const repaint = `\x1b[H${frame}\x1b[K\r\n`;
+    screenEmulator.write(initial);
+    screenEmulator.write(repaint);
+    screenEmulator.write(repaint);
+    await screenEmulator.waitForIdle();
+    const terminal = createTerminal({
+      scrollbackBuffer: initial + repaint + repaint,
+      screenEmulator,
+      isAlternateScreen: false,
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    const restoreState = await manager.getTerminalState(terminal.panelId);
+    const restored = restoreState?.scrollbackBuffer as string;
+    expect(restored.split(frame).length - 1).toBe(1);
+    expect(terminal.scrollbackBuffer.split(frame).length - 1).toBe(3);
+    screenEmulator.dispose();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
   it('submits Codex initial input through the composer sequence', async () => {
     vi.useFakeTimers();
     const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
