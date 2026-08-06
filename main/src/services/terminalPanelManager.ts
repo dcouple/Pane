@@ -224,10 +224,16 @@ export class TerminalPanelManager {
   private agentStatusPollTimer: ReturnType<typeof setInterval> | null = null;
   private agentStatusPolling = false;
 
+  /**
+   * Detect the CLI agent from a launch command. Matches "claude"/"codex" as a
+   * standalone token (start/space/slash-delimited), not a substring — a command
+   * whose cwd or script path merely contains the word (e.g. /tmp/claude-501/x.sh)
+   * must not be classified as that agent.
+   */
   private getCliAgentType(command?: string): CliAgentType | undefined {
     const lower = command?.toLowerCase() ?? '';
-    if (lower.includes('claude')) return 'claude';
-    if (lower.includes('codex')) return 'codex';
+    if (/(^|[\s/])claude($|\s)/.test(lower)) return 'claude';
+    if (/(^|[\s/])codex($|\s)/.test(lower)) return 'codex';
     return undefined;
   }
 
