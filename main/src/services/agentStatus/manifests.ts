@@ -253,29 +253,29 @@ export const CODEX_MANIFEST: AgentManifest = {
 
 /**
  * Universal fallback for any terminal panel without a bespoke manifest — other
- * CLI agents (opencode, aider, ...) and plain shells alike. Detects the common
- * permission-prompt shapes; working/idle otherwise come from PTY activity and
- * the idle fallback, which is the old activity system's signal generalized.
+ * CLI agents (opencode, aider, ...) and plain shells alike. Blocked requires a
+ * LIVE prompt: the last non-empty line must itself end in a prompt shape, so a
+ * finished command whose scrollback still shows "[y/n]" text (answered prompts,
+ * an apt run above a fresh shell prompt) is not classified blocked. Working and
+ * idle come from PTY activity and the idle fallback.
  */
 export const GENERIC_MANIFEST: AgentManifest = {
   id: 'generic',
   rules: [
     {
-      id: 'generic_permission_prompt',
+      id: 'generic_live_prompt',
       state: 'blocked',
       priority: 600,
-      region: 'whole_recent',
+      region: 'bottom_non_empty_lines(1)',
+      visibleBlocker: true,
       any: [
-        { contains: ['do you want to proceed?'] },
-        { contains: ['[y/n]'] },
-        { contains: ['(y/n)'] },
-        { contains: ['press enter to confirm'] },
-        { contains: ['allow command?'] },
-        { contains: ['waiting for permission'] },
-        { contains: ['do you want to'], any: [{ contains: ['yes'] }, { contains: ['❯'] }] },
-        { contains: ['would you like to'], any: [{ contains: ['yes'] }, { contains: ['❯'] }] },
+        { lineRegex: [/\[y\/n[^\]]*\]\s*:?\s*$/i] },
+        { lineRegex: [/\(y\/n[^)]*\)\s*:?\s*$/i] },
+        { lineRegex: [/press enter to confirm\.?\s*$/i] },
+        { lineRegex: [/(?:do you want|would you like)\b[^?]*\?\s*$/i] },
+        { lineRegex: [/allow command\?\s*$/i] },
+        { lineRegex: [/waiting for permission\.{0,3}\s*$/i] },
       ],
-      not: [{ regex: [/^\s*❯\s*$/m] }],
     },
   ],
 };

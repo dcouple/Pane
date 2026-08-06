@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rollupAgentState, rollupSessionAgentState, toAgentDisplayStatus } from './agentStatus';
+import { rollupAgentDisplayStatus, rollupAgentState, rollupSessionAgentState, toAgentDisplayStatus } from './agentStatus';
 
 describe('rollupSessionAgentState', () => {
   const agentStatus = { p1: 'working', p2: 'idle', p3: 'blocked' } as const;
@@ -48,5 +48,20 @@ describe('toAgentDisplayStatus', () => {
   it('treats missing/unknown as unknown', () => {
     expect(toAgentDisplayStatus(undefined, true)).toBe('unknown');
     expect(toAgentDisplayStatus('unknown', false)).toBe('unknown');
+  });
+});
+
+describe('rollupAgentDisplayStatus', () => {
+  it('applies blocked > working > done > idle precedence', () => {
+    expect(rollupAgentDisplayStatus(['idle', 'blocked', 'working'])).toBe('blocked');
+    expect(rollupAgentDisplayStatus(['idle', 'working', 'done'])).toBe('working');
+    expect(rollupAgentDisplayStatus(['idle', 'done'])).toBe('done');
+    expect(rollupAgentDisplayStatus(['idle', 'idle'])).toBe('idle');
+  });
+
+  it('keeps all-done groups visible as done, and empty groups unknown', () => {
+    expect(rollupAgentDisplayStatus(['done', 'done'])).toBe('done');
+    expect(rollupAgentDisplayStatus([])).toBe('unknown');
+    expect(rollupAgentDisplayStatus(['unknown'])).toBe('unknown');
   });
 });

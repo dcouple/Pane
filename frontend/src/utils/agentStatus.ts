@@ -34,6 +34,21 @@ export function rollupSessionAgentState(
   return rollupAgentState(states);
 }
 
+const DISPLAY_PRECEDENCE: readonly AgentDisplayStatus[] = ['blocked', 'working', 'done', 'idle'];
+
+/**
+ * Roll several {@link AgentDisplayStatus}es up into one, with precedence
+ * blocked > working > done > idle. Unlike {@link rollupAgentState} this keeps
+ * unseen completion visible: a group whose members are all freshly finished
+ * reads as `done`, not `idle`. Used for the project-level dot.
+ */
+export function rollupAgentDisplayStatus(statuses: AgentDisplayStatus[]): AgentDisplayStatus {
+  for (const status of DISPLAY_PRECEDENCE) {
+    if (statuses.includes(status)) return status;
+  }
+  return 'unknown';
+}
+
 /**
  * Map a raw {@link AgentState} to the status shown in the UI. A finished agent
  * the user hasn't looked at yet reads as `done`; once seen it is plain `idle`.

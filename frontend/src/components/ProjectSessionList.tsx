@@ -12,7 +12,7 @@ import { StatusAccentBar } from './ui/StatusAccentBar';
 import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 import type { DropdownItem } from './ui/Dropdown';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
-import { rollupAgentState, rollupSessionAgentState } from '../utils/agentStatus';
+import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 import { API } from '../utils/api';
 import { cn } from '../utils/cn';
@@ -84,6 +84,7 @@ export function ProjectSessionList({
   const expandProject = useNavigationStore(s => s.expandProject);
   const agentStatusByPanel = usePanelStore(s => s.agentStatus);
   const agentPanelSessions = usePanelStore(s => s.agentStatusSession);
+  const unviewedBySession = usePanelStore(s => s.unviewedCompletedActivity);
 
   // Load projects
   const loadProjects = useCallback(async () => {
@@ -411,9 +412,14 @@ export function ProjectSessionList({
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
-          // Agent status rolled up across the project's sessions (blocked > working > idle).
-          const projectAgentState = rollupAgentState(
-            projectSessions.map(s => rollupSessionAgentState(agentStatusByPanel, agentPanelSessions, s.id))
+          // Display status rolled up across the project's sessions
+          // (blocked > working > done > idle), so unseen completion shows blue
+          // at the project level too.
+          const projectAgentState = rollupAgentDisplayStatus(
+            projectSessions.map(s => toAgentDisplayStatus(
+              rollupSessionAgentState(agentStatusByPanel, agentPanelSessions, s.id),
+              Boolean(unviewedBySession[s.id]),
+            ))
           );
 
           const projectMenuItems: DropdownItem[] = [

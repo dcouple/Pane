@@ -110,8 +110,18 @@ describe('CODEX_MANIFEST', () => {
 });
 
 describe('GENERIC_MANIFEST', () => {
-  it('detects a y/n prompt as blocked and a bare prompt as idle', () => {
+  it('detects a live prompt on the last line as blocked', () => {
     expect(detectAgentState(GENERIC_MANIFEST, screen('Overwrite file? (y/n)')).state).toBe('blocked');
+    expect(detectAgentState(GENERIC_MANIFEST, screen('Do you want to proceed? [y/n] ')).state).toBe('blocked');
+    expect(
+      detectAgentState(GENERIC_MANIFEST, screen('Apply migration to database?\nDo you want to proceed? [y/n] ')).state,
+    ).toBe('blocked');
+    expect(detectAgentState(GENERIC_MANIFEST, screen('Continue? [Y/n]:')).state).toBe('blocked');
+  });
+
+  it('does not stay blocked once the prompt is answered or scrolled past', () => {
+    expect(detectAgentState(GENERIC_MANIFEST, screen('Do you want to proceed? [y/n] y\nok: y')).state).toBe('idle');
+    expect(detectAgentState(GENERIC_MANIFEST, screen('Overwrite file? (y/n)\n$ ')).state).toBe('idle');
     expect(detectAgentState(GENERIC_MANIFEST, screen('$ ')).state).toBe('idle');
   });
 });
