@@ -31,6 +31,8 @@ const MIN_PTY_COLS = 20;
 const MIN_PTY_ROWS = 5;
 const FORCED_REDRAW_TRANSITION_MS = 50;
 const FORCED_REDRAW_SETTLE_MS = 80;
+const SHELL_PROMPT_SETTLE_MS = 300;
+const SHELL_PROMPT_FALLBACK_MS = 5000;
 // Formal ceiling for the restore/getState replay payload (now the emulator
 // serialization for normal buffers, raw ANSI log otherwise). Peer consensus:
 // Orca (TERMINAL_SCROLLBACK_REPLAY_BYTE_LIMIT) and Superset (MAX_HISTORY_SCROLLBACK_BYTES) both use
@@ -404,6 +406,32 @@ export class TerminalPanelManager {
     const clean = this.stripAnsiSequences(output);
     const match = clean.match(/\bcodex\s+resume\s+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i);
     return match?.[1];
+  }
+
+  private scheduleAfterShellPrompt(ptyProcess: pty.IPty, callback: () => void): void {
+    let callbackInvoked = false;
+    // Match prompt symbol allowing trailing ANSI escapes and whitespace.
+    // eslint-disable-next-line no-control-regex
+    const promptPattern = /[$#%>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])*\s*$/;
+
+    const invokeOnce = () => {
+      if (callbackInvoked) return;
+      callbackInvoked = true;
+      onPromptReady.dispose();
+      callback();
+    };
+
+    const onPromptReady = ptyProcess.onData((data: string) => {
+      if (callbackInvoked) return;
+      const lastLine = data.split(/\r?\n/).filter(line => line.length > 0).pop() || '';
+      // eslint-disable-next-line no-control-regex
+      const cleanLine = lastLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+      if (promptPattern.test(cleanLine)) {
+        setTimeout(invokeOnce, SHELL_PROMPT_SETTLE_MS);
+      }
+    });
+
+    setTimeout(invokeOnce, SHELL_PROMPT_FALLBACK_MS);
   }
 
   private captureCodexSessionId(terminal: TerminalProcess, output: string): void {
@@ -984,15 +1012,7 @@ export class TerminalPanelManager {
       // We check only the LAST line of the latest data chunk for a prompt pattern,
       // so banner lines ending with % or > don't trigger a false positive.
       const panelId = panel.id;
-      let commandInjected = false;
-      // Match prompt symbol allowing trailing ANSI escapes and whitespace
-      // eslint-disable-next-line no-control-regex
-      const promptPattern = /[$#%>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])*\s*$/;
-
       const injectCommand = () => {
-        if (commandInjected) return;
-        commandInjected = true;
-        onPromptReady.dispose();
         this.writeToTerminal(panelId, commandToRun! + '\r');
 
         // For CLI tool terminals, signal the frontend when the CLI responds
@@ -1037,23 +1057,7 @@ export class TerminalPanelManager {
         }
       };
 
-      const onPromptReady = ptyProcess.onData((data: string) => {
-        if (commandInjected) return;
-        // Only check the last line of the most recent chunk to avoid
-        // matching prompt-like characters in earlier banner/init output.
-        // Strip ANSI escape sequences before matching so colored prompts
-        // (e.g. "user@host:~$ \x1b[0m") are detected correctly.
-        const lastLine = data.split(/\r?\n/).filter(l => l.length > 0).pop() || '';
-        // eslint-disable-next-line no-control-regex
-        const cleanLine = lastLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
-        if (promptPattern.test(cleanLine)) {
-          // Prompt detected — shell is interactive and ready for input.
-          setTimeout(injectCommand, 50);
-        }
-      });
-
-      // Safety timeout: if prompt is never detected within 5s, inject anyway
-      setTimeout(injectCommand, 5000);
+      this.scheduleAfterShellPrompt(ptyProcess, injectCommand);
     } else if (initialInput) {
       setTimeout(() => this.sendInitialInputOnce(panel.id), 1000);
     }
