@@ -117,6 +117,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const showDiffSkeleton = (diffLoading || commitDiffLoading) && combinedDiff === null;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 

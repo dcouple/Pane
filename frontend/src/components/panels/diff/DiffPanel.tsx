@@ -6,9 +6,11 @@ import type { GitStatus } from '../../../types/session';
 import { AlertCircle, GitBranch, Globe } from 'lucide-react';
 import { useSession } from '../../../contexts/SessionContext';
 import { cn } from '../../../utils/cn';
+import { Tooltip } from '../../ui/Tooltip';
 import BrowserSurface from '../browser/BrowserSurface';
 import {
   consumeLocalReviewModeRequest,
+  getEffectiveReviewMode,
   getReviewDefaultMode,
   setReviewDefaultMode,
   subscribeReviewDefaultMode,
@@ -76,6 +78,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   const lastGitFingerprintRef = useRef<string | null>(null);
   const wasActiveRef = useRef(isActive);
   const reviewUrl = useMemo(() => buildGithubReviewUrl(session?.gitStatus?.prUrl), [session?.gitStatus?.prUrl]);
+  const effectiveReviewMode = getEffectiveReviewMode(reviewMode, !!reviewUrl);
 
   useEffect(() => subscribeReviewDefaultMode(setReviewModeState), []);
 
@@ -154,7 +157,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
     const becameActive = isActive && !wasActiveRef.current;
     wasActiveRef.current = isActive;
 
-    if (becameActive && isStale && reviewMode === 'local') {
+    if (becameActive && isStale && effectiveReviewMode === 'local') {
       setIsStale(false);
       combinedDiffRef.current?.refresh();
 
@@ -188,25 +191,30 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
       return () => clearTimeout(timer);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- panel.state/diffState intentionally excluded: they are written inside this effect via IPC and must not re-trigger it
-  }, [isActive, isStale, panel.id, sessionId, reviewMode]);
-
-  if (!reviewUrl) {
-    return (
-      <div className="diff-panel h-full flex flex-col bg-bg-primary">
-        <div className="flex-1 flex items-center justify-center p-8 text-text-secondary">
-          <div className="max-w-sm text-center space-y-2">
-            <GitBranch className="w-8 h-8 mx-auto text-text-muted" />
-            <h2 className="text-sm font-medium text-text-primary">Review unavailable</h2>
-            <p className="text-xs text-text-tertiary">
-              Open a PR for this branch to review changes.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [effectiveReviewMode, isActive, isStale, panel.id, sessionId]);
 
   const prLabel = session?.gitStatus?.prNumber ? `#${session.gitStatus.prNumber}` : 'Pull Request';
+  const githubModeButton = (
+    <button
+      type="button"
+      onClick={() => reviewUrl && handleReviewModeChange('github')}
+      disabled={!reviewUrl}
+      aria-disabled={!reviewUrl}
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors",
+        !reviewUrl
+          ? "text-text-muted cursor-not-allowed opacity-50"
+          : effectiveReviewMode === 'github'
+          ? "bg-interactive text-text-on-interactive"
+          : "text-text-secondary hover:bg-surface-hover"
+      )}
+      aria-pressed={effectiveReviewMode === 'github'}
+      title={!reviewUrl ? 'Open a PR to enable' : undefined}
+    >
+      <Globe className="w-3 h-3" />
+      GitHub
+    </button>
+  );
 
   return (
     <div className="diff-panel h-full flex flex-col bg-bg-primary">
@@ -214,37 +222,34 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <GitBranch className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
           <span className="text-xs font-medium text-text-secondary truncate">Review</span>
-          <span className="text-xs text-text-muted truncate">{prLabel}</span>
-          {session?.gitStatus?.prTitle && (
-            <span className="text-xs text-text-tertiary truncate">{session.gitStatus.prTitle}</span>
+          {reviewUrl ? (
+            <>
+              <span className="text-xs text-text-muted truncate">{prLabel}</span>
+              {session?.gitStatus?.prTitle && (
+                <span className="text-xs text-text-tertiary truncate">{session.gitStatus.prTitle}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-xs text-text-muted truncate">Local changes</span>
           )}
         </div>
 
         <div className="inline-flex items-center rounded border border-border-primary bg-bg-primary p-0.5 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => handleReviewModeChange('github')}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors",
-              reviewMode === 'github'
-                ? "bg-interactive text-text-on-interactive"
-                : "text-text-secondary hover:bg-surface-hover"
-            )}
-            aria-pressed={reviewMode === 'github'}
-          >
-            <Globe className="w-3 h-3" />
-            GitHub
-          </button>
+          {reviewUrl ? githubModeButton : (
+            <Tooltip content="Open a PR to enable" side="bottom">
+              {githubModeButton}
+            </Tooltip>
+          )}
           <button
             type="button"
             onClick={() => handleReviewModeChange('local')}
             className={cn(
               "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors",
-              reviewMode === 'local'
+              effectiveReviewMode === 'local'
                 ? "bg-interactive text-text-on-interactive"
                 : "text-text-secondary hover:bg-surface-hover"
             )}
-            aria-pressed={reviewMode === 'local'}
+            aria-pressed={effectiveReviewMode === 'local'}
           >
             <GitBranch className="w-3 h-3" />
             Local
@@ -253,7 +258,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
       </div>
 
       {/* Stale indicator bar */}
-      {reviewMode === 'local' && isStale && !isActive && (
+      {effectiveReviewMode === 'local' && isStale && !isActive && (
         <div className="bg-status-warning/10 border-b border-status-warning/30 px-3 py-2 flex items-center justify-between">
           <div className="flex items-center gap-2 text-status-warning text-sm">
             <AlertCircle className="w-4 h-4" />
@@ -264,7 +269,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
 
       {/* Main diff view */}
       <div className="flex-1 overflow-hidden">
-        {reviewMode === 'github' ? (
+        {effectiveReviewMode === 'github' && reviewUrl ? (
           <BrowserSurface
             panelId={panel.id}
             sessionId={sessionId}
