@@ -117,6 +117,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const showDiffSkeleton = (diffLoading || commitDiffLoading) && combinedDiff === null;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => { mountedRef.current = false; };
   }, []);
 
@@ -690,7 +691,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
                     ? historySource === 'remote'
                       ? `No commits ahead of ${mainBranch}`
                       : 'Origin remote not found; showing recent local commits'
-                    : 'No commits found for this session'}
+                    : 'No changes to review'}
                 </p>
                 {isMainRepo && historySource === 'remote' && (
                   <p className="text-sm text-text-tertiary">

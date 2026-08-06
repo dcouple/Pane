@@ -58,38 +58,11 @@ import { Kbd } from './ui/Kbd';
 import { useErrorStore } from '../stores/errorStore';
 import ProjectSettings from './ProjectSettings';
 
-const REVIEW_UNAVAILABLE_REASON = 'Open a PR for this branch to review changes';
-
-function canSelectPanel(panel: ToolPanel | null | undefined, hasReviewPr: boolean): panel is ToolPanel {
-  return !!panel && (panel.type !== 'diff' || hasReviewPr);
-}
-
 function pickDefaultPanel(panelList: ToolPanel[], hasReviewPr: boolean): ToolPanel | undefined {
   return (hasReviewPr ? panelList.find(p => p.type === 'diff') : undefined)
     || panelList.find(p => p.type === 'explorer')
     || panelList.find(p => p.type !== 'diff')
     || panelList[0];
-}
-
-function sanitizeReviewActivePanels(
-  node: SessionPanelLayout['root'],
-  panelById: Map<string, ToolPanel>,
-  hasReviewPr: boolean
-): SessionPanelLayout['root'] {
-  if (hasReviewPr) return node;
-
-  if (node.type === 'group') {
-    const activePanel = node.activePanelId ? panelById.get(node.activePanelId) : undefined;
-    if (activePanel?.type !== 'diff') return node;
-
-    const fallback = node.panelIds
-      .map(id => panelById.get(id))
-      .find((panel): panel is ToolPanel => !!panel && panel.type !== 'diff');
-
-    return { ...node, activePanelId: fallback?.id ?? null };
-  }
-
-  return { ...node, children: node.children.map(child => sanitizeReviewActivePanels(child, panelById, hasReviewPr)) };
 }
 
 export const SessionView = memo(() => {
@@ -250,19 +223,21 @@ export const SessionView = memo(() => {
       // Always reload panels from database when switching sessions
       panelApi.loadPanelsForSession(sid).then(async loadedPanels => {
         devLog.debug('[SessionView] Loaded panels:', loadedPanels);
-        const hasReviewPr = !!activeSession.gitStatus?.prUrl;
+        const sessionState = useSessionStore.getState();
+        const loadedSession = sessionState.activeMainRepoSession?.id === sid
+          ? sessionState.activeMainRepoSession
+          : sessionState.sessions.find(session => session.id === sid);
+        const hasReviewPr = !!loadedSession?.gitStatus?.prUrl;
         const inFlight = (usePanelStore.getState().panels[sid] || []).filter(
           p => !preLoadIds.has(p.id) && !loadedPanels.some(lp => lp.id === p.id)
         );
         setPanels(sid, inFlight.length > 0 ? [...loadedPanels, ...inFlight] : loadedPanels);
 
-        // Pick default active: Review is only selectable once a PR is known.
+        // Preserve the existing startup preference without blocking Review.
         const fallback = pickDefaultPanel(loadedPanels, hasReviewPr);
 
         const activePanelResult = await panelApi.getActivePanel(sid);
-        const effectiveActivePanel = canSelectPanel(activePanelResult, hasReviewPr)
-          ? activePanelResult
-          : fallback;
+        const effectiveActivePanel = activePanelResult ?? fallback;
         const fallbackActiveId = effectiveActivePanel?.id ?? null;
 
         if (effectiveActivePanel) {
@@ -307,22 +282,16 @@ export const SessionView = memo(() => {
             fallbackActiveId,
           );
           const { layout } = reconcileLayout(base, liveIdsNow);
-          const panelById = new Map(nowPanels.map(panel => [panel.id, panel]));
-          const safeRoot = sanitizeReviewActivePanels(layout.root, panelById, hasReviewPr);
-          const safeLayout = safeRoot === layout.root ? layout : { ...layout, root: safeRoot };
-          setLayoutInStore(sid, safeLayout);
-          setFocusedGroupInStore(sid, safeLayout.focusedGroupId ?? primaryGroup(safeLayout.root).id);
+          setLayoutInStore(sid, layout);
+          setFocusedGroupInStore(sid, layout.focusedGroupId ?? primaryGroup(layout.root).id);
         } catch (err) {
           console.warn('[SessionView] Failed to load layout, creating default:', err);
           const layout = createSingleGroupLayout(
             sortedLive.map(p => p.id),
             fallbackActiveId,
           );
-          const panelById = new Map(loadedPanels.map(panel => [panel.id, panel]));
-          const safeRoot = sanitizeReviewActivePanels(layout.root, panelById, hasReviewPr);
-          const safeLayout = safeRoot === layout.root ? layout : { ...layout, root: safeRoot };
-          setLayoutInStore(sid, safeLayout);
-          setFocusedGroupInStore(sid, safeLayout.focusedGroupId ?? primaryGroup(safeLayout.root).id);
+          setLayoutInStore(sid, layout);
+          setFocusedGroupInStore(sid, layout.focusedGroupId ?? primaryGroup(layout.root).id);
         }
       });
     }
@@ -331,7 +300,7 @@ export const SessionView = memo(() => {
     return () => {
       flushLayoutPersist();
     };
-  }, [activeSession?.id, activeSession?.gitStatus?.prUrl, setPanels, setActivePanelInStore, setLayoutInStore, setFocusedGroupInStore, flushLayoutPersist]);
+  }, [activeSession?.id, setPanels, setActivePanelInStore, setLayoutInStore, setFocusedGroupInStore, flushLayoutPersist]);
   
   // Listen for panel updates from the backend
   useEffect(() => {
@@ -495,13 +464,10 @@ export const SessionView = memo(() => {
 
   const getPanelTabPresentation = useCallback<PanelTabPresentationResolver>((panel) => {
     if (panel.type !== 'diff') return undefined;
-    const hasReviewPr = !!activeSession?.gitStatus?.prUrl;
     return {
       title: 'Review',
-      disabled: !hasReviewPr,
-      disabledReason: hasReviewPr ? undefined : REVIEW_UNAVAILABLE_REASON,
     };
-  }, [activeSession?.gitStatus?.prUrl]);
+  }, []);
 
   // --- Drag & drop state ---
   const [draggedPanelId, setDraggedPanelId] = useState<string | null>(null);
@@ -553,7 +519,6 @@ export const SessionView = memo(() => {
   const handleGroupPanelSelect = useCallback(
     (groupId: string, panel: ToolPanel) => {
       if (!activeSession) return;
-      if (panel.type === 'diff' && !activeSession.gitStatus?.prUrl) return;
       const sid = activeSession.id;
       const currentLayout = usePanelStore.getState().layouts[sid];
       if (!currentLayout) return;
@@ -584,7 +549,6 @@ export const SessionView = memo(() => {
   const handlePanelSelect = useCallback(
     async (panel: ToolPanel) => {
       if (!activeSession) return;
-      if (panel.type === 'diff' && !activeSession.gitStatus?.prUrl) return;
 
       // Add to history when panel is selected
       addToHistory(activeSession.id, panel.id);
@@ -608,7 +572,6 @@ export const SessionView = memo(() => {
   const handleCommitClick = useCallback(
     async (commitHash: string) => {
       if (!activeSession || sessionPanels.length === 0) return;
-      if (!activeSession.gitStatus?.prUrl) return;
       const diffPanel = sessionPanels.find(p => p.type === 'diff');
       if (!diffPanel) return;
       // Store pending hash before dispatching — if the diff panel is not
@@ -1033,10 +996,6 @@ export const SessionView = memo(() => {
     const currentLayout = usePanelStore.getState().layouts[sid];
     if (currentLayout) {
       const group = findGroup(currentLayout.root, groupId);
-      const panel = group?.activePanelId
-        ? usePanelStore.getState().panels[sid]?.find(candidate => candidate.id === group.activePanelId)
-        : undefined;
-      if (panel?.type === 'diff' && !activeSession.gitStatus?.prUrl) return;
       if (group?.activePanelId) {
         setActivePanelInStore(sid, group.activePanelId);
         panelApi.setActivePanel(sid, group.activePanelId).catch(() => {});

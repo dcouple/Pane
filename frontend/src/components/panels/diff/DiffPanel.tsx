@@ -10,6 +10,7 @@ import BrowserSurface from '../browser/BrowserSurface';
 import {
   consumeLocalReviewModeRequest,
   getReviewDefaultMode,
+  resolveReviewMode,
   setReviewDefaultMode,
   subscribeReviewDefaultMode,
   subscribeLocalReviewModeRequest,
@@ -65,9 +66,13 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
 }) => {
   const sessionContext = useSession();
   const session = sessionContext?.session;
+  const reviewUrl = useMemo(() => buildGithubReviewUrl(session?.gitStatus?.prUrl), [session?.gitStatus?.prUrl]);
   const [isStale, setIsStale] = useState(false);
   const [reviewMode, setReviewModeState] = useState<ReviewMode>(() => (
-    consumeLocalReviewModeRequest(sessionId) ? 'local' : getReviewDefaultMode()
+    resolveReviewMode(
+      consumeLocalReviewModeRequest(sessionId) ? 'local' : getReviewDefaultMode(),
+      Boolean(reviewUrl),
+    )
   ));
   const diffState = panel.state?.customState as DiffPanelState | undefined;
   const lastRefreshRef = useRef<number>(Date.now());
@@ -75,9 +80,13 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   // Track diff-relevant git state to avoid spurious refreshes on no-op status events
   const lastGitFingerprintRef = useRef<string | null>(null);
   const wasActiveRef = useRef(isActive);
-  const reviewUrl = useMemo(() => buildGithubReviewUrl(session?.gitStatus?.prUrl), [session?.gitStatus?.prUrl]);
+  useEffect(() => subscribeReviewDefaultMode((mode) => {
+    setReviewModeState(resolveReviewMode(mode, Boolean(reviewUrl)));
+  }), [reviewUrl]);
 
-  useEffect(() => subscribeReviewDefaultMode(setReviewModeState), []);
+  useEffect(() => {
+    if (!reviewUrl) setReviewModeState('local');
+  }, [reviewUrl]);
 
   useEffect(() => {
     if (consumeLocalReviewModeRequest(sessionId)) {
@@ -190,23 +199,11 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- panel.state/diffState intentionally excluded: they are written inside this effect via IPC and must not re-trigger it
   }, [isActive, isStale, panel.id, sessionId, reviewMode]);
 
-  if (!reviewUrl) {
-    return (
-      <div className="diff-panel h-full flex flex-col bg-bg-primary">
-        <div className="flex-1 flex items-center justify-center p-8 text-text-secondary">
-          <div className="max-w-sm text-center space-y-2">
-            <GitBranch className="w-8 h-8 mx-auto text-text-muted" />
-            <h2 className="text-sm font-medium text-text-primary">Review unavailable</h2>
-            <p className="text-xs text-text-tertiary">
-              Open a PR for this branch to review changes.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const prLabel = session?.gitStatus?.prNumber ? `#${session.gitStatus.prNumber}` : 'Pull Request';
+  const prLabel = session?.gitStatus?.prNumber
+    ? `#${session.gitStatus.prNumber}`
+    : reviewUrl
+      ? 'Pull Request'
+      : 'Local changes';
 
   return (
     <div className="diff-panel h-full flex flex-col bg-bg-primary">
@@ -224,11 +221,15 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
           <button
             type="button"
             onClick={() => handleReviewModeChange('github')}
+            disabled={!reviewUrl}
+            title={reviewUrl ? 'Review pull request on GitHub' : 'No pull request yet'}
             className={cn(
               "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors",
               reviewMode === 'github'
                 ? "bg-interactive text-text-on-interactive"
-                : "text-text-secondary hover:bg-surface-hover"
+                : reviewUrl
+                  ? "text-text-secondary hover:bg-surface-hover"
+                  : "text-text-muted cursor-not-allowed"
             )}
             aria-pressed={reviewMode === 'github'}
           >
@@ -264,7 +265,7 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
 
       {/* Main diff view */}
       <div className="flex-1 overflow-hidden">
-        {reviewMode === 'github' ? (
+        {reviewMode === 'github' && reviewUrl ? (
           <BrowserSurface
             panelId={panel.id}
             sessionId={sessionId}

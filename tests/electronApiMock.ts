@@ -26,6 +26,8 @@ type ElectronApiMockOptions = {
     pinnedSectionExpanded: boolean;
     repositoriesSectionExpanded: boolean;
   }>;
+  initialExecutions?: Array<Record<string, unknown>>;
+  initialCombinedDiff?: Record<string, unknown> | null;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -248,6 +250,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         }
         if (prop === 'onRemoteDaemonResyncRequested') {
           return (callback: () => void) => subscribe('remote-daemon:resync-required', callback);
+        }
+        if (prop === 'onGitStatusUpdated') {
+          return (callback: (data: unknown) => void) => subscribe('git-status-updated', callback);
         }
         return () => unsubscribe;
       },
@@ -479,6 +484,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getAllWithProjects: () => success(clone(mockSessions)),
         getArchivedWithProjects: () => success([]),
         getResumable: () => success([]),
+        getExecutions: () => success(clone(mockOptions.initialExecutions ?? [])),
+        getCombinedDiff: () => success(clone(mockOptions.initialCombinedDiff ?? null)),
       }),
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),
@@ -751,6 +758,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         setPanels(panels: Array<Record<string, unknown>>) {
           mockPanels = clone(panels);
+        },
+        emitGitStatusUpdated(sessionId: string, gitStatus: Record<string, unknown>) {
+          emit('git-status-updated', { sessionId, gitStatus: clone(gitStatus) });
         },
         getSessionsReadCount() {
           return sessionsGetCount;
