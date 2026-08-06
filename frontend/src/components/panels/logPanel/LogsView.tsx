@@ -4,6 +4,7 @@ import { cn } from '../../../utils/cn';
 import AnsiToHtml from 'ansi-to-html';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { LiveRegion } from '../../ui/LiveRegion';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 
 interface LogEntry {
   timestamp: string;
@@ -30,6 +31,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastLogCount = useRef(0);
   const { theme } = useTheme();
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
 
   // Create ANSI to HTML converter with theme-aware colors
   const ansiConverter = useMemo(() => {
@@ -174,7 +176,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Cmd+F or Ctrl+F for search
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if (keyboardShortcutsEnabled && (e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setSearchVisible(true);
         setTimeout(() => searchInputRef.current?.focus(), 100);
@@ -197,7 +199,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isVisible, searchVisible, searchMatches, goToNextMatch, goToPreviousMatch]);
+  }, [isVisible, keyboardShortcutsEnabled, searchVisible, searchMatches, goToNextMatch, goToPreviousMatch]);
 
   const handleClearLogs = async () => {
     try {

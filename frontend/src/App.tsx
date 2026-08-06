@@ -109,6 +109,7 @@ function App() {
   const [resumableSessions, setResumableSessions] = useState<ResumableSession[]>([]);
   const [isResumeDialogOpen, setIsResumeDialogOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isKeyboardShortcutsOpen, setIsKeyboardShortcutsOpen] = useState(false);
   const [isDocsOpen, setIsDocsOpen] = useState(false);
   const [showCreateSessionDialog, setShowCreateSessionDialog] = useState(false);
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
@@ -849,6 +850,10 @@ function App() {
           onCategoryChange={setSettingsCategory}
           openRequest={settingsOpenRequest}
           onOpenRequestHandled={() => setSettingsOpenRequest(undefined)}
+          onShowKeyboardShortcuts={() => {
+            closeSettings();
+            setIsKeyboardShortcutsOpen(true);
+          }}
         />
         <AnalyticsConsentDialog
           isOpen={isAnalyticsConsentOpen}
@@ -915,6 +920,11 @@ function App() {
           onClose={() => setShowAddProjectDialog(false)}
         />
         <Help isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+        <Help
+          isOpen={isKeyboardShortcutsOpen}
+          onClose={() => setIsKeyboardShortcutsOpen(false)}
+          shortcutsOnly
+        />
         <DocsDialog isOpen={isDocsOpen} onClose={() => setIsDocsOpen(false)} />
         <ShortcutHintsOverlay isVisible={shortcutHintsVisible} shortcuts={terminalShortcuts} />
         </div>

@@ -10,6 +10,7 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { useSessionPreferencesStore, type SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../stores/configStore';
 import { generatePaneName, sanitizePaneName } from '../utils/paneName';
 
 // Interface for branch information
@@ -72,6 +73,7 @@ export function CreateSessionDialog({
   const { showError } = useErrorStore();
   const { preferences, loadPreferences, updatePreferences } = useSessionPreferencesStore();
   const existingSessions = useSessionStore(state => state.sessions);
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
 
   // Load session creation preferences when dialog opens
   useEffect(() => {
@@ -267,7 +269,7 @@ export function CreateSessionDialog({
       if (!isOpen) return;
 
       // Cmd/Ctrl + Enter to submit
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      if (keyboardShortcutsEnabled && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         const form = document.getElementById('create-session-form') as HTMLFormElement;
         if (form) {
@@ -279,7 +281,7 @@ export function CreateSessionDialog({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, keyboardShortcutsEnabled]);
 
   // Auto-focus name input on dialog open (always available immediately)
   useEffect(() => {

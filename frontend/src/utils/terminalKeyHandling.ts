@@ -11,6 +11,7 @@ export interface TerminalKeyHandlingState {
   isTuiActive: boolean;
   isCliPanel: boolean;
   isMac: boolean;
+  keyboardShortcutsEnabled: boolean;
 }
 
 export interface TerminalKeyLike {
@@ -21,6 +22,15 @@ export interface TerminalKeyLike {
   metaKey: boolean;
   altKey: boolean;
   getModifierState: (key: string) => boolean;
+}
+
+export function shouldOpenTerminalSearch(
+  event: Pick<TerminalKeyLike, 'ctrlKey' | 'metaKey' | 'key'>,
+  keyboardShortcutsEnabled: boolean,
+): boolean {
+  return keyboardShortcutsEnabled
+    && (event.ctrlKey || event.metaKey)
+    && event.key.toLowerCase() === 'f';
 }
 
 function isPaneNavigationShortcut(
@@ -62,6 +72,8 @@ export function resolveTerminalKeyHandling(
   event: TerminalKeyLike,
   state: TerminalKeyHandlingState,
 ): TerminalKeyHandlingDecision {
+  if (!state.keyboardShortcutsEnabled) return { action: 'pass-through' };
+
   const ctrlOrMeta = event.ctrlKey || event.metaKey;
   const shiftEnter = event.shiftKey && !ctrlOrMeta && event.key === 'Enter';
 

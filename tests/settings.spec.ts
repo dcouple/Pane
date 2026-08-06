@@ -89,8 +89,60 @@ test.describe('Settings', () => {
     await page.keyboard.press('Control+Alt+/');
 
     await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Shortcuts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Shortcuts', exact: true })).toBeVisible();
     await expect(page.locator('[data-setting-id="terminal-shortcuts"]')).toBeFocused();
+  });
+
+  test('disables Pane keyboard shortcut interception from shortcut settings', async ({ page }) => {
+    await bootSettings(page);
+    await page.getByRole('button', { name: 'Shortcuts', exact: true }).click();
+
+    const toggle = page.getByRole('switch', { name: 'Enable Pane keyboard shortcuts' });
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await toggle.click();
+    await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+
+    const updates = await page.evaluate(() => (
+      window as typeof window & { __paneTestElectronMock: SettingsMock }
+    ).__paneTestElectronMock.getConfigUpdates());
+    expect(updates).toContainEqual({ keyboardShortcutsEnabled: false });
+  });
+
+  test('configures the Command Palette exception and opens the shortcut reference', async ({ page }) => {
+    await bootSettings(page, {
+      initialConfig: { keyboardShortcutsEnabled: false, commandPaletteShortcutEnabled: true },
+    });
+    await page.getByRole('button', { name: 'Shortcuts', exact: true }).click();
+
+    await expect(page.getByText("When disabled, Pane shortcuts won't work, but native terminal and embedded app shortcuts will. The Command Palette shortcut can remain enabled below.")).toBeVisible();
+    const paletteToggle = page.getByRole('switch', { name: 'Keep Command Palette shortcut enabled' });
+    await expect(paletteToggle).toHaveAttribute('aria-checked', 'true');
+    await paletteToggle.click();
+
+    const updates = await page.evaluate(() => (
+      window as typeof window & { __paneTestElectronMock: SettingsMock }
+    ).__paneTestElectronMock.getConfigUpdates());
+    expect(updates).toContainEqual({ commandPaletteShortcutEnabled: false });
+
+    await page.getByRole('button', { name: 'View all Pane keyboard shortcuts' }).click();
+    await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeVisible();
+    await expect(page.getByText('Open Command Palette')).toBeVisible();
+  });
+
+  test('guards the shortcut reference when snippet edits are dirty', async ({ page }) => {
+    await bootSettings(page);
+    await page.getByRole('button', { name: 'Shortcuts', exact: true }).click();
+    await page.getByRole('button', { name: 'Add Shortcut' }).click();
+    await page.getByRole('button', { name: 'View all Pane keyboard shortcuts' }).click();
+
+    const confirm = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: 'Stay' }).click();
+    await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'View all Pane keyboard shortcuts' }).click();
+    await confirm.getByRole('button', { name: 'Discard Changes' }).click();
+    await expect(page.getByRole('dialog', { name: 'Keyboard Shortcuts' })).toBeVisible();
   });
 
   test('persists immediate config and database preferences through their owners', async ({ page }) => {

@@ -92,9 +92,9 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
   {
     id: 'shortcuts',
     label: 'Shortcuts',
-    description: 'Terminal snippet hotkeys.',
+    description: 'Application and terminal snippet hotkeys.',
     icon: Keyboard,
-    settingIds: ['terminal-shortcuts'],
+    settingIds: ['keyboard-shortcuts', 'command-palette-shortcut', 'terminal-shortcuts'],
     aliases: ['hotkeys', 'keyboard', 'snippets'],
   },
   {

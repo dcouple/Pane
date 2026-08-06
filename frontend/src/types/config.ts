@@ -134,6 +134,10 @@ export interface AppConfig {
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
   terminalShortcuts?: TerminalShortcut[];
+  // Whether Pane intercepts application keyboard shortcuts
+  keyboardShortcutsEnabled?: boolean;
+  // Whether the Command Palette shortcut remains active when other shortcuts are disabled
+  commandPaletteShortcutEnabled?: boolean;
   // Worktree file sync — files/dirs to copy from main repo into new worktrees
   worktreeFileSync?: WorktreeFileSyncEntry[];
   // Preferred shell for Windows terminals
@@ -184,6 +188,8 @@ export interface UpdateConfigRequest {
   analytics?: AnalyticsConfig;
   customCommands?: CustomCommand[];
   terminalShortcuts?: TerminalShortcut[];
+  keyboardShortcutsEnabled?: boolean;
+  commandPaletteShortcutEnabled?: boolean;
   worktreeFileSync?: WorktreeFileSyncEntry[];
   preferredShell?: PreferredShell;
   terminalPowerMode?: PreferredTerminalPowerMode;

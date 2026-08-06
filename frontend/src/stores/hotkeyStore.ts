@@ -29,6 +29,7 @@
  * @module hotkeyStore
  */
 import { create } from 'zustand';
+import { areKeyboardShortcutsEnabled, isCommandPaletteShortcutEnabled, useConfigStore } from './configStore';
 
 export interface HotkeyDefinition {
   /** Unique identifier, e.g. 'open-prompt-history' */
@@ -154,6 +155,11 @@ let lookupIndex: Map<string, string> = new Map(); // normalized keys → hotkey 
 export function isHotkeyEnabledForEvent(e: KeyboardEvent): boolean {
   const hotkeyId = lookupIndex.get(normalizeKeyEvent(e));
   if (!hotkeyId) return false;
+
+  const config = useConfigStore.getState().config;
+  if (!areKeyboardShortcutsEnabled(config)) {
+    if (hotkeyId !== 'open-command-palette' || !isCommandPaletteShortcutEnabled(config)) return false;
+  }
 
   const def = useHotkeyStore.getState().hotkeys.get(hotkeyId);
   if (!def) return false;

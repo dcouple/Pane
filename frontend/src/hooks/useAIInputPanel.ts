@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, KeyboardEvent } from 'react';
 import type { CodexInputOptions } from '../../../shared/types/models';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../stores/configStore';
 
 export interface AttachedImage {
   id: string;
@@ -91,6 +92,7 @@ export const buildMessageWithAttachments = (
 
 export const useAIInputPanel = (options: UseAIInputPanelOptions) => {
   const { onSendMessage, onCancel, disabled } = options;
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   
   const [input, setInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -249,11 +251,11 @@ export const useAIInputPanel = (options: UseAIInputPanelOptions) => {
     }
     
     // Handle submit on Enter with modifier (Cmd/Ctrl+Enter)
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+    if (keyboardShortcutsEnabled && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       await handleSubmit();
     }
-  }, [onCancel, handleSubmit]);
+  }, [keyboardShortcutsEnabled, onCancel, handleSubmit]);
 
   const adjustTextareaHeight = useCallback(() => {
     const textarea = textareaRef.current;

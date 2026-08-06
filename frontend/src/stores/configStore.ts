@@ -10,6 +10,17 @@ interface ConfigStore {
   updateConfig: (updates: UpdateConfigRequest) => Promise<AppConfig>;
 }
 
+export function areKeyboardShortcutsEnabled(config: AppConfig | null): boolean {
+  return config !== null && config.keyboardShortcutsEnabled !== false;
+}
+
+export function isCommandPaletteShortcutEnabled(config: AppConfig | null): boolean {
+  return config !== null && (
+    config.keyboardShortcutsEnabled !== false
+    || config.commandPaletteShortcutEnabled !== false
+  );
+}
+
 export const useConfigStore = create<ConfigStore>((set, get) => ({
   config: null,
   isLoading: false,

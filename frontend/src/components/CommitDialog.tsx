@@ -4,6 +4,7 @@ import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Textarea } from './ui/Textarea';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../stores/configStore';
 
 interface CommitDialogProps {
   isOpen: boolean;
@@ -22,6 +23,7 @@ export const CommitDialog: React.FC<CommitDialogProps> = ({
   const [isCommitting, setIsCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
 
   // Set default message
   useEffect(() => {
@@ -59,13 +61,13 @@ export const CommitDialog: React.FC<CommitDialogProps> = ({
   }, [commitMessage, onCommit, onClose]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (keyboardShortcutsEnabled && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleCommit();
     } else if (e.key === 'Escape') {
       onClose();
     }
-  }, [handleCommit, onClose]);
+  }, [handleCommit, keyboardShortcutsEnabled, onClose]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">

@@ -11,7 +11,7 @@ import { TerminalPanelProps } from '../../types/panelComponents';
 import { isHotkeyEnabledForEvent, useHotkeyStore } from '../../stores/hotkeyStore';
 import { renderLog, devLog } from '../../utils/console';
 import { getTerminalTheme } from '../../utils/terminalTheme';
-import { resolveTerminalKeyHandling } from '../../utils/terminalKeyHandling';
+import { resolveTerminalKeyHandling, shouldOpenTerminalSearch } from '../../utils/terminalKeyHandling';
 import { isMac } from '../../utils/platformUtils';
 import { FileEdit, FolderOpen } from 'lucide-react';
 import { useTerminalLinks } from '../terminal/hooks/useTerminalLinks';
@@ -27,7 +27,7 @@ import { createAtTerminalHandler } from '../../services/terminalInterceptor/hand
 import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
 import { InterceptorToast } from '../terminal/InterceptorToast';
 import { usePanelStore } from '../../stores/panelStore';
-import { useConfigStore } from '../../stores/configStore';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../../stores/configStore';
 import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
@@ -41,7 +41,7 @@ const SKELETON_TRANSCRIPT_WIDTHS = ['w-2/3', 'w-1/2', 'w-5/6', 'w-1/3', 'w-3/4',
 // lines, and a prompt box, swept by a single shimmer so it reads as one
 // cohesive loading surface. Shown while initializing, refreshing, and CLI startup.
 const TerminalLoadingSkeleton: React.FC = () => (
-  <div role="status" className="relative w-full h-full overflow-hidden px-4 py-4 font-mono select-none" aria-label="Loading terminal">
+  <div className="relative w-full h-full overflow-hidden px-4 py-4 font-mono select-none" role="status" aria-label="Loading terminal">
     <div className="flex h-full flex-col gap-4">
       <div className="rounded-md border border-border-primary p-3 space-y-2 max-w-md">
         <div className="h-3.5 w-40 rounded bg-surface-tertiary" />
@@ -233,6 +233,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   const interceptorRef = useRef<TerminalInterceptor | null>(null);
   const skipNextInterceptRef = useRef(false); // set by AltGr @ detection
   const terminalPowerMode = useConfigStore((state) => state.config?.terminalPowerMode ?? 'performance');
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
+  const keyboardShortcutsEnabledRef = useRef(keyboardShortcutsEnabled);
   const useBatterySaverTerminalVisibility = terminalPowerMode === 'batterySaver';
   const panelVisible = isActive;
   const effectiveVisible = useBatterySaverTerminalVisibility ? panelVisible && windowFocused : true;
@@ -294,6 +296,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   useEffect(() => {
     isCliPanelRef.current = isCliPanel;
   }, [isCliPanel]);
+
+  useEffect(() => {
+    keyboardShortcutsEnabledRef.current = keyboardShortcutsEnabled;
+  }, [keyboardShortcutsEnabled]);
 
   useEffect(() => {
     if (terminalState?.isCliReady && !isCliReady) {
@@ -767,12 +773,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
   // Open search on Ctrl/Cmd+F from the container div
   const handleTerminalKeyDown = useCallback((e: React.KeyboardEvent) => {
-    const ctrlOrMeta = e.ctrlKey || e.metaKey;
-    if (ctrlOrMeta && e.key.toLowerCase() === 'f') {
+    if (shouldOpenTerminalSearch(e, keyboardShortcutsEnabled)) {
       e.preventDefault();
       openSearch();
     }
-  }, [openSearch]);
+  }, [keyboardShortcutsEnabled, openSearch]);
 
   const getDropdownPosition = useCallback((): { x: number; y: number } => {
     const container = terminalRef.current;
@@ -906,6 +911,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
         // Intercept app-level shortcuts before xterm consumes them
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+          if (!keyboardShortcutsEnabledRef.current) return !isHotkeyEnabledForEvent(e);
+
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
           // Ctrl/Cmd+K: clear xterm scrollback without writing ^K to the PTY.
@@ -925,6 +932,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             isTuiActive: tuiActiveRef.current,
             isCliPanel: isCliPanelRef.current,
             isMac: isMac(),
+            keyboardShortcutsEnabled: keyboardShortcutsEnabledRef.current,
           });
 
           // Shift+Enter sends the same ESC+CR sequence as Alt+Enter for CLI
