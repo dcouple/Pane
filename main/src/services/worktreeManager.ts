@@ -516,13 +516,14 @@ export class WorktreeManager {
    *
    * Source of truth: session.baseBranch — the ref the user picked at creation.
    * For legacy worktree sessions where baseBranch is null/empty/the literal
-   * "HEAD", prefer the remote default branch. The project root may currently
-   * be on an unrelated feature branch, which would produce incorrect diffs.
+   * "HEAD", prefer the recorded fork commit, then the remote default branch.
+   * The project root may currently be on an unrelated feature branch, which
+   * would produce incorrect diffs.
    * Main-repo sessions preserve the current-branch origin fallback.
    *
-   * The returned ref is a raw branch name (`main`, `my-feature`) or remote
-   * ref (`origin/main`, `origin/staging`) — pass it directly to git diff /
-   * git log / git rev-list. DO NOT prepend `origin/`.
+   * The returned ref is a raw branch name (`main`, `my-feature`), remote ref
+   * (`origin/main`, `origin/staging`), or recorded commit SHA. Pass it directly
+   * to git diff / git log / git rev-list. DO NOT prepend `origin/`.
    *
    * Use this for READ operations (diff, log, rev-list, status). For WRITE
    * operations that need to `git checkout` the integration target (squash/
@@ -530,7 +531,7 @@ export class WorktreeManager {
    * remote ref like `origin/main` puts the project repo in detached HEAD.
    */
   async getSessionComparisonBranch(
-    session: { baseBranch?: string; isMainRepo?: boolean; worktreePath?: string },
+    session: { baseBranch?: string; baseCommit?: string; isMainRepo?: boolean; worktreePath?: string },
     ctx: { project: { path: string }; commandRunner: CommandRunner },
   ): Promise<string> {
     // Treat the literal "HEAD" placeholder as missing — createWorktree
@@ -560,6 +561,13 @@ export class WorktreeManager {
       } else {
         return session.baseBranch;
       }
+    }
+
+    // Legacy sessions still record the commit they started from. Prefer that
+    // immutable boundary over a branch ref that may be behind local commits
+    // which existed before Pane created the worktree.
+    if (!session.isMainRepo && session.baseCommit) {
+      return session.baseCommit;
     }
 
     if (!session.isMainRepo && session.worktreePath) {
@@ -607,10 +615,31 @@ export class WorktreeManager {
    * tracking branch from origin/<name> when one exists.
    */
   async getSessionLocalBaseBranch(
-    session: { baseBranch?: string; isMainRepo?: boolean; worktreePath?: string },
+    session: { baseBranch?: string; baseCommit?: string; isMainRepo?: boolean; worktreePath?: string },
     ctx: { project: { path: string }; commandRunner: CommandRunner },
   ): Promise<string> {
-    const ref = await this.getSessionComparisonBranch(session, ctx);
+    // Do not reuse the read fallback here: it may intentionally resolve to a
+    // remote ref or immutable commit. Writes must always target a local branch.
+    let ref = session.baseBranch && session.baseBranch !== 'HEAD'
+      ? session.baseBranch
+      : await this.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
+
+    // Existing-branch panes can store their own checked-out branch as the base.
+    // Merging that branch into itself is invalid, so use the project checkout's
+    // integration branch just as we do for legacy HEAD sessions.
+    if (session.worktreePath && session.baseBranch && session.baseBranch !== 'HEAD') {
+      try {
+        const { stdout } = await ctx.commandRunner.execAsync(
+          'git branch --show-current',
+          session.worktreePath,
+        );
+        if (stdout.trim() === session.baseBranch) {
+          ref = await this.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
+        }
+      } catch {
+        // If the worktree cannot be inspected, trust the explicitly stored base.
+      }
+    }
 
     // Strip any known remote prefix. Cross-check against `git remote` so we
     // don't mangle a local branch that legitimately has a slash in its name.

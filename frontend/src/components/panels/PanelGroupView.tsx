@@ -211,12 +211,13 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
         </div>
       )}
 
-      {/* Panel content stack: only the active tab is displayed; terminals
-          stay mounted behind display:none so xterm never reflows */}
+      {/* Panel content stack: only the active tab is displayed. Terminals stay
+          mounted so xterm never reflows; Review stays mounted so navigation
+          does not discard the user's local diff state. */}
       <div className="flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
         {orderedPanels.map(panel => {
           const isActiveTab = panel.id === group.activePanelId;
-          const keepAlive = panel.type === 'terminal';
+          const keepAlive = panel.type === 'terminal' || panel.type === 'diff';
           const panelTabNamespace = !multiGroup || panel.metadata?.permanent === true ? 'top' : group.id;
           if (!isActiveTab && !keepAlive) return null;
           return (

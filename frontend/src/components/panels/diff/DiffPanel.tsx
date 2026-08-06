@@ -74,6 +74,8 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
       Boolean(reviewUrl),
     )
   ));
+  const [hasOpenedLocal, setHasOpenedLocal] = useState(reviewMode === 'local');
+  const [hasOpenedGithub, setHasOpenedGithub] = useState(reviewMode === 'github');
   const diffState = panel.state?.customState as DiffPanelState | undefined;
   const lastRefreshRef = useRef<number>(Date.now());
   const combinedDiffRef = useRef<CombinedDiffViewHandle>(null);
@@ -87,6 +89,14 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
   useEffect(() => {
     if (!reviewUrl) setReviewModeState('local');
   }, [reviewUrl]);
+
+  useEffect(() => {
+    if (reviewMode === 'local') {
+      setHasOpenedLocal(true);
+    } else if (reviewUrl) {
+      setHasOpenedGithub(true);
+    }
+  }, [reviewMode, reviewUrl]);
 
   useEffect(() => {
     if (consumeLocalReviewModeRequest(sessionId)) {
@@ -264,24 +274,39 @@ export const DiffPanel: React.FC<DiffPanelProps> = ({
       )}
 
       {/* Main diff view */}
-      <div className="flex-1 overflow-hidden">
-        {reviewMode === 'github' && reviewUrl ? (
-          <BrowserSurface
-            panelId={panel.id}
-            sessionId={sessionId}
-            url={reviewUrl}
-            isActive={isActive}
-            compact
-          />
-        ) : (
-          <CombinedDiffView
-            ref={combinedDiffRef}
-            sessionId={sessionId}
-            selectedExecutions={[]}
-            isGitOperationRunning={false}
-            isMainRepo={isMainRepo}
-            isVisible={isActive}
-          />
+      <div className="relative flex-1 overflow-hidden">
+        {hasOpenedGithub && reviewUrl && (
+          <div
+            className="absolute inset-0"
+            aria-hidden={reviewMode !== 'github'}
+            inert={reviewMode !== 'github' ? true : undefined}
+            style={{ display: reviewMode === 'github' ? 'block' : 'none' }}
+          >
+            <BrowserSurface
+              panelId={panel.id}
+              sessionId={sessionId}
+              url={reviewUrl}
+              isActive={isActive && reviewMode === 'github'}
+              compact
+            />
+          </div>
+        )}
+        {hasOpenedLocal && (
+          <div
+            className="absolute inset-0"
+            aria-hidden={reviewMode !== 'local'}
+            inert={reviewMode !== 'local' ? true : undefined}
+            style={{ display: reviewMode === 'local' ? 'block' : 'none' }}
+          >
+            <CombinedDiffView
+              ref={combinedDiffRef}
+              sessionId={sessionId}
+              selectedExecutions={[]}
+              isGitOperationRunning={false}
+              isMainRepo={isMainRepo}
+              isVisible={isActive && reviewMode === 'local'}
+            />
+          </div>
         )}
       </div>
     </div>

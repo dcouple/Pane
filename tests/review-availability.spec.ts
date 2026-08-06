@@ -189,6 +189,18 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(page.getByText('Local changes', { exact: true })).toBeVisible();
   await expect(page.locator('.combined-diff-view').getByText('+8', { exact: true })).toBeVisible();
   await expect(page.locator('.combined-diff-view').getByText('-3', { exact: true })).toBeVisible();
+
+  const reviewFile = page.getByRole('button', { name: 'Expand diff for src/review.ts', exact: true });
+  await expect(reviewFile).toHaveAttribute('aria-expanded', 'false');
+  await reviewFile.click();
+  const expandedReviewFile = page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true });
+  await expect(expandedReviewFile).toHaveAttribute('aria-expanded', 'true');
+  const splitMode = page.getByRole('button', { name: 'Split', exact: true });
+  await splitMode.click();
+  await page.getByRole('tab', { name: 'Explorer', exact: true }).click();
+  await reviewTab.click();
+  await expect(page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(splitMode).toHaveClass(/bg-interactive/);
   await capture(page, testInfo, '01-local-review-before-pr.png');
 
   await page.evaluate((gitStatus) => {
@@ -217,6 +229,10 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(localMode).not.toHaveClass(/bg-interactive/);
   await expect(page.getByText('https://github.com/dcouple/Pane/pull/374/files', { exact: true })).toBeVisible();
   await capture(page, testInfo, '03-github-review-selected.png');
+
+  await localMode.click();
+  await expect(page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(splitMode).toHaveClass(/bg-interactive/);
 });
 
 test('Review shows a clean local empty state before a pull request exists', async ({ page }) => {
