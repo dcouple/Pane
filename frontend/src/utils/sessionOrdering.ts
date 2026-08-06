@@ -7,6 +7,17 @@ export interface PinnedSession {
   label: string;
 }
 
+const PINNED_REPOSITORY_NAME_LENGTH = 6;
+
+function getPinnedSessionLabel(projectName: string | undefined, sessionName: string | undefined): string {
+  const repositoryName = projectName?.split(/[\\/]/).filter(Boolean).pop();
+  const shortRepositoryName = repositoryName && repositoryName.length > PINNED_REPOSITORY_NAME_LENGTH
+    ? `${repositoryName.slice(0, PINNED_REPOSITORY_NAME_LENGTH)}...`
+    : repositoryName || 'Unknown';
+
+  return `${shortRepositoryName}/${sessionName || 'Untitled'}`;
+}
+
 function hasDisplayOrder(session: Session): boolean {
   return typeof session.displayOrder === 'number' && Number.isFinite(session.displayOrder);
 }
@@ -97,7 +108,7 @@ export function getPinnedSessions(
         : session.projectId != null ? projectById.get(session.projectId)?.name : undefined;
       return {
         session,
-        label: `${projectName || 'Unknown'}/${session.name || 'Untitled'}`,
+        label: getPinnedSessionLabel(projectName, session.name),
       };
     })
     .sort((a, b) => {

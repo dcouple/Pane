@@ -515,10 +515,10 @@ export class WorktreeManager {
    * Return the ref a session's diff/status should be compared against.
    *
    * Source of truth: session.baseBranch — the ref the user picked at creation.
-   * For legacy sessions where baseBranch is null/empty/the literal "HEAD"
-   * (createWorktree stores "HEAD" as the placeholder when no base was picked),
-   * falls back to today's behavior: project root current branch, with
-   * isMainRepo origin fallback.
+   * For legacy worktree sessions where baseBranch is null/empty/the literal
+   * "HEAD", prefer the remote default branch. The project root may currently
+   * be on an unrelated feature branch, which would produce incorrect diffs.
+   * Main-repo sessions preserve the current-branch origin fallback.
    *
    * The returned ref is a raw branch name (`main`, `my-feature`) or remote
    * ref (`origin/main`, `origin/staging`) — pass it directly to git diff /
@@ -559,6 +559,21 @@ export class WorktreeManager {
         }
       } else {
         return session.baseBranch;
+      }
+    }
+
+    if (!session.isMainRepo && session.worktreePath) {
+      try {
+        const { stdout } = await ctx.commandRunner.execAsync(
+          'git symbolic-ref --quiet --short refs/remotes/origin/HEAD',
+          session.worktreePath,
+        );
+        const remoteDefaultBranch = stdout.trim();
+        if (remoteDefaultBranch) {
+          return remoteDefaultBranch;
+        }
+      } catch {
+        // Fall through for repositories without an origin/HEAD symbolic ref.
       }
     }
 

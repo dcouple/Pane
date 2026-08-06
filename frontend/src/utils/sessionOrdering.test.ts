@@ -38,6 +38,20 @@ function project(id: number, name = `Project ${id}`): Project {
 }
 
 describe('sessionOrdering', () => {
+  it('formats pinned labels with a short repository name and no owner prefix', () => {
+    const projects = new Map([
+      [1, project(1, 'bloomapi/bloom-mono')],
+      [2, project(2, 'dcouple\\doozy')],
+    ]);
+    const pinned = getPinnedSessions([
+      session({ id: 'bloom', name: 'do-tm-560', projectId: 1, isFavorite: true }),
+      session({ id: 'doozy', name: 'improve fan out', projectId: 2, isFavorite: true }),
+    ], projects);
+
+    expect(pinned.find(item => item.session.id === 'bloom')?.label).toBe('bloom-.../do-tm-560');
+    expect(pinned.find(item => item.session.id === 'doozy')?.label).toBe('doozy/improve fan out');
+  });
+
   it('orders sessions by displayOrder in the default ascending view', () => {
     const grouped = groupSessionsByProject([
       session({ id: 'newer', projectId: 1, displayOrder: 2, createdAt: '2026-01-03T00:00:00.000Z' }),
