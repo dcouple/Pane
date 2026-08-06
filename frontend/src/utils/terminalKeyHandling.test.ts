@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveTerminalKeyHandling,
+  shouldOpenTerminalSearch,
   TERMINAL_MULTILINE_NEWLINE_SEQUENCE,
   type TerminalKeyLike,
 } from './terminalKeyHandling';
@@ -16,14 +17,27 @@ const key = (overrides: Partial<TerminalKeyLike>): TerminalKeyLike => ({
   ...overrides,
 });
 
-const tui = (overrides: Partial<{ isTuiActive: boolean; isCliPanel: boolean; isMac: boolean }> = {}) => ({
+const tui = (overrides: Partial<{
+  isTuiActive: boolean;
+  isCliPanel: boolean;
+  isMac: boolean;
+  keyboardShortcutsEnabled: boolean;
+}> = {}) => ({
   isTuiActive: true,
   isCliPanel: true,
   isMac: false,
+  keyboardShortcutsEnabled: true,
   ...overrides,
 });
 
 describe('resolveTerminalKeyHandling', () => {
+  it('passes keys through when Pane keyboard shortcuts are disabled', () => {
+    expect(resolveTerminalKeyHandling(
+      key({ key: 'w', code: 'KeyW', ctrlKey: true }),
+      tui({ keyboardShortcutsEnabled: false }),
+    )).toEqual({ action: 'pass-through' });
+  });
+
   it('sends the multiline sequence for Shift+Enter outside TUI mode', () => {
     expect(resolveTerminalKeyHandling(
       key({ key: 'Enter', shiftKey: true }),
@@ -152,5 +166,13 @@ describe('resolveTerminalKeyHandling', () => {
       }),
       tui(),
     )).toEqual({ action: 'pass-through' });
+  });
+});
+
+describe('shouldOpenTerminalSearch', () => {
+  it('only opens search when Pane keyboard shortcuts are enabled', () => {
+    const event = key({ key: 'f', code: 'KeyF', ctrlKey: true });
+    expect(shouldOpenTerminalSearch(event, true)).toBe(true);
+    expect(shouldOpenTerminalSearch(event, false)).toBe(false);
   });
 });

@@ -42,9 +42,10 @@ interface SettingsProps {
   onCategoryChange: (category: SettingsCategoryId) => void;
   openRequest?: SettingsOpenRequest;
   onOpenRequestHandled: () => void;
+  onShowKeyboardShortcuts: () => void;
 }
 
-export function Settings({ isOpen, onClose, category, onCategoryChange, openRequest, onOpenRequestHandled }: SettingsProps) {
+export function Settings({ isOpen, onClose, category, onCategoryChange, openRequest, onOpenRequestHandled, onShowKeyboardShortcuts }: SettingsProps) {
   const persistence = useSettingsPersistence(isOpen);
   const dirtyForms = useDirtySettingsForms();
   const {
@@ -114,6 +115,10 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
     });
   }, [onClose, requestTransition]);
 
+  const showKeyboardShortcuts = useCallback(() => {
+    requestTransition(onShowKeyboardShortcuts);
+  }, [onShowKeyboardShortcuts, requestTransition]);
+
   const openRemoteSubview = useCallback((subview: RemoteAccessSubviewId) => {
     requestTransition(() => setRemoteSubview(subview));
   }, [requestTransition]);
@@ -141,7 +146,7 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
       case 'integrations':
         return <IntegrationsSettings persistence={persistence} {...sharedDirtyProps} />;
       case 'shortcuts':
-        return <ShortcutsSettings persistence={persistence} {...sharedDirtyProps} />;
+        return <ShortcutsSettings persistence={persistence} onShowKeyboardShortcuts={showKeyboardShortcuts} {...sharedDirtyProps} />;
       case 'privacy':
         return <PrivacySettings persistence={persistence} />;
       case 'advanced':

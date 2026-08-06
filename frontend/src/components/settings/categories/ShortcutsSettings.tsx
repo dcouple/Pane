@@ -4,6 +4,7 @@ import { Button, IconButton } from '../../ui/Button';
 import { Input, Textarea } from '../../ui/Input';
 import { SettingsSection } from '../../ui/SettingsSection';
 import { SettingRow, SettingsPage } from '../SettingRow';
+import { ImmediateToggle } from '../SettingsControls';
 import type { SettingsPersistence } from '../useSettingsPersistence';
 import type { TerminalShortcut } from '../../../types/config';
 import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
@@ -11,9 +12,10 @@ import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
 interface ShortcutsSettingsProps {
   persistence: SettingsPersistence;
   onDirtyChange: (dirty: boolean) => void;
+  onShowKeyboardShortcuts: () => void;
 }
 
-export function ShortcutsSettings({ persistence, onDirtyChange }: ShortcutsSettingsProps) {
+export function ShortcutsSettings({ persistence, onDirtyChange, onShowKeyboardShortcuts }: ShortcutsSettingsProps) {
   const config = persistence.config!;
   const persistedShortcuts = config.terminalShortcuts ?? [];
   const persistedKey = JSON.stringify(persistedShortcuts);
@@ -46,7 +48,40 @@ export function ShortcutsSettings({ persistence, onDirtyChange }: ShortcutsSetti
   };
 
   return (
-    <SettingsPage title="Shortcuts" description="Bind application-wide Ctrl/Cmd+Alt+letter shortcuts to terminal snippets.">
+    <SettingsPage title="Shortcuts" description="Control Pane keyboard shortcuts and terminal snippet hotkeys.">
+      <SettingsSection title="Application shortcuts">
+        <SettingRow
+          settingId="keyboard-shortcuts"
+          label="Enable Pane keyboard shortcuts"
+          description="When disabled, Pane won't intercept keyboard shortcuts, allowing them to pass through to terminals and embedded apps, except for the Command Palette option below."
+          saveState={persistence.saveStates['keyboard-shortcuts']}
+        >
+          <ImmediateToggle
+            label="Enable Pane keyboard shortcuts"
+            value={config.keyboardShortcutsEnabled !== false}
+            onSave={(value) => persistence.saveConfig('keyboard-shortcuts', { keyboardShortcutsEnabled: value })}
+          />
+        </SettingRow>
+        <SettingRow
+          settingId="command-palette-shortcut"
+          label="Keep Command Palette shortcut enabled"
+          description="Keep Ctrl/Cmd+Shift+P available when other Pane keyboard shortcuts are disabled."
+          saveState={persistence.saveStates['command-palette-shortcut']}
+        >
+          <ImmediateToggle
+            label="Keep Command Palette shortcut enabled"
+            value={config.commandPaletteShortcutEnabled !== false}
+            onSave={(value) => persistence.saveConfig('command-palette-shortcut', { commandPaletteShortcutEnabled: value })}
+          />
+        </SettingRow>
+        <button
+          type="button"
+          className="text-sm font-medium text-interactive underline underline-offset-4 hover:text-interactive-hover"
+          onClick={onShowKeyboardShortcuts}
+        >
+          View all Pane keyboard shortcuts
+        </button>
+      </SettingsSection>
       <SettingsSection title="Terminal snippets">
         <SettingRow
           settingId="terminal-shortcuts"

@@ -65,13 +65,17 @@ function KeyboardShortcutsSection() {
 interface HelpProps {
   isOpen: boolean;
   onClose: () => void;
+  shortcutsOnly?: boolean;
 }
 
-export default function Help({ isOpen, onClose }: HelpProps) {
+export default function Help({ isOpen, onClose, shortcutsOnly = false }: HelpProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="xl" showCloseButton={false}>
-      <ModalHeader title="Pane Help" />
+      <ModalHeader title={shortcutsOnly ? 'Keyboard Shortcuts' : 'Pane Help'} />
       <ModalBody>
+        {shortcutsOnly ? (
+          <KeyboardShortcutsSection />
+        ) : (
         <div className="space-y-8">
             {/* Quick Start */}
             <section>
@@ -286,7 +290,8 @@ export default function Help({ isOpen, onClose }: HelpProps) {
                 <li>Enable notifications to know when Claude needs your input</li>
               </ul>
             </section>
-          </div>
+        </div>
+        )}
       </ModalBody>
       
       <div className="p-4 border-t border-border-primary text-center text-sm text-text-muted">

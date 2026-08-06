@@ -63,6 +63,7 @@ import * as path from 'path';
 import * as os from 'os';
 import type { SessionManager } from './services/sessionManager';
 import type { ConfigManager } from './services/configManager';
+import { areKeyboardShortcutsEnabled, shouldForwardCommandPaletteShortcut } from './utils/keyboardShortcuts';
 import type { WorktreeManager } from './services/worktreeManager';
 import type { GitStatusManager } from './services/gitStatusManager';
 import type { DatabaseService } from './database/database';
@@ -407,6 +408,11 @@ async function createWindow() {
 
       const key = input.key.toLowerCase();
       const code = input.code;
+      const config = configManager.getConfig();
+      if (
+        !areKeyboardShortcutsEnabled(config)
+        && !shouldForwardCommandPaletteShortcut(config, input)
+      ) return;
 
       // Skip AltGr: on Windows/Linux international layouts, AltGr reports
       // control+alt simultaneously. We detect this as control+alt without
@@ -530,6 +536,7 @@ async function createWindow() {
   // can use it to close tabs. We intercept at before-input-event and re-emit
   // the key as a DOM keydown via IPC so the renderer's hotkey system sees it.
   mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!areKeyboardShortcutsEnabled(configManager.getConfig())) return;
     if ((input.control || input.meta) && input.key.toLowerCase() === 'w' && input.type === 'keyDown') {
       event.preventDefault();
       mainWindow?.webContents.send('synthetic-keydown', {

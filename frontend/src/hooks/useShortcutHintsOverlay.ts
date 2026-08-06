@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../stores/configStore';
 
 const HOLD_DELAY_MS = 300;
 
 export function useShortcutHintsOverlay(): { isVisible: boolean } {
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   const [isVisible, setIsVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isShowingRef = useRef(false);
@@ -19,6 +21,11 @@ export function useShortcutHintsOverlay(): { isVisible: boolean } {
   }, []);
 
   useEffect(() => {
+    if (!keyboardShortcutsEnabled) {
+      cancel();
+      return;
+    }
+
     const isModifierKey = (key: string) =>
       key === 'Meta' || key === 'Control' || key === 'Alt';
 
@@ -63,7 +70,7 @@ export function useShortcutHintsOverlay(): { isVisible: boolean } {
       window.removeEventListener('blur', handleBlur);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [cancel]);
+  }, [cancel, keyboardShortcutsEnabled]);
 
   return { isVisible };
 }

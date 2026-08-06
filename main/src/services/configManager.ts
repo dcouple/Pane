@@ -81,6 +81,8 @@ export class ConfigManager extends EventEmitter {
         managedAgentsMd: true
       },
       remoteDaemon: createDefaultRemoteDaemonConfig(),
+      keyboardShortcutsEnabled: true,
+      commandPaletteShortcutEnabled: true,
       terminalShortcuts: [
         {
           id: 'default-root-cause',

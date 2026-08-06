@@ -15,7 +15,7 @@ import { ExplorerPanelState } from '../../../../../shared/types/panels';
 import { isMac, isWindows } from '../../../utils/platformUtils';
 import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
 import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
-import { useConfigStore } from '../../../stores/configStore';
+import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { LiveRegion } from '../../ui/LiveRegion';
 
 interface FileItem {
@@ -89,6 +89,7 @@ function HeadlessFileTree({
   // Platform-adaptive label
   const revealLabel = isMac() ? 'Reveal in Finder' : isWindows() ? 'Show in Explorer' : 'Show in File Manager';
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
+  const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
 
   // Initialize expanded state from persisted state or default to root expanded.
   // Normalize legacy '' root to ROOT_ID so saved state from the old FileTree still works.
@@ -703,7 +704,7 @@ function HeadlessFileTree({
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || !!target?.isContentEditable;
       if (isEditingText && e.key !== 'Escape') return;
 
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+      if (keyboardShortcutsEnabled && (e.metaKey || e.ctrlKey) && e.key === 'f') {
         e.preventDefault();
         setShowSearch(prev => !prev);
       }
@@ -722,6 +723,7 @@ function HeadlessFileTree({
           searchInputRef.current?.focus();
         }
       }
+      if (!keyboardShortcutsEnabled) return;
       if (e.key === 'F2' && selectedItems.length === 1) {
         const item = tree.getItemInstance(selectedItems[0])?.getItemData();
         if (item) {
@@ -752,7 +754,7 @@ function HeadlessFileTree({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchQuery, showNewItemDialog, contextMenu, selectedItems, tree, startRename, handleDelete, clipboard, handlePaste]);
+  }, [searchQuery, showNewItemDialog, contextMenu, keyboardShortcutsEnabled, selectedItems, tree, startRename, handleDelete, clipboard, handlePaste]);
 
   return (
     <div

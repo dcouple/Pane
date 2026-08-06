@@ -48,6 +48,8 @@ export type SettingsSettingId =
   | 'remote-existing-profile'
   | 'cloud-workspace'
   | 'voice-transcription'
+  | 'keyboard-shortcuts'
+  | 'command-palette-shortcut'
   | 'terminal-shortcuts'
   | 'analytics'
   | 'verbose-logging'
