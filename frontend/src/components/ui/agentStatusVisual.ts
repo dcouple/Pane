@@ -11,7 +11,8 @@ export interface AgentStatusVisual {
 
 /**
  * Single source of truth for how an {@link AgentDisplayStatus} looks: blocked is
- * red and pulses, working is amber and pulses, a freshly finished agent is a blue
+ * red and pulses, working is the info blue (matching the label shimmer) and
+ * pulses, a freshly finished agent is a blue
  * "done" cue, a seen-idle agent is calm green. `unknown` (no agent / plain shell)
  * returns null so callers render no badge.
  */
@@ -20,7 +21,7 @@ export function agentStatusVisual(status: AgentDisplayStatus): AgentStatusVisual
     case 'blocked':
       return { colorClass: 'bg-status-error', label: 'blocked', animate: true };
     case 'working':
-      return { colorClass: 'bg-status-warning', label: 'working', animate: true };
+      return { colorClass: 'bg-status-info', label: 'working', animate: true };
     case 'done':
       return { colorClass: 'bg-status-info', label: 'done', animate: false };
     case 'idle':

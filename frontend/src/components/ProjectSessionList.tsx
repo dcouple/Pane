@@ -9,9 +9,10 @@ import { AddProjectDialog } from './AddProjectDialog';
 import { Dropdown } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
 import { StatusAccentBar } from './ui/StatusAccentBar';
-import { AgentStatusDot } from './ui/AgentStatusDot';
+import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 import type { DropdownItem } from './ui/Dropdown';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
+import { rollupAgentState, rollupSessionAgentState } from '../utils/agentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 import { API } from '../utils/api';
 import { cn } from '../utils/cn';
@@ -81,8 +82,8 @@ export function ProjectSessionList({
   const expandedProjects = useNavigationStore(s => s.expandedProjects);
   const toggleProjectExpanded = useNavigationStore(s => s.toggleProjectExpanded);
   const expandProject = useNavigationStore(s => s.expandProject);
-  const panelPanels = usePanelStore(s => s.panels);
-  const panelActivityStatus = usePanelStore(s => s.activityStatus);
+  const agentStatusByPanel = usePanelStore(s => s.agentStatus);
+  const agentPanelSessions = usePanelStore(s => s.agentStatusSession);
 
   // Load projects
   const loadProjects = useCallback(async () => {
@@ -410,10 +411,10 @@ export function ProjectSessionList({
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
-          const projectActivity = projectSessions.some(s => {
-            const sessionPanels = panelPanels[s.id] || [];
-            return sessionPanels.some(p => panelActivityStatus[p.id] === 'active');
-          }) ? 'active' : 'idle';
+          // Agent status rolled up across the project's sessions (blocked > working > idle).
+          const projectAgentState = rollupAgentState(
+            projectSessions.map(s => rollupSessionAgentState(agentStatusByPanel, agentPanelSessions, s.id))
+          );
 
           const projectMenuItems: DropdownItem[] = [
             {
@@ -467,12 +468,11 @@ export function ProjectSessionList({
                 <div className="relative z-10 pointer-events-none flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="min-w-0 truncate text-xs font-semibold text-text-primary">{project.name}</span>
-                    <span className={cn(
-                      "w-1.5 h-1.5 rounded-full flex-shrink-0 transition-all",
-                      projectActivity === 'active'
-                        ? 'bg-status-info opacity-100 duration-150'
-                        : 'bg-text-muted/20 opacity-40 duration-[3s]'
-                    )} />
+                    {projectAgentState === 'unknown' ? (
+                      <AgentActivityDot active={false} size="sm" className="flex-shrink-0" />
+                    ) : (
+                      <AgentStatusDot status={projectAgentState} size="sm" className="flex-shrink-0" />
+                    )}
                   </div>
                 </div>
                 <div
@@ -665,10 +665,6 @@ function SessionRow({
   const [localGitStatus, setLocalGitStatus] = useState<GitStatus | undefined>(session.gitStatus);
   const initialGitStatusRequestRef = useRef<string | null>(null);
 
-  const sessionActivity = usePanelStore(s => {
-    const sessionPanels = s.panels[session.id] || [];
-    return sessionPanels.some(p => s.activityStatus[p.id] === 'active') ? 'active' : 'idle';
-  });
   const hasUnviewedCompletedActivity = usePanelStore(s => Boolean(s.unviewedCompletedActivity[session.id]));
   const agentDisplayStatus = useSessionAgentDisplayStatus(session.id);
 
@@ -728,7 +724,7 @@ function SessionRow({
   const adds = (gs?.commitAdditions ?? 0) + (gs?.additions ?? 0);
   const dels = (gs?.commitDeletions ?? 0) + (gs?.deletions ?? 0);
   const hasDiff = adds > 0 || dels > 0;
-  const showActivity = sessionActivity === 'active';
+  const showActivity = agentDisplayStatus === 'working';
   const accessibleName = displayName || gs?.prTitle || session.name || 'Untitled';
 
   return (

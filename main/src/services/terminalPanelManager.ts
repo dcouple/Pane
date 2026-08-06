@@ -1618,9 +1618,12 @@ export class TerminalPanelManager {
     return customState?.agentType ?? this.getCliAgentType(customState?.initialCommand);
   }
 
-  /** Start status detection for an AI/CLI agent panel (no-op for plain shells). */
+  /**
+   * Start status detection for a terminal panel. Every panel is tracked: known
+   * agents get their bespoke manifest, everything else (other CLI agents, plain
+   * shells) gets the generic one, so one status system covers all terminals.
+   */
   private registerAgentStatusPanel(terminal: TerminalProcess): void {
-    if (!getManifestForAgent(terminal.agentType)) return;
     this.agentStatusMonitor.register(terminal.panelId, Date.now());
     this.ensureAgentStatusPoll();
   }
@@ -1662,7 +1665,7 @@ export class TerminalPanelManager {
         if (!this.agentStatusMonitor.isTracked(terminal.panelId)) continue;
         const manifest = getManifestForAgent(terminal.agentType);
         const emulator = terminal.screenEmulator;
-        if (!manifest || !emulator) continue;
+        if (!emulator) continue;
 
         await emulator.waitForIdle();
         const detection = detectAgentState(manifest, {

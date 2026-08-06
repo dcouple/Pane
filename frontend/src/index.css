@@ -471,7 +471,11 @@ body.light-rounded {
 }
 
 .animate-sidebar-active-label {
-  animation: sidebar-active-label-breathe 2.4s ease-in-out infinite;
+  /* 2.8s = one full cycle of the accent bar's status-working sweep (1.4s
+     alternate), so the label's color peak lands on the sweep's bottom bounce
+     and the two stay in phase — both animations start on the same render when
+     a session flips to working. */
+  animation: sidebar-active-label-breathe 2.8s ease-in-out infinite;
 }
 
 /* Terminal specific styling */

@@ -1,7 +1,6 @@
 import React from 'react';
-import { usePanelStore } from '../stores/panelStore';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
-import { AgentStatusDot } from './ui/AgentStatusDot';
+import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 
 interface SessionStatusBadgeProps {
   sessionId: string;
@@ -9,22 +8,16 @@ interface SessionStatusBadgeProps {
 }
 
 /**
- * Session dot for the sidebar / session list. Shows the herd-of-agents status
- * (blocked / working / done / idle) when the session has AI/CLI panels; for
- * sessions with only plain shells it falls back to the legacy active/idle dot.
+ * Session dot for the sidebar / session list: the herd-of-agents status
+ * (blocked / working / done / idle) rolled up over the session's terminal
+ * panels. `unknown` means no terminal panel has reported yet (or the session
+ * has none); an inert placeholder holds the dot's footprint.
  */
 export const SessionStatusBadge: React.FC<SessionStatusBadgeProps> = ({ sessionId, size = 'md' }) => {
   const displayStatus = useSessionAgentDisplayStatus(sessionId);
-  const isActive = usePanelStore((s) => s.getSessionActivityStatus(sessionId) === 'active');
 
   if (displayStatus === 'unknown') {
-    // No agent panels — preserve the original binary activity indicator.
-    const color = isActive
-      ? 'bg-status-warning opacity-100 duration-150'
-      : 'bg-text-muted/20 opacity-40 duration-[3s]';
-    return (
-      <div className={`w-2.5 h-2.5 rounded-full transition-all ${color} ${isActive ? 'animate-pulse' : ''}`} />
-    );
+    return <AgentActivityDot active={false} size={size} />;
   }
 
   return <AgentStatusDot status={displayStatus} size={size} />;

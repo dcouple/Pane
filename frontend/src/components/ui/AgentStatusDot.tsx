@@ -19,11 +19,54 @@ const spinnerSizeClasses = {
   md: 'w-3.5 h-3.5 border-2',
 };
 
+// Both variants render inside a container sized to the larger spinner, so the
+// footprint stays constant and status flips cause no layout shift.
+const containerSizeClasses = {
+  sm: 'w-3 h-3',
+  md: 'w-3.5 h-3.5',
+};
+
 /**
- * At-a-glance agent status indicator. Working renders as an amber spinner; blocked
+ * At-a-glance agent status indicator. Working renders as a blue spinner; blocked
  * (red), done (blue), and idle (green) render as a dot — the "dot + spinner"
  * variation. Renders nothing for `unknown` so non-agent panels show no badge.
  */
+interface AgentActivityDotProps {
+  active: boolean;
+  size?: 'sm' | 'md';
+  /** Color of the active dot; idle is always the muted dot. */
+  activeColorClass?: string;
+  /** Pulse while active. */
+  pulse?: boolean;
+  className?: string;
+}
+
+/**
+ * Legacy binary activity dot (active/idle) for panes without an agent, rendered
+ * at the same dot size and fixed footprint as AgentStatusDot so both indicator
+ * systems look identical and swap without layout shift.
+ */
+export const AgentActivityDot: React.FC<AgentActivityDotProps> = ({
+  active,
+  size = 'md',
+  activeColorClass = 'bg-status-info',
+  pulse = false,
+  className,
+}) => (
+  <span className={cn('inline-flex items-center justify-center', containerSizeClasses[size], className)}>
+    <span
+      className={cn(
+        'inline-block rounded-full transition-all',
+        sizeClasses[size],
+        active
+          ? `${activeColorClass} opacity-100 duration-150`
+          : 'bg-text-muted/20 opacity-40 duration-[3s]',
+        active && pulse && 'animate-pulse',
+      )}
+    />
+  </span>
+);
+
 export const AgentStatusDot: React.FC<AgentStatusDotProps> = ({ status, size = 'md', className }) => {
   const visual = agentStatusVisual(status);
   if (!visual) return null;
@@ -32,30 +75,36 @@ export const AgentStatusDot: React.FC<AgentStatusDotProps> = ({ status, size = '
     // Amber ring spinner conveys active work more clearly than a pulsing dot.
     return (
       <span
-        className={cn(
-          'inline-block rounded-full border-status-warning/30 border-t-status-warning animate-spin',
-          spinnerSizeClasses[size],
-          className,
-        )}
+        className={cn('inline-flex items-center justify-center', containerSizeClasses[size], className)}
         role="status"
         aria-label="Agent working"
         title="working"
-      />
+      >
+        <span
+          className={cn(
+            'inline-block rounded-full border-status-info/30 border-t-status-info animate-spin',
+            spinnerSizeClasses[size],
+          )}
+        />
+      </span>
     );
   }
 
   return (
     <span
-      className={cn(
-        'inline-block rounded-full transition-all',
-        sizeClasses[size],
-        visual.colorClass,
-        visual.animate && 'animate-pulse',
-        className,
-      )}
+      className={cn('inline-flex items-center justify-center', containerSizeClasses[size], className)}
       role="status"
       aria-label={`Agent ${visual.label}`}
       title={visual.label}
-    />
+    >
+      <span
+        className={cn(
+          'inline-block rounded-full transition-all',
+          sizeClasses[size],
+          visual.colorClass,
+          visual.animate && 'animate-pulse',
+        )}
+      />
+    </span>
   );
 };

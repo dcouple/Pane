@@ -4,6 +4,7 @@ import { usePanelStore } from '../stores/panelStore';
 import { API } from '../utils/api';
 import { useConfigStore } from '../stores/configStore';
 import { ToolPanel } from '../../../shared/types/panels';
+import type { AgentState } from '../../../shared/types/agentStatus';
 
 // Extend window interface for webkit audio context compatibility
 declare global {
@@ -17,10 +18,11 @@ interface NotificationSettings {
   enabled: boolean;
 }
 
-// Extra delay on top of the 30s PTY idle threshold before firing a "finished"
-// notification. Guards against false positives from mid-task pauses: network
-// waits, slow tool calls, shells sitting between commands. Total silent time
-// before a notification fires is roughly 30s (dot flip) + 60s = 90s.
+// How long a panel must stay idle after a working -> idle agent-status flip
+// before a "finished" notification fires. The agent-status monitor settles to
+// idle within ~1.3s of output stopping, so this debounce is what guards
+// against mid-task pauses: network waits, slow tool calls, quiet builds.
+// Re-activation (working or blocked) cancels the pending notification.
 const NOTIFICATION_DEBOUNCE_MS = 60_000;
 
 export function useNotifications() {
@@ -65,12 +67,12 @@ export function useNotifications() {
     return unsubscribe;
   }, []);
 
-  // Track previous activityStatus per panelId to detect active -> idle transitions.
-  const prevActivityRef = useRef<Record<string, 'active' | 'idle'>>({});
+  // Track previous agentStatus per panelId to detect transitions.
+  const prevAgentStatusRef = useRef<Record<string, AgentState>>({});
 
-  // Pending notification timers per panelId. A panel must stay idle for
-  // NOTIFICATION_DEBOUNCE_MS after the 5s dot flip before we fire, so we
-  // don't ping on mid-task pauses (network waits, slow tool calls, shells
+  // Pending "finished" timers per panelId. A panel must stay idle for
+  // NOTIFICATION_DEBOUNCE_MS after the working -> idle flip before we fire, so
+  // we don't ping on mid-task pauses (network waits, slow tool calls, shells
   // sitting at a prompt between commands). Re-activation cancels the timer.
   const pendingIdleTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
@@ -163,6 +165,34 @@ export function useNotifications() {
     });
   }, [playNotificationSound, requestPermission]);
 
+  /** Resolve a panel to its session + display names, or null when unknown. */
+  function findPanelContext(panelId: string) {
+    const panelStoreState = usePanelStore.getState();
+    let foundSessionId: string | undefined;
+    let foundPanel: ToolPanel | undefined;
+    for (const [sessionId, panels] of Object.entries(panelStoreState.panels)) {
+      const panel = panels.find((p) => p.id === panelId);
+      if (panel) {
+        foundSessionId = sessionId;
+        foundPanel = panel;
+        break;
+      }
+    }
+    if (!foundSessionId || !foundPanel) return null;
+
+    const session = useSessionStore.getState().sessions.find((s) => s.id === foundSessionId);
+    if (!session) return null;
+
+    const projectName = session.projectId
+      ? projectNamesRef.current.get(session.projectId) ?? ''
+      : '';
+    return {
+      session,
+      panelName: foundPanel.title || 'Terminal',
+      body: projectName ? `${session.name} · ${projectName}` : session.name,
+    };
+  }
+
   function maybeNotifyPanelIdle(panelId: string, scheduledLastActivityAt?: string) {
     const currentSettings = settingsRef.current;
     if (!currentSettings.enabled) return;
@@ -174,9 +204,9 @@ export function useNotifications() {
     const panelStoreState = usePanelStore.getState();
 
     // Re-check idle at fire time. The debounced timer may fire right as the
-    // panel re-activates; without this check we'd ping "finished" for a
-    // panel that is actively running again.
-    if (panelStoreState.activityStatus[panelId] !== 'idle') return;
+    // panel re-activates (working) or hits a prompt (blocked); without this
+    // check we'd ping "finished" for a panel that isn't finished.
+    if (panelStoreState.agentStatus[panelId] !== 'idle') return;
 
     // Re-check that no PTY output arrived after the idle transition that
     // scheduled this timer. This catches stale timers around rapid quiet/resume
@@ -188,86 +218,87 @@ export function useNotifications() {
       return;
     }
 
-    let foundSessionId: string | undefined;
-    let foundPanel: ToolPanel | undefined;
-    for (const [sessionId, panels] of Object.entries(panelStoreState.panels)) {
-      const panel = panels.find((p) => p.id === panelId);
-      if (panel) {
-        foundSessionId = sessionId;
-        foundPanel = panel;
-        break;
-      }
-    }
-    if (!foundSessionId || !foundPanel) return;
-
-    const sessionStoreState = useSessionStore.getState();
-    const session = sessionStoreState.sessions.find((s) => s.id === foundSessionId);
-    if (!session) return;
-
-    // A panel going idle while the session is in 'waiting' state means Claude
-    // is blocked on user input, not finished. Suppress the "finished" ping.
-    if (session.status === 'waiting') return;
-
-    const projectName = session.projectId
-      ? projectNamesRef.current.get(session.projectId) ?? ''
-      : '';
-    const panelName = foundPanel.title || 'Terminal';
+    const context = findPanelContext(panelId);
+    if (!context) return;
 
     showNotification(
-      `${panelName} finished`,
-      projectName ? `${session.name} · ${projectName}` : session.name,
+      `${context.panelName} finished`,
+      context.body,
       undefined,
       'panel_idle',
       `idle:${panelId}:${Date.now()}`,
     );
   }
 
-  // Subscribe to panelStore.activityStatus and schedule notifications on
-  // active -> idle transitions, firing only after the panel has stayed idle
-  // for NOTIFICATION_DEBOUNCE_MS. Re-activation cancels the pending timer,
-  // so mid-task pauses never produce false "finished" pings.
-  // Uses the unary subscribe form since panelStore does not use the
-  // subscribeWithSelector middleware.
+  // Fires as soon as an agent flips to blocked: it is waiting on the human, so
+  // there is nothing to debounce — the sooner the user knows, the better.
+  function maybeNotifyPanelBlocked(panelId: string) {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.enabled) return;
+    if (windowFocusedRef.current) return;
+
+    const context = findPanelContext(panelId);
+    if (!context) return;
+
+    showNotification(
+      `${context.panelName} needs your input`,
+      context.body,
+      undefined,
+      'panel_blocked',
+      `blocked:${panelId}:${Date.now()}`,
+    );
+  }
+
+  // Subscribe to panelStore.agentStatus (the unified per-panel agent state) and
+  // notify on its transitions: -> blocked fires immediately ("needs your
+  // input"); working -> idle schedules a debounced "finished" ping that any
+  // re-activation cancels. Uses the unary subscribe form since panelStore does
+  // not use the subscribeWithSelector middleware.
   useEffect(() => {
     const pending = pendingIdleTimersRef.current;
-    // Seed from current store state so panels already active at mount time
+    const cancelPending = (panelId: string) => {
+      const existing = pending.get(panelId);
+      if (existing) {
+        clearTimeout(existing);
+        pending.delete(panelId);
+      }
+    };
+    // Seed from current store state so panels already tracked at mount time
     // (e.g. restored terminals, agents still running during app startup) are
-    // correctly detected on their first idle transition instead of being
-    // dismissed as `undefined -> idle`.
-    prevActivityRef.current = { ...usePanelStore.getState().activityStatus };
+    // detected on their next transition — and an agent already sitting blocked
+    // when the app opens doesn't re-ping.
+    prevAgentStatusRef.current = { ...usePanelStore.getState().agentStatus };
     const unsubscribe = usePanelStore.subscribe((state) => {
-      const activityStatus = state.activityStatus;
-      const prev = prevActivityRef.current;
-      for (const [panelId, status] of Object.entries(activityStatus)) {
+      const agentStatus = state.agentStatus;
+      const prev = prevAgentStatusRef.current;
+      for (const [panelId, status] of Object.entries(agentStatus)) {
         const prevStatus = prev[panelId];
-        if (prevStatus === 'active' && status === 'idle') {
+        if (prevStatus === status) continue;
+        if (status === 'blocked') {
+          // Waiting on the human supersedes any pending "finished" ping.
+          cancelPending(panelId);
+          maybeNotifyPanelBlocked(panelId);
+        } else if (prevStatus === 'working' && status === 'idle') {
           // Schedule a debounced notification. Clear any stale timer first.
-          const existing = pending.get(panelId);
-          if (existing) clearTimeout(existing);
+          cancelPending(panelId);
           const scheduledLastActivityAt = state.lastActivityAt[panelId];
           const timer = setTimeout(() => {
             pending.delete(panelId);
             maybeNotifyPanelIdle(panelId, scheduledLastActivityAt);
           }, NOTIFICATION_DEBOUNCE_MS);
           pending.set(panelId, timer);
-        } else if (prevStatus === 'idle' && status === 'active') {
+        } else if (status === 'working') {
           // Panel woke up before the debounce fired: cancel the pending notification.
-          const existing = pending.get(panelId);
-          if (existing) {
-            clearTimeout(existing);
-            pending.delete(panelId);
-          }
+          cancelPending(panelId);
         }
       }
       // Clean up timers for panels that have been removed from the store.
       for (const panelId of pending.keys()) {
-        if (!(panelId in activityStatus)) {
-          const existing = pending.get(panelId);
-          if (existing) clearTimeout(existing);
-          pending.delete(panelId);
+        if (!(panelId in agentStatus)) {
+          cancelPending(panelId);
         }
       }
-      prevActivityRef.current = { ...activityStatus };
+      prevAgentStatusRef.current = { ...agentStatus };
     });
     return () => {
       unsubscribe();
@@ -275,7 +306,7 @@ export function useNotifications() {
       for (const timer of pending.values()) clearTimeout(timer);
       pending.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscription must be created once; maybeNotifyPanelIdle reads live state via refs
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscription must be created once; the notify helpers read live state via refs
   }, []);
 
   useEffect(() => {

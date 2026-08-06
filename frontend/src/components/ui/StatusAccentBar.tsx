@@ -11,14 +11,14 @@ interface StatusAccentBarProps {
 
 const barColor: Record<Exclude<AgentDisplayStatus, 'unknown'>, string> = {
   blocked: 'bg-status-error',
-  working: 'bg-status-warning',
+  working: 'bg-status-info',
   done: 'bg-status-info',
   idle: 'bg-status-success',
 };
 
 /**
  * The always-present left accent bar on a session row. It follows the at-a-glance
- * agent status: red = blocked, amber (with an up/down loading sweep) = working,
+ * agent status: red = blocked, blue with an up/down loading sweep = working,
  * blue = done, green = idle. For rows with no tracked agent (`unknown`) it shows
  * the selection accent when active and nothing otherwise.
  */

@@ -252,9 +252,10 @@ export const CODEX_MANIFEST: AgentManifest = {
 };
 
 /**
- * Cross-agent fallback for CLI agents without a bespoke manifest. Detects the
- * common permission-prompt shapes; working/idle otherwise come from PTY activity
- * and the idle fallback.
+ * Universal fallback for any terminal panel without a bespoke manifest — other
+ * CLI agents (opencode, aider, ...) and plain shells alike. Detects the common
+ * permission-prompt shapes; working/idle otherwise come from PTY activity and
+ * the idle fallback, which is the old activity system's signal generalized.
  */
 export const GENERIC_MANIFEST: AgentManifest = {
   id: 'generic',
@@ -286,10 +287,10 @@ const MANIFESTS_BY_AGENT: Record<string, AgentManifest> = {
 
 /**
  * Resolve the manifest for a panel's agent type. Known agents get their bespoke
- * manifest; any other CLI agent id gets the generic fallback. Returns null when
- * there is no agent (plain shell) so the caller can skip detection entirely.
+ * manifest; everything else — unrecognized CLI agents and plain shells — gets
+ * the generic fallback, so every terminal panel is covered by one status system.
  */
-export function getManifestForAgent(agentType: string | undefined | null): AgentManifest | null {
-  if (!agentType) return null;
+export function getManifestForAgent(agentType: string | undefined | null): AgentManifest {
+  if (!agentType) return GENERIC_MANIFEST;
   return MANIFESTS_BY_AGENT[agentType] ?? GENERIC_MANIFEST;
 }

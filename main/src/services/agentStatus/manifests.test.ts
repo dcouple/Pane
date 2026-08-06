@@ -10,12 +10,12 @@ import {
 const screen = (s: string, oscTitle = '', oscProgress = '') => ({ screen: s, oscTitle, oscProgress });
 
 describe('getManifestForAgent', () => {
-  it('resolves bespoke manifests and generic fallback', () => {
+  it('resolves bespoke manifests, with the generic fallback covering everything else', () => {
     expect(getManifestForAgent('claude')).toBe(CLAUDE_MANIFEST);
     expect(getManifestForAgent('codex')).toBe(CODEX_MANIFEST);
     expect(getManifestForAgent('aider')).toBe(GENERIC_MANIFEST);
-    expect(getManifestForAgent(undefined)).toBeNull();
-    expect(getManifestForAgent(null)).toBeNull();
+    expect(getManifestForAgent(undefined)).toBe(GENERIC_MANIFEST);
+    expect(getManifestForAgent(null)).toBe(GENERIC_MANIFEST);
   });
 });
 
