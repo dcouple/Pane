@@ -8,7 +8,7 @@ import type { Unicode11Addon } from '@xterm/addon-unicode11';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
-import { useHotkeyStore } from '../../stores/hotkeyStore';
+import { isHotkeyEnabledForEvent, useHotkeyStore } from '../../stores/hotkeyStore';
 import { renderLog, devLog } from '../../utils/console';
 import { getTerminalTheme } from '../../utils/terminalTheme';
 import { resolveTerminalKeyHandling } from '../../utils/terminalKeyHandling';
@@ -31,20 +31,42 @@ import { useConfigStore } from '../../stores/configStore';
 import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
-const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+// Hold the loading overlay at least this long past ready so the terminal
+// underneath finishes painting before it is revealed.
+const TERMINAL_OVERLAY_LINGER_MS = 150;
 
-const TerminalSpinner: React.FC = () => {
-  const [frame, setFrame] = useState(0);
+const SKELETON_TRANSCRIPT_WIDTHS = ['w-2/3', 'w-1/2', 'w-5/6', 'w-1/3', 'w-3/4', 'w-2/5'];
 
-  useEffect(() => {
-    const interval = setInterval(() => setFrame(f => (f + 1) % SPINNER_FRAMES.length), 80);
-    return () => clearInterval(interval);
-  }, []);
-
-  return (
-    <span className="text-accent-primary text-2xl font-mono">{SPINNER_FRAMES[frame]}</span>
-  );
-};
+// Opaque stand-in shaped like a CLI agent session: greeting banner, transcript
+// lines, and a prompt box, swept by a single shimmer so it reads as one
+// cohesive loading surface. Shown while initializing, refreshing, and CLI startup.
+const TerminalLoadingSkeleton: React.FC = () => (
+  <div className="relative w-full h-full overflow-hidden px-4 py-4 font-mono select-none" aria-label="Loading terminal">
+    <div className="flex h-full flex-col gap-4">
+      <div className="rounded-md border border-border-primary p-3 space-y-2 max-w-md">
+        <div className="h-3.5 w-40 rounded bg-surface-tertiary" />
+        <div className="h-3 w-56 rounded bg-surface-tertiary" />
+        <div className="h-3 w-32 rounded bg-surface-tertiary" />
+      </div>
+      <div className="space-y-2.5 max-w-2xl">
+        {SKELETON_TRANSCRIPT_WIDTHS.map((w, i) => (
+          <div key={i} className={`h-3 rounded bg-surface-tertiary ${w}`} />
+        ))}
+      </div>
+      <div className="flex-1" />
+      <div className="space-y-2">
+        <div className="rounded-md border border-border-primary px-3 py-2.5">
+          <div className="h-3 w-24 rounded bg-surface-tertiary" />
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="h-2.5 w-20 rounded bg-surface-tertiary" />
+          <div className="h-2.5 w-28 rounded bg-surface-tertiary" />
+        </div>
+      </div>
+    </div>
+    <div className="pointer-events-none absolute inset-0 animate-shimmer bg-gradient-to-r from-transparent via-[color-mix(in_srgb,var(--color-text-primary)_4%,transparent)] to-transparent" />
+  </div>
+);
 
 // Type for terminal state restoration
 interface TerminalRestoreState {
@@ -161,10 +183,12 @@ function waitForNextPaint(): Promise<void> {
  * xterm falls back to the DOM renderer. Never call `clearTextureAtlas()`
  * here: the atlas is shared across terminals.
  *
- * PERSISTENCE: main owns the raw scrollback (authoritative, ANSI-safe
- * trimmed); the renderer serializes a formatting-preserving snapshot on
- * hide (throttled to SNAPSHOT_MIN_INTERVAL_MS) and on unmount, used only for
- * app-restart restore. Live restores always prefer main's raw scrollback.
+ * PERSISTENCE: main owns the raw scrollback log plus a headless emulator that
+ * renders every PTY byte; the renderer serializes a formatting-preserving
+ * snapshot on hide (throttled to SNAPSHOT_MIN_INTERVAL_MS) and on unmount,
+ * used only for app-restart restore. Live normal-buffer restores replay main's
+ * rendered emulator serialization (duplicate-free by construction); the raw
+ * append log remains for snapshot/scrollback readers.
  *
  * UNMOUNT (session switch / panel close): serialize a final snapshot, then
  * dispose WebGL, addons, and the xterm instance. Remounts restore from
@@ -178,8 +202,12 @@ function waitForNextPaint(): Promise<void> {
  * without a renderer per session. The tradeoff is that remounting exposes
  * foreground-TUI redraw assumptions hidden by retained-DOM designs. Restoring
  * cells recreates terminal state but cannot make the application recompute its
- * layout, which is why activation finishes with a timed real PTY size
- * transition and return.
+ * layout, which is why the alternate-screen activation path finishes with a
+ * timed real PTY size transition. The normal-buffer path deliberately does
+ * NOT force one: the emulator serialization is already the exact current
+ * screen, and forced width transitions made normal-buffer TUIs (Claude Code)
+ * re-render their transcript tail — duplicating scrollback on every
+ * activation once content overflowed the viewport.
  */
 export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
   renderLog('[TerminalPanel] Component rendering, panel:', panel.id, 'isActive:', isActive);
@@ -272,6 +300,20 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
       setIsCliReady(true);
     }
   }, [terminalState?.isCliReady, isCliReady]);
+
+  // Loading-skeleton visibility: show immediately when any loading state is
+  // active, hide only after a short linger so the terminal underneath has
+  // finished painting before the mask lifts.
+  const overlayActive = !isInitialized || isRefreshing || (isCliPanel && !isCliReady);
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  useEffect(() => {
+    if (overlayActive) {
+      setOverlayVisible(true);
+      return;
+    }
+    const lingerTimer = setTimeout(() => setOverlayVisible(false), TERMINAL_OVERLAY_LINGER_MS);
+    return () => clearTimeout(lingerTimer);
+  }, [overlayActive]);
 
   // Listen for cliReady event (only for CLI panels that aren't already ready)
   useEffect(() => {
@@ -592,13 +634,18 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     }
   }, [panel.id]);
 
-  // Full-depth refresh: normal buffers reset+replay main's raw scrollback at the
-  // settled width; alternate buffers preserve their live model. Both paths end
-  // with a forced PTY resize so foreground applications redraw even when the
-  // dimensions did not change. Runs on initial construction, remount/session
-  // switch, battery-saver activation, sustained-blur recovery, and manual
-  // Refresh. Eligible same-session hot activations use reconcileMountedTerminal
-  // instead and never enter this function.
+  // Full-depth refresh: normal buffers reset+replay main's rendered emulator
+  // serialization at the settled width; alternate buffers preserve their live
+  // model and end with a forced PTY resize so the fullscreen app redraws. The
+  // normal-buffer path must NOT force a PTY resize: the serialized snapshot is
+  // already the exact current screen, and a forced width transition makes
+  // normal-buffer TUIs (Claude Code) re-render their transcript tail — when
+  // that content overflows the viewport the re-render scrolls, appending a
+  // duplicate copy to scrollback on every activation. Runs on initial
+  // construction, remount/session switch, battery-saver activation,
+  // sustained-blur recovery, and manual Refresh. Eligible same-session hot
+  // activations use reconcileMountedTerminal instead and never enter this
+  // function.
   const handleRefreshTerminal = useCallback(async () => {
     const terminal = xtermRef.current;
     if (!terminal) return;
@@ -629,6 +676,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         setShowScrollDown(true);
       };
 
+      // Fit BEFORE requesting state so the emulator serializes at the settled
+      // width — resizing after getState would replay a stale-width snapshot,
+      // and the normal-buffer path has no forced app redraw left to repair it.
+      await resizePtyToFit();
       const state = await window.electronAPI.invoke('terminal:getState', panel.id);
       if (state?.isAlternateScreen) {
         // Renderer refresh alone cannot repair an application frame that was
@@ -643,17 +694,12 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         return;
       }
 
-      // Fit first so reset+replay lands at the settled width, not a stale/tiny grid
-      await resizePtyToFit();
       terminal.reset();
       const finishRefresh = async () => {
         restoreScrollPosition();
         // The old post-replay fit() invalidated WebGL via a dims change; after reordering
         // that fit is a same-size no-op, so an explicit refresh is needed for WebGL redraw
         if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
-        // Claude's default renderer can remain in the normal buffer while still
-        // needing the same application redraw as a fullscreen alternate-buffer TUI.
-        await resizePtyToFit(true);
       };
 
       if (state?.scrollbackBuffer) {
@@ -878,6 +924,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           const terminalKeyDecision = resolveTerminalKeyHandling(e, {
             isTuiActive: tuiActiveRef.current,
             isCliPanel: isCliPanelRef.current,
+            isMac: isMac(),
           });
 
           // Shift+Enter sends the same ESC+CR sequence as Alt+Enter for CLI
@@ -890,6 +937,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
             return false;
           }
           if (terminalKeyDecision.action === 'block') return false;
+          if (terminalKeyDecision.action === 'release-to-app') {
+            return !isHotkeyEnabledForEvent(e);
+          }
           if (terminalKeyDecision.action === 'pass-through') return true;
 
           // Ctrl/Cmd+1-9: switch sessions
@@ -1919,14 +1969,9 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         </button>
       )}
 
-      {(!isInitialized || isRefreshing || (isCliPanel && !isCliReady)) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-surface-primary z-10">
-          <div className="flex flex-col items-center gap-3">
-            <TerminalSpinner />
-            <div className="text-text-secondary text-sm">
-              {!isInitialized ? 'Initializing terminal...' : isRefreshing ? 'Refreshing terminal...' : 'Starting CLI...'}
-            </div>
-          </div>
+      {overlayVisible && (
+        <div className="absolute inset-0 bg-surface-primary z-10">
+          <TerminalLoadingSkeleton />
         </div>
       )}
 

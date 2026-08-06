@@ -151,6 +151,16 @@ function normalizeHotkeyString(keys: string): string {
 let listenerAttached = false;
 let lookupIndex: Map<string, string> = new Map(); // normalized keys → hotkey id
 
+export function isHotkeyEnabledForEvent(e: KeyboardEvent): boolean {
+  const hotkeyId = lookupIndex.get(normalizeKeyEvent(e));
+  if (!hotkeyId) return false;
+
+  const def = useHotkeyStore.getState().hotkeys.get(hotkeyId);
+  if (!def) return false;
+  if (def.devOnly && process.env.NODE_ENV !== 'development') return false;
+  return !def.enabled || def.enabled();
+}
+
 function isXtermHelperTarget(target: HTMLElement): boolean {
   return target.classList.contains('xterm-helper-textarea') || target.closest('.xterm') !== null;
 }
@@ -182,11 +192,7 @@ function handleKeyDown(e: KeyboardEvent) {
   // Skip if typing in input and shortcut doesn't use mod key
   if (isInput && !pressed.includes('mod')) return;
 
-  // Check devOnly
-  if (def.devOnly && process.env.NODE_ENV !== 'development') return;
-
-  // Check enabled
-  if (def.enabled && !def.enabled()) return;
+  if (!isHotkeyEnabledForEvent(e)) return;
 
   e.preventDefault();
   def.action();

@@ -198,10 +198,25 @@ export function Dropdown({
   // Fixed position for portal rendering
   const [fixedStyle, setFixedStyle] = useState<CSSProperties>({});
 
-  // Smart positioning for auto mode
-  useEffect(() => {
-    if (isOpen && dropdownRef.current) {
-      const rect = dropdownRef.current.getBoundingClientRect();
+  // Smart positioning for auto mode. Must run BEFORE paint: fixedStyle
+  // persists across closes, so the first open after mount used to paint the
+  // portal unpositioned (static flow at the end of the portal container —
+  // off-screen) until a post-paint effect corrected it, and the correction
+  // only became visible on the SECOND open. While open, a rAF loop re-anchors
+  // the menu whenever the trigger actually moves (drawer expand animation,
+  // layout shifts, window resizes).
+  useLayoutEffect(() => {
+    if (!isOpen || !dropdownRef.current) return;
+
+    let lastRectKey = '';
+    const computePosition = () => {
+      const el = dropdownRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const rectKey = `${rect.top},${rect.left},${rect.width},${rect.height}`;
+      if (rectKey === lastRectKey) return;
+      lastRectKey = rectKey;
+
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
 
@@ -242,8 +257,15 @@ export function Dropdown({
         delete pos.right;
       }
       setFixedStyle(pos);
-    }
-  }, [isOpen, position]);
+    };
+
+    computePosition();
+    let raf = requestAnimationFrame(function track() {
+      computePosition();
+      raf = requestAnimationFrame(track);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [isOpen, position, width]);
 
   // Handle click outside
   useEffect(() => {

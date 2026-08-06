@@ -113,6 +113,12 @@ type LaunchCommandAccess = {
   };
 };
 
+type ShellPromptSchedulerAccess = {
+  scheduleAfterShellPrompt(ptyProcess: TerminalUnderTest['pty'] & {
+    onData(listener: (data: string) => void): { dispose(): void };
+  }, callback: () => void): void;
+};
+
 function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnderTest {
   return {
     pty: {
@@ -170,6 +176,79 @@ describe('TerminalPanelManager terminal resize', () => {
     await redraw;
     expect(terminal.pty.resize).toHaveBeenNthCalledWith(2, 80, 24);
     disposeFlowControlRecord(terminal.flowControl);
+  });
+});
+
+describe('TerminalPanelManager shell prompt scheduling', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function createPromptPty() {
+    let listener: ((data: string) => void) | undefined;
+    const dispose = vi.fn();
+    const terminal = createTerminal();
+    return {
+      pty: {
+        ...terminal.pty,
+        onData: vi.fn((nextListener: (data: string) => void) => {
+          listener = nextListener;
+          return { dispose };
+        }),
+      },
+      emit(data: string) {
+        listener?.(data);
+      },
+      dispose,
+    };
+  }
+
+  it('waits for the shell to settle after detecting its prompt', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as ShellPromptSchedulerAccess;
+    const promptPty = createPromptPty();
+    const callback = vi.fn();
+
+    manager.scheduleAfterShellPrompt(promptPty.pty, callback);
+    promptPty.emit('user@host:~$ ');
+
+    await vi.advanceTimersByTimeAsync(299);
+    expect(callback).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(promptPty.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('invokes once when repeated prompts race the fallback', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as ShellPromptSchedulerAccess;
+    const promptPty = createPromptPty();
+    const callback = vi.fn();
+
+    manager.scheduleAfterShellPrompt(promptPty.pty, callback);
+    promptPty.emit('\x1b[32m$\x1b[0m ');
+    promptPty.emit('\x1b[32m$\x1b[0m ');
+
+    await vi.runAllTimersAsync();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(promptPty.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back after five seconds when no prompt is detected', async () => {
+    vi.useFakeTimers();
+    const manager = new TerminalPanelManager() as unknown as ShellPromptSchedulerAccess;
+    const promptPty = createPromptPty();
+    const callback = vi.fn();
+
+    manager.scheduleAfterShellPrompt(promptPty.pty, callback);
+    promptPty.emit('loading shell configuration\r\n');
+
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(callback).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(callback).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -412,6 +491,34 @@ describe('TerminalPanelManager hidden output delivery', () => {
       scrollbackBuffer: 'scrollback',
     });
     expect(restoreState?.serializedBuffer).toContain('\x1b[?1049h');
+    screenEmulator.dispose();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('serves normal-buffer restore content from the rendered emulator, not the raw append log', async () => {
+    const manager = new TerminalPanelManager() as unknown as SnapshotAccess;
+    const screenEmulator = new TerminalStateEmulator(40, 5);
+    const frame = 'PR #363 state unchanged';
+    // Live stream: the frame prints once, then forced-redraw repaints re-emit it
+    // after cursor-home — the traffic that duplicated rows when the raw log was
+    // replayed. The emulator overwrites in place, like a live terminal.
+    const initial = `${frame}\r\n`;
+    const repaint = `\x1b[H${frame}\x1b[K\r\n`;
+    screenEmulator.write(initial);
+    screenEmulator.write(repaint);
+    screenEmulator.write(repaint);
+    await screenEmulator.waitForIdle();
+    const terminal = createTerminal({
+      scrollbackBuffer: initial + repaint + repaint,
+      screenEmulator,
+      isAlternateScreen: false,
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    const restoreState = await manager.getTerminalState(terminal.panelId);
+    const restored = restoreState?.scrollbackBuffer as string;
+    expect(restored.split(frame).length - 1).toBe(1);
+    expect(terminal.scrollbackBuffer.split(frame).length - 1).toBe(3);
     screenEmulator.dispose();
     disposeFlowControlRecord(terminal.flowControl);
   });
