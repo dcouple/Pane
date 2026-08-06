@@ -41,7 +41,7 @@ const SKELETON_TRANSCRIPT_WIDTHS = ['w-2/3', 'w-1/2', 'w-5/6', 'w-1/3', 'w-3/4',
 // lines, and a prompt box, swept by a single shimmer so it reads as one
 // cohesive loading surface. Shown while initializing, refreshing, and CLI startup.
 const TerminalLoadingSkeleton: React.FC = () => (
-  <div className="relative w-full h-full overflow-hidden px-4 py-4 font-mono select-none" aria-label="Loading terminal">
+  <div className="relative w-full h-full overflow-hidden px-4 py-4 font-mono select-none" role="status" aria-label="Loading terminal">
     <div className="flex h-full flex-col gap-4">
       <div className="rounded-md border border-border-primary p-3 space-y-2 max-w-md">
         <div className="h-3.5 w-40 rounded bg-surface-tertiary" />

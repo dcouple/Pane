@@ -53,7 +53,7 @@ export function ShortcutsSettings({ persistence, onDirtyChange, onShowKeyboardSh
         <SettingRow
           settingId="keyboard-shortcuts"
           label="Enable Pane keyboard shortcuts"
-          description="When disabled, Pane won't intercept keyboard shortcuts, allowing them to pass through to terminals and embedded apps, except for the Command Palette option below."
+          description="When disabled, Pane shortcuts won't work, but native terminal and embedded app shortcuts will. The Command Palette shortcut can remain enabled below."
           saveState={persistence.saveStates['keyboard-shortcuts']}
         >
           <ImmediateToggle

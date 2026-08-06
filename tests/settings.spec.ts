@@ -89,7 +89,7 @@ test.describe('Settings', () => {
     await page.keyboard.press('Control+Alt+/');
 
     await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Shortcuts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Shortcuts', exact: true })).toBeVisible();
     await expect(page.locator('[data-setting-id="terminal-shortcuts"]')).toBeFocused();
   });
 
@@ -114,7 +114,7 @@ test.describe('Settings', () => {
     });
     await page.getByRole('button', { name: 'Shortcuts', exact: true }).click();
 
-    await expect(page.getByText("When disabled, Pane won't intercept keyboard shortcuts, allowing them to pass through to terminals and embedded apps, except for the Command Palette option below.")).toBeVisible();
+    await expect(page.getByText("When disabled, Pane shortcuts won't work, but native terminal and embedded app shortcuts will. The Command Palette shortcut can remain enabled below.")).toBeVisible();
     const paletteToggle = page.getByRole('switch', { name: 'Keep Command Palette shortcut enabled' });
     await expect(paletteToggle).toHaveAttribute('aria-checked', 'true');
     await paletteToggle.click();
