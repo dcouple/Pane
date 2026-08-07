@@ -29,7 +29,7 @@ describe('resolveDefaultWorktreeBase', () => {
   it('falls back to a conventional remote main ref when origin HEAD is unavailable', async () => {
     const runner = commandRunner(async command => {
       if (command.includes('symbolic-ref')) throw new Error('No remote HEAD');
-      if (command.includes("'origin/main^{commit}'")) {
+      if (command.startsWith('git rev-parse --verify ') && command.includes('origin/main^{commit}')) {
         return { stdout: 'abc123\n', stderr: '' };
       }
       throw new Error(`Unknown ref: ${command}`);
@@ -59,7 +59,7 @@ describe('WorktreeManager.resolveWorkingDirectory', () => {
       if (command === 'git rev-parse --verify origin/pane') {
         throw new Error('No remote pane branch');
       }
-      if (command === "git rev-parse 'HEAD'") {
+      if (command.startsWith('git rev-parse ') && command.includes('HEAD')) {
         return { stdout: 'base-commit\n', stderr: '' };
       }
       throw new Error(`Unexpected command: ${command}`);
