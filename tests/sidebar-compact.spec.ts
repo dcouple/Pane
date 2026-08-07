@@ -54,6 +54,47 @@ async function collapseSidebar(page: Page) {
 }
 
 test.describe('compact sidebar', () => {
+  test('keeps the hover background on the active pane in both sidebar modes', async ({ page }) => {
+    await installElectronApiMock(page, {
+      initialConfig: { theme: 'night-owl' },
+      initialProjects: projects,
+      initialSessions: [
+        session('pinned', 'Pinned work', 1, {
+          isFavorite: true,
+          favoritePinnedAt: '2026-01-03T00:00:00.000Z',
+        }),
+        session('regular', 'Regular work', 1),
+      ],
+      initialUiState: {
+        expandedProjects: [1],
+        pinnedSectionExpanded: true,
+        repositoriesSectionExpanded: true,
+      },
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    const fullSidebarPane = page.getByRole('button', { name: 'Regular work', exact: true });
+    await fullSidebarPane.click();
+    await expect(fullSidebarPane).toHaveAttribute('aria-current', 'page');
+    await expect(fullSidebarPane.locator('..')).toHaveClass(/bg-surface-hover/);
+    await fullSidebarPane.evaluate(element => element.blur());
+    await page.mouse.move(640, 360);
+    await page.screenshot({
+      path: 'test-results/sidebar-active-pane-full.png',
+      clip: { x: 0, y: 0, width: 340, height: 720 },
+    });
+
+    await collapseSidebar(page);
+    const compactSidebarPane = page.getByTestId('compact-repository-pane-regular');
+    await expect(compactSidebarPane).toHaveClass(/bg-surface-hover/);
+    await page.mouse.move(320, 180);
+    await page.screenshot({
+      path: 'test-results/sidebar-active-pane-compact.png',
+      clip: { x: 0, y: 0, width: 180, height: 720 },
+    });
+  });
+
   test('mirrors an expanded pinned section and collapsed repositories section', async ({ page }) => {
     await installElectronApiMock(page, {
       initialConfig: { theme: 'night-owl' },
