@@ -115,15 +115,20 @@ const localCombinedDiff = {
 async function openSession(
   page: Page,
   gitStatus: ReviewGitStatus = baseGitStatus,
-  options: { withLocalChanges?: boolean } = { withLocalChanges: true },
+  options: {
+    withLocalChanges?: boolean;
+    initialPanels?: Array<Record<string, unknown>>;
+    initialConfig?: Record<string, unknown>;
+  } = { withLocalChanges: true },
 ): Promise<void> {
   await installElectronApiMock(page, {
     initialProjects: [project],
     initialSessions: [createSession(gitStatus)],
-    initialPanels: panels,
+    initialPanels: options.initialPanels ?? panels,
     initialExecutions: options.withLocalChanges === false ? [] : localExecutions,
     initialCombinedDiff: options.withLocalChanges === false ? null : localCombinedDiff,
     activeProjectId: project.id,
+    initialConfig: options.initialConfig,
   });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.getByRole('button', { name: /^Expand repository Review fixture$/ }).click();
@@ -167,6 +172,79 @@ test('Pinned panes use the short repository and pane name', async ({ page }, tes
   await capture(page, testInfo, '00-pinned-pane-short-label.png');
 });
 
+test('New panes start with details hidden and explain the toggle on hover', async ({ page }, testInfo) => {
+  await openSession(page, baseGitStatus, {
+    initialPanels: [
+      ...panels,
+      {
+        id: 'review-logs',
+        sessionId: 'review-session',
+        type: 'logs',
+        title: 'Logs',
+        state: { isActive: false, hasBeenViewed: true, customState: { isRunning: false } },
+        metadata: { createdAt: new Date(0).toISOString(), lastActiveAt: new Date(0).toISOString(), position: 3 },
+      },
+    ],
+  });
+  await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+
+  const detailPanel = page.locator('.pane-detail-panel-vertical');
+  const detailToggle = page.getByRole('button', { name: 'Show details', exact: true });
+  await expect(detailToggle).toBeVisible();
+  await expect(detailPanel).toHaveCSS('width', '0px');
+
+  await detailToggle.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Show details');
+  const path = testInfo.outputPath('04-detail-panel-default-collapsed.png');
+  await page.screenshot({ path });
+  await testInfo.attach('04-detail-panel-default-collapsed.png', { path, contentType: 'image/png' });
+
+  await detailToggle.click();
+  await expect(page.getByRole('button', { name: 'Hide details', exact: true })).toBeVisible();
+  await expect(detailPanel).not.toHaveCSS('width', '0px');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: /^Expand repository Review fixture$/ }).click();
+  await page.getByRole('button', { name: 'Review changes before PR', exact: true }).click();
+  await page.getByRole('tab', { name: 'Logs', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Hide details', exact: true })).toBeVisible();
+  await expect(page.locator('.pane-detail-panel-vertical')).not.toHaveCSS('width', '0px');
+});
+
+test('Add Tool keeps long custom commands inside a narrow viewport', async ({ page }, testInfo) => {
+  const commandName = 'pnpm run extraordinarily-long-development-command';
+  const fullCommand = `${commandName} --with-options`;
+  const expectedLabel = `${commandName.slice(0, 15)}...`;
+
+  await page.setViewportSize({ width: 420, height: 720 });
+  await openSession(page, baseGitStatus, {
+    initialConfig: {
+      customCommands: [{ name: commandName, command: fullCommand }],
+    },
+  });
+
+  await page.getByRole('button', { name: 'Add Tool', exact: true }).click();
+  const menu = page.getByRole('menu');
+  const commandLabel = menu.getByText(expectedLabel, { exact: true });
+  const commandButton = menu.getByRole('menuitem', { name: expectedLabel, exact: false });
+  await expect(menu).toBeVisible();
+  await expect(commandLabel).toBeVisible();
+  await expect(commandLabel).toHaveText(expectedLabel);
+
+  const menuBounds = await menu.boundingBox();
+  expect(menuBounds).not.toBeNull();
+  expect(menuBounds!.x).toBeGreaterThanOrEqual(8);
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(412);
+  expect(await commandLabel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  await commandButton.hover();
+  await expect(page.getByRole('tooltip')).toContainText(fullCommand);
+  const path = testInfo.outputPath('05-add-tool-responsive-command.png');
+  await page.screenshot({ path });
+  await testInfo.attach('05-add-tool-responsive-command.png', { path, contentType: 'image/png' });
+});
+
 test('Review stays local until a newly discovered pull request is explicitly opened', async ({ page }, testInfo) => {
   await openSession(page);
 
@@ -187,8 +265,9 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(localMode).toHaveAttribute('aria-pressed', 'true');
   await expect(localMode).toHaveClass(/bg-interactive/);
   await expect(page.getByText('Local changes', { exact: true })).toBeVisible();
-  await expect(page.locator('.combined-diff-view').getByText('+8', { exact: true })).toBeVisible();
-  await expect(page.locator('.combined-diff-view').getByText('-3', { exact: true })).toBeVisible();
+  const diffSummary = page.locator('.combined-diff-view').getByText('Changes', { exact: true }).locator('..');
+  await expect(diffSummary.getByText('+8', { exact: true })).toBeVisible();
+  await expect(diffSummary.getByText('-3', { exact: true })).toBeVisible();
 
   const reviewFile = page.getByRole('button', { name: 'Expand diff for src/review.ts', exact: true });
   await expect(reviewFile).toHaveAttribute('aria-expanded', 'false');

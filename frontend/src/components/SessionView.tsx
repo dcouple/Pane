@@ -1345,7 +1345,7 @@ export const SessionView = memo(() => {
   // Detail panel state
   const [detailVisible, setDetailVisible] = useState(() => {
     const stored = localStorage.getItem('pane-detail-panel-visible');
-    return stored !== null ? stored === 'true' : true;
+    return stored !== null ? stored === 'true' : false;
   });
 
   // Persist detail panel visibility

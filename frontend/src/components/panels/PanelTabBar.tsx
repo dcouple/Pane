@@ -15,6 +15,15 @@ import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/
 import { PanelTabStrip } from './PanelTabStrip';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 
+const ADD_TOOL_MENU_WIDTH = 280;
+const ADD_TOOL_MENU_VIEWPORT_MARGIN = 8;
+const MAX_CUSTOM_COMMAND_LABEL_LENGTH = 18;
+
+function truncateCustomCommandLabel(label: string): string {
+  if (label.length <= MAX_CUSTOM_COMMAND_LABEL_LENGTH) return label;
+  return `${label.slice(0, MAX_CUSTOM_COMMAND_LABEL_LENGTH - 3)}...`;
+}
+
 // Build prompt for setting up intelligent dev command — adapts based on Worktree File Sync config
 export function buildSetupRunScriptPrompt(fileSyncEntries?: WorktreeFileSyncEntry[]): string {
   const nodeModulesEnabled = fileSyncEntries?.some(e => e.path === 'node_modules' && e.enabled) ?? true;
@@ -151,12 +160,24 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     const updatePosition = () => {
       if (!dropdownRef.current) return;
       const rect = dropdownRef.current.getBoundingClientRect();
+      const width = Math.min(
+        ADD_TOOL_MENU_WIDTH,
+        window.innerWidth - (ADD_TOOL_MENU_VIEWPORT_MARGIN * 2),
+      );
+      const left = Math.max(
+        ADD_TOOL_MENU_VIEWPORT_MARGIN,
+        Math.min(
+          rect.left,
+          window.innerWidth - width - ADD_TOOL_MENU_VIEWPORT_MARGIN,
+        ),
+      );
       setDropdownStyle({
         position: 'fixed',
         top: rect.bottom + 4,
-        left: rect.left,
+        left,
         zIndex: 10000,
-        minWidth: 280,
+        width,
+        maxWidth: `calc(100vw - ${ADD_TOOL_MENU_VIEWPORT_MARGIN * 2}px)`,
       });
     };
 
@@ -549,32 +570,42 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               {availablePanelTypes.includes('terminal') && customCommands.map((cmd, index) => {
                 const currentRefIndex = refIndex++;
                 const shortcutDisplay = hotkeyDisplay(`add-tool-custom-${index}`);
+                const displayName = truncateCustomCommandLabel(cmd.name);
                 return (
-                <div key={`custom-${index}`} role="none" className="flex items-center">
-                  <button
-                    ref={(el) => { dropdownItemsRef.current[currentRefIndex] = el; }}
-                    type="button"
-                    role="menuitem"
-                    className={menuItemClass}
-                    onClick={() => handleAddPanel('terminal', {
-                      initialCommand: cmd.command,
-                      title: cmd.name
-                    })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Delete' || e.key === 'Backspace') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        deleteCustomCommand(index);
-                      }
-                    }}
-                    title={`${cmd.name} (Delete/Backspace to remove)`}
+                <div key={`custom-${index}`} role="none" className="flex min-w-0 items-center">
+                  <Tooltip
+                    content={(
+                      <span className="block max-w-[min(32rem,calc(100vw-1rem))] whitespace-normal break-words">
+                        <span className="block">{cmd.command}</span>
+                        <span className="mt-1 block text-xs text-text-tertiary">Delete or Backspace to remove</span>
+                      </span>
+                    )}
+                    side="bottom"
                   >
-                    {getCliBrandIcon(cmd.command, 'w-4 h-4 flex-shrink-0 mt-0.5') || <TerminalSquare className="w-4 h-4 flex-shrink-0 mt-0.5" />}
-                    <span className="ml-2 flex-1 min-w-0">
-                      <span className="block truncate">{cmd.name}</span>
-                      {shortcutDisplay && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{shortcutDisplay}</Kbd>}
-                    </span>
-                  </button>
+                    <button
+                      ref={(el) => { dropdownItemsRef.current[currentRefIndex] = el; }}
+                      type="button"
+                      role="menuitem"
+                      className={cn(menuItemClass, 'min-w-0 flex-1')}
+                      onClick={() => handleAddPanel('terminal', {
+                        initialCommand: cmd.command,
+                        title: cmd.name
+                      })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Delete' || e.key === 'Backspace') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          deleteCustomCommand(index);
+                        }
+                      }}
+                    >
+                      {getCliBrandIcon(cmd.command, 'w-4 h-4 flex-shrink-0 mt-0.5') || <TerminalSquare className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+                      <span className="ml-2 min-w-0 flex-1">
+                        <span className="block truncate">{displayName}</span>
+                        {shortcutDisplay && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{shortcutDisplay}</Kbd>}
+                      </span>
+                    </button>
+                  </Tooltip>
                   <button
                     type="button"
                     className="p-1 mr-2 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors flex-shrink-0"
@@ -680,22 +711,37 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
 
           {/* Detail panel toggle */}
           {onToggleDetailPanel && (
-            <Tooltip content={detailPanelToggleDisabled ? detailPanelToggleDisabledReason : (hotkeyDisplay('toggle-detail-panel') ? <Kbd>{hotkeyDisplay('toggle-detail-panel')}</Kbd> : undefined)} side="bottom">
+            <Tooltip
+              content={detailPanelToggleDisabled
+                ? detailPanelToggleDisabledReason
+                : (
+                  <span className="flex items-center gap-2">
+                    <span>{detailPanelVisible ? 'Hide details' : 'Show details'}</span>
+                    {hotkeyDisplay('toggle-detail-panel') && (
+                      <Kbd size="xs" variant="muted">{hotkeyDisplay('toggle-detail-panel')}</Kbd>
+                    )}
+                  </span>
+                )}
+              side="bottom"
+            >
               <button
+                type="button"
                 onClick={detailPanelToggleDisabled ? undefined : onToggleDetailPanel}
                 disabled={detailPanelToggleDisabled}
                 aria-disabled={detailPanelToggleDisabled}
+                aria-label={detailPanelToggleDisabled
+                  ? detailPanelToggleDisabledReason
+                  : detailPanelVisible ? 'Hide details' : 'Show details'}
                 className={cn(
-                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded transition-colors flex-shrink-0",
+                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] w-[var(--panel-tab-height)] rounded-md transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle",
                   detailPanelToggleDisabled
                     ? "text-text-muted cursor-not-allowed opacity-50"
                     : detailPanelVisible
-                    ? "text-text-primary bg-surface-hover"
+                    ? "text-text-primary bg-surface-hover hover:text-interactive"
                     : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
                 )}
-                title={detailPanelToggleDisabled ? detailPanelToggleDisabledReason : detailPanelVisible ? "Hide detail panel" : "Show detail panel"}
               >
-                <PanelRight className="w-4 h-4" />
+                <PanelRight aria-hidden="true" className="w-4 h-4" />
               </button>
             </Tooltip>
           )}
