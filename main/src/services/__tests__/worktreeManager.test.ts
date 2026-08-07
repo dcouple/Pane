@@ -1,12 +1,136 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CommandRunner } from '../../utils/commandRunner';
-import { WorktreeManager } from '../worktreeManager';
+import type { PathResolver } from '../../utils/pathResolver';
+import { resolveDefaultWorktreeBase, WorktreeManager } from '../worktreeManager';
+import { worktreePoolManager } from '../worktreePoolManager';
 
 function commandRunner(
   execAsync: (command: string, cwd: string) => Promise<{ stdout: string; stderr: string }>,
 ): CommandRunner {
   return { execAsync: vi.fn(execAsync) } as CommandRunner;
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe('resolveDefaultWorktreeBase', () => {
+  it('uses the remote default branch instead of the project checkout HEAD', async () => {
+    const runner = commandRunner(async command => {
+      if (command.includes('symbolic-ref')) {
+        return { stdout: 'origin/main\n', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await expect(resolveDefaultWorktreeBase('/repo', runner)).resolves.toBe('origin/main');
+  });
+
+  it('falls back to a conventional remote main ref when origin HEAD is unavailable', async () => {
+    const runner = commandRunner(async command => {
+      if (command.includes('symbolic-ref')) throw new Error('No remote HEAD');
+      if (command.includes("'origin/main^{commit}'")) {
+        return { stdout: 'abc123\n', stderr: '' };
+      }
+      throw new Error(`Unknown ref: ${command}`);
+    });
+
+    await expect(resolveDefaultWorktreeBase('/repo', runner)).resolves.toBe('origin/main');
+  });
+
+  it('uses HEAD only when no conventional integration ref exists', async () => {
+    const runner = commandRunner(async () => {
+      throw new Error('Unknown ref');
+    });
+
+    await expect(resolveDefaultWorktreeBase('/repo', runner)).resolves.toBe('HEAD');
+  });
+});
+
+describe('WorktreeManager.resolveWorkingDirectory', () => {
+  it('persists the resolved default branch when claiming a reserve worktree', async () => {
+    const runner = commandRunner(async (command, cwd) => {
+      if (command.includes('symbolic-ref')) {
+        return { stdout: 'origin/main\n', stderr: '' };
+      }
+      if (command === 'git branch --show-current' && cwd === '/repo/worktrees/pane') {
+        return { stdout: 'pane\n', stderr: '' };
+      }
+      if (command === 'git rev-parse --verify origin/pane') {
+        throw new Error('No remote pane branch');
+      }
+      if (command === "git rev-parse 'HEAD'") {
+        return { stdout: 'base-commit\n', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.spyOn(worktreePoolManager, 'claimReserve').mockResolvedValue({ worktreePath: '/repo/worktrees/pane' });
+    const manager = new WorktreeManager();
+
+    const result = await manager.resolveWorkingDirectory(
+      '/repo',
+      'pane',
+      undefined,
+      true,
+      undefined,
+      {} as PathResolver,
+      runner,
+    );
+
+    expect(worktreePoolManager.claimReserve).toHaveBeenCalledWith(
+      '/repo',
+      'origin/main',
+      'pane',
+      'pane',
+      undefined,
+      expect.anything(),
+      runner,
+    );
+    expect(result).toEqual({
+      worktreePath: '/repo/worktrees/pane',
+      baseCommit: 'base-commit',
+      baseBranch: 'origin/main',
+    });
+  });
+
+  it('passes the resolved default branch to fresh worktree creation', async () => {
+    const runner = commandRunner(async command => {
+      if (command.includes('symbolic-ref')) {
+        return { stdout: 'origin/main\n', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    vi.spyOn(worktreePoolManager, 'claimReserve').mockResolvedValue(null);
+    vi.spyOn(worktreePoolManager, 'createReserve').mockResolvedValue();
+    const manager = new WorktreeManager();
+    const createWorktree = vi.spyOn(manager, 'createWorktree').mockResolvedValue({
+      worktreePath: '/repo/worktrees/pane',
+      baseCommit: 'base-commit',
+      baseBranch: 'origin/main',
+    });
+
+    const result = await manager.resolveWorkingDirectory(
+      '/repo',
+      'pane',
+      undefined,
+      true,
+      undefined,
+      {} as PathResolver,
+      runner,
+    );
+
+    expect(createWorktree).toHaveBeenCalledWith(
+      '/repo',
+      'pane',
+      undefined,
+      'origin/main',
+      undefined,
+      expect.anything(),
+      runner,
+    );
+    expect(result.baseBranch).toBe('origin/main');
+  });
+});
 
 describe('WorktreeManager.getSessionComparisonBranch', () => {
   it('uses the recorded fork commit before a remote default branch for a legacy worktree', async () => {

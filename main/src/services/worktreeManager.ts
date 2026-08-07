@@ -114,6 +114,41 @@ export async function detectGitBase(
   return { baseBranch: actualBaseBranch, baseCommit };
 }
 
+/**
+ * Resolve a stable integration ref when callers do not choose a base branch.
+ * The project checkout may be on an unrelated feature branch, so HEAD is only
+ * safe as a final fallback for repositories without a conventional base ref.
+ */
+export async function resolveDefaultWorktreeBase(
+  projectPath: string,
+  commandRunner: CommandRunner,
+): Promise<string> {
+  try {
+    const { stdout } = await commandRunner.execAsync(
+      'git symbolic-ref --quiet --short refs/remotes/origin/HEAD',
+      projectPath,
+    );
+    const remoteDefault = stdout.trim();
+    if (remoteDefault) return remoteDefault;
+  } catch {
+    // Fall through to common remote and local integration branches.
+  }
+
+  for (const candidate of ['origin/main', 'origin/master', 'main', 'master']) {
+    try {
+      await commandRunner.execAsync(
+        `git rev-parse --verify ${escapeShellArg(`${candidate}^{commit}`)}`,
+        projectPath,
+      );
+      return candidate;
+    } catch {
+      // Try the next conventional integration ref.
+    }
+  }
+
+  return 'HEAD';
+}
+
 export class WorktreeManager {
   private projectsCache: Map<string, { baseDir: string }> = new Map();
 
@@ -316,10 +351,11 @@ export class WorktreeManager {
     commandRunner: CommandRunner
   ): Promise<{ worktreePath: string; baseCommit: string | undefined; baseBranch: string | undefined }> {
     if (useWorktree) {
+      const effectiveBase = baseBranch || await resolveDefaultWorktreeBase(projectPath, commandRunner);
+
       // Try claiming a pre-created reserve worktree for instant creation
       try {
         const branchName = worktreeName; // worktreeName is used as both dir name and branch name
-        const effectiveBase = baseBranch || 'HEAD';
         const claimed = await worktreePoolManager.claimReserve(
           projectPath,
           effectiveBase,
@@ -331,18 +367,17 @@ export class WorktreeManager {
         );
         if (claimed) {
           // Detect base commit from the claimed worktree
-          const { baseBranch: detectedBranch, baseCommit } = await detectGitBase(claimed.worktreePath, commandRunner);
-          return { worktreePath: claimed.worktreePath, baseCommit, baseBranch: detectedBranch || baseBranch };
+          const { baseCommit } = await detectGitBase(claimed.worktreePath, commandRunner);
+          return { worktreePath: claimed.worktreePath, baseCommit, baseBranch: effectiveBase };
         }
       } catch (error) {
         console.warn('[WorktreeManager] Pool claim failed, falling back to fresh worktree:', error);
       }
 
       // Fall back to standard worktree creation
-      const result = await this.createWorktree(projectPath, worktreeName, undefined, baseBranch, worktreeFolder, pathResolver, commandRunner);
+      const result = await this.createWorktree(projectPath, worktreeName, undefined, effectiveBase, worktreeFolder, pathResolver, commandRunner);
 
       // Trigger background replenishment after successful creation
-      const effectiveBase = baseBranch || 'HEAD';
       worktreePoolManager.createReserve(projectPath, effectiveBase, worktreeFolder, pathResolver, commandRunner).catch(err => {
         console.warn('[WorktreeManager] Background reserve creation failed:', err);
       });

@@ -720,7 +720,7 @@ function SessionRow({
       className={cn(
         'group/session relative w-full text-left pl-3 pr-2 transition-colors flex items-center gap-1',
         rowLayout === 'single' ? 'py-1.5' : 'py-2',
-        isActive ? 'bg-interactive/30' : 'hover:bg-surface-hover'
+        isActive ? 'bg-surface-hover' : 'hover:bg-surface-hover'
       )}
     >
       {/* Always-present left accent bar reflecting the agent status. */}
