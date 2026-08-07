@@ -65,6 +65,88 @@ describe('resolveDefaultWorktreeBase', () => {
 });
 
 describe('WorktreeManager.resolveWorkingDirectory', () => {
+  it('creates fresh worktrees from remote bases without setting upstream tracking', async () => {
+    const runner = commandRunner(async command => {
+      if (command === 'git rev-parse --is-inside-work-tree') {
+        return { stdout: 'true\n', stderr: '' };
+      }
+      if (command.startsWith('git worktree remove ')) {
+        throw new Error('No existing worktree');
+      }
+      if (command === 'git rev-parse HEAD') {
+        return { stdout: 'current-head\n', stderr: '' };
+      }
+      if (command === 'git show-ref --verify --quiet refs/heads/pane') {
+        throw new Error('Branch does not exist');
+      }
+      if (command === 'git rev-parse --verify origin/main') {
+        return { stdout: 'base-commit\n', stderr: '' };
+      }
+      if (command === 'git rev-parse origin/main') {
+        return { stdout: 'base-commit\n', stderr: '' };
+      }
+      if (command === 'git worktree add -b pane --no-track "/repo/worktrees/pane" origin/main') {
+        return { stdout: '', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    const manager = new WorktreeManager();
+
+    const result = await manager.createWorktree(
+      '/repo',
+      'pane',
+      undefined,
+      'origin/main',
+      undefined,
+      { join: (...parts: string[]) => parts.join('/') } as PathResolver,
+      runner,
+    );
+
+    expect(result).toEqual({
+      worktreePath: '/repo/worktrees/pane',
+      baseCommit: 'base-commit',
+      baseBranch: 'origin/main',
+    });
+    expect(runner.execAsync).toHaveBeenCalledWith(
+      'git worktree add -b pane --no-track "/repo/worktrees/pane" origin/main',
+      '/repo',
+      { timeout: 60000 },
+    );
+    const worktreeAddCall = vi.mocked(runner.execAsync).mock.calls.find(([command]) =>
+      command.startsWith('git worktree add -b pane '),
+    );
+    expect(worktreeAddCall?.[0]).not.toContain(' --track ');
+  });
+
+  it('creates reserve worktrees without setting upstream tracking', async () => {
+    const runner = commandRunner(async command => {
+      if (command === 'git fetch') {
+        return { stdout: '', stderr: '' };
+      }
+      if (command.startsWith('git worktree add -b ')) {
+        return { stdout: '', stderr: '' };
+      }
+      if (command === 'git rev-parse origin/main') {
+        return { stdout: 'base-commit\n', stderr: '' };
+      }
+      throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await worktreePoolManager.createReserve(
+      '/repo',
+      'origin/main',
+      undefined,
+      { join: (...parts: string[]) => parts.join('/') } as PathResolver,
+      runner,
+    );
+
+    const worktreeAddCall = vi.mocked(runner.execAsync).mock.calls.find(([command]) =>
+      command.startsWith('git worktree add -b '),
+    );
+    expect(worktreeAddCall?.[0]).toContain('--no-track');
+    expect(worktreeAddCall?.[0]).not.toContain(' --track ');
+  });
+
   it('persists the resolved default branch when claiming a reserve worktree', async () => {
     const runner = commandRunner(async (command, cwd) => {
       if (command.includes('symbolic-ref')) {

@@ -76,7 +76,7 @@ class WorktreePoolManager {
 
     try {
       await commandRunner.execAsync(
-        `git worktree add -b ${escapeShellArg(branchName)} ${escapeShellArg(reservePath)} ${escapeShellArg(baseRef)}`,
+        `git worktree add -b ${escapeShellArg(branchName)} --no-track ${escapeShellArg(reservePath)} ${escapeShellArg(baseRef)}`,
         projectPath,
         { timeout: 60000 }
       );

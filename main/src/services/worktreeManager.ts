@@ -309,16 +309,9 @@ export class WorktreeManager {
         baseCommit = (await commandRunner.execAsync(`git rev-parse ${baseRef}`, projectPath)).stdout.trim();
 
         if (isRemoteBranch) {
-          // Use --track flag for remote branches to set up tracking automatically
-          await commandRunner.execAsync(`git worktree add -b ${branchName} --track "${worktreePath}" ${baseBranch}`, projectPath, { timeout: 60000 });
-
-          // Verify tracking was set (for debugging)
-          try {
-            const { stdout: trackingInfo } = await commandRunner.execAsync(`git branch -vv`, worktreePath);
-            console.log(`[WorktreeManager] Branch tracking set:`, trackingInfo.trim());
-          } catch {
-            // Ignore verification errors
-          }
+          // Keep the remote base for Pane comparisons, but leave upstream unset
+          // so first push creates origin/<branchName> instead of pushing to the base.
+          await commandRunner.execAsync(`git worktree add -b ${branchName} --no-track "${worktreePath}" ${baseBranch}`, projectPath, { timeout: 60000 });
         } else {
           // Existing logic for local branches (no tracking)
           await commandRunner.execAsync(`git worktree add -b ${branchName} "${worktreePath}" ${baseRef}`, projectPath, { timeout: 60000 });
