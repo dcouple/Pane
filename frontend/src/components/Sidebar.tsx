@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -17,11 +17,12 @@ import type { DropdownItem } from './ui/Dropdown';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { SessionStatusBadge } from './SessionStatusBadge';
-import { AgentStatusDot } from './ui/AgentStatusDot';
+import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
+import type { Session } from '../types/session';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
 import { useResourceMonitor } from '../hooks/useResourceMonitor';
 import {
@@ -31,6 +32,9 @@ import {
   type RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
 import { getRemoteFooterStatus } from '../utils/remoteRuntimePresentation';
+import { usePanelStore } from '../stores/panelStore';
+import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
+import { createProjectById, getPinnedSessions, groupSessionsByProject } from '../utils/sessionOrdering';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -42,6 +46,24 @@ function CollapsedProjectTooltip({ project, sessionCount }: { project: Project; 
       <p className="text-[10px] text-text-tertiary">
         {sessionCount} {sessionCount === 1 ? 'workspace' : 'workspaces'}
       </p>
+    </div>
+  );
+}
+
+function CompactSessionTooltip({
+  session,
+  label,
+}: {
+  session: Session;
+  label: string;
+}) {
+  return (
+    <div className="max-w-xs space-y-1.5">
+      <p className="text-[11px] font-medium leading-snug text-text-primary whitespace-pre-wrap break-words">
+        {label}
+      </p>
+      <div className="border-t border-border-primary" />
+      <SessionDetailTooltip session={session} showName={false} />
     </div>
   );
 }
@@ -64,6 +86,9 @@ const RESOURCE_POPOVER_WIDTH = 320;
 const RESOURCE_POPOVER_GAP = 8;
 const RESOURCE_POPOVER_VIEWPORT_MARGIN = 8;
 type SidebarSection = 'pinned' | 'repositories';
+const COMPACT_RAIL_BUTTON = 'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive';
+const COMPACT_RAIL_IDLE = 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary';
+const COMPACT_RAIL_ACTIVE = 'bg-interactive/20 text-interactive ring-1 ring-interactive/50';
 
 function formatMemory(mb: number): string {
   if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
@@ -351,10 +376,15 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const activeProjectId = useNavigationStore((state) => state.activeProjectId);
   const activeView = useNavigationStore((state) => state.activeView);
+  const expandedProjects = useNavigationStore((state) => state.expandedProjects);
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
+  const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const setSidebarNavigationScope = useNavigationStore((state) => state.setSidebarNavigationScope);
+  const agentStatusByPanel = usePanelStore((state) => state.agentStatus);
+  const agentPanelSessions = usePanelStore((state) => state.agentStatusSession);
+  const unviewedBySession = usePanelStore((state) => state.unviewedCompletedActivity);
   useSessionNavigationHotkeys({ projects, sessionSortAscending });
 
   const handleRefreshGitStatus = async () => {
@@ -394,6 +424,22 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     return projects.find(p => p.active) || projects[0];
   }, [projects, activeProjectId]);
 
+  const sessionsByProject = useMemo(
+    () => groupSessionsByProject(sessions, sessionSortAscending),
+    [sessions, sessionSortAscending],
+  );
+  const projectById = useMemo(() => createProjectById(projects), [projects]);
+  const pinnedSessions = useMemo(
+    () => getPinnedSessions(sessions, projectById),
+    [sessions, projectById],
+  );
+
+  const openCompactSession = useCallback((sessionId: string, scope: 'pinned' | 'repositories') => {
+    setSidebarNavigationScope(scope);
+    void setActiveSession(sessionId);
+    navigateToSessions();
+  }, [navigateToSessions, setActiveSession, setSidebarNavigationScope]);
+
   // Collapsed sidebar view
   if (collapsed) {
     return (
@@ -408,125 +454,229 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
             <div className="h-3 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
           )}
           {/* Logo */}
-          <div className="flex items-center justify-center px-1 py-2 border-b border-border-primary">
+          <div className="flex shrink-0 items-center justify-center border-b border-border-primary px-1 py-2">
             <img src={paneLogo} alt="Pane" className="h-6 w-6" />
           </div>
 
-          {/* Projects with their sessions */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 flex flex-col items-center gap-1.5">
+          <div className="flex shrink-0 flex-col items-center gap-1 border-b border-border-primary py-2">
+            <Tooltip content="Home" side="right">
+              <button
+                type="button"
+                data-compact-rail-item
+                onClick={() => {
+                  setSidebarNavigationScope('repositories');
+                  void setActiveSession(null);
+                  navigateToSessions();
+                }}
+                aria-label="Home"
+                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'sessions' && !activeSessionId ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+              >
+                <Home className="h-4 w-4" />
+              </button>
+            </Tooltip>
+
             <Tooltip content="Pane Chat" side="right">
               <button
                 type="button"
+                data-testid="compact-pane-chat"
+                data-compact-rail-item
                 onClick={() => {
                   setSidebarNavigationScope('repositories');
-                  setActiveSession(null);
+                  void setActiveSession(null);
                   navigateToPaneChat();
                 }}
                 aria-label="Pane Chat"
-                className={`relative w-8 h-8 rounded flex items-center justify-center transition-colors ${
-                  activeView === 'pane-chat'
-                    ? 'bg-interactive/20 text-interactive ring-1 ring-interactive/50'
-                    : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary'
-                }`}
+                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'pane-chat' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
               >
-                <MessageSquare className="w-4 h-4" />
-                <AgentStatusDot status={paneChatStatus} size="sm" className="absolute -top-0.5 -right-0.5" />
+                <MessageSquare className="h-4 w-4" />
+                <AgentStatusDot status={paneChatStatus} size="sm" className="absolute right-0 top-0" />
               </button>
             </Tooltip>
+
             {showRemoteDesktopLink && (
               <Tooltip content={REMOTE_DESKTOP_TOOLTIP} side="right">
                 <button
                   type="button"
+                  data-compact-rail-item
                   onClick={handleOpenRemoteDesktop}
                   aria-label="Open Remote Desktop"
-                  className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover hover:text-text-primary transition-colors"
+                  className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
                 >
-                  <Monitor className="w-4 h-4" />
+                  <Monitor className="h-4 w-4" />
                 </button>
               </Tooltip>
             )}
-            {projects.map((project) => {
-              const isActiveProject = project.id === activeProject?.id;
-              const initial = project.name.charAt(0).toUpperCase();
-              const projectSessions = sessions.filter(s => s.projectId === project.id && !s.archived);
-              return (
-                <div key={project.id} className="flex flex-col items-center gap-0.5 w-full">
-                  {/* Project initial */}
-                  <Tooltip content={<CollapsedProjectTooltip project={project} sessionCount={projectSessions.length} />} side="right">
-                    <button
-                      onClick={() => navigateToProject(project.id)}
-                      className={`w-8 h-8 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
-                        isActiveProject
-                          ? 'bg-interactive/20 text-interactive ring-1 ring-interactive/50'
-                          : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary'
-                      }`}
-                    >
-                      {initial}
-                    </button>
-                  </Tooltip>
-                  {/* Session status badges — grouped under this project */}
-                  {projectSessions.map((session) => {
-                    const isActive = session.id === activeSessionId;
-                    return (
-                      <Tooltip key={session.id} content={<SessionDetailTooltip session={session} />} side="right">
-                        <button
-                          onClick={() => {
-                            setSidebarNavigationScope('repositories');
-                            setActiveSession(session.id);
-                          }}
-                          className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
-                            isActive ? 'bg-interactive/20 ring-1 ring-interactive/50' : 'hover:bg-surface-hover'
-                          }`}
-                        >
-                          {/* At-a-glance agent status (blocked / working / done), with a
-                              binary activity fallback for non-agent sessions. */}
-                          <SessionStatusBadge sessionId={session.id} />
-                        </button>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            {/* New session button */}
-            {activeProject && (
-              <button
-                onClick={() => setShowCreateDialog(true)}
-                className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover hover:text-interactive transition-colors"
-                title="New Pane"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            )}
           </div>
 
+          <nav
+            aria-label="Compact sidebar"
+            className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden py-2"
+          >
+            {pinnedSessions.length > 0 && (
+              <div role="group" aria-label="Pinned panes" className="flex w-full shrink-0 flex-col items-center gap-0.5">
+                <Tooltip content={`${sidebarSectionExpansion.pinned ? 'Collapse' : 'Expand'} pinned panes`} side="right">
+                  <button
+                    type="button"
+                    data-testid="compact-pinned-toggle"
+                    data-compact-rail-item
+                    onClick={() => handlePinnedSectionExpandedChange(!sidebarSectionExpansion.pinned)}
+                    aria-label={`${sidebarSectionExpansion.pinned ? 'Collapse' : 'Expand'} pinned panes`}
+                    aria-expanded={sidebarSectionExpansion.pinned}
+                    className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+                  >
+                    <Pin className="h-4 w-4" />
+                    {sidebarSectionExpansion.pinned
+                      ? <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5" />
+                      : <ChevronRight className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5" />}
+                  </button>
+                </Tooltip>
+
+                {sidebarSectionExpansion.pinned && pinnedSessions.map(({ session, label }) => (
+                  <Tooltip
+                    key={`compact-pinned-${session.id}`}
+                    content={<CompactSessionTooltip session={session} label={label} />}
+                    side="right"
+                  >
+                    <button
+                      type="button"
+                      data-testid={`compact-pinned-pane-${session.id}`}
+                      data-compact-rail-item
+                      onClick={() => openCompactSession(session.id, 'pinned')}
+                      aria-label={`Open pinned pane ${label}`}
+                      className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+                    >
+                      <SessionStatusBadge
+                        sessionId={session.id}
+                        unknownClassName="bg-text-tertiary/60 opacity-100 duration-150"
+                      />
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+            )}
+
+            <div role="group" aria-label="Repositories" className="flex w-full shrink-0 flex-col items-center gap-0.5">
+              <Tooltip content={`${sidebarSectionExpansion.repositories ? 'Collapse' : 'Expand'} repositories`} side="right">
+                <button
+                  type="button"
+                  data-testid="compact-repositories-toggle"
+                  data-compact-rail-item
+                  onClick={() => handleRepositoriesSectionExpandedChange(!sidebarSectionExpansion.repositories)}
+                  aria-label={`${sidebarSectionExpansion.repositories ? 'Collapse' : 'Expand'} repositories`}
+                  aria-expanded={sidebarSectionExpansion.repositories}
+                  className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+                >
+                  <FolderGit2 className="h-4 w-4" />
+                  {sidebarSectionExpansion.repositories
+                    ? <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5" />
+                    : <ChevronRight className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5" />}
+                </button>
+              </Tooltip>
+
+              {sidebarSectionExpansion.repositories && projects.map((project) => {
+                const isActiveProject = project.id === activeProject?.id && activeView === 'project';
+                const initial = project.name.charAt(0).toUpperCase();
+                const projectSessions = sessionsByProject.get(project.id) ?? [];
+                const projectAgentState = rollupAgentDisplayStatus(
+                  projectSessions.map(session => toAgentDisplayStatus(
+                    rollupSessionAgentState(agentStatusByPanel, agentPanelSessions, session.id),
+                    Boolean(unviewedBySession[session.id]),
+                  )),
+                );
+
+                return (
+                  <div key={project.id} className="flex w-full shrink-0 flex-col items-center gap-0.5">
+                    <Tooltip content={<CollapsedProjectTooltip project={project} sessionCount={projectSessions.length} />} side="right">
+                      <button
+                        type="button"
+                        data-testid={`compact-repository-${project.id}`}
+                        data-compact-rail-item
+                        onClick={() => navigateToProject(project.id)}
+                        aria-label={`Open main workspace for ${project.name}`}
+                        className={`${COMPACT_RAIL_BUTTON} text-xs font-semibold ${isActiveProject ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+                      >
+                        {initial}
+                        {projectAgentState === 'unknown'
+                          ? <AgentActivityDot active={false} size="sm" className="absolute bottom-0 right-0" />
+                          : <AgentStatusDot status={projectAgentState} size="sm" className="absolute bottom-0 right-0" />}
+                      </button>
+                    </Tooltip>
+
+                    {expandedProjects.has(project.id) && projectSessions.map((session) => (
+                      <Tooltip
+                        key={session.id}
+                        content={<CompactSessionTooltip session={session} label={session.name || 'Untitled'} />}
+                        side="right"
+                      >
+                        <button
+                          type="button"
+                          data-testid={`compact-repository-pane-${session.id}`}
+                          data-compact-rail-item
+                          onClick={() => openCompactSession(session.id, 'repositories')}
+                          aria-label={`Open pane ${project.name}/${session.name || 'Untitled'}`}
+                          className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+                        >
+                          <SessionStatusBadge
+                            sessionId={session.id}
+                            unknownClassName="bg-text-tertiary/60 opacity-100 duration-150"
+                          />
+                        </button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                );
+              })}
+
+              {sidebarSectionExpansion.repositories && activeProject && (
+                <Tooltip content={`New pane in ${activeProject.name}`} side="right">
+                  <button
+                    type="button"
+                    data-compact-rail-item
+                    onClick={() => setShowCreateDialog(true)}
+                    aria-label={`New pane in ${activeProject.name}`}
+                    className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE} hover:text-interactive`}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                </Tooltip>
+              )}
+            </div>
+          </nav>
+
           {/* Bottom actions */}
-          <div className="flex-shrink-0 flex flex-col items-center gap-1 py-2 border-t border-border-primary">
+          <div className="flex shrink-0 flex-col items-center gap-1 border-t border-border-primary py-2">
             <Tooltip content={remoteFooterTooltip} side="right" interactive delay={250}>
               <button
                 type="button"
+                data-compact-rail-item
                 onClick={onRemoteSettingsClick}
                 aria-label={remoteFooterStatus.ariaLabel}
-                className="w-8 h-8 rounded flex items-center justify-center text-text-tertiary hover:bg-surface-hover transition-colors"
+                className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
               >
                 <span className={`h-2.5 w-2.5 rounded-full ${remoteFooterStatus.dotClassName}`} />
               </button>
             </Tooltip>
             <Tooltip content={hotkeyDisplay('open-settings') ? <Kbd>{hotkeyDisplay('open-settings')}</Kbd> : undefined} side="right">
-              <IconButton
+              <button
+                type="button"
+                data-compact-rail-item
                 onClick={onSettingsClick}
                 aria-label="Settings"
-                size="sm"
-                icon={<SettingsIcon className="w-4 h-4" />}
-              />
+                className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+              >
+                <SettingsIcon className="h-4 w-4" />
+              </button>
             </Tooltip>
             <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="right">
-              <IconButton
+              <button
+                type="button"
+                data-compact-rail-item
                 onClick={onToggleCollapse}
                 aria-label="Expand sidebar"
-                size="sm"
-                icon={<PanelLeftOpen className="w-4 h-4" />}
-              />
+                className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+              >
+                <PanelLeftOpen className="h-4 w-4" />
+              </button>
             </Tooltip>
           </div>
         </div>
@@ -638,6 +788,9 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           <ProjectSessionList
+            projects={projects}
+            onProjectsChange={setProjects}
+            onProjectsRefresh={loadProjects}
             sessionSortAscending={sessionSortAscending}
             pinnedSectionExpanded={sidebarSectionExpansion.pinned}
             repositoriesSectionExpanded={sidebarSectionExpansion.repositories}

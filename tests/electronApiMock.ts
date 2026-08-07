@@ -19,6 +19,13 @@ type ElectronApiMockOptions = {
   initialProjects?: Array<Record<string, unknown>>;
   initialSessions?: Array<Record<string, unknown>>;
   initialPanels?: Array<Record<string, unknown>>;
+  initialUiState?: Partial<{
+    expandedProjects: number[];
+    expandedFolders: string[];
+    sessionSortAscending: boolean;
+    pinnedSectionExpanded: boolean;
+    repositoriesSectionExpanded: boolean;
+  }>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -162,6 +169,14 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     let mockProjects = clone(mockOptions.initialProjects ?? []);
     let mockSessions = clone(mockOptions.initialSessions ?? []);
     let mockPanels = clone(mockOptions.initialPanels ?? []);
+    const uiState = {
+      expandedProjects: [] as number[],
+      expandedFolders: [] as string[],
+      sessionSortAscending: true,
+      pinnedSectionExpanded: true,
+      repositoriesSectionExpanded: true,
+      ...clone(mockOptions.initialUiState ?? {}),
+    };
     let mockActiveProjectId = mockOptions.activeProjectId === undefined
       ? (mockProjects.find((project) => project.active === true)?.id as number | undefined) ?? null
       : mockOptions.activeProjectId;
@@ -651,18 +666,22 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           subscribe('remote-daemon:host-state-changed', callback),
       }),
       uiState: namespace({
-        getExpanded: () => success({
-          expandedProjects: [],
-          expandedFolders: [],
-          sessionSortAscending: true,
-          pinnedSectionExpanded: true,
-          repositoriesSectionExpanded: true,
-        }),
+        getExpanded: () => success(clone(uiState)),
         saveExpanded: () => success(),
-        saveExpandedProjects: () => success(),
+        saveExpandedProjects: (projectIds: number[]) => {
+          uiState.expandedProjects = clone(projectIds);
+          return success();
+        },
         saveExpandedFolders: () => success(),
-        saveSessionSortAscending: () => success(),
-        saveSidebarSectionExpanded: () => success(),
+        saveSessionSortAscending: (ascending: boolean) => {
+          uiState.sessionSortAscending = ascending;
+          return success();
+        },
+        saveSidebarSectionExpanded: (section: 'pinned' | 'repositories', expanded: boolean) => {
+          if (section === 'pinned') uiState.pinnedSectionExpanded = expanded;
+          else uiState.repositoriesSectionExpanded = expanded;
+          return success();
+        },
       }),
     };
 

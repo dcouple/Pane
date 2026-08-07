@@ -39,6 +39,7 @@ interface AgentActivityDotProps {
   /** Pulse while active. */
   pulse?: boolean;
   className?: string;
+  inactiveClassName?: string;
 }
 
 /**
@@ -52,6 +53,7 @@ export const AgentActivityDot: React.FC<AgentActivityDotProps> = ({
   activeColorClass = 'bg-status-info',
   pulse = false,
   className,
+  inactiveClassName = 'bg-text-muted/20 opacity-40 duration-[3s]',
 }) => (
   <span className={cn('inline-flex items-center justify-center', containerSizeClasses[size], className)}>
     <span
@@ -60,7 +62,7 @@ export const AgentActivityDot: React.FC<AgentActivityDotProps> = ({
         sizeClasses[size],
         active
           ? `${activeColorClass} opacity-100 duration-150`
-          : 'bg-text-muted/20 opacity-40 duration-[3s]',
+          : inactiveClassName,
         active && pulse && 'animate-pulse',
       )}
     />

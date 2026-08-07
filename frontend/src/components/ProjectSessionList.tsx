@@ -34,6 +34,9 @@ const SIDEBAR_SECTION_ROW = 'mt-2 flex w-full items-center justify-between gap-2
 const SIDEBAR_SECTION_LABEL = 'truncate text-[13px] font-semibold uppercase leading-4 text-text-tertiary';
 
 interface ProjectSessionListProps {
+  projects: Project[];
+  onProjectsChange: (update: (projects: Project[]) => Project[]) => void;
+  onProjectsRefresh: () => void;
   sessionSortAscending: boolean;
   pinnedSectionExpanded: boolean;
   repositoriesSectionExpanded: boolean;
@@ -45,6 +48,9 @@ interface ProjectSessionListProps {
 }
 
 export function ProjectSessionList({
+  projects,
+  onProjectsChange,
+  onProjectsRefresh,
   sessionSortAscending,
   pinnedSectionExpanded,
   repositoriesSectionExpanded,
@@ -54,7 +60,6 @@ export function ProjectSessionList({
   onRemoteDesktopClick,
   remoteDesktopTooltip,
 }: ProjectSessionListProps) {
-  const [projects, setProjects] = useState<Project[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForProject, setCreateForProject] = useState<Project | null>(null);
   const [sidebarPaneRowLayout, setSidebarPaneRowLayout] = useState<SidebarPaneRowLayout>('single');
@@ -85,29 +90,6 @@ export function ProjectSessionList({
   const agentStatusByPanel = usePanelStore(s => s.agentStatus);
   const agentPanelSessions = usePanelStore(s => s.agentStatusSession);
   const unviewedBySession = usePanelStore(s => s.unviewedCompletedActivity);
-
-  // Load projects
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await API.projects.getAll();
-      if (res.success && res.data) {
-        setProjects(res.data);
-      }
-    } catch (e) {
-      console.error('Failed to load projects:', e);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadProjects();
-    const handle = () => loadProjects();
-    window.addEventListener('project-changed', handle);
-    window.addEventListener('project-sessions-refresh', handle);
-    return () => {
-      window.removeEventListener('project-changed', handle);
-      window.removeEventListener('project-sessions-refresh', handle);
-    };
-  }, [loadProjects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -223,7 +205,7 @@ export function ProjectSessionList({
   const handleDeleteProject = async (projectId: number) => {
     try {
       await API.projects.delete(String(projectId));
-      loadProjects();
+      onProjectsRefresh();
       window.dispatchEvent(new Event('project-changed'));
     } catch (e) {
       console.error('Failed to delete project:', e);
@@ -253,7 +235,7 @@ export function ProjectSessionList({
     }
 
     let payload: Array<{ id: number; displayOrder: number }> = [];
-    setProjects(current => {
+    onProjectsChange(current => {
       const newProjects = [...current];
       const fromIndex = newProjects.findIndex(p => p.id === dragProjectId);
       const toIndex = newProjects.findIndex(p => p.id === targetProjectId);
@@ -275,7 +257,7 @@ export function ProjectSessionList({
         window.dispatchEvent(new Event('project-changed'));
       } catch (err) {
         console.error('Failed to reorder projects:', err);
-        loadProjects();
+        onProjectsRefresh();
       }
     }
   };
