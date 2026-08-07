@@ -20,7 +20,24 @@ describe('resolveDefaultWorktreeBase', () => {
       if (command.includes('symbolic-ref')) {
         return { stdout: 'origin/main\n', stderr: '' };
       }
+      if (command.includes('origin/main^{commit}')) {
+        return { stdout: 'abc123\n', stderr: '' };
+      }
       throw new Error(`Unexpected command: ${command}`);
+    });
+
+    await expect(resolveDefaultWorktreeBase('/repo', runner)).resolves.toBe('origin/main');
+  });
+
+  it('falls back when the remote default branch is dangling', async () => {
+    const runner = commandRunner(async command => {
+      if (command.includes('symbolic-ref')) {
+        return { stdout: 'origin/deleted\n', stderr: '' };
+      }
+      if (command.includes('origin/main^{commit}')) {
+        return { stdout: 'abc123\n', stderr: '' };
+      }
+      throw new Error(`Unknown ref: ${command}`);
     });
 
     await expect(resolveDefaultWorktreeBase('/repo', runner)).resolves.toBe('origin/main');
@@ -52,6 +69,9 @@ describe('WorktreeManager.resolveWorkingDirectory', () => {
     const runner = commandRunner(async (command, cwd) => {
       if (command.includes('symbolic-ref')) {
         return { stdout: 'origin/main\n', stderr: '' };
+      }
+      if (command.includes('origin/main^{commit}')) {
+        return { stdout: 'abc123\n', stderr: '' };
       }
       if (command === 'git branch --show-current' && cwd === '/repo/worktrees/pane') {
         return { stdout: 'pane\n', stderr: '' };
@@ -97,6 +117,9 @@ describe('WorktreeManager.resolveWorkingDirectory', () => {
     const runner = commandRunner(async command => {
       if (command.includes('symbolic-ref')) {
         return { stdout: 'origin/main\n', stderr: '' };
+      }
+      if (command.includes('origin/main^{commit}')) {
+        return { stdout: 'abc123\n', stderr: '' };
       }
       throw new Error(`Unexpected command: ${command}`);
     });

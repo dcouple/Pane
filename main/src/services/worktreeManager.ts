@@ -129,7 +129,13 @@ export async function resolveDefaultWorktreeBase(
       projectPath,
     );
     const remoteDefault = stdout.trim();
-    if (remoteDefault) return remoteDefault;
+    if (remoteDefault) {
+      await commandRunner.execAsync(
+        `git rev-parse --verify ${escapeShellArg(`${remoteDefault}^{commit}`)}`,
+        projectPath,
+      );
+      return remoteDefault;
+    }
   } catch {
     // Fall through to common remote and local integration branches.
   }
