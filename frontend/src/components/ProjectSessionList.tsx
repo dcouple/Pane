@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, LayoutGrid } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -81,6 +81,7 @@ export function ProjectSessionList({
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
+  const navigateToFleet = useNavigationStore(s => s.navigateToFleet);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
   // Expansion state lives in the navigation store so the always-mounted
   // session hotkeys (useSessionNavigationHotkeys) see the same visible ordering
@@ -131,6 +132,12 @@ export function ProjectSessionList({
   );
 
   const projectById = useMemo(() => createProjectById(projects), [projects]);
+
+  /** Agents across every session that are waiting on the user — the fleet's badge. */
+  const blockedAgentCount = useMemo(
+    () => Object.values(agentStatusByPanel).filter(state => state === 'blocked').length,
+    [agentStatusByPanel]
+  );
 
   const pinnedSessions = useMemo(() => {
     return getPinnedSessions(sessions, projectById);
@@ -314,6 +321,37 @@ export function ProjectSessionList({
           <MessageSquare className="w-4 h-4" />
           <span>Pane Chat</span>
           <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
+        </button>
+
+        <button
+          type="button"
+          data-testid="fleet-nav"
+          onClick={() => {
+            setSidebarNavigationScope('repositories');
+            navigateToFleet();
+          }}
+          className={cn(
+            SIDEBAR_ROW_BASE,
+            SIDEBAR_ROW_GAP,
+            SIDEBAR_ROW_PADDING,
+            'py-2 text-sm hover:bg-surface-hover hover:text-text-primary',
+            activeView === 'fleet'
+              ? 'bg-surface-hover text-text-primary'
+              : 'text-text-secondary',
+          )}
+        >
+          <LayoutGrid className="w-4 h-4" />
+          <span>Agent Fleet</span>
+          {/* Agents waiting on an answer are worth seeing without opening the grid. */}
+          {blockedAgentCount > 0 && (
+            <span
+              className="ml-auto flex items-center gap-1 rounded-full bg-status-error/15 px-1.5 text-[10px] font-medium tabular-nums text-status-error"
+              title={`${blockedAgentCount} ${blockedAgentCount === 1 ? 'agent needs' : 'agents need'} input`}
+            >
+              <AgentStatusDot status="blocked" size="sm" />
+              {blockedAgentCount}
+            </span>
+          )}
         </button>
 
         {showRemoteDesktopLink && onRemoteDesktopClick && (
