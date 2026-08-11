@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, CalendarClock } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { SETTINGS_PREFERENCE_KEYS, normalizeSidebarPaneRowLayout, type SidebarPaneRowLayout } from '../types/settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
+import { ScheduledRunsDialog } from './schedule/ScheduledRunsDialog';
 import { AddProjectDialog } from './AddProjectDialog';
 import { Dropdown } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
@@ -61,6 +62,8 @@ export function ProjectSessionList({
   remoteDesktopTooltip,
 }: ProjectSessionListProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  /** Project whose recurring runs are being edited, if any. */
+  const [schedulesFor, setSchedulesFor] = useState<{ id: number; name: string } | null>(null);
   const [createForProject, setCreateForProject] = useState<Project | null>(null);
   const [sidebarPaneRowLayout, setSidebarPaneRowLayout] = useState<SidebarPaneRowLayout>('single');
   const knownSessionIdsRef = useRef<Set<string> | null>(null);
@@ -414,6 +417,12 @@ export function ProjectSessionList({
               onClick: () => navigateToProject(project.id),
             },
             {
+              id: 'scheduled-runs',
+              label: 'Scheduled runs',
+              icon: CalendarClock,
+              onClick: () => setSchedulesFor({ id: project.id, name: project.name }),
+            },
+            {
               id: 'delete',
               label: 'Delete Project',
               icon: Trash2,
@@ -527,6 +536,16 @@ export function ProjectSessionList({
           }}
           projectName={createForProject.name}
           projectId={createForProject.id}
+        />
+      )}
+
+      {/* Recurring agent runs for one project */}
+      {schedulesFor && (
+        <ScheduledRunsDialog
+          isOpen
+          projectId={schedulesFor.id}
+          projectName={schedulesFor.name}
+          onClose={() => setSchedulesFor(null)}
         />
       )}
 

@@ -132,7 +132,9 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'projects:',
   'prompts:',
   'resource-monitor:',
+  'pr:',
   'runpane:',
+  'schedules:',
   'sessions:',
   'terminal:',
   'voice:',
@@ -473,6 +475,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setAgent: (agent: 'claude' | 'codex' | 'cursor'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
   },
 
+  // Recurring agent runs
+  schedules: {
+    list: (projectId?: number): Promise<IPCResponse> => invokeIpc('schedules:list', projectId),
+    save: (input: unknown): Promise<IPCResponse> => invokeIpc('schedules:save', input),
+    delete: (id: string): Promise<IPCResponse> => invokeIpc('schedules:delete', id),
+    setEnabled: (id: string, enabled: boolean): Promise<IPCResponse> => invokeIpc('schedules:set-enabled', id, enabled),
+    runNow: (id: string): Promise<IPCResponse> => invokeIpc('schedules:run-now', id),
+  },
   // Session management
   sessions: {
     getAll: (): Promise<IPCResponse> => invokeIpc('sessions:get-all'),
