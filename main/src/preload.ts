@@ -135,6 +135,7 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'runpane:',
   'sessions:',
   'terminal:',
+  'usage:',
   'voice:',
 ] as const;
 
@@ -471,6 +472,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   paneChat: {
     getOrCreate: (): Promise<IPCResponse> => invokeIpc('pane-chat:get-or-create'),
     setAgent: (agent: 'claude' | 'codex' | 'cursor'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
+  },
+
+  // Token usage, cost and rate-limit reporting
+  usage: {
+    getReport: (request?: { fromMs?: number; toMs?: number; bucket?: 'hour' | 'day' }): Promise<IPCResponse> => invokeIpc('usage:get-report', request),
+    getStatus: (): Promise<IPCResponse> => invokeIpc('usage:get-status'),
+    rescan: (): Promise<IPCResponse> => invokeIpc('usage:rescan'),
   },
 
   // Session management

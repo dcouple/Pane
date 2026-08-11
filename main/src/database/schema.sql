@@ -59,7 +59,54 @@ CREATE TABLE IF NOT EXISTS session_git_status_cache (
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
+-- Incremental scan cursor for agent CLI transcript files. Pane reads these
+-- read-only. offset_bytes lets a re-scan resume instead of re-reading the file.
+-- NOTE this file is split on the statement separator at startup, so a comment
+-- must never contain one.
+CREATE TABLE IF NOT EXISTS usage_files (
+  path TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  mtime_ms INTEGER NOT NULL,
+  offset_bytes INTEGER NOT NULL DEFAULT 0,
+  last_scanned_ms INTEGER NOT NULL,
+  parser_version INTEGER NOT NULL DEFAULT 0
+);
+
+-- One row per assistant message with token accounting, normalised across
+-- providers. id is the provider message id when available, else path:offset.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  timestamp_ms INTEGER NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  agent_session_id TEXT,
+  cwd TEXT,
+  source_path TEXT NOT NULL
+);
+
+-- Quota state as the provider itself reported it, newest sample per limit.
+-- Codex writes this into every token_count event. Claude reports nothing.
+CREATE TABLE IF NOT EXISTS usage_rate_limits (
+  provider TEXT NOT NULL,
+  limit_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  used_percent REAL NOT NULL,
+  window_minutes INTEGER,
+  resets_at_ms INTEGER,
+  plan_type TEXT,
+  captured_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (provider, limit_id, scope)
+);
+
 -- Index for faster lookups
+CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(timestamp_ms);
+CREATE INDEX IF NOT EXISTS idx_usage_events_model_ts ON usage_events(model, timestamp_ms);
+CREATE INDEX IF NOT EXISTS idx_usage_events_source ON usage_events(source_path);
 CREATE INDEX IF NOT EXISTS idx_session_outputs_session_id ON session_outputs(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_outputs_timestamp ON session_outputs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session_id ON conversation_messages(session_id);

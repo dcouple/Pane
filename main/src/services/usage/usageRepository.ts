@@ -1,0 +1,234 @@
+import type { Database } from 'better-sqlite3-multiple-ciphers';
+import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
+import { usageEventId } from './usageParser';
+
+export interface UsageFileCursor {
+  path: string;
+  provider: UsageProvider;
+  sizeBytes: number;
+  mtimeMs: number;
+  offsetBytes: number;
+  lastScannedMs: number;
+  /** Parser that produced this file's events; see USAGE_PARSER_VERSION. */
+  parserVersion: number;
+}
+
+interface UsageFileRow {
+  path: string;
+  provider: string;
+  size_bytes: number;
+  mtime_ms: number;
+  offset_bytes: number;
+  last_scanned_ms: number;
+  parser_version: number | null;
+}
+
+/**
+ * Persistence for the transcript index.
+ *
+ * Uses the raw better-sqlite3 handle rather than growing the ~5,000-line
+ * `DatabaseService` facade — the same escape hatch `ScrollbackRetentionService`
+ * uses for its sweeps.
+ */
+export class UsageRepository {
+  constructor(private db: Database) {}
+
+  getFileCursor(path: string): UsageFileCursor | null {
+    const row = this.db
+      .prepare('SELECT * FROM usage_files WHERE path = ?')
+      .get(path) as UsageFileRow | undefined;
+    if (!row) return null;
+
+    return {
+      path: row.path,
+      provider: row.provider === 'codex' ? 'codex' : 'claude',
+      sizeBytes: row.size_bytes,
+      mtimeMs: row.mtime_ms,
+      offsetBytes: row.offset_bytes,
+      lastScannedMs: row.last_scanned_ms,
+      parserVersion: row.parser_version ?? 0,
+    };
+  }
+
+  /**
+   * Persist a file's parsed events and advance its cursor in one transaction,
+   * so a crash mid-file cannot leave the cursor ahead of the stored rows.
+   */
+  commitFile(
+    cursor: UsageFileCursor,
+    events: Array<{ event: UsageEvent; byteOffset: number }>,
+    nowMs: number
+  ): number {
+    const insert = this.db.prepare(`
+      INSERT OR IGNORE INTO usage_events (
+        id, provider, timestamp_ms, model,
+        input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+        agent_session_id, cwd, source_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const upsertFile = this.db.prepare(`
+      INSERT INTO usage_files (path, provider, size_bytes, mtime_ms, offset_bytes, last_scanned_ms, parser_version)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(path) DO UPDATE SET
+        provider = excluded.provider,
+        size_bytes = excluded.size_bytes,
+        mtime_ms = excluded.mtime_ms,
+        offset_bytes = excluded.offset_bytes,
+        last_scanned_ms = excluded.last_scanned_ms,
+        parser_version = excluded.parser_version
+    `);
+
+    const run = this.db.transaction(() => {
+      let inserted = 0;
+      for (const { event, byteOffset } of events) {
+        const result = insert.run(
+          usageEventId(event, cursor.path, byteOffset),
+          event.provider,
+          event.timestampMs,
+          event.model,
+          event.inputTokens,
+          event.outputTokens,
+          event.cacheReadTokens,
+          event.cacheCreationTokens,
+          event.agentSessionId,
+          event.cwd,
+          cursor.path
+        );
+        inserted += result.changes;
+      }
+
+      upsertFile.run(
+        cursor.path,
+        cursor.provider,
+        cursor.sizeBytes,
+        cursor.mtimeMs,
+        cursor.offsetBytes,
+        nowMs,
+        cursor.parserVersion
+      );
+
+      return inserted;
+    });
+
+    return run();
+  }
+
+  /** Keep only the newest sample per limit; older re-scans must not regress it. */
+  recordRateLimits(samples: UsageRateLimitSample[]): void {
+    if (samples.length === 0) return;
+
+    const upsert = this.db.prepare(`
+      INSERT INTO usage_rate_limits (
+        provider, limit_id, scope, used_percent, window_minutes,
+        resets_at_ms, plan_type, captured_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(provider, limit_id, scope) DO UPDATE SET
+        used_percent = excluded.used_percent,
+        window_minutes = excluded.window_minutes,
+        resets_at_ms = excluded.resets_at_ms,
+        plan_type = excluded.plan_type,
+        captured_at_ms = excluded.captured_at_ms
+      WHERE excluded.captured_at_ms > usage_rate_limits.captured_at_ms
+    `);
+
+    this.db.transaction(() => {
+      for (const sample of samples) {
+        upsert.run(
+          sample.provider,
+          sample.limitId,
+          sample.scope,
+          sample.usedPercent,
+          sample.windowMinutes,
+          sample.resetsAtMs,
+          sample.planType,
+          sample.capturedAtMs
+        );
+      }
+    })();
+  }
+
+  /**
+   * The current quota state, one row per provider and window.
+   *
+   * Rows are stored per `limit_id`, which the provider changes when the plan or
+   * account behind a session changes — so the table accumulates several ids over
+   * time and listing it raw showed four near-identical "OpenAI 7d window" bars.
+   * A provider only ever has one primary (rolling) and one secondary (weekly)
+   * window in force, so the newest capture of each is the answer; the older
+   * ids are history, not additional limits.
+   *
+   * Readings whose window has already elapsed are dropped rather than shown at
+   * their last value: "0% of a window that ended 54 days ago" is not a fact
+   * about the present, and a progress bar makes it look like one.
+   */
+  getRateLimits(nowMs: number): UsageRateLimitSample[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM usage_rate_limits ORDER BY provider, scope, captured_at_ms DESC
+    `).all() as Array<{
+      provider: string;
+      limit_id: string;
+      scope: string;
+      used_percent: number;
+      window_minutes: number | null;
+      resets_at_ms: number | null;
+      plan_type: string | null;
+      captured_at_ms: number;
+    }>;
+
+    const newestPerWindow = new Map<string, UsageRateLimitSample>();
+
+    for (const row of rows) {
+      // Expired by its own reset time, or — when the provider named no reset —
+      // older than the window it describes.
+      const windowMs = (row.window_minutes ?? 0) * 60_000;
+      const expired = row.resets_at_ms !== null
+        ? row.resets_at_ms <= nowMs
+        : windowMs > 0 && row.captured_at_ms + windowMs <= nowMs;
+      if (expired) continue;
+
+      const sample: UsageRateLimitSample = {
+        provider: row.provider === 'codex' ? 'codex' : 'claude',
+        limitId: row.limit_id,
+        scope: row.scope === 'secondary' ? 'secondary' : 'primary',
+        usedPercent: row.used_percent,
+        windowMinutes: row.window_minutes,
+        resetsAtMs: row.resets_at_ms,
+        planType: row.plan_type,
+        capturedAtMs: row.captured_at_ms,
+      };
+
+      const key = `${sample.provider}:${sample.scope}`;
+      const existing = newestPerWindow.get(key);
+      if (!existing || existing.capturedAtMs < sample.capturedAtMs) {
+        newestPerWindow.set(key, sample);
+      }
+    }
+
+    return [...newestPerWindow.values()]
+      .sort((a, b) => a.provider.localeCompare(b.provider) || a.scope.localeCompare(b.scope));
+  }
+
+  countFiles(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM usage_files').get() as { n: number };
+    return row.n;
+  }
+
+  countEvents(): number {
+    const row = this.db.prepare('SELECT COUNT(*) AS n FROM usage_events').get() as { n: number };
+    return row.n;
+  }
+
+  /** Drop events older than the cutoff so the table stays bounded. */
+  pruneOlderThan(cutoffMs: number): number {
+    return this.db.prepare('DELETE FROM usage_events WHERE timestamp_ms < ?').run(cutoffMs).changes;
+  }
+
+  /** Forget a transcript file that no longer exists on disk. */
+  forgetFile(path: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM usage_events WHERE source_path = ?').run(path);
+      this.db.prepare('DELETE FROM usage_files WHERE path = ?').run(path);
+    })();
+  }
+}

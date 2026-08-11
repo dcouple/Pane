@@ -4,6 +4,7 @@ import type { Project } from '../types/project';
 import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { UsageReportRequest } from '../../../shared/types/usage';
 import type {
   RemoteDaemonClientRecord,
   RemoteDaemonClientSettings,
@@ -61,6 +62,24 @@ export class API {
     async setAgent(agent: PaneChatAgent): Promise<IPCResponse<PaneChatState<Session>>> {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.paneChat.setAgent(agent);
+    },
+  };
+
+  // Token usage, cost and rate limits
+  static usage = {
+    /** Totals, time series, per-model breakdown and rolling-window state. */
+    async getReport(request?: UsageReportRequest) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.usage.getReport(request);
+    },
+    /** Health of the background transcript index. */
+    async getStatus() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.usage.getStatus();
+    },
+    async rescan() {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.usage.rescan();
     },
   };
 

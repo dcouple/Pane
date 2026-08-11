@@ -12,8 +12,14 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
+import { registerUsageHandlers } from './usage';
 import type { AppServices } from './types';
 
+const USAGE_CHANNELS = [
+  'usage:get-report',
+  'usage:get-status',
+  'usage:rescan',
+] as const;
 const PROJECT_CHANNELS = [
   'projects:get-all',
   'projects:get-active',
@@ -340,6 +346,16 @@ describe('daemon registry IPC bindings', () => {
 
     expect(registry.listChannels()).toEqual([...VOICE_CHANNELS].sort());
     expect(ipcMain.boundChannels.sort()).toEqual([...VOICE_CHANNELS].sort());
+  });
+
+  it('binds daemon-owned usage channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerUsageHandlers(ipcMain, registry);
+
+    expect(registry.listChannels()).toEqual([...USAGE_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...USAGE_CHANNELS].sort());
   });
 
   it('binds daemon-owned prompt channels through the shared registry', () => {

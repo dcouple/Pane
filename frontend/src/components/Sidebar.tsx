@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
+import { Archive, ArrowUpDown, BarChart3, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { IconButton } from './ui/Button';
@@ -390,6 +390,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
   const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
+  const navigateToUsage = useNavigationStore((state) => state.navigateToUsage);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const setSidebarNavigationScope = useNavigationStore((state) => state.setSidebarNavigationScope);
   const agentStatusByPanel = usePanelStore((state) => state.agentStatus);
@@ -525,6 +526,22 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
               >
                 <MessageSquare className="h-4 w-4" />
                 <AgentStatusDot status={paneChatStatus} size="sm" className="absolute right-0 top-0" />
+              </button>
+            </Tooltip>
+
+            <Tooltip content="Usage & Limits" side="right">
+              <button
+                type="button"
+                data-testid="compact-usage"
+                data-compact-rail-item
+                onClick={() => {
+                  setSidebarNavigationScope('repositories');
+                  navigateToUsage();
+                }}
+                aria-label="Usage and Limits"
+                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'usage' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+              >
+                <BarChart3 className="h-4 w-4" />
               </button>
             </Tooltip>
 

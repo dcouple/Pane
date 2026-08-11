@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, BarChart3 } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -81,6 +81,7 @@ export function ProjectSessionList({
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
+  const navigateToUsage = useNavigationStore(s => s.navigateToUsage);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
   // Expansion state lives in the navigation store so the always-mounted
   // session hotkeys (useSessionNavigationHotkeys) see the same visible ordering
@@ -314,6 +315,27 @@ export function ProjectSessionList({
           <MessageSquare className="w-4 h-4" />
           <span>Pane Chat</span>
           <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
+        </button>
+
+        <button
+          type="button"
+          data-testid="usage-nav"
+          onClick={() => {
+            setSidebarNavigationScope('repositories');
+            navigateToUsage();
+          }}
+          className={cn(
+            SIDEBAR_ROW_BASE,
+            SIDEBAR_ROW_GAP,
+            SIDEBAR_ROW_PADDING,
+            'py-2 text-sm hover:bg-surface-hover hover:text-text-primary',
+            activeView === 'usage'
+              ? 'bg-surface-hover text-text-primary'
+              : 'text-text-secondary',
+          )}
+        >
+          <BarChart3 className="w-4 h-4" />
+          <span>Usage &amp; Limits</span>
         </button>
 
         {showRemoteDesktopLink && onRemoteDesktopClick && (

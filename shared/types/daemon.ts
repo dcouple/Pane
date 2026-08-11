@@ -94,6 +94,7 @@ export const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'runpane:',
   'sessions:',
   'terminal:',
+  'usage:',
   'voice:',
 ] as const;
 

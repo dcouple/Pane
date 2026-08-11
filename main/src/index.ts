@@ -95,6 +95,7 @@ import * as fs from 'fs';
 import { terminalPanelManager } from './services/terminalPanelManager';
 import { panelManager } from './services/panelManager';
 import { worktreePoolManager } from './services/worktreePoolManager';
+import { usageManager } from './services/usage/usageManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { syncAutoStartOnBoot } from './utils/autoStart';
 import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
@@ -1266,6 +1267,14 @@ if (launchRemoteSetup) {
     }
   }, 5000); // Delay to not slow down app startup
 
+  // Index agent CLI transcripts for the usage page. Read-only, and deferred so
+  // a first pass over a large ~/.claude never delays window creation.
+  setTimeout(() => {
+    void usageManager.start().catch(error => {
+      console.warn('[Usage] Failed to start transcript indexing:', error);
+    });
+  }, 8000);
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
         console.log('[Main] Activating app, creating new window...');
@@ -1290,6 +1299,8 @@ if (launchRemoteSetup) {
   };
 
   logToFile('before-quit fired');
+
+  usageManager.stop();
 
   // Guard against multiple shutdown attempts
   if (shutdownInProgress) {
