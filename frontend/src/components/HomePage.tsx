@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { ChevronDown, ChevronUp, CircleHelp, Terminal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Terminal } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useConfigStore } from '../stores/configStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -8,7 +8,6 @@ import { API } from '../utils/api';
 import { Dropdown } from './ui/Dropdown';
 import { Badge } from './ui/Badge';
 import { Toggle } from './ui/Toggle';
-import { Tooltip } from './ui/Tooltip';
 import { AddProjectDialog } from './AddProjectDialog';
 import { CloneFromGitHubDialog } from './CloneFromGitHubDialog';
 import { formatDistanceToNow, isValidTimestamp } from '../utils/timestampUtils';
@@ -371,34 +370,6 @@ export function HomePage() {
                 checked={config?.keepAwakeWhileSessionsActive !== false}
                 aria-label="Keep computer awake while sessions are active"
                 onChange={(value) => void updateConfig({ keepAwakeWhileSessionsActive: value }).catch(() => {})}
-              />
-            </div>
-
-            <div className="flex items-center justify-between rounded-lg bg-surface-secondary p-4">
-              <div className="flex items-center gap-1.5">
-                <span className="text-text-primary">Copy on select</span>
-                <Tooltip
-                  content={(
-                    <span className="block max-w-xs whitespace-normal">
-                      Automatically copies selected terminal text to the clipboard. This replaces the current clipboard contents whenever you select terminal text.
-                    </span>
-                  )}
-                  side="top"
-                  delay={0}
-                >
-                  <button
-                    type="button"
-                    aria-label="About Copy on select"
-                    className="text-text-tertiary hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
-                  >
-                    <CircleHelp className="h-3.5 w-3.5" />
-                  </button>
-                </Tooltip>
-              </div>
-              <Toggle
-                checked={config?.terminalCopyOnSelect !== false}
-                aria-label="Copy terminal text on select"
-                onChange={(value) => void updateConfig({ terminalCopyOnSelect: value }).catch(() => {})}
               />
             </div>
 

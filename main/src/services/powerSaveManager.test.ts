@@ -222,9 +222,4 @@ describe('PowerSaveManager', () => {
     expect(freshConfigManager.getConfig().keepAwakeWhileSessionsActive).toBe(true);
   });
 
-  it('defaults terminal copy-on-select to enabled for a fresh ConfigManager', () => {
-    const freshConfigManager = new ConfigManager();
-
-    expect(freshConfigManager.getConfig().terminalCopyOnSelect).toBe(true);
-  });
 });

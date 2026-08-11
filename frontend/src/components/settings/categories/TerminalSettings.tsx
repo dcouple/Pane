@@ -11,7 +11,7 @@ import {
 } from '../../ui/Select';
 import { SettingsSection } from '../../ui/SettingsSection';
 import { SettingRow, SettingsPage } from '../SettingRow';
-import { ImmediateToggle, SegmentedControl } from '../SettingsControls';
+import { SegmentedControl } from '../SettingsControls';
 import type { SettingsPersistence } from '../useSettingsPersistence';
 import type { PreferredShell, PreferredTerminalPowerMode } from '../../../types/config';
 
@@ -98,21 +98,6 @@ export function TerminalSettings({ persistence, platform, availableShells, syste
               onClick={() => void persistence.saveConfig('terminal-font-size', { terminalFontSize: fontSize + 1 })}
             />
           </div>
-        </SettingRow>
-      </SettingsSection>
-
-      <SettingsSection title="Selection">
-        <SettingRow
-          settingId="terminal-copy-on-select"
-          label="Copy on select"
-          description={`Automatically copy selected terminal text to the clipboard. This replaces the current clipboard contents. ${platform === 'darwin' ? 'Cmd+C' : 'Ctrl+Shift+C'} copies the selection either way.`}
-          saveState={persistence.saveStates['terminal-copy-on-select']}
-        >
-          <ImmediateToggle
-            label="Copy on select"
-            value={config.terminalCopyOnSelect ?? true}
-            onSave={(value) => persistence.saveConfig('terminal-copy-on-select', { terminalCopyOnSelect: value })}
-          />
         </SettingRow>
       </SettingsSection>
 

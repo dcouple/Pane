@@ -6,12 +6,10 @@ import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { useConfigStore } from '../../../stores/configStore';
 import type { BrowserPanelState, ToolPanel } from '../../../../../shared/types/panels';
-import { copyTerminalText } from '../../../utils/terminalClipboard';
 
 export interface UseTerminalLinksConfig {
   workingDirectory: string;
   sessionId: string;
-  onClipboardError?: (error: unknown) => void;
 }
 
 interface TooltipState {
@@ -35,7 +33,6 @@ interface SelectionPopoverState {
   x: number;
   y: number;
   text: string;
-  copied: boolean;
 }
 
 function getBrowserPanelTitle(url: string): string {
@@ -47,7 +44,6 @@ function getBrowserPanelTitle(url: string): string {
 }
 
 export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalLinksConfig) {
-  const { onClipboardError } = config;
   const [tooltip, setTooltip] = useState<TooltipState>({
     visible: false,
     x: 0,
@@ -69,14 +65,11 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
     x: 0,
     y: 0,
     text: '',
-    copied: false,
   });
 
   const [githubRemoteUrl, setGithubRemoteUrl] = useState<string | null>(null);
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
-  const copyOnSelect = useConfigStore((state) => state.config?.terminalCopyOnSelect ?? true);
   const mousePositionRef = useRef({ x: 0, y: 0 });
-  const selectionChangedRef = useRef(false);
 
   // Track mouse position for selection popover
   const onMouseMove = useCallback((e: React.MouseEvent) => {
@@ -134,8 +127,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
       if (terminal.hasSelection()) {
         const text = terminal.getSelection();
         const { x, y } = mousePositionRef.current;
-        selectionChangedRef.current = true;
-        setSelectionPopover({ visible: true, x, y, text, copied: false });
+        setSelectionPopover({ visible: true, x, y, text });
       } else {
         setSelectionPopover((prev) => ({ ...prev, visible: false }));
       }
@@ -145,55 +137,6 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
       disposable.dispose();
     };
   }, [terminal]);
-
-  // xterm updates its selection throughout a drag. Wait for mouse release so
-  // copy-on-select writes only the completed selection, including when the drag
-  // ends outside the terminal bounds.
-  useEffect(() => {
-    if (!terminal) return;
-
-    let confirmationTimer: ReturnType<typeof setTimeout> | null = null;
-    let interactionId = 0;
-    const handleMouseDown = () => {
-      interactionId += 1;
-      if (confirmationTimer) {
-        clearTimeout(confirmationTimer);
-        confirmationTimer = null;
-      }
-      selectionChangedRef.current = false;
-    };
-    const handleMouseUp = () => {
-      if (!selectionChangedRef.current) return;
-      selectionChangedRef.current = false;
-      if (!copyOnSelect || !terminal.hasSelection()) return;
-      const text = terminal.getSelection();
-      const copyInteractionId = interactionId;
-      void copyTerminalText(text)
-        .then((copied) => {
-          if (!copied || copyInteractionId !== interactionId) return;
-          setSelectionPopover((current) => (
-            current.text === text ? { ...current, visible: true, copied: true } : current
-          ));
-          confirmationTimer = setTimeout(() => {
-            setSelectionPopover((current) => (
-              current.copied ? { ...current, visible: false, copied: false } : current
-            ));
-            confirmationTimer = null;
-          }, 2000);
-        })
-        .catch((error: unknown) => {
-          onClipboardError?.(error);
-        });
-    };
-
-    document.addEventListener('mousedown', handleMouseDown, true);
-    document.addEventListener('mouseup', handleMouseUp);
-    return () => {
-      if (confirmationTimer) clearTimeout(confirmationTimer);
-      document.removeEventListener('mousedown', handleMouseDown, true);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [copyOnSelect, onClipboardError, terminal]);
 
   // Get panel store methods
   const addPanel = usePanelStore((state) => state.addPanel);

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react';
+import { Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react';
 import { TerminalPopover, PopoverButton } from './TerminalPopover';
 import { InterceptorToast } from './InterceptorToast';
 import { isWindows } from '../../utils/platformUtils';
@@ -11,7 +11,6 @@ export interface SelectionPopoverProps {
   x: number;
   y: number;
   text: string;
-  copied?: boolean;
   workingDirectory?: string;
   sessionId?: string;
   isRemoteMode?: boolean;
@@ -60,7 +59,6 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   x,
   y,
   text,
-  copied = false,
   workingDirectory,
   sessionId,
   isRemoteMode = false,
@@ -141,19 +139,12 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   return (
     <>
     <TerminalPopover visible={visible} x={x} y={y} onClose={onClose}>
-      {copied ? (
-        <div role="status" className="flex items-center gap-2 px-3 py-2 text-sm text-status-success">
-          <Check className="h-4 w-4" />
-          Copied
-        </div>
-      ) : (
-        <PopoverButton onClick={handleCopy}>
-          <span className="flex items-center gap-2">
-            <Copy className="w-4 h-4" />
-            Copy
-          </span>
-        </PopoverButton>
-      )}
+      <PopoverButton onClick={handleCopy}>
+        <span className="flex items-center gap-2">
+          <Copy className="w-4 h-4" />
+          Copy
+        </span>
+      </PopoverButton>
       {isUrl && sessionId && (
         <PopoverButton onClick={handleOpenInBrowser}>
           <span className="flex items-center gap-2">

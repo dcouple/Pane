@@ -575,7 +575,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   } = useTerminalLinks(terminalInstance, {
     workingDirectory: workingDirectory || '',
     sessionId: sessionId || panel.sessionId,
-    onClipboardError: handleClipboardError,
   });
 
   // Terminal search hook
@@ -2046,7 +2045,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
         x={selectionPopover.x}
         y={selectionPopover.y}
         text={selectionPopover.text}
-        copied={selectionPopover.copied}
         workingDirectory={workingDirectory}
         sessionId={panel.sessionId}
         isRemoteMode={isRemoteMode}

@@ -149,8 +149,6 @@ export interface AppConfig {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy terminal selections to the clipboard when selection finishes.
-  terminalCopyOnSelect?: boolean;
 }
 
 export interface UpdateConfigRequest {
@@ -225,6 +223,4 @@ export interface UpdateConfigRequest {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy terminal selections to the clipboard when selection finishes.
-  terminalCopyOnSelect?: boolean;
 }

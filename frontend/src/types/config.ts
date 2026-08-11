@@ -150,8 +150,6 @@ export interface AppConfig {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy terminal selections to the clipboard when selection finishes.
-  terminalCopyOnSelect?: boolean;
 }
 
 export type PreferredShell = NonNullable<AppConfig['preferredShell']>;
@@ -198,6 +196,4 @@ export interface UpdateConfigRequest {
   cloud?: CloudVmConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy terminal selections to the clipboard when selection finishes.
-  terminalCopyOnSelect?: boolean;
 }
