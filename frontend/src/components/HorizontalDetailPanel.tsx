@@ -17,6 +17,7 @@ interface HorizontalDetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
+  onCommitFileClick?: (hash: string, path: string) => void;
 }
 
 export function HorizontalDetailPanel({
@@ -28,6 +29,7 @@ export function HorizontalDetailPanel({
   onSwapLayout,
   terminalShortcuts,
   onCommitClick,
+  onCommitFileClick,
 }: HorizontalDetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
@@ -191,6 +193,8 @@ export function HorizontalDetailPanel({
               baseBranch={session.baseBranch || 'main'}
               layout="wide"
               onCommitClick={onCommitClick}
+              expandable
+              onFileClick={onCommitFileClick}
             />
           </div>
         )}

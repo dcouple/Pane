@@ -578,23 +578,31 @@ export const SessionView = memo(() => {
   );
 
   const handleCommitClick = useCallback(
-    async (commitHash: string) => {
+    async (commitHash: string, filePath?: string) => {
       if (!activeSession || sessionPanels.length === 0) return;
       const diffPanel = sessionPanels.find(p => p.type === 'diff');
       if (!diffPanel) return;
       // Store pending hash before dispatching — if the diff panel is not
       // currently active, CombinedDiffView is unmounted and will read this
       // module-level variable when it mounts after the panel switch.
-      setPendingViewCommit(activeSession.id, commitHash);
+      setPendingViewCommit(activeSession.id, commitHash, filePath);
       requestLocalReviewMode(activeSession.id);
       await handlePanelSelect(diffPanel);
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('diff:view-commit', {
-          detail: { sessionId: activeSession.id, commitHash },
+          detail: { sessionId: activeSession.id, commitHash, filePath },
         }));
       }, 0);
     },
     [activeSession, sessionPanels, handlePanelSelect]
+  );
+
+  // A file inside an expanded commit in the history graph was clicked.
+  const handleCommitFileClick = useCallback(
+    (commitHash: string, filePath: string) => {
+      void handleCommitClick(commitHash, filePath);
+    },
+    [handleCommitClick]
   );
 
   // Tab cycling: navigates between panels in the focused group using
@@ -1727,6 +1735,7 @@ export const SessionView = memo(() => {
                   onToggleCollapse={toggleDetailCollapse}
                   onSwapLayout={toggleLayoutSwap}
                   onCommitClick={handleCommitClick}
+                  onCommitFileClick={handleCommitFileClick}
                   terminalShortcuts={
                     <>
                       {agentPresets.map(preset => (
@@ -1936,6 +1945,7 @@ export const SessionView = memo(() => {
                 mergeError={hook.mergeError}
                 onSwapLayout={toggleLayoutSwap}
                 onCommitClick={handleCommitClick}
+                onCommitFileClick={handleCommitFileClick}
               />
             </>
           )}

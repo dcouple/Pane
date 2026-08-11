@@ -1,8 +1,10 @@
 import React, { useState, useEffect, memo, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
 import DiffViewer, { DiffViewerHandle } from './DiffViewer';
 import ExecutionList from '../../ExecutionList';
+import { invalidateCommitFileCache } from '../../git/commitFileCache';
 import { CommitDialog } from '../../CommitDialog';
 import { API } from '../../../utils/api';
+import { parseUnifiedDiffToFiles } from '../../../utils/parseUnifiedDiff';
 import type { CombinedDiffViewProps, FileDiff } from '../../../types/diff';
 import type { ExecutionDiff, GitDiffResult } from '../../../types/diff';
 import { RefreshCw } from 'lucide-react';
@@ -35,33 +37,6 @@ async function loadCommitDiff(sessionId: string, commitHash: string): Promise<Co
       error: error instanceof Error ? error.message : 'Failed to load commit diff',
     };
   }
-}
-
-// --- Unified diff parser (single pass, shared between FileList and DiffViewer) ---
-
-function parseUnifiedDiffToFiles(diff: string): FileDiff[] {
-  if (!diff?.trim()) return [];
-
-  const fileChunks = diff.match(/diff --git[\s\S]*?(?=diff --git|$)/g);
-  if (!fileChunks) return [];
-
-  return fileChunks.flatMap(chunk => {
-    const nameMatch = chunk.match(/diff --git a\/(.*?) b\/(.*?)(?:\n|$)/);
-    if (!nameMatch) return [];
-    const oldPath = nameMatch[1];
-    const newPath = nameMatch[2];
-    const isBinary = chunk.includes('Binary files') || chunk.includes('GIT binary patch');
-
-    let type: FileDiff['type'] = 'modified';
-    if (chunk.includes('new file mode')) type = 'added';
-    else if (chunk.includes('deleted file mode')) type = 'deleted';
-    else if (chunk.includes('rename from') && chunk.includes('rename to')) type = 'renamed';
-
-    const additions = (chunk.match(/^\+(?!\+\+)/gm) || []).length;
-    const deletions = (chunk.match(/^-(?!--)/gm) || []).length;
-
-    return [{ path: newPath || oldPath, oldPath, type, isBinary, additions, deletions, rawDiff: chunk }];
-  });
 }
 
 // --- CombinedDiffView ---
@@ -118,6 +93,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const [isResizing, setIsResizing] = useState(false);
 
   const diffViewerRef = useRef<DiffViewerHandle>(null);
+  // Path a file-row click asked us to reveal once the matching diff has loaded.
+  const pendingRevealPathRef = useRef<string | null>(null);
 
   const isAnyLoading = executionsLoading || diffLoading || commitDiffLoading;
   const showInitialSkeleton = executionsLoading && executions.length === 0;
@@ -319,11 +296,12 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
   const triggerSoftRefresh = useCallback(() => {
     diffCacheRef.current.clear();
+    invalidateCommitFileCache(sessionId);
     commitDiffRequestIdRef.current += 1;
     combinedDiffRequestIdRef.current += 1;
     setViewingCommitHash(null);
     setExecutionRefreshNonce(prev => prev + 1);
-  }, []);
+  }, [sessionId]);
 
   // Expose refresh() to parent (DiffPanel) via ref.
   // Same-session refresh keeps current diff visible while refreshed data loads.
@@ -336,18 +314,21 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   // fired while this component was unmounted (non-active panels are not rendered).
   useEffect(() => {
     // Consume any pending hash written before this component mounted
-    const pendingCommitHash = takePendingViewCommit(sessionId);
-    if (pendingCommitHash !== null) {
+    const pendingCommit = takePendingViewCommit(sessionId);
+    if (pendingCommit !== null) {
       combinedDiffRequestIdRef.current += 1;
-      setViewingCommitHash(pendingCommitHash);
+      pendingRevealPathRef.current = pendingCommit.filePath ?? null;
+      setViewingCommitHash(pendingCommit.commitHash);
       setSelectedExecutions([]);
     }
 
     const handler = (event: Event) => {
       // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
-      const { sessionId: eventSessionId, commitHash } = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
+      const { sessionId: eventSessionId, commitHash, filePath } =
+        (event as CustomEvent<{ sessionId: string; commitHash: string; filePath?: string }>).detail;
       if (eventSessionId !== sessionId) return;
       combinedDiffRequestIdRef.current += 1;
+      pendingRevealPathRef.current = filePath ?? null;
       setViewingCommitHash(commitHash);
       setSelectedExecutions([]);
       clearPendingViewCommit();
@@ -471,9 +452,29 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
   const handleSelectionChange = (newSelection: number[]) => {
     commitDiffRequestIdRef.current += 1;
+    pendingRevealPathRef.current = null;
     setViewingCommitHash(null); // exit hash mode
     setSelectedExecutions(newSelection);
   };
+
+  // A file row inside an expanded commit was clicked: switch the diff pane to
+  // that commit (if it is not already showing it) and remember which file to
+  // scroll to once the patch has been parsed.
+  const handleFileClick = useCallback((commitRef: string, path: string) => {
+    pendingRevealPathRef.current = path;
+    if (viewingCommitHashRef.current === commitRef) {
+      // Already showing this commit — reveal immediately.
+      const index = parsedFilesRef.current.findIndex(file => file.path === path);
+      if (index >= 0) {
+        pendingRevealPathRef.current = null;
+        diffViewerRef.current?.scrollToFile(index);
+      }
+      return;
+    }
+    commitDiffRequestIdRef.current += 1;
+    setViewingCommitHash(commitRef);
+    setSelectedExecutions([]);
+  }, []);
 
   const handleManualRefresh = () => {
     triggerSoftRefresh();
@@ -525,6 +526,26 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     if (!combinedDiff?.diff) return [];
     return parseUnifiedDiffToFiles(combinedDiff.diff);
   }, [combinedDiff]);
+
+  const parsedFilesRef = useRef(parsedFiles);
+  parsedFilesRef.current = parsedFiles;
+
+  // Consume a pending file reveal once the newly requested diff has parsed.
+  // DiffViewer resets its expanded set on a file-list change, so the reveal is
+  // deferred by a frame to land after that reset.
+  useEffect(() => {
+    const path = pendingRevealPathRef.current;
+    if (!path || parsedFiles.length === 0) return;
+
+    const index = parsedFiles.findIndex(file => file.path === path);
+    pendingRevealPathRef.current = null;
+    if (index < 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      diffViewerRef.current?.scrollToFile(index);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [parsedFiles]);
 
   const handleRestore = useCallback(async () => {
     if (!window.confirm('Are you sure you want to restore all uncommitted changes? This will discard all your local modifications.')) {
@@ -653,6 +674,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
                   onRestore={handleRestore}
                   historyLimitReached={limitReached}
                   historyLimit={HISTORY_LIMIT}
+                  onFileClick={handleFileClick}
                 />
               </div>
             </div>

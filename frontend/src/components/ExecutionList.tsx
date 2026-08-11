@@ -1,7 +1,18 @@
-import React, { useState, memo } from 'react';
-import { RotateCcw, GitCommitHorizontal } from 'lucide-react';
-import type { ExecutionListProps } from '../types/diff';
+import React, { useState, memo, useCallback } from 'react';
+import { RotateCcw, GitCommitHorizontal, ChevronRight, ChevronDown } from 'lucide-react';
+import type { ExecutionListProps, ExecutionDiff } from '../types/diff';
 import { useScrollSurface } from '../hooks/useScrollSurface';
+import { CommitFileList } from './git/CommitFileList';
+
+/** Pseudo-ref the backend understands for uncommitted working-tree changes. */
+const WORKING_TREE_REF = 'index';
+
+function executionRef(execution: ExecutionDiff): string | null {
+  if (execution.id === 0) return WORKING_TREE_REF;
+  const hash = execution.after_commit_hash;
+  if (!hash || hash === 'UNCOMMITTED') return null;
+  return hash;
+}
 
 const ExecutionList: React.FC<ExecutionListProps> = memo(({
   sessionId,
@@ -12,9 +23,11 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
   onRevert,
   onRestore,
   historyLimitReached = false,
-  historyLimit
+  historyLimit,
+  onFileClick
 }) => {
   const [rangeStart, setRangeStart] = useState<number | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
   const limitDisplay = historyLimit ?? 50;
   const executionListRef = React.useRef<HTMLDivElement>(null);
   const scrollSurfaceRef = useScrollSurface<HTMLDivElement>({
@@ -23,6 +36,15 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
     priority: 80,
     ownerElement: () => executionListRef.current,
   });
+
+  const toggleExpanded = useCallback((executionId: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(executionId)) next.delete(executionId);
+      else next.add(executionId);
+      return next;
+    });
+  }, []);
 
   const handleCommitClick = (executionId: number, event: React.MouseEvent) => {
     if (event.shiftKey && rangeStart !== null) {
@@ -89,10 +111,14 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
           const isUncommitted = execution.id === 0;
           const isFirst = idx === 0;
           const isLast = idx === executions.length - 1;
+          const commitRef = executionRef(execution);
+          const isExpanded = expandedIds.has(execution.id);
+          const canExpand = commitRef !== null && execution.stats_files_changed > 0;
+          const filesPanelId = `execution-files-${execution.id}`;
 
           return (
+            <div key={execution.id}>
             <div
-              key={execution.id}
               className={`
                 group relative flex items-stretch gap-2 px-3 transition-colors
                 ${isSelected ? 'bg-interactive/10 border-l-2 border-l-interactive' : 'border-l-2 border-l-transparent hover:bg-surface-hover'}
@@ -138,17 +164,35 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
 
                 {/* Stats + actions */}
                 <div className="flex items-start justify-between mt-0.5">
-                  <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
-                    {execution.stats_files_changed > 0 ? (
-                      <>
-                        <span className="text-status-success">+{execution.stats_additions}</span>
-                        <span className="text-status-error">-{execution.stats_deletions}</span>
-                        <span>{execution.stats_files_changed} {execution.stats_files_changed === 1 ? 'file' : 'files'}</span>
-                      </>
-                    ) : (
-                      <span>No changes</span>
-                    )}
-                  </div>
+                  {canExpand ? (
+                    <button
+                      type="button"
+                      aria-expanded={isExpanded}
+                      aria-controls={filesPanelId}
+                      aria-label={`${isExpanded ? 'Hide' : 'Show'} changed files`}
+                      onClick={(e) => { e.stopPropagation(); toggleExpanded(execution.id); }}
+                      className="pointer-events-auto -ml-0.5 flex items-center gap-1 rounded px-0.5 text-[10px] text-text-muted transition-colors hover:text-text-secondary focus:outline-none focus:ring-1 focus:ring-interactive"
+                    >
+                      {isExpanded
+                        ? <ChevronDown className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+                        : <ChevronRight className="h-3 w-3 flex-shrink-0" aria-hidden="true" />}
+                      <span className="text-status-success">+{execution.stats_additions}</span>
+                      <span className="text-status-error">-{execution.stats_deletions}</span>
+                      <span>{execution.stats_files_changed} {execution.stats_files_changed === 1 ? 'file' : 'files'}</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
+                      {execution.stats_files_changed > 0 ? (
+                        <>
+                          <span className="text-status-success">+{execution.stats_additions}</span>
+                          <span className="text-status-error">-{execution.stats_deletions}</span>
+                          <span>{execution.stats_files_changed} {execution.stats_files_changed === 1 ? 'file' : 'files'}</span>
+                        </>
+                      ) : (
+                        <span>No changes</span>
+                      )}
+                    </div>
+                  )}
                   <div className="pointer-events-auto flex flex-col items-end gap-0.5 flex-shrink-0">
                     {isUncommitted && onCommit && execution.stats_files_changed > 0 && (
                       <button
@@ -182,6 +226,19 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
                   </div>
                 </div>
               </div>
+            </div>
+            {isExpanded && commitRef && (
+              <div
+                id={filesPanelId}
+                className={`border-l-2 ${isSelected ? 'border-l-interactive bg-interactive/5' : 'border-l-transparent'} pl-3`}
+              >
+                <CommitFileList
+                  sessionId={sessionId}
+                  commitRef={commitRef}
+                  onFileClick={onFileClick}
+                />
+              </div>
+            )}
             </div>
           );
         })}
