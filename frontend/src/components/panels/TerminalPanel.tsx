@@ -215,6 +215,8 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
   // All hooks must be called at the top level, before any conditional returns
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<Terminal | null>(null);
+  // Async initialization must publish the instance reactively so terminal hooks subscribe immediately.
+  const [terminalInstance, setTerminalInstance] = useState<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
@@ -564,7 +566,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
     handleShowInExplorer,
     closeFilePopover,
     closeSelectionPopover,
-  } = useTerminalLinks(xtermRef.current, {
+  } = useTerminalLinks(terminalInstance, {
     workingDirectory: workingDirectory || '',
     sessionId: sessionId || panel.sessionId,
   });
@@ -1114,6 +1116,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
           }
 
           xtermRef.current = terminal;
+          setTerminalInstance(terminal);
           fitAddonRef.current = fitAddon;
 
           // Track scroll position with direction-based sticky behaviour.
@@ -1728,13 +1731,15 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, 
 
       // Dispose XTerm instance only on final unmount
       if (xtermRef.current) {
+        const terminalToDispose = xtermRef.current;
         try {
           console.log('[TerminalPanel] Disposing terminal for panel:', panel.id);
-          xtermRef.current.dispose();
+          terminalToDispose.dispose();
         } catch (e) {
           console.warn('Error disposing terminal:', e);
         }
         xtermRef.current = null;
+        setTerminalInstance((current) => current === terminalToDispose ? null : current);
       }
       
       if (fitAddonRef.current) {

@@ -1,0 +1,134 @@
+import { expect, test, type Locator, type Page } from '@playwright/test';
+import { installElectronApiMock } from './electronApiMock';
+
+const project = {
+  id: 380,
+  name: 'Terminal selection fixture',
+  path: '/tmp/terminal-selection-fixture',
+  active: true,
+  created_at: new Date(0).toISOString(),
+  updated_at: new Date(0).toISOString(),
+};
+
+const session = {
+  id: 'terminal-selection-session',
+  name: 'Terminal selection pane',
+  worktreePath: project.path,
+  prompt: 'Verify terminal selection popovers',
+  status: 'stopped',
+  createdAt: new Date(0).toISOString(),
+  lastActivity: new Date(0).toISOString(),
+  output: [],
+  jsonMessages: [],
+  isRunning: false,
+  permissionMode: 'ignore',
+  projectId: project.id,
+  displayOrder: 0,
+  isFavorite: false,
+  toolType: 'none',
+  archived: false,
+};
+
+const panels = ['Bottom Terminal', 'First Terminal', 'Second Terminal'].map((title, index) => ({
+  id: `terminal-${index}`,
+  sessionId: session.id,
+  type: 'terminal',
+  title,
+  state: { isActive: index === 1, hasBeenViewed: true, customState: { isInitialized: true } },
+  metadata: {
+    createdAt: new Date(index).toISOString(),
+    lastActiveAt: new Date(index).toISOString(),
+    position: index,
+    permanent: index === 0,
+  },
+}));
+
+async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
+  const viewport = terminal.locator('.xterm-screen');
+  await expect(viewport).toBeVisible();
+  const box = await viewport.boundingBox();
+  if (!box) throw new Error('Terminal viewport has no bounding box');
+
+  await page.mouse.move(box.x + 100, box.y + 8);
+  await expect.poll(() => terminal.evaluate((element) => {
+    interface HookNode {
+      memoizedState?: unknown;
+      next?: HookNode | null;
+    }
+    interface FiberNode {
+      memoizedState?: HookNode | null;
+      return?: FiberNode | null;
+    }
+
+    // xterm renders outside React, so walk to TerminalPanel's fiber and use its
+    // existing terminal ref to drive the public selection API deterministically.
+    let reactElement: HTMLElement | null = element.parentElement;
+    while (reactElement) {
+      const fiberKey = Object.keys(reactElement).find((key) => key.startsWith('__reactFiber$'));
+      if (fiberKey) {
+        let fiber = Reflect.get(reactElement, fiberKey) as FiberNode | null;
+        while (fiber) {
+          let hook = fiber.memoizedState;
+          while (hook) {
+            const ref = hook.memoizedState;
+            if (ref && typeof ref === 'object') {
+              const candidate = Reflect.get(ref, 'current') as unknown;
+              if (candidate && typeof candidate === 'object') {
+                const select = Reflect.get(candidate, 'select') as unknown;
+                if (typeof select === 'function') {
+                  select.call(candidate, 0, 0, 11);
+                  return true;
+                }
+              }
+            }
+            hook = hook.next;
+          }
+          fiber = fiber.return ?? null;
+        }
+      }
+      reactElement = reactElement.parentElement;
+    }
+    return false;
+  })).toBe(true);
+}
+
+test('selection popover works in restored bottom and tab terminals', async ({ page }, testInfo) => {
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [session],
+    initialPanels: panels,
+    initialTerminalStates: Object.fromEntries(panels.map((panel, index) => [
+      panel.id,
+      { scrollbackBuffer: `selection-${index}\r\n` },
+    ])),
+    activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Terminal selection fixture$/ }).click();
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+
+  await page.getByRole('button', { name: 'Expand terminal', exact: true }).click();
+  await expect(page.locator('.xterm-screen')).toHaveCount(3, { timeout: 15_000 });
+  await expect(page.getByRole('status', { name: 'Loading terminal' })).toHaveCount(0);
+
+  const assertions = [
+    page.locator('.pane-terminal-shell-body .xterm').first(),
+    page.getByRole('tabpanel').locator('.xterm').first(),
+  ];
+
+  for (const terminal of assertions) {
+    await selectFirstLine(page, terminal);
+    await expect(page.getByRole('button', { name: 'Copy', exact: true }).first()).toBeVisible();
+    await page.mouse.click(20, 20);
+    await expect(page.getByRole('button', { name: 'Copy', exact: true })).toHaveCount(0);
+  }
+
+  await page.getByRole('tab', { name: panels[2].title, exact: true }).click();
+  await expect(page.getByRole('tabpanel').getByRole('status', { name: 'Loading terminal' })).toHaveCount(0);
+  await selectFirstLine(page, page.getByRole('tabpanel').locator('.xterm').first());
+  await expect(page.getByRole('button', { name: 'Copy', exact: true }).first()).toBeVisible();
+
+  const screenshotPath = testInfo.outputPath('terminal-selection-popover.png');
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await testInfo.attach('terminal-selection-popover', { path: screenshotPath, contentType: 'image/png' });
+});

@@ -28,6 +28,7 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: Array<Record<string, unknown>>;
   initialCombinedDiff?: Record<string, unknown> | null;
+  initialTerminalStates?: Record<string, Record<string, unknown>>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -259,6 +260,12 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     });
 
     const invoke = (channel: string, key?: string, value?: string) => {
+      if (channel === 'panels:checkInitialized') {
+        return Promise.resolve(Boolean(key && mockOptions.initialTerminalStates?.[key]));
+      }
+      if (channel === 'terminal:getState') {
+        return Promise.resolve(key ? clone(mockOptions.initialTerminalStates?.[key] ?? null) : null);
+      }
       if (channel === 'preferences:get') {
         return success(key ? preferences[key] ?? 'true' : 'true');
       }
