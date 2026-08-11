@@ -105,12 +105,12 @@ export function TerminalSettings({ persistence, platform, availableShells, syste
         <SettingRow
           settingId="terminal-copy-on-select"
           label="Copy on select"
-          description="Copy highlighted terminal text to the clipboard as soon as it is selected. Ctrl/Cmd+Shift+C copies the selection either way."
+          description={`Automatically copy selected terminal text to the clipboard. This replaces the current clipboard contents. ${platform === 'darwin' ? 'Cmd+C' : 'Ctrl+Shift+C'} copies the selection either way.`}
           saveState={persistence.saveStates['terminal-copy-on-select']}
         >
           <ImmediateToggle
             label="Copy on select"
-            value={config.terminalCopyOnSelect ?? false}
+            value={config.terminalCopyOnSelect ?? true}
             onSave={(value) => persistence.saveConfig('terminal-copy-on-select', { terminalCopyOnSelect: value })}
           />
         </SettingRow>

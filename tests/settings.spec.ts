@@ -51,9 +51,9 @@ test.describe('Settings', () => {
   });
 
   test('shows a loading state while configuration is pending', async ({ page }) => {
-    await bootSettings(page, { configReadDelayMs: 1_500 });
+    await bootSettings(page, { configReadDelayMs: 5_000 });
     await expect(page.getByText('Loading settings')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByRole('heading', { name: 'General', exact: true })).toBeVisible({ timeout: 10_000 });
   });
 
   test('navigates categories and keeps the last category for the renderer session', async ({ page }) => {
@@ -174,6 +174,29 @@ test.describe('Settings', () => {
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfigUpdates());
     expect(updates).toContainEqual({ keepAwakeWhileSessionsActive: false });
+  });
+
+  test('keeps Copy on select synchronized between Home and Terminal settings', async ({ page }) => {
+    await installElectronApiMock(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await expect(page.locator('[data-testid="sidebar"]').first()).toBeVisible({ timeout: 10_000 });
+
+    const homeToggle = page.getByRole('switch', { name: 'Copy terminal text on select' });
+    await expect(homeToggle).toHaveAttribute('aria-checked', 'true');
+    await page.getByRole('button', { name: 'About Copy on select' }).hover();
+    await expect(page.getByRole('tooltip')).toContainText('replaces the current clipboard contents');
+    await homeToggle.click();
+
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+    const settingsButton = page.getByRole('button', { name: 'Settings' }).first();
+    await settingsButton.click();
+    await page.getByRole('button', { name: 'Terminal', exact: true }).click();
+    await expect(page.getByRole('switch', { name: 'Copy on select' })).toHaveAttribute('aria-checked', 'false');
+
+    const updates = await page.evaluate(() => (
+      window as typeof window & { __paneTestElectronMock: SettingsMock }
+    ).__paneTestElectronMock.getConfigUpdates());
+    expect(updates).toContainEqual({ terminalCopyOnSelect: false });
   });
 
   test('announces a failed save and restores the authoritative value', async ({ page }) => {

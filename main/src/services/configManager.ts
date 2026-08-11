@@ -51,7 +51,7 @@ export class ConfigManager extends EventEmitter {
       highContrast: false,
       terminalFontFamily: 'Geist Mono',
       terminalFontSize: 14,
-      terminalCopyOnSelect: false,
+      terminalCopyOnSelect: true,
       terminalPowerMode: 'performance',
       defaultPermissionMode: 'ignore',
       defaultModel: 'sonnet',

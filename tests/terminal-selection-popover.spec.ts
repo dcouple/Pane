@@ -43,6 +43,28 @@ const panels = ['Bottom Terminal', 'First Terminal', 'Second Terminal'].map((tit
   },
 }));
 
+async function installClipboardMock(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const copiedText: string[] = [];
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          copiedText.push(text);
+        },
+      },
+    });
+    Reflect.set(window, '__terminalClipboardWrites', copiedText);
+  });
+}
+
+async function clipboardWrites(page: Page): Promise<string[]> {
+  return page.evaluate(() => (
+    Reflect.get(window, '__terminalClipboardWrites') as string[] | undefined
+  ) ?? []);
+}
+
 async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
   const viewport = terminal.locator('.xterm-screen');
   await expect(viewport).toBeVisible();
@@ -131,4 +153,55 @@ test('selection popover works in restored bottom and tab terminals', async ({ pa
   const screenshotPath = testInfo.outputPath('terminal-selection-popover.png');
   await page.screenshot({ path: screenshotPath, fullPage: true });
   await testInfo.attach('terminal-selection-popover', { path: screenshotPath, contentType: 'image/png' });
+});
+
+test('copies once when terminal selection finishes', async ({ page }) => {
+  await installClipboardMock(page);
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [session],
+    initialPanels: panels,
+    initialTerminalStates: Object.fromEntries(panels.map((panel, index) => [
+      panel.id,
+      { scrollbackBuffer: `selection-${index}\r\n` },
+    ])),
+    activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Terminal selection fixture$/ }).click();
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+
+  const terminal = page.getByRole('tabpanel').locator('.xterm').first();
+  await selectFirstLine(page, terminal);
+  await terminal.dispatchEvent('pointerup');
+
+  await expect.poll(() => clipboardWrites(page)).toEqual(['selection-1']);
+});
+
+test('keeps keyboard copy available when copy-on-select and Pane shortcuts are disabled', async ({ page }) => {
+  await installClipboardMock(page);
+  await installElectronApiMock(page, {
+    initialConfig: { terminalCopyOnSelect: false, keyboardShortcutsEnabled: false },
+    initialProjects: [project],
+    initialSessions: [session],
+    initialPanels: panels,
+    initialTerminalStates: Object.fromEntries(panels.map((panel, index) => [
+      panel.id,
+      { scrollbackBuffer: `selection-${index}\r\n` },
+    ])),
+    activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Terminal selection fixture$/ }).click();
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+
+  const terminal = page.getByRole('tabpanel').locator('.xterm').first();
+  await selectFirstLine(page, terminal);
+  await terminal.dispatchEvent('pointerup');
+  await expect.poll(() => clipboardWrites(page)).toEqual([]);
+
+  await selectFirstLine(page, terminal);
+  await terminal.locator('.xterm-helper-textarea').focus();
+  await page.keyboard.press('Control+Shift+C');
+  await expect.poll(() => clipboardWrites(page)).toEqual(['selection-1']);
 });

@@ -6,10 +6,12 @@ import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { useConfigStore } from '../../../stores/configStore';
 import type { BrowserPanelState, ToolPanel } from '../../../../../shared/types/panels';
+import { copyTerminalText } from '../../../utils/terminalClipboard';
 
 export interface UseTerminalLinksConfig {
   workingDirectory: string;
   sessionId: string;
+  onClipboardError?: (error: unknown) => void;
 }
 
 interface TooltipState {
@@ -44,6 +46,7 @@ function getBrowserPanelTitle(url: string): string {
 }
 
 export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalLinksConfig) {
+  const { onClipboardError } = config;
   const [tooltip, setTooltip] = useState<TooltipState>({
     visible: false,
     x: 0,
@@ -69,7 +72,9 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
 
   const [githubRemoteUrl, setGithubRemoteUrl] = useState<string | null>(null);
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
+  const copyOnSelect = useConfigStore((state) => state.config?.terminalCopyOnSelect ?? true);
   const mousePositionRef = useRef({ x: 0, y: 0 });
+  const selectionChangedRef = useRef(false);
 
   // Track mouse position for selection popover
   const onMouseMove = useCallback((e: React.MouseEvent) => {
@@ -127,6 +132,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
       if (terminal.hasSelection()) {
         const text = terminal.getSelection();
         const { x, y } = mousePositionRef.current;
+        selectionChangedRef.current = true;
         setSelectionPopover({ visible: true, x, y, text });
       } else {
         setSelectionPopover((prev) => ({ ...prev, visible: false }));
@@ -137,6 +143,32 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
       disposable.dispose();
     };
   }, [terminal]);
+
+  // xterm updates its selection throughout a drag. Wait for pointer release so
+  // copy-on-select writes only the completed selection, including when the drag
+  // ends outside the terminal bounds.
+  useEffect(() => {
+    if (!terminal) return;
+
+    const handlePointerDown = () => {
+      selectionChangedRef.current = false;
+    };
+    const handlePointerUp = () => {
+      if (!selectionChangedRef.current) return;
+      selectionChangedRef.current = false;
+      if (!copyOnSelect || !terminal.hasSelection()) return;
+      void copyTerminalText(terminal.getSelection()).catch((error: unknown) => {
+        onClipboardError?.(error);
+      });
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [copyOnSelect, onClipboardError, terminal]);
 
   // Get panel store methods
   const addPanel = usePanelStore((state) => state.addPanel);

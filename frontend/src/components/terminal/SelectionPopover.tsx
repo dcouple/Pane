@@ -4,6 +4,7 @@ import { Copy, ExternalLink, FolderOpen, Globe } from 'lucide-react';
 import { TerminalPopover, PopoverButton } from './TerminalPopover';
 import { InterceptorToast } from './InterceptorToast';
 import { isWindows } from '../../utils/platformUtils';
+import { copyTerminalText } from '../../utils/terminalClipboard';
 
 export interface SelectionPopoverProps {
   visible: boolean;
@@ -75,10 +76,11 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyTerminalText(text);
       onClose();
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
+      setErrorToast('Failed to copy terminal text');
     }
   };
 

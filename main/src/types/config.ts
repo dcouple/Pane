@@ -149,8 +149,7 @@ export interface AppConfig {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy the terminal selection to the clipboard as soon as it is made.
-  // Off by default: it overwrites the clipboard on every drag.
+  // Copy terminal selections to the clipboard when selection finishes.
   terminalCopyOnSelect?: boolean;
 }
 
@@ -226,7 +225,6 @@ export interface UpdateConfigRequest {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
-  // Copy the terminal selection to the clipboard as soon as it is made.
-  // Off by default: it overwrites the clipboard on every drag.
+  // Copy terminal selections to the clipboard when selection finishes.
   terminalCopyOnSelect?: boolean;
 }
