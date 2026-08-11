@@ -1,109 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { API } from '../../utils/api';
-import type { GitCommitFileChange, GitCommitFilesResult, GitFileChangeStatus } from '../../../../shared/types/git';
+import type { GitCommitFilesResult } from '../../../../shared/types/git';
 import { readCommitFileCache, writeCommitFileCache } from './commitFileCache';
-
-const STATUS_LABEL: Record<GitFileChangeStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-  typechange: 'T',
-  unmerged: 'U',
-  unknown: '?',
-};
-
-const STATUS_CLASS: Record<GitFileChangeStatus, string> = {
-  added: 'text-status-success',
-  modified: 'text-interactive',
-  deleted: 'text-status-error',
-  renamed: 'text-interactive',
-  copied: 'text-interactive',
-  typechange: 'text-status-warning',
-  unmerged: 'text-status-warning',
-  unknown: 'text-text-muted',
-};
-
-const STATUS_TITLE: Record<GitFileChangeStatus, string> = {
-  added: 'Added',
-  modified: 'Modified',
-  deleted: 'Deleted',
-  renamed: 'Renamed',
-  copied: 'Copied',
-  typechange: 'Type changed',
-  unmerged: 'Unmerged',
-  unknown: 'Unknown change',
-};
-
-function splitPath(path: string): { dir: string; name: string } {
-  const idx = path.lastIndexOf('/');
-  if (idx < 0) return { dir: '', name: path };
-  return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
-}
-
-function FileRow({
-  file,
-  onClick,
-}: {
-  file: GitCommitFileChange;
-  onClick?: () => void;
-}) {
-  const { dir, name } = splitPath(file.path);
-  const statusTitle = STATUS_TITLE[file.status];
-  const title = file.status === 'renamed' || file.status === 'copied'
-    ? `${statusTitle} from ${file.oldPath} to ${file.path}`
-    : `${statusTitle}: ${file.path}`;
-
-  const body = (
-    <>
-      <span
-        className={`w-3 flex-shrink-0 font-mono text-[10px] leading-none ${STATUS_CLASS[file.status]}`}
-        aria-hidden="true"
-      >
-        {STATUS_LABEL[file.status]}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-left text-[11px] leading-snug">
-        {dir && <span className="text-text-muted">{dir}</span>}
-        <span className="text-text-secondary">{name}</span>
-      </span>
-      <span className="flex flex-shrink-0 items-center gap-1 font-mono text-[10px] leading-none">
-        {file.isBinary ? (
-          <span className="text-text-muted">bin</span>
-        ) : (
-          <>
-            {(file.additions ?? 0) > 0 && <span className="text-status-success">+{file.additions}</span>}
-            {(file.deletions ?? 0) > 0 && <span className="text-status-error">-{file.deletions}</span>}
-            {file.additions === null && file.deletions === null && (
-              <span className="text-text-muted">new</span>
-            )}
-          </>
-        )}
-      </span>
-    </>
-  );
-
-  if (!onClick) {
-    return (
-      <div className="flex items-center gap-1.5 py-0.5 pl-6 pr-2" title={title}>
-        {body}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-label={`${statusTitle}: ${file.path}. Show diff.`}
-      className="flex w-full items-center gap-1.5 rounded-sm py-0.5 pl-6 pr-2 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-inset focus:ring-interactive"
-    >
-      {body}
-    </button>
-  );
-}
+import { FileChangeList } from './FileChangeList';
 
 export interface CommitFileListProps {
   sessionId: string;
@@ -187,13 +87,10 @@ export function CommitFileList({ sessionId, commitRef, onFileClick, className = 
           Merge commit — showing changes against the first parent
         </div>
       )}
-      {result.files.map(file => (
-        <FileRow
-          key={`${file.status}-${file.oldPath}-${file.path}`}
-          file={file}
-          onClick={onFileClick ? () => onFileClick(commitRef, file.path) : undefined}
-        />
-      ))}
+      <FileChangeList
+        files={result.files}
+        onFileClick={onFileClick ? path => onFileClick(commitRef, path) : undefined}
+      />
       {result.truncated && (
         <div className="py-0.5 pl-6 pr-2 text-[10px] text-text-muted">
           Showing {result.files.length} of {result.totalFiles} files

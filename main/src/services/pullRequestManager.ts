@@ -1,0 +1,979 @@
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+import type { CommandRunner } from '../utils/commandRunner';
+import type { Logger } from '../utils/logger';
+import { escapeShellArg } from '../utils/shellEscape';
+import {
+  PR_TEMPLATE_PATHS,
+  type CreatePullRequestRequest,
+  type CreatePullRequestResult,
+  type ExistingPullRequest,
+  type PullRequestCheck,
+  type PullRequestCheckState,
+  type PullRequestChecksResult,
+  type BaseBranchOptions,
+  type PullRequestChanges,
+  type PullRequestDiff,
+  type PullRequestDraft,
+  type PullRequestReviewDecision,
+  type PullRequestReviewer,
+  type PullRequestStatus,
+  type PullRequestTarget,
+} from '../../../shared/types/pullRequest';
+import { MAX_FILES_PER_COMMIT, type GitCommitFileChange } from '../../../shared/types/git';
+import { mergeFileChanges, parseNameStatusZ, parseNumstatZ } from './gitDiffManager';
+
+/**
+ * Opening pull requests through the GitHub CLI.
+ *
+ * Everything that decides *what* to send is a pure function below and tested on
+ * its own; the class is the thin part that runs commands. `gh` is invoked
+ * through the session's `CommandRunner`, so a WSL project uses the `gh` inside
+ * the distro rather than the one on the Windows host.
+ */
+
+const GH_TIMEOUT_MS = 20_000;
+const PUSH_TIMEOUT_MS = 120_000;
+/** Branches per API page, and how many pages are worth waiting for. */
+const BRANCH_PAGE_SIZE = 100;
+const MAX_BRANCH_PAGES = 5;
+/** Patches beyond this are cut: a modal cannot usefully show more. */
+const MAX_DIFF_BYTES = 2_000_000;
+
+export interface CommitSummary {
+  subject: string;
+  body: string;
+}
+
+/**
+ * Title and body for a new pull request.
+ *
+ * The first commit's subject is the title — the same convention `gh pr create`
+ * uses when it fills the form itself. Everything else becomes the body, with
+ * the repository's template appended rather than replaced: the template asks
+ * questions the commits do not answer.
+ */
+export function deriveDraftText(
+  commits: CommitSummary[],
+  template: string | null
+): { title: string; body: string } {
+  const title = commits[0]?.subject.trim() ?? '';
+
+  const sections: string[] = [];
+  const first = commits[0]?.body.trim();
+  if (first) sections.push(first);
+
+  const rest = commits.slice(1).filter(commit => commit.subject.trim().length > 0);
+  if (rest.length > 0) {
+    sections.push(rest.map(commit => `- ${commit.subject.trim()}`).join('\n'));
+  }
+
+  if (template && template.trim()) sections.push(template.trim());
+
+  return { title, body: sections.join('\n\n') };
+}
+
+/**
+ * Which repositories this branch could be sent to.
+ *
+ * A fork has two: itself and the repository it was forked from. Contributions
+ * are meant for the parent, so that is the default — sending them to your own
+ * fork by accident is the mistake this ordering prevents.
+ */
+export function resolveTargets(repoView: {
+  nameWithOwner?: string;
+  defaultBranchRef?: { name?: string } | null;
+  parent?: { name?: string; owner?: { login?: string }; defaultBranchRef?: { name?: string } } | null;
+}): { targets: PullRequestTarget[]; defaultTarget: string } {
+  const targets: PullRequestTarget[] = [];
+
+  const parentOwner = repoView.parent?.owner?.login;
+  const parentName = repoView.parent?.name;
+  if (parentOwner && parentName) {
+    targets.push({
+      nameWithOwner: `${parentOwner}/${parentName}`,
+      isParent: true,
+      ...(repoView.parent?.defaultBranchRef?.name
+        ? { defaultBranch: repoView.parent.defaultBranchRef.name }
+        : {}),
+    });
+  }
+
+  if (repoView.nameWithOwner) {
+    targets.push({
+      nameWithOwner: repoView.nameWithOwner,
+      isParent: false,
+      ...(repoView.defaultBranchRef?.name ? { defaultBranch: repoView.defaultBranchRef.name } : {}),
+    });
+  }
+
+  return { targets, defaultTarget: targets[0]?.nameWithOwner ?? '' };
+}
+
+/**
+ * Arguments for `gh pr create`, as a list.
+ *
+ * Returned unescaped so tests can assert the arguments themselves rather than
+ * one long quoted string; the caller escapes exactly once, on the way out.
+ */
+export function buildCreateArgs(
+  request: CreatePullRequestRequest,
+  context: { branch: string; forkOwner: string | null; bodyFile: string }
+): string[] {
+  // A pull request that crosses repositories has to name the fork the branch
+  // lives in; within one repository the bare branch name is what gh expects.
+  const targetOwner = request.targetRepo.split('/')[0].toLowerCase();
+  const crossRepo = Boolean(context.forkOwner) && targetOwner !== context.forkOwner?.toLowerCase();
+  const head = crossRepo ? `${context.forkOwner}:${context.branch}` : context.branch;
+
+  const args = [
+    'pr', 'create',
+    '--repo', request.targetRepo,
+    '--base', request.baseBranch,
+    '--head', head,
+    '--title', request.title,
+    '--body-file', context.bodyFile,
+  ];
+  if (request.draft) args.push('--draft');
+  return args;
+}
+
+/** `gh pr create` prints the new pull request's URL, and nothing else useful. */
+export function parseCreatedPullRequest(stdout: string): CreatePullRequestResult | null {
+  const match = stdout.match(/https:\/\/[^\s]*\/pull\/(\d+)/);
+  if (!match) return null;
+  return { url: match[0], number: Number(match[1]) };
+}
+
+/** gh reports a check as a bucket (`pass`) or a raw state (`SUCCESS`). */
+export function normalizeCheckState(raw: string | undefined): PullRequestCheckState {
+  const value = (raw ?? '').toLowerCase();
+  if (['pass', 'success', 'completed', 'neutral'].includes(value)) return 'pass';
+  if (['fail', 'failure', 'failing', 'error', 'timed_out', 'action_required', 'startup_failure'].includes(value)) return 'fail';
+  if (['skipping', 'skipped'].includes(value)) return 'skipped';
+  if (['cancel', 'cancelled', 'canceled'].includes(value)) return 'cancelled';
+  return 'pending';
+}
+
+/**
+ * One state for a whole run.
+ *
+ * Ordered by what needs a human: a failure matters even when nine other checks
+ * passed, and something still running matters more than an all-green rollup
+ * that is not final yet.
+ */
+export function summarizeChecks(checks: PullRequestCheck[]): PullRequestChecksResult['summary'] {
+  if (checks.length === 0) return 'none';
+  if (checks.some(check => check.state === 'fail')) return 'fail';
+  if (checks.some(check => check.state === 'pending')) return 'pending';
+  if (checks.some(check => check.state === 'pass')) return 'pass';
+  if (checks.some(check => check.state === 'cancelled')) return 'cancelled';
+  return 'skipped';
+}
+
+/**
+ * Read `gh pr view --json …`.
+ *
+ * Every field is treated as optional: gh omits what GitHub did not compute
+ * (`mergeable` is lazy) and adds fields over time, and a review panel that
+ * throws on an unexpected shape is worse than one missing a badge.
+ */
+export function parsePullRequestStatus(stdout: string): PullRequestStatus | null {
+  const trimmed = stdout.trim();
+  if (!trimmed) return null;
+
+  const raw = JSON.parse(trimmed) as {
+    number?: number;
+    url?: string;
+    title?: string;
+    state?: string;
+    isDraft?: boolean;
+    baseRefName?: string;
+    headRefName?: string;
+    headRepositoryOwner?: { login?: string } | null;
+    reviewDecision?: string | null;
+    mergeable?: string | null;
+    reviews?: Array<{ author?: { login?: string } | null; state?: string }>;
+    comments?: unknown[];
+    additions?: number;
+    deletions?: number;
+    changedFiles?: number;
+  };
+  if (typeof raw.number !== 'number') return null;
+
+  // Only the newest review per person counts — GitHub shows it that way, and a
+  // "changes requested" someone later approved is not an open objection.
+  const byAuthor = new Map<string, PullRequestReviewer>();
+  for (const review of raw.reviews ?? []) {
+    const login = review?.author?.login;
+    if (!login) continue;
+    byAuthor.set(login, { login, state: review.state ?? 'COMMENTED' });
+  }
+
+  return {
+    number: raw.number,
+    url: raw.url ?? '',
+    title: raw.title ?? '',
+    state: (raw.state ?? 'OPEN').toUpperCase(),
+    isDraft: Boolean(raw.isDraft),
+    baseRefName: raw.baseRefName ?? '',
+    headRefName: raw.headRefName ?? '',
+    ...(raw.headRepositoryOwner?.login ? { headRepositoryOwner: raw.headRepositoryOwner.login } : {}),
+    reviewDecision: normalizeReviewDecision(raw.reviewDecision),
+    mergeable: (raw.mergeable ?? 'UNKNOWN').toUpperCase(),
+    reviewers: Array.from(byAuthor.values()),
+    commentCount: Array.isArray(raw.comments) ? raw.comments.length : 0,
+    additions: raw.additions ?? 0,
+    deletions: raw.deletions ?? 0,
+    changedFiles: raw.changedFiles ?? 0,
+    fetchedAtMs: Date.now(),
+  };
+}
+
+export function normalizeReviewDecision(raw: string | null | undefined): PullRequestReviewDecision {
+  switch ((raw ?? '').toUpperCase()) {
+    case 'APPROVED': return 'approved';
+    case 'CHANGES_REQUESTED': return 'changes_requested';
+    case 'REVIEW_REQUIRED': return 'review_required';
+    default: return 'none';
+  }
+}
+
+export function parseChecks(stdout: string): PullRequestCheck[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+
+  const rows = JSON.parse(trimmed) as Array<{
+    name?: string;
+    state?: string;
+    bucket?: string;
+    link?: string;
+  }>;
+
+  return rows
+    .filter(row => Boolean(row?.name))
+    .map(row => ({
+      name: row.name as string,
+      state: normalizeCheckState(row.bucket ?? row.state),
+      ...(row.link ? { url: row.link } : {}),
+    }));
+}
+
+/** Parse `git log --format=%s%x00%b%x01`. */
+export function parseCommitSummaries(raw: string): CommitSummary[] {
+  return raw
+    .split('\x01')
+    .map(record => record.trim())
+    .filter(record => record.length > 0)
+    .map(record => {
+      const [subject, body] = record.split('\x00');
+      return { subject: (subject ?? '').trim(), body: (body ?? '').trim() };
+    });
+}
+
+/** Pushing goes to `origin` when it exists — the fork, in the usual setup. */
+export function resolvePushRemote(remotes: string[]): string | null {
+  if (remotes.includes('origin')) return 'origin';
+  return remotes[0] ?? null;
+}
+
+/**
+ * Where the GitHub CLI is when it is not on PATH.
+ *
+ * Pane snapshots its PATH at start-up, so a `gh` installed while the app is
+ * running is invisible to it — which is exactly when people install it, having
+ * just been told they need it. Rather than telling the user to restart, look
+ * where the installers put it.
+ */
+export function ghCandidatePaths(platform: NodeJS.Platform, env: NodeJS.ProcessEnv = process.env): string[] {
+  if (platform === 'win32') {
+    // Built with join rather than string templates: a backslash in a template
+    // is an escape, and getting that wrong yields "C:\Program FilesGitHub CLI".
+    const programFiles = env.ProgramFiles ?? 'C:/Program Files';
+    const localAppData = env.LOCALAPPDATA ?? '';
+    return [
+      win32Join(programFiles, 'GitHub CLI', 'gh.exe'),
+      ...(localAppData ? [win32Join(localAppData, 'Programs', 'GitHub CLI', 'gh.exe')] : []),
+    ];
+  }
+  return ['/opt/homebrew/bin/gh', '/usr/local/bin/gh', '/usr/bin/gh', '/snap/bin/gh'];
+}
+
+/** Join Windows path segments regardless of which platform is running. */
+function win32Join(...segments: string[]): string {
+  return segments
+    .map((segment, index) => (index === 0 ? segment.replace(/[\\/]+$/, '') : segment.replace(/^[\\/]+|[\\/]+$/g, '')))
+    .join('\\');
+}
+
+/**
+ * A base branch as GitHub names it.
+ *
+ * The session's comparison branch is a tracking ref like `origin/main`, and
+ * `gh pr create --base origin/main` looks for a branch of that name — which
+ * does not exist. The remote prefix has to come off.
+ */
+export function normalizeBaseBranch(branch: string, remotes: string[]): string {
+  const trimmed = branch.trim().replace(/^refs\/heads\//, '');
+  for (const remote of remotes) {
+    if (trimmed.startsWith(`${remote}/`)) return trimmed.slice(remote.length + 1);
+  }
+  return trimmed;
+}
+
+/** Branch names from `gh api .../branches`, newest API shape or the older one. */
+/**
+ * Order base candidates so the useful ones are reachable without scrolling.
+ *
+ * A repository with hundreds of branches sorted A-Z buries `main` somewhere in
+ * the middle; the branch a pull request targets is almost always the default or
+ * a long-lived line, so those come first and the rest follows alphabetically.
+ * Duplicates — the same name from two pages — are dropped.
+ */
+const LONG_LIVED_BRANCHES = ['main', 'master', 'develop', 'development', 'dev', 'release'];
+
+export function sortBaseBranches(names: string[], defaultBranch?: string | null): string[] {
+  const rank = (name: string): number => {
+    if (defaultBranch && name === defaultBranch) return 0;
+    const index = LONG_LIVED_BRANCHES.indexOf(name);
+    if (index >= 0) return 1 + index;
+    if (name.startsWith('release/') || name.startsWith('releases/')) return 50;
+    return 100;
+  };
+
+  return Array.from(new Set(names)).sort((a, b) => {
+    const byRank = rank(a) - rank(b);
+    return byRank !== 0 ? byRank : a.localeCompare(b);
+  });
+}
+
+/**
+ * Roll per-file counts up into the totals shown above the list. Binary files
+ * report `null` rather than 0 and must not be counted as either.
+ */
+export function summarizeFileChanges(files: GitCommitFileChange[]): { additions: number; deletions: number } {
+  return files.reduce(
+    (totals, file) => ({
+      additions: totals.additions + (file.additions ?? 0),
+      deletions: totals.deletions + (file.deletions ?? 0),
+    }),
+    { additions: 0, deletions: 0 }
+  );
+}
+
+/**
+ * Branch names from `git for-each-ref refs/remotes/<remote>`.
+ *
+ * `HEAD` is in there as the remote's symbolic default and is not a branch
+ * anyone can target; names with a slash survive intact (`feature/x`).
+ */
+export function parseTrackingBranches(stdout: string): string[] {
+  return stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(name => name.length > 0 && name !== 'HEAD');
+}
+
+export function parseBranchNames(stdout: string): string[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+
+  const parsed = JSON.parse(trimmed) as Array<{ name?: string } | string>;
+  return parsed
+    .map(row => (typeof row === 'string' ? row : row?.name))
+    .filter((name): name is string => Boolean(name));
+}
+
+/**
+ * `owner/repo` from a git remote URL, in any of the forms git accepts.
+ *
+ * Needed because `gh repo view` without an argument answers with the *base*
+ * repository, which for a fork is the upstream one. Taking the fork's identity
+ * from that would put the wrong owner in the head ref and send the pull request
+ * looking for a branch that is not there.
+ */
+export function parseGitHubRemote(url: string): string | null {
+  const trimmed = url.trim().replace(/\.git$/, '');
+  if (!trimmed) return null;
+
+  // https://github.com/owner/repo and ssh://git@github.com/owner/repo
+  const withScheme = /^(?:https?|ssh):\/\/[^/]*github\.com\/([^/]+)\/([^/]+)/.exec(trimmed);
+  if (withScheme) return `${withScheme[1]}/${withScheme[2]}`;
+
+  // git@github.com:owner/repo
+  const scpLike = /^[^@]+@[^:]*github\.com:([^/]+)\/([^/]+)$/.exec(trimmed);
+  if (scpLike) return `${scpLike[1]}/${scpLike[2]}`;
+
+  return null;
+}
+
+export class PullRequestManager {
+  /** Resolved `gh` command per execution context; see `ghCandidatePaths`. */
+  private ghCommand = new Map<string, string | null>();
+
+  constructor(private logger?: Logger) {}
+
+  /**
+   * The command that runs the GitHub CLI here, or null if it is not installed.
+   *
+   * Tries PATH first and falls back to the standard install locations, because
+   * Pane's PATH is a snapshot from start-up and `gh` is usually installed
+   * after Pane has told the user it is missing.
+   */
+  private async resolveGh(cwd: string, commandRunner: CommandRunner): Promise<string | null> {
+    const key = commandRunner.wslContext?.distribution ?? 'host';
+    const cached = this.ghCommand.get(key);
+    if (cached !== undefined) return cached;
+
+    const platform = commandRunner.wslContext ? 'linux' : process.platform;
+    const candidates = ['gh', ...ghCandidatePaths(platform)];
+
+    for (const candidate of candidates) {
+      try {
+        await commandRunner.execAsync(`${escapeShellArg(candidate)} --version`, cwd, {
+          timeout: 5000,
+          silent: true,
+        });
+        if (candidate !== 'gh') {
+          this.logger?.info(`[PullRequest] Using the GitHub CLI at ${candidate} — it is not on Pane's PATH.`);
+        }
+        this.ghCommand.set(key, candidate);
+        return candidate;
+      } catch {
+        // Try the next location.
+      }
+    }
+
+    this.ghCommand.set(key, null);
+    return null;
+  }
+
+  /**
+   * Everything the create dialog opens with.
+   *
+   * Deliberately one call: the branch, its commits, the target repositories, an
+   * existing pull request and the repository's template all have to be on
+   * screen at once, and a form that fills itself in over three round trips
+   * looks broken.
+   */
+  async getDraft(
+    worktreePath: string,
+    projectPath: string,
+    baseBranch: string,
+    commandRunner: CommandRunner
+  ): Promise<PullRequestDraft> {
+    const blockers: string[] = [];
+    let baseBranches: BaseBranchOptions = { all: [], local: [] };
+    // `origin/main` is a tracking ref; a pull request needs the branch name.
+    const base = normalizeBaseBranch(baseBranch, this.remotes(worktreePath, commandRunner));
+
+    const branch = this.currentBranch(worktreePath, commandRunner);
+    if (!branch) blockers.push('This worktree has a detached HEAD, so there is no branch to propose.');
+
+    const commits = branch ? this.commitsAhead(worktreePath, baseBranch, commandRunner) : [];
+    if (branch && commits.length === 0) {
+      blockers.push(`No commits on ${branch} that ${baseBranch} does not already have.`);
+    }
+
+    const hasUncommittedChanges = this.hasUncommittedChanges(worktreePath, commandRunner);
+
+    let targets: PullRequestTarget[] = [];
+    let defaultTarget = '';
+    let existing: ExistingPullRequest | undefined;
+
+    const gh = await this.resolveGh(worktreePath, commandRunner);
+    if (!gh) {
+      blockers.push('The GitHub CLI (gh) was not found. Install it from https://cli.github.com and sign in with `gh auth login`.');
+    } else if (!await this.isGhAuthenticated(gh, worktreePath, commandRunner)) {
+      blockers.push('The GitHub CLI is installed but not signed in. Run `gh auth login` once.');
+    } else {
+      const view = await this.repoView(projectPath, commandRunner, this.originRepo(worktreePath, commandRunner));
+      if (view) {
+        const resolved = resolveTargets(view);
+        targets = resolved.targets;
+        defaultTarget = resolved.defaultTarget;
+      } else {
+        blockers.push('This repository has no GitHub remote that gh recognises.');
+      }
+
+      if (branch) existing = await this.findExisting(projectPath, branch, commandRunner);
+      if (defaultTarget) {
+        const targetDefault = targets.find(target => target.nameWithOwner === defaultTarget)?.defaultBranch;
+        baseBranches = await this.listBaseBranches(defaultTarget, projectPath, commandRunner, targetDefault);
+      }
+    }
+
+    const template = this.readTemplate(projectPath);
+    const { title, body } = deriveDraftText(commits, template);
+
+    return {
+      branch: branch ?? '',
+      baseBranch: base,
+      baseBranches: baseBranches.all,
+      localBaseBranches: baseBranches.local,
+      title,
+      body,
+      commitCount: commits.length,
+      hasUncommittedChanges,
+      targets,
+      defaultTarget,
+      ...(existing ? { existing } : {}),
+      blockers,
+    };
+  }
+
+  /** Push the branch, then open the pull request. */
+  async create(
+    request: CreatePullRequestRequest,
+    worktreePath: string,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): Promise<CreatePullRequestResult> {
+    const branch = this.currentBranch(worktreePath, commandRunner);
+    if (!branch) throw new Error('This worktree has a detached HEAD, so there is no branch to push.');
+
+    const remote = resolvePushRemote(this.remotes(worktreePath, commandRunner));
+    if (!remote) throw new Error('This repository has no remote to push to.');
+
+    await commandRunner.execAsync(
+      `git push -u ${escapeShellArg(remote)} ${escapeShellArg(branch)}`,
+      worktreePath,
+      { timeout: PUSH_TIMEOUT_MS }
+    );
+
+    const forkOwner = this.originRepo(worktreePath, commandRunner)?.split('/')[0] ?? null;
+
+    // The body goes through a file: it is markdown with newlines, quotes and
+    // backticks, and no amount of shell escaping makes that pleasant.
+    const bodyFile = join(tmpdir(), `pane-pr-${randomUUID()}.md`);
+    writeFileSync(bodyFile, request.body, 'utf8');
+
+    try {
+      const gh = await this.resolveGh(worktreePath, commandRunner);
+      if (!gh) throw new Error('The GitHub CLI (gh) was not found. Install it from https://cli.github.com.');
+
+      const args = buildCreateArgs(request, { branch, forkOwner, bodyFile });
+      const command = `${escapeShellArg(gh)} ${args.map(escapeShellArg).join(' ')}`;
+      const { stdout } = await commandRunner.execAsync(command, worktreePath, { timeout: GH_TIMEOUT_MS });
+
+      const created = parseCreatedPullRequest(stdout);
+      if (!created) {
+        throw new Error(`gh did not return a pull request URL. Output: ${stdout.trim().slice(0, 200)}`);
+      }
+      return created;
+    } finally {
+      try {
+        unlinkSync(bodyFile);
+      } catch {
+        // A leftover temp file is not worth failing a created pull request over.
+      }
+    }
+  }
+
+  /**
+   * The pull request as it stands now: state, reviews, mergeability, size.
+   *
+   * One `gh pr view` rather than several calls — every field here comes from
+   * the same object, and the review panel wants them together or not at all.
+   */
+  async getStatus(
+    repo: string,
+    number: number,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): Promise<PullRequestStatus | null> {
+    const gh = await this.resolveGh(projectPath, commandRunner);
+    if (!gh) return null;
+
+    const fields = [
+      'number', 'url', 'title', 'state', 'isDraft', 'baseRefName', 'headRefName',
+      'headRepositoryOwner', 'reviewDecision', 'mergeable', 'reviews', 'comments',
+      'additions', 'deletions', 'changedFiles',
+    ].join(',');
+
+    try {
+      const { stdout } = await commandRunner.execAsync(
+        `${escapeShellArg(gh)} pr view ${number} --repo ${escapeShellArg(repo)} --json ${fields}`,
+        projectPath,
+        { timeout: GH_TIMEOUT_MS, silent: true }
+      );
+      return parsePullRequestStatus(stdout);
+    } catch (error) {
+      this.logger?.verbose(
+        `[PullRequest] Could not read ${repo}#${number}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return null;
+    }
+  }
+
+  /** CI state for a pull request, normalised. */
+  async getChecks(
+    repo: string,
+    number: number,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): Promise<PullRequestChecksResult> {
+    const gh = await this.resolveGh(projectPath, commandRunner);
+    if (!gh) return { number, checks: [], summary: 'none', fetchedAtMs: Date.now() };
+
+    const command = `${escapeShellArg(gh)} pr checks ${number} --repo ${escapeShellArg(repo)} --json name,state,bucket,link`;
+
+    try {
+      const { stdout } = await commandRunner.execAsync(command, projectPath, {
+        timeout: GH_TIMEOUT_MS,
+        silent: true,
+      });
+      const checks = parseChecks(stdout);
+      return { number, checks, summary: summarizeChecks(checks), fetchedAtMs: Date.now() };
+    } catch (error) {
+      // `gh pr checks` exits non-zero when checks are failing *or* when there
+      // are none at all — the message tells them apart, the exit code does not.
+      const message = error instanceof Error ? error.message : String(error);
+      if (/no checks/i.test(message)) {
+        return { number, checks: [], summary: 'none', fetchedAtMs: Date.now() };
+      }
+
+      const embedded = message.match(/\[[\s\S]*\]/);
+      if (embedded) {
+        const checks = parseChecks(embedded[0]);
+        return { number, checks, summary: summarizeChecks(checks), fetchedAtMs: Date.now() };
+      }
+
+      this.logger?.verbose(`[PullRequest] Could not read checks for ${repo}#${number}: ${message}`);
+      return { number, checks: [], summary: 'none', fetchedAtMs: Date.now() };
+    }
+  }
+
+  // --- git and gh plumbing ---
+
+  private currentBranch(worktreePath: string, commandRunner: CommandRunner): string | null {
+    try {
+      return commandRunner.exec('git branch --show-current', worktreePath, { silent: true }).trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private remotes(worktreePath: string, commandRunner: CommandRunner): string[] {
+    try {
+      return commandRunner.exec('git remote', worktreePath, { silent: true })
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  private commitsAhead(
+    worktreePath: string,
+    baseBranch: string,
+    commandRunner: CommandRunner
+  ): CommitSummary[] {
+    // Oldest first: the first commit is the one the title comes from.
+    const range = `${escapeShellArg(baseBranch)}..HEAD`;
+    try {
+      const raw = commandRunner.exec(
+        `git log ${range} --reverse --format=%s%x00%b%x01`,
+        worktreePath,
+        { silent: true }
+      );
+      return parseCommitSummaries(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  private hasUncommittedChanges(worktreePath: string, commandRunner: CommandRunner): boolean {
+    try {
+      return commandRunner.exec('git status --porcelain', worktreePath, { silent: true }).trim().length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  private readTemplate(projectPath: string): string | null {
+    for (const relative of PR_TEMPLATE_PATHS) {
+      const candidate = join(projectPath, relative);
+      try {
+        if (existsSync(candidate)) return readFileSync(candidate, 'utf8');
+      } catch {
+        // Unreadable template: fall through to the next candidate.
+      }
+    }
+    return null;
+  }
+
+  private async isGhAuthenticated(gh: string, cwd: string, commandRunner: CommandRunner): Promise<boolean> {
+    try {
+      await commandRunner.execAsync(`${escapeShellArg(gh)} auth status`, cwd, { timeout: 10_000, silent: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Branches of the target repository, as candidates for the base.
+   *
+   * Asked of the target rather than taken from the local clone: the base has to
+   * exist *there*, and a fork's branches are not the upstream's. Split in two,
+   * because a busy upstream has hundreds of branches and none of them is the
+   * one you meant — that one is among the handful your clone already tracks.
+   */
+  async listBaseBranches(
+    repo: string,
+    projectPath: string,
+    commandRunner: CommandRunner,
+    defaultBranch?: string | null
+  ): Promise<BaseBranchOptions> {
+    // Local knowledge first: it needs no network, and a branch pushed a minute
+    // ago is in the tracking refs before anyone asks GitHub about it.
+    const local = this.trackingBranchesFor(repo, projectPath, commandRunner);
+
+    const gh = await this.resolveGh(projectPath, commandRunner);
+    if (!gh) {
+      const sorted = sortBaseBranches(local, defaultBranch);
+      return { all: sorted, local: sorted };
+    }
+
+    // Paged by hand rather than with `--paginate`: this repository has hundreds
+    // of branches, and waiting for every last one to fill a picker nobody
+    // scrolls to the end of is not worth the round trips.
+    const names: string[] = [];
+    try {
+      for (let page = 1; page <= MAX_BRANCH_PAGES; page++) {
+        const query = `repos/${repo}/branches?per_page=${BRANCH_PAGE_SIZE}&page=${page}`;
+        const { stdout } = await commandRunner.execAsync(
+          `${escapeShellArg(gh)} api ${escapeShellArg(query)} --jq ${escapeShellArg('[.[].name]')}`,
+          projectPath,
+          { timeout: GH_TIMEOUT_MS, silent: true }
+        );
+        const pageNames = parseBranchNames(stdout);
+        names.push(...pageNames);
+        if (pageNames.length < BRANCH_PAGE_SIZE) break;
+      }
+    } catch (error) {
+      this.logger?.verbose(
+        `[PullRequest] Could not list branches of ${repo}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    const all = sortBaseBranches([...names, ...local], defaultBranch);
+
+    // The short list is the branches you *work on*, not everything you ever
+    // fetched: a full fetch of a busy upstream leaves hundreds of tracking refs
+    // behind, which is exactly the noise this list exists to avoid. The
+    // default branch joins them because nearly every pull request targets it.
+    const own = new Set(this.localHeads(projectPath, commandRunner));
+    if (defaultBranch) own.add(defaultBranch);
+
+    return { all, local: all.filter(name => own.has(name)) };
+  }
+
+  /** Branches that exist as heads in this clone — yours, across all worktrees. */
+  private localHeads(projectPath: string, commandRunner: CommandRunner): string[] {
+    try {
+      return parseTrackingBranches(
+        commandRunner.exec(
+          'git for-each-ref --format=%(refname:lstrip=2) refs/heads',
+          projectPath,
+          { silent: true }
+        )
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Branches this clone already tracks for the remote that *is* the given
+   * repository. A fork and its upstream both have remotes here, and only the
+   * matching one's branches are valid bases for a pull request into it.
+   */
+  private trackingBranchesFor(
+    repo: string,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): string[] {
+    const remote = this.remotes(projectPath, commandRunner).find(name => {
+      try {
+        const url = commandRunner.exec(`git remote get-url ${escapeShellArg(name)}`, projectPath, { silent: true });
+        return parseGitHubRemote(url)?.toLowerCase() === repo.toLowerCase();
+      } catch {
+        return false;
+      }
+    });
+    if (!remote) return [];
+
+    try {
+      const raw = commandRunner.exec(
+        `git for-each-ref --format=%(refname:lstrip=3) ${escapeShellArg(`refs/remotes/${remote}`)}`,
+        projectPath,
+        { silent: true }
+      );
+      return parseTrackingBranches(raw);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Which files the pull request would carry, and by how much.
+   *
+   * Cheap on purpose — counts only, no patch — so the dialog can show the list
+   * the moment it opens and reload it when the base changes.
+   */
+  async getChanges(
+    worktreePath: string,
+    baseBranch: string,
+    commandRunner: CommandRunner
+  ): Promise<PullRequestChanges> {
+    const baseRef = this.resolveComparisonRef(worktreePath, baseBranch, commandRunner);
+    const empty: PullRequestChanges = {
+      baseRef, files: [], totalFiles: 0, truncated: false, additions: 0, deletions: 0,
+    };
+    if (!baseRef) return { ...empty, baseRef: baseBranch };
+
+    try {
+      const range = `${escapeShellArg(baseRef)}...HEAD`;
+      const numstatRaw = commandRunner.exec(`git diff --numstat -M -z ${range}`, worktreePath, { silent: true });
+      const nameStatusRaw = commandRunner.exec(`git diff --name-status -M -z ${range}`, worktreePath, { silent: true });
+
+      const all = mergeFileChanges(parseNumstatZ(numstatRaw), parseNameStatusZ(nameStatusRaw));
+      const files = all.slice(0, MAX_FILES_PER_COMMIT);
+      const { additions, deletions } = summarizeFileChanges(all);
+
+      return {
+        baseRef,
+        files,
+        totalFiles: all.length,
+        truncated: all.length > files.length,
+        additions,
+        deletions,
+      };
+    } catch (error) {
+      this.logger?.verbose(
+        `[PullRequest] Could not list changed files against ${baseRef}: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return empty;
+    }
+  }
+
+  /** The patch behind {@link getChanges}, loaded only when the user asks. */
+  async getDiff(
+    worktreePath: string,
+    baseBranch: string,
+    commandRunner: CommandRunner
+  ): Promise<PullRequestDiff> {
+    const baseRef = this.resolveComparisonRef(worktreePath, baseBranch, commandRunner);
+    if (!baseRef) return { baseRef: baseBranch, diff: '', truncated: false };
+
+    const raw = commandRunner.exec(
+      `git diff -M ${escapeShellArg(baseRef)}...HEAD`,
+      worktreePath,
+      { silent: true, maxBuffer: MAX_DIFF_BYTES * 2 }
+    );
+
+    const truncated = raw.length > MAX_DIFF_BYTES;
+    return { baseRef, diff: truncated ? raw.slice(0, MAX_DIFF_BYTES) : raw, truncated };
+  }
+
+  /**
+   * A ref git can actually compare against.
+   *
+   * The base is a branch name in the *target* repository. Locally it may exist
+   * only as a tracking ref — a fresh worktree often has no local `main` — so the
+   * remote-tracking form is tried first, and only a ref that resolves is used.
+   */
+  private resolveComparisonRef(
+    worktreePath: string,
+    baseBranch: string,
+    commandRunner: CommandRunner
+  ): string {
+    const base = baseBranch.trim();
+    if (!base) return '';
+
+    const candidates = base.includes('/')
+      ? [base, `refs/remotes/${base}`]
+      : [`origin/${base}`, base, `upstream/${base}`];
+
+    for (const candidate of candidates) {
+      try {
+        commandRunner.exec(
+          `git rev-parse --verify --quiet ${escapeShellArg(`${candidate}^{commit}`)}`,
+          worktreePath,
+          { silent: true }
+        );
+        return candidate;
+      } catch {
+        // Not a ref here — try the next spelling.
+      }
+    }
+    return '';
+  }
+
+  /** The fork this clone pushes to, as `owner/repo`. */
+  private originRepo(worktreePath: string, commandRunner: CommandRunner): string | null {
+    const remote = resolvePushRemote(this.remotes(worktreePath, commandRunner));
+    if (!remote) return null;
+    try {
+      const url = commandRunner.exec(`git remote get-url ${escapeShellArg(remote)}`, worktreePath, { silent: true });
+      return parseGitHubRemote(url);
+    } catch {
+      return null;
+    }
+  }
+
+  private async repoView(
+    projectPath: string,
+    commandRunner: CommandRunner,
+    repo?: string | null
+  ): Promise<{
+    nameWithOwner?: string;
+    defaultBranchRef?: { name?: string } | null;
+    parent?: { name?: string; owner?: { login?: string }; defaultBranchRef?: { name?: string } } | null;
+  } | null> {
+    try {
+      // Naming the repository matters: without it gh answers about the *base*
+      // repository, which for a fork is upstream — and then the fork's own
+      // identity, which the head ref needs, is nowhere in the answer.
+      const gh = await this.resolveGh(projectPath, commandRunner);
+      if (!gh) return null;
+      const target = repo ? ` ${escapeShellArg(repo)}` : '';
+      const { stdout } = await commandRunner.execAsync(
+        `${escapeShellArg(gh)} repo view${target} --json nameWithOwner,defaultBranchRef,parent`,
+        projectPath,
+        { timeout: GH_TIMEOUT_MS, silent: true }
+      );
+      return JSON.parse(stdout.trim());
+    } catch (error) {
+      this.logger?.verbose(
+        `[PullRequest] gh repo view failed: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return null;
+    }
+  }
+
+  private async findExisting(
+    projectPath: string,
+    branch: string,
+    commandRunner: CommandRunner
+  ): Promise<ExistingPullRequest | undefined> {
+    try {
+      const gh = await this.resolveGh(projectPath, commandRunner);
+      if (!gh) return undefined;
+      const { stdout } = await commandRunner.execAsync(
+        `${escapeShellArg(gh)} pr list --head ${escapeShellArg(branch)} --state all --json number,url,state,title --limit 1`,
+        projectPath,
+        { timeout: GH_TIMEOUT_MS, silent: true }
+      );
+      const rows = JSON.parse(stdout.trim() || '[]') as ExistingPullRequest[];
+      return rows[0];
+    } catch {
+      return undefined;
+    }
+  }
+}

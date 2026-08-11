@@ -12,8 +12,21 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
+import { registerFleetHandlers } from './fleet';
+import { registerPullRequestHandlers } from './pullRequest';
+import { registerScheduleHandlers } from './schedule';
+import { registerUsageHandlers } from './usage';
 import type { AppServices } from './types';
 
+const PULL_REQUEST_CHANNELS = [
+  'pr:get-draft',
+  'pr:create',
+  'pr:get-checks',
+  'pr:list-base-branches',
+  'pr:get-changes',
+  'pr:get-diff',
+  'pr:get-status',
+] as const;
 const PROJECT_CHANNELS = [
   'projects:get-all',
   'projects:get-active',
@@ -343,6 +356,7 @@ describe('daemon registry IPC bindings', () => {
     expect(ipcMain.boundChannels.sort()).toEqual([...VOICE_CHANNELS].sort());
   });
 
+    registerPullRequestHandlers(ipcMain, createServicesStub(), registry);
   it('binds daemon-owned prompt channels through the shared registry', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
