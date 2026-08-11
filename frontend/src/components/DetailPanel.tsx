@@ -53,6 +53,7 @@ export function DetailPanel({
   onSwapLayout,
   terminalShortcuts,
   onCommitClick,
+  onCommitFileClick,
 }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
@@ -90,6 +91,7 @@ export function DetailPanel({
         onSwapLayout={onSwapLayout}
         terminalShortcuts={terminalShortcuts}
         onCommitClick={onCommitClick}
+        onCommitFileClick={onCommitFileClick}
       />
     );
   }
@@ -251,6 +253,8 @@ export function DetailPanel({
                 sessionId={session.id}
                 baseBranch={session.baseBranch || 'main'}
                 onCommitClick={onCommitClick}
+                expandable
+                onFileClick={onCommitFileClick}
               />
             </div>
           </div>
