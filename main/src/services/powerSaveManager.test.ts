@@ -221,5 +221,4 @@ describe('PowerSaveManager', () => {
 
     expect(freshConfigManager.getConfig().keepAwakeWhileSessionsActive).toBe(true);
   });
-
 });
