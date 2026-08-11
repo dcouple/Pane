@@ -15,6 +15,7 @@ import { CommitMessageDialog } from './session/CommitMessageDialog';
 import { FolderArchiveDialog } from './session/FolderArchiveDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ProjectView } from './ProjectView';
+import { FleetView } from './fleet/FleetView';
 import { API } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
@@ -1650,6 +1651,11 @@ export const SessionView = memo(() => {
   }, [activeSession, hook.isMerging, hook.gitCommands, hook.hasChangesToRebase, hook.hasStash, hook.handleGitPull, hook.handleGitPush, hook.handleGitSoftReset, hook.handleGitFetch, hook.handleGitStash, hook.handleGitStashPop, hook.setShowCommitMessageDialog, hook.setDialogType, hook.handleRebaseMainIntoWorktree, hook.handleSquashAndRebaseToMain, activeSession?.gitStatus]);
   
   // Removed unused variables - now handled by panels
+
+  // Live grid of every agent pane — spans all projects.
+  if (activeView === 'fleet') {
+    return <FleetView />;
+  }
 
   // Show project view if navigation is set to project
   if (activeView === 'project' && activeProjectId) {

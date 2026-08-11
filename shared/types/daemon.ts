@@ -68,6 +68,7 @@ interface PaneDaemonResponseFrameCandidate {
 }
 
 export const DAEMON_OWNED_CHANNEL_PREFIXES = [
+  'fleet:',
   'folders:',
   'logs:',
   'panels:',

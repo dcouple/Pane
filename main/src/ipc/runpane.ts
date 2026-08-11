@@ -6,6 +6,11 @@ import type { AppServices } from './types';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { PathResolver } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
+import {
+  boundSanitizedLines,
+  normalizeScrollbackBuffer,
+  selectPanelScreenText,
+} from '../services/panels/terminalScreenText';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
@@ -50,7 +55,6 @@ import type {
   RunpanePanelOutputResult,
   RunpanePanelScreenRequest,
   RunpanePanelScreenResult,
-  RunpanePanelScreenSource,
   RunpanePanelStateSummary,
   RunpanePanelSubmitComposerRequest,
   RunpanePanelSubmitComposerResult,
@@ -1045,39 +1049,6 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   };
 }
 
-function selectPanelScreenText(
-  snapshot: TerminalPanelSnapshot | null,
-  customState: TerminalPanelState,
-): { source: RunpanePanelScreenSource; rawText: string } {
-  if (snapshot) {
-    if (snapshot.screenText !== undefined) {
-      return {
-        source: snapshot.isAlternateScreen ? 'alternateScreen' : 'scrollback',
-        rawText: snapshot.screenText,
-      };
-    }
-    if (snapshot.isAlternateScreen && snapshot.alternateScreenBuffer) {
-      return { source: 'alternateScreen', rawText: snapshot.alternateScreenBuffer };
-    }
-    if (snapshot.scrollbackBuffer) {
-      return { source: 'scrollback', rawText: snapshot.scrollbackBuffer };
-    }
-    return { source: 'empty', rawText: '' };
-  }
-
-  const persistedAlternate = customState.alternateScreenBuffer;
-  if (customState.isAlternateScreen && persistedAlternate) {
-    return { source: 'persistedOutput', rawText: persistedAlternate };
-  }
-
-  const persistedScrollback = normalizeScrollbackBuffer(customState.scrollbackBuffer);
-  if (persistedScrollback) {
-    return { source: 'persistedOutput', rawText: persistedScrollback };
-  }
-
-  return { source: 'empty', rawText: '' };
-}
-
 function panelStateSummary(
   panel: ToolPanel,
   snapshot: TerminalPanelSnapshot | null,
@@ -1101,32 +1072,6 @@ function panelStateSummary(
 
 function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
   return (isRecord(panel.state.customState) ? panel.state.customState : {}) as TerminalPanelState;
-}
-
-function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.join('\n');
-  }
-  return '';
-}
-
-function boundSanitizedLines(rawText: string, limit: number): { text: string; hasMore: boolean; returnedLineCount: number } {
-  const stripped = sanitizeTerminalOutput(rawText);
-  if (!stripped) {
-    return { text: '', hasMore: false, returnedLineCount: 0 };
-  }
-
-  const allLines = stripped.split('\n');
-  const hasMore = allLines.length > limit;
-  const lines = hasMore ? allLines.slice(-limit) : allLines;
-  return {
-    text: lines.join('\n'),
-    hasMore,
-    returnedLineCount: lines.length,
-  };
 }
 
 async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest): Promise<RunpanePanelWaitResult> {

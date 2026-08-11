@@ -513,6 +513,18 @@ body.light-rounded {
   background-color: transparent !important;
 }
 
+/* Fleet tiles are read-only previews: no scrollbar, no text cursor, no
+   selection affordance — all of which read as chrome bugs at tile size. */
+.pane-fleet-surface .xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}
+.pane-fleet-surface .xterm-viewport {
+  overflow: hidden !important;
+}
+.pane-fleet-surface .xterm {
+  cursor: default !important;
+}
+
 /* xterm v6 custom scrollbar — thin, matches app scrollbars */
 .xterm .xterm-scrollable-element > .scrollbar {
   width: 3px !important;

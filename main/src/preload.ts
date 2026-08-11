@@ -125,6 +125,7 @@ interface UpdaterInfo {
 }
 
 const DAEMON_OWNED_CHANNEL_PREFIXES = [
+  'fleet:',
   'folders:',
   'logs:',
   'pane-chat:',
@@ -452,6 +453,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   paneChat: {
     getOrCreate: (): Promise<IPCResponse> => invokeIpc('pane-chat:get-or-create'),
     setAgent: (agent: 'claude' | 'codex'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
+  },
+
+  // Fleet grid — live overview of every agent pane across all sessions
+  fleet: {
+    listAgents: (options?: { includeArchived?: boolean }): Promise<IPCResponse> => invokeIpc('fleet:list-agents', options),
+    snapshots: (request: { panelIds: string[]; maxLines?: number }): Promise<IPCResponse> => invokeIpc('fleet:snapshots', request),
   },
 
   // Session management
