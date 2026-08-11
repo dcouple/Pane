@@ -378,7 +378,11 @@ export function HomePage() {
               <div className="flex items-center gap-1.5">
                 <span className="text-text-primary">Copy on select</span>
                 <Tooltip
-                  content="Automatically copies selected terminal text to the clipboard. This replaces the current clipboard contents whenever you select terminal text."
+                  content={(
+                    <span className="block max-w-xs whitespace-normal">
+                      Automatically copies selected terminal text to the clipboard. This replaces the current clipboard contents whenever you select terminal text.
+                    </span>
+                  )}
                   side="top"
                   delay={0}
                 >
