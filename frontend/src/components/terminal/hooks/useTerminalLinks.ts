@@ -35,6 +35,7 @@ interface SelectionPopoverState {
   x: number;
   y: number;
   text: string;
+  copied: boolean;
 }
 
 function getBrowserPanelTitle(url: string): string {
@@ -68,6 +69,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
     x: 0,
     y: 0,
     text: '',
+    copied: false,
   });
 
   const [githubRemoteUrl, setGithubRemoteUrl] = useState<string | null>(null);
@@ -133,7 +135,7 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
         const text = terminal.getSelection();
         const { x, y } = mousePositionRef.current;
         selectionChangedRef.current = true;
-        setSelectionPopover({ visible: true, x, y, text });
+        setSelectionPopover({ visible: true, x, y, text, copied: false });
       } else {
         setSelectionPopover((prev) => ({ ...prev, visible: false }));
       }
@@ -144,29 +146,52 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
     };
   }, [terminal]);
 
-  // xterm updates its selection throughout a drag. Wait for pointer release so
+  // xterm updates its selection throughout a drag. Wait for mouse release so
   // copy-on-select writes only the completed selection, including when the drag
   // ends outside the terminal bounds.
   useEffect(() => {
     if (!terminal) return;
 
-    const handlePointerDown = () => {
+    let confirmationTimer: ReturnType<typeof setTimeout> | null = null;
+    let interactionId = 0;
+    const handleMouseDown = () => {
+      interactionId += 1;
+      if (confirmationTimer) {
+        clearTimeout(confirmationTimer);
+        confirmationTimer = null;
+      }
       selectionChangedRef.current = false;
     };
-    const handlePointerUp = () => {
+    const handleMouseUp = () => {
       if (!selectionChangedRef.current) return;
       selectionChangedRef.current = false;
       if (!copyOnSelect || !terminal.hasSelection()) return;
-      void copyTerminalText(terminal.getSelection()).catch((error: unknown) => {
-        onClipboardError?.(error);
-      });
+      const text = terminal.getSelection();
+      const copyInteractionId = interactionId;
+      void copyTerminalText(text)
+        .then((copied) => {
+          if (!copied || copyInteractionId !== interactionId) return;
+          setSelectionPopover((current) => (
+            current.text === text ? { ...current, visible: true, copied: true } : current
+          ));
+          confirmationTimer = setTimeout(() => {
+            setSelectionPopover((current) => (
+              current.copied ? { ...current, visible: false, copied: false } : current
+            ));
+            confirmationTimer = null;
+          }, 2000);
+        })
+        .catch((error: unknown) => {
+          onClipboardError?.(error);
+        });
     };
 
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    document.addEventListener('pointerup', handlePointerUp);
+    document.addEventListener('mousedown', handleMouseDown, true);
+    document.addEventListener('mouseup', handleMouseUp);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-      document.removeEventListener('pointerup', handlePointerUp);
+      if (confirmationTimer) clearTimeout(confirmationTimer);
+      document.removeEventListener('mousedown', handleMouseDown, true);
+      document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [copyOnSelect, onClipboardError, terminal]);
 

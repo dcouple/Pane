@@ -65,14 +65,14 @@ async function clipboardWrites(page: Page): Promise<string[]> {
   ) ?? []);
 }
 
-async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
+async function selectFirstLine(page: Page, terminal: Locator, onMouseUp = false): Promise<void> {
   const viewport = terminal.locator('.xterm-screen');
   await expect(viewport).toBeVisible();
   const box = await viewport.boundingBox();
   if (!box) throw new Error('Terminal viewport has no bounding box');
 
   await page.mouse.move(box.x + 100, box.y + 8);
-  await expect.poll(() => terminal.evaluate((element) => {
+  await expect.poll(() => terminal.evaluate((element, deferUntilMouseUp) => {
     interface HookNode {
       memoizedState?: unknown;
       next?: HookNode | null;
@@ -98,7 +98,12 @@ async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
               if (candidate && typeof candidate === 'object') {
                 const select = Reflect.get(candidate, 'select') as unknown;
                 if (typeof select === 'function') {
-                  select.call(candidate, 0, 0, 11);
+                  const selectLine = () => select.call(candidate, 0, 0, 11);
+                  if (deferUntilMouseUp) {
+                    element.addEventListener('mouseup', selectLine, { once: true });
+                  } else {
+                    selectLine();
+                  }
                   return true;
                 }
               }
@@ -111,7 +116,7 @@ async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
       reactElement = reactElement.parentElement;
     }
     return false;
-  })).toBe(true);
+  }, onMouseUp)).toBe(true);
 }
 
 test('selection popover works in restored bottom and tab terminals', async ({ page }, testInfo) => {
@@ -155,7 +160,7 @@ test('selection popover works in restored bottom and tab terminals', async ({ pa
   await testInfo.attach('terminal-selection-popover', { path: screenshotPath, contentType: 'image/png' });
 });
 
-test('copies once when terminal selection finishes', async ({ page }) => {
+test('copies once when terminal selection finishes', async ({ page }, testInfo) => {
   await installClipboardMock(page);
   await installElectronApiMock(page, {
     initialProjects: [project],
@@ -172,10 +177,17 @@ test('copies once when terminal selection finishes', async ({ page }) => {
   await page.getByRole('button', { name: session.name, exact: true }).click();
 
   const terminal = page.getByRole('tabpanel').locator('.xterm').first();
-  await selectFirstLine(page, terminal);
-  await terminal.dispatchEvent('pointerup');
+  await terminal.dispatchEvent('mousedown');
+  await selectFirstLine(page, terminal, true);
+  await terminal.dispatchEvent('mouseup');
 
   await expect.poll(() => clipboardWrites(page)).toEqual(['selection-1']);
+  await expect(page.getByText('Copied', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Copy', exact: true })).toHaveCount(0);
+  const screenshotPath = testInfo.outputPath('terminal-copy-on-select-confirmation.png');
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await testInfo.attach('terminal-copy-on-select-confirmation', { path: screenshotPath, contentType: 'image/png' });
+  await expect(page.getByText('Copied', { exact: true })).toHaveCount(0, { timeout: 4_000 });
 });
 
 test('keeps keyboard copy available when copy-on-select and Pane shortcuts are disabled', async ({ page }) => {
@@ -196,8 +208,9 @@ test('keeps keyboard copy available when copy-on-select and Pane shortcuts are d
   await page.getByRole('button', { name: session.name, exact: true }).click();
 
   const terminal = page.getByRole('tabpanel').locator('.xterm').first();
+  await terminal.dispatchEvent('mousedown');
   await selectFirstLine(page, terminal);
-  await terminal.dispatchEvent('pointerup');
+  await terminal.dispatchEvent('mouseup');
   await expect.poll(() => clipboardWrites(page)).toEqual([]);
 
   await selectFirstLine(page, terminal);
