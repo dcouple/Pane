@@ -24,6 +24,7 @@ import { getManifestForAgent } from './agentStatus/manifests';
 import type { AgentState, PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { PaneEventArgument } from '../core/eventSink';
 import { stripInheritedAgentSession } from './panels/agentSessionEnv';
+import { injectionSequence, INJECTION_PRIMER_DELAY_MS } from './panels/terminalInjection';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -1112,7 +1113,12 @@ export class TerminalPanelManager {
       // so banner lines ending with % or > don't trigger a false positive.
       const panelId = panel.id;
       const injectCommand = () => {
-        this.writeToTerminal(panelId, commandToRun! + '\r');
+        const [primer, line] = injectionSequence(commandToRun!);
+
+        // The primer absorbs a byte the shell may swallow right after its
+        // prompt; the command follows once that window has passed.
+        this.writeToTerminal(panelId, primer);
+        setTimeout(() => this.writeToTerminal(panelId, line), INJECTION_PRIMER_DELAY_MS);
 
         // For CLI tool terminals, signal the frontend when the CLI responds
         if (isCliCommand) {
