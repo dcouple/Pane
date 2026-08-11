@@ -604,6 +604,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
      * Used by `PanelTabBar` to start/stop the dev server for a session.
      */
     resolveRunScript: (sessionId: string): Promise<IPCResponse> => invokeIpc('projects:resolve-run-script', sessionId),
+    /** Repository-wide commit graph across every branch and tag. */
+    getGitGraph: (request: { projectId: number; limit?: number; remoteScope?: string; focusRef?: string }): Promise<IPCResponse> => invokeIpc('projects:get-git-graph', request),
+    /** Full patch for one commit, resolved against the project checkout. */
+    getCommitDetail: (projectId: number, commitHash: string): Promise<IPCResponse> => invokeIpc('projects:get-commit-detail', projectId, commitHash),
   },
 
   // Git operations

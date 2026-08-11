@@ -10,8 +10,15 @@ let hasRegisteredInitialProjectIds = false;
 const toProjectIdArray = (projectIds: Set<number>): number[] =>
   Array.from(projectIds).sort((a, b) => a - b);
 
+/**
+ * Pane has no router — this enum is the whole navigation model. Adding a value
+ * here also requires a branch in `SessionView` and an entry in *both* sidebar
+ * components (`Sidebar` compact rail and `ProjectSessionList` expanded tree).
+ */
+export type ActiveView = 'sessions' | 'project' | 'pane-chat' | 'git-graph';
+
 interface NavigationState {
-  activeView: 'sessions' | 'project' | 'pane-chat';
+  activeView: ActiveView;
   activeProjectId: number | null;
 
   // Sidebar collapse
@@ -37,11 +44,12 @@ interface NavigationState {
   setSidebarNavigationScope: (scope: SidebarNavigationScope) => void;
 
   // Actions
-  setActiveView: (view: 'sessions' | 'project' | 'pane-chat') => void;
+  setActiveView: (view: ActiveView) => void;
   setActiveProjectId: (projectId: number | null) => void;
   navigateToProject: (projectId: number) => void;
   navigateToSessions: () => void;
   navigateToPaneChat: () => void;
+  navigateToGitGraph: (projectId: number) => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
@@ -117,5 +125,11 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
   navigateToPaneChat: () => set({
     activeView: 'pane-chat',
     activeProjectId: null
+  }),
+
+  // The commit graph is repo-wide, so it keeps the project it belongs to.
+  navigateToGitGraph: (projectId) => set({
+    activeView: 'git-graph',
+    activeProjectId: projectId
   }),
 }));

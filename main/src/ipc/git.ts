@@ -9,6 +9,8 @@ import { panelEventBus } from '../services/panelEventBus';
 import { PanelEventType, PanelEvent } from '../../../shared/types/panels';
 import type { Session } from '../types/session';
 import type { GitCommit, GitGraphCommit } from '../services/gitDiffManager';
+import { GitGraphManager } from '../services/gitGraphManager';
+import type { RepoGitGraphRequest } from '../../../shared/types/gitGraph';
 import { CommandRunner } from '../utils/commandRunner';
 import { getShellPath } from '../utils/shellPath';
 import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
@@ -53,6 +55,16 @@ interface RawCommitData {
 }
 
 
+/**
+ * Worktree paths from `git worktree list` and from the sessions table can
+ * disagree on separators and trailing slashes (notably on Windows), so both
+ * sides are normalised before joining.
+ */
+function normalizeWorktreePath(path: string | null | undefined): string {
+  if (!path) return '';
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+
 function isValidGitUrl(url: string): boolean {
   // Accept https://, ssh://, and scp-style git@host:path formats
   return /^(https?:\/\/[\w./:@-]+|ssh:\/\/[\w./:@-]+|git@[\w.-]+:[\w./-]+)(\.git)?$/.test(url);
@@ -68,6 +80,8 @@ const DAEMON_GIT_STATUS_CHANNELS = [
   'sessions:get-executions',
   'sessions:get-execution-diff',
   'sessions:get-git-graph',
+  'projects:get-git-graph',
+  'projects:get-commit-detail',
   'git:file-status',
   'sessions:git-diff',
   'sessions:get-commit-diff-by-hash',
@@ -112,6 +126,9 @@ export function registerGitHandlers(
   commandRegistry: PaneCommandRegistry,
 ): void {
   const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager } = services;
+
+  // Repo-wide graph reads are self-contained; no shared state to register.
+  const gitGraphManager = new GitGraphManager();
 
   // Helper function to emit git operation events to all sessions in a project
   const emitGitOperationToProject = (sessionId: string, eventType: PanelEventType, message: string, details?: JsonObject) => {
@@ -426,6 +443,85 @@ export function registerGitHandlers(
       console.error('Failed to get git graph:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to get git graph';
       return { success: false, error: errorMessage };
+    }
+  });
+
+  /**
+   * Commit graph for one project's repository: every branch and tag of *that*
+   * repo, not just the commits unique to one session's worktree — and not the
+   * branches of a second repository that happens to share the clone as a
+   * remote (see `resolveRemoteScope`).
+   */
+  commandRegistry.register('projects:get-git-graph', async (request: RepoGitGraphRequest) => {
+    try {
+      const projectId = Number(request?.projectId);
+      if (!Number.isFinite(projectId)) {
+        return { success: false, error: 'A projectId is required' };
+      }
+
+      const ctx = sessionManager.getProjectContextByProjectId(projectId);
+      if (!ctx?.project?.path) {
+        return { success: false, error: 'Project not found' };
+      }
+
+      const { project, commandRunner } = ctx;
+
+      const data = await gitGraphManager.getRepoGraph(
+        project.path,
+        { limit: request.limit, remoteScope: request.remoteScope, focusRef: request.focusRef },
+        commandRunner,
+        async () => {
+          const worktrees = await worktreeManager.listWorktrees(project.path, commandRunner);
+          const sessions = databaseService.getAllSessions(projectId, { includeHidden: true });
+          const sessionByPath = new Map(
+            sessions
+              .filter(session => Boolean(session.worktree_path))
+              .map(session => [normalizeWorktreePath(session.worktree_path), session])
+          );
+
+          const projectPathKey = normalizeWorktreePath(project.path);
+          return worktrees.map(worktree => {
+            const key = normalizeWorktreePath(worktree.path);
+            const session = sessionByPath.get(key);
+            return {
+              path: worktree.path,
+              branch: worktree.branch,
+              isMainCheckout: key === projectPathKey,
+              ...(session ? { sessionId: session.id, sessionName: session.name } : {}),
+            };
+          });
+        }
+      );
+
+      return { success: true, data };
+    } catch (error) {
+      console.error('Failed to build repository git graph:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to build repository git graph',
+      };
+    }
+  });
+
+  /** Full patch for one commit, addressed by project rather than by session. */
+  commandRegistry.register('projects:get-commit-detail', async (projectId: number, commitHash: string) => {
+    try {
+      const ctx = sessionManager.getProjectContextByProjectId(Number(projectId));
+      if (!ctx?.project?.path) {
+        return { success: false, error: 'Project not found' };
+      }
+      if (!commitHash || !/^[0-9a-fA-F]{4,40}$/.test(commitHash)) {
+        return { success: false, error: 'A valid commit hash is required' };
+      }
+
+      const data = gitDiffManager.getCommitDiff(ctx.project.path, commitHash, ctx.commandRunner);
+      return { success: true, data };
+    } catch (error) {
+      console.error('Failed to get commit detail:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to get commit detail',
+      };
     }
   });
 

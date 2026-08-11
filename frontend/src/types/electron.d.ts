@@ -35,6 +35,8 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { RepoGitGraph, RepoGitGraphRequest } from '../../../shared/types/gitGraph';
+import type { GitDiffResult } from './diff';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -244,6 +246,10 @@ interface ElectronAPI {
     detectConfig: (projectId: string) => Promise<IPCResponse<DetectedProjectConfig | null>>;
     /** Resolve which run script to execute for a session (DB > config files > scripts/pane-run-script.js). Used by PanelTabBar Play button. */
     resolveRunScript: (sessionId: string) => Promise<IPCResponse<{ command: string; source: string } | null>>;
+    /** Repository-wide commit graph across every branch and tag. */
+    getGitGraph: (request: RepoGitGraphRequest) => Promise<IPCResponse<RepoGitGraph>>;
+    /** Full patch for one commit, resolved against the project checkout. */
+    getCommitDetail: (projectId: number, commitHash: string) => Promise<IPCResponse<GitDiffResult>>;
   };
 
   // Git operations

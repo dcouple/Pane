@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, Network } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -81,6 +81,7 @@ export function ProjectSessionList({
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
+  const navigateToGitGraph = useNavigationStore(s => s.navigateToGitGraph);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
   // Expansion state lives in the navigation store so the always-mounted
   // session hotkeys (useSessionNavigationHotkeys) see the same visible ordering
@@ -412,6 +413,12 @@ export function ProjectSessionList({
               label: 'Open session on main',
               icon: GitBranch,
               onClick: () => navigateToProject(project.id),
+            },
+            {
+              id: 'commit-graph',
+              label: 'Commit graph',
+              icon: Network,
+              onClick: () => navigateToGitGraph(project.id),
             },
             {
               id: 'delete',
