@@ -682,10 +682,12 @@ async function getSessionBranchInfoAsync(
     // Check for associated pull request (async)
     let pullRequest: SessionBranchInfo['pullRequest'];
     try {
+      // Silent: `gh` is optional, and a machine without it (or a repo with no
+      // GitHub remote) would log two errors per session on every dashboard load.
       const prResult = await ctx.commandRunner.execAsync(
         `gh pr list --head ${branchName} --state all --json number,title,state,url --limit 1`,
         projectPath,
-        { timeout: 10000 }
+        { timeout: 10000, silent: true }
       );
       const prOutput = prResult.stdout.trim();
 

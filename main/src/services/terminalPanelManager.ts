@@ -23,6 +23,7 @@ import { detectAgentState } from './agentStatus/manifestEngine';
 import { getManifestForAgent } from './agentStatus/manifests';
 import type { AgentState, PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { PaneEventArgument } from '../core/eventSink';
+import { stripInheritedAgentSession } from './panels/agentSessionEnv';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -968,13 +969,10 @@ export class TerminalPanelManager {
     // `process.env` is `NodeJS.ProcessEnv` which allows `undefined` values; the
     // ptyHost RPC DTO requires `Record<string, string>`. Drop undefined keys so
     // both the legacy `pty.spawn` path and the ptyHost path see the same shape.
-    const baseEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) {
-        baseEnv[key] = value;
-      }
-    }
-    const spawnEnv = {
+    // Drops the launching agent's session markers — inheriting them makes
+    // Claude Code disable transcript persistence, which silently breaks resume.
+    const baseEnv = stripInheritedAgentSession(process.env);
+    const spawnEnv: Record<string, string> = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: enhancedPath,
