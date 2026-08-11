@@ -28,6 +28,7 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: Array<Record<string, unknown>>;
   initialCombinedDiff?: Record<string, unknown> | null;
+  initialFleetAgents?: Array<Record<string, unknown>>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -414,6 +415,21 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           configState.defaultOrchestratorAgent = agent === 'codex' ? 'codex' : 'claude';
           return success(createPaneChatState());
         },
+      }),
+      fleet: namespace({
+        listAgents: () => success(clone(mockOptions.initialFleetAgents ?? [])),
+        snapshots: (request: { panelIds?: string[] }) => success({
+          snapshots: (request?.panelIds ?? []).map((panelId) => ({
+            panelId,
+            text: `snapshot for ${panelId}`,
+            lineCount: 1,
+            isAlternateScreen: false,
+            isLive: true,
+            lastActivityAt: null,
+          })),
+          missing: [],
+          capturedAt: new Date(0).toISOString(),
+        }),
       }),
       panels: namespace({
         getSessionPanels: (sessionId: string) => success(

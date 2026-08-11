@@ -1,0 +1,360 @@
+import { memo } from 'react';
+import { GitBranch, Keyboard, Minimize2, Radio, TerminalSquare, Trash2, X } from 'lucide-react';
+import { AgentStatusDot } from '../ui/AgentStatusDot';
+import { useFleetTerminal } from '../../hooks/useFleetTerminal';
+import { toAgentDisplayStatus } from '../../utils/agentStatus';
+import { describeFleetTile } from '../../utils/fleetGrouping';
+import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
+import type { FleetTileModel } from '../../../../shared/types/fleet';
+
+/** Rendered row height of the live terminal: 12px font at 1.15 line height. */
+const ROW_PX = 14;
+/** Row height to aim for once focused, where legibility matters most. */
+const FOCUS_ROW_PX = 17;
+/** Ceiling so one very tall PTY can't push the rest of the grid off-screen. */
+const MAX_FOCUS_BODY_PX = 620;
+
+/** Left accent per state, so a wall of tiles is scannable at a glance. */
+const ACCENT: Record<AgentDisplayStatus, string> = {
+  blocked: 'bg-status-error',
+  working: 'bg-interactive',
+  done: 'bg-status-success',
+  idle: 'bg-border-secondary',
+  unknown: 'bg-border-secondary',
+};
+
+const STATUS_TEXT: Record<AgentDisplayStatus, string> = {
+  blocked: 'Needs input',
+  working: 'Working',
+  done: 'Done',
+  idle: 'Idle',
+  unknown: 'Not running',
+};
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function LiveTerminalSurface({
+  panelId,
+  cols,
+  rows,
+  isAlternateScreen,
+  height,
+  interactive,
+  fitWholeGrid,
+  sendEscape,
+  onEscapeExit,
+}: {
+  panelId: string;
+  cols: number | null;
+  rows: number | null;
+  isAlternateScreen: boolean;
+  height: number;
+  interactive: boolean;
+  /** Shrink the font until the agent's entire screen fits — expanded view. */
+  fitWholeGrid: boolean;
+  sendEscape: boolean;
+  onEscapeExit: () => void;
+}) {
+  const { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight } = useFleetTerminal({
+    panelId,
+    cols,
+    rows,
+    isAlternateScreen,
+    interactive,
+    matchPtyExactly: fitWholeGrid,
+    sendEscape,
+    onEscapeExit,
+  });
+
+  return (
+    <div
+      ref={wrapperRef}
+      aria-hidden={interactive ? undefined : 'true'}
+      // Pointer-down rather than click: a click on the tile's padding would
+      // otherwise leave the keyboard wherever it was, and typing would be lost.
+      onPointerDown={interactive ? focusTerminal : undefined}
+      className={`relative w-full overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] ${
+        interactive ? '' : 'pane-fleet-surface'
+      } ${fitWholeGrid ? 'p-1' : ''}`}
+      style={{ height }}
+    >
+      {/*
+        Bottom-anchored in every mode: the newest rows — and the prompt waiting
+        for an answer — are what a tile is for, so anything that does not fit is
+        lost off the top. `bottomOverflow` pushes the agent's empty trailing
+        rows out below the tile, so the space goes to content instead of blanks.
+      */}
+      <div
+        ref={containerRef}
+        className={fitWholeGrid ? 'absolute inset-x-1' : 'absolute inset-x-0'}
+        style={{ bottom: (fitWholeGrid ? 4 : 0) - bottomOverflow }}
+      />
+      {/*
+        The terminal is exactly as wide as the agent's PTY — anything wider than
+        the tile is cut off. A hard edge mid-word reads as a rendering fault, so
+        say it with a fade: text running into it is text there is more of.
+      */}
+      {clippedRight && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[color:var(--color-terminal-bg,#0b0b10)] to-transparent"
+        />
+      )}
+      {error && (
+        <p className="absolute inset-x-1 bottom-1 truncate text-[9px] text-status-error">{error}</p>
+      )}
+    </div>
+  );
+}
+
+export interface FleetTileProps {
+  tile: FleetTileModel;
+  /** True when this tile is rendered as a live terminal rather than a snapshot. */
+  isLiveView: boolean;
+  onHoverStart: (panelId: string) => void;
+  onHoverEnd: (panelId: string) => void;
+  onOpen: (tile: FleetTileModel) => void;
+  /** Trailing lines shown in snapshot mode; scales with grid density. */
+  snapshotLines: number;
+  /** True while this tile's agent is open in the focus view. */
+  isFocused: boolean;
+  /**
+   * Whether taking the keyboard also enlarges the tile to the agent's full
+   * screen. Off, the tile keeps its grid size and is typed into where it sits.
+   */
+  expandWhenFocused: boolean;
+  /** Forward Escape to the agent instead of using it to leave typing mode. */
+  sendEscape: boolean;
+  /** Hand this tile the keyboard. */
+  onFocusAgent: (tile: FleetTileModel) => void;
+  /** Return the tile to preview size. */
+  onCollapse: () => void;
+  /** Ask to close this pane for good — the view confirms before acting. */
+  onClose: (tile: FleetTileModel) => void;
+  /** True while the grid's roving keyboard cursor is on this tile. */
+  isSelected: boolean;
+  /** Report this tile's element so the grid can scroll it into view. */
+  registerElement: (panelId: string, element: HTMLElement | null) => void;
+}
+
+/**
+ * One agent in the grid.
+ *
+ * Renders a cheap ANSI-stripped snapshot by default and a real read-only
+ * terminal when promoted, so a large grid costs one xterm instance rather than
+ * one per agent.
+ */
+export const FleetTile = memo(function FleetTile({
+  tile,
+  isLiveView,
+  onHoverStart,
+  onHoverEnd,
+  onOpen,
+  snapshotLines,
+  isFocused,
+  expandWhenFocused,
+  sendEscape,
+  onFocusAgent,
+  onCollapse,
+  onClose,
+  isSelected,
+  registerElement,
+}: FleetTileProps) {
+  const status = toAgentDisplayStatus(tile.agentState, false);
+  const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
+  const snapshotText = tile.snapshot?.text ?? '';
+  const showLive = isLiveView && tile.isLive;
+  // Both bodies are laid out on the same row grid as the live terminal
+  // (12px font x 1.15 line height), so a tile shows whole lines rather than
+  // clipping one in half, and hovering never makes the grid jump.
+  const budgetRows = Math.max(snapshotLines, 6);
+  // A terminal shorter than the budget gets only the height it needs, instead
+  // of reserving blank space below it.
+  const ptyRows = tile.snapshot?.rows ?? 0;
+  const visibleRows = showLive && ptyRows > 0 ? Math.min(ptyRows, budgetRows) : budgetRows;
+  // Expanding is opt-in. On, the tile grows in place to show the agent's whole
+  // grid at a readable size; off, it is typed into exactly where it sits and
+  // the grid around it never reflows — the terminal fits itself to the tile
+  // instead, and the bottom rows carrying the prompt stay visible.
+  const isExpanded = isFocused && expandWhenFocused;
+  const bodyHeight = isExpanded
+    ? Math.min(Math.max(ptyRows, budgetRows) * FOCUS_ROW_PX, MAX_FOCUS_BODY_PX)
+    : visibleRows * ROW_PX;
+  const lastActivity = relativeTime(tile.snapshot?.lastActivityAt ?? null);
+  // Only worth showing when it says something the session name does not.
+  const branchLabel = tile.worktreeName && tile.worktreeName !== tile.sessionName
+    ? tile.worktreeName
+    : null;
+
+  return (
+    <article
+      ref={element => registerElement(tile.panelId, element)}
+      className={`group relative flex min-w-0 flex-col overflow-hidden rounded-md border bg-surface-secondary transition-colors ${
+        isFocused
+          ? 'border-interactive ring-1 ring-interactive/40'
+          : isSelected
+            ? 'border-interactive/70 ring-1 ring-interactive/20'
+            : showLive
+              ? 'border-interactive/50'
+              : 'border-border-primary hover:border-border-secondary'
+      }`}
+      // Expanded, the tile takes the whole grid row: the agent's terminal needs
+      // that width to stay both correct and readable.
+      style={isExpanded ? { gridColumn: '1 / -1' } : undefined}
+      onMouseEnter={() => onHoverStart(tile.panelId)}
+      onMouseLeave={() => onHoverEnd(tile.panelId)}
+    >
+      {/* Status accent */}
+      <span className={`absolute inset-y-0 left-0 w-0.5 ${ACCENT[status]}`} aria-hidden="true" />
+
+      <header className="flex flex-shrink-0 items-center gap-1.5 border-b border-border-primary py-1 pl-2.5 pr-2">
+        <AgentStatusDot status={status} size="sm" className="flex-shrink-0" />
+        <button
+          type="button"
+          onClick={() => onOpen(tile)}
+          onFocus={() => onHoverStart(tile.panelId)}
+          onBlur={() => onHoverEnd(tile.panelId)}
+          aria-label={`Open ${tile.sessionName} — ${agentLabel} — ${STATUS_TEXT[status]}`}
+          title={describeFleetTile(tile)}
+          className="min-w-0 flex-1 truncate rounded text-left text-[11px] font-medium leading-tight text-text-primary transition-colors hover:text-interactive focus:outline-none focus:ring-1 focus:ring-interactive"
+        >
+          {tile.sessionName}
+        </button>
+        {/*
+          Within a project the worktree is the session's real identity — three
+          sessions on "Super Forum" are only told apart by their branch.
+        */}
+        {branchLabel && (
+          <span
+            className="flex min-w-0 max-w-[45%] flex-shrink items-center gap-0.5 text-[9px] text-text-muted"
+            title={tile.worktreePath ?? branchLabel}
+          >
+            <GitBranch className="h-2.5 w-2.5 flex-shrink-0" aria-hidden="true" />
+            <span className="truncate">{branchLabel}</span>
+          </span>
+        )}
+        <span
+          className="flex-shrink-0 rounded-sm bg-surface-tertiary px-1 text-[9px] uppercase tracking-wide text-text-tertiary"
+          aria-hidden="true"
+        >
+          {agentLabel}
+        </span>
+        {isFocused && (
+          <button
+            type="button"
+            onClick={() => onCollapse()}
+            title={isExpanded ? 'Return this tile to preview size' : 'Stop sending keystrokes to this agent'}
+            className="flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[9px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+          >
+            {isExpanded
+              ? <Minimize2 className="h-2.5 w-2.5" aria-hidden="true" />
+              : <X className="h-2.5 w-2.5" aria-hidden="true" />}
+            {isExpanded ? 'Collapse' : 'Release'}
+          </button>
+        )}
+        {showLive
+          ? <Radio className="h-2.5 w-2.5 flex-shrink-0 text-interactive" aria-label="Live" />
+          : <TerminalSquare className="h-2.5 w-2.5 flex-shrink-0 text-text-muted" aria-hidden="true" />}
+        {/*
+          Closing a pane ends a process and drops its scrollback, so it stays
+          out of the way until the tile is hovered — and asks first.
+        */}
+        <button
+          type="button"
+          onClick={() => onClose(tile)}
+          aria-label={`Close ${tile.sessionName}`}
+          title="Close this pane"
+          className="flex-shrink-0 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:bg-status-error/15 hover:text-status-error focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Trash2 className="h-2.5 w-2.5" aria-hidden="true" />
+        </button>
+      </header>
+
+      {showLive ? (
+        <LiveTerminalSurface
+          panelId={tile.panelId}
+          cols={tile.snapshot?.cols ?? null}
+          rows={tile.snapshot?.rows ?? null}
+          isAlternateScreen={tile.snapshot?.isAlternateScreen ?? false}
+          height={bodyHeight}
+          interactive={isFocused}
+          fitWholeGrid={isExpanded}
+          sendEscape={sendEscape}
+          onEscapeExit={onCollapse}
+        />
+      ) : (
+        <div
+          className="overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] px-1.5 py-1"
+          style={{ height: bodyHeight }}
+        >
+          {snapshotText ? (
+            <pre
+              aria-hidden="true"
+              className="h-full overflow-hidden whitespace-pre font-mono text-[11px] text-text-secondary"
+              style={{ lineHeight: `${ROW_PX}px` }}
+            >
+              {snapshotText}
+            </pre>
+          ) : (
+            <p className="pt-3 text-center text-[10px] text-text-muted">
+              {tile.isLive ? 'Waiting for output…' : 'Not running'}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/*
+        Activation target over the preview — snapshot or read-only terminal
+        alike, so a running agent is one click from the keyboard and never
+        needs to be hovered into life first. Removed once focused, leaving the
+        terminal itself to receive every click and keystroke.
+      */}
+      {tile.isLive && !isFocused && (
+        <button
+          type="button"
+          onClick={() => onFocusAgent(tile)}
+          aria-label={`Interact with ${tile.sessionName}`}
+          title="Click to answer or type"
+          className="absolute inset-x-0 bottom-5 top-6 z-10 cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-interactive"
+        >
+          <span className="sr-only">Interact with {tile.sessionName}</span>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-1 right-1 flex items-center gap-1 rounded bg-surface-primary/85 px-1.5 py-0.5 text-[9px] text-text-secondary opacity-0 transition-opacity group-hover:opacity-100"
+          >
+            <Keyboard className="h-2.5 w-2.5" />
+            Click to answer
+          </span>
+        </button>
+      )}
+
+      <footer className="flex flex-shrink-0 items-center gap-1.5 border-t border-border-primary py-0.5 pl-2.5 pr-2 text-[9px] text-text-muted">
+        {isFocused ? (
+          <span className="flex items-center gap-1 font-medium text-interactive">
+            <Keyboard className="h-2.5 w-2.5" aria-hidden="true" />
+            {sendEscape
+              ? 'Typing goes to this agent — Escape is sent to it too'
+              : 'Typing goes to this agent — Escape leaves'}
+          </span>
+        ) : (
+          <span className="min-w-0 truncate">{tile.projectName}</span>
+        )}
+        <span className="ml-auto flex-shrink-0 whitespace-nowrap">
+          {tile.isLive ? (lastActivity || STATUS_TEXT[status]) : 'stopped'}
+        </span>
+      </footer>
+    </article>
+  );
+});
+
+export default FleetTile;

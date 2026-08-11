@@ -27,6 +27,7 @@ import type {
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { FleetAgentPanel, FleetSnapshotRequest, FleetSnapshotResult } from '../../../shared/types/fleet';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -91,6 +92,12 @@ interface ElectronAPI {
   paneChat: {
     getOrCreate: () => Promise<IPCResponse<PaneChatState<Session>>>;
     setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
+  };
+
+  // Fleet grid — every agent pane across all sessions
+  fleet: {
+    listAgents: (options?: { includeArchived?: boolean }) => Promise<IPCResponse<FleetAgentPanel[]>>;
+    snapshots: (request: FleetSnapshotRequest) => Promise<IPCResponse<FleetSnapshotResult>>;
   };
 
   // Session management

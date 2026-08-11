@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
+import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, LayoutGrid } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -380,10 +380,16 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
   const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
+  const navigateToFleet = useNavigationStore((state) => state.navigateToFleet);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const setSidebarNavigationScope = useNavigationStore((state) => state.setSidebarNavigationScope);
   const agentStatusByPanel = usePanelStore((state) => state.agentStatus);
   const agentPanelSessions = usePanelStore((state) => state.agentStatusSession);
+  /** Agents waiting on the user, anywhere — surfaced on the fleet rail button. */
+  const blockedAgentCount = useMemo(
+    () => Object.values(agentStatusByPanel).filter((state) => state === 'blocked').length,
+    [agentStatusByPanel]
+  );
   const unviewedBySession = usePanelStore((state) => state.unviewedCompletedActivity);
   useSessionNavigationHotkeys({ projects, sessionSortAscending });
 
@@ -490,6 +496,28 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
               >
                 <MessageSquare className="h-4 w-4" />
                 <AgentStatusDot status={paneChatStatus} size="sm" className="absolute right-0 top-0" />
+              </button>
+            </Tooltip>
+
+            <Tooltip content="Agent Fleet" side="right">
+              <button
+                type="button"
+                data-testid="compact-fleet"
+                data-compact-rail-item
+                onClick={() => {
+                  setSidebarNavigationScope('repositories');
+                  navigateToFleet();
+                }}
+                aria-label={blockedAgentCount > 0
+                  ? `Agent Fleet — ${blockedAgentCount} waiting for input`
+                  : 'Agent Fleet'}
+                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'fleet' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                {/* Same affordance as Pane Chat above: an agent is waiting. */}
+                {blockedAgentCount > 0 && (
+                  <AgentStatusDot status="blocked" size="sm" className="absolute right-0 top-0" />
+                )}
               </button>
             </Tooltip>
 
