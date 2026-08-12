@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { Logger } from '../utils/logger';
 import { escapeShellArg } from '../utils/shellEscape';
+import { escapeForBash, linuxToUNCPath, posixJoin } from '../utils/wslUtils';
 import {
   PR_TEMPLATE_PATHS,
   type CreatePullRequestRequest,
@@ -45,6 +46,46 @@ const MAX_DIFF_BYTES = 2_000_000;
 export interface CommitSummary {
   subject: string;
   body: string;
+}
+
+/** Just enough of a {@link CommandRunner} to know which shell it targets. */
+type ShellTarget = { wslContext?: { distribution: string } | null };
+
+/**
+ * Quote one argument for the shell that will actually run the command.
+ *
+ * `escapeShellArg` decides by `process.platform`, which is the wrong question
+ * here. A WSL project's commands are handed to `bash -c` inside the distro even
+ * though the host is Windows, and Windows-style double quotes leave `$`,
+ * backticks and `\` live in bash. Git only forbids space, `~^:?*[\` and control
+ * characters in a ref, so a branch named ``fix-`whoami` `` is legal — and would
+ * otherwise run as a command. `wslUtils` has `escapeForBash` for exactly this,
+ * with a comment saying so.
+ */
+export function quoteArg(target: ShellTarget, value: string): string {
+  return target.wslContext ? escapeForBash(value) : escapeShellArg(value);
+}
+
+/**
+ * Where the pull request body is written, and the path `gh` is given for it.
+ *
+ * For a WSL project `gh` runs inside the distro, so the host's `tmpdir()` — a
+ * `C:\…` path on Windows — is one it cannot open, and `--body-file` fails
+ * before the pull request is ever created. The file therefore goes to the
+ * distro's `/tmp`, written through the UNC view Windows has of it and named to
+ * `gh` as the Linux path it sees.
+ */
+export function resolveBodyFile(
+  distribution: string | null | undefined,
+  fileName: string
+): { writePath: string; ghPath: string } {
+  if (!distribution) {
+    const hostPath = join(tmpdir(), fileName);
+    return { writePath: hostPath, ghPath: hostPath };
+  }
+
+  const linuxPath = posixJoin('/tmp', fileName);
+  return { writePath: linuxToUNCPath(linuxPath, distribution), ghPath: linuxPath };
 }
 
 /**
@@ -432,7 +473,7 @@ export class PullRequestManager {
 
     for (const candidate of candidates) {
       try {
-        await commandRunner.execAsync(`${escapeShellArg(candidate)} --version`, cwd, {
+        await commandRunner.execAsync(`${quoteArg(commandRunner, candidate)} --version`, cwd, {
           timeout: 5000,
           silent: true,
         });
@@ -538,7 +579,7 @@ export class PullRequestManager {
     if (!remote) throw new Error('This repository has no remote to push to.');
 
     await commandRunner.execAsync(
-      `git push -u ${escapeShellArg(remote)} ${escapeShellArg(branch)}`,
+      `git push -u ${quoteArg(commandRunner, remote)} ${quoteArg(commandRunner, branch)}`,
       worktreePath,
       { timeout: PUSH_TIMEOUT_MS }
     );
@@ -546,16 +587,20 @@ export class PullRequestManager {
     const forkOwner = this.originRepo(worktreePath, commandRunner)?.split('/')[0] ?? null;
 
     // The body goes through a file: it is markdown with newlines, quotes and
-    // backticks, and no amount of shell escaping makes that pleasant.
-    const bodyFile = join(tmpdir(), `pane-pr-${randomUUID()}.md`);
-    writeFileSync(bodyFile, request.body, 'utf8');
+    // backticks, and no amount of shell escaping makes that pleasant. Where the
+    // file goes depends on which side of the WSL boundary gh runs on.
+    const { writePath, ghPath } = resolveBodyFile(
+      commandRunner.wslContext?.distribution,
+      `pane-pr-${randomUUID()}.md`
+    );
+    writeFileSync(writePath, request.body, 'utf8');
 
     try {
       const gh = await this.resolveGh(worktreePath, commandRunner);
       if (!gh) throw new Error('The GitHub CLI (gh) was not found. Install it from https://cli.github.com.');
 
-      const args = buildCreateArgs(request, { branch, forkOwner, bodyFile });
-      const command = `${escapeShellArg(gh)} ${args.map(escapeShellArg).join(' ')}`;
+      const args = buildCreateArgs(request, { branch, forkOwner, bodyFile: ghPath });
+      const command = `${quoteArg(commandRunner, gh)} ${args.map(arg => quoteArg(commandRunner, arg)).join(' ')}`;
       const { stdout } = await commandRunner.execAsync(command, worktreePath, { timeout: GH_TIMEOUT_MS });
 
       const created = parseCreatedPullRequest(stdout);
@@ -565,7 +610,7 @@ export class PullRequestManager {
       return created;
     } finally {
       try {
-        unlinkSync(bodyFile);
+        unlinkSync(writePath);
       } catch {
         // A leftover temp file is not worth failing a created pull request over.
       }
@@ -595,7 +640,7 @@ export class PullRequestManager {
 
     try {
       const { stdout } = await commandRunner.execAsync(
-        `${escapeShellArg(gh)} pr view ${number} --repo ${escapeShellArg(repo)} --json ${fields}`,
+        `${quoteArg(commandRunner, gh)} pr view ${number} --repo ${quoteArg(commandRunner, repo)} --json ${fields}`,
         projectPath,
         { timeout: GH_TIMEOUT_MS, silent: true }
       );
@@ -618,7 +663,7 @@ export class PullRequestManager {
     const gh = await this.resolveGh(projectPath, commandRunner);
     if (!gh) return { number, checks: [], summary: 'none', fetchedAtMs: Date.now() };
 
-    const command = `${escapeShellArg(gh)} pr checks ${number} --repo ${escapeShellArg(repo)} --json name,state,bucket,link`;
+    const command = `${quoteArg(commandRunner, gh)} pr checks ${number} --repo ${quoteArg(commandRunner, repo)} --json name,state,bucket,link`;
 
     try {
       const { stdout } = await commandRunner.execAsync(command, projectPath, {
@@ -673,7 +718,7 @@ export class PullRequestManager {
     commandRunner: CommandRunner
   ): CommitSummary[] {
     // Oldest first: the first commit is the one the title comes from.
-    const range = `${escapeShellArg(baseBranch)}..HEAD`;
+    const range = `${quoteArg(commandRunner, baseBranch)}..HEAD`;
     try {
       const raw = commandRunner.exec(
         `git log ${range} --reverse --format=%s%x00%b%x01`,
@@ -708,7 +753,7 @@ export class PullRequestManager {
 
   private async isGhAuthenticated(gh: string, cwd: string, commandRunner: CommandRunner): Promise<boolean> {
     try {
-      await commandRunner.execAsync(`${escapeShellArg(gh)} auth status`, cwd, { timeout: 10_000, silent: true });
+      await commandRunner.execAsync(`${quoteArg(commandRunner, gh)} auth status`, cwd, { timeout: 10_000, silent: true });
       return true;
     } catch {
       return false;
@@ -747,7 +792,7 @@ export class PullRequestManager {
       for (let page = 1; page <= MAX_BRANCH_PAGES; page++) {
         const query = `repos/${repo}/branches?per_page=${BRANCH_PAGE_SIZE}&page=${page}`;
         const { stdout } = await commandRunner.execAsync(
-          `${escapeShellArg(gh)} api ${escapeShellArg(query)} --jq ${escapeShellArg('[.[].name]')}`,
+          `${quoteArg(commandRunner, gh)} api ${quoteArg(commandRunner, query)} --jq ${quoteArg(commandRunner, '[.[].name]')}`,
           projectPath,
           { timeout: GH_TIMEOUT_MS, silent: true }
         );
@@ -800,7 +845,7 @@ export class PullRequestManager {
   ): string[] {
     const remote = this.remotes(projectPath, commandRunner).find(name => {
       try {
-        const url = commandRunner.exec(`git remote get-url ${escapeShellArg(name)}`, projectPath, { silent: true });
+        const url = commandRunner.exec(`git remote get-url ${quoteArg(commandRunner, name)}`, projectPath, { silent: true });
         return parseGitHubRemote(url)?.toLowerCase() === repo.toLowerCase();
       } catch {
         return false;
@@ -810,7 +855,7 @@ export class PullRequestManager {
 
     try {
       const raw = commandRunner.exec(
-        `git for-each-ref --format=%(refname:lstrip=3) ${escapeShellArg(`refs/remotes/${remote}`)}`,
+        `git for-each-ref --format=%(refname:lstrip=3) ${quoteArg(commandRunner, `refs/remotes/${remote}`)}`,
         projectPath,
         { silent: true }
       );
@@ -838,7 +883,7 @@ export class PullRequestManager {
     if (!baseRef) return { ...empty, baseRef: baseBranch };
 
     try {
-      const range = `${escapeShellArg(baseRef)}...HEAD`;
+      const range = `${quoteArg(commandRunner, baseRef)}...HEAD`;
       const numstatRaw = commandRunner.exec(`git diff --numstat -M -z ${range}`, worktreePath, { silent: true });
       const nameStatusRaw = commandRunner.exec(`git diff --name-status -M -z ${range}`, worktreePath, { silent: true });
 
@@ -872,7 +917,7 @@ export class PullRequestManager {
     if (!baseRef) return { baseRef: baseBranch, diff: '', truncated: false };
 
     const raw = commandRunner.exec(
-      `git diff -M ${escapeShellArg(baseRef)}...HEAD`,
+      `git diff -M ${quoteArg(commandRunner, baseRef)}...HEAD`,
       worktreePath,
       { silent: true, maxBuffer: MAX_DIFF_BYTES * 2 }
     );
@@ -903,7 +948,7 @@ export class PullRequestManager {
     for (const candidate of candidates) {
       try {
         commandRunner.exec(
-          `git rev-parse --verify --quiet ${escapeShellArg(`${candidate}^{commit}`)}`,
+          `git rev-parse --verify --quiet ${quoteArg(commandRunner, `${candidate}^{commit}`)}`,
           worktreePath,
           { silent: true }
         );
@@ -920,7 +965,7 @@ export class PullRequestManager {
     const remote = resolvePushRemote(this.remotes(worktreePath, commandRunner));
     if (!remote) return null;
     try {
-      const url = commandRunner.exec(`git remote get-url ${escapeShellArg(remote)}`, worktreePath, { silent: true });
+      const url = commandRunner.exec(`git remote get-url ${quoteArg(commandRunner, remote)}`, worktreePath, { silent: true });
       return parseGitHubRemote(url);
     } catch {
       return null;
@@ -942,9 +987,9 @@ export class PullRequestManager {
       // identity, which the head ref needs, is nowhere in the answer.
       const gh = await this.resolveGh(projectPath, commandRunner);
       if (!gh) return null;
-      const target = repo ? ` ${escapeShellArg(repo)}` : '';
+      const target = repo ? ` ${quoteArg(commandRunner, repo)}` : '';
       const { stdout } = await commandRunner.execAsync(
-        `${escapeShellArg(gh)} repo view${target} --json nameWithOwner,defaultBranchRef,parent`,
+        `${quoteArg(commandRunner, gh)} repo view${target} --json nameWithOwner,defaultBranchRef,parent`,
         projectPath,
         { timeout: GH_TIMEOUT_MS, silent: true }
       );
@@ -966,7 +1011,7 @@ export class PullRequestManager {
       const gh = await this.resolveGh(projectPath, commandRunner);
       if (!gh) return undefined;
       const { stdout } = await commandRunner.execAsync(
-        `${escapeShellArg(gh)} pr list --head ${escapeShellArg(branch)} --state all --json number,url,state,title --limit 1`,
+        `${quoteArg(commandRunner, gh)} pr list --head ${quoteArg(commandRunner, branch)} --state all --json number,url,state,title --limit 1`,
         projectPath,
         { timeout: GH_TIMEOUT_MS, silent: true }
       );
