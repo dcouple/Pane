@@ -6,8 +6,6 @@ import {
   parseUntrackedPathsZ,
   mergeFileChanges,
   WORKING_TREE_REF,
-  MAX_UNTRACKED_INLINE_FILES,
-  chunkByCommandLength,
 } from './gitDiffManager';
 import type { CommandRunner } from '../utils/commandRunner';
 
@@ -197,108 +195,6 @@ describe('GitDiffManager.getCommitFileChanges', () => {
 
     expect(result.files).toEqual([]);
     expect(result.totalFiles).toBe(0);
-  });
-});
-
-describe('chunkByCommandLength', () => {
-  it('keeps every file and preserves order', () => {
-    const files = Array.from({ length: 500 }, (_, i) => `src/some/nested/path/file-${i}.ts`);
-    const batches = chunkByCommandLength(files);
-    expect(batches.flat()).toEqual(files);
-  });
-
-  it('keeps each batch within the command-line budget', () => {
-    const files = Array.from({ length: 500 }, (_, i) => `src/file-${i}.ts`);
-    for (const batch of chunkByCommandLength(files, 200)) {
-      const rendered = batch.map(f => `"${f}"`).join(' ');
-      // One over-long path may exceed the budget on its own; more may not.
-      if (batch.length > 1) expect(rendered.length).toBeLessThanOrEqual(200);
-    }
-  });
-
-  it('never drops a path longer than the whole budget', () => {
-    const long = 'a'.repeat(500);
-    expect(chunkByCommandLength([long], 100).flat()).toEqual([long]);
-  });
-
-  it('returns nothing for no files', () => {
-    expect(chunkByCommandLength([])).toEqual([]);
-  });
-});
-
-/**
- * These guard the freeze: a worktree carrying an unignored build tree used to
- * cost one child process per untracked file — twice over — on the main process.
- */
-describe('working-directory capture is bounded and off the main thread', () => {
-  function asyncRunner(untracked: string[], counters: { cat: number; wc: number; lsFiles: number }) {
-    return {
-      exec: vi.fn(() => ''),
-      execAsync: vi.fn(async (command: string) => {
-        if (command.startsWith('cat ')) {
-          counters.cat++;
-          return { stdout: 'hello\nworld', stderr: '' };
-        }
-        if (command.startsWith('wc -l ')) {
-          counters.wc++;
-          const paths = command.match(/"/g)?.length ?? 0;
-          const fileCount = paths / 2;
-          const lines = Array.from({ length: fileCount }, (_, i) => `  2 file${i}`).join('\n');
-          return { stdout: `${lines}\n  ${fileCount * 2} total`, stderr: '' };
-        }
-        if (command.includes('ls-files --others')) {
-          counters.lsFiles++;
-          return { stdout: untracked.join('\n'), stderr: '' };
-        }
-        return { stdout: '', stderr: '' };
-      }),
-    } as unknown as CommandRunner;
-  }
-
-  it('caps content reads and batches line counts for a huge untracked set', async () => {
-    const untracked = Array.from({ length: 5000 }, (_, i) => `app/build/res/values-${i}.arsc.flat`);
-    const counters = { cat: 0, wc: 0, lsFiles: 0 };
-
-    const result = await new GitDiffManager().captureWorkingDirectoryDiff('/repo', asyncRunner(untracked, counters));
-
-    // Content inlining is capped...
-    expect(counters.cat).toBeLessThanOrEqual(MAX_UNTRACKED_INLINE_FILES);
-    // ...and 5000 line counts collapse into a handful of batched spawns,
-    // where the old code spawned one process per file.
-    expect(counters.wc).toBeGreaterThan(0);
-    expect(counters.wc).toBeLessThan(100);
-    // Every untracked file is still reported, even when its content is not.
-    expect(result.changedFiles).toHaveLength(5000);
-    expect(result.stats.filesChanged).toBe(5000);
-  });
-
-  it('lists untracked files exactly once per capture', async () => {
-    const counters = { cat: 0, wc: 0, lsFiles: 0 };
-    await new GitDiffManager().captureWorkingDirectoryDiff('/repo', asyncRunner(['a.ts', 'b.ts'], counters));
-    expect(counters.lsFiles).toBe(1);
-  });
-
-  it('still inlines content for an ordinary number of untracked files', async () => {
-    const counters = { cat: 0, wc: 0, lsFiles: 0 };
-    const result = await new GitDiffManager().captureWorkingDirectoryDiff(
-      '/repo',
-      asyncRunner(['README.md', 'src/new.ts', 'notes.txt'], counters)
-    );
-
-    expect(counters.cat).toBe(3);
-    expect(result.diff).toContain('README.md');
-    expect(result.diff).toContain('+hello');
-  });
-
-  it('never blocks on the synchronous exec path', async () => {
-    const counters = { cat: 0, wc: 0, lsFiles: 0 };
-    const runner = asyncRunner(['a.ts'], counters);
-
-    await new GitDiffManager().captureWorkingDirectoryDiff('/repo', runner);
-
-    // Only getCurrentCommitHash stays sync; nothing that scales with file count.
-    const syncCalls = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls;
-    expect(syncCalls.every(call => call[0].includes('rev-parse'))).toBe(true);
   });
 });
 

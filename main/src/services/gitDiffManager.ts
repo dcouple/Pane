@@ -1,6 +1,10 @@
+import { createReadStream } from 'fs';
+import { readFile, stat } from 'fs/promises';
+import { join } from 'path';
 import type { Logger } from '../utils/logger';
 import type { AnalyticsManager } from './analyticsManager';
 import { CommandRunner } from '../utils/commandRunner';
+import { linuxToUNCPath, posixJoin, type WSLContext } from '../utils/wslUtils';
 import {
   MAX_FILES_PER_COMMIT,
   type GitCommitFileChange,
@@ -49,41 +53,74 @@ export const WORKING_TREE_REF = 'index';
 /**
  * Caps on inlining untracked file content into a synthesized diff.
  *
- * Reading an untracked file costs one synchronous child process on the main
- * process, so an unignored build directory would otherwise stall the whole app.
+ * The resulting patch is parsed with a regex in the renderer, so an unignored
+ * build directory would otherwise hand it megabytes to chew through.
  */
 export const MAX_UNTRACKED_INLINE_FILES = 200;
 export const MAX_UNTRACKED_INLINE_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Per-file ceiling for inlining. Matches the buffer the previous `cat` had, so
+ * the same oversized files are left out of the patch as before.
+ */
+const MAX_UNTRACKED_INLINE_FILE_BYTES = 1024 * 1024;
 
 /** A working-tree diff can be large; don't truncate it at Node's 1MB default. */
 const MAX_DIFF_BUFFER_BYTES = 64 * 1024 * 1024;
 
 /**
- * Windows caps a command line at ~32k characters. Batches stay well under it so
- * a single oversized path can never push a command over the edge.
+ * Split NUL-separated git output.
+ *
+ * Git only quotes and escapes a path when it has to delimit it with a newline;
+ * under `-z` the bytes come through exactly as they are on disk. Nothing is
+ * trimmed here for the same reason — a leading or trailing space is part of the
+ * name, not padding.
  */
-const MAX_COMMAND_LENGTH = 6000;
+export function splitNulSeparated(raw: string): string[] {
+  return raw.split('\0').filter(entry => entry.length > 0);
+}
 
-/** Split paths into batches that fit in one command line. */
-export function chunkByCommandLength(files: string[], maxLength = MAX_COMMAND_LENGTH): string[][] {
-  const batches: string[][] = [];
-  let current: string[] = [];
-  let length = 0;
+/**
+ * The path Node's `fs` needs for a file git named relative to the worktree.
+ *
+ * Git reports `dir/file.txt` with forward slashes whatever the platform. For a
+ * WSL project the worktree is a Linux path the Windows host can only reach
+ * through its UNC mount, which is what `gitPlumbingCommands` does for the same
+ * reason.
+ *
+ * Going through `fs` at all is the point: the name comes from the repository
+ * and may contain a space, a quote, `$`, a backtick or a newline, all of which
+ * git allows. Interpolated into a shell command those stop being a filename.
+ */
+export function untrackedFilePath(
+  worktreePath: string,
+  file: string,
+  wslContext?: WSLContext | null
+): string {
+  if (wslContext) return linuxToUNCPath(posixJoin(worktreePath, file), wslContext.distribution);
+  return join(worktreePath, file);
+}
 
-  for (const file of files) {
-    // +3 covers the two quotes and the separating space.
-    const cost = file.length + 3;
-    if (current.length > 0 && length + cost > maxLength) {
-      batches.push(current);
-      current = [];
-      length = 0;
-    }
-    current.push(file);
-    length += cost;
-  }
+/**
+ * Newlines in a file, streamed so a large one costs bounded memory.
+ *
+ * Counts terminators rather than lines, which is what the `wc -l` this replaces
+ * reported, so the additions figure stays the number it always was.
+ */
+async function countNewlines(fsPath: string): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    let count = 0;
+    const stream = createReadStream(fsPath, { highWaterMark: 64 * 1024 });
 
-  if (current.length > 0) batches.push(current);
-  return batches;
+    stream.on('data', (chunk: string | Buffer) => {
+      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      for (let i = 0; i < buffer.length; i++) {
+        if (buffer[i] === 0x0a) count++;
+      }
+    });
+    stream.on('error', reject);
+    stream.on('close', () => resolve(count));
+  });
 }
 
 interface NumstatEntry {
@@ -760,19 +797,25 @@ export class GitDiffManager {
 
   // --- Working-directory capture (async) -----------------------------------
   //
-  // Everything below runs off the main thread via `execAsync`. The sync
-  // variants used to spawn one child process *per untracked file* — twice, once
-  // to read content and once to count lines — which on a worktree carrying an
-  // unignored build tree blocked the main process for minutes and froze every
-  // IPC channel with it. These versions list the files once, batch the reads,
-  // and never block the event loop.
+  // Everything below runs off the main thread. The sync variants used to spawn
+  // one child process *per untracked file* — twice, once to read content and
+  // once to count lines — which on a worktree carrying an unignored build tree
+  // blocked the main process for minutes and froze every IPC channel with it.
+  // These versions list the files once with `git ls-files -z` and then go
+  // through `fs`, so there is no process per file and no filename in a shell.
 
-  /** Untracked paths, honouring .gitignore. */
+  /**
+   * Untracked paths, honouring .gitignore.
+   *
+   * `-z` is not optional here. Without it git delimits with newlines, which a
+   * filename may contain, and quotes anything non-ASCII into a C-style escape:
+   * `täst.txt` arrives as `"t\303\244st.txt"`, a name that matches no file on
+   * disk, so the file silently vanished from the diff and the stats.
+   */
   private async getUntrackedFilesAsync(worktreePath: string, commandRunner: CommandRunner): Promise<string[]> {
     try {
-      const { stdout } = await commandRunner.execAsync('git ls-files --others --exclude-standard', worktreePath);
-      if (!stdout?.trim()) return [];
-      return stdout.trim().split('\n').map(f => f.trim()).filter(Boolean);
+      const { stdout } = await commandRunner.execAsync('git ls-files --others --exclude-standard -z', worktreePath);
+      return splitNulSeparated(stdout ?? '');
     } catch {
       this.logger?.warn(`Could not get untracked files in ${worktreePath}`);
       return [];
@@ -812,9 +855,9 @@ export class GitDiffManager {
   }
 
   /**
-   * Working-tree stats. Untracked line counts come from batched `wc -l` calls
-   * rather than one spawn per file — the difference between a handful of
-   * processes and several thousand.
+   * Working-tree stats. Untracked line counts are read through `fs` rather than
+   * by spawning a process per file — the difference between a few reads and
+   * several thousand child processes.
    */
   private async getDiffStatsAsync(
     worktreePath: string,
@@ -831,7 +874,7 @@ export class GitDiffManager {
 
     if (untrackedFiles.length === 0) return trackedStats;
 
-    const untrackedAdditions = await this.countLinesBatched(worktreePath, untrackedFiles, commandRunner);
+    const untrackedAdditions = await this.countUntrackedLines(worktreePath, untrackedFiles, commandRunner);
     return {
       additions: trackedStats.additions + untrackedAdditions,
       deletions: trackedStats.deletions,
@@ -840,31 +883,25 @@ export class GitDiffManager {
   }
 
   /**
-   * Total line count across many files, using as few `wc -l` invocations as the
-   * platform's command-line length allows.
+   * Total line count across the untracked files.
+   *
+   * Each file is streamed, so memory stays bounded whatever is in the worktree
+   * and nothing repository-controlled reaches a shell. Awaiting between files
+   * keeps the event loop free, which is what the synchronous version cost.
    */
-  private async countLinesBatched(
+  private async countUntrackedLines(
     worktreePath: string,
     files: string[],
     commandRunner: CommandRunner
   ): Promise<number> {
     let total = 0;
 
-    for (const batch of chunkByCommandLength(files)) {
-      const args = batch.map(file => `"${worktreePath}/${file}"`).join(' ');
+    for (const file of files) {
       try {
-        const { stdout } = await commandRunner.execAsync(`wc -l ${args}`, worktreePath);
-        // `wc` prints "<count> <path>" per file, plus a "<total> total" line for
-        // multiple files. Summing the per-file counts avoids depending on that
-        // trailing line, which is absent for a single file.
-        for (const line of (stdout ?? '').trim().split('\n')) {
-          const match = line.trim().match(/^(\d+)\s+(.*)$/);
-          if (!match) continue;
-          if (batch.length > 1 && match[2].trim() === 'total') continue;
-          total += Number.parseInt(match[1], 10) || 0;
-        }
+        total += await countNewlines(untrackedFilePath(worktreePath, file, commandRunner.wslContext));
       } catch {
-        // Unreadable batch (binary, permissions); its lines simply go uncounted.
+        // Unreadable (permissions, a symlink to nowhere, deleted since the
+        // listing): its lines simply go uncounted, as before.
       }
     }
 
@@ -874,10 +911,12 @@ export class GitDiffManager {
   /**
    * Synthesize `new file` patches for untracked files.
    *
-   * Hard-bounded: each file costs a child process, and the resulting patch is
-   * parsed with a regex in the renderer, so an unignored build tree would
-   * otherwise stall both processes. Files past the budget still appear in
-   * `changedFiles`; only their inline content is omitted.
+   * Content is read through `fs`, never `cat`: a filename may legally contain
+   * a backtick or `$(…)`, and interpolating one into a shell command ran it.
+   *
+   * Still hard-bounded — the resulting patch is parsed with a regex in the
+   * renderer, so an unignored build tree would otherwise stall it. Files past
+   * the budget keep their place in `changedFiles`; only the inline content goes.
    */
   private async createDiffForUntrackedFilesAsync(
     worktreePath: string,
@@ -897,14 +936,17 @@ export class GitDiffManager {
       }
 
       try {
-        const { stdout } = await commandRunner.execAsync(
-          `cat "${worktreePath}/${file}"`,
-          worktreePath,
-          { maxBuffer: 1024 * 1024 }
-        );
+        const fsPath = untrackedFilePath(worktreePath, file, commandRunner.wslContext);
+
+        // Checked before reading rather than by letting a buffer overflow, so a
+        // huge file costs a stat instead of a gigabyte of string.
+        const { size } = await stat(fsPath);
+        if (size > MAX_UNTRACKED_INLINE_FILE_BYTES) continue;
+
+        const content = await readFile(fsPath, 'utf8');
         inlined++;
 
-        const lines = (stdout ?? '').split('\n');
+        const lines = content.split('\n');
         const header =
           `diff --git a/${file} b/${file}\n`
           + 'new file mode 100644\n'
