@@ -119,7 +119,9 @@ describe('scanJsonlFile', () => {
   it('returns nothing for an empty file', async () => {
     await writeFile(file, '', 'utf8');
     const result = await scanJsonlFile(file, 'claude', 0, FALLBACK_MS);
-    expect(result).toEqual({ events: [], nextOffsetBytes: 0, linesRead: 0, rateLimits: [] });
+    expect(result).toEqual({
+      events: [], nextOffsetBytes: 0, linesRead: 0, rateLimits: [], context: null,
+    });
   });
 
   it('surfaces Codex quota samples alongside the events', async () => {

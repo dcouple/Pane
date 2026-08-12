@@ -2392,6 +2392,20 @@ export class DatabaseService {
         .run();
       console.log("[Database] Added parser_version column to usage_files table");
     }
+
+    // Codex states the model, session and cwd once at the top of a transcript.
+    // A scan resuming from a stored offset never sees those lines, so what they
+    // said is kept next to the offset they belong to.
+    const hasParseContext = usageFilesInfo.some(
+      (col: SqliteTableInfo) => col.name === "parse_context",
+    );
+
+    if (usageFilesExists && !hasParseContext) {
+      this.db
+        .prepare("ALTER TABLE usage_files ADD COLUMN parse_context TEXT")
+        .run();
+      console.log("[Database] Added parse_context column to usage_files table");
+    }
   }
 
   // Project operations

@@ -211,7 +211,11 @@ export class UsageManager {
       if (isFileUnchanged(recorded, stats)) return;
 
       const startOffset = resolveStartOffset(recorded, stats.size);
-      const scanned = await scanJsonlFile(path, provider, startOffset, stats.mtimeMs);
+      // A file being re-read from the top states its own attribution again, and
+      // a stored context would describe bytes that are no longer there — this is
+      // the rotation and truncation case.
+      const seedContext = startOffset > 0 ? recorded?.parseContext ?? null : null;
+      const scanned = await scanJsonlFile(path, provider, startOffset, stats.mtimeMs, seedContext);
 
       this.repository.commitFile(
         {
@@ -222,6 +226,7 @@ export class UsageManager {
           offsetBytes: scanned.nextOffsetBytes,
           lastScannedMs: Date.now(),
           parserVersion: USAGE_PARSER_VERSION,
+          parseContext: scanned.context,
         },
         scanned.events,
         Date.now()

@@ -2,7 +2,12 @@ import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import { createInterface } from 'readline';
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
-import { createCodexContext, parseUsageLine } from './usageParser';
+import {
+  createCodexContext,
+  parseUsageLine,
+  snapshotCodexContext,
+  type CodexContextSnapshot,
+} from './usageParser';
 
 export interface ScannedFile {
   /** Events parsed from the bytes read in this pass. */
@@ -12,6 +17,11 @@ export interface ScannedFile {
   linesRead: number;
   /** Provider-reported quota state observed in this pass, newest per limit. */
   rateLimits: UsageRateLimitSample[];
+  /**
+   * Codex attribution as it stood at `nextOffsetBytes`, to be handed back to
+   * the next pass. Null for Claude, whose lines each carry their own.
+   */
+  context: CodexContextSnapshot | null;
 }
 
 /**
@@ -26,12 +36,17 @@ export interface ScannedFile {
  *    cursor only advances past lines that ended with a newline. A partial
  *    trailing line is re-read on the next pass instead of being lost or
  *    double-counted.
+ * 3. **Carried attribution.** Codex names the model, session and cwd once, at
+ *    the top of the transcript. A pass that starts at an offset is past them,
+ *    so `seedContext` — what the previous pass ended with — stands in for the
+ *    lines it cannot see.
  */
 export async function scanJsonlFile(
   path: string,
   provider: UsageProvider,
   startOffset: number,
-  fallbackTimestampMs: number
+  fallbackTimestampMs: number,
+  seedContext?: CodexContextSnapshot | null
 ): Promise<ScannedFile> {
   // Determine up front whether the file currently ends mid-line; the answer
   // decides whether the final emitted line may be trusted.
@@ -46,10 +61,13 @@ export async function scanJsonlFile(
   const reader = createInterface({ input: stream, crlfDelay: Infinity });
 
   // Codex attributes usage from earlier lines in the same file (model, session,
-  // cwd), so the parser carries state across the whole transcript.
-  const codexContext = provider === 'codex' ? createCodexContext() : undefined;
+  // cwd), so the parser carries state across the whole transcript — including
+  // across the pass boundary, via the seed.
+  const codexContext = provider === 'codex' ? createCodexContext(seedContext) : undefined;
   const collectedRateLimits = (): UsageRateLimitSample[] =>
     codexContext ? [...codexContext.rateLimits.values()] : [];
+  const carriedContext = (): CodexContextSnapshot | null =>
+    codexContext ? snapshotCodexContext(codexContext) : null;
 
   try {
     for await (const line of reader) {
@@ -68,11 +86,22 @@ export async function scanJsonlFile(
   }
 
   if (endsWithNewline || linesRead === 0) {
-    return { events, nextOffsetBytes: offset, linesRead, rateLimits: collectedRateLimits() };
+    return {
+      events,
+      nextOffsetBytes: offset,
+      linesRead,
+      rateLimits: collectedRateLimits(),
+      context: carriedContext(),
+    };
   }
 
   // The last line was still being written. Rewind to its start and discard
   // anything parsed from it, so the completed line is picked up next pass.
+  //
+  // The carried context is not rewound with it. A half-written line is either
+  // invalid JSON, which changes nothing, or a complete object whose newline has
+  // not landed yet — and re-reading that line next pass sets the same fields to
+  // the same values.
   while (events.length > 0 && events[events.length - 1].byteOffset >= lastLineStart) {
     events.pop();
   }
@@ -81,6 +110,7 @@ export async function scanJsonlFile(
     nextOffsetBytes: Math.max(startOffset, lastLineStart),
     linesRead: linesRead - 1,
     rateLimits: collectedRateLimits(),
+    context: carriedContext(),
   };
 }
 

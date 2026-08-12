@@ -171,8 +171,11 @@ export interface UsageReport {
  *
  * v2: Codex `token_count` events parsed from `last_token_usage` (v1 read the
  *     wrong shape entirely and recorded nothing).
+ * v3: Codex attribution carried across an incremental scan. Every event a
+ *     resumed pass produced before this was filed under model `codex` with no
+ *     session and no cwd, so those rows have to be read again.
  */
-export const USAGE_PARSER_VERSION = 2;
+export const USAGE_PARSER_VERSION = 3;
 
 /** Claude's published quota window, and the one ccusage-style tools track. */
 export const USAGE_WINDOW_HOURS = 5;

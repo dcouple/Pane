@@ -61,6 +61,8 @@ CREATE TABLE IF NOT EXISTS session_git_status_cache (
 
 -- Incremental scan cursor for agent CLI transcript files. Pane reads these
 -- read-only. offset_bytes lets a re-scan resume instead of re-reading the file.
+-- parse_context carries the Codex model, session and cwd that the top of the
+-- transcript stated, since a resumed scan starts past those lines.
 -- NOTE this file is split on the statement separator at startup, so a comment
 -- must never contain one.
 CREATE TABLE IF NOT EXISTS usage_files (
@@ -70,7 +72,8 @@ CREATE TABLE IF NOT EXISTS usage_files (
   mtime_ms INTEGER NOT NULL,
   offset_bytes INTEGER NOT NULL DEFAULT 0,
   last_scanned_ms INTEGER NOT NULL,
-  parser_version INTEGER NOT NULL DEFAULT 0
+  parser_version INTEGER NOT NULL DEFAULT 0,
+  parse_context TEXT
 );
 
 -- One row per assistant message with token accounting, normalised across

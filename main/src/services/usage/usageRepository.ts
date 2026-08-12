@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3-multiple-ciphers';
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
-import { usageEventId } from './usageParser';
+import { usageEventId, type CodexContextSnapshot } from './usageParser';
 
 export interface UsageFileCursor {
   path: string;
@@ -11,6 +11,12 @@ export interface UsageFileCursor {
   lastScannedMs: number;
   /** Parser that produced this file's events; see USAGE_PARSER_VERSION. */
   parserVersion: number;
+  /**
+   * Codex attribution as of `offsetBytes`. Stored with the cursor because it
+   * describes the same point in the file, and a resumed scan is past the lines
+   * that state it. Null for Claude and for files never scanned as Codex.
+   */
+  parseContext: CodexContextSnapshot | null;
 }
 
 interface UsageFileRow {
@@ -21,6 +27,22 @@ interface UsageFileRow {
   offset_bytes: number;
   last_scanned_ms: number;
   parser_version: number | null;
+  parse_context: string | null;
+}
+
+/** A stored context, or null if the column is empty or no longer parses. */
+function readParseContext(raw: string | null | undefined): CodexContextSnapshot | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<CodexContextSnapshot>;
+    return {
+      model: typeof value.model === 'string' ? value.model : null,
+      sessionId: typeof value.sessionId === 'string' ? value.sessionId : null,
+      cwd: typeof value.cwd === 'string' ? value.cwd : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -47,6 +69,7 @@ export class UsageRepository {
       offsetBytes: row.offset_bytes,
       lastScannedMs: row.last_scanned_ms,
       parserVersion: row.parser_version ?? 0,
+      parseContext: readParseContext(row.parse_context),
     };
   }
 
@@ -68,15 +91,19 @@ export class UsageRepository {
     `);
 
     const upsertFile = this.db.prepare(`
-      INSERT INTO usage_files (path, provider, size_bytes, mtime_ms, offset_bytes, last_scanned_ms, parser_version)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO usage_files (
+        path, provider, size_bytes, mtime_ms, offset_bytes, last_scanned_ms,
+        parser_version, parse_context
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(path) DO UPDATE SET
         provider = excluded.provider,
         size_bytes = excluded.size_bytes,
         mtime_ms = excluded.mtime_ms,
         offset_bytes = excluded.offset_bytes,
         last_scanned_ms = excluded.last_scanned_ms,
-        parser_version = excluded.parser_version
+        parser_version = excluded.parser_version,
+        parse_context = excluded.parse_context
     `);
 
     const run = this.db.transaction(() => {
@@ -105,7 +132,8 @@ export class UsageRepository {
         cursor.mtimeMs,
         cursor.offsetBytes,
         nowMs,
-        cursor.parserVersion
+        cursor.parserVersion,
+        cursor.parseContext ? JSON.stringify(cursor.parseContext) : null
       );
 
       return inserted;

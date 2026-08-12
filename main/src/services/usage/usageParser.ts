@@ -114,8 +114,35 @@ export interface CodexParseContext {
   rateLimits: Map<string, UsageRateLimitSample>;
 }
 
-export function createCodexContext(): CodexParseContext {
-  return { model: null, sessionId: null, cwd: null, rateLimits: new Map() };
+/**
+ * The part of a Codex context that has to outlive a single scan.
+ *
+ * A transcript is read in pieces as the agent appends to it, and the lines that
+ * carry the attribution are at the top — `session_meta` is the file's first
+ * line. A pass that resumes at a byte offset never sees them again, so what
+ * they said is stored with the file's cursor and handed back in.
+ *
+ * Quota samples are deliberately not part of this: they live in their own
+ * table, and replaying an old sample would move a rolling window backwards.
+ */
+export interface CodexContextSnapshot {
+  model: string | null;
+  sessionId: string | null;
+  cwd: string | null;
+}
+
+export function createCodexContext(seed?: CodexContextSnapshot | null): CodexParseContext {
+  return {
+    model: seed?.model ?? null,
+    sessionId: seed?.sessionId ?? null,
+    cwd: seed?.cwd ?? null,
+    rateLimits: new Map(),
+  };
+}
+
+/** What a later pass needs to attribute usage the same way this one did. */
+export function snapshotCodexContext(context: CodexParseContext): CodexContextSnapshot {
+  return { model: context.model, sessionId: context.sessionId, cwd: context.cwd };
 }
 
 /**
