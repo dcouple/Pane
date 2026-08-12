@@ -54,17 +54,13 @@ export class ScheduleManager {
   ) {}
 
   /**
-   * Begin ticking.
-   *
-   * Every schedule's next run is recomputed at startup: the app may have been
-   * closed for a week, and a stored time in the past would otherwise fire the
-   * moment the window opens.
+   * Begin ticking, once what happened while Pane was closed has been settled.
    */
   start(): void {
     if (this.timer) return;
 
     try {
-      this.rescheduleAll();
+      this.reconcileOnStart();
     } catch (error) {
       this.logger?.error('[Schedule] Failed to prime schedules', error instanceof Error ? error : undefined);
     }
@@ -156,11 +152,7 @@ export class ScheduleManager {
         if (isDue(schedule, nowMs)) {
           await this.execute(schedule, { manual: false });
         } else if (isMissed(schedule, nowMs)) {
-          this.logger?.info(`[Schedule] Skipping "${schedule.name}" — it came due while Pane was not running.`);
-          schedule.lastRunStatus = 'skipped';
-          schedule.lastRunError = 'Came due while Pane was closed';
-          schedule.nextRunAtMs = computeNextRun({ ...schedule, lastRunAtMs: nowMs }, nowMs);
-          this.repo.upsert(schedule);
+          this.recordMissed(schedule, nowMs);
         }
       }
     } finally {
@@ -168,17 +160,50 @@ export class ScheduleManager {
     }
   }
 
-  /** Recompute every enabled schedule's next run from now. */
-  private rescheduleAll(): void {
+  /**
+   * Settle the schedules Pane slept through, before the first tick looks at them.
+   *
+   * This used to recompute every enabled schedule's next run from now, which
+   * quietly erased the evidence: a stored time in the past was replaced with a
+   * future one, so the tick that followed saw nothing overdue and never marked
+   * the occurrence skipped. A run that came due two minutes before the app
+   * opened — well inside the grace period, and meant to happen — disappeared
+   * the same way.
+   *
+   * So only two things are decided here. A schedule with no next run at all
+   * gets one, and one that is late beyond the grace period is written off as
+   * missed. Everything else keeps the time it was stored with and the tick
+   * decides, which is where that decision belongs.
+   */
+  private reconcileOnStart(): void {
     const nowMs = Date.now();
+
     for (const schedule of this.repo.list()) {
       if (!schedule.enabled) continue;
-      const next = computeNextRun({ ...schedule, lastRunAtMs: schedule.lastRunAtMs }, nowMs);
-      if (next !== schedule.nextRunAtMs) {
-        schedule.nextRunAtMs = next;
+
+      if (schedule.nextRunAtMs === null) {
+        schedule.nextRunAtMs = computeNextRun({ ...schedule, lastRunAtMs: schedule.lastRunAtMs }, nowMs);
         this.repo.upsert(schedule);
+        continue;
       }
+
+      if (isMissed(schedule, nowMs)) this.recordMissed(schedule, nowMs);
     }
+  }
+
+  /**
+   * Write off one occurrence that came and went unattended.
+   *
+   * One, not one per interval that elapsed: `computeNextRun` counts from now,
+   * so a weekend of downtime leaves a single skipped entry rather than a
+   * backlog nobody wants run.
+   */
+  private recordMissed(schedule: ScheduledRun, nowMs: number): void {
+    this.logger?.info(`[Schedule] Skipping "${schedule.name}" — it came due while Pane was not running.`);
+    schedule.lastRunStatus = 'skipped';
+    schedule.lastRunError = 'Came due while Pane was closed';
+    schedule.nextRunAtMs = computeNextRun({ ...schedule, lastRunAtMs: nowMs }, nowMs);
+    this.repo.upsert(schedule);
   }
 
   private async execute(schedule: ScheduledRun, options: { manual: boolean }): Promise<ScheduledRun> {
