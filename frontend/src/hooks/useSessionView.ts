@@ -22,6 +22,15 @@ interface PromptMarker {
   completion_timestamp?: string;
 }
 
+interface CreatePrResponseData {
+  url?: string;
+}
+
+function isCreatePrResponseData(value: unknown): value is CreatePrResponseData {
+  return typeof value === 'object' &&
+    value !== null &&
+    (!('url' in value) || typeof value.url === 'string');
+}
 
 export const useSessionView = (
   activeSession: Session | undefined,
@@ -994,6 +1003,27 @@ export const useSessionView = (
     }
   };
 
+  const handleCreatePr = async () => {
+    if (!activeSession) return;
+    setIsMerging(true);
+    setMergeError(null);
+    try {
+      const response = await API.sessions.createPr(activeSession.id);
+      if (!response.success) {
+        setMergeError(response.error || 'Failed to create pull request');
+        return;
+      }
+
+      if (isCreatePrResponseData(response.data) && response.data.url) {
+        await window.electronAPI?.openExternal(response.data.url);
+      }
+    } catch (error) {
+      setMergeError(error instanceof Error ? error.message : 'Failed to create pull request');
+    } finally {
+      setIsMerging(false);
+    }
+  };
+
   const handleGitSoftReset = async () => {
     if (!activeSession) return;
     setIsMerging(true);
@@ -1585,6 +1615,7 @@ export const useSessionView = (
     handleStopSession,
     handleGitPull,
     handleGitPush,
+    handleCreatePr,
     handleGitSoftReset,
     handleGitFetch,
     handleGitStash,

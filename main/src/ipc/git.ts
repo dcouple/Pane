@@ -92,6 +92,7 @@ const DAEMON_GIT_MUTATION_CHANNELS = [
   'sessions:rebase-to-main',
   'sessions:git-pull',
   'sessions:git-push',
+  'sessions:create-pr',
   'sessions:git-soft-reset',
   'sessions:git-fetch',
   'sessions:git-stash',
@@ -1433,6 +1434,85 @@ export function registerGitHandlers(
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to push to remote',
+        gitError: {
+          output: gitError.gitOutput || (error instanceof Error ? error.message : String(error)),
+          workingDirectory: gitError.workingDirectory || ''
+        }
+      };
+    }
+  });
+
+  commandRegistry.register('sessions:create-pr', async (sessionId: string) => {
+    try {
+      const session = await sessionManager.getSession(sessionId);
+      if (!session) {
+        return { success: false, error: 'Session not found' };
+      }
+
+      if (!session.worktreePath) {
+        return { success: false, error: 'Session has no worktree path' };
+      }
+
+      const ctx = sessionManager.getProjectContext(sessionId);
+      if (!ctx) throw new Error('Project context not found for session');
+
+      const currentBranch = ctx.commandRunner.exec('git branch --show-current', session.worktreePath).trim();
+      if (!currentBranch) {
+        return { success: false, error: 'Cannot create a pull request from a detached HEAD' };
+      }
+
+      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
+
+      const startMessage = `ðŸ”„ GIT OPERATION\nCreating pull request...`;
+      emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
+        operation: 'create-pr',
+        branch: currentBranch,
+        base: comparisonBranch,
+      });
+
+      const result = await worktreeManager.createPullRequest(
+        session.worktreePath,
+        comparisonBranch,
+        currentBranch,
+        ctx.commandRunner,
+      );
+
+      const successMessage = `âœ“ Successfully created pull request` +
+                            (result.url ? `\n\n${result.url}` : '') +
+                            (result.output ? `\n\nGitHub CLI output:\n${result.output}` : '');
+      emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
+        operation: 'create-pr',
+        output: result.output,
+        url: result.url,
+      });
+      sessionManager.addSessionOutput(sessionId, {
+        type: 'stdout',
+        data: successMessage,
+        timestamp: new Date()
+      });
+
+      const project = sessionManager.getProjectForSession(sessionId);
+      if (project?.path) {
+        gitStatusManager.invalidatePrCache(project.path);
+      }
+      await refreshGitStatusForSession(sessionId);
+
+      return { success: true, data: result };
+    } catch (error: unknown) {
+      console.error('Failed to create pull request:', error);
+
+      const gitError = error as GitError;
+      const errorMessage = `âœ— Create PR failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
+                          (gitError.gitOutput ? `\n\nGitHub CLI output:\n${gitError.gitOutput}` : '');
+      emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
+        operation: 'create-pr',
+        error: error instanceof Error ? error.message : String(error),
+        gitOutput: gitError.gitOutput
+      });
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create pull request',
         gitError: {
           output: gitError.gitOutput || (error instanceof Error ? error.message : String(error)),
           workingDirectory: gitError.workingDirectory || ''

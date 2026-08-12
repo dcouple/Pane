@@ -1284,6 +1284,38 @@ Co-Authored-By: Pane <runpane@users.noreply.github.com>` : commitMessage;
     }
   }
 
+  async createPullRequest(
+    worktreePath: string,
+    baseBranch: string,
+    currentBranch: string,
+    commandRunner: CommandRunner,
+  ): Promise<{ output: string; url?: string }> {
+    try {
+      const normalizedBaseBranch = baseBranch.replace(/^origin\//, '');
+      const command = [
+        'gh pr create',
+        '--fill',
+        `--base ${escapeShellArg(normalizedBaseBranch)}`,
+        `--head ${escapeShellArg(currentBranch)}`,
+      ].join(' ');
+
+      const { stdout, stderr } = await commandRunner.execAsync(command, worktreePath, { timeout: 120000 });
+      const output = stdout || stderr || 'Pull request created successfully';
+      const url = output.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/)?.[0];
+
+      return { output, url };
+    } catch (error: unknown) {
+      const err = error as Error & { stderr?: string; stdout?: string };
+      const gitError = new Error(err.message || 'Failed to create pull request') as Error & {
+        gitOutput?: string;
+        workingDirectory?: string;
+      };
+      gitError.gitOutput = err.stderr || err.stdout || err.message || '';
+      gitError.workingDirectory = worktreePath;
+      throw gitError;
+    }
+  }
+
   async gitFetch(worktreePath: string, commandRunner: CommandRunner): Promise<{ output: string }> {
     try {
       const { stdout, stderr } = await commandRunner.execAsync('git fetch --all', worktreePath, { timeout: 30000 });
