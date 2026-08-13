@@ -518,6 +518,17 @@ Cross-pane work is the exception and cannot be delegated. Only Pane Chat can see
 that two panes hold contradictory instructions, that a pane's name disagrees
 with the artifact it owns, or that one workstream is blocked on another.
 
+Two questions catch most of what goes wrong, and both are cheap enough to ask
+by default:
+
+- Is this the root cause or a symptom? Agents routinely build a fix for the
+  symptom they were shown. Asking the question is usually enough for the agent
+  to catch itself.
+- How do comparable products, harnesses, or open-source projects solve this? A
+  conclusion that something is hard or impossible is the highest-value claim to
+  check prior art against, because it is often wrong and the correction is
+  cheap. Anticipate this rather than waiting for the user to suggest it.
+
 ## Bring The Human In Before The Work
 
 The human is cheap to consult before implementation starts and expensive after.
@@ -544,8 +555,10 @@ Where the work item already specifies the change, discussion collapses to a
 confirmation. The requirement is that the design question is settled and
 recorded, not that a full discussion ran.
 
-Mid-run, agents announce assumptions in passing. Surface those to the user while
-the run continues rather than letting them reach a pull request.
+Do not watch a run to catch assumptions as they form. A run lasting tens of
+minutes is expensive to monitor and the information keeps. Require instead that
+every completed run reports the assumptions it made, and put that list in front
+of the user with the result.
 
 ## Recommend A Lane, Then Orchestrate
 
