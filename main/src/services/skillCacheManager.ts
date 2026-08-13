@@ -530,8 +530,9 @@ A missing fact costs one question beforehand and a rework cycle afterwards. The
 facts most likely to be missing are the ones no sweep reaches: what a vendor
 said, what a customer is owed, what a neighbouring system already solved.
 
-Keep investigation and discussion in the conversation. Their output is for a
-human, and a conversation delivers it better than a terminal does.
+Keep investigation and discussion with the user in the conversation: delegate
+repository-backed legwork to panes, bring the findings back, and synthesize
+here. The conversation is what stays; the digging is what delegates.
 
 Before dispatching, do both:
 
@@ -546,7 +547,8 @@ discussion is optional.
 
 Watching a run to catch assumptions costs context for tens of minutes and buys
 little. Require every completed run to report what it assumed, and put that list
-in front of the user with the result.
+in front of the user with the result. An assumption the design hinges on is not
+a report item: the run surfaces it as a blocker and waits.
 
 ## Recommend A Lane, Then Orchestrate
 
