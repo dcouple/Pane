@@ -373,7 +373,8 @@ Use one unambiguous hierarchy:
    role boundaries, focus preservation, pane/panel/worktree mechanics, cache
    paths, and delegation through RunPane.
 3. The active agent's cached RunPane orchestrator skill is authoritative for the
-   software-work lifecycle, persistent authorization ledger, stage transitions,
+   software-work lifecycle, delivery lanes, persisted intent and holds with
+   live-state re-derivation, stage transitions,
    review-feedback interrupts, current-head evidence invalidation, and
    \`ready_to_merge\` predicate.
 4. Agent-specific downstream skills are authoritative for how each lifecycle
@@ -530,23 +531,22 @@ facts most likely to be missing are the ones no sweep reaches: what a vendor
 said, what a customer is owed, what a neighbouring system already solved.
 
 Keep investigation and discussion in the conversation. Their output is for a
-human, who should not have to read a terminal to get it.
+human, and a conversation delivers it better than a terminal does.
 
 Before dispatching, do both:
 
 - Ask about the gaps you can see. If the design changes when a claim turns out
   false, and neither the repository nor the work tracker supports it, ask.
-- Write down the assumptions you are making. A user cannot correct a model they
-  have not seen, and a stated assumption draws the correction an open question
-  misses.
+- Write down the assumptions you are making. A user corrects the model they can
+  see, so a stated assumption draws the correction an open question misses.
 
 Where the work item already specifies the change, this collapses to a
 confirmation. The design question must be settled and recorded; a full
 discussion is optional.
 
 Watching a run to catch assumptions costs context for tens of minutes and buys
-little. Require instead that every completed run reports what it assumed, and
-put that list in front of the user with the result.
+little. Require every completed run to report what it assumed, and put that list
+in front of the user with the result.
 
 ## Recommend A Lane, Then Orchestrate
 
@@ -577,7 +577,8 @@ Use one unambiguous hierarchy:
    role boundaries, focus preservation, pane/panel/worktree mechanics, cache
    paths, and delegation through RunPane.
 3. The active agent's cached RunPane orchestrator skill is authoritative for the
-   software-work lifecycle, persistent authorization ledger, stage transitions,
+   software-work lifecycle, delivery lanes, persisted intent and holds with
+   live-state re-derivation, stage transitions,
    review-feedback interrupts, current-head evidence invalidation, and
    \`ready_to_merge\` predicate.
 4. Agent-specific downstream skills are authoritative for how each lifecycle
