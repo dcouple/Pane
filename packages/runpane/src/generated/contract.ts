@@ -221,6 +221,18 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "panes rename",
+      "summary": "Rename a Pane without changing its worktree, branch, panels, or focus.",
+      "usage": [
+        "runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "paneRenameRequest",
+        "paneRenameResult"
+      ]
+    },
+    {
       "name": "panels create",
       "summary": "Create a terminal-backed tool panel inside an existing Pane session.",
       "usage": [
@@ -428,7 +440,7 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--name",
         "value": "<name>",
-        "description": "Name for the registered repository or created pane/session."
+        "description": "Name for the registered repository or created/renamed pane session."
       },
       {
         "name": "--worktree-name",
@@ -720,6 +732,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
+        "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
         "",
         "Run \"runpane help panes <command>\" for command-specific options."
       ],
@@ -804,6 +817,20 @@ export const RUNPANE_CONTRACT = {
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without unpinning the pane",
+        "  --yes                          Skip confirmation for mutating commands"
+      ],
+      "panes rename": [
+        "Usage:",
+        "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
+        "",
+        "Renames a Pane without changing its worktree, branch, panels, or focus. The name is trimmed like the Pane UI. Use --dry-run to validate and preview the updated pane without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>               Pane/session id to rename",
+        "  --name <new-name>              New non-empty Pane/session name",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --dry-run                      Validate and preview without renaming the pane",
         "  --yes                          Skip confirmation for mutating commands"
       ],
       "panels": [
@@ -1118,6 +1145,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
+        "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
         "",
         "Run \"runpane help panes <command>\" for command-specific options."
       ],
@@ -1199,6 +1227,20 @@ export const RUNPANE_CONTRACT = {
         "",
         "Options:",
         "  --pane <pane-id>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --dry-run",
+        "  --yes"
+      ],
+      "panes rename": [
+        "Usage:",
+        "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
+        "",
+        "Renames a Pane without changing its worktree, branch, panels, or focus. The name is trimmed like the Pane UI. Use --dry-run to validate and preview the updated pane without mutating.",
+        "",
+        "Options:",
+        "  --pane <pane-id>",
+        "  --name <new-name>",
         "  --pane-dir <path>",
         "  --json",
         "  --dry-run",
@@ -1436,6 +1478,7 @@ export const RUNPANE_CONTRACT = {
       "runpane panes create --repo active --name issue-252 --agent <agent> --prompt \"Kick off the discussion skill for issue 252\" --source agent --no-focus --wait-ready --yes --json",
       "runpane panes create --from-json panes.json --yes --json",
       "runpane panes archive --pane <pane-id> --source agent --yes --json",
+      "runpane panes rename --pane <pane-id> --name issue-393 --yes --json",
       "runpane panels list --pane <pane-id> --json",
       "runpane panels output --panel <panel-id> --limit 200 --json",
       "printf 'Continue\\n' | runpane panels input --panel <panel-id> --input-file - --yes --json",
@@ -1459,6 +1502,7 @@ export const RUNPANE_CONTRACT = {
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.",
       "For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.",
       "`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.",
+      "`runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.",
       "`runpane panels list` lists tool panels inside one Pane session.",
       "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
       "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
@@ -1467,7 +1511,7 @@ export const RUNPANE_CONTRACT = {
       "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
-    "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes list`, `runpane panes create`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
+    "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes ...`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
     "daemonFlagNote": "Unknown daemon flags should be forwarded rather than dropped so newer Pane versions can extend `--remote-setup` without requiring an immediate wrapper release. Unknown flags for non-daemon commands should fail clearly.",
     "downloadAttribution": [
       "The npm package uses `source=npm` for all npm-registry consumers, including `npx`, `pnpm dlx`, `yarn dlx`, `bunx`, and global npm/pnpm installs.",
@@ -1638,6 +1682,16 @@ export const RUNPANE_CONTRACT = {
         "unpin",
         "--pane",
         "session-1",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panes",
+        "rename",
+        "--pane",
+        "session-1",
+        "--name",
+        "issue-393",
         "--yes",
         "--json"
       ],
@@ -2750,6 +2804,45 @@ export const RUNPANE_CONTRACT = {
         },
         "favoritePinnedAt": {
           "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "paneRenameRequest": {
+      "type": "object",
+      "required": [
+        "paneId",
+        "name"
+      ],
+      "properties": {
+        "paneId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dryRun": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "paneRenameResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "pane"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "dryRun": {
+          "const": true
+        },
+        "pane": {
+          "$ref": "#/jsonSchemas/paneListResult/properties/panes/items"
         }
       },
       "additionalProperties": false
@@ -3957,6 +4050,17 @@ export const RUNPANE_CONTRACT = {
           ]
         },
         {
+          "name": "panes rename",
+          "summary": "Rename a Pane without changing its worktree, branch, panels, or focus.",
+          "arguments": [
+            "--pane <pane-id>",
+            "--name <new-name>",
+            "--yes",
+            "--dry-run",
+            "--json"
+          ]
+        },
+        {
           "name": "panels create",
           "summary": "Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.",
           "arguments": [
@@ -4640,6 +4744,54 @@ export const RUNPANE_CONTRACT = {
         "notes": [
           "This is a declarative set, not a toggle: retries leave an already-unpinned Pane unpinned.",
           "Unpinning does not focus the Pane."
+        ]
+      },
+      "panes rename": {
+        "name": "panes rename",
+        "summary": "Rename a Pane without changing its worktree, branch, panels, or focus.",
+        "details": "Trims and sets the Pane display name through the same persistence and session-updated event path used by the UI. Dry-run returns the projected updated pane without mutating.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane/session id to rename."
+          },
+          {
+            "name": "--name",
+            "value": "<new-name>",
+            "required": true,
+            "description": "New non-empty Pane/session name; surrounding whitespace is trimmed."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and return the projected updated pane without mutating."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output including the updated pane."
+          }
+        ],
+        "examples": [
+          "runpane panes rename --pane <pane-id> --name issue-393 --yes --json",
+          "runpane panes rename --pane <pane-id> --name issue-393 --dry-run --json"
+        ],
+        "jsonSchemas": [
+          "paneRenameRequest",
+          "paneRenameResult"
+        ],
+        "notes": [
+          "Empty and whitespace-only names are rejected; no additional maximum length is imposed beyond the existing UI and database behavior.",
+          "The JSON result includes the updated pane summary so callers do not need a second panes list request."
         ]
       },
       "panels list": {

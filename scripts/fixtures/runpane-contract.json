@@ -157,6 +157,16 @@
       "--json"
     ],
     [
+      "panes",
+      "rename",
+      "--pane",
+      "session-1",
+      "--name",
+      "issue-393",
+      "--yes",
+      "--json"
+    ],
+    [
       "panels",
       "list",
       "--pane",

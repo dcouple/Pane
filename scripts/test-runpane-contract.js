@@ -1058,6 +1058,85 @@ print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "ref
   assert.strictEqual(python.refused, true);
 }
 
+async function checkPaneRenameParity() {
+  const daemonClient = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const { runPanesRename } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'localControl.js'));
+  const originalInvokeDaemon = daemonClient.invokeDaemon;
+  const originalConsoleLog = console.log;
+  const calls = [];
+  const stdout = [];
+
+  daemonClient.invokeDaemon = async (channel, args) => {
+    calls.push({ channel, request: args[0] });
+    return { ok: true, ...(args[0].dryRun ? { dryRun: true } : {}), pane: { paneId: args[0].paneId, name: args[0].name } };
+  };
+  console.log = (line) => stdout.push(String(line));
+
+  try {
+    await runPanesRename(parseRunpaneArgs(['panes', 'rename', '--pane', 'session-1', '--name', '  renamed pane  ', '--yes', '--json']));
+    await runPanesRename(parseRunpaneArgs(['panes', 'rename', '--pane', 'session-1', '--name', 'preview', '--dry-run', '--json']));
+    await assert.rejects(
+      runPanesRename(parseRunpaneArgs(['panes', 'rename', '--pane', 'session-1', '--name', 'renamed pane'])),
+      /Rerun with --yes in non-interactive shells/,
+    );
+    await assert.rejects(
+      runPanesRename(parseRunpaneArgs(['panes', 'rename', '--pane', 'session-1', '--name', '   ', '--yes'])),
+      /non-empty --name/,
+    );
+  } finally {
+    daemonClient.invokeDaemon = originalInvokeDaemon;
+    console.log = originalConsoleLog;
+  }
+
+  assert.deepStrictEqual(calls, [{
+    channel: 'runpane:panes:rename',
+    request: { paneId: 'session-1', name: 'renamed pane' }
+  }, {
+    channel: 'runpane:panes:rename',
+    request: { paneId: 'session-1', name: 'preview', dryRun: true }
+  }]);
+
+  const pythonOutput = runPythonSnippet(`
+import contextlib
+import io
+import json
+import runpane.local_control as local_control
+from runpane.cli import parse_args
+
+calls = []
+def fake_invoke(channel, args, **kwargs):
+    calls.append({"channel": channel, "request": args[0]})
+    return {"ok": True, **({"dryRun": True} if args[0].get("dryRun") else {}), "pane": {"paneId": args[0]["paneId"], "name": args[0]["name"]}}
+
+local_control.invoke_daemon = fake_invoke
+stdout = io.StringIO()
+with contextlib.redirect_stdout(stdout):
+    local_control.run_panes_rename(parse_args(["panes", "rename", "--pane", "session-1", "--name", "  renamed pane  ", "--yes", "--json"]))
+    local_control.run_panes_rename(parse_args(["panes", "rename", "--pane", "session-1", "--name", "preview", "--dry-run", "--json"]))
+
+refused = False
+try:
+    local_control.run_panes_rename(parse_args(["panes", "rename", "--pane", "session-1", "--name", "renamed pane"]))
+except ValueError as error:
+    refused = "Rerun with --yes in non-interactive shells" in str(error)
+
+empty_rejected = False
+try:
+    local_control.run_panes_rename(parse_args(["panes", "rename", "--pane", "session-1", "--name", "   ", "--yes"]))
+except ValueError as error:
+    empty_rejected = "non-empty --name" in str(error)
+
+print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "refused": refused, "emptyRejected": empty_rejected}))
+`);
+  const python = JSON.parse(pythonOutput);
+  assert.deepStrictEqual(python.calls, calls);
+  const parseJsonObjects = (lines) => JSON.parse(`[${lines.join('\n').replace(/}\n{/g, '},{')}]`);
+  assert.deepStrictEqual(parseJsonObjects(python.stdout), parseJsonObjects(stdout));
+  assert.strictEqual(python.refused, true);
+  assert.strictEqual(python.emptyRejected, true);
+}
+
 function checkHelpOutput() {
   const python = findPython();
   const pythonEnv = {
@@ -1111,6 +1190,7 @@ function checkHelpOutput() {
     assertIncludes(output, 'runpane panes create');
     assertIncludes(output, 'runpane panes pin');
     assertIncludes(output, 'runpane panes unpin');
+    assertIncludes(output, 'runpane panes rename');
   }
 
   for (const output of [nodePanelsHelp, pyPanelsHelp]) {
@@ -1162,6 +1242,7 @@ function compareAgentContextParity() {
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes create'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes pin'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes unpin'));
+  assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes rename'));
   assert.ok(nodeBrief.rules.some((rule) => rule.includes('`--pinned`')));
 
   const nodeDetail = JSON.parse(runNode(['agent-context', '--command', 'panes create', '--json']));
@@ -1187,6 +1268,13 @@ function compareAgentContextParity() {
   assert.deepStrictEqual(pyUnpinDetail, nodeUnpinDetail);
   assert.strictEqual(nodeUnpinDetail.command.name, 'panes unpin');
   assert.ok(nodeUnpinDetail.command.arguments.some((argument) => argument.name === '--dry-run'));
+
+  const nodeRenameDetail = JSON.parse(runNode(['agent-context', '--command', 'panes rename', '--json']));
+  const pyRenameDetail = JSON.parse(runPython(['agent-context', '--command', 'panes rename', '--json']));
+  assert.deepStrictEqual(pyRenameDetail, nodeRenameDetail);
+  assert.strictEqual(nodeRenameDetail.command.name, 'panes rename');
+  assert.ok(nodeRenameDetail.command.arguments.some((argument) => argument.name === '--name'));
+  assert.ok(nodeRenameDetail.command.jsonSchemas.includes('paneRenameResult'));
 
   const nodePanelsDetail = JSON.parse(runNode(['agent-context', '--command', 'panels create', '--json']));
   const pyPanelsDetail = JSON.parse(runPython(['agent-context', '--command', 'panels create', '--json']));
@@ -1290,6 +1378,7 @@ async function runChecks() {
   checkWindowsPaneVersionDoesNotLaunchExecutable();
   await checkFromJsonAcceptsBom();
   await checkPanePinParity();
+  await checkPaneRenameParity();
   checkHelpOutput();
   compareAgentContextParity();
   await checkNodeReleaseTimeout();

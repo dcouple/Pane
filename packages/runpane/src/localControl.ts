@@ -141,6 +141,18 @@ interface PanePinResult {
   favoritePinnedAt?: string;
 }
 
+interface PaneRenameRequest {
+  paneId: string;
+  name: string;
+  dryRun?: boolean;
+}
+
+interface PaneRenameResult {
+  ok: true;
+  dryRun?: true;
+  pane: PaneSummary;
+}
+
 interface PaneArchiveSafetyCheck {
   performed: boolean;
   hasUncommittedChanges?: boolean;
@@ -464,6 +476,35 @@ export async function runPanesPin(parsed: ParsedArgs, pinned: boolean): Promise<
     printJson(result);
   } else {
     console.log(`${result.pinned ? 'Pinned' : 'Unpinned'} ${result.paneId}`);
+  }
+
+  return 0;
+}
+
+export async function runPanesRename(parsed: ParsedArgs): Promise<number> {
+  if (!parsed.paneId) {
+    throw new Error('runpane panes rename requires --pane.');
+  }
+  const name = parsed.name?.trim();
+  if (!name) {
+    throw new Error('runpane panes rename requires a non-empty --name.');
+  }
+
+  const request: PaneRenameRequest = {
+    paneId: parsed.paneId,
+    name,
+    ...(parsed.dryRun ? { dryRun: true } : {}),
+  };
+  await confirmPaneRename(parsed, request);
+
+  const result = await invokeDaemon<PaneRenameResult>('runpane:panes:rename', [request], {
+    paneDir: parsed.paneDir,
+  });
+
+  if (parsed.json) {
+    printJson(result);
+  } else {
+    console.log(`${parsed.dryRun ? 'Would rename' : 'Renamed'} ${result.pane.paneId} to ${result.pane.name}`);
   }
 
   return 0;
@@ -915,6 +956,26 @@ async function confirmPanePin(parsed: ParsedArgs, request: PanePinRequest): Prom
   const rl = createInterface({ input, output });
   try {
     const answer = (await rl.question(`${request.pinned ? 'Pin' : 'Unpin'} pane ${request.paneId}? [y/N] `)).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('Cancelled.');
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+async function confirmPaneRename(parsed: ParsedArgs, request: PaneRenameRequest): Promise<void> {
+  if (parsed.dryRun || parsed.yes) {
+    return;
+  }
+
+  if (!isInteractiveShell()) {
+    throw new Error('runpane panes rename mutates Pane state. Rerun with --yes in non-interactive shells.');
+  }
+
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`Rename pane ${request.paneId} to ${request.name}? [y/N] `)).trim().toLowerCase();
     if (answer !== 'y' && answer !== 'yes') {
       throw new Error('Cancelled.');
     }

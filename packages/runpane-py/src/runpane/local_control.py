@@ -124,6 +124,35 @@ def run_panes_pin(parsed: Any, pinned: bool) -> int:
     return 0
 
 
+def run_panes_rename(parsed: Any) -> int:
+    if not parsed.pane_id:
+        raise ValueError("runpane panes rename requires --pane.")
+    name = parsed.name.strip() if parsed.name else ""
+    if not name:
+        raise ValueError("runpane panes rename requires a non-empty --name.")
+
+    request = {
+        "paneId": parsed.pane_id,
+        "name": name,
+        **optional_value("dryRun", True if parsed.dry_run else None),
+    }
+    confirm_pane_rename(parsed, request)
+    result = invoke_daemon(
+        "runpane:panes:rename",
+        [request],
+        pane_dir=parsed.pane_dir,
+    )
+
+    if parsed.json:
+        print_json(result)
+    else:
+        action = "Would rename" if parsed.dry_run else "Renamed"
+        pane = result.get("pane", {})
+        print(f"{action} {pane.get('paneId')} to {pane.get('name')}")
+
+    return 0
+
+
 def run_panels_list(parsed: Any) -> int:
     if not parsed.pane_id:
         raise ValueError("runpane panels list requires --pane.")
@@ -472,6 +501,17 @@ def confirm_pane_pin(parsed: Any, request: Dict[str, Any]) -> None:
 
     action = "Pin" if request.get("pinned") else "Unpin"
     answer = input(f"{action} pane {request.get('paneId')}? [y/N] ").strip().lower()
+    if answer not in {"y", "yes"}:
+        raise ValueError("Cancelled.")
+
+
+def confirm_pane_rename(parsed: Any, request: Dict[str, Any]) -> None:
+    if parsed.dry_run or parsed.yes:
+        return
+    if not is_interactive_shell():
+        raise ValueError("runpane panes rename mutates Pane state. Rerun with --yes in non-interactive shells.")
+
+    answer = input(f"Rename pane {request.get('paneId')} to {request.get('name')}? [y/N] ").strip().lower()
     if answer not in {"y", "yes"}:
         raise ValueError("Cancelled.")
 

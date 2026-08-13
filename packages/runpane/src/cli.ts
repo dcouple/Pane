@@ -27,6 +27,7 @@ import {
   runPanesCreate,
   runPanesList,
   runPanesPin,
+  runPanesRename,
   runReposAdd,
   runReposList
 } from './localControl';
@@ -116,6 +117,10 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   if (parsed.command === 'panes unpin') {
     return runPanesPin(parsed, false);
+  }
+
+  if (parsed.command === 'panes rename') {
+    return runPanesRename(parsed);
   }
 
   if (parsed.command === 'panels list') {

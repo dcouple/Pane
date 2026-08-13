@@ -127,6 +127,7 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
     sessionManager: {
       getSessionsForProject: vi.fn(() => [session]),
       getSession: vi.fn(() => session),
+      getProjectForSession: vi.fn(() => project),
       getPanelOutputs: vi.fn(() => [{
         sessionId: session.id,
         panelId: terminalPanel.id,
@@ -290,6 +291,7 @@ describe('runpane IPC handlers', () => {
       },
     });
     expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
+    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:panes:rename');
   });
 
   it('lists saved Pane repositories with session counts', async () => {
@@ -1381,6 +1383,109 @@ describe('runpane IPC handlers', () => {
       .rejects.toThrow('pinned as a boolean');
     await expect(registry.invoke('runpane:panes:pin', [{ paneId: session.id, pinned: 'yes' }]))
       .rejects.toThrow('pinned as a boolean');
+  });
+
+  it('renames a pane, trims the name, emits an update, and returns the updated pane', async () => {
+    const renamedSession = { ...session };
+    const updateSession = vi.fn(() => ({ id: session.id, name: 'renamed pane' }));
+    const emit = vi.fn();
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        updateSession,
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSession: vi.fn(() => renamedSession),
+        emit,
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panes:rename', [{
+      paneId: session.id,
+      name: '  renamed pane  ',
+    }]);
+
+    expect(updateSession).toHaveBeenCalledWith(session.id, { name: 'renamed pane' });
+    expect(renamedSession.name).toBe('renamed pane');
+    expect(emit).toHaveBeenCalledWith('session-updated', renamedSession);
+    expect(result).toMatchObject({
+      ok: true,
+      pane: { paneId: session.id, name: 'renamed pane' },
+    });
+  });
+
+  it('dry-runs pane rename without persisting, mutating, or emitting', async () => {
+    const originalSession = { ...session };
+    const updateSession = vi.fn();
+    const emit = vi.fn();
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        updateSession,
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSession: vi.fn(() => originalSession),
+        emit,
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:panes:rename', [{
+      paneId: session.id,
+      name: 'preview name',
+      dryRun: true,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      pane: { paneId: session.id, name: 'preview name' },
+    });
+    expect(originalSession.name).toBe(session.name);
+    expect(updateSession).not.toHaveBeenCalled();
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty rename names and accepts names without a new length limit', async () => {
+    const longName = 'x'.repeat(10_000);
+    const renamedSession = { ...session };
+    const updateSession = vi.fn(() => ({ id: session.id, name: longName }));
+    const services = createServices({
+      databaseService: {
+        ...createServices().databaseService,
+        updateSession,
+      } as never,
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSession: vi.fn(() => renamedSession),
+        emit: vi.fn(),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    await expect(registry.invoke('runpane:panes:rename', [{ paneId: session.id, name: '' }]))
+      .rejects.toThrow('non-empty name');
+    await expect(registry.invoke('runpane:panes:rename', [{ paneId: session.id, name: '   ' }]))
+      .rejects.toThrow('non-empty name');
+
+    const result = await registry.invoke('runpane:panes:rename', [{ paneId: session.id, name: longName }]);
+    expect(result).toMatchObject({ pane: { name: longName } });
+  });
+
+  it('rejects rename for a pane id that does not exist', async () => {
+    const services = createServices({
+      sessionManager: {
+        ...createServices().sessionManager,
+        getSession: vi.fn(() => undefined),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    await expect(registry.invoke('runpane:panes:rename', [{ paneId: 'missing-pane', name: 'new name' }]))
+      .rejects.toThrow('No Pane pane found with id missing-pane');
   });
 
   it('serializes multi-pane session creation before enqueueing the next pane', async () => {

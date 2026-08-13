@@ -32,6 +32,8 @@ import type {
   RunpanePaneListResult,
   RunpanePanePinRequest,
   RunpanePanePinResult,
+  RunpanePaneRenameRequest,
+  RunpanePaneRenameResult,
   RunpanePaneCreateFailureItem,
   RunpanePaneCreateItem,
   RunpanePaneCreateRequest,
@@ -77,6 +79,7 @@ const RUNPANE_CHANNELS = [
   'runpane:panes:list',
   'runpane:panes:create',
   'runpane:panes:pin',
+  'runpane:panes:rename',
   'runpane:panes:archive',
   'runpane:panels:create',
   'runpane:panels:list',
@@ -269,6 +272,38 @@ export function registerRunpaneHandlers(
         favoritePinnedAt: updatedSession.favorite_pinned_at ?? undefined,
       };
     }, result => ({ paneId: result.paneId }));
+  });
+
+  commandRegistry.register('runpane:panes:rename', async (request: unknown): Promise<RunpanePaneRenameResult> => {
+    return withRunpaneAction(services, 'panes:rename', {}, () => {
+      const normalized = parsePaneRenameRequest(request);
+      const pane = resolvePane(sessionManager, normalized.paneId);
+      const project = sessionManager.getProjectForSession(pane.id);
+      if (!project) {
+        throw new Error(`No Pane repo found for pane ${pane.id}`);
+      }
+
+      if (normalized.dryRun) {
+        return {
+          ok: true,
+          dryRun: true,
+          pane: sessionToPaneSummary({ ...pane, name: normalized.name }, project),
+        };
+      }
+
+      const updatedSession = databaseService.updateSession(pane.id, { name: normalized.name });
+      if (!updatedSession) {
+        throw new Error(`Failed to rename Pane ${pane.id}`);
+      }
+
+      pane.name = normalized.name;
+      sessionManager.emit('session-updated', pane);
+
+      return {
+        ok: true,
+        pane: sessionToPaneSummary(pane, project),
+      };
+    }, result => ({ paneId: result.pane.paneId }));
   });
 
   commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
@@ -1935,6 +1970,27 @@ function parsePanePinRequest(value: unknown): RunpanePanePinRequest {
   return {
     paneId,
     pinned: value.pinned,
+    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+  };
+}
+
+function parsePaneRenameRequest(value: unknown): RunpanePaneRenameRequest {
+  if (!isRecord(value)) {
+    throw new Error('Pane rename request must be an object');
+  }
+
+  const paneId = optionalString(value.paneId)?.trim();
+  if (!paneId) {
+    throw new Error('Pane rename request must include a paneId');
+  }
+  const name = optionalString(value.name)?.trim();
+  if (!name) {
+    throw new Error('Pane rename request must include a non-empty name');
+  }
+
+  return {
+    paneId,
+    name,
     dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
   };
 }

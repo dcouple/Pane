@@ -236,6 +236,18 @@ export interface RunpanePanePinResult {
   favoritePinnedAt?: string;
 }
 
+export interface RunpanePaneRenameRequest {
+  paneId: string;
+  name: string;
+  dryRun?: boolean;
+}
+
+export interface RunpanePaneRenameResult {
+  ok: true;
+  dryRun?: true;
+  pane: RunpanePaneSummary;
+}
+
 export interface RunpanePaneArchiveRequest {
   paneId: string;
   force?: boolean;
