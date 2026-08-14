@@ -350,7 +350,7 @@ test('Pane Chat agent choice uses native radio semantics', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Pane Chat' }).click();
   const radios = page.getByRole('radio');
-  await expect(radios).toHaveCount(2);
+  await expect(radios).toHaveCount(3);
   await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
   await radios.first().focus();
   await page.keyboard.press('ArrowRight');

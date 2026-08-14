@@ -1154,7 +1154,8 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('diagnoses cursor through the ~/.local/bin fallback when PATH misses it', async () => {
+  // The ~/.local/bin fallback is POSIX-only; on a win32 host the doctor gates cursor out entirely.
+  it.skipIf(process.platform === 'win32')('diagnoses cursor through the ~/.local/bin fallback when PATH misses it', async () => {
     const fallbackLookup = 'command -v "$HOME/.local/bin/cursor-agent"';
     const execAsync = vi.fn(async (command: string) => {
       if (command === 'command -v cursor-agent') {
