@@ -28,6 +28,7 @@ import { registerVoiceHandlers } from './voice';
 import { registerPaneChatHandlers } from './paneChat';
 import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 import { registerPermissionHandlers } from './permissions';
+import { registerAgentUsageHandlers } from './agentUsage';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 
@@ -75,6 +76,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerRunpaneHandlers(ipcMain, services, commandRegistry);
   registerClipboardHandlers(ipcMain, services);
   registerResourceMonitorHandlers(ipcMain, services, commandRegistry);
+  registerAgentUsageHandlers(ipcMain, services, commandRegistry);
   registerVoiceHandlers(ipcMain, services, commandRegistry);
   registerPaneChatHandlers(ipcMain, services, commandRegistry);
   registerOnboardingHandlers(ipcMain, services);

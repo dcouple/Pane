@@ -29,6 +29,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 }) => {
   const [mainRepoSessionId, setMainRepoSessionId] = useState<string | null>(null);
   const [mainRepoSession, setMainRepoSession] = useState<Session | null>(null);
+  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
   const [isLoadingSession, setIsLoadingSession] = useState(false);
   // Panel store state and actions
   const {
@@ -45,11 +46,26 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     const stored = localStorage.getItem('pane-project-detail-panel-visible');
     return stored !== null ? stored === 'true' : false;
   });
+  const [agentUsageVisible, setAgentUsageVisible] = useState(() => {
+    return localStorage.getItem('pane-agent-usage-visible') === 'true';
+  });
 
   // Persist detail panel visibility
   useEffect(() => {
     localStorage.setItem('pane-project-detail-panel-visible', String(detailVisible));
   }, [detailVisible]);
+
+  useEffect(() => {
+    localStorage.setItem('pane-agent-usage-visible', String(agentUsageVisible));
+  }, [agentUsageVisible]);
+
+  useEffect(() => {
+    if (agentUsageVisible) setDetailVisible(true);
+  }, [agentUsageVisible]);
+
+  const handleToggleAgentUsage = useCallback(() => {
+    setAgentUsageVisible(current => !current);
+  }, []);
 
   // Right-side resizable
   const { width: detailWidth, startResize: startDetailResize } = useResizable({
@@ -95,6 +111,32 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     () => sessionPanels.find(p => p.id === activePanels[mainRepoSessionId || '']),
     [sessionPanels, activePanels, mainRepoSessionId]
   );
+
+  const detailSession = useMemo(() => {
+    if (!mainRepoSession || mainRepoSession.baseBranch || !currentBranch) return mainRepoSession;
+    return { ...mainRepoSession, baseBranch: currentBranch };
+  }, [currentBranch, mainRepoSession]);
+
+  useEffect(() => {
+    const worktreePath = mainRepoSession?.worktreePath;
+    if (!worktreePath) {
+      setCurrentBranch(null);
+      return;
+    }
+
+    let cancelled = false;
+    window.electronAPI.projects.detectBranch(worktreePath).then(result => {
+      if (!cancelled && result.success && typeof result.data === 'string') {
+        setCurrentBranch(result.data);
+      }
+    }).catch(() => {
+      if (!cancelled) setCurrentBranch(null);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mainRepoSession?.worktreePath]);
   
   // Panel event handlers
   const handlePanelSelect = useCallback(
@@ -255,7 +297,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
       {/* SINGLE SessionProvider wraps everything */}
       {mainRepoSessionId && (
-        <SessionProvider session={mainRepoSession} projectName={projectName}>
+        <SessionProvider session={detailSession} projectName={projectName}>
           {/* Tab bar at top */}
           <PanelTabBar
             panels={sessionPanels}
@@ -266,6 +308,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             context="project"
             onToggleDetailPanel={() => setDetailVisible(v => !v)}
             detailPanelVisible={detailVisible}
+            onToggleAgentUsage={handleToggleAgentUsage}
+            agentUsageVisible={agentUsageVisible}
           />
 
           {/* Content area: center panels + right detail */}
@@ -331,6 +375,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                 onPush: handleGitPush,
                 isMerging
               }}
+              showAgentUsage={agentUsageVisible}
             />
           </div>
         </SessionProvider>

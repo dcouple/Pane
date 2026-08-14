@@ -26,6 +26,7 @@ import type {
 } from '../../../shared/types/daemon';
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
+import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
@@ -505,6 +506,11 @@ interface ElectronAPI {
     getSnapshot: () => Promise<IPCResponse>;
     startActive: () => Promise<IPCResponse>;
     stopActive: () => Promise<IPCResponse>;
+  };
+
+  // Agent subscription usage
+  agentUsage: {
+    get: (sessionId: string, force?: boolean) => Promise<IPCResponse<AgentUsageSnapshot>>;
   };
 
   // Window state queries (invoke, not event subscriptions)

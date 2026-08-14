@@ -29,6 +29,7 @@ type ElectronApiMockOptions = {
   initialExecutions?: Array<Record<string, unknown>>;
   initialCombinedDiff?: Record<string, unknown> | null;
   initialTerminalStates?: Record<string, Record<string, unknown>>;
+  initialAgentUsage?: Record<string, unknown>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -318,6 +319,20 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         syncDistinctId: () => undefined,
         redeemAttribution: () => success(undefined),
       }),
+      agentUsage: namespace({
+        get: () => success(clone(mockOptions.initialAgentUsage ?? {
+          providers: [{
+            id: 'codex',
+            name: 'Codex',
+            status: 'unavailable',
+            plan: null,
+            limits: [],
+            fetchedAt: new Date(0).toISOString(),
+            error: 'Codex usage is unavailable in this test',
+          }],
+          fetchedAt: new Date(0).toISOString(),
+        })),
+      }),
       cloud: namespace({
         getState: () => success(clone(cloudState)),
         onStateChanged: (callback: (state: unknown) => void) => subscribe('cloud:state-changed', callback),
@@ -474,6 +489,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         stopActive: () => success(),
       }),
       sessions: namespace({
+        getOrCreateMainRepoSession: (projectId: number) => success(clone(
+          mockSessions.find((session) => session.projectId === projectId && session.isMainRepo === true) ?? null,
+        )),
         delete: (sessionId: string) => {
           sessionDeleteCalls.push(sessionId);
           return success();

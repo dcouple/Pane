@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, ChevronDown, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
+import { Plus, X, Terminal, ChevronDown, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe, Gauge } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -71,6 +71,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   detailPanelVisible,
   detailPanelToggleDisabled = false,
   detailPanelToggleDisabledReason = 'Unavailable in this view',
+  onToggleAgentUsage,
+  agentUsageVisible = false,
   // Optional split tab group integration
   primaryGroupPanels,
   primaryGroupActivePanelId,
@@ -705,6 +707,34 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 onClick={handleRunDevServer}
               >
                 <Play aria-hidden="true" className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
+
+          {/* Codex usage widget toggle */}
+          {onToggleAgentUsage && (
+            <Tooltip
+              content={detailPanelToggleDisabled
+                ? detailPanelToggleDisabledReason
+                : agentUsageVisible ? 'Disable Codex usage widget' : 'Enable Codex usage widget'}
+              side="bottom"
+            >
+              <button
+                type="button"
+                onClick={detailPanelToggleDisabled ? undefined : onToggleAgentUsage}
+                disabled={detailPanelToggleDisabled}
+                aria-label={agentUsageVisible ? 'Disable Codex usage widget' : 'Enable Codex usage widget'}
+                aria-pressed={agentUsageVisible}
+                className={cn(
+                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] w-[var(--panel-tab-height)] rounded-md transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle",
+                  detailPanelToggleDisabled
+                    ? "text-text-muted cursor-not-allowed opacity-50"
+                    : agentUsageVisible
+                    ? "text-text-primary bg-surface-hover hover:text-interactive"
+                    : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
+                )}
+              >
+                <Gauge aria-hidden="true" className="w-4 h-4" />
               </button>
             </Tooltip>
           )}

@@ -19,6 +19,7 @@ import type {
 } from '../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../shared/types/panels';
 import type { PanelAgentStatusEvent } from '../../shared/types/agentStatus';
+import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 
 interface LogEntry {
   timestamp: string;
@@ -125,6 +126,7 @@ interface UpdaterInfo {
 }
 
 const DAEMON_OWNED_CHANNEL_PREFIXES = [
+  'agent-usage:',
   'folders:',
   'logs:',
   'pane-chat:',
@@ -1098,6 +1100,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSnapshot: (): Promise<IPCResponse> => invokeIpc('resource-monitor:get-snapshot'),
     startActive: (): Promise<IPCResponse> => invokeIpc('resource-monitor:start-active'),
     stopActive: (): Promise<IPCResponse> => invokeIpc('resource-monitor:stop-active'),
+  },
+
+  // Agent subscription usage
+  agentUsage: {
+    get: (sessionId: string, force = false): Promise<IPCResponse<AgentUsageSnapshot>> =>
+      invokeIpc('agent-usage:get', sessionId, force),
   },
 
   // Window state queries (invoke, not event subscriptions)
