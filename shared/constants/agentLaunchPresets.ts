@@ -1,0 +1,48 @@
+export type AgentLaunchPresetId = 'claude' | 'codex' | 'cursor';
+
+export interface AgentLaunchPreset {
+  id: AgentLaunchPresetId;
+  title: string;
+  command: string;
+  iconKey: string;
+  hotkeyId: string;
+  hotkey: string;
+  platforms?: readonly string[];
+}
+
+/*
+ * Launch templates duplicated from contracts/runpane/contract.json
+ * agentTemplates so the renderer doesn't bundle the full generated contract.
+ * agentLaunchPresets.test.ts pins this list 1:1 against the contract.
+ */
+export const AGENT_LAUNCH_PRESETS: readonly AgentLaunchPreset[] = [
+  {
+    id: 'claude',
+    title: 'Claude Code',
+    command: 'claude --dangerously-skip-permissions',
+    iconKey: 'claude',
+    hotkeyId: 'add-tool-terminal-claude',
+    hotkey: 'mod+alt+3',
+  },
+  {
+    id: 'codex',
+    title: 'Codex',
+    command: 'codex --yolo',
+    iconKey: 'codex',
+    hotkeyId: 'add-tool-terminal-codex',
+    hotkey: 'mod+alt+4',
+  },
+  {
+    id: 'cursor',
+    title: 'Cursor',
+    command: 'cursor-agent --force --trust',
+    iconKey: 'cursor',
+    hotkeyId: 'add-tool-terminal-cursor',
+    hotkey: 'mod+alt+5',
+    platforms: ['darwin', 'linux'],
+  },
+];
+
+export function agentPresetsForPlatform(platform: string): readonly AgentLaunchPreset[] {
+  return AGENT_LAUNCH_PRESETS.filter(preset => !preset.platforms || preset.platforms.includes(platform));
+}

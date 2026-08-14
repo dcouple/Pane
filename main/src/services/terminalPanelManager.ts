@@ -45,7 +45,8 @@ const SHELL_PROMPT_FALLBACK_MS = 5000;
 // practice; the cap is a backstop against pathological payloads.
 const MAX_RESTORE_PAYLOAD_SIZE = 512 * 1024;
 
-type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
+import { CliAgentType, resolveAgentTypeFromCommand } from './agents/agentIdentity';
+import { buildCursorLaunchCommand, createCursorReadyDetector, extractCursorChatId } from './agents/cursorLaunch';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -207,8 +208,8 @@ interface TerminalProcess {
   agentType?: CliAgentType;
   // DEC Mode 2026 synchronized-output block tracking — persists across chunks
   inSyncBlock: boolean;
-  codexAgentSessionId?: string;
-  codexResumeOutputBuffer: string;
+  capturedAgentSessionId?: string;
+  agentSessionScrapeBuffer: string;
 }
 
 export class TerminalPanelManager {
@@ -227,19 +228,6 @@ export class TerminalPanelManager {
   private agentStatusPollTimer: ReturnType<typeof setInterval> | null = null;
   private agentStatusPolling = false;
 
-  /**
-   * Detect the CLI agent from a launch command. Matches "claude"/"codex" as a
-   * standalone token (start/space/slash-delimited), not a substring — a command
-   * whose cwd or script path merely contains the word (e.g. /tmp/claude-501/x.sh)
-   * must not be classified as that agent.
-   */
-  private getCliAgentType(command?: string): CliAgentType | undefined {
-    const lower = command?.toLowerCase() ?? '';
-    if (/(^|[\s/])claude($|\s)/.test(lower)) return 'claude';
-    if (/(^|[\s/])codex($|\s)/.test(lower)) return 'codex';
-    return undefined;
-  }
-
   private quoteCommandArgument(value: string): string {
     return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
   }
@@ -249,7 +237,7 @@ export class TerminalPanelManager {
     customState: TerminalPanelState;
     isCliCommand: boolean;
   } {
-    const agentType = customState.agentType ?? this.getCliAgentType(initialCommand);
+    const agentType = customState.agentType ?? resolveAgentTypeFromCommand(initialCommand);
     if (!agentType) {
       return { commandToRun: initialCommand, customState, isCliCommand: false };
     }
@@ -328,6 +316,37 @@ export class TerminalPanelManager {
       nextState.initialInputError = undefined;
       return {
         commandToRun: `${initialCommand} ${this.quoteCommandArgument(customState.initialInput)}`,
+        customState: nextState,
+        isCliCommand: true,
+      };
+    }
+
+    if (agentType === 'cursor' && customState.wasInterrupted) {
+      nextState.wasInterrupted = undefined;
+      const commandToRun = customState.agentSessionId
+        ? buildCursorLaunchCommand({ baseCommand: initialCommand, resumeChatId: customState.agentSessionId })
+        : `${initialCommand} --continue`;
+
+      if (customState.agentSessionId) {
+        console.log(`[TerminalPanelManager] Resolved interrupted Cursor panel ${panelId} to direct resume`);
+      } else {
+        console.warn(`[TerminalPanelManager] Interrupted Cursor panel ${panelId} has no captured chat id; continuing latest chat`);
+      }
+
+      return { commandToRun, customState: nextState, isCliCommand: true };
+    }
+
+    if (agentType === 'cursor' && !/--resume\b|--continue\b/.test(initialCommand)) {
+      const promptArgument =
+        customState.initialInputMode === 'argument' && customState.initialInput?.trim() && !customState.initialInputSentAt
+          ? customState.initialInput
+          : undefined;
+      if (promptArgument) {
+        nextState.initialInputSentAt = new Date().toISOString();
+        nextState.initialInputError = undefined;
+      }
+      return {
+        commandToRun: buildCursorLaunchCommand({ baseCommand: initialCommand, promptArgument }),
         customState: nextState,
         isCliCommand: true,
       };
@@ -452,34 +471,42 @@ export class TerminalPanelManager {
     setTimeout(invokeOnce, SHELL_PROMPT_FALLBACK_MS);
   }
 
-  private captureCodexSessionId(terminal: TerminalProcess, output: string): void {
-    terminal.codexResumeOutputBuffer = this.trimAnsiSafe(
-      terminal.codexResumeOutputBuffer + output,
+  private extractAgentSessionId(agentType: CliAgentType | undefined, output: string): string | undefined {
+    if (agentType === 'codex') return this.extractCodexResumeId(output);
+    if (agentType === 'cursor') return extractCursorChatId(output);
+    return undefined;
+  }
+
+  private captureAgentSessionId(terminal: TerminalProcess, output: string): void {
+    if (terminal.agentType !== 'codex' && terminal.agentType !== 'cursor') return;
+
+    terminal.agentSessionScrapeBuffer = this.trimAnsiSafe(
+      terminal.agentSessionScrapeBuffer + output,
       2000
     );
 
-    const agentSessionId = this.extractCodexResumeId(terminal.codexResumeOutputBuffer);
+    const agentSessionId = this.extractAgentSessionId(terminal.agentType, terminal.agentSessionScrapeBuffer);
     if (!agentSessionId) return;
 
     const panel = panelManager.getPanel(terminal.panelId);
     if (!panel) return;
 
     const customState = (panel.state.customState || {}) as TerminalPanelState;
-    const agentType = customState.agentType ?? this.getCliAgentType(customState.initialCommand);
-    if (agentType !== 'codex' || customState.agentSessionId === agentSessionId) return;
+    const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
+    if (agentType !== terminal.agentType || customState.agentSessionId === agentSessionId) return;
 
-    terminal.codexAgentSessionId = agentSessionId;
+    terminal.capturedAgentSessionId = agentSessionId;
 
     panel.state.customState = {
       ...customState,
-      agentType: 'codex',
+      agentType,
       agentSessionId
     } as TerminalPanelState;
 
     void panelManager.updatePanel(terminal.panelId, { state: panel.state }).catch(error => {
-      console.warn(`[TerminalPanelManager] Failed to persist Codex session id for panel ${terminal.panelId}:`, error);
+      console.warn(`[TerminalPanelManager] Failed to persist ${agentType} session id for panel ${terminal.panelId}:`, error);
     });
-    console.log(`[TerminalPanelManager] Captured Codex session id for panel ${terminal.panelId}: ${agentSessionId}`);
+    console.log(`[TerminalPanelManager] Captured ${agentType} session id for panel ${terminal.panelId}: ${agentSessionId}`);
   }
 
   setAnalyticsManager(analyticsManager: AnalyticsManager): void {
@@ -987,7 +1014,7 @@ export class TerminalPanelManager {
       idleTimer: null,
       inSyncBlock: false,
       agentType: this.resolveTerminalAgentType(panel.state.customState as TerminalPanelState | undefined),
-      codexResumeOutputBuffer: ''
+      agentSessionScrapeBuffer: ''
     };
 
     // Store in map (ptyHost path: pid is already populated on the shim).
@@ -1063,9 +1090,15 @@ export class TerminalPanelManager {
             this.sendInitialInputOnce(panelId);
           };
 
-          // Listen for first CLI output after command injection.
-          // Dispose immediately on first data, then fire a single delayed signal.
-          onCliOutput = ptyProcess.onData(() => {
+          // Listen for CLI output after command injection. Cursor launches are
+          // preceded by the create-chat compound's shell traffic, so ready is
+          // gated on the TUI's own first render signal; other agents keep the
+          // first-byte trigger. Either way, fire a single delayed signal.
+          const cursorReady = launchResolution.customState.agentType === 'cursor'
+            ? createCursorReadyDetector()
+            : null;
+          onCliOutput = ptyProcess.onData((chunk: string) => {
+            if (cursorReady && !cursorReady(chunk)) return;
             if (onCliOutput) onCliOutput.dispose();
             onCliOutput = null;
             // Small delay to let the CLI render its first frame
@@ -1190,7 +1223,7 @@ export class TerminalPanelManager {
 
       // Strip \x1b[2J inside DEC 2026 sync blocks before xterm.js sees the data
       const filtered = this.filterSyncBlockClears(terminal, data);
-      this.captureCodexSessionId(terminal, filtered);
+      this.captureAgentSessionId(terminal, filtered);
       terminal.screenEmulator?.write(filtered);
 
       // Keep TUI redraw traffic separate from durable shell scrollback. Full-screen
@@ -1472,8 +1505,8 @@ export class TerminalPanelManager {
       serializedBuffer: terminal.screenEmulator?.isAlternateScreen
         ? terminal.screenEmulator.serializeForRestore()
         : this.serializedBuffers.get(panelId),
-      ...(terminal.codexAgentSessionId
-        ? { agentType: 'codex' as const, agentSessionId: terminal.codexAgentSessionId }
+      ...(terminal.capturedAgentSessionId && terminal.agentType
+        ? { agentType: terminal.agentType, agentSessionId: terminal.capturedAgentSessionId }
         : {})
     } as TerminalPanelState;
     
@@ -1589,7 +1622,7 @@ export class TerminalPanelManager {
 
     const panel = panelManager.getPanel(panelId);
     const customState = (panel?.state.customState || {}) as TerminalPanelState;
-    const agentType = customState.agentType ?? this.getCliAgentType(customState.initialCommand);
+    const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
 
     return {
       initialized: true,
@@ -1603,7 +1636,7 @@ export class TerminalPanelManager {
       isCliPanel: customState.isCliPanel,
       isCliReady: customState.isCliReady,
       agentType,
-      agentSessionId: customState.agentSessionId ?? terminal.codexAgentSessionId,
+      agentSessionId: customState.agentSessionId ?? terminal.capturedAgentSessionId,
     };
   }
 
@@ -1643,7 +1676,7 @@ export class TerminalPanelManager {
   private resolveTerminalAgentType(
     customState: TerminalPanelState | undefined,
   ): CliAgentType | undefined {
-    return customState?.agentType ?? this.getCliAgentType(customState?.initialCommand);
+    return customState?.agentType ?? resolveAgentTypeFromCommand(customState?.initialCommand);
   }
 
   /**

@@ -66,8 +66,9 @@ type TerminalUnderTest = {
   activityStatus: 'active' | 'idle';
   idleTimer: ReturnType<typeof setTimeout> | null;
   inSyncBlock: boolean;
-  codexResumeOutputBuffer: string;
-  codexAgentSessionId?: string;
+  agentType?: 'claude' | 'codex' | 'cursor';
+  agentSessionScrapeBuffer: string;
+  capturedAgentSessionId?: string;
 };
 
 type FlushOutputBufferAccess = {
@@ -113,6 +114,12 @@ type LaunchCommandAccess = {
   };
 };
 
+type AgentSessionCaptureAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  captureAgentSessionId(terminal: TerminalUnderTest, output: string): void;
+  saveTerminalState(panelId: string): Promise<void>;
+};
+
 type ShellPromptSchedulerAccess = {
   scheduleAfterShellPrompt(ptyProcess: TerminalUnderTest['pty'] & {
     onData(listener: (data: string) => void): { dispose(): void };
@@ -147,7 +154,7 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
     activityStatus: 'idle',
     idleTimer: null,
     inSyncBlock: false,
-    codexResumeOutputBuffer: '',
+    agentSessionScrapeBuffer: '',
     ...overrides,
   };
 }
@@ -447,7 +454,7 @@ describe('TerminalPanelManager hidden output delivery', () => {
       isAlternateScreen: true,
       activityStatus: 'active',
       currentCommand: 'codex',
-      codexAgentSessionId: 'agent-session-1',
+      capturedAgentSessionId: 'agent-session-1',
     });
     manager.terminals.set(terminal.panelId, terminal);
     vi.mocked(panelManager.getPanel).mockReturnValue({
@@ -805,6 +812,83 @@ describe('TerminalPanelManager hidden output delivery', () => {
     expect(result.customState).not.toHaveProperty('initialInputSentAt');
   });
 
+  it('launches a fresh Cursor panel through the create-chat compound', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'cursor-agent --force --trust', {
+      agentType: 'cursor',
+    });
+
+    expect(result).toMatchObject({
+      commandToRun:
+        'if __PANE_CURSOR_CHAT="$(cursor-agent create-chat 2>/dev/null)" && [ -n "$__PANE_CURSOR_CHAT" ]; '
+        + 'then printf \'\\npane-cursor-chat-id: %s\\n\' "$__PANE_CURSOR_CHAT"; '
+        + 'cursor-agent --force --trust --resume "$__PANE_CURSOR_CHAT"; '
+        + 'else cursor-agent --force --trust; fi',
+      isCliCommand: true,
+      customState: {
+        agentType: 'cursor',
+        isCliPanel: true,
+        isCliReady: false,
+      },
+    });
+  });
+
+  it('passes fresh Cursor initial input as a startup prompt argument on both compound branches', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'cursor-agent --force --trust', {
+      agentType: 'cursor',
+      initialInputMode: 'argument',
+      initialInput: 'Read "the guide" and initialize `Pane Chat`.',
+    });
+
+    const quoted = '"Read \\"the guide\\" and initialize \\`Pane Chat\\`."';
+    expect(result.commandToRun).toContain(`--resume "$__PANE_CURSOR_CHAT" ${quoted}; `);
+    expect(result.commandToRun).toContain(`else cursor-agent --force --trust ${quoted}; fi`);
+    expect(result.customState).toMatchObject({
+      agentType: 'cursor',
+      initialInputSentAt: expect.any(String),
+      initialInputError: undefined,
+    });
+  });
+
+  it('resumes an interrupted Cursor panel with its captured chat id', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'cursor-agent --force --trust', {
+      agentType: 'cursor',
+      wasInterrupted: true,
+      agentSessionId: '7403f755-6758-40d3-bb69-2cd356dd9bf0',
+    });
+
+    expect(result).toMatchObject({
+      commandToRun: 'cursor-agent --force --trust --resume "7403f755-6758-40d3-bb69-2cd356dd9bf0"',
+      isCliCommand: true,
+      customState: {
+        agentType: 'cursor',
+        wasInterrupted: undefined,
+      },
+    });
+  });
+
+  it('continues the latest Cursor chat when an interrupted panel has no captured id', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'cursor-agent --force --trust', {
+      agentType: 'cursor',
+      wasInterrupted: true,
+    });
+
+    expect(result).toMatchObject({
+      commandToRun: 'cursor-agent --force --trust --continue',
+      isCliCommand: true,
+      customState: {
+        wasInterrupted: undefined,
+      },
+    });
+  });
+
   it('keeps Enter as the default initial input submit strategy', async () => {
     const manager = new TerminalPanelManager() as unknown as InitialInputAccess;
     const terminal = createTerminal();
@@ -831,6 +915,94 @@ describe('TerminalPanelManager hidden output delivery', () => {
     await flushPromises();
 
     expect(terminal.pty.write).toHaveBeenCalledWith('hello tool\r');
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+});
+
+describe('TerminalPanelManager agent session capture', () => {
+  const CURSOR_CHAT_ID = '7403f755-6758-40d3-bb69-2cd356dd9bf0';
+
+  afterEach(() => {
+    vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+  });
+
+  const mockPanel = (agentType: string, initialCommand: string, panelId = 'panel-1') => {
+    vi.mocked(panelManager.updatePanel).mockResolvedValue(undefined as never);
+    vi.mocked(panelManager.getPanel).mockReturnValue({
+      id: panelId,
+      sessionId: 'session-1',
+      type: 'terminal',
+      title: 'Agent',
+      state: {
+        isActive: true,
+        customState: { agentType, initialCommand, isCliPanel: true },
+      },
+      metadata: {
+        createdAt: '2026-01-01T00:00:00.000Z',
+        lastActiveAt: '2026-01-01T00:01:00.000Z',
+        position: 0,
+      },
+    });
+  };
+
+  it('persists the Cursor chat id scraped from the marker line', () => {
+    const manager = new TerminalPanelManager() as unknown as AgentSessionCaptureAccess;
+    const terminal = createTerminal({ agentType: 'cursor' });
+    mockPanel('cursor', 'cursor-agent --force --trust');
+
+    manager.captureAgentSessionId(terminal, `\r\npane-cursor-chat-id: ${CURSOR_CHAT_ID}\r\n`);
+
+    expect(terminal.capturedAgentSessionId).toBe(CURSOR_CHAT_ID);
+    expect(panelManager.updatePanel).toHaveBeenCalledWith('panel-1', {
+      state: expect.objectContaining({
+        customState: expect.objectContaining({ agentType: 'cursor', agentSessionId: CURSOR_CHAT_ID }),
+      }),
+    });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('still captures Codex resume ids from screen output', () => {
+    const manager = new TerminalPanelManager() as unknown as AgentSessionCaptureAccess;
+    const terminal = createTerminal({ agentType: 'codex' });
+    mockPanel('codex', 'codex --yolo');
+
+    manager.captureAgentSessionId(terminal, `To continue, run codex resume ${CURSOR_CHAT_ID}\r\n`);
+
+    expect(terminal.capturedAgentSessionId).toBe(CURSOR_CHAT_ID);
+    expect(panelManager.updatePanel).toHaveBeenCalledWith('panel-1', {
+      state: expect.objectContaining({
+        customState: expect.objectContaining({ agentType: 'codex', agentSessionId: CURSOR_CHAT_ID }),
+      }),
+    });
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('ignores marker lines when the panel is not a cursor panel', () => {
+    const manager = new TerminalPanelManager() as unknown as AgentSessionCaptureAccess;
+    const terminal = createTerminal({ agentType: 'codex' });
+    mockPanel('codex', 'codex --yolo');
+
+    manager.captureAgentSessionId(terminal, `pane-cursor-chat-id: ${CURSOR_CHAT_ID}\r\n`);
+
+    expect(terminal.capturedAgentSessionId).toBeUndefined();
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('persists the captured session id for the terminal agent on state save', async () => {
+    const manager = new TerminalPanelManager() as unknown as AgentSessionCaptureAccess;
+    const terminal = createTerminal({ agentType: 'cursor', capturedAgentSessionId: CURSOR_CHAT_ID });
+    manager.terminals.set(terminal.panelId, terminal);
+    mockPanel('cursor', 'cursor-agent --force --trust');
+
+    await manager.saveTerminalState(terminal.panelId);
+
+    expect(panelManager.updatePanel).toHaveBeenCalledWith(terminal.panelId, {
+      state: expect.objectContaining({
+        customState: expect.objectContaining({ agentType: 'cursor', agentSessionId: CURSOR_CHAT_ID }),
+      }),
+    });
     disposeFlowControlRecord(terminal.flowControl);
   });
 });

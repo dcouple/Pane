@@ -16,6 +16,7 @@ import {
   type PaneChatState,
 } from '../../../shared/types/paneChat';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
+import { isCliAgentType } from './agents/agentIdentity';
 
 const PANE_CHAT_TITLE = 'Pane Chat';
 const PANE_CHAT_BOOTSTRAP_VERSION = 9;
@@ -119,7 +120,9 @@ export class PaneChatManager {
       id: panelId,
       sessionId,
       type: 'terminal',
-      title: agent === 'codex' ? `${PANE_CHAT_TITLE} - Codex` : PANE_CHAT_TITLE,
+      title: agent === 'claude'
+        ? PANE_CHAT_TITLE
+        : `${PANE_CHAT_TITLE} - ${RUNPANE_CONTRACT.agentTemplates[agent].title}`,
       initialState: this.buildTerminalState(agent, guidePath),
       metadata: { permanent: true },
     });
@@ -172,7 +175,7 @@ export class PaneChatManager {
 
     return {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
-      initialInput: this.buildInitialInput(),
+      initialInput: this.buildInitialInput(agent, guidePath),
       initialInputMode: 'argument',
       initialInputSubmitStrategy: 'enter',
       initialInputDeliveryVersion: PANE_CHAT_BOOTSTRAP_VERSION,
@@ -183,7 +186,10 @@ export class PaneChatManager {
     };
   }
 
-  private buildInitialInput(): string {
+  private buildInitialInput(agent: PaneChatAgent, guidePath: string): string {
+    if (agent === 'cursor') {
+      return `Read ${guidePath} and initialize yourself as Pane Chat.`;
+    }
     return 'Use the pane-orchestrator skill and initialize yourself as Pane Chat.';
   }
 
@@ -194,7 +200,8 @@ export class PaneChatManager {
         : randomUUID();
     }
 
-    return previousState?.agentType === 'codex' ? previousState.agentSessionId : undefined;
+    // Codex and Cursor own their ids; reuse only what was captured for this agent.
+    return previousState?.agentType === agent ? previousState.agentSessionId : undefined;
   }
 
   private needsLaunchStateRepair(panel: ToolPanel, agent: PaneChatAgent): boolean {
@@ -217,9 +224,6 @@ export class PaneChatManager {
 
   private resolvePanelAgent(panel: ToolPanel): PaneChatAgent | undefined {
     const customState = panel.state.customState as TerminalPanelState | undefined;
-    if (customState?.agentType === 'claude' || customState?.agentType === 'codex') {
-      return customState.agentType;
-    }
-    return undefined;
+    return isCliAgentType(customState?.agentType) ? customState?.agentType : undefined;
   }
 }

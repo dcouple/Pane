@@ -14,7 +14,7 @@ import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { usePanelStore } from '../../stores/panelStore';
-import { ClaudeIcon, OpenAIIcon } from '../ui/BrandIcons';
+import { getCliBrandIcon } from '../ui/BrandIcons';
 import { PanelTabStatusDot } from './PanelTabStatusDot';
 import type { PanelTabPresentationResolver } from '../../types/panelComponents';
 
@@ -81,9 +81,8 @@ function getPanelIcon(type: ToolPanelType, panel?: ToolPanel, iconClass = 'w-4 h
   switch (type) {
     case 'terminal': {
       if (panel?.title) {
-        const lowerTitle = panel.title.toLowerCase();
-        if (lowerTitle.includes('claude')) return <ClaudeIcon className={iconClass} />;
-        if (lowerTitle.includes('codex')) return <OpenAIIcon className={iconClass} />;
+        const brandIcon = getCliBrandIcon(panel.title, iconClass);
+        if (brandIcon) return brandIcon;
       }
       return <Terminal className={iconClass} />;
     }

@@ -1154,6 +1154,88 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('diagnoses cursor through the ~/.local/bin fallback when PATH misses it', async () => {
+    const fallbackLookup = 'command -v "$HOME/.local/bin/cursor-agent"';
+    const execAsync = vi.fn(async (command: string) => {
+      if (command === 'command -v cursor-agent') {
+        return { stdout: '', stderr: '' };
+      }
+      if (command === fallbackLookup) {
+        return { stdout: '/home/user/.local/bin/cursor-agent\n', stderr: '' };
+      }
+      if (command === '"$HOME/.local/bin/cursor-agent" --version') {
+        return { stdout: '2026.08.11-e8db854\n', stderr: '' };
+      }
+      return { stdout: '', stderr: '' };
+    });
+    const services = createServices({
+      sessionManager: {
+        ...createServices().sessionManager,
+        getProjectContextByProjectId: vi.fn(() => ({
+          commandRunner: {
+            wslContext: null,
+            execAsync,
+          },
+        })),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:agents:doctor', [{
+      agent: 'cursor',
+      repo: 'active',
+    }]);
+
+    expect(execAsync).toHaveBeenCalledWith(fallbackLookup, project.path, expect.objectContaining({
+      timeout: 5000,
+      silent: true,
+    }));
+    expect(result).toMatchObject({
+      ok: true,
+      agent: 'cursor',
+      available: true,
+      executablePath: '/home/user/.local/bin/cursor-agent',
+      version: '2026.08.11-e8db854',
+    });
+    expect((result as { warnings?: string[] }).warnings?.some((w) => w.includes('PATH'))).toBe(true);
+  });
+
+  it('reports cursor as unsupported for WSL repos', async () => {
+    const execAsync = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const base = createServices();
+    const services = createServices({
+      databaseService: {
+        ...base.databaseService,
+        getAllProjects: vi.fn(() => [{ ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' }]),
+      } as never,
+      sessionManager: {
+        ...base.sessionManager,
+        getProjectContextByProjectId: vi.fn(() => ({
+          commandRunner: {
+            wslContext: null,
+            execAsync,
+          },
+        })),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:agents:doctor', [{
+      agent: 'cursor',
+      repo: 'active',
+    }]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      agent: 'cursor',
+      available: false,
+      checks: expect.arrayContaining([
+        expect.objectContaining({ name: 'platform', ok: false }),
+      ]),
+    });
+    expect(execAsync).not.toHaveBeenCalled();
+  });
+
   it('creates a session, terminal panel, and initial-input state', async () => {
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
@@ -2002,7 +2084,7 @@ describe('runpane IPC handlers', () => {
 
   it('routes every agent, readiness, and input-shape combination consistently', async () => {
     vi.useFakeTimers();
-    const toolKinds = ['claude', 'codex', 'custom'] as const;
+    const toolKinds = ['claude', 'codex', 'cursor', 'custom'] as const;
     const shapes = [
       { name: 'slash', input: '/do TM-x' },
       { name: 'prose', input: 'Please implement this' },
@@ -2074,7 +2156,9 @@ describe('runpane IPC handlers', () => {
           await vi.runAllTimersAsync();
           const result = await resultPromise;
           const initialState = createRequest?.initialState;
-          const useArgument = toolKind === 'claude' || (toolKind === 'codex' && shape.name !== 'slash');
+          const useArgument = toolKind === 'claude'
+            || toolKind === 'cursor'
+            || (toolKind === 'codex' && shape.name !== 'slash');
           const premarkedComposer = waitReady && toolKind === 'codex' && shape.name === 'slash';
 
           expect(initialState?.initialInputMode, `${toolKind}/${waitReady}/${shape.name} mode`).toBe(

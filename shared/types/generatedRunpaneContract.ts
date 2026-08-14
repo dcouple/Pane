@@ -47,7 +47,8 @@ export const RUNPANE_CONTRACT = {
     ],
     "agents": [
       "codex",
-      "claude"
+      "claude",
+      "cursor"
     ]
   },
   "agentTemplates": {
@@ -60,6 +61,11 @@ export const RUNPANE_CONTRACT = {
       "title": "Claude Code",
       "command": "claude --dangerously-skip-permissions",
       "description": "Open a Claude Code terminal tab and allow the initial input to drive the agent."
+    },
+    "cursor": {
+      "title": "Cursor",
+      "command": "cursor-agent --force --trust",
+      "description": "Open a Cursor Agent terminal tab and allow the initial input to drive the agent."
     }
   },
   "commands": [
@@ -121,7 +127,7 @@ export const RUNPANE_CONTRACT = {
       "name": "agents doctor",
       "summary": "Diagnose whether a built-in agent command is available in a Pane repository environment.",
       "usage": [
-        "runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]"
+        "runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]"
       ],
       "jsonSchemas": [
         "agentDoctorResult"
@@ -175,7 +181,7 @@ export const RUNPANE_CONTRACT = {
       "name": "panes create",
       "summary": "Create user-visible Panes (Pane sessions) backed by Pane-managed worktrees for feature/PR work and open terminal-backed tool tabs.",
       "usage": [
-        "runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] [options]",
+        "runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [options]",
         "runpane panes create --from-json <path|-> [--yes] [--json]"
       ],
       "mutates": true,
@@ -236,7 +242,7 @@ export const RUNPANE_CONTRACT = {
       "name": "panels create",
       "summary": "Create a terminal-backed tool panel inside an existing Pane session.",
       "usage": [
-        "runpane panels create --pane <pane-id> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] [--wait-ready] --yes [--json]",
+        "runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready] --yes [--json]",
         "runpane panels create --pane <pane-id> --tool-command <command> [--title <title>] [--focus|--no-focus] --yes [--json]"
       ],
       "mutates": true,
@@ -454,7 +460,7 @@ export const RUNPANE_CONTRACT = {
       },
       {
         "name": "--agent",
-        "value": "<codex|claude>",
+        "value": "<codex|claude|cursor>",
         "description": "Built-in agent terminal template to open."
       },
       {
@@ -579,13 +585,13 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane agent-context [--json]",
-        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
         "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes",
-        "  runpane panels create --pane <pane-id> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] --yes",
+        "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
@@ -728,7 +734,7 @@ export const RUNPANE_CONTRACT = {
         "",
         "Commands:",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
@@ -749,7 +755,7 @@ export const RUNPANE_CONTRACT = {
       ],
       "panes create": [
         "Usage:",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
         "  runpane panes create --from-json <path|-> [--yes] [--json]",
         "",
         "Creates user-visible Panes (Pane sessions) for feature/PR work in a saved repository and opens a terminal-backed tool tab. Pane creates and owns the worktree/branch for each new Pane.",
@@ -759,7 +765,7 @@ export const RUNPANE_CONTRACT = {
         "  --name <name>                  Pane/session name",
         "  --worktree-name <name>         Worktree name; defaults to --name",
         "  --base-branch <branch>         Base branch for the worktree",
-        "  --agent <codex|claude>         Built-in terminal template",
+        "  --agent <codex|claude|cursor>         Built-in terminal template",
         "  --tool-command <command>       Custom terminal command",
         "  --title <title>                Terminal tab title",
         "  --initial-input <text>         Text sent after the command is ready",
@@ -840,7 +846,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels <command> [options]",
         "",
         "Commands:",
-        "  runpane panels create --pane <pane-id> --agent <codex|claude> [options]",
+        "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [options]",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
@@ -907,12 +913,12 @@ export const RUNPANE_CONTRACT = {
       ],
       "agents doctor": [
         "Usage:",
-        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "",
         "Diagnoses whether Codex or Claude is available in the same repository environment Pane will use.",
         "",
         "Options:",
-        "  --agent <codex|claude>         Built-in agent command to diagnose",
+        "  --agent <codex|claude|cursor>         Built-in agent command to diagnose",
         "  --repo <selector>              active, id, exact path, or saved repository name; defaults to active",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output"
@@ -962,12 +968,12 @@ export const RUNPANE_CONTRACT = {
         "Create a terminal-backed tool panel inside an existing Pane session.",
         "",
         "Usage:",
-        "  runpane panels create --pane <pane-id> --agent <codex|claude> [--title <title>] [--initial-input <text>] [--no-focus] [--wait-ready] --yes [--json]",
+        "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--title <title>] [--initial-input <text>] [--no-focus] [--wait-ready] --yes [--json]",
         "  runpane panels create --pane <pane-id> --tool-command <command> [--title <title>] [--no-focus] --yes [--json]",
         "",
         "Options:",
         "  --pane <pane-id>              Existing Pane session to add the panel to.",
-        "  --agent <codex|claude>        Built-in agent command template to launch.",
+        "  --agent <codex|claude|cursor>        Built-in agent command template to launch.",
         "  --tool-command <command>      Custom terminal command to launch.",
         "  --title <title>               Panel title override.",
         "  --initial-input, --prompt     Initial input to send after the tool starts.",
@@ -1003,13 +1009,13 @@ export const RUNPANE_CONTRACT = {
         "  runpane version",
         "  runpane doctor",
         "  runpane agent-context [--json]",
-        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
         "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes",
-        "  python -m runpane panels create --pane <pane-id> --agent <codex|claude> [--source user|agent] [--focus|--no-focus] --yes",
+        "  python -m runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
@@ -1141,7 +1147,7 @@ export const RUNPANE_CONTRACT = {
         "",
         "Commands:",
         "  runpane panes list [--repo <selector>] [--json]",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
         "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
@@ -1162,7 +1168,7 @@ export const RUNPANE_CONTRACT = {
       ],
       "panes create": [
         "Usage:",
-        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude> [options]",
+        "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
         "  runpane panes create --from-json <path|-> [--yes] [--json]",
         "",
         "Creates user-visible Panes (Pane sessions) for feature/PR work in a saved repository and opens a terminal-backed tool tab. Pane creates and owns the worktree/branch for each new Pane.",
@@ -1172,7 +1178,7 @@ export const RUNPANE_CONTRACT = {
         "  --name <name>                  Pane/session name",
         "  --worktree-name <name>         Worktree name; defaults to --name",
         "  --base-branch <branch>         Base branch for the worktree",
-        "  --agent <codex|claude>         Built-in terminal template",
+        "  --agent <codex|claude|cursor>         Built-in terminal template",
         "  --tool-command <command>       Custom terminal command",
         "  --title <title>                Terminal tab title",
         "  --initial-input <text>         Text sent after the command is ready",
@@ -1253,7 +1259,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panels <command> [options]",
         "",
         "Commands:",
-        "  runpane panels create --pane <pane-id> --agent <codex|claude> [options]",
+        "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [options]",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels screen --panel <panel-id> [--limit <count>] [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
@@ -1320,12 +1326,12 @@ export const RUNPANE_CONTRACT = {
       ],
       "agents doctor": [
         "Usage:",
-        "  runpane agents doctor --agent <codex|claude> [--repo <selector>] [--json]",
+        "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "",
         "Diagnoses whether Codex or Claude is available in the same repository environment Pane will use.",
         "",
         "Options:",
-        "  --agent <codex|claude>         Built-in agent command to diagnose",
+        "  --agent <codex|claude|cursor>         Built-in agent command to diagnose",
         "  --repo <selector>              active, id, exact path, or saved repository name; defaults to active",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output"
@@ -1375,12 +1381,12 @@ export const RUNPANE_CONTRACT = {
         "Create a terminal-backed tool panel inside an existing Pane session.",
         "",
         "Usage:",
-        "  python -m runpane panels create --pane <pane-id> --agent <codex|claude> [--title <title>] [--initial-input <text>] [--no-focus] [--wait-ready] --yes [--json]",
+        "  python -m runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--title <title>] [--initial-input <text>] [--no-focus] [--wait-ready] --yes [--json]",
         "  python -m runpane panels create --pane <pane-id> --tool-command <command> [--title <title>] [--no-focus] --yes [--json]",
         "",
         "Options:",
         "  --pane <pane-id>              Existing Pane session to add the panel to.",
-        "  --agent <codex|claude>        Built-in agent command template to launch.",
+        "  --agent <codex|claude|cursor>        Built-in agent command template to launch.",
         "  --tool-command <command>      Custom terminal command to launch.",
         "  --title <title>               Panel title override.",
         "  --initial-input, --prompt     Initial input to send after the tool starts.",
@@ -3933,7 +3939,7 @@ export const RUNPANE_CONTRACT = {
         "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
         "If WSL cannot reach Pane or `runpane` resolves to a broken Windows shim, the user may be running Windows Pane; try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`.",
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
-        "Use `runpane agents doctor --agent <codex|claude> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
+        "Use `runpane agents doctor --agent <codex|claude|cursor> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
         "Use `runpane panes create --wait-ready` to create Panes and validate initial terminal readiness in one call.",
         "Use `runpane panels screen` for compact current state, `panels wait` for readiness/text checks, `panels submit` for ordinary Enter-submitted input, and `panels submit-composer --strategy auto` for agent composers.",
         "Use `runpane panels input` only when exact bytes are required, such as Ctrl-C or handcrafted terminal input.",
@@ -3962,7 +3968,7 @@ export const RUNPANE_CONTRACT = {
           "name": "agents doctor",
           "summary": "Check whether Codex or Claude is available in the repo environment Pane will use.",
           "arguments": [
-            "--agent <codex|claude>",
+            "--agent <codex|claude|cursor>",
             "--repo <selector>",
             "--json"
           ]
@@ -4002,7 +4008,7 @@ export const RUNPANE_CONTRACT = {
           "arguments": [
             "--repo <selector>",
             "--name <name>",
-            "--agent <codex|claude>",
+            "--agent <codex|claude|cursor>",
             "--tool-command <command>",
             "--prompt <text>",
             "--initial-input-file <path|->",
@@ -4065,7 +4071,7 @@ export const RUNPANE_CONTRACT = {
           "summary": "Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.",
           "arguments": [
             "--pane <pane-id>",
-            "--agent <codex|claude>",
+            "--agent <codex|claude|cursor>",
             "--tool-command <command>",
             "--source <user|agent>",
             "--no-focus",
@@ -4503,7 +4509,7 @@ export const RUNPANE_CONTRACT = {
           },
           {
             "name": "--agent",
-            "value": "<codex|claude>",
+            "value": "<codex|claude|cursor>",
             "required": false,
             "description": "Built-in agent terminal template to open."
           },
@@ -4942,7 +4948,7 @@ export const RUNPANE_CONTRACT = {
         "arguments": [
           {
             "name": "--agent",
-            "value": "<codex|claude>",
+            "value": "<codex|claude|cursor>",
             "required": true,
             "description": "Built-in agent command to diagnose."
           },
@@ -5148,7 +5154,7 @@ export const RUNPANE_CONTRACT = {
           },
           {
             "name": "--agent",
-            "value": "<codex|claude>",
+            "value": "<codex|claude|cursor>",
             "required": false,
             "description": "Built-in agent command template to launch."
           },

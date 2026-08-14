@@ -301,7 +301,8 @@ def run_panels_wait(parsed: Any) -> int:
 
 def run_agents_doctor(parsed: Any) -> int:
     if not parsed.agent:
-        raise ValueError("runpane agents doctor requires --agent codex|claude.")
+        agents = "|".join(RUNPANE_CONTRACT["enums"]["agents"])
+        raise ValueError(f"runpane agents doctor requires --agent {agents}.")
 
     result = invoke_daemon("runpane:agents:doctor", [{
         "agent": parsed.agent,

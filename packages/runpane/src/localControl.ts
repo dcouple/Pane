@@ -689,7 +689,7 @@ export async function runPanelsWait(parsed: ParsedArgs): Promise<number> {
 
 export async function runAgentsDoctor(parsed: ParsedArgs): Promise<number> {
   if (!parsed.agent) {
-    throw new Error('runpane agents doctor requires --agent codex|claude.');
+    throw new Error(`runpane agents doctor requires --agent ${RUNPANE_CONTRACT.enums.agents.join('|')}.`);
   }
 
   const result = await invokeDaemon<AgentDoctorResult>('runpane:agents:doctor', [{

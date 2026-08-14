@@ -165,7 +165,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       },
     });
     const createPaneChatState = () => {
-      const agent = configState.defaultOrchestratorAgent === 'codex' ? 'codex' : 'claude';
+      const agent = configState.defaultOrchestratorAgent === 'codex' || configState.defaultOrchestratorAgent === 'cursor'
+        ? configState.defaultOrchestratorAgent
+        : 'claude';
       return {
         session: clone(paneChatSession),
         panel: clone(createPaneChatPanel(agent)),
@@ -440,11 +442,11 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       }),
       paneChat: namespace({
         getOrCreate: () => success(createPaneChatState()),
-        setAgent: async (agent: 'claude' | 'codex') => {
+        setAgent: async (agent: 'claude' | 'codex' | 'cursor') => {
           if (mockOptions.paneChatAgentChangeDelayMs) {
             await new Promise((resolve) => setTimeout(resolve, mockOptions.paneChatAgentChangeDelayMs));
           }
-          configState.defaultOrchestratorAgent = agent === 'codex' ? 'codex' : 'claude';
+          configState.defaultOrchestratorAgent = agent === 'codex' || agent === 'cursor' ? agent : 'claude';
           return success(createPaneChatState());
         },
       }),

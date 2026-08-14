@@ -3,6 +3,7 @@ import { detectAgentState } from './manifestEngine';
 import {
   CLAUDE_MANIFEST,
   CODEX_MANIFEST,
+  CURSOR_MANIFEST,
   GENERIC_MANIFEST,
   getManifestForAgent,
 } from './manifests';
@@ -13,6 +14,7 @@ describe('getManifestForAgent', () => {
   it('resolves bespoke manifests, with the generic fallback covering everything else', () => {
     expect(getManifestForAgent('claude')).toBe(CLAUDE_MANIFEST);
     expect(getManifestForAgent('codex')).toBe(CODEX_MANIFEST);
+    expect(getManifestForAgent('cursor')).toBe(CURSOR_MANIFEST);
     expect(getManifestForAgent('aider')).toBe(GENERIC_MANIFEST);
     expect(getManifestForAgent(undefined)).toBe(GENERIC_MANIFEST);
     expect(getManifestForAgent(null)).toBe(GENERIC_MANIFEST);
@@ -105,6 +107,122 @@ describe('CODEX_MANIFEST', () => {
 
   it('classifies a plain title as idle', () => {
     const r = detectAgentState(CODEX_MANIFEST, screen('', 'Codex'));
+    expect(r.state).toBe('idle');
+  });
+});
+
+// Fixtures below are distilled from real cursor-agent 2026.08.11-e8db854 screens.
+describe('CURSOR_MANIFEST', () => {
+  it('classifies the workspace-trust dialog as blocked', () => {
+    const s = [
+      '  ╭──────────────────────────────────────────────────╮',
+      '  │  ⚠ Workspace Trust Required                      │',
+      '  │  Cursor Agent can execute code and access files  │',
+      '  │  in this directory.                              │',
+      '  │  Do you trust the contents of this directory?    │',
+      '  │  ▶ [a] Trust this workspace                      │',
+      '  │    [q] Quit                                      │',
+      '  ╰──────────────────────────────────────────────────╯',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('blocked');
+    expect(r.visibleBlocker).toBe(true);
+    expect(r.matchedRuleId).toBe('workspace_trust_prompt');
+  });
+
+  it('classifies a shell-approval prompt as blocked', () => {
+    const s = [
+      '  $ rm -f probe-none.txt Waiting for approval...',
+      '────────────────────────────────────────────────────',
+      ' $  rm -f probe-none.txt in .',
+      ' Run this command?',
+      ' Not in allowlist: rm',
+      '  → Run (once) (y)',
+      '    Add Shell(rm) to allowlist? (tab)',
+      '    Run Everything (shift+tab)',
+      '    Skip & tell the agent what to do instead (esc or n)',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('blocked');
+    expect(r.visibleBlocker).toBe(true);
+    expect(r.matchedRuleId).toBe('live_approval_prompt');
+  });
+
+  it('detects working from the braille spinner status line', () => {
+    const s = [
+      '  Add a note to the README',
+      ' ⠘⠤ Working  410 tokens',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  → Add a follow-up                    ctrl+c to stop',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  /repo/path | Gemini 3.5 Flash',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('working');
+    expect(r.visibleWorking).toBe(true);
+  });
+
+  it('detects working while the shell tool runs, via the interruptible composer', () => {
+    const s = [
+      '  $ sleep 5 in .',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  → Add a follow-up                    ctrl+c to stop',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  /repo/path | Gemini 3.5 Flash',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('working');
+  });
+
+  it('detects working while a resumed conversation loads', () => {
+    const s = [
+      '  ⠀⠞ Loading conversation',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  ⌆ Plan, search, build anything',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('working');
+  });
+
+  it('classifies the fresh composer as idle', () => {
+    const s = [
+      '  Cursor Agent',
+      '  v2026.08.11-e8db854',
+      '  Tip: Use /skills to give Cursor specialized knowledge for tasks.',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  ⌆ Plan, search, build anything',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  /repo/path | Gemini 3.5 Flash',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('idle');
+    expect(r.visibleIdle).toBe(true);
+  });
+
+  it('classifies the post-response composer as idle', () => {
+    const s = [
+      '  done-marker.',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  → Add a follow-up',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  /repo/path | Gemini 3.5 Flash | ctx 11%',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
+    expect(r.state).toBe('idle');
+  });
+
+  it('does not stay blocked once an answered approval scrolls above the live composer', () => {
+    const s = [
+      '  $ rm -f probe-none.txt Waiting for approval...',
+      '────────────────────────────────────────────────────',
+      '  I have deleted the file.',
+      ' ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄',
+      '  → Add a follow-up',
+      ' ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀',
+      '  /repo/path | Gemini 3.5 Flash',
+    ].join('\n');
+    const r = detectAgentState(CURSOR_MANIFEST, screen(s));
     expect(r.state).toBe('idle');
   });
 });

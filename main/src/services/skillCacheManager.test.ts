@@ -165,6 +165,22 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(canonicalSkill).not.toContain('treating a broad brief as a plan is usually too loose');
   });
 
+  it('writes a project-scoped pane-orchestrator rule for Cursor', async () => {
+    const manager = new SkillCacheManager();
+
+    await manager.ensurePaneChatGuide();
+
+    const rule = await fs.readFile(manager.cursorPaneOrchestratorRulePath, 'utf8');
+    const canonicalSkill = await fs.readFile(manager.paneChatOrchestratorSkillPath, 'utf8');
+
+    expect(normalizePathSeparators(manager.cursorPaneOrchestratorRulePath)).toContain('/.cursor/rules/pane-orchestrator.mdc');
+    expect(rule.startsWith('---\n')).toBe(true);
+    expect(rule).toContain('alwaysApply: true');
+    expect(rule).not.toContain('name: pane-orchestrator');
+    expect(rule).toContain('You are an orchestrator, not an implementation worker.');
+    expect(rule).toContain(canonicalSkill.split('---\n').slice(2).join('---\n').trim().slice(0, 120));
+  });
+
   it('mirrors cached repository skills into project-scoped Codex and Claude skill roots', async () => {
     const manager = new SkillCacheManager();
     const codexCachedSkill = path.join(manager.cacheRoot, 'parsa', '.codex', 'skills', 'discussion', 'SKILL.md');

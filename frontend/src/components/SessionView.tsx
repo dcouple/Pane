@@ -47,7 +47,10 @@ import {
   type DropZone,
 } from '../utils/panelLayout';
 import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
-import { ClaudeIcon, OpenAIIcon, getCliBrandIcon } from './ui/BrandIcons';
+import { getCliBrandIcon } from './ui/BrandIcons';
+import { visibleAgentPresets } from '../utils/agentPresets';
+
+const agentPresets = visibleAgentPresets();
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';
 import { useConfigStore } from '../stores/configStore';
@@ -665,30 +668,6 @@ export const SessionView = memo(() => {
     action: () => handlePanelCreate('explorer'),
   });
 
-  useHotkey({
-    id: 'add-tool-terminal-claude',
-    label: 'Add Claude Code',
-    keys: 'mod+alt+3',
-    category: 'tools',
-    enabled: () => isInSessionView,
-    action: () => handlePanelCreate('terminal', {
-      initialCommand: 'claude --dangerously-skip-permissions',
-      title: 'Claude Code'
-    }),
-  });
-
-  useHotkey({
-    id: 'add-tool-terminal-codex',
-    label: 'Add Codex',
-    keys: 'mod+alt+4',
-    category: 'tools',
-    enabled: () => isInSessionView,
-    action: () => handlePanelCreate('terminal', {
-      initialCommand: 'codex --yolo',
-      title: 'Codex'
-    }),
-  });
-
   // Close active panel tab (skip permanent panels like diff)
   const closeTabEnabled = () => {
     if (!currentActivePanel) return false;
@@ -1154,8 +1133,28 @@ export const SessionView = memo(() => {
   isInSessionViewRef.current = isInSessionView;
 
   useEffect(() => {
-    const CUSTOM_CMD_START = 5; // mod+alt+1-4 are taken by built-in tools
-    const maxSlots = Math.min(customCommands.length, 5); // mod+alt+5 through 9
+    const ids: string[] = [];
+    for (const preset of agentPresets) {
+      ids.push(preset.hotkeyId);
+      registerHotkey({
+        id: preset.hotkeyId,
+        label: `Add ${preset.title}`,
+        keys: preset.hotkey,
+        category: 'tools',
+        enabled: () => isInSessionViewRef.current,
+        action: () => handlePanelCreateRef.current('terminal', {
+          initialCommand: preset.command,
+          title: preset.title,
+        }),
+      });
+    }
+    return () => { ids.forEach(id => unregisterHotkey(id)); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const CUSTOM_CMD_START = 3 + agentPresets.length; // mod+alt+1-2 are panels, then one slot per agent
+    const maxSlots = Math.min(customCommands.length, 10 - CUSTOM_CMD_START);
     const ids: string[] = [];
 
     for (let i = 0; i < maxSlots; i++) {
@@ -1750,30 +1749,20 @@ export const SessionView = memo(() => {
                   onCommitClick={handleCommitClick}
                   terminalShortcuts={
                     <>
-                      <Tooltip content={hotkeyDisplay('add-tool-terminal-claude') ? <Kbd>{hotkeyDisplay('add-tool-terminal-claude')}</Kbd> : undefined} side="top">
-                        <button
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                          onClick={() => handlePanelCreate('terminal', {
-                            initialCommand: 'claude --dangerously-skip-permissions',
-                            title: 'Claude Code'
-                          })}
-                        >
-                          <ClaudeIcon className="w-3 h-3" />
-                          Claude
-                        </button>
-                      </Tooltip>
-                      <Tooltip content={hotkeyDisplay('add-tool-terminal-codex') ? <Kbd>{hotkeyDisplay('add-tool-terminal-codex')}</Kbd> : undefined} side="top">
-                        <button
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                          onClick={() => handlePanelCreate('terminal', {
-                            initialCommand: 'codex --yolo',
-                            title: 'Codex'
-                          })}
-                        >
-                          <OpenAIIcon className="w-3 h-3" />
-                          Codex
-                        </button>
-                      </Tooltip>
+                      {agentPresets.map(preset => (
+                        <Tooltip key={preset.id} content={hotkeyDisplay(preset.hotkeyId) ? <Kbd>{hotkeyDisplay(preset.hotkeyId)}</Kbd> : undefined} side="top">
+                          <button
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
+                            onClick={() => handlePanelCreate('terminal', {
+                              initialCommand: preset.command,
+                              title: preset.title
+                            })}
+                          >
+                            {getCliBrandIcon(preset.iconKey, 'w-3 h-3')}
+                            {preset.title.split(' ')[0]}
+                          </button>
+                        </Tooltip>
+                      ))}
                       {customCommands.map((cmd, index) => {
                         const shortcutDisplay = hotkeyDisplay(`add-tool-custom-${index}`);
                         const pill = (
@@ -1879,33 +1868,21 @@ export const SessionView = memo(() => {
 
                       {/* Middle: scrollable pill shortcuts */}
                       <div className="flex-1 flex items-center gap-2 overflow-x-auto ml-3 scrollbar-none">
-                        {/* Claude pill */}
-                        <Tooltip content={hotkeyDisplay('add-tool-terminal-claude') ? <Kbd>{hotkeyDisplay('add-tool-terminal-claude')}</Kbd> : undefined} side="top">
-                          <button
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                            onClick={() => handlePanelCreate('terminal', {
-                              initialCommand: 'claude --dangerously-skip-permissions',
-                              title: 'Claude Code'
-                            })}
-                          >
-                            <ClaudeIcon className="w-3 h-3" />
-                            Claude
-                          </button>
-                        </Tooltip>
-
-                        {/* Codex pill */}
-                        <Tooltip content={hotkeyDisplay('add-tool-terminal-codex') ? <Kbd>{hotkeyDisplay('add-tool-terminal-codex')}</Kbd> : undefined} side="top">
-                          <button
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                            onClick={() => handlePanelCreate('terminal', {
-                              initialCommand: 'codex --yolo',
-                              title: 'Codex'
-                            })}
-                          >
-                            <OpenAIIcon className="w-3 h-3" />
-                            Codex
-                          </button>
-                        </Tooltip>
+                        {/* Agent pills */}
+                        {agentPresets.map(preset => (
+                          <Tooltip key={preset.id} content={hotkeyDisplay(preset.hotkeyId) ? <Kbd>{hotkeyDisplay(preset.hotkeyId)}</Kbd> : undefined} side="top">
+                            <button
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
+                              onClick={() => handlePanelCreate('terminal', {
+                                initialCommand: preset.command,
+                                title: preset.title
+                              })}
+                            >
+                              {getCliBrandIcon(preset.iconKey, 'w-3 h-3')}
+                              {preset.title.split(' ')[0]}
+                            </button>
+                          </Tooltip>
+                        ))}
 
                         {/* Custom command pills */}
                         {customCommands.map((cmd, index) => {

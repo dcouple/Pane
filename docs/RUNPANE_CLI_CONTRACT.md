@@ -287,7 +287,7 @@ These flags are consumed by local daemon-control commands:
 --name <name>
 --worktree-name <name>
 --base-branch <branch>
---agent <codex|claude>
+--agent <codex|claude|cursor>
 --tool-command <command>
 --title <title>
 --initial-input <text> (aliases: --prompt)

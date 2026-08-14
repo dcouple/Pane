@@ -6,7 +6,7 @@ import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneCha
 import { SessionProvider } from '../contexts/SessionContext';
 import { PanelContainer } from './panels/PanelContainer';
 import { Button } from './ui/Button';
-import { ClaudeIcon, OpenAIIcon } from './ui/BrandIcons';
+import { ClaudeIcon, CursorIcon, OpenAIIcon } from './ui/BrandIcons';
 import { cn } from '../utils/cn';
 import { LiveRegion } from './ui/LiveRegion';
 
@@ -17,7 +17,14 @@ const PANE_CHAT_AGENT_OPTIONS: Array<{
 }> = [
   { id: 'claude', label: 'Claude', icon: ClaudeIcon },
   { id: 'codex', label: 'Codex', icon: OpenAIIcon },
+  { id: 'cursor', label: 'Cursor', icon: CursorIcon },
 ];
+
+const PANE_CHAT_AGENT_LABELS: Record<PaneChatAgent, string> = {
+  claude: 'Claude',
+  codex: 'Codex',
+  cursor: 'Cursor',
+};
 
 export function PaneChatView() {
   const [state, setState] = useState<PaneChatState<Session> | null>(null);
@@ -54,7 +61,7 @@ export function PaneChatView() {
 
     setSwitchingAgent(agent);
     setError(null);
-    setStatusAnnouncement(`Switching Pane Chat to ${agent === 'claude' ? 'Claude' : 'Codex'}`);
+    setStatusAnnouncement(`Switching Pane Chat to ${PANE_CHAT_AGENT_LABELS[agent]}`);
 
     try {
       const response = await API.paneChat.setAgent(agent);
@@ -62,7 +69,7 @@ export function PaneChatView() {
         throw new Error(response.error || 'Failed to switch Pane Chat agent');
       }
       setState(response.data);
-      setStatusAnnouncement(`Pane Chat is now using ${agent === 'claude' ? 'Claude' : 'Codex'}`);
+      setStatusAnnouncement(`Pane Chat is now using ${PANE_CHAT_AGENT_LABELS[agent]}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to switch Pane Chat agent');
     } finally {

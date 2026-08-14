@@ -16,6 +16,8 @@ import { getShellPath } from '../utils/shellPath';
 import { TerminalSessionManager } from './terminalSessionManager';
 import type { BaseAIPanelState, ToolPanelState, ToolPanel, ResumableSession, TerminalPanelState } from '../../../shared/types/panels';
 import { formatForDisplay } from '../utils/timestampUtils';
+import { isCliAgentType, resolveAgentTypeFromCommand } from './agents/agentIdentity';
+import { resolveResumeId } from './agents/agentResume';
 import { scriptExecutionTracker } from './scriptExecutionTracker';
 
 interface CreateSessionOptions {
@@ -1827,16 +1829,10 @@ export class SessionManager extends EventEmitter {
         if (panel.type === 'terminal') {
           const termState = panel.state?.customState as TerminalPanelState | undefined;
           if (termState?.wasInterrupted && termState?.initialCommand) {
-            const agentType = termState.agentType ?? this.getTerminalAgentType(termState.initialCommand);
-            if (agentType === 'claude') {
-              // Panel ID was used as --session-id when launching Claude, so it IS the resume ID.
-              resumablePanels.push({ panelId: panel.id, panelType: 'terminal', resumeId: panel.id });
-            } else if (agentType === 'codex') {
-              resumablePanels.push({
-                panelId: panel.id,
-                panelType: 'terminal',
-                resumeId: termState.agentSessionId ?? 'interactive'
-              });
+            const agentType = termState.agentType ?? resolveAgentTypeFromCommand(termState.initialCommand);
+            const resumeId = resolveResumeId(agentType, panel.id, termState);
+            if (resumeId) {
+              resumablePanels.push({ panelId: panel.id, panelType: 'terminal', resumeId });
             }
           }
         }
@@ -1878,20 +1874,18 @@ export class SessionManager extends EventEmitter {
           if (termState?.wasInterrupted && termState?.initialCommand) {
             const state = panel.state;
             const customState = (state.customState || {}) as TerminalPanelState;
-            const agentType = customState.agentType ?? this.getTerminalAgentType(customState.initialCommand);
+            const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
 
+            if (!isCliAgentType(agentType)) {
+              continue;
+            }
+            customState.agentType = agentType;
             if (agentType === 'claude') {
               customState.hasClaudeSessionId = true;
-              customState.agentType = 'claude';
-            } else if (agentType === 'codex') {
-              customState.agentType = 'codex';
-              if (customState.agentSessionId) {
-                console.log(`[SessionManager] Preparing Codex panel ${panel.id} for captured-session resume`);
-              } else {
-                console.warn(`[SessionManager] Codex panel ${panel.id} has no captured session id; terminal launch will open interactive resume picker`);
-              }
+            } else if (customState.agentSessionId) {
+              console.log(`[SessionManager] Preparing ${agentType} panel ${panel.id} for captured-session resume`);
             } else {
-              continue;
+              console.warn(`[SessionManager] ${agentType} panel ${panel.id} has no captured session id; terminal launch will use the CLI's own recovery path`);
             }
 
             state.customState = customState;
@@ -1928,10 +1922,4 @@ export class SessionManager extends EventEmitter {
     console.log(`[SessionManager] Dismissed ${sessionIds.length} interrupted sessions`);
   }
 
-  private getTerminalAgentType(command?: string): TerminalPanelState['agentType'] | undefined {
-    const lower = command?.toLowerCase() ?? '';
-    if (lower.includes('claude')) return 'claude';
-    if (lower.includes('codex')) return 'codex';
-    return undefined;
-  }
 }

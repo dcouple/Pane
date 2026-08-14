@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { worktreeFileSyncService } from '../worktreeFileSyncService';
-import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
+import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES, type WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 import type { CommandRunner } from '../../utils/commandRunner';
 import type { ProjectEnvironment } from '../../utils/pathResolver';
 
@@ -102,6 +102,12 @@ const codexEntry: WorktreeFileSyncEntry = {
 describe('worktreeFileSyncService', () => {
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('keeps the .cursor entry in the default sync list so Cursor rules reach worktrees', () => {
+    expect(DEFAULT_WORKTREE_FILE_SYNC_ENTRIES).toContainEqual(
+      { id: 'cursor', path: '.cursor', enabled: true, recursive: false },
+    );
   });
 
   // -------------------------------------------------------------------------

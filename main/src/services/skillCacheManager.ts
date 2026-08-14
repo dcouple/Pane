@@ -104,6 +104,7 @@ export class SkillCacheManager {
   readonly claudeProjectSkillsRoot: string;
   readonly codexPaneOrchestratorSkillPath: string;
   readonly claudePaneOrchestratorSkillPath: string;
+  readonly cursorPaneOrchestratorRulePath: string;
   readonly syncStatePath: string;
 
   private initialSyncTimer: NodeJS.Timeout | null = null;
@@ -122,6 +123,7 @@ export class SkillCacheManager {
     this.claudeProjectSkillsRoot = path.join(getAppDirectory(), '.claude', 'skills');
     this.codexPaneOrchestratorSkillPath = path.join(this.codexProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.claudePaneOrchestratorSkillPath = path.join(this.claudeProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
+    this.cursorPaneOrchestratorRulePath = path.join(getAppDirectory(), '.cursor', 'rules', 'pane-orchestrator.mdc');
     this.syncStatePath = path.join(this.cacheRoot, 'sync-state.json');
   }
 
@@ -306,6 +308,15 @@ export class SkillCacheManager {
     await this.mirrorCachedAgentSkillsIntoProject();
     await this.writeTextFile(this.codexPaneOrchestratorSkillPath, orchestratorSkill);
     await this.writeTextFile(this.claudePaneOrchestratorSkillPath, orchestratorSkill);
+    await this.writeTextFile(this.cursorPaneOrchestratorRulePath, this.toCursorRule(orchestratorSkill));
+  }
+
+  /** Cursor reads .cursor/rules/*.mdc, not SKILL.md files — swap the frontmatter. */
+  private toCursorRule(skill: string): string {
+    const body = skill.startsWith('---\n')
+      ? skill.split('---\n').slice(2).join('---\n').trim()
+      : skill.trim();
+    return `---\ndescription: Pane Chat orchestrator contract\nalwaysApply: true\n---\n\n${body}\n`;
   }
 
   private async mirrorCachedAgentSkillsIntoProject(): Promise<void> {

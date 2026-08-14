@@ -62,6 +62,7 @@ import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, sessio
 import * as path from 'path';
 import * as os from 'os';
 import type { SessionManager } from './services/sessionManager';
+import { isCliAgentType, resolveAgentTypeFromCommand } from './services/agents/agentIdentity';
 import type { ConfigManager } from './services/configManager';
 import { areKeyboardShortcutsEnabled, shouldForwardCommandPaletteShortcut } from './utils/keyboardShortcuts';
 import type { WorktreeManager } from './services/worktreeManager';
@@ -1388,11 +1389,9 @@ if (launchRemoteSetup) {
       if (!panel) continue;
 
       const customState = (panel.state?.customState || {}) as TerminalPanelState;
-      const initialCommand = customState.initialCommand?.toLowerCase() ?? '';
-      const agentType = customState.agentType ??
-        (initialCommand.includes('claude') ? 'claude' : initialCommand.includes('codex') ? 'codex' : undefined);
+      const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
 
-      if (agentType === 'claude' || agentType === 'codex') {
+      if (isCliAgentType(agentType)) {
         customState.wasInterrupted = true;
         customState.agentType = agentType;
         panel.state.customState = customState;

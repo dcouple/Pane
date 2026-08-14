@@ -11,7 +11,10 @@ import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
-import { ClaudeIcon, OpenAIIcon, CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
+import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
+import { visibleAgentPresets } from '../../utils/agentPresets';
+
+const agentPresets = visibleAgentPresets();
 import { PanelTabStrip } from './PanelTabStrip';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 
@@ -530,42 +533,25 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   </span>
                 </button>
               )}
-              {/* Claude Code */}
-              {availablePanelTypes.includes('terminal') && (
+              {/* Built-in agents */}
+              {availablePanelTypes.includes('terminal') && agentPresets.map(preset => (
                 <button
+                  key={preset.id}
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
                   onClick={() => handleAddPanel('terminal', {
-                    initialCommand: 'claude --dangerously-skip-permissions',
-                    title: 'Claude Code'
+                    initialCommand: preset.command,
+                    title: preset.title
                   })}
                 >
-                  <ClaudeIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  {getCliBrandIcon(preset.iconKey, 'w-4 h-4 flex-shrink-0 mt-0.5')}
                   <span className="ml-2 flex-1 min-w-0">
-                    <span className="block">Claude Code</span>
-                    {hotkeyDisplay('add-tool-terminal-claude') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-terminal-claude')}</Kbd>}
+                    <span className="block">{preset.title}</span>
+                    {hotkeyDisplay(preset.hotkeyId) && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay(preset.hotkeyId)}</Kbd>}
                   </span>
                 </button>
-              )}
-              {/* Codex */}
-              {availablePanelTypes.includes('terminal') && (
-                <button
-                  ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
-                  role="menuitem"
-                  className={menuItemClass}
-                  onClick={() => handleAddPanel('terminal', {
-                    initialCommand: 'codex --yolo',
-                    title: 'Codex'
-                  })}
-                >
-                  <OpenAIIcon className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span className="ml-2 flex-1 min-w-0">
-                    <span className="block">Codex</span>
-                    {hotkeyDisplay('add-tool-terminal-codex') && <Kbd size="xs" variant="muted" className="mt-1 origin-left scale-[0.7]">{hotkeyDisplay('add-tool-terminal-codex')}</Kbd>}
-                  </span>
-                </button>
-              )}
+              ))}
               {/* Saved custom commands */}
               {availablePanelTypes.includes('terminal') && customCommands.map((cmd, index) => {
                 const currentRefIndex = refIndex++;

@@ -39,7 +39,7 @@ export function AIAgentsSettings({ persistence, onDirtyChange }: AIAgentsSetting
           <SegmentedControl<PaneChatAgent>
             label="Default Pane Chat agent"
             value={config.defaultOrchestratorAgent ?? 'claude'}
-            options={[{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }]}
+            options={[{ id: 'claude', label: 'Claude' }, { id: 'codex', label: 'Codex' }, { id: 'cursor', label: 'Cursor' }]}
             onChange={(value) => void persistence.saveConfig('default-pane-chat-agent', { defaultOrchestratorAgent: value })}
           />
         </SettingRow>

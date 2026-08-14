@@ -4,7 +4,7 @@ import path from 'path';
 import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
-import { PathResolver } from '../utils/pathResolver';
+import { PathResolver, ProjectEnvironment } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
@@ -833,6 +833,7 @@ function shouldUseArgumentDelivery(tool: RunpaneResolvedTool): boolean {
   return Boolean(
     tool.initialInput &&
     (tool.agent === 'claude' ||
+      tool.agent === 'cursor' ||
       (tool.agent === 'codex' && !isSlashCommandInput(tool.initialInput))),
   );
 }
@@ -1380,6 +1381,15 @@ function looksLikePendingComposer(text: string): boolean {
     /(?:press\s+)?(?:ctrl|control)\+enter\s+to\s+submit/i.test(text);
 }
 
+const AGENT_UNSUPPORTED_ENVIRONMENTS: Partial<Record<RunpaneAgentId, readonly ProjectEnvironment[]>> = {
+  cursor: ['windows', 'wsl'],
+};
+
+// GUI-launched Electron PATHs typically miss ~/.local/bin, cursor-agent's install target.
+const AGENT_FALLBACK_BIN_PATHS: Partial<Record<RunpaneAgentId, readonly string[]>> = {
+  cursor: ['$HOME/.local/bin/cursor-agent'],
+};
+
 async function runAgentDoctor(
   services: AppServices,
   repo: Project,
@@ -1392,6 +1402,24 @@ async function runAgentDoctor(
   const executable = agentCommandExecutable(command);
   const checks: RunpaneAgentDoctorResult['checks'] = [];
   const warnings: string[] = [];
+
+  if (AGENT_UNSUPPORTED_ENVIRONMENTS[agent]?.includes(environment)) {
+    checks.push({
+      name: 'platform',
+      ok: false,
+      message: `${AGENT_TEMPLATES[agent].title} is not supported on ${environment} repos.`,
+    });
+    return {
+      ok: false,
+      agent,
+      command,
+      repo: repoSummary,
+      environment,
+      available: false,
+      checks,
+      warnings: warnings.length > 0 ? warnings : undefined,
+    };
+  }
 
   if (!context) {
     checks.push({
@@ -1414,6 +1442,7 @@ async function runAgentDoctor(
   const lookupCommand = environment === 'windows' ? `where ${executable}` : `command -v ${executable}`;
   let executablePath: string | undefined;
   let version: string | undefined;
+  let versionCommand = `${executable} --version`;
 
   try {
     const result = await context.commandRunner.execAsync(lookupCommand, repo.path, {
@@ -1434,9 +1463,34 @@ async function runAgentDoctor(
     });
   }
 
+  if (!executablePath && environment !== 'windows') {
+    for (const fallback of AGENT_FALLBACK_BIN_PATHS[agent] ?? []) {
+      try {
+        const result = await context.commandRunner.execAsync(`command -v "${fallback}"`, repo.path, {
+          timeout: 5_000,
+          silent: true,
+        });
+        const fallbackPath = firstNonEmptyLine(result.stdout);
+        if (fallbackPath) {
+          executablePath = fallbackPath;
+          versionCommand = `"${fallback}" --version`;
+          checks.push({
+            name: 'executable-fallback',
+            ok: true,
+            message: `Found ${executable} at ${fallbackPath}.`,
+          });
+          warnings.push(`${executable} is installed at ${fallbackPath} but not on PATH; GUI-launched apps may not see it.`);
+          break;
+        }
+      } catch {
+        // Fallback probes are best-effort; the PATH check already reported the miss.
+      }
+    }
+  }
+
   if (executablePath) {
     try {
-      const result = await context.commandRunner.execAsync(`${executable} --version`, repo.path, {
+      const result = await context.commandRunner.execAsync(versionCommand, repo.path, {
         timeout: 5_000,
         silent: true,
       });

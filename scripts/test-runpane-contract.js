@@ -1359,6 +1359,50 @@ function checkNoArgsAndSetupFallback() {
   }
 }
 
+async function checkAgentTemplateParity() {
+  const { RUNPANE_CONTRACT } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'generated', 'contract.js'));
+  const daemonClient = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const { runPanesCreate } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'localControl.js'));
+
+  const agents = [...RUNPANE_CONTRACT.enums.agents].sort();
+  assert.deepStrictEqual(agents, ['claude', 'codex', 'cursor']);
+  for (const agent of RUNPANE_CONTRACT.enums.agents) {
+    const template = RUNPANE_CONTRACT.agentTemplates[agent];
+    assert.ok(template, `agentTemplates missing entry for ${agent}`);
+    assert.ok(template.title.trim().length > 0, `agentTemplates.${agent}.title is empty`);
+    assert.ok(template.command.trim().length > 0, `agentTemplates.${agent}.command is empty`);
+    assert.ok(template.description.trim().length > 0, `agentTemplates.${agent}.description is empty`);
+  }
+  assert.strictEqual(RUNPANE_CONTRACT.agentTemplates.cursor.command, 'cursor-agent --force --trust');
+
+  const originalInvokeDaemon = daemonClient.invokeDaemon;
+  const originalConsoleLog = console.log;
+  const calls = [];
+  try {
+    daemonClient.invokeDaemon = async (channel, args) => {
+      calls.push({ channel, request: args[0] });
+      return { ok: true, repo: {}, items: [] };
+    };
+    console.log = () => {};
+    for (const agent of RUNPANE_CONTRACT.enums.agents) {
+      await runPanesCreate(parseRunpaneArgs([
+        'panes', 'create', '--repo', 'active', '--name', `agent-${agent}`, '--agent', agent,
+        '--dry-run', '--yes', '--json'
+      ]));
+    }
+  } finally {
+    daemonClient.invokeDaemon = originalInvokeDaemon;
+    console.log = originalConsoleLog;
+  }
+
+  assert.strictEqual(calls.length, RUNPANE_CONTRACT.enums.agents.length);
+  RUNPANE_CONTRACT.enums.agents.forEach((agent, index) => {
+    assert.strictEqual(calls[index].channel, 'runpane:panes:create');
+    assert.strictEqual(calls[index].request.panes[0].tool.agent, agent);
+  });
+}
+
 async function runChecks() {
   checkGeneratedContractFresh();
   ensureBuiltCli();
@@ -1379,6 +1423,7 @@ async function runChecks() {
   await checkFromJsonAcceptsBom();
   await checkPanePinParity();
   await checkPaneRenameParity();
+  await checkAgentTemplateParity();
   checkHelpOutput();
   compareAgentContextParity();
   await checkNodeReleaseTimeout();
