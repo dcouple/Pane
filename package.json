@@ -76,7 +76,6 @@
     "test:headed": "playwright test --headed"
   },
   "dependencies": {
-    "@anthropic-ai/claude-code": "^2.0.0",
     "@anthropic-ai/sdk": "^0.60.0",
     "@lydell/node-pty": "1.2.0-beta.3",
     "@modelcontextprotocol/sdk": "^1.12.1",
@@ -121,7 +120,6 @@
       "frontend/dist/**/*",
       "package.json",
       "node_modules/**/*",
-      "!node_modules/@anthropic-ai/claude-code/vendor/**/*.jar",
       "build/**/*",
       "LICENSE",
       "NOTICES"
@@ -131,7 +129,6 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/**/*.node",
-      "!node_modules/@anthropic-ai/claude-code/vendor/**",
       "main/dist/services/mcpPermissionBridge.js",
       "main/dist/services/mcpPermissionBridgeStandalone.js",
       "main/dist/services/**/*.js",
@@ -143,9 +140,6 @@
       "icon": "main/assets/icon.icns",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "signIgnore": [
-        "node_modules/@anthropic-ai/claude-code/vendor/.*\\.jar$"
-      ],
       "notarize": false,
       "target": [
         {
@@ -154,7 +148,7 @@
         }
       ],
       "artifactName": "${productName}-${version}-macOS-universal.${ext}",
-      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/{**/*.node,**/*.dylib,**/spawn-helper,@anthropic-ai/claude-code/vendor/**/*}"
+      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/{**/*.node,**/*.dylib,**/spawn-helper}"
     },
     "linux": {
       "target": [

@@ -12,7 +12,6 @@ console.log('Testing license generation...\n');
 
 // List some key production dependencies we expect to find
 const expectedPackages = [
-  '@anthropic-ai/claude-code',
   '@anthropic-ai/sdk',
   'better-sqlite3-multiple-ciphers',
   'electron-updater',

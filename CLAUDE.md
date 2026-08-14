@@ -165,7 +165,7 @@ All core features have been successfully implemented with significant enhancemen
 - **IPC Server**: Direct IPC communication with renderer process
 - **Database**: Better-SQLite3 for synchronous operations
 - **Task Queue**: Bull with in-memory queue for Electron
-- **Claude Integration**: @anthropic-ai/claude-code SDK
+- **Claude Integration**: spawns the user's own Claude Code CLI via node-pty
 - **Process Management**: node-pty for PTY processes
 - **Git Integration**: Command-line git worktree management
 

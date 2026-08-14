@@ -1,6 +1,6 @@
 /**
  * ReadableStream polyfill for Node.js environments
- * This ensures the Claude Code SDK has access to the ReadableStream API
+ * This ensures the Web Streams API is available as a global
  */
 
 // Check if ReadableStream is already available
@@ -27,7 +27,7 @@ if (typeof globalThis.ReadableStream === 'undefined') {
       console.log('[Polyfill] Using web-streams-polyfill for ReadableStream');
     } catch (polyfillError) {
       console.error('[Polyfill] Failed to load ReadableStream polyfill:', polyfillError);
-      console.error('[Polyfill] The Claude Code SDK may not function properly without ReadableStream support');
+      console.error('[Polyfill] Dependencies relying on a global ReadableStream may not function properly');
     }
   }
 } else {
