@@ -80,7 +80,7 @@ runpane setup</code></pre>
 
 Not an IDE. Not a terminal emulator. **Vim for agent management.**
 
-Pane manages AI coding agents without replacing them. If it runs in a terminal, it runs in Pane — instantly, with zero integration. Claude Code, Codex, Aider, Goose, or any CLI tool. No plugins, no SDK, no waiting for support.
+Pane manages AI coding agents without replacing them. If it runs in a terminal, it runs in Pane — instantly, with zero integration. Claude Code, Codex, Cursor Agent, Aider, Goose, or any CLI tool. No plugins, no SDK, no waiting for support.
 
 ---
 
@@ -104,7 +104,7 @@ Each of these is a small thing. Together they compound fast.
 
 | Feature | | |
 |---|---|---|
-| **Pane Chat** | A global orchestrator terminal that starts in the Pane data directory, loads local Pane orchestration skills, and can coordinate Claude or Codex across repositories, panes, tabs, worktrees, and review loops. | <a href="#pane-chat">Details</a> |
+| **Pane Chat** | A global orchestrator terminal that starts in the Pane data directory, loads local Pane orchestration skills, and can coordinate Claude, Codex, or Cursor across repositories, panes, tabs, worktrees, and review loops. | <a href="#pane-chat">Details</a> |
 | **Remote Pane** | Run panes, worktrees, terminals, files, git state, and approval prompts on a self-hosted remote machine while controlling them from desktop Pane or the browser app at [runpane.com/app](https://runpane.com/app/). | <a href="#remote-pane">Setup</a> |
 | **Agent-Operable CLI** | Pane ships with `runpane agent-context`, `runpane repos add`, and `runpane panes create`, so a coding agent can discover Pane's command schema, register a repo, and open follow-up panes for issues or tasks. | [Contract](docs/RUNPANE_CLI_CONTRACT.md) |
 | **@mention Terminals** | Type `@` in any terminal to pull the last 500 lines from another pane's terminal directly into your context, no copy-paste required. | <img src="images/qol-at-mention.png" alt="Cross-terminal @mention picker" width="420"> |
@@ -183,18 +183,19 @@ Use it for the work that spans panes:
 Add this repo, create three worktree panes for the next features, start Codex in each one, and keep a separate review tab ready for every PR.
 ```
 
-Pane Chat keeps the human discussion at the orchestrator level, distills that into concrete briefs when needed, then delegates authorized lifecycle stages to Claude or Codex panels through RunPane. The active agent's cached `runpane-orchestrator` is the canonical source for the software-work lifecycle, authorization ledger, review-feedback interrupts, current-head evidence rules, and `ready_to_merge` predicate. Pane's generated layer stays focused on the local Pane runtime, skill cache paths, pane/panel/worktree mechanics, and preserving the user's focus.
+Pane Chat keeps the human discussion at the orchestrator level, distills that into concrete briefs when needed, then delegates authorized lifecycle stages to Claude, Codex, or Cursor panels through RunPane. The active agent's cached `runpane-orchestrator` is the canonical source for the software-work lifecycle, authorization ledger, review-feedback interrupts, current-head evidence rules, and `ready_to_merge` predicate. Pane's generated layer stays focused on the local Pane runtime, skill cache paths, pane/panel/worktree mechanics, and preserving the user's focus.
 
 The prompt stays small because Pane writes local project-level skills into the Pane data directory:
 
 - `.codex/skills/pane-orchestrator/SKILL.md`
 - `.claude/skills/pane-orchestrator/SKILL.md`
+- `.cursor/rules/pane-orchestrator.mdc`
 - `skills/pane-chat/runpane-orchestrator.md`
 - `skills/pane-chat/runtime-context.md`
 
 Pane also caches the important workflow skills from the Pane skills repository, including discussion, plan/simple-plan, implement, implementation-reviewer, PR test automation, prepare-pr, `gh-address-comments`, investigate, and commit. The generated orchestrator skill tells Pane Chat to load the workflow map and local skill cache before it coordinates work, while deferring lifecycle policy to the cached active-agent `runpane-orchestrator` so Pane does not maintain a second, drifting copy of the workflow.
 
-The top-right toggle switches Pane Chat between Claude and Codex and persists the default orchestrator agent in Pane settings. Both agents share the same Pane-specific orchestration contract, then follow their own cached downstream skills where the Codex and Claude skill surfaces differ.
+The top-right toggle switches Pane Chat between Claude, Codex, and Cursor and persists the default orchestrator agent in Pane settings. All three share the same Pane-specific orchestration contract, then follow their own cached downstream skills where the agent skill surfaces differ.
 
 ---
 
@@ -202,7 +203,7 @@ The top-right toggle switches Pane Chat between Claude and Codex and persists th
 
 Pane is not just a place where agents run. It exposes a stable `runpane` CLI contract that agents can use to manage the workspace for you.
 
-For example, you can ask an agent to create panes for a set of GitHub issues and start Codex, Claude Code, or any terminal command in each one. The agent can inspect the available Pane commands, register the current repository if needed, and create panes with initial instructions:
+For example, you can ask an agent to create panes for a set of GitHub issues and start Codex, Claude Code, Cursor, or any terminal command in each one. The agent can inspect the available Pane commands, register the current repository if needed, and create panes with initial instructions:
 
 ```bash
 runpane agent-context
@@ -310,6 +311,7 @@ irm https://runpane.com/install.ps1 | iex
 - At least one AI coding agent CLI installed:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) — `npm install -g @anthropic-ai/claude-code`
   - [Codex](https://github.com/openai/codex) — `npm install -g @openai/codex`
+  - [Cursor Agent](https://cursor.com/docs/cli) — `curl https://cursor.com/install -fsS | bash` (macOS/Linux)
   - [Aider](https://aider.chat/) — `pip install aider-chat`
   - [Goose](https://github.com/block/goose) — or any other CLI agent
 
@@ -319,7 +321,7 @@ irm https://runpane.com/install.ps1 | iex
 
 1. **Open Pane** and create or select a project (any git repository)
 2. **Create a pane** — enter a prompt and pick your agent
-3. **Add tabs** — launch a Claude terminal, Codex terminal, diff viewer, file explorer, or any CLI tool
+3. **Add tabs** — launch a Claude, Codex, or Cursor terminal, diff viewer, file explorer, or any CLI tool
 4. **Work in parallel** — create multiple panes for different approaches
 5. **Review diffs** — see what changed with the built-in diff viewer
 6. **Ship** — commit, rebase, and merge from keyboard shortcuts
@@ -345,7 +347,7 @@ Pane is for the other 75%. And for Mac developers who want to choose their own a
 ## Who Pane Is For
 
 - **Developers on any OS**: Mac, Windows, and Linux are all first-class citizens, with no "Mac-first with a Windows waitlist"
-- **Multi-agent users** who run Claude Code, Codex, Aider, or Goose depending on the task and want one app to manage them all
+- **Multi-agent users** who run Claude Code, Codex, Cursor, Aider, or Goose depending on the task and want one app to manage them all
 - **Keyboard-driven developers** who want Superhuman-level speed in their AI-assisted coding workflow
 - **Teams** where different engineers use different agents and need a consistent workflow layer
 - **Anyone tired of juggling terminal windows**, alt-tabbing between diff viewers and git clients, or waiting for agents one at a time
