@@ -519,10 +519,21 @@ Two questions catch most of what goes wrong, and both are cheap enough to ask by
 default:
 
 - Is this the root cause or a symptom? Agents routinely fix the symptom they
-  were shown, and asking is usually enough for them to catch it themselves.
+  were shown, and asking is usually enough for them to catch it themselves. Do
+  not just hold this question: when a delegated discussion or investigation
+  converges, send it to that agent verbatim — "is this addressing the root
+  cause or a symptom? dig deep" — before accepting the design or recommending
+  a lane. A premise-changing answer reopens the discussion.
 - How do comparable products or open-source projects solve this? Check prior art
   hardest when a discussion concludes something is hard or impossible, because
   that conclusion is often wrong and cheap to falsify.
+
+Deliverables addressed to a person get a third standing move. When a pane
+completes something a human will read — a pull request body, a brief, a docs
+page, a report — have it run the cached \`fresh-eyes\` skill before handoff: a
+zero-context recipient review, repeated by a fresh-context agent until a pass
+changes nothing. The producing agent cannot review its own work with fresh
+eyes, which is also why the repeat is delegated, never skipped.
 
 ## Bring The Human In Before The Work
 
