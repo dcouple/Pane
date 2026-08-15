@@ -4,6 +4,28 @@
 
 Both issues have been resolved. Claude Code now spawns correctly on Windows.
 
+## Note: the original reproduction no longer applies
+
+The failure described below was reproduced against a copy of Claude Code installed **inside
+Pane's own `node_modules`** — Pane declared `@anthropic-ai/claude-code` as a dependency, so
+`Pane/node_modules/.bin/claude` existed and could win PATH resolution during development.
+That dependency has since been removed (nothing ever imported it; Pane spawns the user's
+own CLI), so the specific `MODULE_NOT_FOUND` path shown below — resolving into Pane's pnpm
+store — can no longer occur.
+
+**The fixes described here are still live and still required.** Both apply to any
+globally installed `claude`:
+
+- npm/pnpm bin stubs are shell scripts on Windows, so `node-pty` cannot execute them
+  directly (error code 193). The proactive Node.js fallback in `AbstractCliManager.ts`
+  handles this.
+- Those stubs resolve their target through `$basedir`-relative paths, which break when the
+  process is spawned with a worktree as `cwd`. `findCliNodeScript()` in `nodeFinder.ts`
+  parses the stub and invokes the resolved `.js` file directly.
+
+Read the sections below as the rationale for that code. Only the reproduction environment
+is out of date.
+
 ## Problem Summary
 
 Claude Code was failing to spawn properly on Windows when Pane runs it in a worktree directory different from where `@anthropic-ai/claude-code` is installed.

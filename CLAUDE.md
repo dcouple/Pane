@@ -211,7 +211,7 @@ All core features have been successfully implemented with significant enhancemen
 │  │diffs        │ │markers      │ │                     │ │
 │  └─────────────┘ └─────────────┘ └─────────────────────┘ │
 ├─────────────────────────────────────────────────────────┤
-│         Claude Code SDK Instances (node-pty)             │
+│         Claude Code CLI Instances (node-pty)             │
 │              ┌─────────────────────────────┐              │
 │              │     Git Worktrees           │              │
 │              └─────────────────────────────┘              │

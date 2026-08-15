@@ -134,7 +134,6 @@
       "main/dist/services/**/*.js",
       "main/dist/main/src/ptyHost/**/*.js"
     ],
-    "afterSign": "build/afterSign.js",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "main/assets/icon.icns",
