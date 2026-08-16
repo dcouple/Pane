@@ -30,6 +30,10 @@ type ElectronApiMockOptions = {
   initialCombinedDiff?: Record<string, unknown> | null;
   initialTerminalStates?: Record<string, Record<string, unknown>>;
   initialAgentUsage?: Record<string, unknown>;
+  agentUsageBySessionId?: Record<string, Record<string, unknown>>;
+  agentUsageDelayBySessionId?: Record<string, number>;
+  forcedAgentUsageError?: string;
+  detectedBranch?: string | null;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -320,18 +324,29 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         redeemAttribution: () => success(undefined),
       }),
       agentUsage: namespace({
-        get: () => success(clone(mockOptions.initialAgentUsage ?? {
-          providers: [{
-            id: 'codex',
-            name: 'Codex',
-            status: 'unavailable',
-            plan: null,
-            limits: [],
+        get: async (sessionId: string, force = false) => {
+          const delayMs = mockOptions.agentUsageDelayBySessionId?.[sessionId] ?? 0;
+          if (delayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+          if (force && mockOptions.forcedAgentUsageError) {
+            return { success: false, error: mockOptions.forcedAgentUsageError };
+          }
+          return success(clone(mockOptions.agentUsageBySessionId?.[sessionId]
+            ?? mockOptions.initialAgentUsage
+            ?? {
+            providers: [{
+              id: 'codex',
+              name: 'Codex',
+              status: 'unavailable',
+              plan: null,
+              limits: [],
+              fetchedAt: new Date(0).toISOString(),
+              error: 'Codex usage is unavailable in this test',
+            }],
             fetchedAt: new Date(0).toISOString(),
-            error: 'Codex usage is unavailable in this test',
-          }],
-          fetchedAt: new Date(0).toISOString(),
-        })),
+          }));
+        },
       }),
       cloud: namespace({
         getState: () => success(clone(cloudState)),
@@ -468,7 +483,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           mockActiveProjectId = Number(projectId);
           return success();
         },
-        detectBranch: () => success('main'),
+        detectBranch: () => success(mockOptions.detectedBranch === undefined ? 'main' : mockOptions.detectedBranch),
         listBranches: () => success([
           { name: 'origin/main', isCurrent: false, hasWorktree: false, isRemote: true },
           { name: 'main', isCurrent: true, hasWorktree: false, isRemote: false },

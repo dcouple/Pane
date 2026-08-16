@@ -1,5 +1,15 @@
+import { EventEmitter } from 'events';
+import { PassThrough, Writable } from 'stream';
+import type { ChildProcessWithoutNullStreams } from 'child_process';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentUsageService, normalizeCodexUsage, type AgentUsageTarget } from './agentUsageService';
+import {
+  AgentUsageService,
+  getCodexSpawnCommand,
+  normalizeCodexUsage,
+  probeCodexUsage,
+  terminateCodexProcess,
+  type AgentUsageTarget,
+} from './agentUsageService';
 
 const target: AgentUsageTarget = {
   cacheKey: 'windows:host',
@@ -33,6 +43,18 @@ const rateLimitsResponse = {
     },
   },
 };
+
+function createFakeChild(stdin: Writable): ChildProcessWithoutNullStreams {
+  return Object.assign(new EventEmitter(), {
+    stdin,
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    pid: 42,
+    exitCode: null,
+    signalCode: null,
+    kill: vi.fn(() => true),
+  }) as unknown as ChildProcessWithoutNullStreams;
+}
 
 describe('normalizeCodexUsage', () => {
   it('normalizes account details and every named rate-limit bucket', () => {
@@ -115,5 +137,61 @@ describe('AgentUsageService', () => {
         error: 'codex not found',
       }),
     ]);
+  });
+});
+
+describe('probeCodexUsage', () => {
+  it('runs WSL Codex from the pane Linux working directory', () => {
+    const command = getCodexSpawnCommand({
+      cacheKey: 'wsl:Ubuntu:/home/dev/pane',
+      cwd: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\pane',
+      wslContext: {
+        enabled: true,
+        distribution: 'Ubuntu',
+        linuxPath: '/home/dev/pane',
+      },
+    });
+
+    expect(command).toEqual({
+      file: 'wsl.exe',
+      args: [
+        '-d',
+        'Ubuntu',
+        '--',
+        'bash',
+        '-c',
+        "cd '/home/dev/pane' && codex app-server --listen stdio://",
+      ],
+      cwd: undefined,
+    });
+  });
+
+  it('rejects safely when Codex closes stdin during the protocol handshake', async () => {
+    let writeCount = 0;
+    const stdin = new Writable({
+      write(_chunk, _encoding, callback) {
+        writeCount += 1;
+        if (writeCount === 1) callback();
+        else callback(Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+      },
+    });
+    const child = createFakeChild(stdin);
+    const terminate = vi.fn(async () => undefined);
+    const result = probeCodexUsage(target, () => child, terminate);
+
+    child.stdout.write('{"id":1,"result":{}}\n');
+
+    await expect(result).rejects.toThrow(/EPIPE|usage protocol/);
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('terminates the full Windows wrapper process tree after the grace period', async () => {
+    const child = createFakeChild(new PassThrough());
+    const killWindowsTree = vi.fn(async () => undefined);
+
+    await terminateCodexProcess(child, 'win32', 0, killWindowsTree);
+
+    expect(killWindowsTree).toHaveBeenCalledWith(42);
+    expect(child.kill).toHaveBeenCalledOnce();
   });
 });

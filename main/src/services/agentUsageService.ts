@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import type {
   AgentUsageLimit,
   AgentUsageProviderSnapshot,
@@ -10,6 +10,7 @@ import { getWSLExecArgs, type WSLContext } from '../utils/wslUtils';
 const CACHE_TTL_MS = 60_000;
 const PROBE_TIMEOUT_MS = 12_000;
 const MAX_PROTOCOL_BUFFER_BYTES = 1_000_000;
+const PROCESS_SHUTDOWN_GRACE_MS = 500;
 
 interface AgentUsageTarget {
   cacheKey: string;
@@ -34,6 +35,15 @@ interface CodexProbeResult {
 }
 
 type CodexProbe = (target: AgentUsageTarget) => Promise<CodexProbeResult>;
+type CodexProcessFactory = (target: AgentUsageTarget) => ChildProcessWithoutNullStreams;
+type CodexProcessTerminator = (child: ChildProcessWithoutNullStreams) => Promise<void>;
+type WindowsProcessTreeKiller = (pid: number) => Promise<void>;
+
+interface CodexSpawnCommand {
+  file: string;
+  args: string[];
+  cwd: string | undefined;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -140,41 +150,127 @@ export function normalizeCodexUsage(
   };
 }
 
-function createCodexProcess(target: AgentUsageTarget): ChildProcessWithoutNullStreams {
-  const env = { ...process.env, PATH: getShellPath() };
-  const spawnOptions = {
-    cwd: target.wslContext ? undefined : target.cwd,
-    env,
-    windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
-  };
-
+export function getCodexSpawnCommand(target: AgentUsageTarget): CodexSpawnCommand {
   if (target.wslContext) {
     const command = getWSLExecArgs(
       'codex app-server --listen stdio://',
       target.wslContext.distribution,
+      target.wslContext.linuxPath,
     );
-    return spawn(command.file, command.args, spawnOptions);
+    return { ...command, cwd: undefined };
   }
 
   if (process.platform === 'win32') {
-    return spawn(
-      process.env.ComSpec ?? 'cmd.exe',
-      ['/d', '/s', '/c', 'codex app-server --listen stdio://'],
-      spawnOptions,
-    );
+    return {
+      file: process.env.ComSpec ?? 'cmd.exe',
+      args: ['/d', '/s', '/c', 'codex app-server --listen stdio://'],
+      cwd: target.cwd,
+    };
   }
 
-  return spawn('codex', ['app-server', '--listen', 'stdio://'], spawnOptions);
+  return {
+    file: 'codex',
+    args: ['app-server', '--listen', 'stdio://'],
+    cwd: target.cwd,
+  };
 }
 
-function writeProtocolMessage(child: ChildProcessWithoutNullStreams, message: object): void {
-  child.stdin.write(`${JSON.stringify(message)}\n`);
+function createCodexProcess(target: AgentUsageTarget): ChildProcessWithoutNullStreams {
+  const env = { ...process.env, PATH: getShellPath() };
+  const command = getCodexSpawnCommand(target);
+  const spawnOptions = {
+    cwd: command.cwd,
+    env,
+    windowsHide: true,
+    stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
+  };
+  return spawn(command.file, command.args, spawnOptions);
 }
 
-export async function probeCodexUsage(target: AgentUsageTarget): Promise<CodexProbeResult> {
+function waitForProcessClose(
+  child: ChildProcessWithoutNullStreams,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
+
+  return new Promise(resolve => {
+    const onClose = () => finish(true);
+    const timeout = setTimeout(() => finish(false), timeoutMs);
+    const finish = (closed: boolean) => {
+      clearTimeout(timeout);
+      child.off('close', onClose);
+      resolve(closed);
+    };
+    child.once('close', onClose);
+  });
+}
+
+function killWindowsProcessTree(pid: number): Promise<void> {
+  return new Promise(resolve => {
+    execFile(
+      'taskkill',
+      ['/F', '/T', '/PID', String(pid)],
+      { windowsHide: true, timeout: 2_000 },
+      () => resolve(),
+    );
+  });
+}
+
+export async function terminateCodexProcess(
+  child: ChildProcessWithoutNullStreams,
+  platform: NodeJS.Platform = process.platform,
+  graceMs = PROCESS_SHUTDOWN_GRACE_MS,
+  killWindowsTree: WindowsProcessTreeKiller = killWindowsProcessTree,
+): Promise<void> {
+  if (!child.stdin.destroyed && !child.stdin.writableEnded) {
+    try {
+      child.stdin.end();
+    } catch {
+      // The probe's stream error handler owns shutdown errors.
+    }
+  }
+
+  if (await waitForProcessClose(child, graceMs)) return;
+
+  if (platform === 'win32' && child.pid) {
+    await killWindowsTree(child.pid);
+  }
+
+  if (child.exitCode === null && child.signalCode === null) {
+    try {
+      child.kill();
+    } catch {
+      // The process may have exited between the state check and kill.
+    }
+  }
+}
+
+function writeProtocolMessage(
+  child: ChildProcessWithoutNullStreams,
+  message: object,
+  onError: (error: Error) => void,
+): void {
+  if (child.stdin.destroyed || child.stdin.writableEnded) {
+    onError(new Error('Codex closed the usage protocol input'));
+    return;
+  }
+
+  try {
+    child.stdin.write(`${JSON.stringify(message)}\n`, error => {
+      if (error) onError(new Error(`Unable to write to Codex usage protocol: ${error.message}`));
+    });
+  } catch (error) {
+    onError(error instanceof Error ? error : new Error('Unable to write to Codex usage protocol'));
+  }
+}
+
+export async function probeCodexUsage(
+  target: AgentUsageTarget,
+  createProcess: CodexProcessFactory = createCodexProcess,
+  terminateProcess: CodexProcessTerminator = terminateCodexProcess,
+): Promise<CodexProbeResult> {
   return new Promise((resolve, reject) => {
-    const child = createCodexProcess(target);
+    const child = createProcess(target);
     let stdoutBuffer = '';
     let stderr = '';
     let account: unknown;
@@ -185,10 +281,18 @@ export async function probeCodexUsage(target: AgentUsageTarget): Promise<CodexPr
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
-      child.stdin.end();
-      child.kill();
-      if (error) reject(error);
-      else resolve({ account, rateLimits });
+      void terminateProcess(child).then(() => {
+        if (error) reject(error);
+        else resolve({ account, rateLimits });
+      }, () => {
+        if (error) reject(error);
+        else resolve({ account, rateLimits });
+      });
+    };
+
+    const sendProtocolMessage = (message: object) => {
+      if (settled) return;
+      writeProtocolMessage(child, message, error => finish(error));
     };
 
     const timeout = setTimeout(() => {
@@ -196,6 +300,9 @@ export async function probeCodexUsage(target: AgentUsageTarget): Promise<CodexPr
     }, PROBE_TIMEOUT_MS);
 
     child.on('error', error => finish(new Error(`Unable to start Codex: ${error.message}`)));
+    child.stdin.on('error', error => {
+      finish(new Error(`Unable to write to Codex usage protocol: ${error.message}`));
+    });
     child.on('exit', code => {
       if (!settled) {
         const detail = stderr.trim() ? `: ${stderr.trim()}` : '';
@@ -231,13 +338,15 @@ export async function probeCodexUsage(target: AgentUsageTarget): Promise<CodexPr
             finish(new Error('Codex app server initialization failed'));
             return;
           }
-          writeProtocolMessage(child, { method: 'initialized' });
-          writeProtocolMessage(child, {
+          // Codex app-server uses a JSON-RPC handshake before the paired account and
+          // rate-limit reads; non-JSON stdout is ignored until both replies arrive.
+          sendProtocolMessage({ method: 'initialized' });
+          sendProtocolMessage({
             method: 'account/read',
             id: 2,
             params: { refreshToken: false },
           });
-          writeProtocolMessage(child, { method: 'account/rateLimits/read', id: 3 });
+          sendProtocolMessage({ method: 'account/rateLimits/read', id: 3 });
         } else if (message.id === 2) {
           if (message.error) {
             finish(new Error('Codex account information is unavailable'));
@@ -259,7 +368,7 @@ export async function probeCodexUsage(target: AgentUsageTarget): Promise<CodexPr
       }
     });
 
-    writeProtocolMessage(child, {
+    sendProtocolMessage({
       method: 'initialize',
       id: 1,
       params: {

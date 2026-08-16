@@ -11,6 +11,7 @@ import { PanelCreateOptions } from '../types/panelComponents';
 import { SessionProvider } from '../contexts/SessionContext';
 import { DetailPanel } from './DetailPanel';
 import { useResizable } from '../hooks/useResizable';
+import { usePersistedBoolean } from '../hooks/usePersistedBoolean';
 
 interface ProjectViewProps {
   projectId: number;
@@ -46,9 +47,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     const stored = localStorage.getItem('pane-project-detail-panel-visible');
     return stored !== null ? stored === 'true' : false;
   });
-  const [agentUsageVisible, setAgentUsageVisible] = useState(() => {
-    return localStorage.getItem('pane-agent-usage-visible') === 'true';
-  });
+  const [agentUsageVisible, setAgentUsageVisible] = usePersistedBoolean('pane-agent-usage-visible');
 
   // Persist detail panel visibility
   useEffect(() => {
@@ -56,16 +55,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   }, [detailVisible]);
 
   useEffect(() => {
-    localStorage.setItem('pane-agent-usage-visible', String(agentUsageVisible));
-  }, [agentUsageVisible]);
-
-  useEffect(() => {
     if (agentUsageVisible) setDetailVisible(true);
   }, [agentUsageVisible]);
 
   const handleToggleAgentUsage = useCallback(() => {
     setAgentUsageVisible(current => !current);
-  }, []);
+  }, [setAgentUsageVisible]);
 
   // Right-side resizable
   const { width: detailWidth, startResize: startDetailResize } = useResizable({
@@ -124,11 +119,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       return;
     }
 
+    setCurrentBranch(null);
     let cancelled = false;
     window.electronAPI.projects.detectBranch(worktreePath).then(result => {
-      if (!cancelled && result.success && typeof result.data === 'string') {
-        setCurrentBranch(result.data);
-      }
+      if (cancelled) return;
+      setCurrentBranch(result.success && typeof result.data === 'string' ? result.data : null);
     }).catch(() => {
       if (!cancelled) setCurrentBranch(null);
     });

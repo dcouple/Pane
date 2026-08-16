@@ -47,6 +47,19 @@ const panels = [{
   metadata: { createdAt: new Date(0).toISOString(), lastActiveAt: new Date(0).toISOString(), position: 0, permanent: true },
 }];
 
+const secondSession = {
+  ...session,
+  id: 'usage-session-two',
+  name: 'Track separate Codex limits',
+  worktreePath: '/tmp/usage-fixture/track-separate-codex-limits',
+};
+
+const secondSessionPanels = [{
+  ...panels[0],
+  id: 'usage-terminal-two',
+  sessionId: secondSession.id,
+}];
+
 const mainRepoSession = {
   ...session,
   id: 'usage-main-session',
@@ -87,6 +100,17 @@ const usage = {
     fetchedAt: '2026-08-14T12:00:00.000Z',
   }],
   fetchedAt: '2026-08-14T12:00:00.000Z',
+};
+
+const secondSessionUsage = {
+  ...usage,
+  providers: [{
+    ...usage.providers[0],
+    limits: [{
+      ...usage.providers[0].limits[0],
+      remainingPercent: 12,
+    }],
+  }],
 };
 
 async function openSession(page: Page): Promise<void> {
@@ -156,4 +180,70 @@ test('Codex usage is available from a main-repository pane', async ({ page }, te
   await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
   await expect(page.locator('.pane-detail-panel-vertical').getByText('main', { exact: true })).toBeVisible();
   await capture(page, testInfo, 'codex-usage-main-repository.png');
+});
+
+test('Codex usage clears a successful snapshot after a refresh failure', async ({ page }) => {
+  await page.setViewportSize({ width: 1_600, height: 900 });
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [session],
+    initialPanels: panels,
+    initialAgentUsage: usage,
+    activeProjectId: project.id,
+    forcedAgentUsageError: 'Codex exited during refresh',
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Usage fixture$/ }).click();
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+  await page.getByRole('button', { name: 'Enable Codex usage widget', exact: true }).click();
+
+  const widget = page.getByRole('region', { name: 'Codex usage' });
+  await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Refresh Codex usage', exact: true }).click();
+
+  await expect(widget.getByText('Codex usage unavailable', { exact: true })).toBeVisible();
+  await expect(widget.getByText('58% left', { exact: true })).toHaveCount(0);
+});
+
+test('Codex usage hides the previous snapshot while a new session loads', async ({ page }) => {
+  await page.setViewportSize({ width: 1_600, height: 900 });
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [session, secondSession],
+    initialPanels: [...panels, ...secondSessionPanels],
+    activeProjectId: project.id,
+    agentUsageBySessionId: {
+      [session.id]: usage,
+      [secondSession.id]: secondSessionUsage,
+    },
+    agentUsageDelayBySessionId: { [secondSession.id]: 750 },
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Usage fixture$/ }).click();
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+  await page.getByRole('button', { name: 'Enable Codex usage widget', exact: true }).click();
+
+  const widget = page.getByRole('region', { name: 'Codex usage' });
+  await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: secondSession.name, exact: true }).click();
+
+  await expect(widget.getByText('Loading usage...', { exact: true })).toBeVisible();
+  await expect(widget.getByText('58% left', { exact: true })).toHaveCount(0);
+  await expect(widget.getByText('12% left', { exact: true })).toBeVisible();
+});
+
+test('main-repository branch detection clears an invalid result', async ({ page }) => {
+  await page.setViewportSize({ width: 1_600, height: 900 });
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [mainRepoSession],
+    initialPanels: mainRepoPanels,
+    activeProjectId: project.id,
+    detectedBranch: null,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: `Repository actions for ${project.name}` }).click();
+  await page.getByText('Open session on main', { exact: true }).click();
+
+  await expect(page.locator('.pane-detail-panel-vertical').getByText('main', { exact: true })).toHaveCount(0);
 });

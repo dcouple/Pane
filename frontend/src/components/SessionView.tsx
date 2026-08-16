@@ -18,6 +18,7 @@ import { ProjectView } from './ProjectView';
 import { API } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
+import { usePersistedBoolean } from '../hooks/usePersistedBoolean';
 import { usePanelStore } from '../stores/panelStore';
 import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/CombinedDiffView';
@@ -1348,18 +1349,12 @@ export const SessionView = memo(() => {
     return stored !== null ? stored === 'true' : false;
   });
 
-  const [agentUsageVisible, setAgentUsageVisible] = useState(() => {
-    return localStorage.getItem('pane-agent-usage-visible') === 'true';
-  });
+  const [agentUsageVisible, setAgentUsageVisible] = usePersistedBoolean('pane-agent-usage-visible');
 
   // Persist detail panel visibility
   useEffect(() => {
     localStorage.setItem('pane-detail-panel-visible', String(detailVisible));
   }, [detailVisible]);
-
-  useEffect(() => {
-    localStorage.setItem('pane-agent-usage-visible', String(agentUsageVisible));
-  }, [agentUsageVisible]);
 
   // Right-side resizable
   const { width: detailWidth, startResize: startDetailResize } = useResizable({
@@ -1472,7 +1467,7 @@ export const SessionView = memo(() => {
       }
       return next;
     });
-  }, [layoutSwapped]);
+  }, [layoutSwapped, setAgentUsageVisible]);
 
   // Layout-aware detail panel toggle that also handles immersive mode override
   const handleToggleDetailPanel = useCallback(() => {
