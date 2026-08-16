@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { PaneChatAgent } from '../shared/types/paneChat';
 
 type AnalyticsMainEvent = {
   eventName: string;
@@ -139,17 +140,21 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       archived: false,
       isHidden: true,
     };
-    const createPaneChatPanel = (agent: 'claude' | 'codex') => ({
-      id: agent === 'codex' ? '__pane_chat_terminal_codex__' : '__pane_chat_terminal__',
+    const createPaneChatPanel = (agent: PaneChatAgent) => ({
+      id: agent === 'claude' ? '__pane_chat_terminal__' : `__pane_chat_terminal_${agent}__`,
       sessionId: '__pane_chat_session__',
       type: 'terminal',
-      title: agent === 'codex' ? 'Pane Chat - Codex' : 'Pane Chat',
+      title: agent === 'claude' ? 'Pane Chat' : `Pane Chat - ${agent === 'codex' ? 'Codex' : 'Cursor'}`,
       state: {
         isActive: true,
         hasBeenViewed: false,
         customState: {
-          initialCommand: agent === 'codex' ? 'codex' : 'claude --dangerously-skip-permissions',
-          initialInput: 'Use the pane-orchestrator skill and initialize yourself as Pane Chat.',
+          initialCommand: agent === 'claude'
+            ? 'claude --dangerously-skip-permissions'
+            : agent === 'codex' ? 'codex --yolo' : 'cursor-agent --force --trust',
+          initialInput: agent === 'cursor'
+            ? 'Read /tmp/.pane/skills/pane-chat/runpane-orchestrator.md and initialize yourself as Pane Chat.'
+            : 'Use the pane-orchestrator skill and initialize yourself as Pane Chat.',
           initialInputMode: 'argument',
           initialInputSubmitStrategy: 'enter',
           agentType: agent,
@@ -160,7 +165,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       metadata: {
         createdAt: new Date(0).toISOString(),
         lastActiveAt: new Date(0).toISOString(),
-        position: agent === 'codex' ? 1 : 0,
+        position: agent === 'claude' ? 0 : agent === 'codex' ? 1 : 2,
         permanent: true,
       },
     });

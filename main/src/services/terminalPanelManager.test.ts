@@ -107,7 +107,7 @@ type InitialInputAccess = {
 };
 
 type LaunchCommandAccess = {
-  resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: Record<string, unknown>): {
+  resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: Record<string, unknown>, shellType?: string): {
     commandToRun: string;
     customState: Record<string, unknown>;
     isCliCommand: boolean;
@@ -851,6 +851,21 @@ describe('TerminalPanelManager hidden output delivery', () => {
       initialInputSentAt: expect.any(String),
       initialInputError: undefined,
     });
+  });
+
+  it('uses fish-compatible syntax for a fresh Cursor launch in fish', () => {
+    const manager = new TerminalPanelManager() as unknown as LaunchCommandAccess;
+
+    const result = manager.resolveCliLaunchCommand('panel-1', 'cursor-agent --force --trust', {
+      agentType: 'cursor',
+    }, 'fish');
+
+    expect(result.commandToRun).toBe(
+      'if set __PANE_CURSOR_CHAT (cursor-agent create-chat 2>/dev/null); and test -n "$__PANE_CURSOR_CHAT"; '
+      + 'printf \'\\npane-cursor-chat-id: %s\\n\' "$__PANE_CURSOR_CHAT"; '
+      + 'cursor-agent --force --trust --resume "$__PANE_CURSOR_CHAT"; '
+      + 'else; cursor-agent --force --trust; end',
+    );
   });
 
   it('resumes an interrupted Cursor panel with its captured chat id', () => {

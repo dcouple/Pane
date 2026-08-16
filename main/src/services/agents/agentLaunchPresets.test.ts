@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_LAUNCH_PRESETS, agentPresetsForPlatform } from '../../../../shared/constants/agentLaunchPresets';
+import {
+  AGENT_LAUNCH_PRESETS,
+  agentPresetsForPlatform,
+  isAgentSupportedOnPlatform,
+} from '../../../../shared/constants/agentLaunchPresets';
 import { RUNPANE_CONTRACT } from '../../../../shared/types/generatedRunpaneContract';
 
 describe('AGENT_LAUNCH_PRESETS', () => {
@@ -22,5 +26,10 @@ describe('AGENT_LAUNCH_PRESETS', () => {
     expect(agentPresetsForPlatform('win32').map(p => p.id)).toEqual(['claude', 'codex']);
     expect(agentPresetsForPlatform('darwin').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(agentPresetsForPlatform('linux').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
+    expect(agentPresetsForPlatform('windows').map(p => p.id)).toEqual(['claude', 'codex']);
+    expect(agentPresetsForPlatform('macos').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
+    expect(agentPresetsForPlatform('wsl').map(p => p.id)).toEqual(['claude', 'codex']);
+    expect(isAgentSupportedOnPlatform('cursor', 'windows')).toBe(false);
+    expect(isAgentSupportedOnPlatform('cursor', 'wsl')).toBe(false);
   });
 });

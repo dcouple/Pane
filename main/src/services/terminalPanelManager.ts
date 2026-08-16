@@ -212,6 +212,12 @@ interface TerminalProcess {
   agentSessionScrapeBuffer: string;
 }
 
+interface CliLaunchResolution {
+  commandToRun: string;
+  customState: TerminalPanelState;
+  isCliCommand: boolean;
+}
+
 export class TerminalPanelManager {
   private terminals = new Map<string, TerminalProcess>();
   private serializedBuffers = new Map<string, string>();
@@ -232,11 +238,12 @@ export class TerminalPanelManager {
     return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
   }
 
-  private resolveCliLaunchCommand(panelId: string, initialCommand: string, customState: TerminalPanelState): {
-    commandToRun: string;
-    customState: TerminalPanelState;
-    isCliCommand: boolean;
-  } {
+  private resolveCliLaunchCommand(
+    panelId: string,
+    initialCommand: string,
+    customState: TerminalPanelState,
+    shellType?: string,
+  ): CliLaunchResolution {
     const agentType = customState.agentType ?? resolveAgentTypeFromCommand(initialCommand);
     if (!agentType) {
       return { commandToRun: initialCommand, customState, isCliCommand: false };
@@ -249,8 +256,22 @@ export class TerminalPanelManager {
       agentType,
     };
 
+    const resolution = agentType === 'claude'
+      ? this.resolveClaudeLaunch(panelId, initialCommand, customState, nextState)
+      : agentType === 'codex'
+        ? this.resolveCodexLaunch(panelId, initialCommand, customState, nextState)
+        : this.resolveCursorLaunch(panelId, initialCommand, customState, nextState, shellType);
+
+    return resolution ?? { commandToRun: initialCommand, customState: nextState, isCliCommand: true };
+  }
+
+  private resolveClaudeLaunch(
+    panelId: string,
+    initialCommand: string,
+    customState: TerminalPanelState,
+    nextState: TerminalPanelState,
+  ): CliLaunchResolution | undefined {
     if (
-      agentType === 'claude' &&
       !initialCommand.includes('--session-id') &&
       !initialCommand.includes('--resume')
     ) {
@@ -282,12 +303,21 @@ export class TerminalPanelManager {
       };
     }
 
-    if (agentType === 'claude' && customState.wasInterrupted) {
+    if (customState.wasInterrupted) {
       nextState.wasInterrupted = undefined;
       return { commandToRun: initialCommand, customState: nextState, isCliCommand: true };
     }
 
-    if (agentType === 'codex' && customState.wasInterrupted) {
+    return undefined;
+  }
+
+  private resolveCodexLaunch(
+    panelId: string,
+    initialCommand: string,
+    customState: TerminalPanelState,
+    nextState: TerminalPanelState,
+  ): CliLaunchResolution | undefined {
+    if (customState.wasInterrupted) {
       nextState.wasInterrupted = undefined;
       const commandToRun = customState.agentSessionId
         ? `codex resume --yolo ${customState.agentSessionId}`
@@ -307,7 +337,6 @@ export class TerminalPanelManager {
     }
 
     if (
-      agentType === 'codex' &&
       customState.initialInputMode === 'argument' &&
       customState.initialInput?.trim() &&
       !customState.initialInputSentAt
@@ -321,7 +350,17 @@ export class TerminalPanelManager {
       };
     }
 
-    if (agentType === 'cursor' && customState.wasInterrupted) {
+    return undefined;
+  }
+
+  private resolveCursorLaunch(
+    panelId: string,
+    initialCommand: string,
+    customState: TerminalPanelState,
+    nextState: TerminalPanelState,
+    shellType?: string,
+  ): CliLaunchResolution | undefined {
+    if (customState.wasInterrupted) {
       nextState.wasInterrupted = undefined;
       const commandToRun = customState.agentSessionId
         ? buildCursorLaunchCommand({ baseCommand: initialCommand, resumeChatId: customState.agentSessionId })
@@ -336,7 +375,7 @@ export class TerminalPanelManager {
       return { commandToRun, customState: nextState, isCliCommand: true };
     }
 
-    if (agentType === 'cursor' && !/--resume\b|--continue\b/.test(initialCommand)) {
+    if (!/--resume\b|--continue\b/.test(initialCommand)) {
       const promptArgument =
         customState.initialInputMode === 'argument' && customState.initialInput?.trim() && !customState.initialInputSentAt
           ? customState.initialInput
@@ -346,13 +385,13 @@ export class TerminalPanelManager {
         nextState.initialInputError = undefined;
       }
       return {
-        commandToRun: buildCursorLaunchCommand({ baseCommand: initialCommand, promptArgument }),
+        commandToRun: buildCursorLaunchCommand({ baseCommand: initialCommand, promptArgument, shellType }),
         customState: nextState,
         isCliCommand: true,
       };
     }
 
-    return { commandToRun: initialCommand, customState: nextState, isCliCommand: true };
+    return undefined;
   }
 
   private async markInitialInputSent(panelId: string): Promise<{
@@ -856,18 +895,21 @@ export class TerminalPanelManager {
 
     let shellPath: string;
     let shellArgs: string[];
+    let shellType: string;
     let spawnCwd: string | undefined = cwd;
 
     if (wslContext && process.platform === 'win32') {
       const wslShell = getWSLShellSpawn(wslContext.distribution, cwd);
       shellPath = wslShell.path;
       shellArgs = wslShell.args;
+      shellType = 'bash';
       spawnCwd = undefined; // WSL handles cwd
     } else {
       const preferredShell = getRuntimeConfigManager().getPreferredShell();
       const shellInfo = ShellDetector.getDefaultShell(preferredShell);
       shellPath = shellInfo.path;
       shellArgs = shellInfo.args || [];
+      shellType = shellInfo.name;
     }
 
     const isLinux = process.platform === 'linux';
@@ -1044,7 +1086,7 @@ export class TerminalPanelManager {
     // setupTerminalHandlers so we don't miss early shell output.
     let commandToRun: string | undefined;
     if (initialCommand) {
-      const launchResolution = this.resolveCliLaunchCommand(panel.id, initialCommand, existingState || {});
+      const launchResolution = this.resolveCliLaunchCommand(panel.id, initialCommand, existingState || {}, shellType);
       commandToRun = launchResolution.commandToRun;
       const isCliCommand = launchResolution.isCliCommand;
 

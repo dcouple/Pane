@@ -24,7 +24,7 @@ export interface PaneChatState<TSession = unknown> {
 }
 
 export function normalizePaneChatAgent(value: unknown): PaneChatAgent {
-  return typeof value === 'string' && value in PANE_CHAT_PANEL_IDS
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PANE_CHAT_PANEL_IDS, value)
     ? (value as PaneChatAgent)
     : DEFAULT_PANE_CHAT_AGENT;
 }

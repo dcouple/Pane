@@ -16,6 +16,7 @@ import {
   type PaneChatState,
 } from '../../../shared/types/paneChat';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
+import { isAgentSupportedOnPlatform } from '../../../shared/constants/agentLaunchPresets';
 import { isCliAgentType } from './agents/agentIdentity';
 
 const PANE_CHAT_TITLE = 'Pane Chat';
@@ -43,12 +44,14 @@ export class PaneChatManager {
   async setAgent(agent: PaneChatAgent): Promise<PaneChatState<Session>> {
     return withLock('pane-chat-session', async () => {
       const normalizedAgent = normalizePaneChatAgent(agent);
+      this.assertAgentSupported(normalizedAgent);
       await this.configManager.updateConfig({ defaultOrchestratorAgent: normalizedAgent });
       return this.getOrCreateForAgent(normalizedAgent);
     });
   }
 
   private async getOrCreateForAgent(agent: PaneChatAgent): Promise<PaneChatState<Session>> {
+    this.assertAgentSupported(agent);
     const guidePath = await this.ensureGuidePath();
     const cwd = getAppDirectory();
     const session = this.ensureSession(cwd);
@@ -64,6 +67,12 @@ export class PaneChatManager {
       guidePath,
       started: terminalPanelManager.isTerminalInitialized(panel.id),
     };
+  }
+
+  private assertAgentSupported(agent: PaneChatAgent): void {
+    if (!isAgentSupportedOnPlatform(agent, process.platform)) {
+      throw new Error(`${RUNPANE_CONTRACT.agentTemplates[agent].title} is not supported on ${process.platform}.`);
+    }
   }
 
   private async ensureGuidePath(): Promise<string> {

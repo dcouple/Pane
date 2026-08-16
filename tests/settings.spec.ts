@@ -26,6 +26,18 @@ async function bootSettings(page: Page, options: Parameters<typeof installElectr
 }
 
 test.describe('Settings', () => {
+  test('hides unsupported Cursor as a default Pane Chat agent on Windows', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'platform', { configurable: true, get: () => 'Win32' });
+    });
+    await bootSettings(page, { platform: 'win32' });
+
+    await page.getByRole('button', { name: 'AI & Agents', exact: true }).click();
+    const agentChoices = page.getByRole('radiogroup', { name: 'Default Pane Chat agent' });
+    await expect(agentChoices.getByRole('radio')).toHaveCount(2);
+    await expect(agentChoices.getByRole('radio', { name: 'Cursor' })).toHaveCount(0);
+  });
+
   test('mounts every category from the settings catalog', async ({ page }) => {
     await bootSettings(page);
     const categories = [

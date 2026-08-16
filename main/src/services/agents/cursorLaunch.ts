@@ -9,6 +9,7 @@ interface CursorLaunchOptions {
   baseCommand: string;
   promptArgument?: string;
   resumeChatId?: string;
+  shellType?: string;
 }
 
 function quoteShellArgument(value: string): string {
@@ -37,6 +38,14 @@ export function buildCursorLaunchCommand(options: CursorLaunchOptions): string {
   }
 
   const executable = baseCommand.trim().split(/\s+/)[0];
+  if (options.shellType === 'fish') {
+    return (
+      `if set __PANE_CURSOR_CHAT (${executable} create-chat 2>/dev/null); and test -n "$__PANE_CURSOR_CHAT"; `
+      + `printf '\\n${CURSOR_CHAT_ID_MARKER} %s\\n' "$__PANE_CURSOR_CHAT"; `
+      + `${baseCommand} --resume "$__PANE_CURSOR_CHAT"${promptSuffix}; `
+      + `else; ${baseCommand}${promptSuffix}; end`
+    );
+  }
   return (
     `if __PANE_CURSOR_CHAT="$(${executable} create-chat 2>/dev/null)" && [ -n "$__PANE_CURSOR_CHAT" ]; `
     + `then printf '\\n${CURSOR_CHAT_ID_MARKER} %s\\n' "$__PANE_CURSOR_CHAT"; `

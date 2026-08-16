@@ -37,6 +37,18 @@ describe('resolveAgentTypeFromCommand', () => {
     expect(resolveAgentTypeFromCommand('/Users/me/.local/bin/cursor-agent --force')).toBe('cursor');
   });
 
+  it('detects quoted executable paths, including paths with spaces', () => {
+    expect(resolveAgentTypeFromCommand('"/Applications/Cursor Agent.app/Contents/bin/cursor-agent" --force')).toBe('cursor');
+    expect(resolveAgentTypeFromCommand("'/opt/OpenAI tools/codex' --yolo")).toBe('codex');
+    expect(resolveAgentTypeFromCommand('"/usr/local/bin/claude"')).toBe('claude');
+  });
+
+  it('detects agents behind simple command and environment wrappers', () => {
+    expect(resolveAgentTypeFromCommand('env CURSOR_MODE=trusted cursor-agent --force')).toBe('cursor');
+    expect(resolveAgentTypeFromCommand('command "/opt/OpenAI/codex" --yolo')).toBe('codex');
+    expect(resolveAgentTypeFromCommand('FOO=bar exec claude')).toBe('claude');
+  });
+
   it('classifies cursor-agent as cursor even when other agent names appear in arguments', () => {
     expect(resolveAgentTypeFromCommand('cursor-agent --force --model claude-opus-4-8')).toBe('cursor');
   });
@@ -45,6 +57,9 @@ describe('resolveAgentTypeFromCommand', () => {
     expect(resolveAgentTypeFromCommand('/tmp/claude-501/session.sh')).toBeUndefined();
     expect(resolveAgentTypeFromCommand('run-codexlike-tool')).toBeUndefined();
     expect(resolveAgentTypeFromCommand('echo cursor-agentish')).toBeUndefined();
+    expect(resolveAgentTypeFromCommand('echo cursor-agent')).toBeUndefined();
+    expect(resolveAgentTypeFromCommand('/tmp/cursor-agent/project/start.sh')).toBeUndefined();
+    expect(resolveAgentTypeFromCommand('node script.js --agent codex')).toBeUndefined();
   });
 
   it('returns undefined for shells and empty input', () => {

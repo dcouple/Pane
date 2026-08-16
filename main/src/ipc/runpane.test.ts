@@ -1237,6 +1237,48 @@ describe('runpane IPC handlers', () => {
     expect(execAsync).not.toHaveBeenCalled();
   });
 
+  it('rejects cursor pane creation for WSL repos before creating a session', async () => {
+    const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
+    const base = createServices();
+    const services = createServices({
+      databaseService: {
+        ...base.databaseService,
+        getAllProjects: vi.fn(() => [wslProject]),
+      } as never,
+    });
+
+    const result = await createRegistry(services).invoke('runpane:panes:create', [{
+      repo: 'active',
+      panes: [{ name: 'cursor-wsl', tool: { agent: 'cursor' } }],
+    }]);
+
+    expect(result).toMatchObject({
+      ok: false,
+      items: [{
+        ok: false,
+        error: { message: 'Cursor is not supported on wsl repos.' },
+      }],
+    });
+    expect(services.taskQueue?.createSessionAndWait).not.toHaveBeenCalled();
+  });
+
+  it('rejects cursor panel creation for WSL repos before creating a panel', async () => {
+    const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
+    const base = createServices();
+    const services = createServices({
+      sessionManager: {
+        ...base.sessionManager,
+        getProjectForSession: vi.fn(() => wslProject),
+      } as never,
+    });
+
+    await expect(createRegistry(services).invoke('runpane:panels:create', [{
+      paneId: session.id,
+      tool: { agent: 'cursor' },
+    }])).rejects.toThrow('Cursor is not supported on wsl repos.');
+    expect(panelManager.createPanel).not.toHaveBeenCalled();
+  });
+
   it('creates a session, terminal panel, and initial-input state', async () => {
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',

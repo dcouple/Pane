@@ -31,6 +31,15 @@ describe('buildCursorLaunchCommand', () => {
     expect(command).toContain('"$(/opt/bin/cursor-agent create-chat 2>/dev/null)"');
   });
 
+  it('composes fish syntax when the configured interactive shell is fish', () => {
+    expect(buildCursorLaunchCommand({ baseCommand: BASE, shellType: 'fish' })).toBe(
+      'if set __PANE_CURSOR_CHAT (cursor-agent create-chat 2>/dev/null); and test -n "$__PANE_CURSOR_CHAT"; '
+      + `printf '\\n${CURSOR_CHAT_ID_MARKER} %s\\n' "$__PANE_CURSOR_CHAT"; `
+      + `${BASE} --resume "$__PANE_CURSOR_CHAT"; `
+      + `else; ${BASE}; end`,
+    );
+  });
+
   it('resumes a known chat id directly, without the create-chat compound', () => {
     expect(buildCursorLaunchCommand({ baseCommand: BASE, resumeChatId: CHAT_ID })).toBe(
       `${BASE} --resume "${CHAT_ID}"`,

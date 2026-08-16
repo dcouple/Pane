@@ -9,8 +9,9 @@ import { Button } from './ui/Button';
 import { ClaudeIcon, CursorIcon, OpenAIIcon } from './ui/BrandIcons';
 import { cn } from '../utils/cn';
 import { LiveRegion } from './ui/LiveRegion';
+import { visibleAgentPresets } from '../utils/agentPresets';
 
-const PANE_CHAT_AGENT_OPTIONS: Array<{
+const ALL_PANE_CHAT_AGENT_OPTIONS: Array<{
   id: PaneChatAgent;
   label: string;
   icon: typeof ClaudeIcon;
@@ -19,6 +20,9 @@ const PANE_CHAT_AGENT_OPTIONS: Array<{
   { id: 'codex', label: 'Codex', icon: OpenAIIcon },
   { id: 'cursor', label: 'Cursor', icon: CursorIcon },
 ];
+
+const visiblePaneChatAgents = new Set(visibleAgentPresets().map(preset => preset.id));
+const PANE_CHAT_AGENT_OPTIONS = ALL_PANE_CHAT_AGENT_OPTIONS.filter(option => visiblePaneChatAgents.has(option.id));
 
 const PANE_CHAT_AGENT_LABELS: Record<PaneChatAgent, string> = {
   claude: 'Claude',

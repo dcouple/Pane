@@ -125,7 +125,7 @@ const remoteAffordances = {
 
 async function openDesktop(
   page: Page,
-  options: { paneChatAgentChangeDelayMs?: number } = {},
+  options: Parameters<typeof installElectronApiMock>[1] = {},
 ): Promise<void> {
   await installElectronApiMock(page, {
     ...options,
@@ -356,7 +356,25 @@ test('Pane Chat agent choice uses native radio semantics', async ({ page }) => {
   await page.keyboard.press('ArrowRight');
   await expect(radios.nth(1)).toBeFocused();
   await expect(radios.nth(1)).toBeChecked();
+
+  await radios.nth(2).focus();
+  await page.keyboard.press('Space');
+  await expect(radios.nth(2)).toBeChecked();
+  const cursorState = await page.evaluate(async () => window.electronAPI.paneChat.getOrCreate());
+  expect(cursorState.data?.panel.id).toBe('__pane_chat_terminal_cursor__');
+  expect(cursorState.data?.panel.state.customState?.initialCommand).toBe('cursor-agent --force --trust');
   await expectNoAxeViolations(page, { include: '.pane-chat-shell' });
+});
+
+test('Windows hides unsupported Cursor choices from Pane Chat', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { configurable: true, get: () => 'Win32' });
+  });
+  await openDesktop(page, { platform: 'win32' });
+
+  await page.getByRole('button', { name: 'Pane Chat' }).click();
+  await expect(page.getByRole('radio')).toHaveCount(2);
+  await expect(page.getByRole('radio', { name: 'Cursor' })).toHaveCount(0);
 });
 
 test('disconnected Remote Pane screen is axe-clean', async ({ page }) => {

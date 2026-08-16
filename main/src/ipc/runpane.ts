@@ -16,6 +16,7 @@ import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
 import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../../shared/types/panels';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
+import { isAgentSupportedOnPlatform } from '../../../shared/constants/agentLaunchPresets';
 import type {
   RunpaneAgentId,
   RunpaneAgentDoctorRequest,
@@ -321,7 +322,7 @@ export function registerRunpaneHandlers(
             index,
             name: pane.name,
             pinned: Boolean(pane.pinned),
-            tool: describeTool(resolveToolSpec(pane.tool)),
+            tool: describeTool(resolveToolSpec(pane.tool, new PathResolver(repo).environment)),
           })),
         };
       }
@@ -429,7 +430,11 @@ export function registerRunpaneHandlers(
     return withRunpaneAction(services, 'panels:create', {}, async () => {
       const normalized = parsePanelCreateRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
-      const tool = resolveToolSpec(normalized.tool);
+      const repo = sessionManager.getProjectForSession(pane.id);
+      if (!repo) {
+        throw new Error(`No Pane repo found for pane ${pane.id}`);
+      }
+      const tool = resolveToolSpec(normalized.tool, new PathResolver(repo).environment);
       const { panel, readiness, initialInput } = await createTerminalPanelForSession(services, pane, tool, {
         activate: resolvePanelCreateActivation(normalized, tool),
         waitReady: normalized.waitReady,
@@ -952,7 +957,7 @@ async function createPaneItem(
   }
 
   try {
-    const tool = resolveToolSpec(item.tool);
+    const tool = resolveToolSpec(item.tool, new PathResolver(repo).environment);
     const sessionResult = await taskQueue.createSessionAndWait({
       prompt: item.sessionPrompt ?? '',
       worktreeTemplate: item.worktreeName ?? item.name,
@@ -1381,10 +1386,6 @@ function looksLikePendingComposer(text: string): boolean {
     /(?:press\s+)?(?:ctrl|control)\+enter\s+to\s+submit/i.test(text);
 }
 
-const AGENT_UNSUPPORTED_ENVIRONMENTS: Partial<Record<RunpaneAgentId, readonly ProjectEnvironment[]>> = {
-  cursor: ['windows', 'wsl'],
-};
-
 // GUI-launched Electron PATHs typically miss ~/.local/bin, cursor-agent's install target.
 const AGENT_FALLBACK_BIN_PATHS: Partial<Record<RunpaneAgentId, readonly string[]>> = {
   cursor: ['$HOME/.local/bin/cursor-agent'],
@@ -1403,7 +1404,7 @@ async function runAgentDoctor(
   const checks: RunpaneAgentDoctorResult['checks'] = [];
   const warnings: string[] = [];
 
-  if (AGENT_UNSUPPORTED_ENVIRONMENTS[agent]?.includes(environment)) {
+  if (!isAgentSupportedOnPlatform(agent, environment)) {
     checks.push({
       name: 'platform',
       ok: false,
@@ -2223,9 +2224,12 @@ function resolveProjectByName(projects: Project[], selectorName: string): Projec
   return matches[0];
 }
 
-function resolveToolSpec(tool: RunpaneToolSpec): RunpaneResolvedTool {
+function resolveToolSpec(tool: RunpaneToolSpec, environment?: ProjectEnvironment): RunpaneResolvedTool {
   if ('agent' in tool) {
     const template = AGENT_TEMPLATES[tool.agent];
+    if (environment && !isAgentSupportedOnPlatform(tool.agent, environment)) {
+      throw new Error(`${template.title} is not supported on ${environment} repos.`);
+    }
     return {
       title: tool.title ?? template.title,
       command: template.command,

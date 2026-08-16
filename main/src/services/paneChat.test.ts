@@ -14,6 +14,9 @@ describe('normalizePaneChatAgent', () => {
     expect(normalizePaneChatAgent('codex')).toBe('codex');
     expect(normalizePaneChatAgent('cursor')).toBe('cursor');
     expect(normalizePaneChatAgent('aider')).toBe(DEFAULT_PANE_CHAT_AGENT);
+    expect(normalizePaneChatAgent('constructor')).toBe(DEFAULT_PANE_CHAT_AGENT);
+    expect(normalizePaneChatAgent('toString')).toBe(DEFAULT_PANE_CHAT_AGENT);
+    expect(normalizePaneChatAgent('__proto__')).toBe(DEFAULT_PANE_CHAT_AGENT);
     expect(normalizePaneChatAgent(undefined)).toBe(DEFAULT_PANE_CHAT_AGENT);
   });
 });
