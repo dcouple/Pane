@@ -23,6 +23,17 @@
 
 <br />
 
+**Made possible by our amazing contributors**
+
+<a href="https://github.com/dcouple/Pane/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=dcouple/Pane" alt="Pane contributors">
+</a>
+
+<sub><a href="./CONTRIBUTING.md">Join them</a> and help make Pane better.</sub>
+
+<br />
+<br />
+
 **Quick install (recommended)**
 
 <sub>Mac / Linux</sub><br />
