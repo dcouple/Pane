@@ -16,11 +16,6 @@ interface DetailPanelProps {
   height?: number;
   onResize: (e: React.MouseEvent) => void;
   mergeError?: string | null;
-  projectGitActions?: {
-    onPull?: () => void;
-    onPush?: () => void;
-    isMerging?: boolean;
-  };
   orientation?: 'vertical' | 'horizontal';
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
@@ -75,7 +70,7 @@ function actionTooltip(action: { description?: string; disabled?: boolean; disab
   );
 }
 
-export function DetailPanel({ isVisible, width, height, onResize, mergeError, projectGitActions, orientation, isCollapsed, onToggleCollapse, onSwapLayout, terminalShortcuts, onCommitClick }: DetailPanelProps) {
+export function DetailPanel({ isVisible, width, height, onResize, mergeError, orientation, isCollapsed, onToggleCollapse, onSwapLayout, terminalShortcuts, onCommitClick }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
   const remoteIdeTooltip = 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.';
@@ -297,8 +292,8 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
           )}
         </div>
 
-        {/* Changes — worktree sessions only */}
-        {!isProject && gitStatus && (
+        {/* Changes for the checkout represented by this session */}
+        {gitStatus && (
           <DetailSection title="Changes">
             <div className="space-y-1 text-sm px-1">
               {gitStatus.ahead != null && gitStatus.ahead > 0 && (
@@ -329,7 +324,7 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
         )}
 
         {/* Branch actions */}
-        {((!isProject && (onSetTracking || onOpenIDEWithCommand)) || (isProject && onOpenIDEWithCommand)) && (
+        {(onSetTracking || onOpenIDEWithCommand) && (
           <DetailSection title="Branch">
             <div className="space-y-0.5">
               {!gitUnavailable && onSetTracking && (
@@ -366,13 +361,13 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
                       </Button>
                     }
                     items={ideItems}
-                    footer={
+                    footer={onConfigureIDE ? (
                       <DropdownMenuItem
                         icon={Settings}
                         label="Configure..."
                         onClick={onConfigureIDE}
                       />
-                    }
+                    ) : undefined}
                     position="auto"
                     width="sm"
                   />
@@ -404,8 +399,8 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
         ) : (
         <DetailSection title="Actions">
           <div className="space-y-0.5">
-            {/* Worktree actions — ordered by workflow */}
-            {!isProject && (() => {
+            {/* Checkout actions — callers provide only actions valid for this checkout */}
+            {(() => {
               const byId = (id: string) => gitBranchActions?.find(a => a.id === id);
               const behindCount = gitStatus?.behind ?? 0;
               const aheadCount = gitStatus?.ahead ?? 0;
@@ -544,21 +539,6 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
               });
             })()}
 
-            {/* Project: Pull/Push */}
-            {isProject && projectGitActions && (
-              <>
-                {projectGitActions.onPull && (
-                  <Button variant="ghost" size="sm" className={sidebarBtn} onClick={projectGitActions.onPull} disabled={projectGitActions.isMerging}>
-                    Pull
-                  </Button>
-                )}
-                {projectGitActions.onPush && (
-                  <Button variant="ghost" size="sm" className={sidebarBtn} onClick={projectGitActions.onPush} disabled={projectGitActions.isMerging}>
-                    Push
-                  </Button>
-                )}
-              </>
-            )}
           </div>
         </DetailSection>
         )}

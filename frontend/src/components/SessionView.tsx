@@ -72,7 +72,6 @@ export const SessionView = memo(() => {
   const { activeView, activeProjectId } = useNavigationStore();
   const [projectData, setProjectData] = useState<Project | null>(null);
   const [isProjectLoading, setIsProjectLoading] = useState(false);
-  const [isMergingProject, setIsMergingProject] = useState(false);
   const [sessionProject, setSessionProject] = useState<Project | null>(null);
   const [showSetTrackingDialog, setShowSetTrackingDialog] = useState(false);
   const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
@@ -1241,44 +1240,6 @@ export const SessionView = memo(() => {
     }
   }, [activeView, activeProjectId]);
 
-  const handleProjectGitPull = async () => {
-    if (!activeProjectId || !projectData) return;
-    setIsMergingProject(true);
-    try {
-      // Get or create main repo session for this project
-      const sessionResponse = await API.sessions.getOrCreateMainRepoSession(activeProjectId);
-      if (sessionResponse.success && sessionResponse.data) {
-        const response = await API.sessions.gitPull(sessionResponse.data.id);
-        if (!response.success) {
-          console.error('Git pull failed:', response.error);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to perform git pull:', error);
-    } finally {
-      setIsMergingProject(false);
-    }
-  };
-
-  const handleProjectGitPush = async () => {
-    if (!activeProjectId || !projectData) return;
-    setIsMergingProject(true);
-    try {
-      // Get or create main repo session for this project
-      const sessionResponse = await API.sessions.getOrCreateMainRepoSession(activeProjectId);
-      if (sessionResponse.success && sessionResponse.data) {
-        const response = await API.sessions.gitPush(sessionResponse.data.id);
-        if (!response.success) {
-          console.error('Git push failed:', response.error);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to perform git push:', error);
-    } finally {
-      setIsMergingProject(false);
-    }
-  };
-
   const hook = useSessionView(activeSession);
 
   // Handler to open set tracking dialog
@@ -1669,9 +1630,6 @@ export const SessionView = memo(() => {
       <ProjectView
         projectId={activeProjectId}
         projectName={projectData.name || 'Project'}
-        onGitPull={handleProjectGitPull}
-        onGitPush={handleProjectGitPush}
-        isMerging={isMergingProject}
       />
     );
   }
