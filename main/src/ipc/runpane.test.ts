@@ -2127,7 +2127,9 @@ describe('runpane IPC handlers', () => {
 
   it('routes every agent, readiness, and input-shape combination consistently', async () => {
     vi.useFakeTimers();
-    const toolKinds = ['claude', 'codex', 'cursor', 'custom'] as const;
+    const toolKinds = process.platform === 'win32'
+      ? (['claude', 'codex', 'custom'] as const)
+      : (['claude', 'codex', 'cursor', 'custom'] as const);
     const shapes = [
       { name: 'slash', input: '/do TM-x' },
       { name: 'prose', input: 'Please implement this' },

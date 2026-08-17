@@ -25,6 +25,7 @@ const COMMAND_CLASSIFICATION_CASES: CommandClassificationCase[] = [
   {
     name: 'POSIX backslash-escaped space',
     command: String.raw`/opt/Cursor\ Agent/cursor-agent --force`,
+    platformHint: 'darwin',
     expected: 'cursor',
   },
   {
