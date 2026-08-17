@@ -124,6 +124,14 @@ const COMMAND_CLASSIFICATION_CASES: CommandClassificationCase[] = [
   { name: 'Cursor executable substring', command: 'mycursor-agent', expected: undefined },
   { name: 'agent name in an argument', command: 'echo cursor-agent', expected: undefined },
   { name: 'shell option without command mode', command: 'bash --norc cursor-agent', expected: undefined },
+  { name: 'unterminated single quote', command: "'cursor-agent", expected: undefined },
+  { name: 'unterminated double quote', command: '"cursor-agent', expected: undefined },
+  { name: 'trailing backslash escape', command: 'cursor-agent --force\\', expected: undefined },
+  {
+    name: 'unterminated quote inside shell command string',
+    command: `bash -c "cursor-agent '"`,
+    expected: undefined,
+  },
   { name: 'empty command', command: '', expected: undefined },
   { name: 'missing command', command: undefined, expected: undefined },
 ];

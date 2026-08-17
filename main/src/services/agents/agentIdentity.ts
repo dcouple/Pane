@@ -23,7 +23,7 @@ const ENV_OPTIONS_WITH_SEPARATE_OPERAND = new Set([
 const ENV_FLAGS = new Set(['-i', '--ignore-environment', '-0', '--null', '-v', '--debug']);
 const MAX_ENV_SPLIT_EXPANSIONS = 16;
 
-function tokenizeShellCommand(command: string, platformHint: NodeJS.Platform): string[] {
+function tokenizeShellCommand(command: string, platformHint: NodeJS.Platform): string[] | undefined {
   const tokens: string[] = [];
   let token = '';
   let tokenStarted = false;
@@ -60,9 +60,10 @@ function tokenizeShellCommand(command: string, platformHint: NodeJS.Platform): s
       tokenStarted = true;
     } else if (character === '\\') {
       const nextCharacter = command[index + 1];
+      if (!nextCharacter) return undefined;
       const startsWindowsPath = token === '' ? nextCharacter === '\\' : /^[A-Za-z]:$/.test(token);
 
-      if (platformHint === 'win32' || windowsPath || startsWindowsPath || !nextCharacter) {
+      if (platformHint === 'win32' || windowsPath || startsWindowsPath) {
         token += character;
         windowsPath = windowsPath || platformHint === 'win32' || startsWindowsPath;
       } else {
@@ -83,6 +84,7 @@ function tokenizeShellCommand(command: string, platformHint: NodeJS.Platform): s
     }
   }
 
+  if (quote) return undefined;
   if (tokenStarted) tokens.push(token);
   return tokens;
 }
@@ -114,9 +116,11 @@ function expandEnvArguments(
     if (splitString !== undefined) {
       splitExpansions += 1;
       if (splitExpansions > MAX_ENV_SPLIT_EXPANSIONS) return undefined;
+      const splitTokens = tokenizeShellCommand(splitString, platformHint);
+      if (!splitTokens) return undefined;
       tokens = [
         ...tokens.slice(0, index),
-        ...tokenizeShellCommand(splitString, platformHint),
+        ...splitTokens,
         ...tokens.slice(index + consumedTokens),
       ];
       continue;
@@ -248,6 +252,7 @@ function expandWrapperArguments(
 
 function resolveExecutableToken(command: string, platformHint: NodeJS.Platform): string | undefined {
   let tokens = tokenizeShellCommand(command.trim(), platformHint);
+  if (!tokens) return undefined;
   let index = 0;
 
   while (index < tokens.length) {
