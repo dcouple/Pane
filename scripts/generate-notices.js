@@ -20,6 +20,7 @@ This file includes only packages with licenses that require attribution. Public 
 // Dev-only packages that aren't distributed with the built app
 const DEV_ONLY_PACKAGES = [
   '@eslint/',
+  '@oxlint/',
   '@playwright/',
   '@types/',
   '@typescript-eslint/',
@@ -30,9 +31,12 @@ const DEV_ONLY_PACKAGES = [
   'electron-rebuild',
   'eslint',
   'globals',
+  'knip',
   'mkdirp',
+  'oxlint',
   'playwright',
   'postcss',
+  'react-scan',
   'rimraf',
   'tailwindcss',
   'typescript',
@@ -392,7 +396,7 @@ function main() {
     const { notices, totalPackages } = generateNotices();
     const outputPath = path.join(__dirname, '..', 'NOTICES');
     
-    fs.writeFileSync(outputPath, notices);
+    fs.writeFileSync(outputPath, notices.replace(/[ \t]+$/gm, ''));
     console.log(`\nNOTICES file generated successfully at: ${outputPath}`);
     
     console.log(`Total packages included: ${totalPackages}`);

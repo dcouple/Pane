@@ -1,0 +1,68 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "rules": {
+    "files": "warn",
+    "dependencies": "warn",
+    "devDependencies": "warn",
+    "optionalPeerDependencies": "warn",
+    "unlisted": "warn",
+    "binaries": "warn",
+    "unresolved": "warn",
+    "catalog": "warn",
+    "cycles": "warn",
+    "exports": "warn",
+    "nsExports": "warn",
+    "types": "warn",
+    "nsTypes": "warn",
+    "duplicates": "warn",
+    "enumMembers": "warn",
+    "namespaceMembers": "warn"
+  },
+  "workspaces": {
+    ".": {
+      "entry": [
+        "scripts/**/*.{js,mjs}",
+        "tests/**/*.spec.ts",
+        "playwright*.ts"
+      ],
+      "project": [
+        "scripts/**/*.{js,mjs}",
+        "tests/**/*.ts",
+        "playwright*.ts"
+      ]
+    },
+    "frontend": {
+      "entry": [
+        "src/main.tsx",
+        "src/remote/main.tsx",
+        "src/**/*.test.{ts,tsx}",
+        "vite.config.ts"
+      ],
+      "project": ["src/**/*.{ts,tsx}", "vite.config.{ts,js}"],
+      "vite": {
+        "config": ["vite.config.ts"]
+      }
+    },
+    "main": {
+      "entry": [
+        "src/index.ts",
+        "src/preload.ts",
+        "src/daemon/headless.ts",
+        "src/ptyHost/ptyHostMain.ts",
+        "src/services/mcpPermissionBridge.ts",
+        "src/**/*.test.ts",
+        "src/**/__tests__/**/*.ts",
+        "build-mcp-bridge.js"
+      ],
+      "project": ["src/**/*.ts", "build-mcp-bridge.js"]
+    },
+    "packages/runpane": {
+      "entry": ["src/cli.ts", "scripts/mark-executable.js"],
+      "project": ["src/**/*.ts", "scripts/**/*.js"]
+    },
+    "shared": {
+      "entry": ["types/*.ts"],
+      "project": ["types/*.ts"]
+    }
+  }
+}

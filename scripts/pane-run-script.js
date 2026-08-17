@@ -270,6 +270,13 @@ function killProcessUnix(pid) {
  */
 async function main() {
   const cwd = process.cwd();
+  const args = process.argv.slice(2);
+  const unknownArgs = args.filter(arg => arg !== '--react-scan');
+  if (unknownArgs.length > 0) {
+    console.error(`❌ Unknown argument(s): ${unknownArgs.join(', ')}`);
+    process.exit(1);
+  }
+  const reactScanEnabled = args.includes('--react-scan');
 
   console.log('🚀 pane-run-script.js starting...\n');
 
@@ -333,6 +340,11 @@ async function main() {
     PORT: port.toString(),
     VITE_PORT: port.toString()
   };
+
+  if (reactScanEnabled) {
+    env.PANE_REACT_SCAN = '1';
+    console.log('🔬 React Scan render evidence enabled for this dev session');
+  }
 
   console.log('\n🎬 Starting dev server...\n');
   console.log('─'.repeat(50));

@@ -123,10 +123,12 @@ echo "  noVNC fallback enabled: ${ENABLE_NOVNC_FALLBACK}"
 # ============================================================
 echo "[3/10] Installing Node.js 22 LTS..."
 
-# Always ensure we have Node 22+ (the repo requires >= 22.14)
-NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "0")
-if [ "$NODE_MAJOR" -lt 22 ]; then
-  echo "  Current Node version: $(node --version 2>/dev/null || echo 'none'). Upgrading to Node 22..."
+# Always ensure we meet the repo development floor (>= 22.18).
+NODE_VERSION=$(node --version 2>/dev/null | sed 's/^v//' || echo "0.0.0")
+NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
+NODE_MINOR=$(echo "$NODE_VERSION" | cut -d. -f2)
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 18 ]; }; then
+  echo "  Current Node version: $(node --version 2>/dev/null || echo 'none'). Upgrading to Node 22.18+..."
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y -qq nodejs > /dev/null
 fi

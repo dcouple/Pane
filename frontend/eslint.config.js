@@ -3,6 +3,7 @@ import typescript from 'typescript-eslint';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
+import oxlintOverlap from '../tools/eslint/oxlint-overlap.cjs';
 
 export default [
   js.configs.recommended,
@@ -54,5 +55,11 @@ export default [
   },
   {
     ignores: ['dist/', 'node_modules/', '*.config.js', '*.config.ts', 'vite.config.d.ts']
+  },
+  {
+    rules: {
+      ...oxlintOverlap.common,
+      ...oxlintOverlap.frontendOnly
+    }
   }
 ];

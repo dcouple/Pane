@@ -22,7 +22,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v6
       with:
-        node-version: '22.15.1'
+        node-version: '22.18.0'
         cache: 'pnpm'
 
     - name: Install dependencies
@@ -31,7 +31,7 @@ jobs:
     - name: Run type checking
       run: pnpm typecheck
 
-    - name: Run linting
+    - name: Run consolidated lint harness
       run: pnpm lint
 
     - name: Rebuild native modules for Node tests
@@ -61,7 +61,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-2022]
-        node-version: ['18.17.0', '22.15.1']
+        node-version: ['18.17.0', '22.18.0']
         python-version: ['3.8', '3.13']
 
     steps:
@@ -115,7 +115,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v6
       with:
-        node-version: '22.15.1'
+        node-version: '22.18.0'
         cache: 'pnpm'
 
     - name: Install dependencies

@@ -24,7 +24,7 @@ import type {
 } from '../../../shared/types/daemon';
 
 // Type for IPC response
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic type parameter default for flexible API responses
+// oxlint-disable-next-line typescript/no-explicit-any -- Generic type parameter default for flexible API responses
 export interface IPCResponse<T = any> {
   success: boolean;
   data?: T;

@@ -1,0 +1,121 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "off"
+  },
+  "plugins": ["eslint", "typescript", "react", "jsx-a11y"],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "dist-electron/**",
+    "tools/oxlint/anti-slop/**"
+  ],
+  "rules": {
+    "eslint/for-direction": "error",
+    "eslint/no-async-promise-executor": "error",
+    "eslint/no-case-declarations": "error",
+    "eslint/no-compare-neg-zero": "error",
+    "eslint/no-cond-assign": "error",
+    "eslint/no-constant-binary-expression": "error",
+    "eslint/no-constant-condition": "error",
+    "eslint/no-control-regex": "error",
+    "eslint/no-debugger": "error",
+    "eslint/no-delete-var": "error",
+    "eslint/no-dupe-else-if": "error",
+    "eslint/no-duplicate-case": "error",
+    "eslint/no-empty-character-class": "error",
+    "eslint/no-empty-pattern": "error",
+    "eslint/no-empty-static-block": "error",
+    "eslint/no-ex-assign": "error",
+    "eslint/no-extra-boolean-cast": "error",
+    "eslint/no-fallthrough": "error",
+    "eslint/no-global-assign": "error",
+    "eslint/no-invalid-regexp": "error",
+    "eslint/no-irregular-whitespace": "error",
+    "eslint/no-loss-of-precision": "error",
+    "eslint/no-misleading-character-class": "error",
+    "eslint/no-nonoctal-decimal-escape": "error",
+    "eslint/no-prototype-builtins": "error",
+    "eslint/no-regex-spaces": "error",
+    "eslint/no-self-assign": "error",
+    "eslint/no-shadow-restricted-names": "error",
+    "eslint/no-sparse-arrays": "error",
+    "eslint/no-unexpected-multiline": "error",
+    "eslint/no-unsafe-finally": "error",
+    "eslint/no-unsafe-optional-chaining": "error",
+    "eslint/no-unused-labels": "error",
+    "eslint/no-unused-private-class-members": "error",
+    "eslint/no-useless-backreference": "error",
+    "eslint/no-useless-catch": "error",
+    "eslint/no-var": "error",
+    "eslint/prefer-rest-params": "error",
+    "eslint/prefer-spread": "error",
+    "eslint/require-yield": "error",
+    "eslint/use-isnan": "error",
+    "eslint/valid-typeof": "error",
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-array-constructor": "error",
+    "typescript/no-duplicate-enum-values": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unnecessary-type-constraint": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-unused-expressions": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-namespace-keyword": "error",
+    "typescript/triple-slash-reference": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-widen-then-assert": "error"
+  },
+  "overrides": [
+    {
+      "files": ["frontend/src/**/*.{ts,tsx}"],
+      "rules": {
+        "eslint/no-empty": "error",
+        "eslint/prefer-const": "error",
+        "typescript/no-require-imports": "error",
+        "react/rules-of-hooks": "error",
+        "jsx-a11y/alt-text": "error",
+        "jsx-a11y/anchor-has-content": "error",
+        "jsx-a11y/aria-props": "error",
+        "jsx-a11y/aria-proptypes": "error",
+        "jsx-a11y/aria-unsupported-elements": "error",
+        "jsx-a11y/click-events-have-key-events": "error",
+        "jsx-a11y/heading-has-content": "error",
+        "jsx-a11y/iframe-has-title": "error",
+        "jsx-a11y/no-access-key": "error",
+        "jsx-a11y/no-distracting-elements": "error",
+        "jsx-a11y/no-static-element-interactions": [
+          "error",
+          {
+            "handlers": ["onClick"],
+            "allowExpressionValues": true
+          }
+        ],
+        "jsx-a11y/role-has-required-aria-props": "error",
+        "jsx-a11y/role-supports-aria-props": "error",
+        "jsx-a11y/tabindex-no-positive": "error"
+      }
+    }
+  ]
+}

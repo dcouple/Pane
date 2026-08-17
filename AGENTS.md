@@ -9,7 +9,8 @@
 - Dev app: `pnpm dev` (spawns frontend + Electron).
 - Build all: `pnpm build` (frontend, main, then electron package).
 - Package (examples): `pnpm build:mac`, `pnpm build:linux`.
-- Lint: `pnpm lint`; Type-check: `pnpm typecheck` (runs per package).
+- Lint: `pnpm lint`; Type-check: `pnpm typecheck` (runs per package). The root lint command is the single entry point for blocking Oxlint, residual ESLint, advisory anti-slop, and advisory Knip checks.
+- Detailed advisory output: `pnpm lint:ox:extra:details`; accessibility scan: `pnpm a11y:scan` (install Chromium once with `pnpm exec playwright install chromium`); opt-in render evidence: `pnpm perf:scan`.
 - Tests (E2E): `pnpm test`, `pnpm test:ui`, CI configs in `playwright.ci*.config.ts`.
 - Main unit tests (if added): `pnpm --filter main test`, coverage: `pnpm --filter main run test:coverage`.
 
@@ -30,12 +31,14 @@
 - If dependencies change, run `pnpm run generate-notices` and commit updated `NOTICES`.
 
 ## Security & Configuration Tips
-- Node >= `22.14`; `pnpm` >= `8`. Use `pnpm` only.
+- The root development toolchain requires Node >= `22.18`; `pnpm` >= `8`. Use `pnpm` only. Electron 41 bundles Node 24 for the app, while the published `packages/runpane` wrapper intentionally supports Node >= `18.17`.
 - Secrets via `.env` (dotenv) for local dev; never commit secrets.
 - To avoid clobbering local data when hacking on Pane with Pane: `PANE_DIR=~/.pane_test pnpm dev`.
 
 ## Agent Notes (for automation)
 - Keep changes minimal and scoped; prefer small patches.
+- Treat blocking lint as the new-code floor. Advisory anti-slop and Knip output records existing debt; address relevant findings without broad suppressions. See `references/anti-slop.md` and `references/oxlint-overlap.md`.
+- `pnpm perf:scan` enables React Scan only for that Vite dev session and emits `[render-evidence]` summaries for pane switching and Remote PWA churn. Production builds must never include React Scan. Component counts do not measure xterm/WebGL, Electron main-process, IPC, or network cost.
 - Update docs alongside code; do not alter build targets without discussion.
 - Use repository scripts (pnpm) and keep formatting consistent with existing files.
 - Always review the root `CLAUDE.md` before beginning any work. 

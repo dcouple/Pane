@@ -1,5 +1,6 @@
 const js = require('@eslint/js');
 const typescript = require('typescript-eslint');
+const oxlintOverlap = require('../../tools/eslint/oxlint-overlap.cjs');
 
 module.exports = [
   js.configs.recommended,
@@ -24,5 +25,8 @@ module.exports = [
   },
   {
     ignores: ['dist/', 'node_modules/', '*.config.js']
+  },
+  {
+    rules: oxlintOverlap.common
   }
 ];

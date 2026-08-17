@@ -1,14 +1,11 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import '../index.css';
-import '@xterm/xterm/css/xterm.css';
-import { RemotePwaApp } from './RemotePwaApp';
+import { loadReactScan } from '../devtools/loadReactScan';
 
-document.documentElement.classList.add('light-rounded');
-document.body.classList.add('light-rounded');
+async function bootstrapRemote(): Promise<void> {
+  await loadReactScan();
+  const { mountRemoteRenderer } = await import('./bootstrap');
+  mountRemoteRenderer();
+}
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <RemotePwaApp />
-  </React.StrictMode>,
-);
+bootstrapRemote().catch(error => {
+  console.error('Failed to bootstrap the Pane remote renderer.', error);
+});

@@ -23,7 +23,8 @@
   ],
   "scripts": {
     "build": "tsc && node scripts/mark-executable.js",
-    "lint": "eslint src --ext .ts",
+    "lint": "pnpm --dir ../.. run lint:ox:runpane && pnpm run lint:eslint",
+    "lint:eslint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit",
     "prepack": "pnpm run build"
   },

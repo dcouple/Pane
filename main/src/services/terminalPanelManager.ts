@@ -416,7 +416,7 @@ export class TerminalPanelManager {
   }
 
   private stripAnsiSequences(output: string): string {
-    // eslint-disable-next-line no-control-regex
+    // oxlint-disable-next-line eslint/no-control-regex
     return output.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g, '');
   }
 
@@ -429,7 +429,7 @@ export class TerminalPanelManager {
   private scheduleAfterShellPrompt(ptyProcess: pty.IPty, callback: () => void): void {
     let callbackInvoked = false;
     // Match prompt symbol allowing trailing ANSI escapes and whitespace.
-    // eslint-disable-next-line no-control-regex
+    // oxlint-disable-next-line eslint/no-control-regex
     const promptPattern = /[$#%>]\s*(?:\x1b\[[0-9;]*[a-zA-Z])*\s*$/;
 
     const invokeOnce = () => {
@@ -442,7 +442,7 @@ export class TerminalPanelManager {
     const onPromptReady = ptyProcess.onData((data: string) => {
       if (callbackInvoked) return;
       const lastLine = data.split(/\r?\n/).filter(line => line.length > 0).pop() || '';
-      // eslint-disable-next-line no-control-regex
+      // oxlint-disable-next-line eslint/no-control-regex
       const cleanLine = lastLine.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
       if (promptPattern.test(cleanLine)) {
         setTimeout(invokeOnce, SHELL_PROMPT_SETTLE_MS);

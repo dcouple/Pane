@@ -11,7 +11,7 @@
   "license": "AGPL-3.0",
   "main": "main/dist/main/src/index.js",
   "engines": {
-    "node": ">=22.14.0",
+    "node": ">=22.18.0",
     "pnpm": ">=8.0.0"
   },
   "pnpm": {
@@ -62,7 +62,17 @@
     "release:mac:universal": "pnpm run build:frontend && pnpm run build:main && pnpm run inject-build-info && pnpm run generate-notices && node scripts/configure-build.js && electron-builder --mac --universal --publish always && node scripts/verify-mac-universal-binaries.js",
     "release:linux": "pnpm run build:frontend && pnpm run build:main && pnpm run inject-build-info && pnpm run generate-notices && electron-builder --linux --publish always",
     "preview": "pnpm run --filter frontend preview",
-    "lint": "pnpm run -r lint",
+    "lint": "pnpm run lint:ox && pnpm run lint:eslint && pnpm run lint:ox:extra && pnpm run deadcode",
+    "lint:ox": "oxlint --config .oxlintrc.json frontend main packages/runpane shared tests scripts tools playwright.config.ts playwright.shared.ts playwright.ci.config.ts playwright.ci.minimal.config.ts",
+    "lint:ox:frontend": "oxlint --config .oxlintrc.json frontend",
+    "lint:ox:main": "oxlint --config .oxlintrc.json main",
+    "lint:ox:runpane": "oxlint --config .oxlintrc.json packages/runpane",
+    "lint:eslint": "pnpm run -r lint:eslint",
+    "lint:ox:extra": "node scripts/run-oxlint-advisory.mjs",
+    "lint:ox:extra:details": "oxlint --config .oxlintrc.advisory.json frontend main packages/runpane shared tests scripts tools playwright.config.ts playwright.shared.ts playwright.ci.config.ts playwright.ci.minimal.config.ts",
+    "deadcode": "knip --reporter compact",
+    "perf:scan": "node scripts/pane-run-script.js --react-scan",
+    "a11y:scan": "playwright test tests/accessibility.spec.ts",
     "typecheck": "pnpm run -r typecheck",
     "postinstall": "electron-builder install-app-deps",
     "electron:rebuild": "pnpm exec electron-rebuild -f -w better-sqlite3-multiple-ciphers -m ./main",
@@ -92,6 +102,7 @@
     "ws": "^8.20.1"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.76.0",
     "@axe-core/playwright": "^4.10.2",
     "@electron/rebuild": "4.2.0",
     "@playwright/test": "^1.52.0",
@@ -101,6 +112,8 @@
     "electron-builder-squirrel-windows": "26.7.0",
     "icns-lib": "^1.0.1",
     "node-abi": "^4.33.0",
+    "knip": "6.29.0",
+    "oxlint": "1.76.0",
     "playwright": "^1.52.0",
     "png-to-ico": "^3.0.1",
     "png2icons": "^2.0.1",

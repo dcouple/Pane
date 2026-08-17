@@ -1,4 +1,4 @@
-/* eslint-disable no-control-regex -- Terminal output cleanup needs control-character patterns. */
+/* oxlint-disable eslint/no-control-regex -- Terminal output cleanup needs control-character patterns. */
 const ANSI_PATTERNS: RegExp[] = [
   /\x1b\[[0-9;?]*[ -/]*[@-~]/g,
   /\x1b\].*?(?:\x07|\x1b\\)/g,
@@ -7,7 +7,7 @@ const ANSI_PATTERNS: RegExp[] = [
   /[^\n]*\r(?!\n)/g,
   /\x1b/g,
 ];
-/* eslint-enable no-control-regex */
+/* oxlint-enable eslint/no-control-regex */
 
 const DEGRADED_XTERM_FRAGMENT = String.raw`\[\?(?:25|2004)[hl]`;
 const DEGRADED_XTERM_LINE_START_PATTERN = new RegExp(`(^|\\n)(?:${DEGRADED_XTERM_FRAGMENT}){2,}`, 'g');

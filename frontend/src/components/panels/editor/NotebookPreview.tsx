@@ -55,7 +55,7 @@ function joinText(text: string | string[] | undefined): string {
 
 /** Strip ANSI escape codes from traceback strings */
 function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line eslint/no-control-regex
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 

@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "off"
+  },
+  "plugins": ["eslint", "typescript", "react", "jsx-a11y"],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/node_modules/**",
+    "dist-electron/**",
+    "tools/oxlint/anti-slop/**"
+  ],
+  "rules": {
+    "anti-slop/no-reflect-get": "warn",
+    "anti-slop/no-chained-type-assertions": "warn",
+    "anti-slop/no-conditional-empty-object-spread": "warn",
+    "anti-slop/no-known-value-widening": "warn",
+    "anti-slop/no-module-mocking": "warn",
+    "anti-slop/no-runtime-typeof": "warn",
+    "anti-slop/no-shape-in-symbol-names": "warn",
+    "anti-slop/no-unknown-parameters": "warn",
+    "anti-slop/no-unknown-returns": "warn",
+    "anti-slop/no-unsafe-dictionary-type": "warn",
+    "anti-slop/require-safety-comment-for-type-assertion": "warn"
+  }
+}

@@ -20,7 +20,7 @@ import { escapeForBash } from '../../../utils/wslUtils';
 interface GlobalMcpStorage {
   [key: string]: string | undefined;
 }
-declare const globalThis: GlobalMcpStorage;
+const mcpStorage: GlobalMcpStorage = {};
 
 interface ClaudeSpawnOptions {
   panelId: string;
@@ -362,7 +362,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     PermissionManager.getInstance().clearPendingRequests(sessionId);
 
     // Clean up MCP config file if it exists
-    const mcpConfigPath = globalThis[`mcp_config_${sessionId}`];
+    const mcpConfigPath = mcpStorage[`mcp_config_${sessionId}`];
     if (mcpConfigPath && fs.existsSync(mcpConfigPath)) {
       setTimeout(() => {
         try {
@@ -370,7 +370,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
             fs.unlinkSync(mcpConfigPath);
             this.logger?.verbose(`[MCP] Cleaned up config file: ${mcpConfigPath}`);
           }
-          delete globalThis[`mcp_config_${sessionId}`];
+          delete mcpStorage[`mcp_config_${sessionId}`];
         } catch (error) {
           this.logger?.error(`Failed to delete MCP config file:`, error instanceof Error ? error : undefined);
         }
@@ -378,7 +378,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     }
 
     // Clean up base project MCP config file if it exists (not .mcp.json from project)
-    const baseConfigPath = globalThis[`mcp_base_config_${sessionId}`];
+    const baseConfigPath = mcpStorage[`mcp_base_config_${sessionId}`];
     if (baseConfigPath && fs.existsSync(baseConfigPath)) {
       setTimeout(() => {
         try {
@@ -386,7 +386,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
             fs.unlinkSync(baseConfigPath);
             this.logger?.verbose(`[MCP] Cleaned up base project config file: ${baseConfigPath}`);
           }
-          delete globalThis[`mcp_base_config_${sessionId}`];
+          delete mcpStorage[`mcp_base_config_${sessionId}`];
         } catch (error) {
           this.logger?.error(`Failed to delete base project MCP config file:`, error instanceof Error ? error : undefined);
         }
@@ -394,7 +394,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     }
 
     // Clean up temporary MCP script file if it exists
-    const mcpScriptPath = globalThis[`mcp_script_${sessionId}`];
+    const mcpScriptPath = mcpStorage[`mcp_script_${sessionId}`];
     if (mcpScriptPath && fs.existsSync(mcpScriptPath)) {
       setTimeout(() => {
         try {
@@ -402,7 +402,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
             fs.unlinkSync(mcpScriptPath);
             this.logger?.verbose(`[MCP] Cleaned up script file: ${mcpScriptPath}`);
           }
-          delete globalThis[`mcp_script_${sessionId}`];
+          delete mcpStorage[`mcp_script_${sessionId}`];
         } catch (error) {
           this.logger?.error(`Failed to delete temporary MCP script file:`, error instanceof Error ? error : undefined);
         }
@@ -1070,9 +1070,9 @@ export class ClaudeCodeManager extends AbstractCliManager {
     }
 
     // Store config path and temp script path for cleanup
-    globalThis[`mcp_config_${sessionId}`] = mcpConfigPath;
+    mcpStorage[`mcp_config_${sessionId}`] = mcpConfigPath;
     if (mcpBridgePath.includes(tempDir)) {
-      globalThis[`mcp_script_${sessionId}`] = mcpBridgePath;
+      mcpStorage[`mcp_script_${sessionId}`] = mcpBridgePath;
     }
 
     // Add a small delay to ensure file is fully written and accessible
@@ -1123,7 +1123,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
         this.logger?.info(`[MCP] Created base project MCP config with ${Object.keys(baseProjectMcp.mcpServers).length} servers: ${mcpConfigPath}`);
 
         // Store for cleanup
-        globalThis[`mcp_base_config_${sessionId}`] = mcpConfigPath;
+        mcpStorage[`mcp_base_config_${sessionId}`] = mcpConfigPath;
 
         return mcpConfigPath;
       } catch (error) {

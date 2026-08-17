@@ -48,7 +48,7 @@ interface RendererDiagnosticPayload {
   column?: number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic type parameter default for flexible API responses
+// oxlint-disable-next-line typescript/no-explicit-any -- Generic type parameter default for flexible API responses
 interface IPCResponse<T = any> {
   success: boolean;
   data?: T;
@@ -60,7 +60,7 @@ interface IPCResponse<T = any> {
 interface ElectronAPI {
   // Generic invoke method. Daemon-owned channels route through the main-process
   // daemon bridge while adapter-only channels stay on direct Electron IPC.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC bridge that returns different types based on channel
+  // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC bridge that returns different types based on channel
   invoke: (channel: string, ...args: unknown[]) => Promise<any>;
   
   // Basic app info
@@ -537,11 +537,11 @@ interface ElectronInterface {
   openExternal: (url: string) => Promise<void>;
   // Generic invoke method. Daemon-owned channels route through the main-process
   // daemon bridge while adapter-only channels stay on direct Electron IPC.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC bridge that returns different types based on channel
+  // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC bridge that returns different types based on channel
   invoke: (channel: string, ...args: unknown[]) => Promise<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC event callback that receives different argument types
+  // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC event callback that receives different argument types
   on: (channel: string, callback: (...args: any[]) => void) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Generic IPC event callback that receives different argument types
+  // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC event callback that receives different argument types
   off: (channel: string, callback: (...args: any[]) => void) => void;
 }
 

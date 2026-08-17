@@ -231,7 +231,7 @@ export function validateWSLAvailable(distro: string): string | null {
     const output = nodeExecSync('wsl.exe -l -q', { encoding: 'utf-8', timeout: 5000 });
     // wsl -l -q outputs distro names, one per line (may have UTF-16 BOM/null chars)
     const distros = output
-      .replace(/\0/g, '') // strip null chars from UTF-16
+      .replaceAll('\0', '') // strip null chars from UTF-16
       .split('\n')
       .map(d => d.trim())
       .filter(Boolean);
