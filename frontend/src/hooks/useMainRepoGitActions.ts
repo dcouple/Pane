@@ -16,6 +16,7 @@ export function useMainRepoGitActions(sessionId: string | null, session: Session
   const [gitCommands, setGitCommands] = useState<GitCommands | null>(null);
   const [hasStash, setHasStash] = useState(false);
   const [currentUpstream, setCurrentUpstream] = useState<string | null>(null);
+  const [isUpstreamLoaded, setIsUpstreamLoaded] = useState(false);
   const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
   const [showSetTrackingDialog, setShowSetTrackingDialog] = useState(false);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
@@ -33,9 +34,11 @@ export function useMainRepoGitActions(sessionId: string | null, session: Session
       setGitCommands(null);
       setHasStash(false);
       setCurrentUpstream(null);
+      setIsUpstreamLoaded(false);
       return;
     }
 
+    setIsUpstreamLoaded(false);
     let cancelled = false;
     Promise.all([
       API.sessions.getGitCommands(sessionId),
@@ -45,7 +48,10 @@ export function useMainRepoGitActions(sessionId: string | null, session: Session
       if (cancelled) return;
       if (commandsResponse.success) setGitCommands(commandsResponse.data);
       if (stashResponse.success) setHasStash(stashResponse.data);
-      if (upstreamResponse.success) setCurrentUpstream(upstreamResponse.data);
+      if (upstreamResponse.success) {
+        setCurrentUpstream(upstreamResponse.data);
+        setIsUpstreamLoaded(true);
+      }
     }).catch((loadError) => {
       if (!cancelled) console.error('Failed to load main checkout Git data:', loadError);
     });
@@ -207,13 +213,19 @@ export function useMainRepoGitActions(sessionId: string | null, session: Session
     },
     {
       id: 'push', label: 'Push', icon: Upload, onClick: handlePush,
-      disabled: actionsBusy || !gitStatus?.ahead, variant: 'default' as const,
-      description: gitStatus?.ahead
-        ? `Push ${gitStatus.ahead} commit(s) from ${gitCommands?.currentBranch || 'the current branch'}`
-        : 'No commits to push',
-      disabledReason: busyReason ?? (gitStatus?.ahead ? undefined : 'No commits to push'),
+      disabled: actionsBusy || !isUpstreamLoaded || (!!currentUpstream && !gitStatus?.ahead), variant: 'default' as const,
+      description: !isUpstreamLoaded
+        ? 'Checking remote tracking branch'
+        : !currentUpstream
+          ? `Publish ${gitCommands?.currentBranch || 'the current branch'} to origin and set its upstream`
+          : gitStatus?.ahead
+            ? `Push ${gitStatus.ahead} commit(s) from ${gitCommands?.currentBranch || 'the current branch'}`
+            : 'No commits to push',
+      disabledReason: busyReason ?? (!isUpstreamLoaded
+        ? 'Checking remote tracking branch'
+        : currentUpstream && !gitStatus?.ahead ? 'No commits to push' : undefined),
     },
-  ], [actionsBusy, busyReason, gitCommands?.currentBranch, gitStatus, handleFetch, handlePull, handlePush, handleSoftReset, handleStash, handleStashPop, hasStash]);
+  ], [actionsBusy, busyReason, currentUpstream, gitCommands?.currentBranch, gitStatus, handleFetch, handlePull, handlePush, handleSoftReset, handleStash, handleStashPop, hasStash, isUpstreamLoaded]);
 
   return {
     actions,

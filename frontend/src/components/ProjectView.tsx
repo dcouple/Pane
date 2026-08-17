@@ -12,16 +12,21 @@ import { SessionProvider } from '../contexts/SessionContext';
 import { DetailPanel } from './DetailPanel';
 import { useResizable } from '../hooks/useResizable';
 import { CommitMessageDialog } from './session/CommitMessageDialog';
+import { SetTrackingBranchDialog } from './session/SetTrackingBranchDialog';
 import { useMainRepoGitActions } from '../hooks/useMainRepoGitActions';
 
 interface ProjectViewProps {
   projectId: number;
   projectName: string;
+  configuredIDECommand?: string | null;
+  onConfigureIDE: () => void;
 }
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ 
   projectId, 
   projectName,
+  configuredIDECommand,
+  onConfigureIDE,
 }) => {
   const [mainRepoSessionId, setMainRepoSessionId] = useState<string | null>(null);
   const [mainRepoSession, setMainRepoSession] = useState<Session | null>(null);
@@ -309,8 +314,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           isMerging={mainRepoGit.actionsBusy}
           gitCommands={mainRepoGit.gitCommands}
           onOpenIDEWithCommand={mainRepoGit.handleOpenIDE}
+          onConfigureIDE={onConfigureIDE}
           onSetTracking={mainRepoGit.handleOpenSetTracking}
           trackingBranch={mainRepoGit.currentUpstream}
+          configuredIDECommand={configuredIDECommand}
           isRemoteMode={mainRepoGit.isRemoteMode}
         >
           {/* Tab bar at top */}
@@ -436,43 +443,14 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         isMerging={mainRepoGit.isRunning}
       />
 
-      {mainRepoGit.showSetTrackingDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-labelledby="main-tracking-title">
-          <div className="bg-bg-primary border border-border-primary rounded-lg shadow-lg p-4 w-80 max-h-96 overflow-hidden flex flex-col">
-            <h3 id="main-tracking-title" className="text-lg font-medium text-text-primary mb-2">Set Tracking Branch</h3>
-            {mainRepoGit.currentUpstream && (
-              <p className="text-sm text-text-secondary mb-3">
-                Currently tracking: <span className="text-text-primary font-mono">{mainRepoGit.currentUpstream}</span>
-              </p>
-            )}
-            <p className="text-sm text-text-secondary mb-3">Select a remote branch for the primary checkout to track:</p>
-            <div className="flex-1 overflow-y-auto space-y-1 mb-4">
-              {mainRepoGit.remoteBranches.length === 0 ? (
-                <p className="text-sm text-text-tertiary italic">No remote branches found</p>
-              ) : mainRepoGit.remoteBranches.map((branch) => (
-                <button
-                  key={branch}
-                  type="button"
-                  onClick={() => mainRepoGit.handleSelectUpstream(branch)}
-                  className={`w-full text-left px-3 py-2 rounded text-sm font-mono hover:bg-bg-secondary transition-colors ${
-                    branch === mainRepoGit.currentUpstream ? 'bg-bg-secondary text-accent-primary' : 'text-text-primary'
-                  }`}
-                >
-                  {branch}
-                  {branch === mainRepoGit.currentUpstream && <span className="ml-2 text-xs">(current)</span>}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => mainRepoGit.setShowSetTrackingDialog(false)}
-              className="w-full px-4 py-2 text-sm text-text-secondary hover:text-text-primary border border-border-primary rounded hover:bg-bg-secondary transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <SetTrackingBranchDialog
+        isOpen={mainRepoGit.showSetTrackingDialog}
+        currentUpstream={mainRepoGit.currentUpstream}
+        remoteBranches={mainRepoGit.remoteBranches}
+        checkoutLabel="the primary checkout"
+        onSelect={mainRepoGit.handleSelectUpstream}
+        onClose={() => mainRepoGit.setShowSetTrackingDialog(false)}
+      />
     </div>
   );
 };

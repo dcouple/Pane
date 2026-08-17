@@ -1627,10 +1627,28 @@ export const SessionView = memo(() => {
     }
 
     return (
-      <ProjectView
-        projectId={activeProjectId}
-        projectName={projectData.name || 'Project'}
-      />
+      <>
+        <ProjectView
+          projectId={activeProjectId}
+          projectName={projectData.name || 'Project'}
+          configuredIDECommand={projectData.open_ide_command}
+          onConfigureIDE={() => setShowProjectSettings(true)}
+        />
+        <ProjectSettings
+          project={projectData}
+          isOpen={showProjectSettings}
+          onClose={() => setShowProjectSettings(false)}
+          onUpdate={() => {
+            API.projects.getAll().then(response => {
+              if (response.success && response.data) {
+                const project = response.data.find((candidate: Project) => candidate.id === activeProjectId);
+                if (project) setProjectData(project);
+              }
+            });
+          }}
+          onDelete={() => setShowProjectSettings(false)}
+        />
+      </>
     );
   }
 
