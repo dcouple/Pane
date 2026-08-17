@@ -418,7 +418,7 @@ function respondOk(id: number, result: { ptyId: string; pid: number } | undefine
   }
   const frame: PtyHostResponse = result
     ? { id, ok: true, result }
-    : { id, ok: true, result: undefined };
+    : { id, ok: true };
   rpcPort.postMessage(frame);
 }
 

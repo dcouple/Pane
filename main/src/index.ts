@@ -136,7 +136,7 @@ function safeDiagnosticValue(value: PaneEventArgument, maxLength = 4_000): strin
     serialized = decodeString(value) ?? '';
   } else {
     try {
-      serialized = JSON.stringify(value);
+      serialized = JSON.stringify(value) ?? String(value);
     } catch {
       serialized = String(value);
     }

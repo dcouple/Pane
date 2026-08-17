@@ -1950,7 +1950,7 @@ export class SessionManager extends EventEmitter {
 
           if (termState?.wasInterrupted && termState?.initialCommand) {
             const state = panel.state;
-            const customState = parseTerminalResumeState(state.customState) ?? {};
+            const customState = { ...(state.customState ?? {}), ...termState };
             const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
 
             if (!isCliAgentType(agentType)) {

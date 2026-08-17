@@ -77,7 +77,7 @@ export type PtyHostSpawnError = {
  * Failure always carries a `PtyHostSpawnError`.
  */
 export type PtyHostResponse =
-  | { id: number; ok: true; result: PtyHostSuccessResult }
+  | { id: number; ok: true; result?: PtyHostSuccessResult }
   | { id: number; ok: false; error: PtyHostSpawnError };
 
 /**

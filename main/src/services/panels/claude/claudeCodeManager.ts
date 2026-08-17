@@ -685,7 +685,11 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
       // Check if we should skip --resume flag this time (after prompt compaction)
       const skipContinueRaw = dbSession?.skip_continue_next;
-      const shouldSkipContinue = skipContinueRaw === true;
+      const skipContinue = decodeBoundary(
+        skipContinueRaw ?? false,
+        boundary.union(boundary.boolean, boundary.literal(0), boundary.literal(1)),
+      );
+      const shouldSkipContinue = skipContinue === true || skipContinue === 1;
 
       // Check if interactive mode is enabled
       const config = this.configManager?.getConfig();
