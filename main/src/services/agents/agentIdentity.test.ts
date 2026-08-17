@@ -49,6 +49,20 @@ describe('resolveAgentTypeFromCommand', () => {
     expect(resolveAgentTypeFromCommand('FOO=bar exec claude')).toBe('claude');
   });
 
+  it('detects wrapped commands with quoted assignments and env option operands', () => {
+    expect(resolveAgentTypeFromCommand('FOO="bar baz" cursor-agent --force')).toBe('cursor');
+    expect(resolveAgentTypeFromCommand('env -u FOO cursor-agent --force')).toBe('cursor');
+    expect(resolveAgentTypeFromCommand('env FOO=bar command cursor-agent --force')).toBe('cursor');
+  });
+
+  it('detects agents behind nested wrappers', () => {
+    expect(
+      resolveAgentTypeFromCommand(
+        'env -i -C /tmp FOO="bar baz" command exec nohup "/opt/Cursor Agent/cursor-agent" --force',
+      ),
+    ).toBe('cursor');
+  });
+
   it('classifies cursor-agent as cursor even when other agent names appear in arguments', () => {
     expect(resolveAgentTypeFromCommand('cursor-agent --force --model claude-opus-4-8')).toBe('cursor');
   });
