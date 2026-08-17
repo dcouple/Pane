@@ -28,4 +28,24 @@ describe('visibleAgentPresets', () => {
       'codex',
     ]);
   });
+
+  it('uses the remote repository environment instead of the renderer platform', () => {
+    vi.stubGlobal('navigator', { platform: 'MacIntel' });
+    expect(visibleAgentPresets('windows').map(preset => preset.id)).toEqual([
+      'claude',
+      'codex',
+    ]);
+
+    vi.stubGlobal('navigator', { platform: 'Win32' });
+    expect(visibleAgentPresets('macos').map(preset => preset.id)).toEqual([
+      'claude',
+      'codex',
+      'cursor',
+    ]);
+    expect(visibleAgentPresets('linux').map(preset => preset.id)).toEqual([
+      'claude',
+      'codex',
+      'cursor',
+    ]);
+  });
 });
