@@ -11,12 +11,27 @@ import type {
   RemoteSetupChannel,
   RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
+import os from 'os';
+import path from 'path';
+import { repairRemoteDaemonService } from './remoteDaemonService';
 
 export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<number> {
   try {
     if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
       console.log(getUsageText());
       return 0;
+    }
+
+    if (hasFlag(args, '--remote-repair-service')) {
+      const paneDir = path.resolve(readArgValue(args, '--pane-dir') ?? path.join(os.homedir(), '.pane_remote'));
+      const result = await repairRemoteDaemonService(paneDir);
+      if (hasFlag(args, '--json')) {
+        console.log(JSON.stringify(result));
+      } else {
+        console.log(result.message);
+        console.log(`Launcher: ${result.launcherPath}`);
+      }
+      return result.ok ? 0 : 1;
     }
 
     const interactiveTailscaleSetup = hasFlag(args, '--interactive-tailscale-setup');
@@ -125,6 +140,7 @@ function getUsageText(): string {
     '  --no-install-service          Write config and print manual daemon command without installing startup service',
     '  --no-tailscale-serve          Do not attempt to install or configure Tailscale Serve',
     '  --print-only                  Validate output without writing config, installing service, or configuring tunnels; incompatible with default Tailscale setup',
+    '  --remote-repair-service       Internal: repair only the managed launcher and service definition',
     '',
   ].join('\n');
 }

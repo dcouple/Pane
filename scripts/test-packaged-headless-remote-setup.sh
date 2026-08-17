@@ -9,7 +9,16 @@ fi
 
 pane_dir="$(mktemp -d)"
 output_file="$(mktemp)"
-trap 'rm -rf "$pane_dir" "$output_file"' EXIT
+extract_dir="$(mktemp -d)"
+trap 'rm -rf "$pane_dir" "$output_file" "$extract_dir"' EXIT
+
+(
+  cd "$extract_dir"
+  "$appimage" --appimage-extract >/dev/null
+  test -x squashfs-root/pane
+  test -L squashfs-root/Pane
+  test "$(readlink squashfs-root/Pane)" = pane
+)
 
 set +e
 env -u DISPLAY \

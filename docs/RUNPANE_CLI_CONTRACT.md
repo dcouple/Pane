@@ -99,6 +99,7 @@ runpane update
 runpane version
 runpane doctor
 runpane doctor --json
+runpane daemon repair --pane-dir ~/.pane_remote --yes --json
 runpane agent-context
 runpane agent-context --command "panes create" --json
 runpane repos list --json
@@ -130,6 +131,8 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 `runpane version` prints only wrapper package metadata and does not contact, launch, or focus the Pane app or daemon.
 
 `runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state. Installed app version detection must be best-effort and must not launch, focus, or configure Pane; macOS wrappers read app bundle metadata instead of executing `Pane --version`.
+
+`runpane daemon repair` rewrites and restarts only the managed remote-daemon launcher/service. It never creates pairing credentials, changes tunnels, or downloads Pane; doctor only recommends it and never runs it automatically.
 
 `runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.
 

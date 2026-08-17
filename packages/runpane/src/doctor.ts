@@ -1,6 +1,8 @@
 import type { ParsedArgs } from './commands';
 import childProcess from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { boundary } from './boundaryDecoder';
 import {
   getPaneDaemonEndpoint,
@@ -16,6 +18,51 @@ import type { BoundarySchema } from './boundaryDecoder';
 
 const DOCTOR_DAEMON_TIMEOUT_MS = 5_000;
 const DOCTOR_RELEASE_TIMEOUT_MS = 5_000;
+const REMOTE_LAUNCHER_MARKER = 'pane-remote-daemon-launcher-v2';
+const REMOTE_DAEMON_UNIT = 'pane-remote-daemon.service';
+
+type ProcessImageStatus = 'current' | 'replaced' | 'deleted' | 'unknown';
+type RestartStatus = 'ready' | 'broken' | 'unknown';
+
+interface RemoteDaemonExecutableHealth {
+  processImage: {
+    status: ProcessImageStatus;
+    runtimePath: string | null;
+    installedPath: string | null;
+    evidence: string;
+  };
+  restart: {
+    status: RestartStatus;
+    launcherPath?: string;
+    resolvedPath?: string;
+    evidence: string;
+  };
+  diagnosticCode?: 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED' | 'PANE_REMOTE_DAEMON_UPDATE_PENDING' | 'PANE_REMOTE_DAEMON_LAUNCHER_STALE';
+  recoveryCommand?: string;
+  checkedAt: string;
+}
+
+const executableHealthSchema: BoundarySchema<RemoteDaemonExecutableHealth> = boundary.object({
+  processImage: boundary.object({
+    status: boundary.enumeration('current', 'replaced', 'deleted', 'unknown'),
+    runtimePath: boundary.nullable(boundary.string),
+    installedPath: boundary.nullable(boundary.string),
+    evidence: boundary.string,
+  }),
+  restart: boundary.object({
+    status: boundary.enumeration('ready', 'broken', 'unknown'),
+    launcherPath: boundary.optional(boundary.string),
+    resolvedPath: boundary.optional(boundary.string),
+    evidence: boundary.string,
+  }),
+  diagnosticCode: boundary.optional(boundary.enumeration(
+    'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED',
+    'PANE_REMOTE_DAEMON_UPDATE_PENDING',
+    'PANE_REMOTE_DAEMON_LAUNCHER_STALE',
+  )),
+  recoveryCommand: boundary.optional(boundary.string),
+  checkedAt: boundary.string,
+});
 
 interface DaemonDoctorResult {
   ok: true;
@@ -28,6 +75,7 @@ interface DaemonDoctorResult {
   };
   daemon: {
     channels: string[];
+    executableHealth?: RemoteDaemonExecutableHealth;
   };
   repos: {
     count: number;
@@ -56,6 +104,7 @@ const daemonDoctorResultSchema: BoundarySchema<DaemonDoctorResult> = boundary.ob
   }),
   daemon: boundary.object({
     channels: boundary.array(boundary.string),
+    executableHealth: boundary.optional(executableHealthSchema),
   }),
   repos: boundary.object({
     count: boundary.number,
@@ -110,8 +159,17 @@ interface DoctorReport {
   release: DoctorReleaseCheck;
   installedPane: DoctorInstalledPaneCheck;
   daemon: DoctorDaemonCheck;
+  remoteDaemonService: RemoteDaemonServiceDoctorCheck;
   remoteSetup: RemoteSetupDoctorCheck;
   nextCommands: string[];
+}
+
+interface RemoteDaemonServiceDoctorCheck {
+  paneDir: string;
+  managed: boolean;
+  reachable: boolean;
+  endpoint: PaneDaemonEndpoint;
+  executableHealth?: RemoteDaemonExecutableHealth;
 }
 
 interface RemoteSetupDiagnostic {
@@ -150,10 +208,12 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
   const installedPane = collectInstalledPane(parsed.panePath);
   const daemonPromise = collectDaemonHealth(parsed.paneDir, endpoint);
   const [release, daemon] = await Promise.all([releasePromise, daemonPromise]);
+  const remoteDaemonService = await collectRemoteDaemonServiceCheck(parsed, paneDir, daemon);
   const remoteSetup = collectRemoteSetupCheck(
     platform.ok ? platform.platform : undefined,
-    'format' in release ? release.format : undefined
+    'format' in release ? release.format : undefined,
   );
+  addRemoteDaemonHealthDiagnostic(remoteSetup, remoteDaemonService);
 
   return {
     ok: release.ok && daemon.reachable && remoteSetup.ready,
@@ -168,6 +228,7 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
     release,
     installedPane,
     daemon,
+    remoteDaemonService,
     remoteSetup,
     nextCommands: [
       'runpane agent-context --json',
@@ -175,6 +236,261 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
       'runpane repos list --json',
     ],
   };
+}
+
+async function collectRemoteDaemonServiceCheck(
+  parsed: ParsedArgs,
+  desktopPaneDir: string,
+  desktopDaemon: DoctorDaemonCheck,
+): Promise<RemoteDaemonServiceDoctorCheck> {
+  const defaultRemotePaneDir = path.join(os.homedir(), '.pane_remote');
+  const requestedPaneDir = parsed.paneDir ? resolvePaneDirectory(parsed.paneDir) : undefined;
+  const fallbackManaged = hasManagedRemoteLauncher(defaultRemotePaneDir);
+  const paneDir = requestedPaneDir ?? (fallbackManaged ? defaultRemotePaneDir : desktopPaneDir);
+  const endpoint = getPaneDaemonEndpoint(paneDir);
+  const managed = hasManagedRemoteLauncher(paneDir);
+  const daemon = paneDir === desktopPaneDir
+    ? desktopDaemon
+    : await collectDaemonHealth(paneDir, endpoint);
+  const selfReportedHealth = daemon.result?.daemon.executableHealth;
+  return {
+    paneDir,
+    managed,
+    reachable: daemon.reachable,
+    endpoint,
+    ...(selfReportedHealth
+      ? { executableHealth: selfReportedHealth }
+      : managed ? { executableHealth: inspectLegacyRemoteDaemonHealth(paneDir, daemon.reachable) } : {}),
+  };
+}
+
+function hasManagedRemoteLauncher(paneDir: string): boolean {
+  return fs.existsSync(path.join(paneDir, 'remote-daemon', process.platform === 'win32' ? 'start.cmd' : 'start.sh'));
+}
+
+interface LegacyHealthOverrides {
+  platform?: NodeJS.Platform;
+  launcherPath?: string;
+  installedCandidates?: string[];
+  runtimePath?: string | null;
+  checkedAt?: string;
+}
+
+export function inspectLegacyRemoteDaemonHealth(
+  paneDir: string,
+  reachable: boolean,
+  overrides: LegacyHealthOverrides = {},
+): RemoteDaemonExecutableHealth {
+  const platform = overrides.platform ?? process.platform;
+  const launcherPath = overrides.launcherPath
+    ?? path.join(paneDir, 'remote-daemon', platform === 'win32' ? 'start.cmd' : 'start.sh');
+  const candidates = overrides.installedCandidates ?? getRemoteExecutableCandidates(platform);
+  const installedPath = candidates.find(isExecutableFile) ?? null;
+  const recoveryCommand = `runpane daemon repair --pane-dir ${formatPaneDir(paneDir)}`;
+  const checkedAt = overrides.checkedAt ?? new Date().toISOString();
+  let launcherContents: string;
+  try {
+    launcherContents = fs.readFileSync(launcherPath, 'utf8');
+  } catch (error) {
+    return unknownExecutableHealth(launcherPath, installedPath, checkedAt, `The managed launcher could not be read: ${errorMessage(error)}`);
+  }
+
+  const savedPath = extractLegacyExecutablePath(launcherContents);
+  const sourceLauncher = launcherContents.includes(`${REMOTE_LAUNCHER_MARKER} source`);
+  const resolvedPath = launcherContents.includes(REMOTE_LAUNCHER_MARKER) && !sourceLauncher
+    ? installedPath
+    : savedPath && isExecutableFile(savedPath) ? savedPath : null;
+  const restart: RemoteDaemonExecutableHealth['restart'] = sourceLauncher
+    ? { status: 'unknown', launcherPath, evidence: 'The source-development launcher is not tied to an installed Pane executable.' }
+    : resolvedPath
+    ? { status: 'ready', launcherPath, resolvedPath, evidence: `The managed launcher resolves ${resolvedPath}.` }
+    : savedPath
+      ? { status: 'broken', launcherPath, evidence: `The saved launcher target is missing: ${savedPath}.` }
+      : launcherContents.includes(REMOTE_LAUNCHER_MARKER)
+        ? { status: 'broken', launcherPath, evidence: 'The runtime resolver cannot find an installed Pane executable.' }
+        : { status: 'unknown', launcherPath, evidence: 'The launcher format is not recognized.' };
+  const runtimeLink = overrides.runtimePath === undefined
+    ? findSystemdDaemonRuntimePath(platform)
+    : overrides.runtimePath;
+  const processImage = classifyLegacyProcessImage(runtimeLink, installedPath, reachable);
+
+  if (reachable && processImage.status === 'deleted' && restart.status === 'broken' && savedPath !== null) {
+    return {
+      processImage,
+      restart,
+      diagnosticCode: 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED',
+      recoveryCommand,
+      checkedAt,
+    };
+  }
+  if (processImage.status === 'deleted' || processImage.status === 'replaced') {
+    return {
+      processImage,
+      restart,
+      diagnosticCode: 'PANE_REMOTE_DAEMON_UPDATE_PENDING',
+      ...(restart.status === 'broken' ? { recoveryCommand } : {}),
+      checkedAt,
+    };
+  }
+  if (restart.status === 'broken') {
+    return {
+      processImage,
+      restart,
+      diagnosticCode: 'PANE_REMOTE_DAEMON_LAUNCHER_STALE',
+      recoveryCommand,
+      checkedAt,
+    };
+  }
+  return { processImage, restart, checkedAt };
+}
+
+function classifyLegacyProcessImage(
+  runtimeLink: string | null,
+  installedPath: string | null,
+  reachable: boolean,
+): RemoteDaemonExecutableHealth['processImage'] {
+  if (!reachable || !runtimeLink) {
+    return {
+      status: 'unknown',
+      runtimePath: runtimeLink,
+      installedPath,
+      evidence: reachable ? 'The service process executable could not be inspected.' : 'The managed daemon is not reachable.',
+    };
+  }
+  if (runtimeLink.endsWith(' (deleted)')) {
+    return {
+      status: 'deleted',
+      runtimePath: runtimeLink.slice(0, -' (deleted)'.length),
+      installedPath,
+      evidence: 'The running service executable points to a deleted inode in /proc.',
+    };
+  }
+  const current = installedPath !== null && sameExecutable(runtimeLink, installedPath);
+  return {
+    status: installedPath ? current ? 'current' : 'replaced' : 'unknown',
+    runtimePath: runtimeLink,
+    installedPath,
+    evidence: installedPath
+      ? current ? 'The running and installed executables have the same device and inode.' : 'The installed executable differs from the running service process.'
+      : 'No installed Pane executable was found for comparison.',
+  };
+}
+
+function findSystemdDaemonRuntimePath(platform: NodeJS.Platform): string | null {
+  if (platform !== 'linux' || !commandExists('systemctl')) return null;
+  const group = childProcess.spawnSync(
+    'systemctl',
+    ['--user', 'show', REMOTE_DAEMON_UNIT, '--property=ControlGroup', '--value'],
+    { encoding: 'utf8', timeout: 2_000 },
+  ).stdout?.trim();
+  if (!group) return null;
+  let pids: string[];
+  try {
+    pids = fs.readFileSync(path.join('/sys/fs/cgroup', group, 'cgroup.procs'), 'utf8').trim().split(/\s+/).filter(Boolean);
+  } catch {
+    return null;
+  }
+  for (const pid of pids) {
+    try {
+      const commandLine = fs.readFileSync(path.join('/proc', pid, 'cmdline'));
+      if (!commandLine.toString('utf8').includes('--daemon-headless')) continue;
+      return fs.readlinkSync(path.join('/proc', pid, 'exe'));
+    } catch {
+      // Processes can leave the cgroup while doctor is walking it.
+    }
+  }
+  return null;
+}
+
+function addRemoteDaemonHealthDiagnostic(
+  setup: RemoteSetupDoctorCheck,
+  service: RemoteDaemonServiceDoctorCheck,
+): void {
+  const diagnostic = createRemoteDaemonHealthDiagnostic(service);
+  if (!diagnostic) return;
+  setup.diagnostics.push(diagnostic);
+  setup.ready = setup.diagnostics.every((item) => item.severity !== 'error');
+}
+
+export function createRemoteDaemonHealthDiagnostic(
+  service: RemoteDaemonServiceDoctorCheck,
+): RemoteSetupDiagnostic | undefined {
+  const health = service.executableHealth;
+  if (!health?.diagnosticCode) return undefined;
+  const fatal = service.reachable
+    && health.diagnosticCode === 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED'
+    && health.processImage.status === 'deleted'
+    && health.restart.status === 'broken';
+  const runtimePath = health.processImage.runtimePath ?? 'the previous Pane executable';
+  const installedPath = health.processImage.installedPath ?? 'the current Pane executable';
+  const message = fatal
+    ? `Remote daemon is reachable but unsafe to restart. It is running ${runtimePath} from a deleted inode; Pane is now installed at ${installedPath}, and the saved launcher still references the old path. The daemon will not return after reboot or service restart. Run ${health.recoveryCommand} before restarting, then rerun doctor.`
+    : health.diagnosticCode === 'PANE_REMOTE_DAEMON_UPDATE_PENDING'
+      ? 'The remote daemon is still running an older or deleted process image, but its launcher can resolve the installed Pane executable on restart.'
+      : health.restart.evidence;
+  return {
+    code: health.diagnosticCode,
+    severity: fatal ? 'error' : 'warning',
+    message,
+    ...(health.recoveryCommand ? { recoveryCommand: health.recoveryCommand } : {}),
+  };
+}
+
+function unknownExecutableHealth(
+  launcherPath: string,
+  installedPath: string | null,
+  checkedAt: string,
+  evidence: string,
+): RemoteDaemonExecutableHealth {
+  return {
+    processImage: { status: 'unknown', runtimePath: null, installedPath, evidence },
+    restart: { status: 'unknown', launcherPath, evidence },
+    checkedAt,
+  };
+}
+
+function getRemoteExecutableCandidates(platform: NodeJS.Platform): string[] {
+  if (platform === 'darwin') {
+    return ['/Applications/Pane.app/Contents/MacOS/Pane', path.join(os.homedir(), 'Applications', 'Pane.app', 'Contents', 'MacOS', 'Pane')];
+  }
+  if (platform === 'win32') {
+    return [
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Pane', 'Pane.exe') : '',
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Pane', 'Pane.exe') : '',
+      process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Pane', 'Pane.exe') : '',
+    ].filter(Boolean);
+  }
+  return [path.join(os.homedir(), '.local', 'bin', 'pane'), '/usr/bin/pane', '/opt/Pane/pane', '/opt/Pane/Pane'];
+}
+
+function extractLegacyExecutablePath(contents: string): string | null {
+  return contents.match(/(?:'|")?(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|")?/)?.[1] ?? null;
+}
+
+function isExecutableFile(filePath: string): boolean {
+  try {
+    fs.accessSync(filePath, fs.constants.X_OK);
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function sameExecutable(left: string, right: string): boolean {
+  try {
+    const leftStat = fs.statSync(left);
+    const rightStat = fs.statSync(right);
+    return leftStat.dev === rightStat.dev && leftStat.ino === rightStat.ino;
+  } catch {
+    return false;
+  }
+}
+
+function formatPaneDir(paneDir: string): string {
+  const relative = path.relative(os.homedir(), paneDir);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+    ? `~/${relative}`
+    : `'${paneDir.replace(/'/g, `'\\''`)}'`;
 }
 
 interface RemoteSetupProbes {

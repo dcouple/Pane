@@ -124,6 +124,17 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "daemon repair",
+      "summary": "Repair and restart the managed remote-daemon launcher without changing pairing or tunnel configuration.",
+      "usage": [
+        "runpane daemon repair [--pane-dir <path>] [--pane-path <path>] [--yes] [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "daemonRepairResult"
+      ]
+    },
+    {
       "name": "agents doctor",
       "summary": "Diagnose whether a built-in agent command is available in a Pane repository environment.",
       "usage": [
@@ -584,6 +595,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
@@ -701,6 +713,18 @@ export const RUNPANE_CONTRACT = {
         "Agent discovery:",
         "  runpane doctor --json",
         "  runpane agent-context --json"
+      ],
+      "daemon repair": [
+        "Usage:",
+        "  runpane daemon repair [--pane-dir <path>] [--pane-path <path>] [--yes] [--json]",
+        "",
+        "Repairs and restarts only the managed remote-daemon launcher and service definition.",
+        "",
+        "Options:",
+        "  --pane-dir <path>              Remote daemon data directory (default: ~/.pane_remote)",
+        "  --pane-path <path>             Existing Pane executable used to perform repair",
+        "  --yes                         Skip the restart confirmation",
+        "  --json                        Print one machine-readable repair result"
       ],
       "repos list": [
         "Usage:",
@@ -1008,6 +1032,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
         "  runpane repos list [--json]",
@@ -1114,6 +1139,18 @@ export const RUNPANE_CONTRACT = {
         "Agent discovery:",
         "  runpane doctor --json",
         "  runpane agent-context --json"
+      ],
+      "daemon repair": [
+        "Usage:",
+        "  runpane daemon repair [--pane-dir <path>] [--pane-path <path>] [--yes] [--json]",
+        "",
+        "Repairs and restarts only the managed remote-daemon launcher and service definition.",
+        "",
+        "Options:",
+        "  --pane-dir <path>",
+        "  --pane-path <path>",
+        "  --yes",
+        "  --json"
       ],
       "repos list": [
         "Usage:",
@@ -1476,6 +1513,7 @@ export const RUNPANE_CONTRACT = {
       "runpane version",
       "runpane doctor",
       "runpane doctor --json",
+      "runpane daemon repair --pane-dir ~/.pane_remote --yes --json",
       "runpane agent-context",
       "runpane agent-context --command \"panes create\" --json",
       "runpane repos list --json",
@@ -1500,6 +1538,7 @@ export const RUNPANE_CONTRACT = {
       "`runpane update` uses the same release resolution and installer path as `install client`.",
       "`runpane version` prints only wrapper package metadata and does not contact, launch, or focus the Pane app or daemon.",
       "`runpane doctor` checks platform support, release metadata reachability, download URL selection, installed Pane detection, daemon reachability, and remote-daemon hints. Add `--json` for a machine-readable report that agents should run before mutating Pane state. Installed app version detection must be best-effort and must not launch, focus, or configure Pane; macOS wrappers read app bundle metadata instead of executing `Pane --version`.",
+      "`runpane daemon repair` rewrites and restarts only the managed remote-daemon launcher/service. It never creates pairing credentials, changes tunnels, or downloads Pane; doctor only recommends it and never runs it automatically.",
       "`runpane agent-context` prints a brief, token-efficient command schema for coding agents without connecting to the Pane daemon.",
       "`runpane agent-context --command \"panes create\"` prints the detailed definition for one command. Add `--json` for machine-readable output.",
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
@@ -1601,6 +1640,14 @@ export const RUNPANE_CONTRACT = {
         "--json",
         "--pane-dir",
         "/tmp/pane"
+      ],
+      [
+        "daemon",
+        "repair",
+        "--pane-dir",
+        "/tmp/pane-remote",
+        "--yes",
+        "--json"
       ],
       [
         "agent-context"
@@ -1909,6 +1956,7 @@ export const RUNPANE_CONTRACT = {
         "release",
         "installedPane",
         "daemon",
+        "remoteDaemonService",
         "remoteSetup",
         "nextCommands"
       ],
@@ -2054,6 +2102,131 @@ export const RUNPANE_CONTRACT = {
           },
           "additionalProperties": false
         },
+        "remoteDaemonService": {
+          "type": "object",
+          "required": [
+            "paneDir",
+            "managed",
+            "reachable",
+            "endpoint"
+          ],
+          "properties": {
+            "paneDir": {
+              "type": "string"
+            },
+            "managed": {
+              "type": "boolean"
+            },
+            "reachable": {
+              "type": "boolean"
+            },
+            "endpoint": {
+              "type": "object",
+              "required": [
+                "transport",
+                "path"
+              ],
+              "properties": {
+                "transport": {
+                  "enum": [
+                    "pipe",
+                    "unix"
+                  ]
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "executableHealth": {
+              "type": "object",
+              "required": [
+                "processImage",
+                "restart",
+                "checkedAt"
+              ],
+              "properties": {
+                "processImage": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "runtimePath",
+                    "installedPath",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "current",
+                        "replaced",
+                        "deleted",
+                        "unknown"
+                      ]
+                    },
+                    "runtimePath": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "installedPath": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "restart": {
+                  "type": "object",
+                  "required": [
+                    "status",
+                    "evidence"
+                  ],
+                  "properties": {
+                    "status": {
+                      "enum": [
+                        "ready",
+                        "broken",
+                        "unknown"
+                      ]
+                    },
+                    "launcherPath": {
+                      "type": "string"
+                    },
+                    "resolvedPath": {
+                      "type": "string"
+                    },
+                    "evidence": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "diagnosticCode": {
+                  "enum": [
+                    "PANE_REMOTE_DAEMON_EXECUTABLE_DELETED",
+                    "PANE_REMOTE_DAEMON_UPDATE_PENDING",
+                    "PANE_REMOTE_DAEMON_LAUNCHER_STALE"
+                  ]
+                },
+                "recoveryCommand": {
+                  "type": "string"
+                },
+                "checkedAt": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
         "remoteSetup": {
           "type": "object",
           "required": [
@@ -2087,7 +2260,10 @@ export const RUNPANE_CONTRACT = {
                       "PANE_APPIMAGE_FUSE_MISSING",
                       "PANE_ELECTRON_SANDBOX_ROOT",
                       "PANE_ELECTRON_SANDBOX_UNAVAILABLE",
-                      "PANE_USER_SERVICE_UNAVAILABLE"
+                      "PANE_USER_SERVICE_UNAVAILABLE",
+                      "PANE_REMOTE_DAEMON_EXECUTABLE_DELETED",
+                      "PANE_REMOTE_DAEMON_UPDATE_PENDING",
+                      "PANE_REMOTE_DAEMON_LAUNCHER_STALE"
                     ]
                   },
                   "severity": {
@@ -2114,6 +2290,54 @@ export const RUNPANE_CONTRACT = {
           "items": {
             "type": "string"
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "daemonRepairResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "changed",
+        "paneDir",
+        "strategy",
+        "launcherPath",
+        "before",
+        "after",
+        "message"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "paneDir": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "systemd-user",
+            "launch-agent",
+            "scheduled-task",
+            "manual",
+            "skipped"
+          ]
+        },
+        "launcherPath": {
+          "type": "string"
+        },
+        "before": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "message": {
+          "type": "string"
         }
       },
       "additionalProperties": false
@@ -4335,6 +4559,46 @@ export const RUNPANE_CONTRACT = {
           "Agents should run `runpane doctor --json` before mutating Pane state.",
           "The JSON report includes daemon reachability as data; an unreachable daemon is not a reason to skip the rest of the report.",
           "Use `runpane agent-context --json` after doctor when full CLI context is needed."
+        ]
+      },
+      "daemon repair": {
+        "name": "daemon repair",
+        "summary": "Repair and restart the managed remote-daemon launcher without changing pairing or tunnel configuration.",
+        "details": "Use this only after doctor reports a stale or broken remote-daemon launcher. The command invokes the installed Pane executable in service-repair mode and does not rerun remote setup.",
+        "requiresPaneDaemon": false,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "required": false,
+            "description": "Remote daemon data directory; defaults to ~/.pane_remote."
+          },
+          {
+            "name": "--pane-path",
+            "value": "<path>",
+            "required": false,
+            "description": "Existing Pane executable used to perform repair."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip the service restart confirmation."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print one machine-readable repair result."
+          }
+        ],
+        "examples": [
+          "runpane daemon repair --pane-dir ~/.pane_remote --yes --json"
+        ],
+        "jsonSchemas": [
+          "daemonRepairResult"
+        ],
+        "notes": [
+          "Repair does not create pairing credentials, change tunnel configuration, or download Pane."
         ]
       },
       "agent-context": {

@@ -1,0 +1,538 @@
+import { spawnSync } from 'child_process';
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from 'fs';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import type {
+  RemoteDaemonServiceInspection,
+  RemoteDaemonServiceRepairResult,
+  RemoteHostSetupServiceResult,
+} from '../../../shared/types/remoteDaemon';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+
+const SERVICE_NAME = 'com.dcouple.pane.remote-daemon';
+const SYSTEMD_UNIT_NAME = 'pane-remote-daemon.service';
+const WINDOWS_TASK_NAME = 'PaneRemoteDaemon';
+const LAUNCHER_MARKER = 'pane-remote-daemon-launcher-v2';
+
+interface CommandResult {
+  ok: boolean;
+  stdout: string;
+  stderr: string;
+}
+
+export interface RemoteDaemonServiceDependencies {
+  platform?: NodeJS.Platform;
+  homeDir?: string;
+  executablePath?: string;
+  sourceRoot?: string | null;
+  executableCandidates?: string[];
+  commandExists?: (command: string) => boolean;
+  runCommand?: (command: string, args: string[]) => CommandResult;
+}
+
+export function assertRemoteDaemonServiceCanBeInstalled(
+  dependencies: RemoteDaemonServiceDependencies = {},
+): void {
+  assertPackagedExecutableDiscoverable(createContext(dependencies));
+}
+
+interface ServiceContext {
+  platform: NodeJS.Platform;
+  homeDir: string;
+  executablePath: string;
+  sourceRoot: string | null;
+  executableCandidates: string[];
+  commandExists: (command: string) => boolean;
+  runCommand: (command: string, args: string[]) => CommandResult;
+}
+
+export async function installRemoteDaemonService(
+  paneDir: string,
+  dependencies: RemoteDaemonServiceDependencies = {},
+): Promise<RemoteHostSetupServiceResult> {
+  const context = createContext(dependencies);
+  assertPackagedExecutableDiscoverable(context);
+  return installForContext(path.resolve(paneDir), context, false);
+}
+
+export function buildManualRemoteDaemonCommand(
+  paneDir: string,
+  dependencies: RemoteDaemonServiceDependencies = {},
+): string {
+  const resolvedPaneDir = path.resolve(paneDir);
+  const context = createContext(dependencies);
+  if (context.sourceRoot) {
+    return buildSourceCommand(context.sourceRoot, resolvedPaneDir, context.platform);
+  }
+  if (context.platform === 'win32') {
+    return `${quoteForWindows(context.executablePath)} --daemon-headless --pane-dir ${quoteForWindows(resolvedPaneDir)}`;
+  }
+  const flags = context.platform === 'linux' ? ' --ozone-platform=headless --disable-gpu' : '';
+  const environment = context.platform === 'linux' ? 'ELECTRON_OZONE_PLATFORM_HINT=headless ' : '';
+  return `${environment}PANE_DIR=${quoteForPosix(resolvedPaneDir)} ${quoteForPosix(context.executablePath)}${flags} --daemon-headless --pane-dir ${quoteForPosix(resolvedPaneDir)}`;
+}
+
+export async function repairRemoteDaemonService(
+  paneDir: string,
+  dependencies: RemoteDaemonServiceDependencies = {},
+): Promise<RemoteDaemonServiceRepairResult> {
+  const resolvedPaneDir = path.resolve(paneDir);
+  const context = createContext(dependencies);
+  assertPackagedExecutableDiscoverable(context);
+  const before = await inspectRemoteDaemonService(resolvedPaneDir, dependencies);
+  const service = await installForContext(resolvedPaneDir, context, true);
+  const after = await inspectRemoteDaemonService(resolvedPaneDir, dependencies);
+  return {
+    ok: service.installed && service.started && after.launcherCurrent,
+    changed: !before.launcherCurrent || before.launcherContents !== after.launcherContents,
+    paneDir: resolvedPaneDir,
+    strategy: service.strategy,
+    launcherPath: after.launcherPath,
+    before: omitLauncherContents(before),
+    after: omitLauncherContents(after),
+    message: service.message,
+  };
+}
+
+async function inspectRemoteDaemonService(
+  paneDir: string,
+  dependencies: RemoteDaemonServiceDependencies = {},
+): Promise<RemoteDaemonServiceInspection & { launcherContents?: string }> {
+  const context = createContext(dependencies);
+  const launcherPath = getLauncherPath(path.resolve(paneDir), context.platform);
+  let launcherContents: string | undefined;
+  try {
+    launcherContents = await fs.readFile(launcherPath, 'utf8');
+  } catch (error) {
+    if (!isNodeErrorWithCode(error, 'ENOENT')) {
+      throw error;
+    }
+  }
+
+  const resolvedPath = resolveFirstExecutable(context.executableCandidates);
+  const savedExecutablePath = launcherContents ? extractLegacyExecutablePath(launcherContents) : null;
+  const savedExecutableExists = savedExecutablePath ? isExecutableFile(savedExecutablePath) : null;
+  const launcherCurrent = launcherContents?.includes(LAUNCHER_MARKER) === true;
+  return {
+    launcherPath,
+    launcherExists: launcherContents !== undefined,
+    launcherCurrent,
+    savedExecutablePath,
+    savedExecutableExists,
+    resolvedExecutablePath: resolvedPath,
+    restartStatus: launcherCurrent
+      ? resolvedPath ? 'ready' : 'broken'
+      : savedExecutableExists === true ? 'ready' : launcherContents ? 'broken' : 'unknown',
+    ...(launcherContents === undefined ? {} : { launcherContents }),
+  };
+}
+
+export function getRemoteDaemonExecutableCandidates(
+  platform: NodeJS.Platform = process.platform,
+  homeDir = os.homedir(),
+): string[] {
+  if (platform === 'darwin') {
+    return [
+      '/Applications/Pane.app/Contents/MacOS/Pane',
+      path.join(homeDir, 'Applications', 'Pane.app', 'Contents', 'MacOS', 'Pane'),
+    ];
+  }
+  if (platform === 'win32') {
+    return [
+      ...(process.env.LOCALAPPDATA ? [path.join(process.env.LOCALAPPDATA, 'Programs', 'Pane', 'Pane.exe')] : []),
+      ...(process.env.LOCALAPPDATA ? [path.join(process.env.LOCALAPPDATA, 'Pane', 'Pane.exe')] : []),
+      ...(process.env.ProgramFiles ? [path.join(process.env.ProgramFiles, 'Pane', 'Pane.exe')] : []),
+    ];
+  }
+  return [
+    path.join(homeDir, '.local', 'bin', 'pane'),
+    '/usr/bin/pane',
+    '/opt/Pane/pane',
+    '/opt/Pane/Pane',
+  ];
+}
+
+export function renderPosixRemoteDaemonLauncher(options: {
+  paneDir: string;
+  platform: 'linux' | 'darwin';
+  executableCandidates: string[];
+  sourceCommand?: string;
+}): string {
+  if (options.sourceCommand) {
+    return [
+      '#!/usr/bin/env sh',
+      `# ${LAUNCHER_MARKER} source`,
+      'set -eu',
+      `export PANE_DIR=${quoteForPosix(options.paneDir)}`,
+      `exec /bin/sh -lc ${quoteForPosix(options.sourceCommand)}`,
+      '',
+    ].join('\n');
+  }
+
+  const candidateAssignments = options.executableCandidates.map((candidate) => quoteForPosix(candidate)).join(' ');
+  const linuxFlags = options.platform === 'linux' ? ' --ozone-platform=headless --disable-gpu' : '';
+  const environment = options.platform === 'linux'
+    ? ['export ELECTRON_OZONE_PLATFORM_HINT=headless']
+    : [];
+  const command = [
+    'pane_executable=',
+    `for candidate in ${candidateAssignments}; do`,
+    '  if [ -x "$candidate" ]; then pane_executable=$candidate; break; fi',
+    'done',
+    'if [ -z "$pane_executable" ]; then',
+    '  for name in pane Pane; do',
+    '    candidate=$(command -v "$name" 2>/dev/null || true)',
+    '    if [ -n "$candidate" ] && [ -x "$candidate" ]; then pane_executable=$candidate; break; fi',
+    '  done',
+    'fi',
+    '[ -n "$pane_executable" ] || { echo "Pane remote daemon: no installed Pane executable could be resolved" >&2; exit 127; }',
+    `exec "$pane_executable"${linuxFlags} --daemon-headless --pane-dir "$PANE_DIR"`,
+  ].join('\n');
+  return [
+    '#!/usr/bin/env sh',
+    `# ${LAUNCHER_MARKER}`,
+    'set -eu',
+    `export PANE_DIR=${quoteForPosix(options.paneDir)}`,
+    ...environment,
+    `exec /bin/sh -lc ${quoteForPosix(command)}`,
+    '',
+  ].join('\n');
+}
+
+export function renderWindowsRemoteDaemonLauncher(options: {
+  paneDir: string;
+  executableCandidates: string[];
+  sourceCommand?: string;
+}): string {
+  if (options.sourceCommand) {
+    return [
+      '@echo off',
+      `rem ${LAUNCHER_MARKER} source`,
+      `set "PANE_DIR=${escapeForCmdEnvironment(options.paneDir)}"`,
+      options.sourceCommand,
+      '',
+    ].join('\r\n');
+  }
+  const lines = [
+    '@echo off',
+    `rem ${LAUNCHER_MARKER}`,
+    'setlocal',
+    `set "PANE_DIR=${escapeForCmdEnvironment(options.paneDir)}"`,
+    'set "PANE_EXECUTABLE="',
+  ];
+  for (const candidate of options.executableCandidates) {
+    lines.push(`if not defined PANE_EXECUTABLE if exist ${quoteForWindows(candidate)} set "PANE_EXECUTABLE=${escapeForCmdEnvironment(candidate)}"`);
+  }
+  lines.push(
+    'if not defined PANE_EXECUTABLE for %%I in (pane.exe Pane.exe) do if not defined PANE_EXECUTABLE for /f "delims=" %%P in (\'where %%I 2^>nul\') do set "PANE_EXECUTABLE=%%P"',
+    'if defined PANE_EXECUTABLE goto pane_executable_found',
+    'echo Pane remote daemon: no installed Pane executable could be resolved 1>&2',
+    'exit /b 127',
+    ':pane_executable_found',
+    '"%PANE_EXECUTABLE%" --daemon-headless --pane-dir "%PANE_DIR%"',
+    'exit /b %ERRORLEVEL%',
+    '',
+  );
+  return lines.join('\r\n');
+}
+
+function createContext(dependencies: RemoteDaemonServiceDependencies): ServiceContext {
+  const platform = dependencies.platform ?? process.platform;
+  const homeDir = dependencies.homeDir ?? os.homedir();
+  return {
+    platform,
+    homeDir,
+    executablePath: dependencies.executablePath ?? process.execPath,
+    sourceRoot: dependencies.sourceRoot === undefined ? findSourceRoot(process.cwd()) : dependencies.sourceRoot,
+    executableCandidates: dependencies.executableCandidates ?? getRemoteDaemonExecutableCandidates(platform, homeDir),
+    commandExists: dependencies.commandExists ?? commandExists,
+    runCommand: dependencies.runCommand ?? runCommand,
+  };
+}
+
+function assertPackagedExecutableDiscoverable(context: ServiceContext): void {
+  if (context.sourceRoot) {
+    return;
+  }
+  const current = safeRealpath(context.executablePath);
+  const discoverable = context.executableCandidates.some((candidate) => safeRealpath(candidate) === current)
+    || resolveCommandPath(context.platform === 'win32' ? 'pane.exe' : 'pane', context) === current
+    || resolveCommandPath(context.platform === 'win32' ? 'Pane.exe' : 'Pane', context) === current;
+  if (!discoverable) {
+    throw new Error(
+      `Pane remote daemon setup cannot persist the current executable safely: ${context.executablePath}. `
+      + 'Install or symlink Pane at a supported stable location (for Linux, ~/.local/bin/pane or /opt/Pane/pane), then rerun setup.',
+    );
+  }
+}
+
+async function installForContext(
+  paneDir: string,
+  context: ServiceContext,
+  restart: boolean,
+): Promise<RemoteHostSetupServiceResult> {
+  if (context.platform === 'linux' && context.commandExists('systemctl')) {
+    return installSystemdUserService(paneDir, context, restart);
+  }
+  if (context.platform === 'darwin' && context.commandExists('launchctl')) {
+    return installLaunchAgent(paneDir, context);
+  }
+  if (context.platform === 'win32' && context.commandExists('schtasks')) {
+    return installWindowsScheduledTask(paneDir, context);
+  }
+  return {
+    strategy: 'manual',
+    installed: false,
+    started: false,
+    message: 'No supported user-level service manager detected; use the manual daemon command.',
+  };
+}
+
+async function installSystemdUserService(
+  paneDir: string,
+  context: ServiceContext,
+  restart: boolean,
+): Promise<RemoteHostSetupServiceResult> {
+  const launcherPath = await writeLauncher(paneDir, context);
+  const serviceDir = path.join(context.homeDir, '.config', 'systemd', 'user');
+  const servicePath = path.join(serviceDir, SYSTEMD_UNIT_NAME);
+  const serviceFile = [
+    '[Unit]',
+    'Description=Pane Remote Daemon',
+    'After=default.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    `Environment=${quoteForSystemd(`PANE_DIR=${paneDir}`)}`,
+    `ExecStart=${quoteForSystemd(launcherPath)}`,
+    'Restart=on-failure',
+    'RestartSec=3',
+    '',
+    '[Install]',
+    'WantedBy=default.target',
+    '',
+  ].join('\n');
+  await writeFileAtomically(servicePath, serviceFile, 0o644);
+  const reload = context.runCommand('systemctl', ['--user', 'daemon-reload']);
+  const enable = reload.ok
+    ? context.runCommand('systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT_NAME])
+    : reload;
+  const restartResult = enable.ok && restart
+    ? context.runCommand('systemctl', ['--user', 'restart', SYSTEMD_UNIT_NAME])
+    : enable;
+  const started = enable.ok && restartResult.ok;
+  return {
+    strategy: 'systemd-user',
+    installed: enable.ok,
+    started,
+    message: started
+      ? restart ? 'Repaired and restarted the user systemd service.' : 'Installed and started a user systemd service.'
+      : `Wrote ${servicePath}, but systemctl failed: ${firstNonEmpty(restartResult.stderr, restartResult.stdout, 'unknown error')}`,
+  };
+}
+
+async function installLaunchAgent(paneDir: string, context: ServiceContext): Promise<RemoteHostSetupServiceResult> {
+  const launcherPath = await writeLauncher(paneDir, context);
+  const agentDir = path.join(context.homeDir, 'Library', 'LaunchAgents');
+  const plistPath = path.join(agentDir, `${SERVICE_NAME}.plist`);
+  const plist = [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    '<plist version="1.0">',
+    '<dict>',
+    '  <key>Label</key>',
+    `  <string>${SERVICE_NAME}</string>`,
+    '  <key>ProgramArguments</key>',
+    '  <array>',
+    `    <string>${escapeXml(launcherPath)}</string>`,
+    '  </array>',
+    '  <key>EnvironmentVariables</key>',
+    '  <dict>',
+    '    <key>PANE_DIR</key>',
+    `    <string>${escapeXml(paneDir)}</string>`,
+    '  </dict>',
+    '  <key>RunAtLoad</key>',
+    '  <true/>',
+    '  <key>KeepAlive</key>',
+    '  <true/>',
+    '</dict>',
+    '</plist>',
+    '',
+  ].join('\n');
+  await writeFileAtomically(plistPath, plist, 0o644);
+  context.runCommand('launchctl', ['unload', '-w', plistPath]);
+  const load = context.runCommand('launchctl', ['load', '-w', plistPath]);
+  return {
+    strategy: 'launch-agent',
+    installed: load.ok,
+    started: load.ok,
+    message: load.ok ? 'Installed and started a LaunchAgent.' : `Wrote ${plistPath}, but launchctl failed: ${firstNonEmpty(load.stderr, load.stdout, 'unknown error')}`,
+  };
+}
+
+async function installWindowsScheduledTask(paneDir: string, context: ServiceContext): Promise<RemoteHostSetupServiceResult> {
+  const launcherPath = await writeLauncher(paneDir, context);
+  const create = context.runCommand('schtasks', [
+    '/Create', '/TN', WINDOWS_TASK_NAME, '/TR', `cmd.exe /d /c ${quoteForWindows(launcherPath)}`, '/SC', 'ONLOGON', '/F',
+  ]);
+  const run = create.ok ? context.runCommand('schtasks', ['/Run', '/TN', WINDOWS_TASK_NAME]) : create;
+  return {
+    strategy: 'scheduled-task',
+    installed: create.ok,
+    started: run.ok,
+    message: create.ok && run.ok ? 'Installed and started a per-user Scheduled Task.' : `Scheduled Task setup failed: ${firstNonEmpty(run.stderr, run.stdout, 'unknown error')}`,
+  };
+}
+
+async function writeLauncher(paneDir: string, context: ServiceContext): Promise<string> {
+  const launcherPath = getLauncherPath(paneDir, context.platform);
+  const sourceCommand = context.sourceRoot ? buildSourceCommand(context.sourceRoot, paneDir, context.platform) : undefined;
+  const contents = context.platform === 'win32'
+    ? renderWindowsRemoteDaemonLauncher({ paneDir, executableCandidates: context.executableCandidates, sourceCommand })
+    : renderPosixRemoteDaemonLauncher({
+        paneDir,
+        platform: context.platform === 'darwin' ? 'darwin' : 'linux',
+        executableCandidates: context.executableCandidates,
+        sourceCommand,
+      });
+  await writeFileAtomically(launcherPath, contents, context.platform === 'win32' ? 0o644 : 0o755);
+  return launcherPath;
+}
+
+function buildSourceCommand(sourceRoot: string, paneDir: string, platform: NodeJS.Platform): string {
+  if (platform === 'win32') {
+    return `cd /d ${quoteForWindows(sourceRoot)} && set "PANE_DIR=${escapeForCmdEnvironment(paneDir)}" && pnpm daemon:headless -- --pane-dir ${quoteForWindows(paneDir)}`;
+  }
+  const flags = platform === 'linux' ? ' --ozone-platform=headless --disable-gpu' : '';
+  return `cd ${quoteForPosix(sourceRoot)} && PANE_DIR=${quoteForPosix(paneDir)} pnpm daemon:headless --${flags} --pane-dir ${quoteForPosix(paneDir)}`;
+}
+
+function getLauncherPath(paneDir: string, platform: NodeJS.Platform): string {
+  return path.join(paneDir, 'remote-daemon', platform === 'win32' ? 'start.cmd' : 'start.sh');
+}
+
+async function writeFileAtomically(filePath: string, contents: string, mode: number): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await fs.writeFile(temporaryPath, contents, { encoding: 'utf8', mode });
+    await fs.chmod(temporaryPath, mode);
+    await fs.rename(temporaryPath, filePath);
+  } catch (error) {
+    await fs.unlink(temporaryPath).catch(() => {});
+    throw error;
+  }
+}
+
+function resolveFirstExecutable(candidates: string[]): string | null {
+  return candidates.find(isExecutableFile) ?? null;
+}
+
+function resolveCommandPath(command: string, context: ServiceContext): string | null {
+  const result = context.platform === 'win32'
+    ? context.runCommand('where', [command])
+    : context.runCommand('sh', ['-lc', `command -v ${quoteForPosix(command)}`]);
+  const firstLine = result.ok ? result.stdout.split(/\r?\n/).map((line) => line.trim()).find(Boolean) : undefined;
+  return firstLine ? safeRealpath(firstLine) : null;
+}
+
+function safeRealpath(filePath: string): string | null {
+  try {
+    return realpathSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function isExecutableFile(filePath: string): boolean {
+  try {
+    accessSync(filePath, constants.X_OK);
+    return statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function extractLegacyExecutablePath(contents: string): string | null {
+  const match = contents.match(/(?:'|")?(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|")?/);
+  return match?.[1] ?? null;
+}
+
+function omitLauncherContents(
+  inspection: RemoteDaemonServiceInspection & { launcherContents?: string },
+): RemoteDaemonServiceInspection {
+  const { launcherContents: _launcherContents, ...rest } = inspection;
+  return rest;
+}
+
+function findSourceRoot(startDir: string): string | null {
+  let current = path.resolve(startDir);
+  while (true) {
+    const packagePath = path.join(current, 'package.json');
+    if (existsSync(packagePath)) {
+      try {
+        const parsed = decodeBoundary(JSON.parse(readFileSync(packagePath, 'utf8')), boundary.json);
+        if (isRecord(parsed) && parsed.name === 'Pane') {
+          return current;
+        }
+      } catch {
+        return null;
+      }
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function runCommand(command: string, args: string[]): CommandResult {
+  const result = spawnSync(command, args, { encoding: 'utf8', stdio: 'pipe', timeout: 5_000 });
+  return {
+    ok: result.status === 0,
+    stdout: commandOutputToString(result.stdout),
+    stderr: commandOutputToString(result.stderr) || result.error?.message || '',
+  };
+}
+
+function commandExists(command: string): boolean {
+  return process.platform === 'win32'
+    ? runCommand('where', [command]).ok
+    : runCommand('sh', ['-lc', `command -v ${quoteForPosix(command)}`]).ok;
+}
+
+function commandOutputToString(value: string | Buffer | null): string {
+  return Buffer.isBuffer(value) ? value.toString('utf8') : value ?? '';
+}
+
+function firstNonEmpty(...values: string[]): string {
+  return values.find((value) => value.trim().length > 0)?.trim() ?? '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === code;
+}
+
+function quoteForPosix(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function quoteForWindows(value: string): string {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function quoteForSystemd(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function escapeForCmdEnvironment(value: string): string {
+  return value.replace(/%/g, '%%').replace(/"/g, '""');
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+}

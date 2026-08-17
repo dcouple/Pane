@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import os
 import socket
 import sys
@@ -16,6 +17,7 @@ from .installers import (
     resolve_existing_pane_path,
     should_reuse_existing_pane,
     spawn_pane,
+    spawn_pane_captured,
 )
 from .local_control import (
     run_agents_doctor,
@@ -164,6 +166,8 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return print_version(parsed.pane_path)
     if parsed.command == "doctor":
         return run_doctor(parsed, SOURCE)
+    if parsed.command == "daemon repair":
+        return run_daemon_repair(parsed)
     if parsed.command == "agent-context":
         return run_agent_context(parsed)
     if parsed.command == "repos list":
@@ -603,6 +607,7 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
 def is_runpane_local_command(command: str) -> bool:
     return command in {
         "doctor",
+        "daemon repair",
         "repos list",
         "repos add",
         "panes list",
@@ -636,6 +641,54 @@ def read_value(args: List[str], index: int, flag: str) -> str:
     if index >= len(args) or (args[index].startswith("-") and args[index] != "-"):
         raise ValueError(f"{flag} requires a value.")
     return args[index]
+
+
+def run_daemon_repair(parsed: ParsedArgs) -> int:
+    executable = resolve_existing_pane_path(parsed.pane_path)
+    if not executable:
+        raise RuntimeError("Pane is not installed. Install Pane first, then rerun runpane daemon repair.")
+    confirm_daemon_repair(parsed)
+    pane_dir = parsed.pane_dir or os.path.join(os.path.expanduser("~"), ".pane_remote")
+    args = ["--remote-setup", "--remote-repair-service", "--pane-dir", pane_dir]
+    if parsed.json:
+        child = spawn_pane_captured(executable, [*args, "--json"])
+        try:
+            result = json.loads(child.stdout.strip())
+        except (TypeError, ValueError) as error:
+            raise RuntimeError(
+                f"Pane returned an invalid daemon repair result: {child.stderr.strip() or error}"
+            ) from error
+        if not valid_daemon_repair_result(result):
+            raise RuntimeError("Pane returned an invalid daemon repair result: response did not match the contract schema.")
+        print(json.dumps(result, indent=2))
+        return 0 if child.returncode == 0 and result["ok"] is True else 1
+    print(f"runpane: repairing the remote daemon service in {pane_dir}...")
+    return spawn_pane(executable, args)
+
+
+def valid_daemon_repair_result(result) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return (
+        type(result.get("ok")) is bool
+        and type(result.get("changed")) is bool
+        and isinstance(result.get("paneDir"), str)
+        and result.get("strategy") in {"systemd-user", "launch-agent", "scheduled-task", "manual", "skipped"}
+        and isinstance(result.get("launcherPath"), str)
+        and isinstance(result.get("before"), dict)
+        and isinstance(result.get("after"), dict)
+        and isinstance(result.get("message"), str)
+    )
+
+
+def confirm_daemon_repair(parsed: ParsedArgs) -> None:
+    if parsed.yes:
+        return
+    if parsed.json or not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise RuntimeError("runpane daemon repair restarts the remote daemon service. Rerun with --yes to confirm.")
+    answer = input("Repair and restart the Pane remote daemon service? [y/N] ").strip().lower()
+    if answer not in {"y", "yes"}:
+        raise RuntimeError("Daemon repair cancelled.")
 
 
 def install_or_update(parsed: ParsedArgs, telemetry_context: Optional[WrapperTelemetryContext] = None) -> int:

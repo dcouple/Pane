@@ -23,4 +23,14 @@ describe('hasRemoteSetupLaunchArg', () => {
   it('accepts the legacy setup alias', () => {
     expect(hasRemoteSetupLaunchArg(['Pane.exe', '--setup-remote'])).toBe(true);
   });
+
+  it('routes the internal repair through the existing remote setup launch mode', () => {
+    expect(hasRemoteSetupLaunchArg([
+      'pane',
+      '--remote-setup',
+      '--remote-repair-service',
+      '--pane-dir',
+      '/tmp/.pane_remote',
+    ])).toBe(true);
+  });
 });

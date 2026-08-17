@@ -54,6 +54,32 @@ describe('setupRemoteHost', () => {
     expect(spawnSyncMock).toHaveBeenCalledWith('tailscale', ['version'], expect.any(Object));
   });
 
+  it('rejects an undiscoverable packaged executable before changing configuration', async () => {
+    const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-custom-executable-'));
+    const executable = path.join(paneDir, 'custom-pane');
+    const writeConfig = vi.fn(async () => {});
+    await fs.writeFile(executable, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    try {
+      await expect(setupRemoteHost({
+        paneDir,
+        writeConfig,
+        installService: true,
+        serviceDependencies: {
+          platform: 'linux',
+          homeDir: paneDir,
+          executablePath: executable,
+          executableCandidates: [path.join(paneDir, '.local', 'bin', 'pane')],
+          sourceRoot: null,
+          runCommand: () => ({ ok: false, stdout: '', stderr: '' }),
+        },
+      })).rejects.toThrow('cannot persist the current executable safely');
+      expect(writeConfig).not.toHaveBeenCalled();
+      await expect(fs.stat(path.join(paneDir, 'config.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await fs.rm(paneDir, { recursive: true, force: true });
+    }
+  });
+
   it('uses a Tailscale Serve HTTPS URL for the generated connection code', async () => {
     const paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-remote-tailscale-'));
     try {

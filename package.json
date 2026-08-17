@@ -122,6 +122,7 @@
   "build": {
     "appId": "com.dcouple.pane",
     "productName": "Pane",
+    "afterPack": "./scripts/after-pack.js",
     "directories": {
       "output": "dist-electron"
     },
@@ -160,6 +161,7 @@
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/{**/*.node,**/*.dylib,**/spawn-helper}"
     },
     "linux": {
+      "executableName": "pane",
       "target": [
         {
           "target": "deb",

@@ -9,6 +9,7 @@ import { SecretField } from './SecretField';
 import type { RemoteAccessSubviewId } from '../../types/settings';
 import type { RemoteAccessController } from './useRemoteAccessSettings';
 import type { RemoteSetupTunnelPreference } from '../../../../shared/types/remoteDaemon';
+import { getRemoteExecutableHealthPresentation } from '../../utils/remoteRuntimePresentation';
 
 interface RemoteAccessWorkflowsProps {
   subview: RemoteAccessSubviewId;
@@ -63,9 +64,20 @@ function formatRemoteBaseUrl(host: string, port: number): string {
 
 function HostSetup({ controller }: { controller: RemoteAccessController }) {
   const activeCode = controller.setupResult?.connectionCode;
+  const executableHealth = getRemoteExecutableHealthPresentation(controller.hostState.executableHealth);
   return (
     <SettingsPage title="Set Up This Machine" description="Configure this Pane install as a remote host and create a cross-device connection code.">
       <SettingsSection title="Host status">
+        {executableHealth && (
+          <div
+            className={`mb-3 rounded-md border p-3 text-sm ${executableHealth.severity === 'error' ? 'border-status-error/30 bg-status-error/10 text-status-error' : 'border-status-warning/30 bg-status-warning/10 text-text-primary'}`}
+            role="alert"
+          >
+            <p className="font-medium">{executableHealth.code}</p>
+            <p className="mt-1">{executableHealth.message}</p>
+            {executableHealth.recoveryCommand && <code className="mt-2 block select-all text-xs">{executableHealth.recoveryCommand}</code>}
+          </div>
+        )}
         <SettingRow
           settingId="remote-host-setup"
           label={controller.hostState.status === 'live' ? 'Remote host is live' : 'Remote host is not running'}

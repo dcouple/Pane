@@ -8,10 +8,15 @@ import {
   runTailscaleUpInteractive,
 } from './tailscaleSetup';
 import { runRemoteSetupCli } from './setupRemoteHostCli';
+import { repairRemoteDaemonService } from './remoteDaemonService';
 
 vi.mock('./setupRemoteHost', () => ({
   formatSetupRemoteHostResult: vi.fn(() => 'formatted remote setup result'),
   setupRemoteHost: vi.fn(),
+}));
+
+vi.mock('./remoteDaemonService', () => ({
+  repairRemoteDaemonService: vi.fn(),
 }));
 
 vi.mock('./tailscaleSetup', () => ({
@@ -25,6 +30,7 @@ describe('runRemoteSetupCli', () => {
     vi.mocked(setupRemoteHost).mockReset();
     vi.mocked(ensureTailscaleInstalledInteractive).mockReset();
     vi.mocked(runTailscaleUpInteractive).mockReset();
+    vi.mocked(repairRemoteDaemonService).mockReset();
   });
 
   it('installs and authenticates Tailscale before running remote setup in interactive mode', async () => {
@@ -82,5 +88,47 @@ describe('runRemoteSetupCli', () => {
       interactiveTailscaleSetup: true,
     }));
     expect(formatSetupRemoteHostResult).toHaveBeenCalledOnce();
+  });
+
+  it('repairs only service assets when routed through remote setup', async () => {
+    vi.mocked(repairRemoteDaemonService).mockResolvedValue({
+      ok: true,
+      changed: true,
+      paneDir: '/tmp/pane-remote',
+      strategy: 'systemd-user',
+      launcherPath: '/tmp/pane-remote/remote-daemon/start.sh',
+      before: {
+        launcherPath: '/tmp/pane-remote/remote-daemon/start.sh',
+        launcherExists: true,
+        launcherCurrent: false,
+        savedExecutablePath: '/opt/Pane/Pane',
+        savedExecutableExists: false,
+        resolvedExecutablePath: '/opt/Pane/pane',
+        restartStatus: 'ready',
+      },
+      after: {
+        launcherPath: '/tmp/pane-remote/remote-daemon/start.sh',
+        launcherExists: true,
+        launcherCurrent: true,
+        savedExecutablePath: null,
+        savedExecutableExists: null,
+        resolvedExecutablePath: '/opt/Pane/pane',
+        restartStatus: 'ready',
+      },
+      message: 'Repaired and restarted the user systemd service.',
+    });
+
+    const exitCode = await runRemoteSetupCli([
+      '--remote-setup',
+      '--remote-repair-service',
+      '--pane-dir',
+      '/tmp/pane-remote',
+      '--json',
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(repairRemoteDaemonService).toHaveBeenCalledWith('/tmp/pane-remote');
+    expect(setupRemoteHost).not.toHaveBeenCalled();
+    expect(ensureTailscaleInstalledInteractive).not.toHaveBeenCalled();
   });
 });

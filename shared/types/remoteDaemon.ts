@@ -18,6 +18,29 @@ export interface RemoteDaemonHostConfig {
 }
 
 export type RemoteDaemonHostRuntimeStatus = 'inactive' | 'live' | 'error';
+export type RemoteDaemonProcessImageStatus = 'current' | 'replaced' | 'deleted' | 'unknown';
+export type RemoteDaemonRestartStatus = 'ready' | 'broken' | 'unknown';
+
+export interface RemoteDaemonExecutableHealth {
+  processImage: {
+    status: RemoteDaemonProcessImageStatus;
+    runtimePath: string | null;
+    installedPath: string | null;
+    evidence: string;
+  };
+  restart: {
+    status: RemoteDaemonRestartStatus;
+    launcherPath?: string;
+    resolvedPath?: string;
+    evidence: string;
+  };
+  diagnosticCode?:
+    | 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED'
+    | 'PANE_REMOTE_DAEMON_UPDATE_PENDING'
+    | 'PANE_REMOTE_DAEMON_LAUNCHER_STALE';
+  recoveryCommand?: string;
+  checkedAt: string;
+}
 
 export interface RemoteDaemonConnectedClient {
   id: string;
@@ -36,6 +59,7 @@ export interface RemoteDaemonHostRuntimeState {
   listenPort: number | null;
   lastError: string | null;
   connectedClients: RemoteDaemonConnectedClient[];
+  executableHealth: RemoteDaemonExecutableHealth;
   updatedAt: string;
 }
 
@@ -101,6 +125,27 @@ export interface RemoteHostSetupServiceResult {
   strategy: RemoteHostSetupServiceStrategy;
   installed: boolean;
   started: boolean;
+  message: string;
+}
+
+export interface RemoteDaemonServiceInspection {
+  launcherPath: string;
+  launcherExists: boolean;
+  launcherCurrent: boolean;
+  savedExecutablePath: string | null;
+  savedExecutableExists: boolean | null;
+  resolvedExecutablePath: string | null;
+  restartStatus: RemoteDaemonRestartStatus;
+}
+
+export interface RemoteDaemonServiceRepairResult {
+  ok: boolean;
+  changed: boolean;
+  paneDir: string;
+  strategy: RemoteHostSetupServiceStrategy;
+  launcherPath: string;
+  before: RemoteDaemonServiceInspection;
+  after: RemoteDaemonServiceInspection;
   message: string;
 }
 
@@ -290,7 +335,24 @@ export function createDefaultRemoteDaemonHostRuntimeState(): RemoteDaemonHostRun
     listenPort: null,
     lastError: null,
     connectedClients: [],
+    executableHealth: createUnknownRemoteDaemonExecutableHealth(),
     updatedAt: '1970-01-01T00:00:00.000Z',
+  };
+}
+
+export function createUnknownRemoteDaemonExecutableHealth(): RemoteDaemonExecutableHealth {
+  return {
+    processImage: {
+      status: 'unknown',
+      runtimePath: null,
+      installedPath: null,
+      evidence: 'Executable identity has not been checked yet.',
+    },
+    restart: {
+      status: 'unknown',
+      evidence: 'Remote daemon launcher readiness has not been checked yet.',
+    },
+    checkedAt: '1970-01-01T00:00:00.000Z',
   };
 }
 

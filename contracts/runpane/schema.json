@@ -343,6 +343,7 @@
         "update",
         "version",
         "doctor",
+        "daemon repair",
         "agents doctor",
         "repos list",
         "repos add",
@@ -381,6 +382,9 @@
           "$ref": "#/$defs/helpLines"
         },
         "doctor": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "daemon repair": {
           "$ref": "#/$defs/helpLines"
         },
         "agents doctor": {

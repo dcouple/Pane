@@ -43,6 +43,7 @@ def resolve_existing_pane_path(pane_path: Optional[str] = None) -> Optional[str]
             os.path.join(home, ".local", "bin", "pane"),
             "/usr/bin/pane",
             "/opt/Pane/pane",
+            "/opt/Pane/Pane",
         ])
 
     for candidate in candidates:
@@ -82,6 +83,20 @@ def spawn_pane(executable_path: str, args: List[str]) -> int:
     except OSError as error:
         print(f"Failed to launch Pane: {error}")
         return 1
+
+
+def spawn_pane_captured(executable_path: str, args: List[str]):
+    try:
+        return subprocess.run(
+            [executable_path, *build_pane_daemon_args(args)],
+            env=build_pane_daemon_environment(),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as error:
+        return subprocess.CompletedProcess([executable_path, *args], 1, "", str(error))
 
 
 def build_pane_daemon_args(args: List[str], system_name: Optional[str] = None) -> List[str]:

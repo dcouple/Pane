@@ -1,5 +1,6 @@
 import type { ProjectEnvironment, ToolPanelType } from './panels';
 import type { RunpaneAgent } from './generatedRunpaneContract';
+import type { RemoteDaemonExecutableHealth } from './remoteDaemon';
 
 export type RunpaneAgentId = RunpaneAgent;
 
@@ -35,6 +36,7 @@ export interface RunpaneDoctorResult {
   };
   daemon: {
     channels: string[];
+    executableHealth: RemoteDaemonExecutableHealth;
   };
   repos: {
     count: number;

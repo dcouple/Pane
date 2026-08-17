@@ -232,6 +232,149 @@ print(json.dumps(normalized))
   assert.deepStrictEqual(JSON.parse(pythonOutput), nodeOutput);
 }
 
+function compareLegacyRemoteDaemonHealthParity() {
+  const fixture = path.join(rootDir, 'main', 'src', 'daemon', '__fixtures__', 'remote-daemon-start-v2.4.30.sh');
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'runpane-doctor-'));
+  const installedPath = path.join(temporaryDirectory, 'pane');
+  fs.writeFileSync(installedPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  try {
+    const doctor = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'doctor.js'));
+    const nodeHealth = doctor.inspectLegacyRemoteDaemonHealth(temporaryDirectory, true, {
+      platform: 'linux',
+      launcherPath: fixture,
+      installedCandidates: [installedPath],
+      runtimePath: '/opt/Pane/Pane (deleted)',
+      checkedAt: '2026-08-17T00:00:00.000Z'
+    });
+    const pythonHealth = JSON.parse(runPythonSnippet(`
+import json
+import sys
+from runpane.doctor import inspect_legacy_remote_daemon_health
+
+request = json.loads(sys.stdin.read())
+print(json.dumps(inspect_legacy_remote_daemon_health(
+    request["paneDir"],
+    True,
+    platform_name="linux",
+    launcher_path=request["launcherPath"],
+    installed_candidates=[request["installedPath"]],
+    runtime_path_marker="/opt/Pane/Pane (deleted)",
+    checked_at="2026-08-17T00:00:00.000Z",
+)))
+`, JSON.stringify({ paneDir: temporaryDirectory, launcherPath: fixture, installedPath })));
+    assert.deepStrictEqual(pythonHealth, nodeHealth);
+    assert.strictEqual(nodeHealth.processImage.status, 'deleted');
+    assert.strictEqual(nodeHealth.restart.status, 'broken');
+    assert.strictEqual(nodeHealth.diagnosticCode, 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED');
+
+    const lockedHealth = {
+      ...nodeHealth,
+      processImage: {
+        ...nodeHealth.processImage,
+        runtimePath: '/opt/Pane/Pane',
+        installedPath: '/opt/Pane/pane'
+      },
+      recoveryCommand: 'runpane daemon repair --pane-dir ~/.pane_remote'
+    };
+    const diagnostic = doctor.createRemoteDaemonHealthDiagnostic({
+      paneDir: path.join(os.homedir(), '.pane_remote'),
+      managed: true,
+      reachable: true,
+      endpoint: { transport: 'unix', path: '/tmp/daemon.sock' },
+      executableHealth: lockedHealth
+    });
+    assert.strictEqual(
+      `${diagnostic.code}: ${diagnostic.message}`,
+      'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED: Remote daemon is reachable but unsafe to restart. It is running /opt/Pane/Pane from a deleted inode; Pane is now installed at /opt/Pane/pane, and the saved launcher still references the old path. The daemon will not return after reboot or service restart. Run runpane daemon repair --pane-dir ~/.pane_remote before restarting, then rerun doctor.'
+    );
+    const pythonDiagnostic = JSON.parse(runPythonSnippet(`
+import json
+import sys
+from runpane.doctor import add_remote_daemon_health_diagnostic
+
+service = json.loads(sys.stdin.read())
+setup = {"ready": True, "diagnostics": []}
+add_remote_daemon_health_diagnostic(setup, service)
+print(json.dumps(setup["diagnostics"][0]))
+`, JSON.stringify({
+      paneDir: path.join(os.homedir(), '.pane_remote'),
+      managed: true,
+      reachable: true,
+      endpoint: { transport: 'unix', path: '/tmp/daemon.sock' },
+      executableHealth: lockedHealth
+    })));
+    assert.deepStrictEqual(pythonDiagnostic, diagnostic);
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+function compareDaemonRepairJsonParity() {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'runpane-repair-'));
+  const fakePane = path.join(temporaryDirectory, 'pane');
+  const paneDir = path.join(temporaryDirectory, '.pane_remote');
+  const result = {
+    ok: true,
+    changed: true,
+    paneDir,
+    strategy: 'systemd-user',
+    launcherPath: path.join(paneDir, 'remote-daemon', 'start.sh'),
+    before: { launcherCurrent: false },
+    after: { launcherCurrent: true },
+    message: 'Repaired and restarted the user systemd service.'
+  };
+  fs.writeFileSync(fakePane, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(result)}'\n`, { mode: 0o755 });
+  const args = ['daemon', 'repair', '--pane-path', fakePane, '--pane-dir', paneDir, '--yes', '--json'];
+  const pythonEnv = {
+    ...process.env,
+    PYTHONDONTWRITEBYTECODE: '1',
+    PYTHONPATH: pythonSource
+  };
+  try {
+    const nodeOutput = childProcess.execFileSync(process.execPath, [npmCli, ...args], { encoding: 'utf8' });
+    const pythonOutput = childProcess.execFileSync(findPython(), ['-m', 'runpane', ...args], {
+      encoding: 'utf8',
+      env: pythonEnv,
+      cwd: rootDir
+    });
+    assert.deepStrictEqual(JSON.parse(nodeOutput), result);
+    assert.deepStrictEqual(JSON.parse(pythonOutput), result);
+
+    for (const command of [
+      [process.execPath, [npmCli, ...args.filter((arg) => arg !== '--yes')], process.env],
+      [findPython(), ['-m', 'runpane', ...args.filter((arg) => arg !== '--yes')], pythonEnv]
+    ]) {
+      const refused = childProcess.spawnSync(command[0], command[1], { encoding: 'utf8', env: command[2], cwd: rootDir });
+      assert.notStrictEqual(refused.status, 0);
+      assertIncludes(`${refused.stdout}${refused.stderr}`, 'Rerun with --yes to confirm');
+    }
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function checkLinuxPackageCompatibilityAlias() {
+  // macOS's default case-insensitive filesystem cannot represent pane and Pane
+  // as distinct entries. Linux CI exercises this package invariant.
+  if (process.platform !== 'linux') return;
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-linux-package-'));
+  const appDirectory = path.join(temporaryDirectory, 'linux-unpacked');
+  fs.mkdirSync(appDirectory, { recursive: true });
+  fs.writeFileSync(path.join(appDirectory, 'pane'), 'binary', { mode: 0o755 });
+  try {
+    const afterPack = require(path.join(rootDir, 'scripts', 'after-pack.js'));
+    await afterPack({ electronPlatformName: 'linux', appOutDir: appDirectory });
+    await afterPack({ electronPlatformName: 'linux', appOutDir: appDirectory });
+    childProcess.execFileSync(process.execPath, [
+      path.join(rootDir, 'scripts', 'verify-linux-package-executables.js'),
+      temporaryDirectory
+    ]);
+    assert.strictEqual(fs.readlinkSync(path.join(appDirectory, 'Pane')), 'pane');
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
 function comparePlatformParity() {
   const { archAliases, defaultFormat, platformParam } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'platform.js'));
   const nodeOutput = platformCases.map(({ platform, target }) => ({
@@ -1407,6 +1550,9 @@ async function runChecks() {
   checkGeneratedContractFresh();
   ensureBuiltCli();
   compareParserParity();
+  compareLegacyRemoteDaemonHealthParity();
+  compareDaemonRepairJsonParity();
+  await checkLinuxPackageCompatibilityAlias();
   comparePlatformParity();
   compareDaemonEndpointParity();
   checkPythonUnixEndpointSeparatorsAreHostIndependent();

@@ -22,6 +22,7 @@ export function resolveExistingPanePath(panePath?: string): string | undefined {
     process.platform === 'linux' ? path.join(os.homedir(), '.local', 'bin', 'pane') : undefined,
     process.platform === 'linux' ? '/usr/bin/pane' : undefined,
     process.platform === 'linux' ? '/opt/Pane/pane' : undefined,
+    process.platform === 'linux' ? '/opt/Pane/Pane' : undefined,
     process.platform === 'win32' && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Programs', 'Pane', 'Pane.exe') : undefined,
     process.platform === 'win32' && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Pane', 'Pane.exe') : undefined,
     process.platform === 'win32' && process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Pane', 'Pane.exe') : undefined
@@ -69,6 +70,30 @@ export function spawnPane(executablePath: string, args: string[]): Promise<numbe
       console.error(`Failed to launch Pane: ${error.message}`);
       resolve(1);
     });
+  });
+}
+
+export interface CapturedPaneResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export function spawnPaneCaptured(executablePath: string, args: string[]): Promise<CapturedPaneResult> {
+  return new Promise((resolve) => {
+    const child = childProcess.spawn(executablePath, buildPaneDaemonArgs(args), {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+      env: buildPaneDaemonEnvironment()
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('error', (error) => resolve({ code: 1, stdout, stderr: `${stderr}${error.message}` }));
   });
 }
 

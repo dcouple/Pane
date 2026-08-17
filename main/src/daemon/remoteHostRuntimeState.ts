@@ -6,6 +6,8 @@ import {
   type RemoteDaemonHostRuntimeState,
 } from '../../../shared/types/remoteDaemon';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { getAppDirectory } from '../utils/appDirectory';
+import { collectRemoteDaemonExecutableHealth } from './remoteDaemonExecutableHealth';
 
 interface RemoteHttpAddress {
   host: string;
@@ -16,7 +18,10 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
   private state: RemoteDaemonHostRuntimeState = createDefaultRemoteDaemonHostRuntimeState();
 
   getState(): RemoteDaemonHostRuntimeState {
-    return { ...this.state };
+    return {
+      ...this.state,
+      executableHealth: collectRemoteDaemonExecutableHealth(getAppDirectory()),
+    };
   }
 
   setInactive(config?: RemoteDaemonHostConfig | null): void {
@@ -27,6 +32,7 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
       listenPort: config?.listenPort ?? null,
       lastError: null,
       connectedClients: [],
+      executableHealth: this.state.executableHealth,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -39,6 +45,7 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
       listenPort: address?.port ?? config.listenPort,
       lastError: null,
       connectedClients: this.state.status === 'live' ? this.state.connectedClients : [],
+      executableHealth: this.state.executableHealth,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -51,6 +58,7 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
       listenPort: config?.listenPort ?? null,
       lastError: getErrorMessage(error, 'Remote listener failed'),
       connectedClients: [],
+      executableHealth: this.state.executableHealth,
       updatedAt: new Date().toISOString(),
     });
   }

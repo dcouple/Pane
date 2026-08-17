@@ -420,6 +420,7 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
 
 function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
   return command === 'doctor'
+    || command === 'daemon repair'
     || command === 'repos list'
     || command === 'repos add'
     || command === 'panes list'

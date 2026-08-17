@@ -1,5 +1,6 @@
 import type {
   RemoteDaemonConnectedClient,
+  RemoteDaemonExecutableHealth,
   RemoteDaemonHostRuntimeState,
   RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
@@ -9,6 +10,49 @@ interface RemoteHostRuntimePresentation {
   borderClassName: string;
   title: string;
   description: string;
+}
+
+export interface RemoteExecutableHealthPresentation {
+  severity: 'warning' | 'error';
+  code: string;
+  message: string;
+  recoveryCommand?: string;
+}
+
+export function getRemoteExecutableHealthPresentation(
+  health: RemoteDaemonExecutableHealth,
+): RemoteExecutableHealthPresentation | null {
+  if (
+    health.diagnosticCode === 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED'
+    && health.processImage.status === 'deleted'
+    && health.restart.status === 'broken'
+  ) {
+    const runtimePath = health.processImage.runtimePath ?? 'the previous Pane executable';
+    const installedPath = health.processImage.installedPath ?? 'the current Pane executable';
+    return {
+      severity: 'error',
+      code: 'PANE_REMOTE_DAEMON_EXECUTABLE_DELETED',
+      message: `Remote daemon is reachable but unsafe to restart. It is running ${runtimePath} from a deleted inode; Pane is now installed at ${installedPath}, and the saved launcher cannot resolve an executable. The daemon will not return after reboot or service restart.`,
+      recoveryCommand: health.recoveryCommand,
+    };
+  }
+  if (health.restart.status === 'broken') {
+    return {
+      severity: 'error',
+      code: health.diagnosticCode ?? 'PANE_REMOTE_DAEMON_LAUNCHER_STALE',
+      message: health.restart.evidence,
+      recoveryCommand: health.recoveryCommand,
+    };
+  }
+  if (health.processImage.status === 'replaced' || health.processImage.status === 'deleted') {
+    return {
+      severity: 'warning',
+      code: health.diagnosticCode ?? 'PANE_REMOTE_DAEMON_UPDATE_PENDING',
+      message: 'Pane was updated while this remote daemon was running. Its launcher is restart-ready, but restart it when convenient to run the installed version.',
+      recoveryCommand: health.recoveryCommand,
+    };
+  }
+  return null;
 }
 
 export interface RemoteFooterStatus {

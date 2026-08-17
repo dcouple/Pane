@@ -68,6 +68,14 @@
       "/tmp/pane"
     ],
     [
+      "daemon",
+      "repair",
+      "--pane-dir",
+      "/tmp/pane-remote",
+      "--yes",
+      "--json"
+    ],
+    [
       "agent-context"
     ],
     [

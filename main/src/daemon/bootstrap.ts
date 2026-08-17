@@ -35,6 +35,7 @@ import { setupEventListeners } from '../events';
 import { getAppDirectory } from '../utils/appDirectory';
 import { resourceMonitorService } from '../services/resourceMonitorService';
 import type { PaneCommandRegistry } from './commandRegistry';
+import { syncRemoteTransportForMode } from './remoteTransportStartup';
 
 interface PaneDaemonHostOptions {
   app: App;
@@ -235,11 +236,10 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
 
   if (startRemoteTransport) {
     remoteTransportController.startWatchingConfig();
-    try {
-      await remoteTransportController.syncToConfig();
-    } catch (error) {
-      console.error('[Pane remote daemon] Failed to start remote HTTP transport; continuing without remote access', error);
-    }
+    await syncRemoteTransportForMode(remoteTransportController, mode, async () => {
+      await remoteTransportController.stopWatchingAndShutdown();
+      await paneDaemonServer?.stop();
+    });
   }
 
   const daemonSinks: PaneEventSink[] = [];

@@ -4,6 +4,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { runAgentContext } from './agentContext';
 import { helpText, parseRunpaneArgs, type ParsedArgs } from './commands';
+import { boundary, decodeBoundary } from './boundaryDecoder';
 import { downloadArtifact } from './download';
 import { runDoctor } from './doctor';
 import {
@@ -11,7 +12,8 @@ import {
   launchPaneClient,
   resolveExistingPanePath,
   shouldReuseExistingPane,
-  spawnPane
+  spawnPane,
+  spawnPaneCaptured
 } from './installers';
 import {
   runAgentsDoctor,
@@ -85,6 +87,10 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   if (parsed.command === 'doctor') {
     return runDoctor(parsed, SOURCE);
+  }
+
+  if (parsed.command === 'daemon repair') {
+    return runDaemonRepair(parsed);
   }
 
   if (parsed.command === 'agent-context') {
@@ -165,6 +171,59 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   console.log(helpText());
   return 0;
+}
+
+const daemonRepairResultSchema = boundary.object({
+  ok: boundary.boolean,
+  changed: boundary.boolean,
+  paneDir: boundary.string,
+  strategy: boundary.enumeration('systemd-user', 'launch-agent', 'scheduled-task', 'manual', 'skipped'),
+  launcherPath: boundary.string,
+  before: boundary.jsonObject,
+  after: boundary.jsonObject,
+  message: boundary.string,
+});
+
+async function runDaemonRepair(parsed: ParsedArgs): Promise<number> {
+  const executable = resolveExistingPanePath(parsed.panePath);
+  if (!executable) {
+    throw new Error('Pane is not installed. Install Pane first, then rerun runpane daemon repair.');
+  }
+  await confirmDaemonRepair(parsed);
+  const paneDir = parsed.paneDir ?? `${os.homedir()}/.pane_remote`;
+  const args = ['--remote-setup', '--remote-repair-service', '--pane-dir', paneDir];
+  if (parsed.json) {
+    const child = await spawnPaneCaptured(executable, [...args, '--json']);
+    try {
+      const result = decodeBoundary(JSON.parse(child.stdout.trim()), daemonRepairResultSchema);
+      console.log(JSON.stringify(result, null, 2));
+      return child.code === 0 && result.ok ? 0 : 1;
+    } catch (error) {
+      throw new Error(`Pane returned an invalid daemon repair result: ${child.stderr.trim() || errorMessage(error)}`);
+    }
+  }
+  console.log(`runpane: repairing the remote daemon service in ${paneDir}...`);
+  return spawnPane(executable, args);
+}
+
+async function confirmDaemonRepair(parsed: ParsedArgs): Promise<void> {
+  if (parsed.yes) return;
+  if (parsed.json || !input.isTTY || !output.isTTY) {
+    throw new Error('runpane daemon repair restarts the remote daemon service. Rerun with --yes to confirm.');
+  }
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question('Repair and restart the Pane remote daemon service? [y/N] ')).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('Daemon repair cancelled.');
+    }
+  } finally {
+    rl.close();
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function runTrackedCommand(
