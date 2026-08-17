@@ -8,7 +8,6 @@ import { Dropdown, DropdownMenuItem } from './ui/Dropdown';
 import { GitHistoryGraph } from './GitHistoryGraph';
 import { Kbd } from './ui/Kbd';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
-import { AgentUsageWidget } from './AgentUsageWidget';
 
 interface DetailPanelProps {
   isVisible: boolean;
@@ -28,7 +27,6 @@ interface DetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
-  showAgentUsage?: boolean;
 }
 
 /** Consistent compact button class for sidebar actions */
@@ -77,7 +75,7 @@ function actionTooltip(action: { description?: string; disabled?: boolean; disab
   );
 }
 
-export function DetailPanel({ isVisible, width, height, onResize, mergeError, projectGitActions, orientation, isCollapsed, onToggleCollapse, onSwapLayout, terminalShortcuts, onCommitClick, showAgentUsage = false }: DetailPanelProps) {
+export function DetailPanel({ isVisible, width, height, onResize, mergeError, projectGitActions, orientation, isCollapsed, onToggleCollapse, onSwapLayout, terminalShortcuts, onCommitClick }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
   const remoteIdeTooltip = 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.';
@@ -239,20 +237,15 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
           )}
           </div>
 
-          {/* Expandable content: usage and history */}
-          {!isCollapsed && (showAgentUsage || (!gitUnavailable && session.worktreePath)) && (
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {showAgentUsage && <AgentUsageWidget sessionId={session.id} compact />}
-              {!gitUnavailable && session.worktreePath && (
-                <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
-                  <GitHistoryGraph
-                    sessionId={session.id}
-                    baseBranch={session.baseBranch || 'main'}
-                    layout="wide"
-                    onCommitClick={onCommitClick}
-                  />
-                </div>
-              )}
+          {/* Expandable content: history */}
+          {!isCollapsed && !gitUnavailable && session.worktreePath && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
+              <GitHistoryGraph
+                sessionId={session.id}
+                baseBranch={session.baseBranch || 'main'}
+                layout="wide"
+                onCommitClick={onCommitClick}
+              />
             </div>
           )}
         </div>
@@ -304,9 +297,7 @@ export function DetailPanel({ isVisible, width, height, onResize, mergeError, pr
           )}
         </div>
 
-        {showAgentUsage && <AgentUsageWidget sessionId={session.id} />}
-
-        {/* Changes - worktree sessions only */}
+        {/* Changes — worktree sessions only */}
         {!isProject && gitStatus && (
           <DetailSection title="Changes">
             <div className="space-y-1 text-sm px-1">

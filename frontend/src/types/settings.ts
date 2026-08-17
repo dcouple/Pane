@@ -3,6 +3,7 @@ export type SettingsCategoryId =
   | 'appearance'
   | 'terminal'
   | 'ai-agents'
+  | 'usage'
   | 'worktrees-git'
   | 'notifications'
   | 'remote-access'

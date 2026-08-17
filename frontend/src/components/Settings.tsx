@@ -15,11 +15,12 @@ import { IntegrationsSettings } from './settings/categories/IntegrationsSettings
 import { ShortcutsSettings } from './settings/categories/ShortcutsSettings';
 import { PrivacySettings } from './settings/categories/PrivacySettings';
 import { AdvancedSettings } from './settings/categories/AdvancedSettings';
+import { UsageSettings } from './settings/categories/UsageSettings';
 import { RemoteAccessWorkflows } from './settings/RemoteAccessWorkflows';
 import { useSettingsPersistence } from './settings/useSettingsPersistence';
 import { useDirtySettingsForms } from './settings/useDirtySettingsForms';
 import { useRemoteAccessSettings } from './settings/useRemoteAccessSettings';
-import { settingDomId } from './settings/catalog';
+import { SETTINGS_CATEGORIES, SETTINGS_CATEGORIES_WITHOUT_USAGE, settingDomId } from './settings/catalog';
 import type {
   RemoteAccessSubviewId,
   SettingsCategoryId,
@@ -34,6 +35,9 @@ interface AvailableShell {
   name: string;
   path: string;
 }
+
+/** Whether the host probe found a Codex login; the Usage tab is rendered only when 'available'. */
+type CodexUsageDetection = 'unknown' | 'available' | 'unavailable';
 
 interface SettingsProps {
   isOpen: boolean;
@@ -59,6 +63,7 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
   const [availableShells, setAvailableShells] = useState<AvailableShell[]>([]);
   const [systemMonoFonts, setSystemMonoFonts] = useState<string[]>([]);
   const [remoteSubview, setRemoteSubview] = useState<RemoteAccessSubviewId | undefined>();
+  const [codexUsageDetection, setCodexUsageDetection] = useState<CodexUsageDetection>('unknown');
   const handledRequestRef = useRef<number | null>(null);
   const fontsLoadedRef = useRef(false);
   const remote = useRemoteAccessSettings(isOpen, onClose);
@@ -79,6 +84,33 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
       }).catch(() => undefined);
     }
   }, [isOpen]);
+
+  // Detect a Codex login each time Settings opens (main-process cache: 60 s). The last
+  // result is kept across closes so re-opening on the Usage tab does not flash it out.
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    void window.electronAPI.agentUsage.get().then((response) => {
+      if (cancelled) return;
+      const available = response.success
+        && response.data?.providers.some((provider) => provider.id === 'codex' && provider.status === 'available') === true;
+      setCodexUsageDetection(available ? 'available' : 'unavailable');
+    }).catch(() => {
+      if (!cancelled) setCodexUsageDetection('unavailable');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const visibleCategories = codexUsageDetection === 'available'
+    ? SETTINGS_CATEGORIES
+    : SETTINGS_CATEGORIES_WITHOUT_USAGE;
+
+  // A remembered Usage category with no Codex login falls back to General.
+  useEffect(() => {
+    if (isOpen && category === 'usage' && codexUsageDetection === 'unavailable') onCategoryChange('general');
+  }, [category, codexUsageDetection, isOpen, onCategoryChange]);
 
   const focusSetting = useCallback((setting?: SettingsSettingId) => {
     if (!setting) return;
@@ -135,6 +167,8 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
         return <TerminalSettings persistence={persistence} platform={platform} availableShells={availableShells} systemMonoFonts={systemMonoFonts} />;
       case 'ai-agents':
         return <AIAgentsSettings persistence={persistence} {...sharedDirtyProps} />;
+      case 'usage':
+        return <UsageSettings />;
       case 'worktrees-git':
         return <WorktreesGitSettings persistence={persistence} {...sharedDirtyProps} />;
       case 'notifications':
@@ -175,7 +209,7 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
             <Button type="button" variant="secondary" size="sm" onClick={() => void persistence.fetchConfig()}>Retry</Button>
           </div>
         ) : (
-          <SettingsLayout category={category} onCategoryChange={changeCategory}>
+          <SettingsLayout category={category} categories={visibleCategories} onCategoryChange={changeCategory}>
             {content()}
           </SettingsLayout>
         )}

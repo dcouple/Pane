@@ -1,36 +1,29 @@
 import type { IpcMain } from 'electron';
+import * as os from 'os';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
-import { agentUsageService } from '../services/agentUsageService';
+import { agentUsageService, type AgentUsageTarget } from '../services/agentUsageService';
 import type { AppServices } from './types';
 
 const DAEMON_AGENT_USAGE_CHANNELS = ['agent-usage:get'] as const;
 
+// Subscription usage is account-level, so the probe always targets the host that
+// runs this daemon (the local machine, or the remote host when connected remotely).
+function hostAgentUsageTarget(): AgentUsageTarget {
+  return { cacheKey: 'host', cwd: os.homedir(), wslContext: null };
+}
+
 export function registerAgentUsageHandlers(
   ipcMain: IpcMain,
-  services: AppServices,
+  _services: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
-  commandRegistry.register('agent-usage:get', async (sessionId: string, force = false) => {
-    if (typeof sessionId !== 'string' || !sessionId.trim()) {
-      return { success: false, error: 'A pane is required to read agent usage' };
-    }
+  commandRegistry.register('agent-usage:get', async (force = false) => {
     if (typeof force !== 'boolean') {
       return { success: false, error: 'Invalid agent usage refresh request' };
     }
 
-    const context = services.sessionManager.getProjectContext(sessionId);
-    if (!context) {
-      return { success: false, error: 'Pane environment is unavailable' };
-    }
-
     try {
-      const environment = context.pathResolver.environment;
-      const distribution = context.commandRunner.wslContext?.distribution ?? 'host';
-      const snapshot = await agentUsageService.getSnapshot({
-        cacheKey: `${environment}:${distribution}`,
-        cwd: context.project.path,
-        wslContext: context.commandRunner.wslContext,
-      }, force);
+      const snapshot = await agentUsageService.getSnapshot(hostAgentUsageTarget(), force);
       return { success: true, data: snapshot };
     } catch (error) {
       console.error('[IPC] Failed to read agent usage:', error);

@@ -6,7 +6,6 @@ import { OpenAIIcon } from './ui/BrandIcons';
 import { Tooltip } from './ui/Tooltip';
 
 interface AgentUsageWidgetProps {
-  sessionId: string;
   compact?: boolean;
 }
 
@@ -54,8 +53,8 @@ function UsageLimitRow({ limit, compact }: { limit: AgentUsageLimit; compact: bo
   );
 }
 
-export function AgentUsageWidget({ sessionId, compact = false }: AgentUsageWidgetProps) {
-  const { snapshot, isLoading, error, refresh } = useAgentUsage(sessionId, true);
+export function AgentUsageWidget({ compact = false }: AgentUsageWidgetProps) {
+  const { snapshot, isLoading, error, refresh } = useAgentUsage();
   const provider = snapshot?.providers.find(item => item.id === 'codex');
   const unavailableMessage = error || provider?.error;
 

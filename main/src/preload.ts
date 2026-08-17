@@ -1104,8 +1104,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Agent subscription usage
   agentUsage: {
-    get: (sessionId: string, force = false): Promise<IPCResponse<AgentUsageSnapshot>> =>
-      invokeIpc('agent-usage:get', sessionId, force),
+    get: (force = false): Promise<IPCResponse<AgentUsageSnapshot>> =>
+      invokeIpc('agent-usage:get', force),
   },
 
   // Window state queries (invoke, not event subscriptions)

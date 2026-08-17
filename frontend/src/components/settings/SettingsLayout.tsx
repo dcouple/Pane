@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { SETTINGS_CATEGORIES } from './catalog';
+import type { SettingsCategoryDefinition } from './catalog';
 import type { SettingsCategoryId } from '../../types/settings';
 import {
   Select,
@@ -12,15 +12,16 @@ import { cn } from '../../utils/cn';
 
 interface SettingsLayoutProps {
   category: SettingsCategoryId;
+  categories: readonly SettingsCategoryDefinition[];
   onCategoryChange: (category: SettingsCategoryId) => void;
   children: ReactNode;
 }
-export function SettingsLayout({ category, onCategoryChange, children }: SettingsLayoutProps) {
+export function SettingsLayout({ category, categories, onCategoryChange, children }: SettingsLayoutProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[220px_minmax(0,1fr)]">
       <aside className="hidden min-h-0 border-r border-border-primary bg-surface-secondary/35 p-3 md:block">
         <nav aria-label="Settings categories" className="space-y-0.5">
-          {SETTINGS_CATEGORIES.map((item) => {
+          {categories.map((item) => {
             const Icon = item.icon;
             const selected = item.id === category;
             return (
@@ -56,7 +57,7 @@ export function SettingsLayout({ category, onCategoryChange, children }: Setting
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {SETTINGS_CATEGORIES.map((item) => (
+            {categories.map((item) => (
               <SelectItem key={item.id} value={item.id} disabled={item.availability?.disabled}>
                 {item.label}
               </SelectItem>

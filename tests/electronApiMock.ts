@@ -30,8 +30,6 @@ type ElectronApiMockOptions = {
   initialCombinedDiff?: Record<string, unknown> | null;
   initialTerminalStates?: Record<string, Record<string, unknown>>;
   initialAgentUsage?: Record<string, unknown>;
-  agentUsageBySessionId?: Record<string, Record<string, unknown>>;
-  agentUsageDelayBySessionId?: Record<string, number>;
   forcedAgentUsageError?: string;
   detectedBranch?: string | null;
   detectedBranchByPath?: Record<string, string | null>;
@@ -327,16 +325,11 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         redeemAttribution: () => success(undefined),
       }),
       agentUsage: namespace({
-        get: async (sessionId: string, force = false) => {
-          const delayMs = mockOptions.agentUsageDelayBySessionId?.[sessionId] ?? 0;
-          if (delayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-          }
+        get: async (force = false) => {
           if (force && mockOptions.forcedAgentUsageError) {
             return { success: false, error: mockOptions.forcedAgentUsageError };
           }
-          return success(clone(mockOptions.agentUsageBySessionId?.[sessionId]
-            ?? mockOptions.initialAgentUsage
+          return success(clone(mockOptions.initialAgentUsage
             ?? {
             providers: [{
               id: 'codex',

@@ -3,6 +3,7 @@ import {
   Bell,
   Bot,
   BrainCircuit,
+  Gauge,
   GitBranch,
   Keyboard,
   Link2,
@@ -56,6 +57,14 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
     icon: Bot,
     settingIds: ['default-pane-chat-agent', 'agent-context', 'claude-executable'],
     aliases: ['claude', 'codex', 'pane chat', 'agents.md'],
+  },
+  {
+    id: 'usage',
+    label: 'Usage',
+    description: 'Subscription usage and rate limits for detected agent logins.',
+    icon: Gauge,
+    settingIds: [],
+    aliases: ['codex', 'usage', 'limits', 'quota', 'plan', 'rate limit'],
   },
   {
     id: 'worktrees-git',
@@ -114,6 +123,10 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
     aliases: ['debug', 'verbose', 'developer', 'pty', 'path'],
   },
 ] as const;
+
+/** The catalog without the detection-gated Usage tab (shown only when a Codex login is detected). */
+export const SETTINGS_CATEGORIES_WITHOUT_USAGE: readonly SettingsCategoryDefinition[] =
+  SETTINGS_CATEGORIES.filter((category) => category.id !== 'usage');
 
 export const SETTINGS_CATEGORY_BY_ID = Object.fromEntries(
   SETTINGS_CATEGORIES.map((category) => [category.id, category]),

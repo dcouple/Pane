@@ -510,7 +510,7 @@ interface ElectronAPI {
 
   // Agent subscription usage
   agentUsage: {
-    get: (sessionId: string, force?: boolean) => Promise<IPCResponse<AgentUsageSnapshot>>;
+    get: (force?: boolean) => Promise<IPCResponse<AgentUsageSnapshot>>;
   };
 
   // Window state queries (invoke, not event subscriptions)

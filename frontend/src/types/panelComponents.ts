@@ -26,8 +26,6 @@ export interface PanelTabBarProps {
   detailPanelVisible?: boolean;
   detailPanelToggleDisabled?: boolean;
   detailPanelToggleDisabledReason?: string;
-  onToggleAgentUsage?: () => void;
-  agentUsageVisible?: boolean;
 
   // --- Optional split tab group integration ---
   /** Panels in layout order for the primary group (overrides internal sort). */

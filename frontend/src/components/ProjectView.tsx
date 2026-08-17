@@ -11,7 +11,6 @@ import { PanelCreateOptions } from '../types/panelComponents';
 import { SessionProvider } from '../contexts/SessionContext';
 import { DetailPanel } from './DetailPanel';
 import { useResizable } from '../hooks/useResizable';
-import { usePersistedBoolean } from '../hooks/usePersistedBoolean';
 
 interface ProjectViewProps {
   projectId: number;
@@ -60,20 +59,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     const stored = localStorage.getItem('pane-project-detail-panel-visible');
     return stored !== null ? stored === 'true' : false;
   });
-  const [agentUsageVisible, setAgentUsageVisible] = usePersistedBoolean('pane-agent-usage-visible');
 
   // Persist detail panel visibility
   useEffect(() => {
     localStorage.setItem('pane-project-detail-panel-visible', String(detailVisible));
   }, [detailVisible]);
-
-  useEffect(() => {
-    if (agentUsageVisible) setDetailVisible(true);
-  }, [agentUsageVisible]);
-
-  const handleToggleAgentUsage = useCallback(() => {
-    setAgentUsageVisible(current => !current);
-  }, [setAgentUsageVisible]);
 
   // Right-side resizable
   const { width: detailWidth, startResize: startDetailResize } = useResizable({
@@ -331,8 +321,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             context="project"
             onToggleDetailPanel={() => setDetailVisible(v => !v)}
             detailPanelVisible={detailVisible}
-            onToggleAgentUsage={handleToggleAgentUsage}
-            agentUsageVisible={agentUsageVisible}
           />
 
           {/* Content area: center panels + right detail */}
@@ -402,7 +390,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                 onPush: handleGitPush,
                 isMerging
               }}
-              showAgentUsage={agentUsageVisible}
             />
           </div>
         </SessionProvider>

@@ -18,7 +18,6 @@ import { ProjectView } from './ProjectView';
 import { API } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
-import { usePersistedBoolean } from '../hooks/usePersistedBoolean';
 import { usePanelStore } from '../stores/panelStore';
 import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/CombinedDiffView';
@@ -1349,8 +1348,6 @@ export const SessionView = memo(() => {
     return stored !== null ? stored === 'true' : false;
   });
 
-  const [agentUsageVisible, setAgentUsageVisible] = usePersistedBoolean('pane-agent-usage-visible');
-
   // Persist detail panel visibility
   useEffect(() => {
     localStorage.setItem('pane-detail-panel-visible', String(detailVisible));
@@ -1457,17 +1454,6 @@ export const SessionView = memo(() => {
       return newValue;
     });
   }, []);
-
-  const handleToggleAgentUsage = useCallback(() => {
-    setAgentUsageVisible(current => {
-      const next = !current;
-      if (next) {
-        if (layoutSwapped) setIsDetailCollapsed(false);
-        else setDetailVisible(true);
-      }
-      return next;
-    });
-  }, [layoutSwapped, setAgentUsageVisible]);
 
   // Layout-aware detail panel toggle that also handles immersive mode override
   const handleToggleDetailPanel = useCallback(() => {
@@ -1715,11 +1701,9 @@ export const SessionView = memo(() => {
           onPanelClose={handlePanelClose}
           onPanelCreate={handlePanelCreate}
           onToggleDetailPanel={handleToggleDetailPanel}
-          detailPanelVisible={layoutSwapped ? !isDetailCollapsed : detailVisible}
+          detailPanelVisible={detailVisible}
           detailPanelToggleDisabled={immersiveMode}
           detailPanelToggleDisabledReason="Hidden in Explorer and Diff views"
-          onToggleAgentUsage={handleToggleAgentUsage}
-          agentUsageVisible={agentUsageVisible}
           primaryGroupPanels={topBarPanels}
           primaryGroupActivePanelId={isSplitLayout ? (currentActivePanel?.id ?? null) : primaryGroupNode?.activePanelId}
           primaryGroupFocused={!primaryGroupNode || primaryGroupNode.id === focusedGroupId}
@@ -1764,7 +1748,6 @@ export const SessionView = memo(() => {
                   onToggleCollapse={toggleDetailCollapse}
                   onSwapLayout={toggleLayoutSwap}
                   onCommitClick={handleCommitClick}
-                  showAgentUsage={agentUsageVisible}
                   terminalShortcuts={
                     <>
                       <Tooltip content={hotkeyDisplay('add-tool-terminal-claude') ? <Kbd>{hotkeyDisplay('add-tool-terminal-claude')}</Kbd> : undefined} side="top">
@@ -1996,7 +1979,6 @@ export const SessionView = memo(() => {
                 mergeError={hook.mergeError}
                 onSwapLayout={toggleLayoutSwap}
                 onCommitClick={handleCommitClick}
-                showAgentUsage={agentUsageVisible}
               />
             </>
           )}
