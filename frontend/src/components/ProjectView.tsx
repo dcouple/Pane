@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { API } from '../utils/api';
 import { useSessionStore } from '../stores/sessionStore';
 import { Session } from '../types/session';
@@ -36,6 +36,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     branch: string | null;
   }>({ projectId, worktreePath: null, branch: null });
   const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const sessionRequestGeneration = useRef(0);
   const activeMainRepoSession = mainRepoSession?.projectId === projectId ? mainRepoSession : null;
   const activeWorktreePath = activeMainRepoSession?.worktreePath ?? null;
   const detectedBranch = branchState.projectId === projectId
@@ -235,11 +236,15 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   // Get or create main repo session when panels are needed
   useEffect(() => {
+    const requestGeneration = ++sessionRequestGeneration.current;
+    const isLatestRequest = () => requestGeneration === sessionRequestGeneration.current;
+
     // Create main repo session when component mounts to support panels
     const getMainRepoSession = async () => {
       setIsLoadingSession(true);
       try {
         const response = await API.sessions.getOrCreateMainRepoSession(projectId);
+        if (!isLatestRequest()) return;
         if (response.success && response.data) {
           setMainRepoSessionId(response.data.id);
           setMainRepoSession(response.data);
@@ -255,13 +260,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           useSessionStore.getState().setActiveSession(response.data.id);
         }
       } catch (error) {
-        console.error('Failed to get main repo session:', error);
+        if (isLatestRequest()) console.error('Failed to get main repo session:', error);
       } finally {
-        setIsLoadingSession(false);
+        if (isLatestRequest()) setIsLoadingSession(false);
       }
     };
 
-    getMainRepoSession();
+    void getMainRepoSession();
+    return () => {
+      if (isLatestRequest()) sessionRequestGeneration.current += 1;
+    };
   }, [projectId]);
   
   // Subscribe to session updates - optimized to check for actual changes
@@ -308,7 +316,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-bg-primary">
       {/* SINGLE SessionProvider wraps everything */}
-      {mainRepoSessionId && (
+      {activeMainRepoSession && (
         <SessionProvider session={detailSession} projectName={projectName}>
           {/* Tab bar at top */}
           <PanelTabBar
@@ -329,7 +337,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             {/* Center: panel content */}
             <div className="flex-1 relative min-h-0 overflow-hidden">
               {isLoadingSession ? (
-                <div className="h-full animate-pulse">
+                <div
+                  role="status"
+                  aria-label="Loading main repository session"
+                  className="h-full animate-pulse"
+                >
                   <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
                     <div className="h-3 w-28 bg-surface-tertiary rounded" />
                     <div className="flex items-center gap-2">
@@ -394,8 +406,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       )}
 
       {/* Loading state when no session yet */}
-      {!mainRepoSessionId && (
-        <div className="flex-1 animate-pulse">
+      {!activeMainRepoSession && (
+        <div
+          role="status"
+          aria-label="Loading main repository session"
+          className="flex-1 animate-pulse"
+        >
           {/* Tab bar skeleton */}
           <div className="flex items-center gap-1 px-2 py-1 border-b border-border-primary bg-surface-secondary">
             {[1, 2, 3].map(i => (
