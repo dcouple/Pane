@@ -324,7 +324,7 @@ export class ConfigManager extends EventEmitter {
         ? normalizePaneChatAgent(updates.defaultOrchestratorAgent)
         : this.config.defaultOrchestratorAgent,
       cloud: 'cloud' in updates
-        ? updates.cloud
+        ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
         : this.config.cloud,
       remoteDaemon: 'remoteDaemon' in updates
         ? normalizeRemoteDaemonConfig(updates.remoteDaemon)

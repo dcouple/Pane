@@ -80,7 +80,7 @@ export function createDefaultCloudVmState(): CloudVmState {
   };
 }
 
-export function normalizeCloudVmConfig(value: JsonValue | undefined): CloudVmConfig {
+export function normalizeCloudVmConfig<Value>(value: Value): CloudVmConfig {
   const defaults = createDefaultCloudVmConfig();
   let config: JsonObject;
   try {

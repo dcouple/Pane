@@ -60,7 +60,7 @@ function materializeObject<Fields extends ObjectFields>(
   entries: Array<[string, unknown]>,
 ): InferObject<Fields>;
 function materializeObject(entries: Array<[string, unknown]>): ObjectValue {
-  return Object.fromEntries(entries);
+  return Object.fromEntries(entries.filter(([, value]) => value !== undefined));
 }
 
 function decodeUnion<Schemas extends readonly BoundarySchema<unknown>[]>(
