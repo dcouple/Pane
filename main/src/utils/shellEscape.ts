@@ -58,7 +58,7 @@ Co-Authored-By: Pane <runpane@users.noreply.github.com>` : message;
  * @param args The arguments to escape
  * @returns The escaped arguments joined with spaces
  */
-export function escapeShellArgs(args: string[]): string {
+function escapeShellArgs(args: string[]): string {
   return args.map(escapeShellArg).join(' ');
 }
 
@@ -68,7 +68,7 @@ export function escapeShellArgs(args: string[]): string {
  * @param args The arguments to escape and append
  * @returns The safe command string
  */
-export function buildSafeCommand(command: string, ...args: string[]): string {
+function buildSafeCommand(command: string, ...args: string[]): string {
   if (args.length === 0) return command;
   return `${command} ${escapeShellArgs(args)}`;
 }

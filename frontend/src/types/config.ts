@@ -12,12 +12,12 @@ export interface TerminalShortcut {
   enabled: boolean;
 }
 
-export interface CustomCommand {
+interface CustomCommand {
   name: string;
   command: string;
 }
 
-export type TerminalPowerMode = 'performance' | 'batterySaver';
+type TerminalPowerMode = 'performance' | 'batterySaver';
 
 export interface AnalyticsIdentity {
   distinctId: string;
@@ -37,7 +37,7 @@ export interface AnalyticsIdentity {
   gitUserName?: string;
 }
 
-export interface AnalyticsConfig {
+interface AnalyticsConfig {
   enabled: boolean;
   posthogApiKey?: string;
   posthogHost?: string;

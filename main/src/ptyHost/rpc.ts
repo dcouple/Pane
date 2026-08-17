@@ -40,7 +40,7 @@ export interface RpcPoster {
  * each own their own stream of ids without collision. Starts at 1 so `0` can
  * remain a sentinel for "not yet assigned" in callers that need one.
  */
-export class RpcIdAllocator {
+class RpcIdAllocator {
   private next = 1;
 
   allocate(): number {

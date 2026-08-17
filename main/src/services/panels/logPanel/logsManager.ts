@@ -8,7 +8,7 @@ import { getShellPath } from '../../../utils/shellPath';
 import type { AnalyticsManager } from '../../analyticsManager';
 import { WSLContext, buildWSLENV } from '../../../utils/wslUtils';
 
-export class LogsManager {
+class LogsManager {
   private static instance: LogsManager;
   private activeProcesses = new Map<string, ChildProcess>(); // panelId -> process
   private scriptStartTimes = new Map<string, number>(); // panelId -> start timestamp

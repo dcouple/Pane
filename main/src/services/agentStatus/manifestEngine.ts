@@ -20,7 +20,7 @@ import type {
 } from '../../../../shared/types/agentStatus';
 
 /** A boolean matcher over a region of text. Nestable via all/any/not. */
-export interface Gate {
+interface Gate {
   /** Case-insensitive substrings; all must be present. */
   contains?: string[];
   /** Patterns; all must match the region text. */

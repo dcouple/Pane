@@ -40,7 +40,7 @@ function pinnedAtTime(session: Session): number {
   return Number.isNaN(createdAt) ? 0 : createdAt;
 }
 
-export function compareSessionsForSidebar(
+function compareSessionsForSidebar(
   a: Session,
   b: Session,
   createdAtAscending: boolean

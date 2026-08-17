@@ -26,7 +26,7 @@ export function formatForDisplay(timestamp: string | Date): string {
  * @param timestamp - The timestamp string from database or Date object
  * @returns Localized date and time string
  */
-export function formatFullDateTime(timestamp: string | Date): string {
+function formatFullDateTime(timestamp: string | Date): string {
   const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
   return date.toLocaleString();
 }
@@ -44,7 +44,7 @@ export function parseTimestamp(timestamp: string): Date {
  * Gets the current timestamp in ISO format for database storage
  * @returns ISO 8601 formatted string
  */
-export function getCurrentTimestamp(): string {
+function getCurrentTimestamp(): string {
   return new Date().toISOString();
 }
 
@@ -64,7 +64,7 @@ export function isValidTimestamp(timestamp: string | Date | null | undefined): b
  * @param timestamp - The timestamp to convert
  * @returns UTC ISO string
  */
-export function toUTC(timestamp: string | Date): string {
+function toUTC(timestamp: string | Date): string {
   const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
   return date.toISOString();
 }

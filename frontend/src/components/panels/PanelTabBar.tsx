@@ -28,7 +28,7 @@ function truncateCustomCommandLabel(label: string): string {
 }
 
 // Build prompt for setting up intelligent dev command — adapts based on Worktree File Sync config
-export function buildSetupRunScriptPrompt(fileSyncEntries?: WorktreeFileSyncEntry[]): string {
+function buildSetupRunScriptPrompt(fileSyncEntries?: WorktreeFileSyncEntry[]): string {
   const nodeModulesEnabled = fileSyncEntries?.some(e => e.path === 'node_modules' && e.enabled) ?? true;
   const envEnabled = fileSyncEntries?.some(e => e.path.startsWith('.env') && e.enabled) ?? true;
 

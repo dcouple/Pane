@@ -46,8 +46,3 @@ export interface ProjectDashboardData {
   sessionBranches: SessionBranchInfo[];
   lastRefreshed: string;
 }
-
-export interface ProjectDashboardError {
-  message: string;
-  details?: string;
-}

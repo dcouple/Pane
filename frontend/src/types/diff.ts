@@ -19,7 +19,7 @@ export interface ExecutionDiff {
   history_limit_reached?: boolean;
 }
 
-export interface GitDiffStats {
+interface GitDiffStats {
   additions: number;
   deletions: number;
   filesChanged: number;

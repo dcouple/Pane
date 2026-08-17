@@ -210,7 +210,7 @@ function waitForNextPaint(): Promise<void> {
  * re-render their transcript tail — duplicating scrollback on every
  * activation once content overflowed the viewport.
  */
-export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
+const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActive, autoFocus = true }) => {
   renderLog('[TerminalPanel] Component rendering, panel:', panel.id, 'isActive:', isActive);
   
   // All hooks must be called at the top level, before any conditional returns

@@ -9,16 +9,16 @@
 import { EventEmitter } from 'events';
 import { getPaneEventSink } from '../core/runtime';
 
-export type ScriptType = 'session' | 'project';
+type ScriptType = 'session' | 'project';
 
-export interface RunningScriptInfo {
+interface RunningScriptInfo {
   type: ScriptType;
   id: string | number; // sessionId or projectId
   sessionId?: string; // The actual session where the script is running
   startedAt: Date;
 }
 
-export class ScriptExecutionTracker extends EventEmitter {
+class ScriptExecutionTracker extends EventEmitter {
   private static instance: ScriptExecutionTracker;
   private runningScript: RunningScriptInfo | null = null;
   private closingScript: RunningScriptInfo | null = null;

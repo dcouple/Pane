@@ -283,5 +283,5 @@ export class CliManagerFactory {
 /**
  * Convenience function to get the factory instance
  */
-export const getCliManagerFactory = (logger?: Logger, configManager?: ConfigManager) =>
+const getCliManagerFactory = (logger?: Logger, configManager?: ConfigManager) =>
   CliManagerFactory.getInstance(logger, configManager);

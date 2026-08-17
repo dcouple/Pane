@@ -1,6 +1,6 @@
 import type { TerminalPanelState } from '../../../shared/types/panels';
 
-export type TerminalRestoreSource = 'alternateScreen' | 'scrollback' | 'serialized';
+type TerminalRestoreSource = 'alternateScreen' | 'scrollback' | 'serialized';
 
 export interface TerminalRestoreContent {
   content: string;

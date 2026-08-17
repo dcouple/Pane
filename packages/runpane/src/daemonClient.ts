@@ -55,7 +55,7 @@ const UNIX_SOCKET_BASE_DIRECTORY = '/tmp';
 const DAEMON_SOCKET_FILENAME = 'daemon.sock';
 const DEFAULT_TIMEOUT_MS = 130_000;
 
-export class PaneDaemonClientError extends Error {
+class PaneDaemonClientError extends Error {
   constructor(
     message: string,
     readonly code?: string,

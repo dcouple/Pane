@@ -34,7 +34,7 @@ export function decodeRemoteConnectionCode(code: string): RemotePaneConnectionPr
   };
 }
 
-export function normalizeBaseUrl(baseUrl: string): string {
+function normalizeBaseUrl(baseUrl: string): string {
   const url = new URL(baseUrl);
   url.pathname = url.pathname.replace(/\/+$/, '');
   url.search = '';

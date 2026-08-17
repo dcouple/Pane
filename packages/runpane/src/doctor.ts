@@ -155,7 +155,7 @@ interface RemoteSetupProbes {
   hasSystemctl: boolean;
 }
 
-export function collectRemoteSetupCheck(
+function collectRemoteSetupCheck(
   platform: PanePlatform | undefined,
   releaseFormat: string | undefined,
   probeOverrides: Partial<RemoteSetupProbes> = {}

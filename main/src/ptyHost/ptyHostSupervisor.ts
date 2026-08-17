@@ -220,7 +220,7 @@ interface WindowPortPair {
  * - `ready-after-restart`: emitted ONLY after a restart completes; callers use
  *   this to drive per-manager `respawnAll()` without firing on the initial boot.
  */
-export interface PtyHostSupervisorEvents {
+interface PtyHostSupervisorEvents {
   restart: () => void;
   ready: () => void;
   'ready-after-restart': () => void;

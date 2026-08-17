@@ -46,7 +46,7 @@ export function SettingRow({
   );
 }
 
-export function SaveState({ state }: { state: SettingSaveState }) {
+function SaveState({ state }: { state: SettingSaveState }) {
   if (state.state === 'idle') return null;
   if (state.state === 'saving') {
     return (

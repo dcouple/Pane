@@ -628,7 +628,7 @@ export function registerRunpaneHandlers(
   });
 }
 
-export function runpaneDaemonChannels(): readonly string[] {
+function runpaneDaemonChannels(): readonly string[] {
   return RUNPANE_CHANNELS;
 }
 

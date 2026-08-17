@@ -5,12 +5,12 @@ import { archAliases, defaultFormat, platformParam, type PanePlatform } from './
 const GITHUB_API_BASE = 'https://api.github.com/repos/dcouple/Pane/releases';
 const DOWNLOAD_API_BASE = 'https://runpane.com/api/download';
 
-export interface GitHubReleaseAsset {
+interface GitHubReleaseAsset {
   name: string;
   browser_download_url: string;
 }
 
-export interface GitHubRelease {
+interface GitHubRelease {
   tag_name: string;
   name: string;
   body: string;
@@ -56,7 +56,7 @@ export async function resolveRelease(options: ResolveReleaseOptions): Promise<Re
   };
 }
 
-export async function fetchRelease(version: string, timeoutMs?: number): Promise<GitHubRelease> {
+async function fetchRelease(version: string, timeoutMs?: number): Promise<GitHubRelease> {
   const normalized = version === 'latest' ? 'latest' : version.startsWith('v') ? `tags/${version}` : `tags/v${version}`;
   const controller = timeoutMs ? new AbortController() : undefined;
   const timeout = controller
@@ -93,7 +93,7 @@ export async function fetchRelease(version: string, timeoutMs?: number): Promise
   }
 }
 
-export function findArtifact(
+function findArtifact(
   release: GitHubRelease,
   platform: PanePlatform,
   format: Exclude<ArtifactFormat, 'auto'>

@@ -58,7 +58,7 @@ function buildGithubReviewUrl(prUrl?: string): string | null {
   }
 }
 
-export const DiffPanel: React.FC<DiffPanelProps> = ({
+const DiffPanel: React.FC<DiffPanelProps> = ({
   panel,
   isActive,
   sessionId,

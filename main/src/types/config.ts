@@ -4,7 +4,7 @@ import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
 
-export interface TerminalShortcut {
+interface TerminalShortcut {
   id: string;
   label: string;
   key: string;
@@ -12,12 +12,12 @@ export interface TerminalShortcut {
   enabled: boolean;
 }
 
-export interface CustomCommand {
+interface CustomCommand {
   name: string;
   command: string;
 }
 
-export type TerminalPowerMode = 'performance' | 'batterySaver';
+type TerminalPowerMode = 'performance' | 'batterySaver';
 
 export interface AnalyticsIdentity {
   distinctId: string;
@@ -30,20 +30,6 @@ export interface AnalyticsIdentity {
   webAttributionPresent?: boolean;
   isFirstLaunch?: boolean;
   previousVersion?: string | null;
-  githubUsername?: string;
-  githubEmail?: string;
-  gitEmail?: string;
-  gitEmailHash?: string;
-  gitUserName?: string;
-}
-
-export interface AnalyticsConfig {
-  enabled: boolean;
-  posthogApiKey?: string;
-  posthogHost?: string;
-  installId?: string;
-  distinctId?: string;
-  identitySource?: AnalyticsIdentity['identitySource'];
   githubUsername?: string;
   githubEmail?: string;
   gitEmail?: string;
@@ -128,7 +114,19 @@ export interface AppConfig {
   // Off by default. Requires app restart; the supervisor is forked once at `app.whenReady`.
   usePtyHost?: boolean;
   // PostHog analytics settings
-  analytics?: AnalyticsConfig;
+  analytics?: {
+    enabled: boolean;
+    posthogApiKey?: string;
+    posthogHost?: string;
+    installId?: string;
+    distinctId?: string;
+    identitySource?: AnalyticsIdentity['identitySource'];
+    githubUsername?: string;
+    githubEmail?: string;
+    gitEmail?: string;
+    gitEmailHash?: string;
+    gitUserName?: string;
+  };
   // User-defined custom commands for the Add Tool picker
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
@@ -202,7 +200,7 @@ export interface UpdateConfigRequest {
   // Off by default. Requires app restart to take effect.
   usePtyHost?: boolean;
   // PostHog analytics settings
-  analytics?: AnalyticsConfig;
+  analytics?: AppConfig['analytics'];
   // User-defined custom commands for the Add Tool picker
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets

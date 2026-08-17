@@ -19,7 +19,7 @@ export type WrapperTelemetryEventName =
   | 'runpane_wrapper_command_succeeded'
   | 'runpane_wrapper_command_failed';
 
-export type WrapperInvocation =
+type WrapperInvocation =
   | 'npm'
   | 'npx'
   | 'npm_global'
@@ -29,7 +29,7 @@ export type WrapperInvocation =
   | 'bunx'
   | 'unknown';
 
-export type WrapperFailureStage =
+type WrapperFailureStage =
   | 'parse'
   | 'resolve_release'
   | 'download'
@@ -67,7 +67,7 @@ export interface WrapperTelemetryContext {
   exitCode?: number;
 }
 
-export type WrapperTelemetryProperties = Record<string, string | number | boolean>;
+type WrapperTelemetryProperties = Record<string, string | number | boolean>;
 
 interface ConfigFile {
   analytics?: {
@@ -186,7 +186,7 @@ export function categorizeFailure(error: unknown): WrapperFailureCategory {
   return 'unknown';
 }
 
-export function detectNpmInvocation(
+function detectNpmInvocation(
   env: NodeJS.ProcessEnv = process.env,
   argv: string[] = process.argv
 ): WrapperInvocation {
@@ -216,7 +216,7 @@ export function detectNpmInvocation(
   return 'unknown';
 }
 
-export function buildWrapperTelemetryProperties(input: {
+function buildWrapperTelemetryProperties(input: {
   installId: string;
   wrapperVersion: string;
   invocation: WrapperInvocation;

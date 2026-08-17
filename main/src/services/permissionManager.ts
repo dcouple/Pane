@@ -5,7 +5,7 @@ import type {
   PanePermissionResponse as PermissionResponse,
 } from '../../../shared/types/daemon';
 
-export type { PermissionInput, PermissionRequest, PermissionResponse };
+export type {   PermissionResponse };
 
 /**
  * Legacy compatibility wrapper around the daemon-owned permission broker.

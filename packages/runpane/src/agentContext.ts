@@ -36,7 +36,7 @@ export function runAgentContext(parsed: Pick<ParsedArgs, 'contextCommand' | 'jso
   return 0;
 }
 
-export function buildAgentContextResult(commandName?: string): AgentContextResult {
+function buildAgentContextResult(commandName?: string): AgentContextResult {
   if (commandName) {
     return {
       ok: true,

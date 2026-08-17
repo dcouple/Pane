@@ -9,7 +9,6 @@
 
 import type {
   PanelGroupNode,
-  PanelSplitNode,
   PanelLayoutNode,
   SessionPanelLayout,
 } from '../../../shared/types/panels';
@@ -54,17 +53,6 @@ export function findGroup(root: PanelLayoutNode, groupId: string): PanelGroupNod
 export function containsGroup(node: PanelLayoutNode, groupId: string): boolean {
   if (node.type === 'group') return node.id === groupId;
   return node.children.some(c => containsGroup(c, groupId));
-}
-
-/** Find the parent split of a node by the node's id. */
-export function findParent(root: PanelLayoutNode, nodeId: string): PanelSplitNode | null {
-  if (root.type === 'group') return null;
-  for (const child of root.children) {
-    if (child.id === nodeId) return root;
-    const found = findParent(child, nodeId);
-    if (found) return found;
-  }
-  return null;
 }
 
 /** Find which group contains a given panelId. */
@@ -295,12 +283,12 @@ export function splitGroup(
 
 export type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center';
 
-export interface MoveTargetCenter {
+interface MoveTargetCenter {
   groupId: string;
   index: number;
 }
 
-export interface MoveTargetEdge {
+interface MoveTargetEdge {
   groupId: string;
   edge: 'left' | 'right' | 'top' | 'bottom';
 }

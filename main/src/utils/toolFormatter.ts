@@ -129,7 +129,7 @@ function makePathsRelative(content: unknown, gitRepoPath?: string): string {
 /**
  * Format tool call and response as a unified display
  */
-export function formatToolInteraction(
+function formatToolInteraction(
   toolCall: ToolCall,
   toolResult: ToolResult | null,
   callTimestamp: string,
@@ -723,4 +723,4 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
 }
 
 // Re-export the original formatter for backwards compatibility
-export { formatJsonForOutput };
+;

@@ -62,7 +62,7 @@ export function applyAppDirectoryOverrideFromArgs(args = process.argv.slice(2)):
  * Sets a custom Pane directory path. This should be called early in the
  * application lifecycle, before any services are initialized.
  */
-export function setAppDirectory(dir: string): void {
+function setAppDirectory(dir: string): void {
   customAppDir = dir;
 }
 

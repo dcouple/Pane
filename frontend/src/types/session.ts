@@ -1,27 +1,27 @@
 // Claude message content types
-export interface TextContent {
+interface TextContent {
   type: 'text';
   text: string;
 }
 
-export interface ToolUseContent {
+interface ToolUseContent {
   type: 'tool_use';
   id: string;
   name: string;
   input: Record<string, unknown>;
 }
 
-export interface ToolResultContent {
+interface ToolResultContent {
   type: 'tool_result';
   tool_use_id: string;
   content: string;
   is_error?: boolean;
 }
 
-export type MessageContent = TextContent | ToolUseContent | ToolResultContent;
+type MessageContent = TextContent | ToolUseContent | ToolResultContent;
 
 // Tool definition interface
-export interface ToolDefinition {
+interface ToolDefinition {
   name: string;
   description?: string;
   input_schema?: Record<string, unknown>;
@@ -29,7 +29,7 @@ export interface ToolDefinition {
 }
 
 // MCP server definition interface  
-export interface McpServerDefinition {
+interface McpServerDefinition {
   name: string;
   command?: string;
   args?: string[];
@@ -193,9 +193,6 @@ export interface GitErrorDetails {
 // Import Folder from the proper types file
 import type { Folder } from './folder';
 
-// FolderWithProjectId is just an alias for Folder since it already has projectId
-export type FolderWithProjectId = Folder;
-
 export type ContextMenuPayload = Session | Folder;
 
 // Version update info interface
@@ -208,13 +205,6 @@ export interface VersionUpdateInfo {
   releaseNotes?: string;
   downloadUrl?: string;
   mandatory?: boolean;
-}
-
-// Permission request input types  
-export interface PermissionInput {
-  tool_name?: string;
-  args?: Record<string, unknown>;
-  [key: string]: unknown;
 }
 
 // Attachment types for Claude Code config

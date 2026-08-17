@@ -567,7 +567,7 @@ async function detectInstallCommand(
  * This is used by terminalPanelManager to auto-detect the install command
  * when a terminal panel initializes — no CommandRunner needed.
  */
-export function detectInstallCommandSync(cwd: string): string | null {
+function detectInstallCommandSync(cwd: string): string | null {
   const lockFiles: Array<{ file: string; command: string }> = [
     { file: 'pnpm-lock.yaml', command: 'pnpm install' },
     { file: 'package-lock.json', command: 'npm install' },

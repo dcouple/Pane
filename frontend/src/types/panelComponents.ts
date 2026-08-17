@@ -1,13 +1,13 @@
 import { ToolPanel, ToolPanelType } from '../../../shared/types/panels';
 
-export type PanelContext = 'project' | 'worktree';
+type PanelContext = 'project' | 'worktree';
 
 export interface PanelCreateOptions {
   initialCommand?: string;  // Command to run on terminal init
   title?: string;           // Custom panel title
 }
 
-export interface PanelTabPresentation {
+interface PanelTabPresentation {
   title?: string;
   disabled?: boolean;
   disabledReason?: string;

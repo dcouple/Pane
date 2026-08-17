@@ -4,7 +4,7 @@ import { execFile, execFileSync } from 'child_process';
 
 /** Detect if the Electron process is running inside WSL (e.g. via WSLg). */
 let _isWSL: boolean | null = null;
-export function isRunningInWSL(): boolean {
+function isRunningInWSL(): boolean {
   if (_isWSL !== null) return _isWSL;
   try {
     const version = fsSync.readFileSync('/proc/version', 'utf-8');

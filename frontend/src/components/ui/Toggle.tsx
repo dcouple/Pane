@@ -119,33 +119,3 @@ export const Toggle: React.FC<ToggleProps> = ({
     </button>
   );
 };
-
-interface ToggleFieldProps extends ToggleProps {
-  label: string;
-  description?: string;
-  id?: string;
-}
-
-export const ToggleField: React.FC<ToggleFieldProps> = ({
-  label,
-  description,
-  id,
-  ...toggleProps
-}) => {
-  return (
-    <div className="flex items-center justify-between">
-      <div className="flex-1">
-        <label 
-          htmlFor={id}
-          className="font-medium text-text-primary cursor-pointer"
-        >
-          {label}
-        </label>
-        {description && (
-          <p className="text-sm text-text-secondary">{description}</p>
-        )}
-      </div>
-      <Toggle id={id} {...toggleProps} />
-    </div>
-  );
-};

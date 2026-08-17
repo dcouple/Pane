@@ -186,14 +186,6 @@ export function initPostHog(config: PostHogConfig, options: PostHogInitOptions =
   }
 }
 
-export function optIn(): void {
-  posthog.opt_in_capturing();
-}
-
-export function optOut(): void {
-  posthog.opt_out_capturing();
-}
-
 export function queuePendingEvent(event: PendingAnalyticsEvent): void {
   pendingEvents.push({
     eventName: event.eventName,

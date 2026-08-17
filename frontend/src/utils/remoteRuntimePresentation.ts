@@ -4,7 +4,7 @@ import type {
   RemotePaneConnectionState,
 } from '../../../shared/types/remoteDaemon';
 
-export interface RemoteHostRuntimePresentation {
+interface RemoteHostRuntimePresentation {
   dotClassName: string;
   borderClassName: string;
   title: string;
@@ -18,7 +18,7 @@ export interface RemoteFooterStatus {
   ariaLabel: string;
 }
 
-export function formatRemoteLastSeen(lastSeenAt: string | null, style: 'sentence' | 'inline' = 'sentence'): string | null {
+function formatRemoteLastSeen(lastSeenAt: string | null, style: 'sentence' | 'inline' = 'sentence'): string | null {
   if (!lastSeenAt) {
     return null;
   }
@@ -46,11 +46,11 @@ export function formatRemoteLastSeen(lastSeenAt: string | null, style: 'sentence
   return `${prefix} ${new Date(seenAtMs).toLocaleString()}${suffix}`;
 }
 
-export function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
+function getRemoteClientDisplayLabel(client: RemoteDaemonConnectedClient): string | null {
   return client.deviceLabel ?? client.remoteAddress;
 }
 
-export function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): string {
+function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): string {
   if (state.connectedClients.length === 0) {
     return 'No remote clients are connected.';
   }
@@ -69,7 +69,7 @@ export function formatRemoteHostClients(state: RemoteDaemonHostRuntimeState): st
   return `${state.connectedClients.length} remote ${clientNoun} connected: ${labels}${remaining > 0 ? `, +${remaining} more` : ''}.`;
 }
 
-export function getRemoteHostRuntimePresentation(
+function getRemoteHostRuntimePresentation(
   state: RemoteDaemonHostRuntimeState,
   surface: 'settings' | 'sidebar' = 'settings',
 ): RemoteHostRuntimePresentation {

@@ -6,7 +6,7 @@ import { panelEventBus } from './panelEventBus';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
 
-export class PanelManager {
+class PanelManager {
   private panels = new Map<string, ToolPanel>();
   // Sessions that have been archived during this process lifetime.
   // Used by getPanel / getPanelsForSession to skip re-caching from DB

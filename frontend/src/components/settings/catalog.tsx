@@ -128,10 +128,6 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
 export const SETTINGS_CATEGORIES_WITHOUT_USAGE: readonly SettingsCategoryDefinition[] =
   SETTINGS_CATEGORIES.filter((category) => category.id !== 'usage');
 
-export const SETTINGS_CATEGORY_BY_ID = Object.fromEntries(
-  SETTINGS_CATEGORIES.map((category) => [category.id, category]),
-) as Record<SettingsCategoryId, SettingsCategoryDefinition>;
-
 export function settingDomId(settingId: SettingsSettingId): string {
   return `settings-${settingId}`;
 }

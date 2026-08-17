@@ -91,19 +91,19 @@ export interface SessionUpdate {
 }
 
 // Claude message content types
-export interface TextContent {
+interface TextContent {
   type: 'text';
   text: string;
 }
 
-export interface ToolUseContent {
+interface ToolUseContent {
   type: 'tool_use';
   id: string;
   name: string;
   input: Record<string, unknown>;
 }
 
-export interface ToolResultContent {
+interface ToolResultContent {
   type: 'tool_result';
   tool_use_id: string;
   content: string;
@@ -113,7 +113,7 @@ export interface ToolResultContent {
 export type MessageContent = TextContent | ToolUseContent | ToolResultContent;
 
 // Tool definition interface
-export interface ToolDefinition {
+interface ToolDefinition {
   name: string;
   description?: string;
   input_schema?: Record<string, unknown>;
@@ -121,7 +121,7 @@ export interface ToolDefinition {
 }
 
 // MCP server definition interface  
-export interface McpServerDefinition {
+interface McpServerDefinition {
   name: string;
   command?: string;
   args?: string[];

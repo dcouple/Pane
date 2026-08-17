@@ -10,7 +10,7 @@ const execAsync = promisify(exec);
 /**
  * Get augmented PATH that includes common installation directories
  */
-export function getAugmentedPath(): string {
+function getAugmentedPath(): string {
   const platform = os.platform();
   const homeDir = os.homedir();
   const pathSeparator = platform === 'win32' ? ';' : ':';
@@ -86,7 +86,7 @@ export function getAugmentedPath(): string {
 /**
  * Find the claude executable in common locations
  */
-export async function findClaudeExecutable(): Promise<string | null> {
+async function findClaudeExecutable(): Promise<string | null> {
   const platform = os.platform();
   const executableName = platform === 'win32' ? 'claude.exe' : 'claude';
   const augmentedPath = getAugmentedPath();

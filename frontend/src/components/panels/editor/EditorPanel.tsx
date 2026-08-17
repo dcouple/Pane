@@ -10,7 +10,7 @@ interface ExplorerPanelProps {
   isActive: boolean;
 }
 
-export const ExplorerPanel: React.FC<ExplorerPanelProps> = ({ 
+const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   panel, 
   isActive 
 }) => {

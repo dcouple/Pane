@@ -33,7 +33,7 @@ export interface CliToolDefinition {
 /**
  * Defines what a CLI tool can do
  */
-export interface CliToolCapabilities {
+interface CliToolCapabilities {
   /** Can handle conversation continuations */
   supportsResume: boolean;
   
@@ -65,7 +65,7 @@ export interface CliToolCapabilities {
 /**
  * Configuration requirements for a CLI tool
  */
-export interface CliToolConfig {
+interface CliToolConfig {
   /** Required environment variables */
   requiredEnvVars: string[];
   
@@ -91,7 +91,7 @@ export interface CliToolConfig {
 /**
  * Output format support
  */
-export interface CliOutputFormat {
+interface CliOutputFormat {
   /** Format identifier */
   id: string;
   
@@ -540,4 +540,4 @@ export const CLI_OUTPUT_FORMATS = {
 } as const;
 
 // Export default instance getter for convenience
-export const getCliToolRegistry = () => CliToolRegistry.getInstance();
+const getCliToolRegistry = () => CliToolRegistry.getInstance();

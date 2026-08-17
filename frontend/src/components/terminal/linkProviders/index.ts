@@ -1,6 +1,6 @@
-export { createFileLinkProvider } from './fileLinkProvider';
-export { createGitLinkProvider } from './gitLinkProvider';
-export type { LinkProviderConfig, CreateLinkProvider, LinkMatch } from './types';
+;
+;
+export type { LinkProviderConfig,   } from './types';
 
 import type { IDisposable } from '@xterm/xterm';
 import type { LinkProviderConfig } from './types';

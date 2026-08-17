@@ -27,11 +27,11 @@ function getExtraEnvVars(mergedEnv?: Record<string, string | undefined>): Record
  * Extended ExecSyncOptions that includes a custom 'silent' flag
  * to suppress command execution logging
  */
-export interface ExtendedExecSyncOptions extends ExecSyncOptions {
+interface ExtendedExecSyncOptions extends ExecSyncOptions {
   silent?: boolean;
 }
 
-export interface ExtendedExecAsyncOptions extends ExecOptions {
+interface ExtendedExecAsyncOptions extends ExecOptions {
   timeout?: number;
   silent?: boolean;
 }
@@ -226,4 +226,4 @@ export const commandExecutor = new CommandExecutor();
 export const execSync = commandExecutor.execSync.bind(commandExecutor);
 
 // Export the execAsync function
-export const execAsync = commandExecutor.execAsync.bind(commandExecutor);
+const execAsync = commandExecutor.execAsync.bind(commandExecutor);

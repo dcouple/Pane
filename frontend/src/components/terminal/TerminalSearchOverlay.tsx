@@ -127,6 +127,5 @@ const TerminalSearchOverlay: React.FC<TerminalSearchOverlayProps> = ({
 
 TerminalSearchOverlay.displayName = 'TerminalSearchOverlay';
 
-export default React.memo(TerminalSearchOverlay);
 export { TerminalSearchOverlay };
-export type { TerminalSearchOverlayProps };
+;

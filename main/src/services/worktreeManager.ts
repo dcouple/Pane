@@ -8,7 +8,7 @@ import { CommandRunner } from '../utils/commandRunner';
 import { getGitAttributionEnv } from '../utils/attribution';
 import { worktreePoolManager } from './worktreePoolManager';
 
-export type WorktreeAuditSource = 'session-delete' | 'project-delete' | 'create-cleanup';
+type WorktreeAuditSource = 'session-delete' | 'project-delete' | 'create-cleanup';
 
 export interface WorktreeAuditContext {
   source: WorktreeAuditSource;

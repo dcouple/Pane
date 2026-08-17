@@ -182,7 +182,7 @@ export function formatSetupRemoteHostResult(result: SetupRemoteHostResult): stri
   return lines.join('\n');
 }
 
-export function createRemoteHostAccess(
+function createRemoteHostAccess(
   baseUrl: string,
   tunnel?: PaneRemoteConnectionImportPayload['tunnel'],
 ): RemoteDaemonHostAccess {

@@ -45,7 +45,7 @@ export async function ensureProjectAgentContext(
   return { changed: true, filePath };
 }
 
-export function renderManagedAgentContextBlock(): string {
+function renderManagedAgentContextBlock(): string {
   return [
     PANE_AGENT_CONTEXT_START,
     ...RUNPANE_CONTRACT.agentContext.managedBlock,
@@ -54,7 +54,7 @@ export function renderManagedAgentContextBlock(): string {
   ].join('\n');
 }
 
-export function upsertManagedBlock(existing: string, block: string = renderManagedAgentContextBlock()): string {
+function upsertManagedBlock(existing: string, block: string = renderManagedAgentContextBlock()): string {
   const startIndex = existing.indexOf(PANE_AGENT_CONTEXT_START);
   const endIndex = existing.indexOf(PANE_AGENT_CONTEXT_END);
 
@@ -71,7 +71,7 @@ export function upsertManagedBlock(existing: string, block: string = renderManag
   return `${existing}${separator}${block}`;
 }
 
-export function removeManagedBlock(existing: string): string {
+function removeManagedBlock(existing: string): string {
   const startIndex = existing.indexOf(PANE_AGENT_CONTEXT_START);
   const endIndex = existing.indexOf(PANE_AGENT_CONTEXT_END);
 

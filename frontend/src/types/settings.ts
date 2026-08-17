@@ -82,10 +82,9 @@ export const SETTINGS_PREFERENCE_KEYS = {
   atTerminalLineCount: 'at_terminal_line_count',
 } as const;
 
-export type SettingsPreferenceKey = typeof SETTINGS_PREFERENCE_KEYS[keyof typeof SETTINGS_PREFERENCE_KEYS];
 export type SidebarPaneRowLayout = 'single' | 'two-row';
-export type AtTerminalPasteMode = 'raw' | 'embed';
-export type AtTerminalLineCount = 100 | 300 | 500 | -1;
+type AtTerminalPasteMode = 'raw' | 'embed';
+type AtTerminalLineCount = 100 | 300 | 500 | -1;
 
 export interface SettingsPreferenceValues {
   autoRenameSessionsToPr: boolean;

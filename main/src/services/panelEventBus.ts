@@ -1,7 +1,7 @@
 import { PanelEvent, PanelEventType, PanelEventSubscription } from '../../../shared/types/panels';
 import { EventEmitter } from 'events';
 
-export class PanelEventBus extends EventEmitter {
+class PanelEventBus extends EventEmitter {
   private eventHistory: PanelEvent[] = [];
   private readonly MAX_HISTORY_SIZE = 100;
 

@@ -14,7 +14,7 @@ interface BrowserSurfaceProps {
   compact?: boolean;
 }
 
-export const BrowserSurface: React.FC<BrowserSurfaceProps> = ({
+const BrowserSurface: React.FC<BrowserSurfaceProps> = ({
   panelId,
   sessionId,
   url,

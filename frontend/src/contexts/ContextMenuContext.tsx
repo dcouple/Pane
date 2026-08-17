@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import type { ContextMenuPayload } from '../types/session';
 
 interface ContextMenuPosition {
@@ -20,14 +20,6 @@ interface ContextMenuContextType {
 }
 
 const ContextMenuContext = createContext<ContextMenuContextType | undefined>(undefined);
-
-export const useContextMenu = () => {
-  const context = useContext(ContextMenuContext);
-  if (!context) {
-    throw new Error('useContextMenu must be used within a ContextMenuProvider');
-  }
-  return context;
-};
 
 interface ContextMenuProviderProps {
   children: ReactNode;

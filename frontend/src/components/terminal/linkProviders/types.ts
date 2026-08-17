@@ -1,19 +1,4 @@
-import type { ILinkProvider, Terminal } from '@xterm/xterm';
-
-export interface LinkMatch {
-  text: string;
-  startIndex: number;
-  endIndex: number;
-  type: 'file' | 'git-sha' | 'issue';
-  // For file links
-  filePath?: string;
-  lineNumber?: number;
-  columnNumber?: number;
-  // For git links
-  sha?: string;
-  issueNumber?: number;
-  repo?: string; // org/repo format
-}
+import type { Terminal } from '@xterm/xterm';
 
 export interface LinkProviderConfig {
   terminal: Terminal;
@@ -24,5 +9,3 @@ export interface LinkProviderConfig {
   onShowFilePopover: (event: MouseEvent, filePath: string, line?: number) => void;
   onOpenUrl: (url: string) => void;
 }
-
-export type CreateLinkProvider = (config: LinkProviderConfig) => ILinkProvider;

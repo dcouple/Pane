@@ -26,15 +26,6 @@ export interface Project {
   environment?: ProjectEnvironment;
 }
 
-export interface ProjectRunCommand {
-  id: number;
-  project_id: number;
-  command: string;
-  display_name?: string;
-  order_index: number;
-  created_at: string;
-}
-
 export interface CreateProjectRequest {
   name: string;
   path: string;

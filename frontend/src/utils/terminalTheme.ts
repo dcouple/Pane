@@ -103,32 +103,3 @@ export const getScriptTerminalTheme = () => {
     background: surfaceBackground || (isLight ? '#f9fafb' : isForge ? '#1E1F22' : isDusk ? '#111827' : isOled ? '#080808' : '#1f2937'),
   };
 };
-
-// Debug function to check current terminal theme values
-export const debugTerminalTheme = () => {
-  const isLight = document.documentElement.classList.contains('light');
-  const isDark = document.documentElement.classList.contains('dark');
-  const isOled = document.documentElement.classList.contains('oled');
-  const isDusk = document.documentElement.classList.contains('dusk');
-  const isForge = document.documentElement.classList.contains('forge');
-
-  // Check actual CSS variable values
-  const bgVar = getComputedStyle(document.documentElement).getPropertyValue('--color-terminal-bg').trim();
-  const fgVar = getComputedStyle(document.documentElement).getPropertyValue('--color-terminal-fg').trim();
-
-  // Return debug info instead of logging to console
-  return {
-    classes: document.documentElement.className,
-    isLight,
-    isDark,
-    isOled,
-    isDusk,
-    isForge,
-    cssVariables: {
-      '--color-terminal-bg': bgVar || 'NOT SET',
-      '--color-terminal-fg': fgVar || 'NOT SET',
-    },
-    terminalTheme: getTerminalTheme(),
-    scriptTerminalTheme: getScriptTerminalTheme(),
-  };
-};

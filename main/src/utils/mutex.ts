@@ -10,7 +10,7 @@ const logger = {
  * A simple async mutex implementation for preventing race conditions
  * in critical sections of code. Supports named locks and timeouts.
  */
-export class Mutex {
+class Mutex {
   private locks = new Map<string, Promise<void>>();
   private lockCounts = new Map<string, number>();
   private defaultTimeout = 30000; // 30 seconds
@@ -114,7 +114,7 @@ export class Mutex {
 }
 
 // Global mutex instance for the application
-export const mutex = new Mutex();
+const mutex = new Mutex();
 
 /**
  * Convenience function to execute code with a named lock
@@ -137,7 +137,7 @@ export async function withLock<T>(
  * @param timeout - Optional timeout in milliseconds
  * @returns Promise<() => void> - Release function to unlock the resource
  */
-export async function acquireLock(resourceName: string, timeout?: number): Promise<() => void> {
+async function acquireLock(resourceName: string, timeout?: number): Promise<() => void> {
   return mutex.acquire(resourceName, timeout);
 }
 
@@ -146,6 +146,6 @@ export async function acquireLock(resourceName: string, timeout?: number): Promi
  * @param resourceName - Name of the resource to check
  * @returns boolean - True if the resource is locked
  */
-export function isLocked(resourceName: string): boolean {
+function isLocked(resourceName: string): boolean {
   return mutex.isLocked(resourceName);
 }

@@ -62,7 +62,7 @@ export function resolveTailscaleCommand(): ResolvedCommand | null {
   return null;
 }
 
-export function ensureTailscaleInstalled(): ResolvedCommand {
+function ensureTailscaleInstalled(): ResolvedCommand {
   return resolveTailscaleCommand() ?? installTailscaleCommandOrThrow();
 }
 
@@ -157,7 +157,7 @@ export function runCommand(
   };
 }
 
-export function runCommandInteractive(
+function runCommandInteractive(
   command: string | ResolvedCommand,
   args: string[],
   options: { timeoutMs?: number } = {},
@@ -178,7 +178,7 @@ export function runCommandInteractive(
   };
 }
 
-export function runShellCommand(command: string, options: { timeoutMs?: number } = {}): CommandResult {
+function runShellCommand(command: string, options: { timeoutMs?: number } = {}): CommandResult {
   const result = spawnSync(command, {
     encoding: 'utf8',
     shell: true,
@@ -192,7 +192,7 @@ export function runShellCommand(command: string, options: { timeoutMs?: number }
   };
 }
 
-export function runShellCommandInteractive(command: string, options: { timeoutMs?: number } = {}): CommandResult {
+function runShellCommandInteractive(command: string, options: { timeoutMs?: number } = {}): CommandResult {
   const result = spawnSync(command, {
     shell: true,
     stdio: 'inherit',

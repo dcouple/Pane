@@ -12,7 +12,7 @@ export interface VersionInfo {
   publishedAt?: string;
 }
 
-export interface GitHubReleaseAsset {
+interface GitHubReleaseAsset {
   name: string;
   browser_download_url: string;
 }

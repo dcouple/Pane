@@ -29,7 +29,7 @@ interface SessionContextValue {
   isRemoteMode?: boolean;
 }
 
-export const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 
 export const SessionProvider: React.FC<{
   children: ReactNode;
@@ -92,13 +92,4 @@ export const SessionProvider: React.FC<{
 // Safe hook that doesn't throw
 export const useSession = (): SessionContextValue | null => {
   return useContext(SessionContext) || null;
-};
-
-// Hook for components that absolutely require a session
-export const useRequiredSession = (): SessionContextValue => {
-  const context = useContext(SessionContext);
-  if (!context) {
-    throw new Error('useRequiredSession must be used within a SessionProvider with a valid session');
-  }
-  return context;
 };

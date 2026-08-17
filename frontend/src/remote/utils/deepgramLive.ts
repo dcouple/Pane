@@ -1,6 +1,6 @@
 import type { VoiceDeepgramStreamingMetadata } from '../../../../shared/types/voiceTranscription';
 
-export const DEEPGRAM_STREAMING_KEYTERMS = [
+const DEEPGRAM_STREAMING_KEYTERMS = [
   'Doozy',
   'Pane',
   'Dcouple',
@@ -43,7 +43,7 @@ export const DEEPGRAM_STREAMING_KEYTERMS = [
   'shadcn/ui',
 ];
 
-export interface DeepgramTranscriptUpdate {
+interface DeepgramTranscriptUpdate {
   transcript: string;
   isFinal: boolean;
   speechFinal: boolean;
