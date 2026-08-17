@@ -198,6 +198,7 @@ test.describe('compact sidebar', () => {
 
     await expect(page.getByTestId('compact-pinned-toggle')).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByTestId('compact-pinned-pane-pinned')).toBeVisible();
+    await expect(page.getByTestId('compact-pinned-pane-placeholder-pinned')).toBeVisible();
     await expect(page.getByTestId('compact-repositories-toggle')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByTestId('compact-repository-1')).toHaveCount(0);
     await expect(page.getByTestId('compact-repository-pane-regular')).toHaveCount(0);

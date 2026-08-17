@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
+import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -584,7 +584,13 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                     >
                       <SessionStatusBadge
                         sessionId={session.id}
-                        unknownClassName="bg-text-tertiary/60 opacity-100 duration-150"
+                        unknownFallback={(
+                          <SquareTerminal
+                            data-testid={`compact-pinned-pane-placeholder-${session.id}`}
+                            aria-hidden="true"
+                            className="h-4 w-4 text-text-tertiary"
+                          />
+                        )}
                       />
                     </button>
                   </Tooltip>
@@ -656,7 +662,13 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                         >
                           <SessionStatusBadge
                             sessionId={session.id}
-                            unknownClassName="bg-text-tertiary/60 opacity-100 duration-150"
+                            unknownFallback={(
+                              <SquareTerminal
+                                data-testid={`compact-repository-pane-placeholder-${session.id}`}
+                                aria-hidden="true"
+                                className="h-4 w-4 text-text-tertiary"
+                              />
+                            )}
                           />
                         </button>
                       </Tooltip>
