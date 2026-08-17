@@ -140,7 +140,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(canonicalSkill).toContain('## Contract Precedence');
     expect(canonicalSkill).toContain('The generated runtime context is authoritative');
     expect(canonicalSkill).toContain("active agent's cached RunPane orchestrator skill is authoritative");
-    expect(canonicalSkill).toContain('persistent authorization ledger');
+    expect(canonicalSkill).toContain('persisted intent and holds');
     expect(canonicalSkill).toContain('review-feedback interrupts');
     expect(canonicalSkill).toContain('current-head evidence invalidation');
     expect(canonicalSkill).toContain('`ready_to_merge` predicate');
