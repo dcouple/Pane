@@ -69,22 +69,30 @@ type PaneToolSpec =
   | { agent: RunpaneAgent; title?: string; initialInput?: string }
   | { command: string; title?: string; initialInput?: string };
 
+interface PaneCreateSuccessItem {
+  ok: true;
+  index: number;
+  name?: string;
+  pinned: boolean;
+  sessionId?: string;
+  panelId?: string;
+  worktreePath?: string;
+  nextCommand?: string;
+  readiness?: PanelReadiness;
+  initialInput?: InitialInputDeliveryResult;
+}
+
+interface PaneCreateFailureItem {
+  ok: false;
+  index: number;
+  name?: string;
+  error: { message: string; code?: string };
+}
+
 interface PaneCreateResult {
   ok: boolean;
   repo: RepoSummary;
-  items: Array<{
-    ok: boolean;
-    index: number;
-    name?: string;
-    pinned: boolean;
-    sessionId?: string;
-    panelId?: string;
-    worktreePath?: string;
-    nextCommand?: string;
-    readiness?: PanelReadiness;
-    initialInput?: InitialInputDeliveryResult;
-    error?: { message: string; code?: string };
-  }>;
+  items: Array<PaneCreateSuccessItem | PaneCreateFailureItem>;
 }
 
 interface InitialInputDeliveryResult {
@@ -497,22 +505,29 @@ const paneListResultSchema: BoundarySchema<PaneListResult> = boundary.object({
 const paneCreateResultSchema: BoundarySchema<PaneCreateResult> = boundary.object({
   ok: boundary.boolean,
   repo: repoSummarySchema,
-  items: boundary.array(boundary.object({
-    ok: boundary.boolean,
-    index: boundary.number,
-    name: boundary.optional(boundary.string),
-    pinned: boundary.boolean,
-    sessionId: boundary.optional(boundary.string),
-    panelId: boundary.optional(boundary.string),
-    worktreePath: boundary.optional(boundary.string),
-    nextCommand: boundary.optional(boundary.string),
-    readiness: boundary.optional(panelReadinessSchema),
-    initialInput: boundary.optional(initialInputSchema),
-    error: boundary.optional(boundary.object({
+  items: boundary.array(boundary.union(
+    boundary.object({
+      ok: boundary.literal(true),
+      index: boundary.number,
+      name: boundary.optional(boundary.string),
+      pinned: boundary.boolean,
+      sessionId: boundary.optional(boundary.string),
+      panelId: boundary.optional(boundary.string),
+      worktreePath: boundary.optional(boundary.string),
+      nextCommand: boundary.optional(boundary.string),
+      readiness: boundary.optional(panelReadinessSchema),
+      initialInput: boundary.optional(initialInputSchema),
+    }),
+    boundary.object({
+      ok: boundary.literal(false),
+      index: boundary.number,
+      name: boundary.optional(boundary.string),
+      error: boundary.object({
       message: boundary.string,
       code: boundary.optional(boundary.string),
-    })),
-  })),
+      }),
+    }),
+  )),
 });
 const paneArchiveResultSchema: BoundarySchema<PaneArchiveResult> = boundary.union(
   boundary.object({
@@ -1467,10 +1482,9 @@ function printPaneListResult(result: PaneListResult): void {
 
 function printPaneCreateResult(result: PaneCreateResult): void {
   for (const item of result.items) {
-    if (item.sessionId || item.panelId) {
+    if (item.ok) {
       const worktree = item.worktreePath ? ` at ${item.worktreePath}` : '';
-      const status = item.ok ? 'Created' : 'Created with follow-up needed';
-      console.log(`${status} ${item.name ?? `pane ${item.index}`}: session ${item.sessionId ?? 'unknown'} panel ${item.panelId ?? 'unknown'}${worktree}`);
+      console.log(`Created ${item.name ?? `pane ${item.index}`}: session ${item.sessionId ?? 'unknown'} panel ${item.panelId ?? 'unknown'}${worktree}`);
       if (item.readiness) {
         console.log(`  Ready: ${item.readiness.ok ? 'yes' : item.readiness.timedOut ? 'timed out' : 'blocked'} after ${item.readiness.elapsedMs}ms`);
         if (item.readiness.blocked) {
@@ -1483,7 +1497,7 @@ function printPaneCreateResult(result: PaneCreateResult): void {
       }
       continue;
     }
-    console.error(`Failed ${item.name ?? `pane ${item.index}`}: ${item.error?.message ?? 'unknown error'}`);
+    console.error(`Failed ${item.name ?? `pane ${item.index}`}: ${item.error.message}`);
   }
 }
 

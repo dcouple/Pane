@@ -541,13 +541,20 @@ describe('PaneRemoteHttpApiServer', () => {
       lastSeenAt: expect.any(String),
     }]);
 
-    server.getEventSink().send('session:created', { id: 'session-1' });
+    server.getEventSink().send('session:created', {
+      id: 'session-1',
+      omitted: undefined,
+      timestamp: new Date('2026-08-17T00:00:00.000Z'),
+    });
 
     const daemonEvent = await stream.nextEvent();
     expect(daemonEvent.event).toBe('daemon-event');
     expect(JSON.parse(daemonEvent.data.join('\n'))).toEqual({
       channel: 'session:created',
-      args: [{ id: 'session-1' }],
+      args: [{
+        id: 'session-1',
+        timestamp: '2026-08-17T00:00:00.000Z',
+      }],
       timestamp: expect.any(String),
     });
 

@@ -1,23 +1,25 @@
 import { isDaemonOwnedChannel } from '../daemon/daemonChannels';
-import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
-import { boundary, decodeBoundary, type JsonValue } from '../../../shared/validation/boundaryDecoder';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 interface IpcMainHandleLike {
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
+  // Keep the daemon boundary independent from Electron while retaining the
+  // structural portion of IpcMainInvokeEvent needed for handler compatibility.
+  handle(
+    channel: string,
+    listener: (_event: { readonly sender: object }, channel: PaneCommandValue, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>,
+  ): void;
 }
 
 interface PaneDaemonBridgeRouter {
-  invoke(channel: string, args: JsonValue[]): Promise<JsonValue | undefined>;
+  invoke(channel: string, args: PaneCommandValue[]): Promise<PaneCommandValue>;
 }
 
 export function createDaemonBridgeRouter(commandRegistry: PaneCommandRegistry): PaneDaemonBridgeRouter {
   return {
-    async invoke(channel: string, args: JsonValue[]): Promise<JsonValue | undefined> {
-      return remotePaneClientController.invoke(channel, args, async () => {
-        const result = await commandRegistry.invoke(channel, args);
-        return result === undefined ? undefined : decodeBoundary(result, boundary.json);
-      });
+    async invoke(channel: string, args: PaneCommandValue[]): Promise<PaneCommandValue> {
+      return remotePaneClientController.invoke(channel, args, () => commandRegistry.invoke(channel, args));
     },
   };
 }
@@ -26,16 +28,18 @@ export function registerDaemonBridgeHandlers(
   ipcMain: IpcMainHandleLike,
   bridgeRouter: PaneDaemonBridgeRouter,
 ): void {
-  ipcMain.handle('daemon:invoke', async (_event, channel: unknown, ...args: unknown[]) => {
-    const decodedArgs = decodeBoundary(args, boundary.array(boundary.json));
-    if (typeof channel !== 'string') {
+  ipcMain.handle('daemon:invoke', async (_event, channel, ...args) => {
+    let decodedChannel: string;
+    try {
+      decodedChannel = decodeBoundary(channel, boundary.string);
+    } catch {
       throw new Error('Pane daemon bridge requires a string channel');
     }
 
-    if (!isDaemonOwnedChannel(channel)) {
-      throw new Error(`Channel "${channel}" is not daemon-owned`);
+    if (!isDaemonOwnedChannel(decodedChannel)) {
+      throw new Error(`Channel "${decodedChannel}" is not daemon-owned`);
     }
 
-    return bridgeRouter.invoke(channel, decodedArgs);
+    return bridgeRouter.invoke(decodedChannel, args);
   });
 }

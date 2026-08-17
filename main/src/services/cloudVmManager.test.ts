@@ -105,6 +105,17 @@ describe('normalizeCloudVmConfig', () => {
       tunnelPort: '9000',
     }).tunnelPort).toBe(9000);
   });
+
+  it('preserves normalized configuration across repeated normalization', () => {
+    const normalized = normalizeCloudVmConfig({
+      provider: 'gcp',
+      apiToken: 'secret-token',
+      serverId: 'pane-user123',
+      projectId: 'pane-cloud-user123',
+    });
+
+    expect(normalizeCloudVmConfig(normalized)).toEqual(normalized);
+  });
 });
 
 describe('CloudVmManager', () => {

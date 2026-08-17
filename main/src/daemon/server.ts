@@ -10,7 +10,8 @@ import type {
   PaneDaemonRequestFrame,
   PaneDaemonSuccessResponseFrame,
 } from '../../../shared/types/daemon';
-import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { boundary } from '../../../shared/validation/boundaryDecoder';
+import { serializeJsonTransport } from './jsonTransport';
 
 const DAEMON_EVENT_PREFIXES = [
   'archive:',
@@ -75,7 +76,7 @@ export class PaneDaemonServer {
       const encodedFrame = encodePaneDaemonFrame({
         type: 'event',
         channel,
-        args: decodeBoundary(args, boundary.array(boundary.json)),
+        args: serializeJsonTransport(args, boundary.array(boundary.json)),
       });
 
       for (const [clientId] of this.clients) {
@@ -319,7 +320,7 @@ export class PaneDaemonServer {
         type: 'response',
         id: frame.id,
         ok: true,
-        result: decodeBoundary(result, boundary.optional(boundary.json)),
+        result: result === undefined ? undefined : serializeJsonTransport(result, boundary.json),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

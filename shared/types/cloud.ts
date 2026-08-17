@@ -84,7 +84,11 @@ export function normalizeCloudVmConfig<Value>(value: Value): CloudVmConfig {
   const defaults = createDefaultCloudVmConfig();
   let config: JsonObject;
   try {
-    config = decodeBoundary(value, boundary.jsonObject);
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) {
+      return defaults;
+    }
+    config = decodeBoundary(JSON.parse(serialized), boundary.jsonObject);
   } catch {
     return defaults;
   }

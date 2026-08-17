@@ -107,7 +107,11 @@ async function waitForSubscriberCount(server: PaneDaemonServer, expectedCount: n
 describe('PaneDaemonServer', () => {
   it('serves registered daemon commands over the local endpoint', async () => {
     const registry = new PaneCommandRegistry();
-    registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);
+    registry.register('sessions:get-all', async () => [{
+      id: 'session-1',
+      omitted: undefined,
+      timestamp: new Date('2026-08-17T00:00:00.000Z'),
+    }]);
 
     const server = new PaneDaemonServer(registry, createTempAppDirectory());
     activeServers.push(server);
@@ -125,7 +129,10 @@ describe('PaneDaemonServer', () => {
       type: 'response',
       id: 1,
       ok: true,
-      result: [{ id: 'session-1' }],
+      result: [{
+        id: 'session-1',
+        timestamp: '2026-08-17T00:00:00.000Z',
+      }],
     });
   });
 

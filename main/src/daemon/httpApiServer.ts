@@ -25,6 +25,7 @@ import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 import { getRemotePwaAssetResponse } from './pwaStaticAssets';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { BoundarySchema, JsonValue } from '../../../shared/validation/boundaryDecoder';
+import { serializeJsonTransport } from './jsonTransport';
 
 interface RemoteHttpAddress {
   host: string;
@@ -206,7 +207,7 @@ export class PaneRemoteHttpApiServer {
 
           const payload: RemoteDaemonEventEnvelope = {
             channel,
-            args: decodeBoundary(args, boundary.array(boundary.json)),
+            args: serializeJsonTransport(args, boundary.array(boundary.json)),
             timestamp: new Date().toISOString(),
           };
 
