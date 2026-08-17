@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && node ../scripts/verify-xterm-request-mode-build.js && node ../scripts/verify-react-scan-build.js",
+    "build": "pnpm run typecheck && vite build && node ../scripts/verify-xterm-request-mode-build.js && node ../scripts/verify-react-scan-build.js",
     "preview": "vite preview",
     "lint": "pnpm --dir .. run lint:ox:frontend && pnpm run lint:eslint",
     "lint:eslint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run"
   },
   "dependencies": {

@@ -11,7 +11,7 @@
 - Dev app: `pnpm dev` (spawns frontend + Electron).
 - Build all: `pnpm build` (frontend, main, then electron package).
 - Package (examples): `pnpm build:mac`, `pnpm build:linux`.
-- Lint: `pnpm lint`; Type-check: `pnpm typecheck` (runs per package). The root lint command is the single entry point for blocking Oxlint, residual ESLint, advisory anti-slop, and advisory Knip checks.
+- Lint: `pnpm lint`; Type-check: `pnpm typecheck` (runs per package). The root lint command is the single entry point for blocking Oxlint and unused-file checks, residual ESLint, advisory anti-slop, and the remaining advisory Knip checks.
 - Detailed advisory output: `pnpm lint:ox:extra:details`; accessibility scan: `pnpm a11y:scan` (install Chromium once with `pnpm exec playwright install chromium`); opt-in render evidence: `pnpm perf:scan`.
 - Tests (E2E): `pnpm test`, `pnpm test:ui`, CI configs in `playwright.ci*.config.ts`.
 - Main unit tests (if added): `pnpm --filter main test`, coverage: `pnpm --filter main run test:coverage`.
@@ -41,7 +41,7 @@
 
 ## Agent Notes (for automation)
 - Keep changes minimal and scoped; prefer small patches.
-- Treat blocking lint as the new-code floor. Advisory anti-slop and Knip output records existing debt; address relevant findings without broad suppressions. See `references/anti-slop.md` and `references/oxlint-overlap.md`.
+- Treat blocking lint as the new-code floor. Knip's unused-file category is blocking; advisory anti-slop and the remaining advisory Knip output record existing debt. Address relevant findings without broad suppressions. See `references/anti-slop.md` and `references/oxlint-overlap.md`.
 - `pnpm perf:scan` enables React Scan only for that Vite dev session and emits `[render-evidence]` summaries for pane switching and Remote PWA churn. Production builds must never include React Scan. Component counts do not measure xterm/WebGL, Electron main-process, IPC, or network cost.
 - For WSL git-status work, keep filesystem watching inside the distro: prefer `inotifywait`; without it Pane intentionally falls back to a five-second WSL-native `git status` poll while focused. Do not add Windows-side recursive watchers over `\\wsl.localhost` or `\\wsl$`.
 - Development runs capture renderer and main-process output in root `frontend-debug.log` and `backend-debug.log`; inspect those logs when reproducing app failures. They are reset when development starts.

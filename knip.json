@@ -1,7 +1,7 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "rules": {
-    "files": "warn",
+    "files": "error",
     "dependencies": "warn",
     "devDependencies": "warn",
     "optionalPeerDependencies": "warn",
