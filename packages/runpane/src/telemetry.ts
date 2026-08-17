@@ -216,7 +216,7 @@ function detectNpmInvocation(
   return 'unknown';
 }
 
-function buildWrapperTelemetryProperties(input: {
+export function buildWrapperTelemetryProperties(input: {
   installId: string;
   wrapperVersion: string;
   invocation: WrapperInvocation;

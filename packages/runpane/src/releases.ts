@@ -56,7 +56,7 @@ export async function resolveRelease(options: ResolveReleaseOptions): Promise<Re
   };
 }
 
-async function fetchRelease(version: string, timeoutMs?: number): Promise<GitHubRelease> {
+export async function fetchRelease(version: string, timeoutMs?: number): Promise<GitHubRelease> {
   const normalized = version === 'latest' ? 'latest' : version.startsWith('v') ? `tags/${version}` : `tags/v${version}`;
   const controller = timeoutMs ? new AbortController() : undefined;
   const timeout = controller
@@ -93,7 +93,7 @@ async function fetchRelease(version: string, timeoutMs?: number): Promise<GitHub
   }
 }
 
-function findArtifact(
+export function findArtifact(
   release: GitHubRelease,
   platform: PanePlatform,
   format: Exclude<ArtifactFormat, 'auto'>

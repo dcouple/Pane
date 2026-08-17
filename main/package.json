@@ -26,23 +26,18 @@
     "better-sqlite3-multiple-ciphers": "12.11.1",
     "bull": "^4.16.3",
     "chokidar": "^5.0.0",
-    "dotenv": "^16.4.7",
-    "electron-store": "^11.0.0",
     "electron-updater": "^6.6.8",
     "glob": "^11.0.0",
     "js-yaml": "^4.1.1",
+    "uuid": "^13.0.0",
     "web-streams-polyfill": "^3.3.3",
     "ws": "^8.20.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "4.2.0",
-    "@types/bull": "^4.10.0",
-    "@types/glob": "^9.0.0",
+    "@eslint/js": "^9.17.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.10.2",
     "@types/ws": "^8.18.1",
-    "@typescript-eslint/eslint-plugin": "^8.19.0",
-    "@typescript-eslint/parser": "^8.19.0",
     "@vitest/coverage-v8": "^2.1.8",
     "electron": "41.10.3",
     "eslint": "^9.17.0",
@@ -50,6 +45,7 @@
     "rimraf": "^6.0.1",
     "shx": "^0.4.0",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0",
     "vitest": "^2.1.8"
   }
 }

@@ -76,7 +76,7 @@ export function spawnPane(executablePath: string, args: string[]): Promise<numbe
 // selection must arrive as argv. ELECTRON_OZONE_PLATFORM_HINT (below) was
 // removed in Electron 38 and is a no-op from 39 on; it is kept only so older
 // Pane builds keep working.
-function buildPaneDaemonArgs(args: string[], platform = process.platform): string[] {
+export function buildPaneDaemonArgs(args: string[], platform = process.platform): string[] {
   if (platform !== 'linux') {
     return [...args];
   }
@@ -84,7 +84,7 @@ function buildPaneDaemonArgs(args: string[], platform = process.platform): strin
   return ['--ozone-platform=headless', '--disable-gpu', ...args];
 }
 
-function buildPaneDaemonEnvironment(
+export function buildPaneDaemonEnvironment(
   platform = process.platform,
   baseEnvironment: NodeJS.ProcessEnv = process.env
 ): NodeJS.ProcessEnv {

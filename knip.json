@@ -2,21 +2,21 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "rules": {
     "files": "error",
-    "dependencies": "warn",
-    "devDependencies": "warn",
-    "optionalPeerDependencies": "warn",
-    "unlisted": "warn",
-    "binaries": "warn",
-    "unresolved": "warn",
-    "catalog": "warn",
-    "cycles": "warn",
+    "dependencies": "error",
+    "devDependencies": "error",
+    "optionalPeerDependencies": "error",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "error",
+    "catalog": "error",
+    "cycles": "error",
     "exports": "error",
-    "nsExports": "warn",
+    "nsExports": "error",
     "types": "error",
-    "nsTypes": "warn",
+    "nsTypes": "error",
     "duplicates": "error",
-    "enumMembers": "warn",
-    "namespaceMembers": "warn"
+    "enumMembers": "error",
+    "namespaceMembers": "error"
   },
   "workspaces": {
     ".": {
@@ -29,6 +29,20 @@
         "scripts/**/*.{js,mjs}",
         "tests/**/*.ts",
         "playwright*.ts"
+      ],
+      "ignoreDependencies": [
+        "@anthropic-ai/sdk",
+        "@lydell/node-pty",
+        "@modelcontextprotocol/sdk",
+        "@xterm/addon-serialize",
+        "@xterm/headless",
+        "better-sqlite3-multiple-ciphers",
+        "bull",
+        "chokidar",
+        "electron-updater",
+        "web-streams-polyfill",
+        "ws",
+        "electron-builder-squirrel-windows"
       ]
     },
     "frontend": {
@@ -54,11 +68,32 @@
         "src/**/__tests__/**/*.ts",
         "build-mcp-bridge.js"
       ],
-      "project": ["src/**/*.ts", "build-mcp-bridge.js"]
+      "project": ["src/**/*.ts", "build-mcp-bridge.js"],
+      "ignoreBinaries": [
+        "fc-list",
+        "system_profiler",
+        "xclip",
+        "gcloud",
+        "wsl.exe",
+        "wmic",
+        "awk",
+        "pkill",
+        "wslpath",
+        "explorer.exe",
+        "dscl"
+      ]
     },
     "packages/runpane": {
-      "entry": ["src/cli.ts", "scripts/mark-executable.js"],
-      "project": ["src/**/*.ts", "scripts/**/*.js"]
+      "entry": [
+        "src/cli.ts",
+        "src/doctor.ts",
+        "src/installers.ts",
+        "src/releases.ts",
+        "src/telemetry.ts",
+        "scripts/mark-executable.js"
+      ],
+      "project": ["src/**/*.ts", "scripts/**/*.js"],
+      "ignoreBinaries": ["ditto"]
     },
     "shared": {
       "entry": ["types/*.ts"],
