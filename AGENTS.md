@@ -4,6 +4,8 @@
 - Root `pnpm` workspace with packages: `main/` (Electron main process, TypeScript), `frontend/` (React + Vite), `shared/` (shared types), and `tests/` (Playwright E2E).
 - Key paths: `main/src/{services,ipc,utils}/`, `frontend/src/{components,hooks,stores,utils}/`, `main/assets/`, `scripts/`.
 - Build artifacts: `frontend/dist/`, `main/dist/`, packaged output `dist-electron/`.
+- Pane is an Electron desktop app: the main process owns native integration, CLI processes, git worktrees, and SQLite persistence; the preload bridge exposes IPC to the React renderer.
+- When adding or changing CLI integrations, follow `docs/ADDING_NEW_CLI_TOOLS.md` and `docs/IMPLEMENTING_NEW_CLI_AGENTS.md`.
 
 ## Build, Test, and Development Commands
 - Dev app: `pnpm dev` (spawns frontend + Electron).
@@ -13,11 +15,13 @@
 - Detailed advisory output: `pnpm lint:ox:extra:details`; accessibility scan: `pnpm a11y:scan` (install Chromium once with `pnpm exec playwright install chromium`); opt-in render evidence: `pnpm perf:scan`.
 - Tests (E2E): `pnpm test`, `pnpm test:ui`, CI configs in `playwright.ci*.config.ts`.
 - Main unit tests (if added): `pnpm --filter main test`, coverage: `pnpm --filter main run test:coverage`.
+- Releases must follow `docs/RELEASE_INSTRUCTIONS.md` and run from a clean `main` checkout whose `HEAD` matches `origin/main`.
 
 ## Coding Style & Naming Conventions
 - Use TypeScript throughout; follow ESLint configs in `frontend/eslint.config.js` and `main/eslint.config.js`.
 - Indentation 2 spaces; prefer explicit types at module boundaries.
 - Naming: `camelCase` for variables/functions, `PascalCase` for React components/types, `kebab-case` for filenames (React files may match component name).
+- Do not introduce explicit `any`; use a specific type or `unknown` with narrowing. ESLint enforces `@typescript-eslint/no-explicit-any` at error level.
 - Run `pnpm lint && pnpm typecheck` before sending PRs.
 
 ## Testing Guidelines
@@ -39,10 +43,10 @@
 - Keep changes minimal and scoped; prefer small patches.
 - Treat blocking lint as the new-code floor. Advisory anti-slop and Knip output records existing debt; address relevant findings without broad suppressions. See `references/anti-slop.md` and `references/oxlint-overlap.md`.
 - `pnpm perf:scan` enables React Scan only for that Vite dev session and emits `[render-evidence]` summaries for pane switching and Remote PWA churn. Production builds must never include React Scan. Component counts do not measure xterm/WebGL, Electron main-process, IPC, or network cost.
+- For WSL git-status work, keep filesystem watching inside the distro: prefer `inotifywait`; without it Pane intentionally falls back to a five-second WSL-native `git status` poll while focused. Do not add Windows-side recursive watchers over `\\wsl.localhost` or `\\wsl$`.
+- Development runs capture renderer and main-process output in root `frontend-debug.log` and `backend-debug.log`; inspect those logs when reproducing app failures. They are reset when development starts.
 - Update docs alongside code; do not alter build targets without discussion.
 - Use repository scripts (pnpm) and keep formatting consistent with existing files.
-- Always review the root `CLAUDE.md` before beginning any work. 
-- Scan the repository for every `CLAUDE.md`, and when working in a folder or any of its subfolders that has one, read and follow that file too.
 - For RunPane local-control debugging on macOS, test against an isolated Pane directory (for example `PANE_DIR=~/.pane_test pnpm dev`) and validate with the local wrapper (`node packages/runpane/dist/cli.js doctor --json --pane-dir ~/.pane_test`, then `repos list`, `repos add --path ... --yes`, and `panes list`). Use Node 22 for repo scripts; if switching between Vitest/plain Node and Electron dev runs, rebuild native modules for the target runtime (`npm rebuild better-sqlite3-multiple-ciphers` for Node, `pnpm electron:rebuild` for Electron).
 
 <!-- pane-agent-context:start -->
