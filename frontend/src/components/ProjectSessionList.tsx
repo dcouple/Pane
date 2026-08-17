@@ -726,7 +726,7 @@ function SessionRow({
       {/* Always-present left accent bar reflecting the agent status. */}
       <StatusAccentBar status={agentDisplayStatus} isActive={isActive} />
       <Tooltip
-        content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName={false} showDiffStats={false} globalIndex={globalIndex} />}
+        content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName showDiffStats={false} globalIndex={globalIndex} />}
         side="right"
         interactive
       >

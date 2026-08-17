@@ -63,7 +63,7 @@ function CompactSessionTooltip({
         {label}
       </p>
       <div className="border-t border-border-primary" />
-      <SessionDetailTooltip session={session} showName={false} />
+      <SessionDetailTooltip session={session} showName />
     </div>
   );
 }

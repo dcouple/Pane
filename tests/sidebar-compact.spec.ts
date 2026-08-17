@@ -54,6 +54,29 @@ async function collapseSidebar(page: Page) {
 }
 
 test.describe('compact sidebar', () => {
+  test('shows the full pane title when hovering a long sidebar label', async ({ page }) => {
+    const longPaneTitle = 'TIP416A · Show the complete descriptive pane title in the sidebar hover popover';
+
+    await installElectronApiMock(page, {
+      initialConfig: { theme: 'night-owl' },
+      initialProjects: projects,
+      initialSessions: [session('pane416--show-full-pane-title-in-sidebar-hover', longPaneTitle, 1)],
+      initialUiState: {
+        expandedProjects: [1],
+        pinnedSectionExpanded: true,
+        repositoriesSectionExpanded: true,
+      },
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    await page.getByRole('button', { name: longPaneTitle, exact: true }).hover();
+    const tooltip = page.getByRole('tooltip');
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip.getByText(longPaneTitle, { exact: true })).toBeVisible();
+    await expect(tooltip).toContainText('pane416--show-full-pane-title-in-sidebar-hover');
+  });
+
   test('keeps the hover background on the active pane in both sidebar modes', async ({ page }) => {
     await installElectronApiMock(page, {
       initialConfig: { theme: 'night-owl' },
