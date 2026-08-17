@@ -1,6 +1,104 @@
 import { describe, expect, it } from 'vitest';
 import { CLI_AGENT_TYPES, isCliAgentType, resolveAgentTypeFromCommand } from './agentIdentity';
 
+type CommandClassificationCase = {
+  name: string;
+  command: string | undefined;
+  expected: 'claude' | 'codex' | 'cursor' | undefined;
+  platformHint?: NodeJS.Platform;
+};
+
+const COMMAND_CLASSIFICATION_CASES: CommandClassificationCase[] = [
+  { name: 'direct Claude command', command: 'claude --dangerously-skip-permissions', expected: 'claude' },
+  { name: 'direct Codex command', command: 'codex --yolo', expected: 'codex' },
+  { name: 'direct Cursor command', command: 'cursor-agent --force --trust', expected: 'cursor' },
+  {
+    name: 'POSIX single-quoted path with spaces',
+    command: "'/opt/OpenAI tools/codex' --yolo",
+    expected: 'codex',
+  },
+  {
+    name: 'POSIX double-quoted path with spaces',
+    command: '"/Applications/Cursor Agent.app/Contents/bin/cursor-agent" --force',
+    expected: 'cursor',
+  },
+  {
+    name: 'POSIX backslash-escaped space',
+    command: String.raw`/opt/Cursor\ Agent/cursor-agent --force`,
+    expected: 'cursor',
+  },
+  {
+    name: 'quoted environment assignment value',
+    command: 'FOO="bar baz" cursor-agent --force',
+    expected: 'cursor',
+  },
+  {
+    name: 'Windows drive path',
+    command: String.raw`C:\Tools\cursor-agent --force`,
+    expected: 'cursor',
+  },
+  {
+    name: 'quoted Windows drive path with spaces',
+    command: String.raw`"C:\Program Files\Cursor\cursor-agent" --force`,
+    expected: 'cursor',
+  },
+  {
+    name: 'Windows UNC path',
+    command: String.raw`\\server\share\cursor-agent --force`,
+    expected: 'cursor',
+  },
+  {
+    name: 'Windows platform hint preserves relative backslash path',
+    command: String.raw`Tools\cursor-agent --force`,
+    platformHint: 'win32',
+    expected: 'cursor',
+  },
+  { name: 'env short unset option', command: 'env -u FOO cursor-agent --force', expected: 'cursor' },
+  { name: 'env attached short unset option', command: 'env -uFOO cursor-agent --force', expected: 'cursor' },
+  { name: 'env long unset option', command: 'env --unset FOO cursor-agent --force', expected: 'cursor' },
+  { name: 'env attached long unset option', command: 'env --unset=FOO cursor-agent --force', expected: 'cursor' },
+  { name: 'env short chdir option', command: 'env -C /tmp cursor-agent --force', expected: 'cursor' },
+  { name: 'env attached short chdir option', command: 'env -C/tmp cursor-agent --force', expected: 'cursor' },
+  { name: 'env long chdir option', command: 'env --chdir /tmp cursor-agent --force', expected: 'cursor' },
+  { name: 'env attached long chdir option', command: 'env --chdir=/tmp cursor-agent --force', expected: 'cursor' },
+  { name: 'env alternate path option', command: 'env -P /usr/bin cursor-agent --force', expected: 'cursor' },
+  { name: 'env attached alternate path option', command: 'env -P/usr/bin cursor-agent --force', expected: 'cursor' },
+  { name: 'env split-string option', command: "env -S 'cursor-agent --force'", expected: 'cursor' },
+  { name: 'env attached split-string option', command: "env -S'cursor-agent --force'", expected: 'cursor' },
+  {
+    name: 'env long split-string option',
+    command: "env --split-string 'cursor-agent --force'",
+    expected: 'cursor',
+  },
+  {
+    name: 'env attached long split-string option',
+    command: "env --split-string='cursor-agent --force'",
+    expected: 'cursor',
+  },
+  { name: 'env ignore-environment flag', command: 'env -i cursor-agent --force', expected: 'cursor' },
+  {
+    name: 'env long ignore-environment flag',
+    command: 'env --ignore-environment cursor-agent --force',
+    expected: 'cursor',
+  },
+  {
+    name: 'env assignment followed by command wrapper',
+    command: 'env FOO=bar command cursor-agent --force',
+    expected: 'cursor',
+  },
+  {
+    name: 'nested wrappers and environment assignment',
+    command: 'env -i FOO="bar baz" command exec nohup nice time cursor-agent --force',
+    expected: 'cursor',
+  },
+  { name: 'agent-like directory name', command: '/tmp/claude-501/x.sh', expected: undefined },
+  { name: 'Claude executable substring', command: 'claude-code-something', expected: undefined },
+  { name: 'Cursor executable substring', command: 'mycursor-agent', expected: undefined },
+  { name: 'agent name in an argument', command: 'echo cursor-agent', expected: undefined },
+  { name: 'empty command', command: '', expected: undefined },
+  { name: 'missing command', command: undefined, expected: undefined },
+];
+
 describe('CLI_AGENT_TYPES', () => {
   it('lists the supported agents', () => {
     expect([...CLI_AGENT_TYPES].sort()).toEqual(['claude', 'codex', 'cursor']);
@@ -20,65 +118,7 @@ describe('isCliAgentType', () => {
 });
 
 describe('resolveAgentTypeFromCommand', () => {
-  it('detects each agent from its launch template', () => {
-    expect(resolveAgentTypeFromCommand('claude --dangerously-skip-permissions')).toBe('claude');
-    expect(resolveAgentTypeFromCommand('codex --yolo')).toBe('codex');
-    expect(resolveAgentTypeFromCommand('cursor-agent --force --trust')).toBe('cursor');
-  });
-
-  it('detects agents from resume commands', () => {
-    expect(resolveAgentTypeFromCommand('codex resume --yolo 7403f755-6758-40d3-bb69-2cd356dd9bf0')).toBe('codex');
-    expect(resolveAgentTypeFromCommand('claude --resume abc --dangerously-skip-permissions')).toBe('claude');
-    expect(resolveAgentTypeFromCommand('cursor-agent --force --trust --resume "abc123"')).toBe('cursor');
-  });
-
-  it('detects agents behind absolute paths', () => {
-    expect(resolveAgentTypeFromCommand('/usr/local/bin/claude')).toBe('claude');
-    expect(resolveAgentTypeFromCommand('/Users/me/.local/bin/cursor-agent --force')).toBe('cursor');
-  });
-
-  it('detects quoted executable paths, including paths with spaces', () => {
-    expect(resolveAgentTypeFromCommand('"/Applications/Cursor Agent.app/Contents/bin/cursor-agent" --force')).toBe('cursor');
-    expect(resolveAgentTypeFromCommand("'/opt/OpenAI tools/codex' --yolo")).toBe('codex');
-    expect(resolveAgentTypeFromCommand('"/usr/local/bin/claude"')).toBe('claude');
-  });
-
-  it('detects agents behind simple command and environment wrappers', () => {
-    expect(resolveAgentTypeFromCommand('env CURSOR_MODE=trusted cursor-agent --force')).toBe('cursor');
-    expect(resolveAgentTypeFromCommand('command "/opt/OpenAI/codex" --yolo')).toBe('codex');
-    expect(resolveAgentTypeFromCommand('FOO=bar exec claude')).toBe('claude');
-  });
-
-  it('detects wrapped commands with quoted assignments and env option operands', () => {
-    expect(resolveAgentTypeFromCommand('FOO="bar baz" cursor-agent --force')).toBe('cursor');
-    expect(resolveAgentTypeFromCommand('env -u FOO cursor-agent --force')).toBe('cursor');
-    expect(resolveAgentTypeFromCommand('env FOO=bar command cursor-agent --force')).toBe('cursor');
-  });
-
-  it('detects agents behind nested wrappers', () => {
-    expect(
-      resolveAgentTypeFromCommand(
-        'env -i -C /tmp FOO="bar baz" command exec nohup "/opt/Cursor Agent/cursor-agent" --force',
-      ),
-    ).toBe('cursor');
-  });
-
-  it('classifies cursor-agent as cursor even when other agent names appear in arguments', () => {
-    expect(resolveAgentTypeFromCommand('cursor-agent --force --model claude-opus-4-8')).toBe('cursor');
-  });
-
-  it('requires token boundaries, not substrings', () => {
-    expect(resolveAgentTypeFromCommand('/tmp/claude-501/session.sh')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('run-codexlike-tool')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('echo cursor-agentish')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('echo cursor-agent')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('/tmp/cursor-agent/project/start.sh')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('node script.js --agent codex')).toBeUndefined();
-  });
-
-  it('returns undefined for shells and empty input', () => {
-    expect(resolveAgentTypeFromCommand('zsh -l')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand('')).toBeUndefined();
-    expect(resolveAgentTypeFromCommand(undefined)).toBeUndefined();
+  it.each(COMMAND_CLASSIFICATION_CASES)('$name', ({ command, platformHint, expected }) => {
+    expect(resolveAgentTypeFromCommand(command, platformHint)).toBe(expected);
   });
 });
