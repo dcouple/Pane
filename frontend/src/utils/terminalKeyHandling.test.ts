@@ -29,9 +29,14 @@ describe('focused surface terminal key boundary', () => {
     expect(isFineSurfaceScrollKey(key({ key: 'ArrowUp', shiftKey: true, ctrlKey: true }))).toBe(false);
   });
 
-  it('lets known CLI panels and active TUIs claim fine scrolling', () => {
+  it('reserves fine scrolling for Pane in known CLI agent panels', () => {
     const event = shiftKey('ArrowDown');
-    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: true, isTuiActive: false })).toBe(true);
+    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: true, isTuiActive: false })).toBe(false);
+    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: true, isTuiActive: true })).toBe(false);
+  });
+
+  it('lets ordinary active TUIs claim fine scrolling', () => {
+    const event = shiftKey('ArrowDown');
     expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: false, isTuiActive: true })).toBe(true);
     expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: false, isTuiActive: false })).toBe(false);
   });

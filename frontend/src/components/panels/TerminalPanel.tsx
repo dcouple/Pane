@@ -963,8 +963,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
 
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
 
-          // Pane owns focused-surface scrolling before xterm encodes the key,
-          // except when a known CLI or alternate-screen TUI claims Shift+Arrow.
+          // Pane owns focused-surface scrolling before xterm encodes the key.
+          // Managed CLI panels (Claude, Codex, Cursor, etc.) reserve the exact
+          // Shift+Arrow chords for Pane; ordinary alternate-screen TUIs keep them.
           if (isFineSurfaceScrollKey(e) || isPageSurfaceScrollKey(e)) {
             if (terminalClaimsFineSurfaceScroll(e, {
               isCliPanel: isCliPanelRef.current,

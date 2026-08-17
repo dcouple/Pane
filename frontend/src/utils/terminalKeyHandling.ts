@@ -49,7 +49,7 @@ export function terminalClaimsFineSurfaceScroll(
   event: SurfaceScrollKeyLike,
   state: Pick<TerminalKeyHandlingState, 'isCliPanel' | 'isTuiActive'>,
 ): boolean {
-  return isFineSurfaceScrollKey(event) && (state.isCliPanel || state.isTuiActive);
+  return isFineSurfaceScrollKey(event) && state.isTuiActive && !state.isCliPanel;
 }
 
 export function shouldOpenTerminalSearch(
