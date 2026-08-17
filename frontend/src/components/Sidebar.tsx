@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
+import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { isMac } from '../utils/platformUtils';
@@ -35,6 +35,7 @@ import { getRemoteFooterStatus } from '../utils/remoteRuntimePresentation';
 import { usePanelStore } from '../stores/panelStore';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { createProjectById, getPinnedSessions, groupSessionsByProject } from '../utils/sessionOrdering';
+import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -63,7 +64,7 @@ function CompactSessionTooltip({
         {label}
       </p>
       <div className="border-t border-border-primary" />
-      <SessionDetailTooltip session={session} showName />
+      <SessionDetailTooltip session={session} showName={false} />
     </div>
   );
 }
@@ -86,6 +87,11 @@ const RESOURCE_POPOVER_WIDTH = 320;
 const RESOURCE_POPOVER_GAP = 8;
 const RESOURCE_POPOVER_VIEWPORT_MARGIN = 8;
 type SidebarSection = 'pinned' | 'repositories';
+interface CompactSessionMenuState {
+  session: Session;
+  x: number;
+  y: number;
+}
 const COMPACT_RAIL_BUTTON = 'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive';
 const COMPACT_RAIL_IDLE = 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary';
 const COMPACT_RAIL_ACTIVE = 'bg-surface-hover text-text-primary';
@@ -374,6 +380,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   // State for collapsed sidebar
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [compactSessionMenu, setCompactSessionMenu] = useState<CompactSessionMenuState | null>(null);
   const activeProjectId = useNavigationStore((state) => state.activeProjectId);
   const activeView = useNavigationStore((state) => state.activeView);
   const expandedProjects = useNavigationStore((state) => state.expandedProjects);
@@ -435,10 +442,39 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   );
 
   const openCompactSession = useCallback((sessionId: string, scope: 'pinned' | 'repositories') => {
+    setCompactSessionMenu(null);
     setSidebarNavigationScope(scope);
     void setActiveSession(sessionId);
     navigateToSessions();
   }, [navigateToSessions, setActiveSession, setSidebarNavigationScope]);
+
+  const openCompactSessionMenu = useCallback((event: React.MouseEvent, session: Session) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setCompactSessionMenu({ session, x: event.clientX, y: event.clientY });
+  }, []);
+
+  const archiveCompactSession = useCallback(async () => {
+    if (!compactSessionMenu) return;
+    const { id } = compactSessionMenu.session;
+    setCompactSessionMenu(null);
+    try {
+      await API.sessions.delete(id);
+    } catch (error) {
+      console.error('Failed to archive session:', error);
+    }
+  }, [compactSessionMenu]);
+
+  const toggleCompactSessionPinned = useCallback(async () => {
+    if (!compactSessionMenu) return;
+    const { id } = compactSessionMenu.session;
+    setCompactSessionMenu(null);
+    try {
+      await API.sessions.toggleFavorite(id);
+    } catch (error) {
+      console.error('Failed to toggle pinned session:', error);
+    }
+  }, [compactSessionMenu]);
 
   // Collapsed sidebar view
   if (collapsed) {
@@ -542,6 +578,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                       data-testid={`compact-pinned-pane-${session.id}`}
                       data-compact-rail-item
                       onClick={() => openCompactSession(session.id, 'pinned')}
+                      onContextMenu={(event) => openCompactSessionMenu(event, session)}
                       aria-label={`Open pinned pane ${label}`}
                       className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
                     >
@@ -613,6 +650,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                           data-testid={`compact-repository-pane-${session.id}`}
                           data-compact-rail-item
                           onClick={() => openCompactSession(session.id, 'repositories')}
+                          onContextMenu={(event) => openCompactSessionMenu(event, session)}
                           aria-label={`Open pane ${project.name}/${session.name || 'Untitled'}`}
                           className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
                         >
@@ -689,6 +727,29 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
             projectId={activeProject.id}
           />
         )}
+
+        <TerminalPopover
+          visible={compactSessionMenu !== null}
+          x={compactSessionMenu?.x ?? 0}
+          y={compactSessionMenu?.y ?? 0}
+          onClose={() => setCompactSessionMenu(null)}
+        >
+          <div role="menu" aria-label={`Pane actions for ${compactSessionMenu?.session.name || 'Untitled'}`}>
+            <PopoverButton role="menuitem" variant="danger" onClick={() => void archiveCompactSession()}>
+              <span className="flex items-center gap-2">
+                <Archive className="h-4 w-4" />
+                Archive
+              </span>
+            </PopoverButton>
+            <div className="my-1 border-t border-border-primary" />
+            <PopoverButton role="menuitem" onClick={() => void toggleCompactSessionPinned()}>
+              <span className="flex items-center gap-2">
+                <Pin className="h-4 w-4 rotate-45" />
+                {compactSessionMenu?.session.isFavorite ? 'Unpin' : 'Pin'}
+              </span>
+            </PopoverButton>
+          </div>
+        </TerminalPopover>
       </>
     );
   }
