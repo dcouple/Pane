@@ -30,14 +30,25 @@ import {
   runTailscaleServeInteractive,
   type ResolvedCommand,
 } from './tailscaleSetup';
+import {
+  boundary,
+  decodeBoundary,
+  type JsonObject,
+} from '../../../shared/validation/boundaryDecoder';
 
 export interface SetupRemoteHostOptions extends Omit<RemoteHostSetupRequest, 'dataDirectoryMode'> {
   printOnly?: boolean;
   interactiveTailscaleSetup?: boolean;
   autoSelectListenPort?: boolean;
-  existingConfig?: unknown;
-  writeConfig?: (config: Record<string, unknown>) => Promise<void>;
+  existingConfig?: object;
+  writeConfig?: (config: RemoteHostConfigDocument) => Promise<void>;
 }
+
+interface RemoteHostConfigDocument {
+  remoteDaemon: RemoteDaemonConfig;
+}
+
+type WritableConfigDocument = JsonObject | RemoteHostConfigDocument;
 
 export type SetupRemoteHostResult = Omit<RemoteHostSetupResult, 'dataDirectoryMode'>;
 
@@ -87,8 +98,8 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
 
   let wroteConfig = false;
   if (!options.printOnly) {
-    const existingConfig = isRecord(options.existingConfig)
-      ? options.existingConfig
+    const existingConfig = options.existingConfig
+      ? decodeBoundary(options.existingConfig, boundary.jsonObject)
       : await readConfigFile(configPath);
     const nextRemoteDaemon = buildNextRemoteDaemonConfig(
       existingConfig.remoteDaemon,
@@ -221,8 +232,8 @@ export function readConfiguredTailscaleServeAccess(listenPort: number): RemoteDa
   });
 }
 
-function buildNextRemoteDaemonConfig(
-  value: unknown,
+function buildNextRemoteDaemonConfig<Value>(
+  value: Value,
   client: RemoteDaemonConfig['host']['clients'][number],
   listenPort: number,
   access: RemoteDaemonHostAccess,
@@ -246,10 +257,10 @@ function buildNextRemoteDaemonConfig(
   });
 }
 
-async function readConfigFile(configPath: string): Promise<Record<string, unknown>> {
+async function readConfigFile(configPath: string): Promise<JsonObject> {
   try {
     const raw = await fs.readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = decodeBoundary(JSON.parse(raw), boundary.json);
     return isRecord(parsed) ? parsed : {};
   } catch (error) {
     if (isNodeErrorWithCode(error, 'ENOENT')) {
@@ -262,7 +273,7 @@ async function readConfigFile(configPath: string): Promise<Record<string, unknow
 async function writeConfigFileAtomically(
   paneDir: string,
   configPath: string,
-  config: Record<string, unknown>,
+  config: WritableConfigDocument,
 ): Promise<void> {
   await fs.mkdir(paneDir, { recursive: true });
   const tmpPath = `${configPath}.${process.pid}.${Date.now()}.tmp`;
@@ -601,7 +612,7 @@ function findSourceRoot(startDir: string): string | null {
     const packagePath = path.join(current, 'package.json');
     if (existsSync(packagePath)) {
       try {
-        const parsed = JSON.parse(readFileSync(packagePath, 'utf8')) as unknown;
+        const parsed = decodeBoundary(JSON.parse(readFileSync(packagePath, 'utf8')), boundary.json);
         if (isRecord(parsed) && parsed.name === 'Pane') {
           return current;
         }
@@ -721,11 +732,11 @@ function commandExists(command: string): boolean {
 }
 
 function commandOutputToString(value: string | Buffer | null): string {
-  if (typeof value === 'string') {
-    return value;
+  if (Buffer.isBuffer(value)) {
+    return value.toString('utf8');
   }
 
-  return value ? value.toString('utf8') : '';
+  return value ?? '';
 }
 
 function extractFirstHttpsUrl(output: string): string | null {
@@ -776,12 +787,25 @@ function upsertById<T extends { id: string }>(items: T[], nextItem: T): T[] {
   return items.map((item, index) => (index === existingIndex ? nextItem : item));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isRecord<Value>(value: Value): value is Value & JsonObject {
+  try {
+    decodeBoundary(value, boundary.jsonObject);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function isNodeErrorWithCode(error: unknown, code: string): boolean {
-  return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code;
+function isNodeErrorWithCode<ErrorValue>(error: ErrorValue, code: string): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  try {
+    const decoded = decodeBoundary(error, boundary.object({ code: boundary.string }));
+    return decoded.code === code;
+  } catch {
+    return false;
+  }
 }
 
 function quoteForPosix(value: string): string {

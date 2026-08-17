@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 export interface RemotePwaAssetResponse {
   handled: boolean;
@@ -80,12 +81,14 @@ export async function getRemotePwaAssetResponse(
 }
 
 function findRemotePwaDistRoot(): string | null {
-  const processWithResources = process as NodeJS.Process & { resourcesPath?: string };
+  const { resourcesPath } = decodeBoundary(process, boundary.object({
+    resourcesPath: boundary.optional(boundary.string),
+  }));
   const candidates = [
     process.env.PANE_REMOTE_PWA_DIST,
     path.resolve(process.cwd(), 'frontend/dist'),
-    processWithResources.resourcesPath
-      ? path.resolve(processWithResources.resourcesPath, 'app/frontend/dist')
+    resourcesPath
+      ? path.resolve(resourcesPath, 'app/frontend/dist')
       : undefined,
     path.resolve(__dirname, '../../../frontend/dist'),
     path.resolve(__dirname, '../../../../frontend/dist'),

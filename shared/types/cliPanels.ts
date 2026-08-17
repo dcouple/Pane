@@ -1,4 +1,5 @@
 import { ToolPanel, ToolPanelState } from './panels';
+import type { JsonObject } from '../validation/boundaryDecoder';
 
 /**
  * Base interface for all CLI panel types
@@ -50,7 +51,7 @@ export interface CliPanelCustomState {
   permissionMode?: 'approve' | 'ignore';
   
   /** Configuration specific to the CLI tool */
-  toolConfig?: Record<string, unknown>;
+  toolConfig?: JsonObject;
   
   /** Feature flags for what this CLI instance supports */
   capabilities?: CliToolCapabilities;
@@ -170,7 +171,7 @@ export interface CliInputOptions {
   systemPrompt?: string;
   
   /** Tool-specific options */
-  toolOptions?: Record<string, unknown>;
+  toolOptions?: JsonObject;
   
   /** Output format preference */
   outputFormat?: string;
@@ -233,7 +234,7 @@ export interface CliOutput {
   source?: string;
   
   /** Additional metadata */
-  metadata?: Record<string, unknown>;
+  metadata?: JsonObject;
 }
 
 /**
@@ -279,7 +280,7 @@ export interface CliPanelSettings {
   maxOutputLines?: number;
   
   /** Tool-specific settings */
-  toolSettings?: Record<string, unknown>;
+  toolSettings?: JsonObject;
 }
 
 /**

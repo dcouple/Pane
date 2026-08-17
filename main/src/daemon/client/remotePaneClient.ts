@@ -18,6 +18,8 @@ import {
   type RemotePaneConnectionStatus,
 } from '../../../../shared/types/remoteDaemon';
 import type { RemoteDaemonEventEnvelope } from '../../../../shared/types/remoteDaemon';
+import { boundary, decodeBoundary } from '../../../../shared/validation/boundaryDecoder';
+import type { BoundarySchema, JsonValue } from '../../../../shared/validation/boundaryDecoder';
 import { PaneSseParser } from './sseParser';
 
 interface RemoteConnectionStateMetadata {
@@ -45,7 +47,7 @@ interface RemotePaneClientConnectOptions {
 
 interface RemoteInvokeSuccessPayload {
   ok: true;
-  result?: unknown;
+  result?: JsonValue;
 }
 
 interface RemoteInvokeErrorPayload {
@@ -68,6 +70,36 @@ interface RemoteReadyEventPayload {
   resync: 'refetch-state-after-reconnect';
   timestamp: string;
 }
+
+const remoteInvokeResponseSchema: BoundarySchema<RemoteInvokeResponsePayload> = boundary.union(
+  boundary.object({
+    ok: boundary.literal(true),
+    result: boundary.optional(boundary.json),
+  }),
+  boundary.object({
+    ok: boundary.literal(false),
+    error: boundary.object({
+      message: boundary.string,
+      code: boundary.optional(boundary.string),
+    }),
+  }),
+);
+const remoteErrorResponseSchema = boundary.object({
+  error: boundary.object({ message: boundary.string }),
+});
+const remoteReadyEventSchema: BoundarySchema<RemoteReadyEventPayload> = boundary.object({
+  replay: boundary.literal('none'),
+  resync: boundary.literal('refetch-state-after-reconnect'),
+  timestamp: boundary.string,
+});
+const remoteHeartbeatSchema: BoundarySchema<RemoteDaemonHeartbeatPayload> = boundary.object({
+  timestamp: boundary.nonEmptyString,
+});
+const remoteEventEnvelopeSchema: BoundarySchema<RemoteDaemonEventEnvelope> = boundary.object({
+  channel: boundary.string,
+  args: boundary.array(boundary.json),
+  timestamp: boundary.string,
+});
 
 const REMOTE_DAEMON_RECONNECT_INITIAL_DELAY_MS = 1_000;
 const REMOTE_DAEMON_RECONNECT_MAX_DELAY_MS = 15_000;
@@ -164,7 +196,7 @@ export class RemotePaneClient {
     this.eventRequest = null;
   }
 
-  async invoke(channel: string, args: unknown[]): Promise<unknown> {
+  async invoke(channel: string, args: unknown[]): Promise<JsonValue | undefined> {
     const endpoint = buildRemoteEndpoint(this.normalizedBaseUrl, 'invoke');
     let response: JsonResponse;
     try {
@@ -182,9 +214,10 @@ export class RemotePaneClient {
       throw error;
     }
 
-    const payload = parseJsonResponse<RemoteInvokeResponsePayload>(
+    const payload = parseJsonResponse(
       response,
       'Remote daemon returned an invalid invoke response',
+      remoteInvokeResponseSchema,
     );
 
     if (!payload.ok) {
@@ -298,8 +331,8 @@ export class RemotePaneClient {
             }
 
             try {
-              const envelope = JSON.parse(event.data) as RemoteDaemonEventEnvelope;
-              if (!isRemoteDaemonEventEnvelope(envelope) || !isPaneDaemonEventChannel(envelope.channel)) {
+              const envelope = decodeBoundary(JSON.parse(event.data), remoteEventEnvelopeSchema);
+              if (!isPaneDaemonEventChannel(envelope.channel)) {
                 continue;
               }
 
@@ -510,7 +543,11 @@ export class RemotePaneClientController extends EventEmitter {
     return !this.isRemoteModeActive() || !isPaneDaemonEventChannel(channel);
   }
 
-  async invoke(channel: string, args: unknown[], invokeLocal: () => Promise<unknown>): Promise<unknown> {
+  async invoke<Result>(
+    channel: string,
+    args: unknown[],
+    invokeLocal: () => Promise<Result>,
+  ): Promise<Result | JsonValue | undefined> {
     if (!this.isRemoteModeActive()) {
       return invokeLocal();
     }
@@ -894,15 +931,19 @@ async function requestJson(
 async function readResponseBody(response: IncomingMessage): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of response) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
   }
 
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function parseJsonResponse<T>(response: JsonResponse, fallbackMessage: string): T {
+function parseJsonResponse<Value>(
+  response: JsonResponse,
+  fallbackMessage: string,
+  schema: BoundarySchema<Value>,
+): Value {
   try {
-    return JSON.parse(response.body) as T;
+    return decodeBoundary(JSON.parse(response.body), schema);
   } catch (error) {
     throw new Error(
       `${fallbackMessage}: ${getErrorMessage(error, 'Unknown JSON parse failure')}`,
@@ -916,10 +957,14 @@ function extractRemoteErrorMessage(body: string): string | null {
   }
 
   try {
-    const parsed = JSON.parse(body) as Partial<RemoteInvokeErrorPayload>;
-    return parsed.error?.message ?? null;
+    const parsed = decodeBoundary(JSON.parse(body), remoteInvokeResponseSchema);
+    return parsed.ok ? null : parsed.error.message;
   } catch {
-    return body;
+    try {
+      return decodeBoundary(JSON.parse(body), remoteErrorResponseSchema).error.message;
+    } catch {
+      return body;
+    }
   }
 }
 
@@ -952,19 +997,10 @@ function parseRemoteReadyEventPayload(data: string): RemoteReadyEventPayload | n
   }
 
   try {
-    const parsed = JSON.parse(data) as Partial<RemoteReadyEventPayload>;
-    if (
-      parsed.replay === 'none' &&
-      parsed.resync === 'refetch-state-after-reconnect' &&
-      typeof parsed.timestamp === 'string'
-    ) {
-      return parsed as RemoteReadyEventPayload;
-    }
+    return decodeBoundary(JSON.parse(data), remoteReadyEventSchema);
   } catch {
     return null;
   }
-
-  return null;
 }
 
 function parseRemoteHeartbeatPayload(data: string): RemoteDaemonHeartbeatPayload | null {
@@ -973,30 +1009,12 @@ function parseRemoteHeartbeatPayload(data: string): RemoteDaemonHeartbeatPayload
   }
 
   try {
-    const parsed = JSON.parse(data) as Partial<RemoteDaemonHeartbeatPayload>;
-    if (typeof parsed.timestamp === 'string' && parsed.timestamp.length > 0) {
-      return parsed as RemoteDaemonHeartbeatPayload;
-    }
+    return decodeBoundary(JSON.parse(data), remoteHeartbeatSchema);
   } catch {
     return null;
   }
-
-  return null;
 }
 
-function isRemoteDaemonEventEnvelope(value: unknown): value is RemoteDaemonEventEnvelope {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const candidate = value as Partial<RemoteDaemonEventEnvelope>;
-  return (
-    typeof candidate.channel === 'string' &&
-    Array.isArray(candidate.args) &&
-    typeof candidate.timestamp === 'string'
-  );
-}
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+function getErrorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof Error ? cause.message : fallback;
 }

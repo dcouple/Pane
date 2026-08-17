@@ -1,18 +1,32 @@
 import { isDaemonOwnedChannel } from './daemonChannels';
+import type { IpcMainInvokeEvent } from 'electron';
 
-export type PaneCommandHandler<TArgs extends unknown[] = unknown[], TResult = unknown> = (
+type PaneCommandObject = object;
+export type PaneCommandValue = PaneCommandObject | string | number | boolean | null | undefined;
+
+export type PaneCommandHandler<
+  TArgs extends PaneCommandValue[] = PaneCommandValue[],
+  TResult extends PaneCommandValue = PaneCommandValue,
+> = (
   ...args: TArgs
 ) => Promise<TResult> | TResult;
 
+type RegisteredPaneCommandHandler = {
+  invoke(...args: PaneCommandValue[]): Promise<PaneCommandValue> | PaneCommandValue;
+}['invoke'];
+
 interface IpcMainHandleLike {
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown): void;
+  handle(
+    channel: string,
+    listener: (_event: IpcMainInvokeEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue> | PaneCommandValue,
+  ): void;
 }
 
 export class PaneCommandRegistry {
-  private readonly handlers = new Map<string, PaneCommandHandler>();
+  private readonly handlers = new Map<string, RegisteredPaneCommandHandler>();
   private readonly boundChannels = new Set<string>();
 
-  register<TArgs extends unknown[], TResult>(
+  register<TArgs extends PaneCommandValue[], TResult extends PaneCommandValue>(
     channel: string,
     handler: PaneCommandHandler<TArgs, TResult>,
   ): void {
@@ -24,7 +38,7 @@ export class PaneCommandRegistry {
       throw new Error(`Pane daemon command "${channel}" is already registered`);
     }
 
-    this.handlers.set(channel, handler as PaneCommandHandler);
+    this.handlers.set(channel, handler);
   }
 
   has(channel: string): boolean {
@@ -35,7 +49,7 @@ export class PaneCommandRegistry {
     return [...this.handlers.keys()].sort();
   }
 
-  async invoke(channel: string, args: readonly unknown[] = []): Promise<unknown> {
+  async invoke(channel: string, args: readonly PaneCommandValue[] = []): Promise<PaneCommandValue> {
     const handler = this.handlers.get(channel);
     if (!handler) {
       throw new Error(`No Pane daemon command registered for channel "${channel}"`);

@@ -1,6 +1,7 @@
 import childProcess from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { boundary, decodeBoundary } from './boundaryDecoder';
 
 const PANE_VERSION_TIMEOUT_MS = 2_000;
 const POWERSHELL_TIMEOUT_MS = 2_000;
@@ -8,7 +9,10 @@ const POWERSHELL_TIMEOUT_MS = 2_000;
 export function getWrapperVersion(): string {
   const packagePath = path.resolve(__dirname, '..', 'package.json');
   try {
-    const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8')) as { version?: string };
+    const pkg = decodeBoundary(
+      JSON.parse(fs.readFileSync(packagePath, 'utf8')),
+      boundary.object({ version: boundary.optional(boundary.string) }),
+    );
     return pkg.version ?? 'unknown';
   } catch {
     return 'unknown';

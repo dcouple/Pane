@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import type {
-  PanePermissionRequest,
   PanePermissionResolvedEvent,
 } from '../../../shared/types/daemon';
 import { PanePermissionBroker } from './permissionBroker';
+import { ConfigManager } from '../services/configManager';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 function installTestRuntime(events: Array<{ channel: string; args: unknown[] }>): void {
   setPaneRuntime({
@@ -13,7 +14,7 @@ function installTestRuntime(events: Array<{ channel: string; args: unknown[] }>)
         events.push({ channel, args });
       },
     },
-    getConfigManager: () => ({} as never),
+    getConfigManager: () => new ConfigManager(),
     getPtyHostRuntime: () => null,
     getWebviewContextMap: () => new Map(),
   });
@@ -35,7 +36,13 @@ describe('PanePermissionBroker', () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.channel).toBe('permission:request');
 
-    const request = events[0]?.args[0] as PanePermissionRequest;
+    const request = decodeBoundary(events[0]?.args[0], boundary.object({
+      id: boundary.string,
+      sessionId: boundary.string,
+      toolName: boundary.string,
+      input: boundary.jsonObject,
+      timestamp: boundary.number,
+    }));
     expect(broker.getPendingRequests()).toEqual([request]);
 
     broker.respondToRequest(request.id, {

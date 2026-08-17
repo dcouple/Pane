@@ -3,7 +3,6 @@
  * Note: "Sessions" are called "Panes" in the UI. Internally they remain
  * "sessions" in code, database, and IPC to avoid a massive refactor.
  */
-
 export type ProjectEnvironment = 'wsl' | 'windows' | 'linux' | 'macos';
 
 export interface ToolPanel {
@@ -21,7 +20,7 @@ export interface ToolPanelState {
   isActive: boolean;
   isPinned?: boolean;
   hasBeenViewed?: boolean;       // Track if panel has ever been viewed
-  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | Record<string, unknown>;
+  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | object;
 }
 
 export interface TerminalPanelState {
@@ -136,7 +135,7 @@ export interface DashboardPanelState {
   lastRefresh?: string;           // Last time dashboard was refreshed
   filterType?: 'all' | 'stale' | 'changes' | 'pr'; // Current filter
   isRefreshing?: boolean;          // Whether dashboard is currently refreshing
-  cachedData?: Record<string, unknown>;                // Cached dashboard data
+  cachedData?: object;                // Cached dashboard data
 }
 
 export interface SetupTasksPanelState {

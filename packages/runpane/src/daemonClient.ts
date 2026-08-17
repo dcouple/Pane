@@ -3,6 +3,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
+import { boundary, decodeBoundary } from './boundaryDecoder';
+import type { BoundarySchema, JsonValue } from './boundaryDecoder';
 
 interface PaneDaemonRequestFrame {
   type: 'request';
@@ -15,7 +17,7 @@ interface PaneDaemonSuccessResponseFrame {
   type: 'response';
   id: number;
   ok: true;
-  result?: unknown;
+  result?: JsonValue;
 }
 
 interface PaneDaemonErrorResponseFrame {
@@ -50,10 +52,45 @@ interface InvokeOptions {
   timeoutMs?: number;
 }
 
+interface TimeoutReference {
+  current?: ReturnType<typeof setTimeout>;
+}
+
+type InvokeOutcome<Value> = { result: Value } | { error: Error };
+
 const FRAME_DELIMITER = '\n';
 const UNIX_SOCKET_BASE_DIRECTORY = '/tmp';
 const DAEMON_SOCKET_FILENAME = 'daemon.sock';
 const DEFAULT_TIMEOUT_MS = 130_000;
+
+const paneDaemonFrameSchema: BoundarySchema<PaneDaemonFrame> = boundary.union(
+  boundary.object({
+    type: boundary.literal('request'),
+    id: boundary.number,
+    channel: boundary.string,
+    args: boundary.array(boundary.json),
+  }),
+  boundary.object({
+    type: boundary.literal('response'),
+    id: boundary.number,
+    ok: boundary.literal(true),
+    result: boundary.optional(boundary.json),
+  }),
+  boundary.object({
+    type: boundary.literal('response'),
+    id: boundary.number,
+    ok: boundary.literal(false),
+    error: boundary.object({
+      message: boundary.string,
+      code: boundary.optional(boundary.string),
+    }),
+  }),
+  boundary.object({
+    type: boundary.literal('event'),
+    channel: boundary.string,
+    args: boundary.array(boundary.json),
+  }),
+);
 
 class PaneDaemonClientError extends Error {
   constructor(
@@ -85,9 +122,10 @@ export function getPaneDaemonEndpoint(appDirectory: string, platform: NodeJS.Pla
   };
 }
 
-export async function invokeDaemon<T = unknown>(
+export async function invokeDaemon<T>(
   channel: string,
   args: unknown[] = [],
+  resultSchema: BoundarySchema<T>,
   options: InvokeOptions = {},
 ): Promise<T> {
   const endpoint = getPaneDaemonEndpoint(resolvePaneDirectory(options.paneDir));
@@ -102,9 +140,9 @@ export async function invokeDaemon<T = unknown>(
     const socket = net.createConnection(endpoint.path);
     const decoder = new PaneDaemonFrameDecoder();
     let settled = false;
-    const timeoutRef: { current?: ReturnType<typeof setTimeout> } = {};
+    const timeoutRef: TimeoutReference = {};
 
-    const settle = (error: Error | null, result?: T) => {
+    const settle = (outcome: InvokeOutcome<T>) => {
       if (settled) {
         return;
       }
@@ -116,15 +154,15 @@ export async function invokeDaemon<T = unknown>(
       if (!socket.destroyed) {
         socket.destroy();
       }
-      if (error) {
-        reject(error);
+      if ('error' in outcome) {
+        reject(outcome.error);
         return;
       }
-      resolve(result as T);
+      resolve(outcome.result);
     };
 
     timeoutRef.current = setTimeout(() => {
-      settle(new PaneDaemonClientError(`Timed out waiting for Pane daemon response on ${endpoint.path}`, 'ERR_RUNPANE_DAEMON_TIMEOUT'));
+      settle({ error: new PaneDaemonClientError(`Timed out waiting for Pane daemon response on ${endpoint.path}`, 'ERR_RUNPANE_DAEMON_TIMEOUT') });
     }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
     socket.once('connect', () => {
@@ -139,25 +177,25 @@ export async function invokeDaemon<T = unknown>(
             continue;
           }
           if (frame.ok) {
-            settle(null, frame.result as T);
+            settle({ result: decodeBoundary(frame.result, resultSchema) });
             return;
           }
-          settle(new PaneDaemonClientError(frame.error.message, frame.error.code));
+          settle({ error: new PaneDaemonClientError(frame.error.message, frame.error.code) });
           return;
         }
       } catch (error) {
-        settle(error instanceof Error ? error : new Error(String(error)));
+        settle({ error: error instanceof Error ? error : new Error(String(error)) });
       }
     });
 
     socket.once('error', (error: NodeJS.ErrnoException) => {
       const code = error.code ?? 'ERR_RUNPANE_DAEMON_CONNECT_FAILED';
-      settle(new PaneDaemonClientError(`Could not connect to Pane daemon at ${endpoint.path}: ${error.message}`, code));
+      settle({ error: new PaneDaemonClientError(`Could not connect to Pane daemon at ${endpoint.path}: ${error.message}`, code) });
     });
 
     socket.once('close', () => {
       if (!settled) {
-        settle(new PaneDaemonClientError(`Pane daemon closed the connection before responding at ${endpoint.path}`, 'ERR_RUNPANE_DAEMON_CLOSED'));
+        settle({ error: new PaneDaemonClientError(`Pane daemon closed the connection before responding at ${endpoint.path}`, 'ERR_RUNPANE_DAEMON_CLOSED') });
       }
     });
   });
@@ -184,7 +222,7 @@ function getUnixSocketDirectoryName(appDirectory: string): string {
     .update(appDirectory)
     .digest('hex')
     .slice(0, 16);
-  const uidSuffix = typeof process.getuid === 'function' ? `-${process.getuid()}` : '';
+  const uidSuffix = process.getuid ? `-${process.getuid()}` : '';
 
   return path.posix.join(UNIX_SOCKET_BASE_DIRECTORY, `pane-daemon${uidSuffix}-${hash}`);
 }
@@ -198,7 +236,7 @@ class PaneDaemonFrameDecoder {
   private decoder = new StringDecoder('utf8');
 
   push(chunk: string | Buffer): PaneDaemonFrame[] {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    this.buffer += Buffer.isBuffer(chunk) ? this.decoder.write(chunk) : chunk;
 
     const frames: PaneDaemonFrame[] = [];
     let delimiterIndex = this.buffer.indexOf(FRAME_DELIMITER);
@@ -219,27 +257,5 @@ class PaneDaemonFrameDecoder {
 }
 
 function parseFrame(rawFrame: string): PaneDaemonFrame {
-  const parsed = JSON.parse(rawFrame) as unknown;
-  if (!isPaneDaemonFrame(parsed)) {
-    throw new Error('Failed to parse Pane daemon frame: frame does not match Pane daemon protocol');
-  }
-  return parsed;
-}
-
-function isPaneDaemonFrame(frame: unknown): frame is PaneDaemonFrame {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
-
-  const candidate = frame as Partial<PaneDaemonFrame>;
-  if (candidate.type === 'event') {
-    return typeof candidate.channel === 'string' && Array.isArray(candidate.args);
-  }
-  if (candidate.type === 'request') {
-    return typeof candidate.id === 'number' && typeof candidate.channel === 'string' && Array.isArray(candidate.args);
-  }
-  if (candidate.type === 'response') {
-    return typeof candidate.id === 'number' && typeof candidate.ok === 'boolean';
-  }
-  return false;
+  return decodeBoundary(JSON.parse(rawFrame), paneDaemonFrameSchema);
 }

@@ -1,5 +1,7 @@
 import path from 'path';
+import { boundary, decodeBoundary } from './boundaryDecoder';
 import type { ArtifactFormat } from './commands';
+import type { BoundarySchema } from './boundaryDecoder';
 import { archAliases, defaultFormat, platformParam, type PanePlatform } from './platform';
 
 const GITHUB_API_BASE = 'https://api.github.com/repos/dcouple/Pane/releases';
@@ -20,6 +22,20 @@ interface GitHubRelease {
   draft: boolean;
   assets?: GitHubReleaseAsset[];
 }
+
+const githubReleaseSchema: BoundarySchema<GitHubRelease> = boundary.object({
+  tag_name: boundary.string,
+  name: boundary.string,
+  body: boundary.string,
+  html_url: boundary.string,
+  published_at: boundary.string,
+  prerelease: boundary.boolean,
+  draft: boundary.boolean,
+  assets: boundary.optional(boundary.array(boundary.object({
+    name: boundary.string,
+    browser_download_url: boundary.string,
+  }))),
+});
 
 export interface ResolvedRelease {
   release: GitHubRelease;
@@ -76,7 +92,7 @@ export async function fetchRelease(version: string, timeoutMs?: number): Promise
       throw new Error(`Failed to fetch Pane release ${version}: ${response.status} ${response.statusText}`);
     }
 
-    const release = await response.json() as GitHubRelease;
+    const release = decodeBoundary(await response.json(), githubReleaseSchema);
     if (release.draft || release.prerelease) {
       throw new Error(`Release ${release.tag_name} is not a stable public release.`);
     }

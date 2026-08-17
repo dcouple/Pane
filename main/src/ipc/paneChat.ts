@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { AppServices } from './types';
 import { normalizePaneChatAgent } from '../../../shared/types/paneChat';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 export function registerPaneChatHandlers(
   ipcMain: IpcMain,
@@ -32,7 +33,8 @@ export function registerPaneChatHandlers(
         throw new Error('Pane Chat manager is not initialized');
       }
 
-      const state = await services.paneChatManager.setAgent(normalizePaneChatAgent(agent));
+      const decodedAgent = decodeBoundary(agent, boundary.optional(boundary.json));
+      const state = await services.paneChatManager.setAgent(normalizePaneChatAgent(decodedAgent));
       return { success: true, data: state };
     } catch (error) {
       console.error('[PaneChat IPC] Failed to set Pane Chat agent:', error);

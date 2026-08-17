@@ -5,6 +5,7 @@ import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodePaneRemoteConnection } from '../../../shared/types/remoteDaemon';
 import { setupRemoteHost } from './setupRemoteHost';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const { spawnSyncMock } = vi.hoisted(() => ({
   spawnSyncMock: vi.fn(),
@@ -94,25 +95,28 @@ describe('setupRemoteHost', () => {
         installService: false,
       });
       const payload = decodePaneRemoteConnection(result.connectionCode);
-      const config = JSON.parse(await fs.readFile(path.join(paneDir, 'config.json'), 'utf8')) as {
-        remoteDaemon: {
-          host: {
-            config: {
-              enabled: boolean;
-              listenHost: string;
-              listenPort: number;
-            };
-            access?: {
-              baseUrl: string;
-              tunnel?: {
-                kind: string;
-                tailscaleIp?: string;
-              };
-              updatedAt: string;
-            };
-          };
-        };
-      };
+      const config = decodeBoundary(
+        JSON.parse(await fs.readFile(path.join(paneDir, 'config.json'), 'utf8')),
+        boundary.object({
+          remoteDaemon: boundary.object({
+            host: boundary.object({
+              config: boundary.object({
+                enabled: boundary.boolean,
+                listenHost: boundary.string,
+                listenPort: boundary.number,
+              }),
+              access: boundary.optional(boundary.object({
+                baseUrl: boundary.string,
+                tunnel: boundary.optional(boundary.object({
+                  kind: boundary.string,
+                  tailscaleIp: boundary.optional(boundary.string),
+                })),
+                updatedAt: boundary.string,
+              })),
+            }),
+          }),
+        }),
+      );
 
       expect(result.tunnel?.kind).toBe('tailscale');
       expect(result.tunnel?.command).toBe('tailscale serve --bg --tls-terminated-tcp=443 42137');
@@ -279,7 +283,7 @@ describe('setupRemoteHost', () => {
       server.listen(0, '127.0.0.1', () => resolve());
     });
     const address = server.address();
-    if (!address || typeof address === 'string') {
+    if (!address || !(address instanceof Object)) {
       throw new Error('Expected test server to listen on a TCP port');
     }
 

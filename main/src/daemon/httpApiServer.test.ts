@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { PaneCommandRegistry } from './commandRegistry';
 import { hashRemoteDaemonToken } from './auth';
+import { boundary, decodeBoundary, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 vi.mock('../services/terminalPanelManager', () => ({
   terminalPanelManager: {
@@ -14,7 +15,7 @@ vi.mock('../services/terminalPanelManager', () => ({
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 
 interface ConfigManagerStub {
-  getConfig(): { remoteDaemon?: RemoteDaemonConfig };
+  getConfig(): { deepgramApiKey?: string; remoteDaemon?: RemoteDaemonConfig };
 }
 
 interface TestEventStream {
@@ -68,10 +69,10 @@ async function requestJson(
   server: PaneRemoteHttpApiServer,
   method: 'GET' | 'POST',
   path: string,
-  body?: unknown,
+  body?: JsonValue,
   token?: string,
   extraHeaders?: Record<string, string>,
-): Promise<{ statusCode: number; body: unknown }> {
+): Promise<{ statusCode: number; body: JsonValue }> {
   const address = server.getAddress();
   if (!address) {
     throw new Error('Remote HTTP API server is not listening');
@@ -91,13 +92,13 @@ async function requestJson(
     }, (response) => {
       const chunks: Buffer[] = [];
       response.on('data', (chunk) => {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       response.on('end', () => {
         const text = Buffer.concat(chunks).toString('utf8');
         resolve({
           statusCode: response.statusCode ?? 0,
-          body: text.length > 0 ? JSON.parse(text) : null,
+          body: text.length > 0 ? decodeBoundary(JSON.parse(text), boundary.json) : null,
         });
       });
     });
@@ -132,7 +133,7 @@ async function requestRaw(
     }, (response) => {
       const chunks: Buffer[] = [];
       response.on('data', (chunk) => {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       response.on('end', () => {
         resolve({
@@ -180,7 +181,7 @@ async function openEventStream(
       let buffer = '';
 
       response.on('data', (chunk) => {
-        buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+        buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
 
         let boundaryIndex = buffer.indexOf('\n\n');
         while (boundaryIndex !== -1) {
@@ -207,7 +208,10 @@ async function openEventStream(
         },
         nextEvent(timeoutMs = 1000) {
           if (queuedEvents.length > 0) {
-            return Promise.resolve(queuedEvents.shift() as { event: string | null; data: string[] });
+            const queuedEvent = queuedEvents.shift();
+            if (queuedEvent) {
+              return Promise.resolve(queuedEvent);
+            }
           }
 
           return new Promise((eventResolve, eventReject) => {
@@ -267,7 +271,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -287,7 +291,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -313,7 +317,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const handler = vi.fn(async () => ({ ok: true }));
     registry.register('terminal:setVisibility', handler);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -339,7 +343,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const handler = vi.fn(async () => ({ ok: true }));
     registry.register('terminal:setVisibility', handler);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -366,7 +370,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => []);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -392,7 +396,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
     const server = new PaneRemoteHttpApiServer(
       registry,
-      createConfigManagerStub(createEnabledRemoteConfig({ pairingRequired: false })) as never,
+      createConfigManagerStub(createEnabledRemoteConfig({ pairingRequired: false })),
     );
     activeServers.push(server);
     await server.start();
@@ -417,7 +421,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('exposes an unauthenticated health endpoint for hosted readiness checks', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -433,7 +437,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('supports browser CORS preflights for PWA remote clients', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -465,7 +469,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => []);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -488,11 +492,9 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('allows larger invoke bodies after header authentication', async () => {
     const registry = new PaneCommandRegistry();
-    registry.register('sessions:get-all', async (value: unknown) => (
-      typeof value === 'string' ? value.length : 0
-    ));
+    registry.register('sessions:get-all', async (value) => decodeBoundary(value, boundary.string).length);
 
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -511,7 +513,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('streams a ready event and daemon-owned runtime events over SSE', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -555,7 +557,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('accepts browser SSE auth metadata from query params', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -584,7 +586,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('checks browser SSE auth without registering a connected client', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -601,7 +603,7 @@ describe('PaneRemoteHttpApiServer', () => {
 
   it('filters non-daemon events from the remote SSE stream', async () => {
     const registry = new PaneCommandRegistry();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
     activeServers.push(server);
     await server.start();
 
@@ -618,7 +620,7 @@ describe('PaneRemoteHttpApiServer', () => {
   it('drops existing SSE subscribers when the paired client token rotates', async () => {
     const registry = new PaneCommandRegistry();
     const remoteConfig = createEnabledRemoteConfig();
-    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(remoteConfig) as never);
+    const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(remoteConfig));
     activeServers.push(server);
     await server.start();
 
@@ -641,7 +643,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     const server = new PaneRemoteHttpApiServer(
       registry,
-      createConfigManagerStub(createEnabledRemoteConfig({ allowInsecureHttpOnLoopback: false })) as never,
+      createConfigManagerStub(createEnabledRemoteConfig({ allowInsecureHttpOnLoopback: false })),
     );
 
     await expect(server.start()).rejects.toThrow('Remote daemon HTTP API loopback transport is disabled by config');
@@ -651,7 +653,7 @@ describe('PaneRemoteHttpApiServer', () => {
     const registry = new PaneCommandRegistry();
     const server = new PaneRemoteHttpApiServer(
       registry,
-      createConfigManagerStub(createEnabledRemoteConfig({ listenHost: '0.0.0.0' })) as never,
+      createConfigManagerStub(createEnabledRemoteConfig({ listenHost: '0.0.0.0' })),
     );
 
     await expect(server.start()).rejects.toThrow(

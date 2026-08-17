@@ -6,6 +6,7 @@ import {
   type RunpaneChannel,
   type RunpaneCommand
 } from './generated/contract';
+import { boundary, decodeBoundary } from './boundaryDecoder';
 
 export type { ArtifactFormat, InstallTarget, RunpaneAgent, RunpaneCommand };
 
@@ -63,6 +64,11 @@ const TARGETS = new Set<string>(RUNPANE_CONTRACT.enums.installTargets);
 const FORMATS = new Set<string>(RUNPANE_CONTRACT.enums.artifactFormats);
 const CHANNELS = new Set<string>(RUNPANE_CONTRACT.enums.channels);
 const AGENTS = new Set<string>(RUNPANE_CONTRACT.enums.agents);
+const commandSchema = boundary.enumeration(...RUNPANE_CONTRACT.commands.map((command) => command.name));
+const targetSchema = boundary.enumeration(...RUNPANE_CONTRACT.enums.installTargets);
+const formatSchema = boundary.enumeration(...RUNPANE_CONTRACT.enums.artifactFormats);
+const channelSchema = boundary.enumeration(...RUNPANE_CONTRACT.enums.channels);
+const agentSchema = boundary.enumeration(...RUNPANE_CONTRACT.enums.agents);
 const COMMAND_GROUP_HELP_TOPICS = new Set(['panes', 'panels']);
 
 const REMOTE_VALUE_FLAGS = new Set<string>(RUNPANE_CONTRACT.flags.remoteValue.map((flag) => flag.name));
@@ -120,7 +126,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   args.splice(0, matched.tokens.length);
 
   const parsed: ParsedArgs = {
-    command: matched.name as RunpaneCommand,
+    command: decodeBoundary(matched.name, commandSchema),
     ...DEFAULTS,
     remoteSetupArgs: []
   };
@@ -130,7 +136,7 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
     if (!target || !TARGETS.has(target)) {
       throw new Error(`Unknown install target: ${target ?? ''}. Expected "client" or "daemon".`);
     }
-    parsed.target = target as InstallTarget;
+    parsed.target = decodeBoundary(target, targetSchema);
   }
 
   if (parsed.command === 'update') {
@@ -199,7 +205,7 @@ function parseFlags(args: string[], parsed: ParsedArgs): void {
       if (!FORMATS.has(value)) {
         throw new Error(`Invalid --format "${value}". Expected one of: ${[...FORMATS].join(', ')}`);
       }
-      parsed.format = value as ArtifactFormat;
+      parsed.format = decodeBoundary(value, formatSchema);
       continue;
     }
 
@@ -209,7 +215,7 @@ function parseFlags(args: string[], parsed: ParsedArgs): void {
         if (!CHANNELS.has(value)) {
           throw new Error(`Invalid --channel "${value}". Expected stable or nightly.`);
         }
-        parsed.channel = value as RunpaneChannel;
+        parsed.channel = decodeBoundary(value, channelSchema);
       }
       appendRemoteArg(parsed, arg, value);
       continue;
@@ -312,7 +318,7 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     if (!AGENTS.has(value)) {
       throw new Error(`Invalid --agent "${value}". Expected one of: ${[...AGENTS].join(', ')}`);
     }
-    parsed.agent = value as RunpaneAgent;
+    parsed.agent = decodeBoundary(value, agentSchema);
     return;
   }
   if (flag === '--tool-command') {
@@ -467,8 +473,8 @@ function readValue(args: string[], index: number, flag: string): string {
 
 export function helpText(topic?: string): string {
   const helpTopics = RUNPANE_CONTRACT.help.npm;
-  const key = topic && Object.prototype.hasOwnProperty.call(helpTopics, topic)
-    ? topic as keyof typeof helpTopics
-    : 'default';
-  return helpTopics[key].join('\n');
+  const topicLines = topic
+    ? Object.entries(helpTopics).find(([key]) => key === topic)?.[1]
+    : undefined;
+  return (topicLines ?? helpTopics.default).join('\n');
 }

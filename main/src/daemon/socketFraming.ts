@@ -1,5 +1,7 @@
 import { StringDecoder } from 'string_decoder';
-import { isPaneDaemonFrame, type PaneDaemonFrame } from '../../../shared/types/daemon';
+import { parsePaneDaemonFrame, type PaneDaemonFrame } from '../../../shared/types/daemon';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 const FRAME_DELIMITER = '\n';
 
@@ -12,7 +14,7 @@ export class PaneDaemonFrameDecoder {
   private decoder = new StringDecoder('utf8');
 
   push(chunk: string | Buffer): PaneDaemonFrame[] {
-    this.buffer += typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    this.buffer += Buffer.isBuffer(chunk) ? this.decoder.write(chunk) : chunk;
 
     const frames: PaneDaemonFrame[] = [];
     let delimiterIndex = this.buffer.indexOf(FRAME_DELIMITER);
@@ -47,20 +49,19 @@ export class PaneDaemonFrameDecoder {
   }
 
   private parseFrame(rawFrame: string): PaneDaemonFrame {
-    let parsed: unknown;
-
+    let parsed: JsonValue;
     try {
-      parsed = JSON.parse(rawFrame) as unknown;
+      parsed = decodeBoundary(JSON.parse(rawFrame), boundary.json);
     } catch (error) {
       throw new Error(
         `Failed to parse Pane daemon frame: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
-    if (!isPaneDaemonFrame(parsed)) {
+    try {
+      return parsePaneDaemonFrame(parsed);
+    } catch {
       throw new Error('Failed to parse Pane daemon frame: frame does not match Pane daemon protocol');
     }
-
-    return parsed;
   }
 }

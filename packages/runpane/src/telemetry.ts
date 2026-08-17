@@ -2,7 +2,9 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { randomUUID } from 'crypto';
+import { boundary, decodeBoundary } from './boundaryDecoder';
 import type { ArtifactFormat, InstallTarget, RunpaneCommand } from './commands';
+import type { JsonObject, JsonValue } from './boundaryDecoder';
 import type { PanePlatform } from './platform';
 import { getWrapperVersion } from './version';
 
@@ -68,14 +70,6 @@ export interface WrapperTelemetryContext {
 }
 
 type WrapperTelemetryProperties = Record<string, string | number | boolean>;
-
-interface ConfigFile {
-  analytics?: {
-    installId?: unknown;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
 
 export function createInitialTelemetryContext(argv: string[]): WrapperTelemetryContext {
   const first = argv[0];
@@ -165,8 +159,8 @@ export function setSetupSelection(
   context.target = target;
 }
 
-export function categorizeFailure(error: unknown): WrapperFailureCategory {
-  const message = error instanceof Error ? error.message : String(error);
+export function categorizeFailure(cause: unknown): WrapperFailureCategory {
+  const message = cause instanceof Error ? cause.message : String(cause);
   const normalized = message.toLowerCase();
   if (normalized.includes('checksum')) return 'checksum';
   if (normalized.includes('timeout') || normalized.includes('timed out')) return 'timeout';
@@ -283,14 +277,14 @@ async function getOrCreateWrapperInstallId(): Promise<string> {
 
   const config = await readConfig(configPath);
   if (config.status === 'ok') {
-    const analytics = isRecord(config.value.analytics) ? config.value.analytics : {};
-    const existing = analytics.installId;
-    if (typeof existing === 'string' && INSTALL_ID_PATTERN.test(existing)) {
+    const analytics = readJsonObject(config.value.analytics);
+    const existing = readInstallId(analytics.installId);
+    if (existing !== undefined) {
       return existing;
     }
 
     const installId = createInstallId();
-    const nextConfig: ConfigFile = {
+    const nextConfig: JsonObject = {
       ...config.value,
       analytics: {
         ...analytics,
@@ -311,14 +305,13 @@ async function getOrCreateWrapperInstallId(): Promise<string> {
 }
 
 async function readConfig(configPath: string): Promise<
-  | { status: 'ok'; value: ConfigFile }
+  | { status: 'ok'; value: JsonObject }
   | { status: 'missing' }
   | { status: 'invalid' }
 > {
   try {
     const raw = await fs.readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as unknown;
-    return isRecord(parsed) ? { status: 'ok', value: parsed as ConfigFile } : { status: 'invalid' };
+    return { status: 'ok', value: decodeBoundary(JSON.parse(raw), boundary.jsonObject) };
   } catch (error) {
     if (isNodeError(error) && error.code === 'ENOENT') {
       return { status: 'missing' };
@@ -330,9 +323,10 @@ async function readConfig(configPath: string): Promise<
 async function getOrCreateFallbackInstallId(fallbackPath: string): Promise<string> {
   try {
     const raw = await fs.readFile(fallbackPath, 'utf8');
-    const parsed = JSON.parse(raw) as unknown;
-    if (isRecord(parsed) && typeof parsed.installId === 'string' && INSTALL_ID_PATTERN.test(parsed.installId)) {
-      return parsed.installId;
+    const parsed = decodeBoundary(JSON.parse(raw), boundary.jsonObject);
+    const existing = readInstallId(parsed.installId);
+    if (existing !== undefined) {
+      return existing;
     }
   } catch {
     // Fall through and create a new fallback identity.
@@ -390,10 +384,23 @@ function setIfDefined(
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function readJsonObject(value: JsonValue | undefined): JsonObject {
+  try {
+    return decodeBoundary(value, boundary.jsonObject);
+  } catch {
+    return {};
+  }
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+function readInstallId(value: JsonValue | undefined): string | undefined {
+  try {
+    const installId = decodeBoundary(value, boundary.string);
+    return INSTALL_ID_PATTERN.test(installId) ? installId : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isNodeError(cause: unknown): cause is NodeJS.ErrnoException {
+  return cause instanceof Error && 'code' in cause;
 }

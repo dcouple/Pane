@@ -34,7 +34,7 @@ export const CODEX_MODELS: Record<OpenAICodexModel, CodexModelConfig> = {
 
 // Helper function to get model configuration
 export function getCodexModelConfig(model: string): CodexModelConfig | undefined {
-  return CODEX_MODELS[model as OpenAICodexModel];
+  return Object.values(CODEX_MODELS).find((config) => config.id === model);
 }
 
 // Helper to get the model list as an array
@@ -64,5 +64,4 @@ export interface CodexInputOptions {
     content: string;
     size: number;
   }>;
-  [key: string]: unknown;
 }

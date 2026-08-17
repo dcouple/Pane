@@ -1,6 +1,7 @@
 import type { ParsedArgs } from './commands';
 import childProcess from 'node:child_process';
 import fs from 'node:fs';
+import { boundary } from './boundaryDecoder';
 import {
   getPaneDaemonEndpoint,
   invokeDaemon,
@@ -11,6 +12,7 @@ import { resolveExistingPanePath } from './installers';
 import { detectPlatform, type PanePlatform } from './platform';
 import { resolveRelease } from './releases';
 import { getPaneVersion, getWrapperVersion } from './version';
+import type { BoundarySchema } from './boundaryDecoder';
 
 const DOCTOR_DAEMON_TIMEOUT_MS = 5_000;
 const DOCTOR_RELEASE_TIMEOUT_MS = 5_000;
@@ -42,6 +44,34 @@ interface DaemonDoctorResult {
     recommendedFirstCommands: string[];
   };
 }
+
+const daemonDoctorResultSchema: BoundarySchema<DaemonDoctorResult> = boundary.object({
+  ok: boundary.literal(true),
+  app: boundary.object({
+    version: boundary.string,
+    isPackaged: boundary.boolean,
+    platform: boundary.string,
+    electronVersion: boundary.optional(boundary.string),
+    nodeVersion: boundary.optional(boundary.string),
+  }),
+  daemon: boundary.object({
+    channels: boundary.array(boundary.string),
+  }),
+  repos: boundary.object({
+    count: boundary.number,
+    active: boundary.optional(boundary.object({
+      id: boundary.number,
+      name: boundary.string,
+      path: boundary.string,
+      active: boundary.boolean,
+      environment: boundary.optional(boundary.string),
+      sessionCount: boundary.number,
+    })),
+  }),
+  agentContext: boundary.object({
+    recommendedFirstCommands: boundary.array(boundary.string),
+  }),
+});
 
 interface DoctorReleaseCheck {
   ok: boolean;
@@ -172,7 +202,7 @@ export function collectRemoteSetupCheck(
   const probes: RemoteSetupProbes = {
     displayAvailable: Boolean(process.env.DISPLAY || process.env.WAYLAND_DISPLAY),
     hasFuseRuntime: hasLinuxFuseRuntime(),
-    isRoot: typeof process.getuid === 'function' && process.getuid() === 0,
+    isRoot: process.getuid?.() === 0,
     unprivilegedUserNamespaceDisabled: isUnprivilegedUserNamespaceDisabled(),
     hasSystemctl: commandExists('systemctl'),
     ...probeOverrides,
@@ -296,23 +326,23 @@ async function collectDaemonHealth(paneDir: string | undefined, endpoint: PaneDa
     return {
       reachable: true,
       endpoint,
-      result: await invokeDaemon<DaemonDoctorResult>('runpane:doctor', [], {
+      result: await invokeDaemon('runpane:doctor', [], daemonDoctorResultSchema, {
         paneDir,
         timeoutMs: DOCTOR_DAEMON_TIMEOUT_MS,
       }),
     };
   } catch (error) {
+    const message = errorMessage(error);
     return {
       reachable: false,
       endpoint,
-      error: errorMessage(error),
-      nextCommand: resolveDaemonRecoveryCommand(endpoint, error),
+      error: message,
+      nextCommand: resolveDaemonRecoveryCommand(endpoint, message),
     };
   }
 }
 
-function resolveDaemonRecoveryCommand(endpoint: PaneDaemonEndpoint, error: unknown): string {
-  const message = errorMessage(error);
+function resolveDaemonRecoveryCommand(endpoint: PaneDaemonEndpoint, message: string): string {
   if (
     endpoint.transport === 'unix'
     && (message.includes('ECONNREFUSED') || fs.existsSync(endpoint.path))
@@ -367,6 +397,6 @@ function renderDoctorText(report: DoctorReport): void {
   console.log('Remote setup: run "runpane setup" for guided setup, or "runpane install daemon --label <name>" for scripting.');
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

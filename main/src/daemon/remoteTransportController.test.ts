@@ -97,7 +97,7 @@ async function openEventStream(server: NonNullable<ReturnType<PaneRemoteTranspor
       let buffer = '';
 
       response.on('data', (chunk) => {
-        buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+        buffer += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
 
         let boundaryIndex = buffer.indexOf('\n\n');
         while (boundaryIndex !== -1) {
@@ -124,7 +124,10 @@ async function openEventStream(server: NonNullable<ReturnType<PaneRemoteTranspor
         },
         nextEvent(timeoutMs = 1000) {
           if (queuedEvents.length > 0) {
-            return Promise.resolve(queuedEvents.shift() as { event: string | null; data: string[] });
+            const queuedEvent = queuedEvents.shift();
+            if (queuedEvent) {
+              return Promise.resolve(queuedEvent);
+            }
           }
 
           return new Promise((eventResolve, eventReject) => {
@@ -183,7 +186,7 @@ describe('PaneRemoteTransportController', () => {
   it('starts and stops remote HTTP transport on config updates while keeping a stable event sink', async () => {
     const registry = new PaneCommandRegistry();
     const configManager = new ConfigManagerStub(createDefaultRemoteDaemonConfig());
-    const controller = new PaneRemoteTransportController(registry, configManager as never);
+    const controller = new PaneRemoteTransportController(registry, configManager);
     activeControllers.push(controller);
     controller.startWatchingConfig();
 
@@ -253,7 +256,7 @@ describe('PaneRemoteTransportController', () => {
   it('stops the active remote HTTP transport when config changes to an invalid non-loopback bind', async () => {
     const registry = new PaneCommandRegistry();
     const configManager = new ConfigManagerStub(createEnabledRemoteConfig());
-    const controller = new PaneRemoteTransportController(registry, configManager as never);
+    const controller = new PaneRemoteTransportController(registry, configManager);
     activeControllers.push(controller);
     controller.startWatchingConfig();
 
@@ -275,7 +278,7 @@ describe('PaneRemoteTransportController', () => {
   it('disconnects active remote clients without stopping the listener', async () => {
     const registry = new PaneCommandRegistry();
     const configManager = new ConfigManagerStub(createEnabledRemoteConfig());
-    const controller = new PaneRemoteTransportController(registry, configManager as never);
+    const controller = new PaneRemoteTransportController(registry, configManager);
     activeControllers.push(controller);
 
     await controller.syncToConfig();

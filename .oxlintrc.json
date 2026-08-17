@@ -89,6 +89,17 @@
   },
   "overrides": [
     {
+      "files": [
+        "shared/validation/boundaryDecoder.ts",
+        "packages/runpane/src/boundaryDecoder.ts"
+      ],
+      "rules": {
+        "anti-slop/no-runtime-typeof": "off",
+        "anti-slop/no-unknown-parameters": "off",
+        "anti-slop/no-unsafe-dictionary-type": "off"
+      }
+    },
+    {
       "files": ["frontend/src/**/*.{ts,tsx}"],
       "rules": {
         "eslint/no-empty": "error",

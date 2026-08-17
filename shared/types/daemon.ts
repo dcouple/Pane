@@ -1,15 +1,18 @@
+import { boundary, decodeBoundary } from '../validation/boundaryDecoder';
+import type { BoundarySchema, JsonObject, JsonValue } from '../validation/boundaryDecoder';
+
 export interface PaneDaemonRequestFrame {
   type: 'request';
   id: number;
   channel: string;
-  args: unknown[];
+  args: JsonValue[];
 }
 
 export interface PaneDaemonSuccessResponseFrame {
   type: 'response';
   id: number;
   ok: true;
-  result?: unknown;
+  result?: JsonValue;
 }
 
 export interface PaneDaemonError {
@@ -27,10 +30,10 @@ export interface PaneDaemonErrorResponseFrame {
 export interface PaneDaemonEventFrame {
   type: 'event';
   channel: string;
-  args: unknown[];
+  args: JsonValue[];
 }
 
-export type PanePermissionInput = Record<string, unknown>;
+export type PanePermissionInput = JsonObject;
 
 export interface PanePermissionRequest {
   id: string;
@@ -60,12 +63,39 @@ export type PaneDaemonFrame =
   | PaneDaemonResponseFrame
   | PaneDaemonEventFrame;
 
-interface PaneDaemonResponseFrameCandidate {
-  type?: unknown;
-  id?: unknown;
-  ok?: unknown;
-  error?: unknown;
-}
+const requestFrameSchema: BoundarySchema<PaneDaemonRequestFrame> = boundary.object({
+  type: boundary.literal('request'),
+  id: boundary.number,
+  channel: boundary.string,
+  args: boundary.array(boundary.json),
+});
+const responseFrameSchema: BoundarySchema<PaneDaemonResponseFrame> = boundary.union(
+  boundary.object({
+    type: boundary.literal('response'),
+    id: boundary.number,
+    ok: boundary.literal(true),
+    result: boundary.optional(boundary.json),
+  }),
+  boundary.object({
+    type: boundary.literal('response'),
+    id: boundary.number,
+    ok: boundary.literal(false),
+    error: boundary.object({
+      message: boundary.string,
+      code: boundary.optional(boundary.string),
+    }),
+  }),
+);
+const eventFrameSchema: BoundarySchema<PaneDaemonEventFrame> = boundary.object({
+  type: boundary.literal('event'),
+  channel: boundary.string,
+  args: boundary.array(boundary.json),
+});
+const daemonFrameSchema: BoundarySchema<PaneDaemonFrame> = boundary.union(
+  requestFrameSchema,
+  responseFrameSchema,
+  eventFrameSchema,
+);
 
 export const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'agent-usage:',
@@ -126,66 +156,38 @@ export function isDaemonOwnedChannel(channel: string): boolean {
     return false;
   }
 
-  if (DAEMON_OWNED_EXACT_CHANNELS.includes(channel as (typeof DAEMON_OWNED_EXACT_CHANNELS)[number])) {
+  if (DAEMON_OWNED_EXACT_CHANNELS.some((ownedChannel) => ownedChannel === channel)) {
     return true;
   }
 
   return DAEMON_OWNED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
 }
 
-export function isPaneDaemonRequestFrame(frame: unknown): frame is PaneDaemonRequestFrame {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
-
-  const candidate = frame as Partial<PaneDaemonRequestFrame>;
-  return (
-    candidate.type === 'request' &&
-    typeof candidate.id === 'number' &&
-    typeof candidate.channel === 'string' &&
-    Array.isArray(candidate.args)
-  );
+export function isPaneDaemonRequestFrame(frame: JsonValue): boolean {
+  return matchesSchema(frame, requestFrameSchema);
 }
 
-export function isPaneDaemonResponseFrame(frame: unknown): frame is PaneDaemonResponseFrame {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
+export function isPaneDaemonResponseFrame(frame: JsonValue): boolean {
+  return matchesSchema(frame, responseFrameSchema);
+}
 
-  const candidate = frame as PaneDaemonResponseFrameCandidate;
-  if (candidate.type !== 'response' || typeof candidate.id !== 'number' || typeof candidate.ok !== 'boolean') {
-    return false;
-  }
+export function isPaneDaemonEventFrame(frame: JsonValue): boolean {
+  return matchesSchema(frame, eventFrameSchema);
+}
 
-  if (candidate.ok === true) {
+export function isPaneDaemonFrame(frame: JsonValue): boolean {
+  return matchesSchema(frame, daemonFrameSchema);
+}
+
+export function parsePaneDaemonFrame(frame: JsonValue): PaneDaemonFrame {
+  return decodeBoundary(frame, daemonFrameSchema);
+}
+
+function matchesSchema<Value>(frame: JsonValue, schema: BoundarySchema<Value>): boolean {
+  try {
+    decodeBoundary(frame, schema);
     return true;
-  }
-
-  if (typeof candidate.error !== 'object' || candidate.error === null) {
+  } catch {
     return false;
   }
-
-  const error = candidate.error as { message?: unknown };
-  return typeof error.message === 'string';
-}
-
-export function isPaneDaemonEventFrame(frame: unknown): frame is PaneDaemonEventFrame {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
-
-  const candidate = frame as Partial<PaneDaemonEventFrame>;
-  return (
-    candidate.type === 'event' &&
-    typeof candidate.channel === 'string' &&
-    Array.isArray(candidate.args)
-  );
-}
-
-export function isPaneDaemonFrame(frame: unknown): frame is PaneDaemonFrame {
-  return (
-    isPaneDaemonRequestFrame(frame) ||
-    isPaneDaemonResponseFrame(frame) ||
-    isPaneDaemonEventFrame(frame)
-  );
 }

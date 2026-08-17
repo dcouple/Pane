@@ -5,7 +5,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
 import { getPaneWebviewContextMap } from '../core/runtime';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
@@ -568,7 +568,7 @@ export function registerPanelHandlers(
   });
   
   // Event handlers
-  commandRegistry.register('panels:emitEvent', async (panelId: string, eventType: PanelEventType, data: unknown) => {
+  commandRegistry.register('panels:emitEvent', async (panelId: string, eventType: PanelEventType, data: PaneCommandValue) => {
     return panelManager.emitPanelEvent(panelId, eventType, data);
   });
 

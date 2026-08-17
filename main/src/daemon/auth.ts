@@ -67,7 +67,7 @@ function extractBearerToken(authorizationHeader: string | string[] | undefined):
       : null;
   }
 
-  if (typeof authorizationHeader !== 'string') {
+  if (authorizationHeader === undefined) {
     return null;
   }
 

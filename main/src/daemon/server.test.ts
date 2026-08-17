@@ -2,7 +2,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { PaneDaemonFrame } from '../../../shared/types/daemon';
 import { PaneCommandRegistry } from './commandRegistry';
 import { encodePaneDaemonFrame, PaneDaemonFrameDecoder } from './socketFraming';
@@ -70,7 +70,10 @@ async function connectClient(server: PaneDaemonServer): Promise<TestClient> {
     socket,
     nextFrame(timeoutMs = 5000) {
       if (queuedFrames.length > 0) {
-        return Promise.resolve(queuedFrames.shift() as PaneDaemonFrame);
+        const queuedFrame = queuedFrames.shift();
+        if (queuedFrame) {
+          return Promise.resolve(queuedFrame);
+        }
       }
 
       return new Promise((resolve, reject) => {
@@ -88,7 +91,7 @@ async function connectClient(server: PaneDaemonServer): Promise<TestClient> {
 }
 
 function getSubscriberCount(server: PaneDaemonServer): number {
-  return (server as unknown as { clients: Map<string, unknown> }).clients.size;
+  return server.getSubscriberCount();
 }
 
 async function waitForSubscriberCount(server: PaneDaemonServer, expectedCount: number): Promise<void> {
@@ -311,26 +314,32 @@ describe('PaneDaemonServer', () => {
     }
 
     const registry = new PaneCommandRegistry();
-    const server = new PaneDaemonServer(registry, createTempAppDirectory(), 'linux');
+    let stalledServerSocket: net.Socket | undefined;
+    let stalledWriteCount = 0;
+    let shouldBackpressure = true;
+    const server = new PaneDaemonServer(
+      registry,
+      createTempAppDirectory(),
+      'linux',
+      (clientId, socket, encodedFrame) => {
+        const accepted = socket.write(encodedFrame);
+        if (clientId !== '1') {
+          return accepted;
+        }
+        stalledServerSocket = socket;
+        stalledWriteCount += 1;
+        if (shouldBackpressure) {
+          shouldBackpressure = false;
+          return false;
+        }
+        return accepted;
+      },
+    );
     activeServers.push(server);
     await server.start();
 
     const stalledClient = await connectClient(server);
     const healthyClient = await connectClient(server);
-    const stalledServerSocket = (server as unknown as { clients: Map<string, { socket: net.Socket }> }).clients.get('1')?.socket;
-    expect(stalledServerSocket).toBeDefined();
-    const originalWrite = (stalledServerSocket as net.Socket).write.bind(stalledServerSocket);
-    let shouldBackpressure = true;
-    const stalledWriteSpy = vi.spyOn(stalledServerSocket as net.Socket, 'write').mockImplementation(((...args: Parameters<net.Socket['write']>) => {
-      const result = originalWrite(...args);
-      if (shouldBackpressure) {
-        shouldBackpressure = false;
-        return false;
-      }
-
-      return result;
-    }) as typeof net.Socket.prototype.write);
-
     server.getEventSink().send('terminal:output', {
       panelId: 'panel-1',
       data: 'hello\n',
@@ -367,8 +376,11 @@ describe('PaneDaemonServer', () => {
       }],
     });
 
-    expect(stalledWriteSpy).toHaveBeenCalledTimes(1);
-    stalledServerSocket?.emit('drain');
+    expect(stalledWriteCount).toBe(1);
+    if (!stalledServerSocket) {
+      throw new Error('Expected the stalled daemon client socket to be captured');
+    }
+    stalledServerSocket.emit('drain');
     await expect(stalledClient.nextFrame()).resolves.toEqual({
       type: 'event',
       channel: 'terminal:output',
@@ -378,7 +390,7 @@ describe('PaneDaemonServer', () => {
       }],
     });
 
-    expect(stalledWriteSpy).toHaveBeenCalledTimes(2);
+    expect(stalledWriteCount).toBe(2);
     expect(server.hasSubscribers()).toBe(true);
   });
 

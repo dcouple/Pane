@@ -11,7 +11,7 @@ export class PaneSseParser {
   private pendingCarriageReturn = false;
 
   push(chunk: Buffer | string): ParsedSseEvent[] {
-    let decodedChunk = typeof chunk === 'string' ? chunk : this.decoder.write(chunk);
+    let decodedChunk = Buffer.isBuffer(chunk) ? this.decoder.write(chunk) : chunk;
     if (this.pendingCarriageReturn) {
       decodedChunk = `\r${decodedChunk}`;
       this.pendingCarriageReturn = false;

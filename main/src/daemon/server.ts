@@ -10,6 +10,7 @@ import type {
   PaneDaemonRequestFrame,
   PaneDaemonSuccessResponseFrame,
 } from '../../../shared/types/daemon';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const DAEMON_EVENT_PREFIXES = [
   'archive:',
@@ -53,6 +54,8 @@ interface ConnectedPaneDaemonClient {
   waitingForDrain: boolean;
 }
 
+type PaneDaemonClientWrite = (clientId: string, socket: net.Socket, encodedFrame: string) => boolean;
+
 const UNIX_SOCKET_DIRECTORY_MODE = 0o700;
 const UNIX_SOCKET_FILE_MODE = 0o600;
 const MAX_PENDING_BYTES_PER_CLIENT = 4 * 1024 * 1024;
@@ -72,7 +75,7 @@ export class PaneDaemonServer {
       const encodedFrame = encodePaneDaemonFrame({
         type: 'event',
         channel,
-        args,
+        args: decodeBoundary(args, boundary.array(boundary.json)),
       });
 
       for (const [clientId] of this.clients) {
@@ -85,6 +88,7 @@ export class PaneDaemonServer {
     private readonly commandRegistry: PaneCommandRegistry,
     appDirectory: string,
     platform: NodeJS.Platform = process.platform,
+    private readonly clientWrite: PaneDaemonClientWrite = (_clientId, socket, encodedFrame) => socket.write(encodedFrame),
   ) {
     this.endpoint = getPaneDaemonEndpoint(appDirectory, platform);
   }
@@ -99,6 +103,10 @@ export class PaneDaemonServer {
 
   hasSubscribers(): boolean {
     return this.clients.size > 0;
+  }
+
+  getSubscriberCount(): number {
+    return this.clients.size;
   }
 
   async start(): Promise<void> {
@@ -253,7 +261,7 @@ export class PaneDaemonServer {
     }
 
     try {
-      const accepted = client.socket.write(encodedFrame);
+      const accepted = this.clientWrite(clientId, client.socket, encodedFrame);
       if (!accepted) {
         client.waitingForDrain = true;
       }
@@ -290,7 +298,7 @@ export class PaneDaemonServer {
 
       client.pendingBytes -= Buffer.byteLength(nextFrame);
       try {
-        const accepted = client.socket.write(nextFrame);
+        const accepted = this.clientWrite(clientId, client.socket, nextFrame);
         if (!accepted) {
           client.waitingForDrain = true;
           return;
@@ -311,7 +319,7 @@ export class PaneDaemonServer {
         type: 'response',
         id: frame.id,
         ok: true,
-        result,
+        result: decodeBoundary(result, boundary.optional(boundary.json)),
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

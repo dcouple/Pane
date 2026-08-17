@@ -1,4 +1,6 @@
 import type { ToolPanel } from './panels';
+import { boundary, decodeBoundary } from '../validation/boundaryDecoder';
+import type { JsonValue } from '../validation/boundaryDecoder';
 
 export type PaneChatAgent = 'claude' | 'codex' | 'cursor';
 
@@ -23,10 +25,12 @@ export interface PaneChatState<TSession = unknown> {
   started: boolean;
 }
 
-export function normalizePaneChatAgent(value: unknown): PaneChatAgent {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(PANE_CHAT_PANEL_IDS, value)
-    ? (value as PaneChatAgent)
-    : DEFAULT_PANE_CHAT_AGENT;
+export function normalizePaneChatAgent(value: JsonValue | undefined): PaneChatAgent {
+  try {
+    return decodeBoundary(value, boundary.enumeration('claude', 'codex', 'cursor'));
+  } catch {
+    return DEFAULT_PANE_CHAT_AGENT;
+  }
 }
 
 export function getPaneChatPanelId(agent: PaneChatAgent): string {

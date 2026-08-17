@@ -19,6 +19,12 @@ export function disconnectActiveRemoteHostClients(clientIds?: string[]): number 
   return activeRemoteHttpApiServer?.disconnectClients(clientIds) ?? 0;
 }
 
+interface RemoteTransportConfigProvider {
+  getConfig(): Pick<ReturnType<ConfigManager['getConfig']>, 'deepgramApiKey' | 'remoteDaemon'>;
+  on(event: 'config-updated', listener: () => void): object;
+  off(event: 'config-updated', listener: () => void): object;
+}
+
 export class PaneRemoteTransportController {
   private remoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
   private activeBindingKey: string | null = null;
@@ -39,7 +45,7 @@ export class PaneRemoteTransportController {
 
   constructor(
     private readonly commandRegistry: PaneCommandRegistry,
-    private readonly configManager: ConfigManager,
+    private readonly configManager: RemoteTransportConfigProvider,
     private readonly analyticsManager?: Pick<AnalyticsManager, 'track'>,
   ) {}
 

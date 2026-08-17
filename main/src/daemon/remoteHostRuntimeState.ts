@@ -5,6 +5,7 @@ import {
   type RemoteDaemonHostConfig,
   type RemoteDaemonHostRuntimeState,
 } from '../../../shared/types/remoteDaemon';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 interface RemoteHttpAddress {
   host: string;
@@ -42,7 +43,7 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
     });
   }
 
-  setError(config: RemoteDaemonHostConfig | null | undefined, error: unknown): void {
+  setError<ErrorValue>(config: RemoteDaemonHostConfig | null | undefined, error: ErrorValue): void {
     this.setState({
       enabled: config?.enabled === true,
       status: 'error',
@@ -76,16 +77,17 @@ class RemoteHostRuntimeStateStore extends EventEmitter {
   }
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
+function getErrorMessage<ErrorValue>(error: ErrorValue, fallback: string): string {
   if (error instanceof Error && error.message.trim().length > 0) {
     return error.message;
   }
 
-  if (typeof error === 'string' && error.trim().length > 0) {
-    return error.trim();
+  try {
+    const message = decodeBoundary(error, boundary.nonEmptyString).trim();
+    return message;
+  } catch {
+    return fallback;
   }
-
-  return fallback;
 }
 
 export const remoteHostRuntimeStateStore = new RemoteHostRuntimeStateStore();

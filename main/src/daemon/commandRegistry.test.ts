@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { PaneCommandRegistry } from './commandRegistry';
+import type { IpcMainInvokeEvent } from 'electron';
+import { PaneCommandRegistry, type PaneCommandValue } from './commandRegistry';
 
 describe('PaneCommandRegistry', () => {
   it('registers and invokes daemon-owned commands', async () => {
@@ -36,9 +37,15 @@ describe('PaneCommandRegistry', () => {
 
   it('binds registered commands back to IPC handles', async () => {
     const registry = new PaneCommandRegistry();
-    const bound = new Map<string, (_event: unknown, ...args: unknown[]) => unknown>();
+    const bound = new Map<string, (
+      _event: IpcMainInvokeEvent,
+      ...args: PaneCommandValue[]
+    ) => Promise<PaneCommandValue> | PaneCommandValue>();
     const ipcMain = {
-      handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown) {
+      handle(
+        channel: string,
+        listener: (_event: IpcMainInvokeEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue> | PaneCommandValue,
+      ) {
         bound.set(channel, listener);
       },
     };
@@ -51,6 +58,7 @@ describe('PaneCommandRegistry', () => {
     if (!listener) {
       throw new Error('Expected IPC listener to be bound');
     }
-    await expect(listener({})).resolves.toEqual({ success: true });
+    const testEvent: IpcMainInvokeEvent = Object.create(null);
+    await expect(listener(testEvent)).resolves.toEqual({ success: true });
   });
 });

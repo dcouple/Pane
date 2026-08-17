@@ -99,7 +99,7 @@ export function runTailscaleUpInteractive(command: ResolvedCommand): void {
     throw new Error(`Tailscale authentication stopped with signal ${result.signal}`);
   }
 
-  if (typeof result.status === 'number' && result.status !== 0) {
+  if (result.status !== null && result.status !== 0) {
     throw new Error(`Tailscale authentication exited with code ${result.status}`);
   }
 }
@@ -141,9 +141,9 @@ export function runCommand(
   args: string[],
   options: { timeoutMs?: number } = {},
 ): CommandResult {
-  const resolved = typeof command === 'string'
-    ? { command, env: process.env }
-    : { command: command.command, env: command.env ?? process.env };
+  const resolved = command instanceof Object
+    ? { command: command.command, env: command.env ?? process.env }
+    : { command, env: process.env };
   const result = spawnSync(resolved.command, args, {
     encoding: 'utf8',
     timeout: options.timeoutMs ?? 30000,
@@ -162,9 +162,9 @@ function runCommandInteractive(
   args: string[],
   options: { timeoutMs?: number } = {},
 ): CommandResult {
-  const resolved = typeof command === 'string'
-    ? { command, env: process.env }
-    : { command: command.command, env: command.env ?? process.env };
+  const resolved = command instanceof Object
+    ? { command: command.command, env: command.env ?? process.env }
+    : { command, env: process.env };
   const result = spawnSync(resolved.command, args, {
     stdio: 'inherit',
     timeout: options.timeoutMs ?? 30000,

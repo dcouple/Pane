@@ -31,7 +31,7 @@ function getUnixSocketDirectoryName(appDirectory: string): string {
     .update(appDirectory)
     .digest('hex')
     .slice(0, 16);
-  const uidSuffix = typeof process.getuid === 'function' ? `-${process.getuid()}` : '';
+  const uidSuffix = process.getuid ? `-${process.getuid()}` : '';
 
   return `pane-daemon${uidSuffix}-${hash}`;
 }

@@ -4,7 +4,6 @@ import os from 'os';
 import path from 'path';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
-import type { ReadableStream as NodeReadableStream } from 'stream/web';
 import { artifactFileName, type ResolvedRelease } from './releases';
 
 export interface DownloadedArtifact {
@@ -17,7 +16,7 @@ export async function downloadArtifact(
   resolved: ResolvedRelease,
   downloadDir?: string,
   verbose = false,
-  onFallbackUsed?: (error: unknown) => Promise<void> | void
+  onFallbackUsed?: (cause: unknown) => Promise<void> | void
 ): Promise<DownloadedArtifact> {
   const targetDir = downloadDir ?? path.join(os.tmpdir(), `runpane-${Date.now()}`);
   fs.mkdirSync(targetDir, { recursive: true });
@@ -58,9 +57,24 @@ async function downloadToFile(url: string, targetPath: string, verbose: boolean)
   }
 
   await pipeline(
-    Readable.fromWeb(response.body as unknown as NodeReadableStream<Uint8Array>),
+    Readable.from(readResponseBody(response.body)),
     fs.createWriteStream(targetPath)
   );
+}
+
+async function* readResponseBody(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<Uint8Array> {
+  const reader = body.getReader();
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) return;
+      yield chunk.value;
+    }
+  } finally {
+    reader.releaseLock();
+  }
 }
 
 async function verifyChecksumIfAvailable(resolved: ResolvedRelease, artifactPath: string, fileName: string): Promise<void> {
@@ -100,6 +114,6 @@ function parseChecksum(checksums: string, fileName: string): string | undefined 
   return undefined;
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function formatError(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

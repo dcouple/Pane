@@ -1,5 +1,6 @@
 import http, { type IncomingMessage, type ServerResponse } from 'http';
 import type { Duplex } from 'stream';
+import type { AddressInfo } from 'net';
 import WebSocket, { type RawData, WebSocketServer } from 'ws';
 import { createFanoutEventSink, noopPaneEventSink, type PaneEventSink } from '../core/eventSink';
 import type { ConfigManager } from '../services/configManager';
@@ -22,11 +23,21 @@ import {
 } from '../../../shared/types/remoteDaemon';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 import { getRemotePwaAssetResponse } from './pwaStaticAssets';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import type { BoundarySchema, JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 interface RemoteHttpAddress {
   host: string;
   port: number;
 }
+
+const remoteInvokeRequestSchema: BoundarySchema<RemoteInvokeRequest> = boundary.object({
+  channel: boundary.nonEmptyString,
+  args: boundary.array(boundary.json),
+  token: boundary.optional(boundary.string),
+  runtimeId: boundary.optional(boundary.string),
+  clientLabel: boundary.optional(boundary.string),
+});
 
 interface ConnectedRemoteEventClient {
   id: string;
@@ -152,6 +163,12 @@ interface PaneRemoteHttpApiServerOptions {
   analyticsSink?: RemotePaneAnalyticsSink;
 }
 
+type RemoteHttpConfig = Pick<ReturnType<ConfigManager['getConfig']>, 'deepgramApiKey' | 'remoteDaemon'>;
+
+interface RemoteHttpConfigProvider {
+  getConfig(): RemoteHttpConfig;
+}
+
 class RemoteDaemonBadRequestError extends Error {
   constructor(
     readonly code: string,
@@ -175,7 +192,7 @@ export class PaneRemoteHttpApiServer {
 
   constructor(
     private readonly commandRegistry: PaneCommandRegistry,
-    private readonly configManager: ConfigManager,
+    private readonly configManager: RemoteHttpConfigProvider,
     options: PaneRemoteHttpApiServerOptions = {},
   ) {
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_REMOTE_DAEMON_HEARTBEAT_INTERVAL_MS;
@@ -189,7 +206,7 @@ export class PaneRemoteHttpApiServer {
 
           const payload: RemoteDaemonEventEnvelope = {
             channel,
-            args,
+            args: decodeBoundary(args, boundary.array(boundary.json)),
             timestamp: new Date().toISOString(),
           };
 
@@ -297,7 +314,7 @@ export class PaneRemoteHttpApiServer {
     });
 
     const address = server.address();
-    if (!address || typeof address === 'string') {
+    if (!isTcpAddress(address)) {
       throw new Error('Remote daemon HTTP API server did not expose a TCP address');
     }
 
@@ -648,9 +665,8 @@ export class PaneRemoteHttpApiServer {
       );
     }
 
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(body) as unknown;
+      return decodeBoundary(JSON.parse(body), remoteInvokeRequestSchema);
     } catch (error) {
       throw new RemoteDaemonBadRequestError(
         'ERR_REMOTE_DAEMON_BAD_REQUEST',
@@ -660,17 +676,9 @@ export class PaneRemoteHttpApiServer {
       );
     }
 
-    if (!isRemoteInvokeRequest(parsed)) {
-      throw new RemoteDaemonBadRequestError(
-        'ERR_REMOTE_DAEMON_BAD_REQUEST',
-        'Remote daemon invoke request must contain a channel string and args array',
-      );
-    }
-
-    return parsed;
   }
 
-  private writeJson(response: ServerResponse, statusCode: number, payload: unknown): void {
+  private writeJson<Payload>(response: ServerResponse, statusCode: number, payload: Payload): void {
     response.writeHead(statusCode, withCorsHeaders({
       'Content-Type': 'application/json; charset=utf-8',
     }));
@@ -771,15 +779,18 @@ export class PaneRemoteHttpApiServer {
     invokeRequest: RemoteInvokeRequest,
     auth: Extract<RemoteRequestAuthResult, { ok: true }>,
     request: IncomingMessage,
-  ): unknown[] {
+  ): JsonValue[] {
     const args = [...invokeRequest.args];
     if (invokeRequest.channel !== 'terminal:setVisibility') {
       return args;
     }
 
-    const rawViewerId = typeof args[2] === 'string' && args[2].trim().length > 0
-      ? args[2]
-      : 'default';
+    let rawViewerId = 'default';
+    try {
+      rawViewerId = decodeBoundary(args[2], boundary.nonEmptyString);
+    } catch {
+      // Missing viewer IDs share the existing default remote visibility scope.
+    }
     args[2] = `${this.getRemoteVisibilityViewerPrefix(
       auth.client?.id ?? null,
       auth.client?.tokenHash ?? null,
@@ -847,7 +858,7 @@ async function readRequestBody(request: IncomingMessage, maxBodyBytes: number): 
   let totalBytes = 0;
 
   for await (const chunk of request) {
-    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
     totalBytes += buffer.length;
 
     if (totalBytes > maxBodyBytes) {
@@ -995,22 +1006,6 @@ function firstNonEmpty(...values: Array<string | undefined>): string | undefined
   return values.map(value => value?.trim()).find(Boolean);
 }
 
-function isRemoteInvokeRequest(value: unknown): value is RemoteInvokeRequest {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const candidate = value as Partial<RemoteInvokeRequest>;
-  return (
-    typeof candidate.channel === 'string' &&
-    candidate.channel.length > 0 &&
-    Array.isArray(candidate.args) &&
-    isOptionalString(candidate.token) &&
-    isOptionalString(candidate.runtimeId) &&
-    isOptionalString(candidate.clientLabel)
-  );
-}
-
-function isOptionalString(value: unknown): boolean {
-  return value === undefined || typeof value === 'string';
+function isTcpAddress(address: string | AddressInfo | null): address is AddressInfo {
+  return address !== null && 'port' in Object(address);
 }

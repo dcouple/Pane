@@ -1,4 +1,6 @@
 import type { RemotePaneConnectionStatus } from './remoteDaemon';
+import { boundary, decodeBoundary } from '../validation/boundaryDecoder';
+import type { JsonObject, JsonValue } from '../validation/boundaryDecoder';
 
 // Cloud VM types — shared between main process and frontend
 export type CloudProvider = 'gcp';
@@ -78,81 +80,97 @@ export function createDefaultCloudVmState(): CloudVmState {
   };
 }
 
-export function normalizeCloudVmConfig(value: unknown): CloudVmConfig {
+export function normalizeCloudVmConfig(value: JsonValue | undefined): CloudVmConfig {
   const defaults = createDefaultCloudVmConfig();
-  if (!isRecord(value)) {
+  let config: JsonObject;
+  try {
+    config = decodeBoundary(value, boundary.jsonObject);
+  } catch {
     return defaults;
   }
 
   return {
-    provider: value.provider === 'gcp' ? 'gcp' : defaults.provider,
-    apiToken: readString(value.apiToken, defaults.apiToken),
-    serverId: readOptionalString(value.serverId),
-    serverIp: readOptionalString(value.serverIp),
-    vncPassword: readOptionalString(value.vncPassword),
-    region: readOptionalString(value.region),
-    projectId: readOptionalString(value.projectId),
-    zone: readOptionalString(value.zone),
-    tunnelPort: readPort(value.tunnelPort, defaults.tunnelPort!),
-    tunnelStatus: readTunnelStatus(value.tunnelStatus, defaults.tunnelStatus!),
-    daemonStatus: readDaemonStatus(value.daemonStatus, defaults.daemonStatus!),
-    daemonBaseUrl: readOptionalString(value.daemonBaseUrl),
-    linkedRemoteProfileId: readOptionalString(value.linkedRemoteProfileId),
-    preferredAccess: readWorkspaceAccessMode(value.preferredAccess, defaults.preferredAccess!),
-    allowNoVncFallback: readBoolean(value.allowNoVncFallback, defaults.allowNoVncFallback!),
+    provider: config.provider === 'gcp' ? 'gcp' : defaults.provider,
+    apiToken: readString(config.apiToken, defaults.apiToken),
+    serverId: readOptionalString(config.serverId),
+    serverIp: readOptionalString(config.serverIp),
+    vncPassword: readOptionalString(config.vncPassword),
+    region: readOptionalString(config.region),
+    projectId: readOptionalString(config.projectId),
+    zone: readOptionalString(config.zone),
+    tunnelPort: readPort(config.tunnelPort, defaults.tunnelPort!),
+    tunnelStatus: readTunnelStatus(config.tunnelStatus, defaults.tunnelStatus!),
+    daemonStatus: readDaemonStatus(config.daemonStatus, defaults.daemonStatus!),
+    daemonBaseUrl: readOptionalString(config.daemonBaseUrl),
+    linkedRemoteProfileId: readOptionalString(config.linkedRemoteProfileId),
+    preferredAccess: readWorkspaceAccessMode(config.preferredAccess, defaults.preferredAccess!),
+    allowNoVncFallback: readBoolean(config.allowNoVncFallback, defaults.allowNoVncFallback!),
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function readBoolean(value: JsonValue | undefined, fallback: boolean): boolean {
+  try {
+    return decodeBoundary(value, boundary.boolean);
+  } catch {
+    return fallback;
+  }
 }
 
-function readBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === 'boolean' ? value : fallback;
+function readString(value: JsonValue | undefined, fallback: string): string {
+  try {
+    return decodeBoundary(value, boundary.string);
+  } catch {
+    return fallback;
+  }
 }
 
-function readString(value: unknown, fallback: string): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
-function readOptionalString(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
+function readOptionalString(value: JsonValue | undefined): string | undefined {
+  let decoded: string;
+  try {
+    decoded = decodeBoundary(value, boundary.string);
+  } catch {
     return undefined;
   }
 
-  const trimmed = value.trim();
+  const trimmed = decoded.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function readPort(value: unknown, fallback: number): number {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
+function readPort(value: JsonValue | undefined, fallback: number): number {
+  try {
+    const decoded = decodeBoundary(value, boundary.string);
+    const trimmed = decoded.trim();
     if (/^\d+$/.test(trimmed)) {
       const parsed = Number.parseInt(trimmed, 10);
       if (parsed > 0 && parsed <= 65535) {
         return parsed;
       }
     }
+  } catch {
+    // Numeric legacy values are handled below.
   }
 
-  return typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 65535
-    ? value
-    : fallback;
+  try {
+    const decoded = decodeBoundary(value, boundary.number);
+    return Number.isInteger(decoded) && decoded > 0 && decoded <= 65535 ? decoded : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
-function readTunnelStatus(value: unknown, fallback: TunnelStatus): TunnelStatus {
+function readTunnelStatus(value: JsonValue | undefined, fallback: TunnelStatus): TunnelStatus {
   return value === 'off' || value === 'starting' || value === 'running' || value === 'error'
     ? value
     : fallback;
 }
 
-function readDaemonStatus(value: unknown, fallback: CloudDaemonStatus): CloudDaemonStatus {
+function readDaemonStatus(value: JsonValue | undefined, fallback: CloudDaemonStatus): CloudDaemonStatus {
   return value === 'unknown' || value === 'bootstrapping' || value === 'ready' || value === 'error'
     ? value
     : fallback;
 }
 
-function readWorkspaceAccessMode(value: unknown, fallback: CloudWorkspaceAccessMode): CloudWorkspaceAccessMode {
+function readWorkspaceAccessMode(value: JsonValue | undefined, fallback: CloudWorkspaceAccessMode): CloudWorkspaceAccessMode {
   return value === 'daemon' || value === 'novnc'
     ? value
     : fallback;
