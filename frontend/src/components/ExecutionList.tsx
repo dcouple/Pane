@@ -1,8 +1,10 @@
 import React, { useState, memo } from 'react';
 import { RotateCcw, GitCommitHorizontal } from 'lucide-react';
 import type { ExecutionListProps } from '../types/diff';
+import { useScrollSurface } from '../hooks/useScrollSurface';
 
 const ExecutionList: React.FC<ExecutionListProps> = memo(({
+  sessionId,
   executions,
   selectedExecutions,
   onSelectionChange,
@@ -14,6 +16,13 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
 }) => {
   const [rangeStart, setRangeStart] = useState<number | null>(null);
   const limitDisplay = historyLimit ?? 50;
+  const executionListRef = React.useRef<HTMLDivElement>(null);
+  const scrollSurfaceRef = useScrollSurface<HTMLDivElement>({
+    id: `review-history:${sessionId}`,
+    sessionId,
+    priority: 80,
+    ownerElement: () => executionListRef.current,
+  });
 
   const handleCommitClick = (executionId: number, event: React.MouseEvent) => {
     if (event.shiftKey && rangeStart !== null) {
@@ -58,7 +67,7 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
   }
 
   return (
-    <div className="execution-list h-full flex flex-col">
+    <div ref={executionListRef} className="execution-list h-full flex flex-col">
       {/* Header */}
       <div className="px-3 py-1.5 border-b border-border-primary flex items-center justify-between">
         <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">
@@ -74,7 +83,7 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
       </div>
 
       {/* Commit list */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div ref={scrollSurfaceRef} tabIndex={-1} className="flex-1 overflow-y-auto min-h-0">
         {executions.map((execution, idx) => {
           const isSelected = isInRange(execution.id);
           const isUncommitted = execution.id === 0;

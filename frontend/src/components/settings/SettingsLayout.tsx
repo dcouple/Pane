@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { useScrollSurface } from '../../hooks/useScrollSurface';
 import type { SettingsCategoryDefinition } from './catalog';
 import type { SettingsCategoryId } from '../../types/settings';
 import {
@@ -17,6 +18,11 @@ interface SettingsLayoutProps {
   children: ReactNode;
 }
 export function SettingsLayout({ category, categories, onCategoryChange, children }: SettingsLayoutProps) {
+  const scrollSurfaceRef = useScrollSurface<HTMLElement>({
+    id: 'settings-content',
+    priority: 80,
+  });
+
   return (
     <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[220px_minmax(0,1fr)]">
       <aside className="hidden min-h-0 border-r border-border-primary bg-surface-secondary/35 p-3 md:block">
@@ -66,7 +72,7 @@ export function SettingsLayout({ category, categories, onCategoryChange, childre
         </Select>
       </div>
 
-      <main className="min-h-0 overflow-y-auto px-5 py-6 sm:px-7 md:px-9" data-testid="settings-content">
+      <main ref={scrollSurfaceRef} tabIndex={-1} className="min-h-0 overflow-y-auto px-5 py-6 sm:px-7 md:px-9" data-testid="settings-content">
         {children}
       </main>
     </div>

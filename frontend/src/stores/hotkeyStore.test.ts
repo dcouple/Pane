@@ -104,4 +104,86 @@ describe('hotkeyStore keyboard shortcut preference', () => {
     expect(paletteAction).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
   });
+
+  it('allows an opted-in unmodified shortcut from xterm but not ordinary textareas', () => {
+    const action = vi.fn();
+    const preventDefault = vi.fn();
+    useConfigStore.setState({ config: {} });
+    useHotkeyStore.getState().register({
+      id: 'test-shortcut',
+      label: 'Scroll terminal',
+      keys: 'shift+ArrowDown',
+      category: 'view',
+      action,
+      allowInXterm: true,
+    });
+    const event = {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: true,
+      getModifierState: () => false,
+      preventDefault,
+    };
+
+    keydownListener?.({
+      ...event,
+      target: {
+        tagName: 'TEXTAREA',
+        isContentEditable: false,
+        classList: { contains: (name: string) => name === 'xterm-helper-textarea' },
+        closest: () => null,
+      },
+    } as unknown as KeyboardEvent);
+    keydownListener?.({
+      ...event,
+      target: {
+        tagName: 'TEXTAREA',
+        isContentEditable: false,
+        classList: { contains: () => false },
+        closest: () => null,
+      },
+    } as unknown as KeyboardEvent);
+
+    expect(action).toHaveBeenCalledOnce();
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('runs only explicitly modal-safe shortcuts inside dialogs', () => {
+    const action = vi.fn();
+    const preventDefault = vi.fn();
+    useConfigStore.setState({ config: {} });
+    const definition = {
+      id: 'test-shortcut',
+      label: 'Scroll modal',
+      keys: 'shift+ArrowUp',
+      category: 'view' as const,
+      action,
+    };
+    const dispatch = () => keydownListener?.({
+      key: 'ArrowUp',
+      code: 'ArrowUp',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      shiftKey: true,
+      target: {
+        tagName: 'DIV',
+        isContentEditable: false,
+        closest: (selector: string) => selector === '[aria-modal="true"]' ? {} : null,
+      },
+      getModifierState: () => false,
+      preventDefault,
+    } as unknown as KeyboardEvent);
+
+    useHotkeyStore.getState().register(definition);
+    dispatch();
+    useHotkeyStore.getState().register({ ...definition, allowInModal: true });
+    dispatch();
+
+    expect(action).toHaveBeenCalledOnce();
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
 });

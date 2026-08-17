@@ -50,6 +50,10 @@ export interface HotkeyDefinition {
   disabledReason?: () => string | null;
   /** If false, hotkey works but doesn't appear in Command Palette/Help. Defaults to true. */
   showInPalette?: boolean;
+  /** Allow this command to run inside a modal focus scope. */
+  allowInModal?: boolean;
+  /** Allow an unmodified command to run from xterm's helper textarea. */
+  allowInXterm?: boolean;
 }
 
 interface GetAllOptions {
@@ -178,10 +182,6 @@ function handleKeyDown(e: KeyboardEvent) {
     target.tagName === 'TEXTAREA' ||
     target.isContentEditable;
 
-  // Suppress all hotkeys when a modal dialog is open (settings, create session, etc.)
-  const isInsideModal = target.closest('[aria-modal="true"]') !== null;
-  if (isInsideModal) return;
-
   const pressed = normalizeKeyEvent(e);
   const hotkeyId = lookupIndex.get(pressed);
   if (!hotkeyId) return;
@@ -190,13 +190,22 @@ function handleKeyDown(e: KeyboardEvent) {
   const def = store.hotkeys.get(hotkeyId);
   if (!def) return;
 
+  // Modal-local commands can opt in, but all other application hotkeys remain
+  // suppressed while focus is trapped in a dialog.
+  const isInsideModal = target.closest('[aria-modal="true"]') !== null;
+  if (isInsideModal && !def.allowInModal) return;
+
   // Let native text editing win for shortcuts users expect in focused inputs.
   // In particular, tab cycling uses mod+a/mod+d, but inputs need mod+a
   // for select-all and mod+d for normal browser/text-field behavior.
   if (isInput && !isXtermHelperTarget(target) && (pressed === 'mod+a' || pressed === 'mod+d')) return;
 
   // Skip if typing in input and shortcut doesn't use mod key
-  if (isInput && !pressed.includes('mod')) return;
+  if (
+    isInput
+    && !pressed.includes('mod')
+    && !(def.allowInXterm && isXtermHelperTarget(target))
+  ) return;
 
   if (!isHotkeyEnabledForEvent(e)) return;
 

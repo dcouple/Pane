@@ -8,6 +8,7 @@ import { HorizontalDetailPanel } from './HorizontalDetailPanel';
 import { Button } from './ui/Button';
 import { Dropdown, DropdownMenuItem } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
+import { useScrollSurface } from '../hooks/useScrollSurface';
 
 interface DetailPanelProps {
   isVisible: boolean;
@@ -55,6 +56,14 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
+  const detailPanelRef = React.useRef<HTMLDivElement>(null);
+  const detailScrollSurfaceRef = useScrollSurface<HTMLDivElement>({
+    id: `detail:${sessionContext?.session.id ?? 'unavailable'}`,
+    sessionId: sessionContext?.session.id,
+    enabled: Boolean(sessionContext && isVisible && !immersiveMode && orientation !== 'horizontal'),
+    priority: 30,
+    ownerElement: () => detailPanelRef.current,
+  });
   const ideItems = useMemo(() => {
     if (!sessionContext?.onOpenIDEWithCommand) return [];
     const handler = sessionContext.onOpenIDEWithCommand;
@@ -101,6 +110,7 @@ export function DetailPanel({
 
   return (
     <div
+      ref={detailPanelRef}
       className={`pane-detail-panel pane-detail-panel-vertical flex-shrink-0 min-w-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${isVisible && !immersiveMode ? 'border-l border-border-primary' : ''}`}
       style={{ width: isVisible && !immersiveMode ? `${width}px` : '0px' }}
     >
@@ -236,7 +246,7 @@ export function DetailPanel({
         {!gitUnavailable && session.worktreePath && (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="px-2 pt-2 flex-shrink-0"><SectionHeader>History</SectionHeader></div>
-            <div role="region" tabIndex={0} aria-label="Commit history" className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
+            <div ref={detailScrollSurfaceRef} role="region" tabIndex={0} aria-label="Commit history" className="flex-1 min-h-0 overflow-y-auto px-2 pb-2">
               <GitHistoryGraph
                 sessionId={session.id}
                 baseBranch={session.baseBranch || 'main'}

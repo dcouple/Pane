@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isFineSurfaceScrollKey,
+  isPageSurfaceScrollKey,
   resolveTerminalKeyHandling,
   shouldOpenTerminalSearch,
+  terminalClaimsFineSurfaceScroll,
   TERMINAL_MULTILINE_NEWLINE_SEQUENCE,
   type TerminalKeyLike,
 } from './terminalKeyHandling';
@@ -15,6 +18,30 @@ const key = (overrides: Partial<TerminalKeyLike>): TerminalKeyLike => ({
   altKey: false,
   getModifierState: () => false,
   ...overrides,
+});
+
+describe('focused surface terminal key boundary', () => {
+  const shiftKey = (keyName: string) => key({ key: keyName, code: keyName, shiftKey: true });
+
+  it('recognizes only unmodified Shift+Arrow and Shift+Page chords', () => {
+    expect(isFineSurfaceScrollKey(shiftKey('ArrowUp'))).toBe(true);
+    expect(isPageSurfaceScrollKey(shiftKey('PageDown'))).toBe(true);
+    expect(isFineSurfaceScrollKey(key({ key: 'ArrowUp', shiftKey: true, ctrlKey: true }))).toBe(false);
+  });
+
+  it('lets known CLI panels and active TUIs claim fine scrolling', () => {
+    const event = shiftKey('ArrowDown');
+    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: true, isTuiActive: false })).toBe(true);
+    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: false, isTuiActive: true })).toBe(true);
+    expect(terminalClaimsFineSurfaceScroll(event, { isCliPanel: false, isTuiActive: false })).toBe(false);
+  });
+
+  it('keeps coarse page scrolling owned by the terminal surface', () => {
+    expect(terminalClaimsFineSurfaceScroll(
+      shiftKey('PageUp'),
+      { isCliPanel: true, isTuiActive: true },
+    )).toBe(false);
+  });
 });
 
 const tui = (overrides: Partial<{

@@ -1,8 +1,9 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useId, useLayoutEffect, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { cn } from '../../utils/cn';
 import { X } from 'lucide-react';
 import { PortalContainerProvider } from '../../contexts/PortalContainerContext';
+import { useScrollSurface } from '../../hooks/useScrollSurface';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -195,9 +196,21 @@ export interface ModalBodyProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const ModalBody = React.forwardRef<HTMLDivElement, ModalBodyProps>(
   ({ className, children, ...props }, ref) => {
+    const surfaceId = useId();
+    const scrollSurfaceRef = useScrollSurface<HTMLDivElement>({
+      id: `modal-body:${surfaceId}`,
+      priority: 50,
+    });
+    const setBodyRef = useCallback((element: HTMLDivElement | null) => {
+      scrollSurfaceRef(element);
+      if (typeof ref === 'function') ref(element);
+      else if (ref) ref.current = element;
+    }, [ref, scrollSurfaceRef]);
+
     return (
       <div
-        ref={ref}
+        ref={setBodyRef}
+        tabIndex={-1}
         className={cn(
           'flex-1 overflow-y-auto px-6 py-4',
           className

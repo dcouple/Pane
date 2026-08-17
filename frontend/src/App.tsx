@@ -5,6 +5,7 @@ import { useResizable } from './hooks/useResizable';
 import { useHotkey } from './hooks/useHotkey';
 import { useTerminalShortcuts } from './hooks/useTerminalShortcuts';
 import { useShortcutHintsOverlay } from './hooks/useShortcutHintsOverlay';
+import { useFocusedSurfaceScrolling } from './hooks/useFocusedSurfaceScrolling';
 
 import { ShortcutHintsOverlay } from './components/ShortcutHintsOverlay';
 import { Sidebar } from './components/Sidebar';
@@ -127,9 +128,11 @@ function App() {
   }, [sidebarCollapsed, setSidebarCollapsed]);
   const { currentError, clearError } = useErrorStore();
   const { sessions, isLoaded } = useSessionStore();
+  const activeSessionId = useSessionStore(state => state.activeSessionId);
   const { fetchConfig, config: appConfig } = useConfigStore();
   const terminalShortcuts = appConfig?.terminalShortcuts ?? EMPTY_TERMINAL_SHORTCUTS;
   const { isVisible: shortcutHintsVisible } = useShortcutHintsOverlay();
+  useFocusedSurfaceScrolling(activeSessionId);
 
   const openSettings = useCallback((target?: SettingsTarget) => {
     if (target) {

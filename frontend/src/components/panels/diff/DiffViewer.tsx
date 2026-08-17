@@ -5,6 +5,7 @@ import { getDiffViewHighlighter } from '@git-diff-view/shiki';
 import { FileText, ChevronRight, ChevronDown, ExternalLink, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import type { DiffViewerProps, FileDiff } from '../../../types/diff';
 import { useTheme } from '../../../contexts/ThemeContext';
+import { useScrollSurface } from '../../../hooks/useScrollSurface';
 import "@git-diff-view/react/styles/diff-view.css";
 
 // --- Shiki singleton ---
@@ -138,12 +139,23 @@ export interface DiffViewerHandle {
   scrollToFile: (index: number) => void;
 }
 
-const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, className = '', onOpenInEditor }, ref) => {
+const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, className = '', sessionId, onOpenInEditor }, ref) => {
   const { theme } = useTheme();
   const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set());
   const [highlighter, setHighlighter] = useState<DiffHighlighter | null>(null);
+  const viewerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const registerScrollSurface = useScrollSurface<HTMLDivElement>({
+    id: `diff:${sessionId ?? 'unscoped'}`,
+    sessionId,
+    priority: 90,
+    ownerElement: () => viewerRef.current,
+  });
+  const setScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
+    scrollContainerRef.current = element;
+    registerScrollSurface(element);
+  }, [registerScrollSurface]);
   const prevFingerprintRef = useRef<string>('');
 
   const [viewType, setViewType] = useState<DiffModeEnum>(() => {
@@ -212,7 +224,7 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
   }
 
   return (
-    <div className={`diff-viewer ${className}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div ref={viewerRef} className={`diff-viewer ${className}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div className="flex justify-between items-center px-4 py-2 flex-shrink-0 bg-surface-secondary border-b border-border-primary">
         <span className="text-sm text-text-secondary">
@@ -261,7 +273,7 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
       </div>
 
       {/* File list */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
+      <div ref={setScrollContainerRef} tabIndex={-1} className="flex-1 overflow-auto">
         {files.map((file, index) => (
           <FileAccordion
             key={`${file.path}-${index}`}

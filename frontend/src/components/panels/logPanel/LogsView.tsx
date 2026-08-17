@@ -5,6 +5,7 @@ import AnsiToHtml from 'ansi-to-html';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
+import { useScrollSurface } from '../../../hooks/useScrollSurface';
 
 interface LogEntry {
   timestamp: string;
@@ -27,7 +28,19 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
   const [searchMatches, setSearchMatches] = useState<number[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [copied, setCopied] = useState(false);
+  const logsViewRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const registerScrollSurface = useScrollSurface<HTMLDivElement>({
+    id: `logs:${sessionId}`,
+    sessionId,
+    enabled: isVisible,
+    priority: 80,
+    ownerElement: () => logsViewRef.current,
+  });
+  const setLogContainerRef = useCallback((element: HTMLDivElement | null) => {
+    logContainerRef.current = element;
+    registerScrollSurface(element);
+  }, [registerScrollSurface]);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastLogCount = useRef(0);
   const { theme } = useTheme();
@@ -237,7 +250,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
 
   return (
-    <div className="h-full flex flex-col bg-bg-primary relative">
+    <div ref={logsViewRef} className="h-full flex flex-col bg-bg-primary relative">
       <LiveRegion>{copied ? 'Logs copied to clipboard' : ''}</LiveRegion>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border-primary">
@@ -368,7 +381,8 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
       {/* Logs Container */}
       <div 
-        ref={logContainerRef}
+        ref={setLogContainerRef}
+        tabIndex={-1}
         className="flex-1 min-h-0 overflow-y-auto overflow-x-auto font-mono text-sm p-4 bg-bg-primary text-text-primary whitespace-pre-wrap break-all"
         onScroll={(e) => {
           const target = e.target as HTMLDivElement;

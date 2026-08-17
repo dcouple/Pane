@@ -6,6 +6,7 @@ import { Button } from './ui/Button';
 import { Dropdown, DropdownMenuItem } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
 import { GitHistoryGraph } from './GitHistoryGraph';
+import { useScrollSurface } from '../hooks/useScrollSurface';
 
 interface HorizontalDetailPanelProps {
   height?: number;
@@ -30,6 +31,14 @@ export function HorizontalDetailPanel({
 }: HorizontalDetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
+  const detailPanelRef = React.useRef<HTMLDivElement>(null);
+  const detailScrollSurfaceRef = useScrollSurface<HTMLDivElement>({
+    id: `detail:${sessionContext?.session.id ?? 'unavailable'}`,
+    sessionId: sessionContext?.session.id,
+    enabled: Boolean(sessionContext && !isCollapsed && !immersiveMode),
+    priority: 30,
+    ownerElement: () => detailPanelRef.current,
+  });
   const remoteIdeTooltip = 'Open in IDE is only available in local mode. Switch this client back to the local runtime to use your desktop IDE.';
   const ideItems = useMemo(() => {
     if (!sessionContext?.onOpenIDEWithCommand) return [];
@@ -62,6 +71,7 @@ export function HorizontalDetailPanel({
 
   return (
     <div
+      ref={detailPanelRef}
       className={`pane-detail-panel pane-detail-panel-horizontal flex-shrink-0 bg-surface-primary flex flex-col overflow-hidden relative transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-t border-border-primary'}`}
       style={{ height: immersiveMode ? '0px' : isCollapsed ? 'auto' : `${height ?? 200}px` }}
     >
@@ -169,7 +179,13 @@ export function HorizontalDetailPanel({
         </div>
 
         {!isCollapsed && !gitUnavailable && session.worktreePath && (
-          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-2">
+          <div
+            ref={detailScrollSurfaceRef}
+            role="region"
+            tabIndex={0}
+            aria-label="Commit history"
+            className="flex-1 min-h-0 overflow-y-auto px-2 py-2"
+          >
             <GitHistoryGraph
               sessionId={session.id}
               baseBranch={session.baseBranch || 'main'}

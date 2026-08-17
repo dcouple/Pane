@@ -24,6 +24,34 @@ export interface TerminalKeyLike {
   getModifierState: (key: string) => boolean;
 }
 
+type SurfaceScrollKeyLike = Pick<
+  TerminalKeyLike,
+  'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'
+>;
+
+export function isFineSurfaceScrollKey(event: SurfaceScrollKeyLike): boolean {
+  return event.shiftKey
+    && !event.altKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && (event.key === 'ArrowUp' || event.key === 'ArrowDown');
+}
+
+export function isPageSurfaceScrollKey(event: SurfaceScrollKeyLike): boolean {
+  return event.shiftKey
+    && !event.altKey
+    && !event.ctrlKey
+    && !event.metaKey
+    && (event.key === 'PageUp' || event.key === 'PageDown');
+}
+
+export function terminalClaimsFineSurfaceScroll(
+  event: SurfaceScrollKeyLike,
+  state: Pick<TerminalKeyHandlingState, 'isCliPanel' | 'isTuiActive'>,
+): boolean {
+  return isFineSurfaceScrollKey(event) && (state.isCliPanel || state.isTuiActive);
+}
+
 export function shouldOpenTerminalSearch(
   event: Pick<TerminalKeyLike, 'ctrlKey' | 'metaKey' | 'key'>,
   keyboardShortcutsEnabled: boolean,

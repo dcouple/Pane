@@ -11,7 +11,13 @@ import { TerminalPanelProps } from '../../types/panelComponents';
 import { isHotkeyEnabledForEvent, useHotkeyStore } from '../../stores/hotkeyStore';
 import { renderLog, devLog } from '../../utils/console';
 import { getTerminalTheme } from '../../utils/terminalTheme';
-import { resolveTerminalKeyHandling, shouldOpenTerminalSearch } from '../../utils/terminalKeyHandling';
+import {
+  isFineSurfaceScrollKey,
+  isPageSurfaceScrollKey,
+  resolveTerminalKeyHandling,
+  shouldOpenTerminalSearch,
+  terminalClaimsFineSurfaceScroll,
+} from '../../utils/terminalKeyHandling';
 import { isMac } from '../../utils/platformUtils';
 import { copyTerminalText, isTerminalCopyShortcut } from '../../utils/terminalClipboard';
 import { FileEdit, FolderOpen } from 'lucide-react';
@@ -20,6 +26,7 @@ import { TerminalLinkTooltip } from '../terminal/TerminalLinkTooltip';
 import { TerminalPopover, PopoverButton } from '../terminal/TerminalPopover';
 import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
+import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
@@ -227,6 +234,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
   const tuiActiveRef = useRef(false);
+  const scrollLineRemainderRef = useRef(0);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
@@ -303,6 +311,29 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   useEffect(() => {
     keyboardShortcutsEnabledRef.current = keyboardShortcutsEnabled;
   }, [keyboardShortcutsEnabled]);
+
+  const terminalScrollSurfaceRef = useScrollSurface<HTMLDivElement>({
+    id: `terminal:${panel.id}`,
+    sessionId: panel.sessionId,
+    enabled: isActive,
+    priority: autoFocus ? 100 : 20,
+    scrollByLines: (lines) => {
+      const terminal = xtermRef.current;
+      if (!terminal) return;
+      if (
+        scrollLineRemainderRef.current !== 0
+        && Math.sign(scrollLineRemainderRef.current) !== Math.sign(lines)
+      ) {
+        scrollLineRemainderRef.current = 0;
+      }
+      const total = scrollLineRemainderRef.current + lines;
+      const wholeLines = total > 0 ? Math.floor(total) : Math.ceil(total);
+      scrollLineRemainderRef.current = total - wholeLines;
+      if (wholeLines !== 0) terminal.scrollLines(wholeLines);
+    },
+    scrollPage: direction => xtermRef.current?.scrollPages(direction),
+    focus: () => xtermRef.current?.focus(),
+  });
 
   useEffect(() => {
     if (terminalState?.isCliReady && !isCliReady) {
@@ -931,6 +962,21 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           if (!keyboardShortcutsEnabledRef.current) return !isHotkeyEnabledForEvent(e);
 
           const ctrlOrMeta = e.ctrlKey || e.metaKey;
+
+          // Pane owns focused-surface scrolling before xterm encodes the key,
+          // except when a known CLI or alternate-screen TUI claims Shift+Arrow.
+          if (isFineSurfaceScrollKey(e) || isPageSurfaceScrollKey(e)) {
+            if (terminalClaimsFineSurfaceScroll(e, {
+              isCliPanel: isCliPanelRef.current,
+              isTuiActive: tuiActiveRef.current,
+            })) {
+              // The application hotkey registry listens on window, so accepting
+              // the key in xterm is not sufficient to keep it terminal-owned.
+              e.stopPropagation();
+              return true;
+            }
+            return !isHotkeyEnabledForEvent(e);
+          }
 
           // Ctrl/Cmd+K: clear xterm scrollback without writing ^K to the PTY.
           if (ctrlOrMeta && e.key.toLowerCase() === 'k') {
@@ -1928,6 +1974,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   // Always render the terminal div to keep XTerm instance alive
   return (
     <div
+      ref={terminalScrollSurfaceRef}
       className="h-full w-full relative group/terminal"
       onMouseMove={onMouseMove}
       onKeyDown={handleTerminalKeyDown}
