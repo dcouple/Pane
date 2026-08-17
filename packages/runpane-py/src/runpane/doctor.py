@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import platform as system_platform
+import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
@@ -123,6 +124,9 @@ def inspect_legacy_remote_daemon_health(
     )
     candidates = installed_candidates if installed_candidates is not None else remote_executable_candidates(platform_name)
     installed_path = next((candidate for candidate in candidates if executable_file(candidate)), None)
+    if not installed_path:
+        command_names = ("pane.exe", "Pane.exe") if platform_name == "win32" else ("pane", "Pane")
+        installed_path = next((resolved for name in command_names if (resolved := shutil.which(name))), None)
     checked_at = checked_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     try:
         with open(launcher_path, "r", encoding="utf-8") as handle:
@@ -173,7 +177,7 @@ def inspect_legacy_remote_daemon_health(
     process_image = classify_legacy_process_image(runtime_link, installed_path, reachable)
     recovery = f"runpane daemon repair --pane-dir {format_pane_dir(pane_dir)}"
     result = {"processImage": process_image, "restart": restart, "checkedAt": checked_at}
-    if reachable and process_image["status"] == "deleted" and restart["status"] == "broken" and saved_path is not None:
+    if reachable and process_image["status"] == "deleted" and restart["status"] == "broken":
         result.update({"diagnosticCode": "PANE_REMOTE_DAEMON_EXECUTABLE_DELETED", "recoveryCommand": recovery})
     elif process_image["status"] in ("deleted", "replaced"):
         result["diagnosticCode"] = "PANE_REMOTE_DAEMON_UPDATE_PENDING"
@@ -255,10 +259,14 @@ def add_remote_daemon_health_diagnostic(setup: Dict[str, Any], service: Dict[str
     )
     runtime_path = process_image.get("runtimePath") or "the previous Pane executable"
     installed_path = process_image.get("installedPath") or "the current Pane executable"
+    if re.search(r"(?:saved|legacy) launcher target is missing:", restart.get("evidence", ""), re.IGNORECASE):
+        launcher_failure = f"Pane is now installed at {installed_path}, and the saved launcher still references the old path"
+    else:
+        launcher_failure = "the runtime-resolving launcher cannot find an installed Pane executable"
     if fatal:
         message = (
             f"Remote daemon is reachable but unsafe to restart. It is running {runtime_path} from a deleted inode; "
-            f"Pane is now installed at {installed_path}, and the saved launcher still references the old path. "
+            f"{launcher_failure}. "
             f"The daemon will not return after reboot or service restart. Run {health.get('recoveryCommand')} before restarting, then rerun doctor."
         )
     elif code == "PANE_REMOTE_DAEMON_UPDATE_PENDING":
@@ -294,8 +302,10 @@ def remote_executable_candidates(platform_name: str):
 
 
 def extract_legacy_executable_path(contents: str):
-    import re
-    match = re.search(r"(?:'|\")?(/opt/Pane/(?:Pane|pane)|[^\s'\"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|\")?", contents)
+    quoted_match = re.search(r"([\"'])([^\"'\r\n]*[\\/](?:Pane\.exe|Pane|pane))\1", contents)
+    if quoted_match:
+        return quoted_match.group(2)
+    match = re.search(r"(/opt/Pane/(?:Pane|pane)|[^\s'\"]+[\\/](?:Pane\.exe|Pane|pane))", contents)
     return match.group(1) if match else None
 
 

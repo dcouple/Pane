@@ -285,7 +285,7 @@ export function inspectLegacyRemoteDaemonHealth(
   const launcherPath = overrides.launcherPath
     ?? path.join(paneDir, 'remote-daemon', platform === 'win32' ? 'start.cmd' : 'start.sh');
   const candidates = overrides.installedCandidates ?? getRemoteExecutableCandidates(platform);
-  const installedPath = candidates.find(isExecutableFile) ?? null;
+  const installedPath = candidates.find(isExecutableFile) ?? resolveRemoteExecutableFromPath(platform);
   const recoveryCommand = `runpane daemon repair --pane-dir ${formatPaneDir(paneDir)}`;
   const checkedAt = overrides.checkedAt ?? new Date().toISOString();
   let launcherContents: string;
@@ -314,7 +314,7 @@ export function inspectLegacyRemoteDaemonHealth(
     : overrides.runtimePath;
   const processImage = classifyLegacyProcessImage(runtimeLink, installedPath, reachable);
 
-  if (reachable && processImage.status === 'deleted' && restart.status === 'broken' && savedPath !== null) {
+  if (reachable && processImage.status === 'deleted' && restart.status === 'broken') {
     return {
       processImage,
       restart,
@@ -423,8 +423,11 @@ export function createRemoteDaemonHealthDiagnostic(
     && health.restart.status === 'broken';
   const runtimePath = health.processImage.runtimePath ?? 'the previous Pane executable';
   const installedPath = health.processImage.installedPath ?? 'the current Pane executable';
+  const launcherFailure = /(?:saved|legacy) launcher target is missing:/.test(health.restart.evidence)
+    ? `Pane is now installed at ${installedPath}, and the saved launcher still references the old path`
+    : 'the runtime-resolving launcher cannot find an installed Pane executable';
   const message = fatal
-    ? `Remote daemon is reachable but unsafe to restart. It is running ${runtimePath} from a deleted inode; Pane is now installed at ${installedPath}, and the saved launcher still references the old path. The daemon will not return after reboot or service restart. Run ${health.recoveryCommand} before restarting, then rerun doctor.`
+    ? `Remote daemon is reachable but unsafe to restart. It is running ${runtimePath} from a deleted inode; ${launcherFailure}. The daemon will not return after reboot or service restart. Run ${health.recoveryCommand} before restarting, then rerun doctor.`
     : health.diagnosticCode === 'PANE_REMOTE_DAEMON_UPDATE_PENDING'
       ? 'The remote daemon is still running an older or deleted process image, but its launcher can resolve the installed Pane executable on restart.'
       : health.restart.evidence;
@@ -463,8 +466,22 @@ function getRemoteExecutableCandidates(platform: NodeJS.Platform): string[] {
   return [path.join(os.homedir(), '.local', 'bin', 'pane'), '/usr/bin/pane', '/opt/Pane/pane', '/opt/Pane/Pane'];
 }
 
+function resolveRemoteExecutableFromPath(platform: NodeJS.Platform): string | null {
+  const commandNames = platform === 'win32' ? ['pane.exe', 'Pane.exe'] : ['pane', 'Pane'];
+  const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  for (const directory of pathEntries) {
+    for (const command of commandNames) {
+      const candidate = path.join(directory, command);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 function extractLegacyExecutablePath(contents: string): string | null {
-  return contents.match(/(?:'|")?(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|")?/)?.[1] ?? null;
+  const quotedMatch = contents.match(/(["'])([^"'\r\n]*[\\/](?:Pane\.exe|Pane|pane))\1/);
+  if (quotedMatch) return quotedMatch[2];
+  return contents.match(/(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))/)?.[1] ?? null;
 }
 
 function isExecutableFile(filePath: string): boolean {

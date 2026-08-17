@@ -310,6 +310,9 @@ print(json.dumps(setup["diagnostics"][0]))
 }
 
 function compareDaemonRepairJsonParity() {
+  // This fixture relies on a POSIX shebang. Windows exercises the same JSON
+  // contract through parser/schema checks; production repair launches Pane.exe.
+  if (process.platform === 'win32') return;
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'runpane-repair-'));
   const fakePane = path.join(temporaryDirectory, 'pane');
   const paneDir = path.join(temporaryDirectory, '.pane_remote');

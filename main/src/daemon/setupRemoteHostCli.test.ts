@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import path from 'path';
 import {
   formatSetupRemoteHostResult,
   setupRemoteHost,
@@ -127,7 +128,7 @@ describe('runRemoteSetupCli', () => {
     ]);
 
     expect(exitCode).toBe(0);
-    expect(repairRemoteDaemonService).toHaveBeenCalledWith('/tmp/pane-remote');
+    expect(repairRemoteDaemonService).toHaveBeenCalledWith(path.resolve('/tmp/pane-remote'));
     expect(setupRemoteHost).not.toHaveBeenCalled();
     expect(ensureTailscaleInstalledInteractive).not.toHaveBeenCalled();
   });

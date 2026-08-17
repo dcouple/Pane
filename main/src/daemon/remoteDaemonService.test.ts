@@ -23,7 +23,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe('remote daemon service launchers', () => {
-  it('resolves the canonical executable at start time and preserves headless arguments', async () => {
+  it.skipIf(process.platform === 'win32')('resolves the canonical executable at start time and preserves headless arguments', async () => {
     const root = await makeTempDir('pane-launcher-');
     const paneDir = path.join(root, "pane dir's data");
     const executable = path.join(root, 'pane');

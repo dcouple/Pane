@@ -2,7 +2,11 @@ import { accessSync, constants, readFileSync, readlinkSync, statSync } from 'fs'
 import os from 'os';
 import path from 'path';
 import type { RemoteDaemonExecutableHealth } from '../../../shared/types/remoteDaemon';
-import { getRemoteDaemonExecutableCandidates } from './remoteDaemonService';
+import {
+  extractLegacyRemoteDaemonExecutablePath,
+  getRemoteDaemonExecutableCandidates,
+  resolveRemoteDaemonExecutablePath,
+} from './remoteDaemonService';
 
 const LAUNCHER_MARKER = 'pane-remote-daemon-launcher-v2';
 
@@ -13,6 +17,7 @@ export interface ExecutableHealthDependencies {
   procExecutablePath?: string;
   candidates?: string[];
   readLink?: (filePath: string) => string;
+  resolveCommandPath?: (command: string) => string | null;
 }
 
 export function collectRemoteDaemonExecutableHealth(
@@ -22,7 +27,11 @@ export function collectRemoteDaemonExecutableHealth(
   const platform = dependencies.platform ?? process.platform;
   const homeDir = dependencies.homeDir ?? os.homedir();
   const candidates = dependencies.candidates ?? getRemoteDaemonExecutableCandidates(platform, homeDir);
-  const installedPath = candidates.find((candidate) => isExecutableFile(candidate)) ?? null;
+  const installedPath = resolveRemoteDaemonExecutablePath(
+    platform,
+    candidates,
+    dependencies.resolveCommandPath,
+  );
   const launcherPath = path.join(paneDir, 'remote-daemon', platform === 'win32' ? 'start.cmd' : 'start.sh');
   const checkedAt = new Date().toISOString();
 
@@ -33,12 +42,10 @@ export function collectRemoteDaemonExecutableHealth(
     procExecutablePath: dependencies.procExecutablePath ?? '/proc/self/exe',
     readLink: dependencies.readLink ?? readlinkSync,
   });
-  const restart = collectRestartHealth(launcherPath, candidates);
+  const restart = collectRestartHealth(launcherPath, installedPath);
   const recoveryCommand = `runpane daemon repair --pane-dir ${formatPaneDirForCommand(paneDir, homeDir)}`;
 
-  const missingLegacyTarget = restart.status === 'broken'
-    && restart.evidence.startsWith('The legacy launcher target is missing:');
-  if (processImage.status === 'deleted' && missingLegacyTarget) {
+  if (processImage.status === 'deleted' && restart.status === 'broken') {
     return {
       processImage,
       restart,
@@ -124,7 +131,7 @@ function collectProcessImage(options: {
 
 function collectRestartHealth(
   launcherPath: string,
-  candidates: string[],
+  resolvedInstalledPath: string | null,
 ): RemoteDaemonExecutableHealth['restart'] {
   let contents: string;
   try {
@@ -147,23 +154,18 @@ function collectRestartHealth(
     };
   }
   if (contents.includes(LAUNCHER_MARKER)) {
-    const resolvedPath = candidates.find(isExecutableFile);
-    return resolvedPath
-      ? { status: 'ready', launcherPath, resolvedPath, evidence: `The runtime resolver can launch ${resolvedPath}.` }
+    return resolvedInstalledPath
+      ? { status: 'ready', launcherPath, resolvedPath: resolvedInstalledPath, evidence: `The runtime resolver can launch ${resolvedInstalledPath}.` }
       : { status: 'broken', launcherPath, evidence: 'The runtime resolver cannot find an installed Pane executable.' };
   }
 
-  const savedPath = extractLegacyExecutablePath(contents);
+  const savedPath = extractLegacyRemoteDaemonExecutablePath(contents);
   if (!savedPath) {
     return { status: 'unknown', launcherPath, evidence: 'The launcher format is not recognized.' };
   }
   return isExecutableFile(savedPath)
     ? { status: 'ready', launcherPath, resolvedPath: savedPath, evidence: `The legacy launcher target still exists at ${savedPath}.` }
     : { status: 'broken', launcherPath, evidence: `The legacy launcher target is missing: ${savedPath}.` };
-}
-
-function extractLegacyExecutablePath(contents: string): string | null {
-  return contents.match(/(?:'|")?(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|")?/)?.[1] ?? null;
 }
 
 function isExecutableFile(filePath: string): boolean {

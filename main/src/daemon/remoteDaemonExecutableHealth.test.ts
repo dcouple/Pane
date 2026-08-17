@@ -41,6 +41,24 @@ describe('collectRemoteDaemonExecutableHealth', () => {
     expect(health.diagnosticCode).toBeUndefined();
   });
 
+  it('mirrors the launcher PATH fallback when fixed candidates are absent', async () => {
+    const fixture = await createFixture();
+    await fs.writeFile(path.join(fixture.paneDir, 'remote-daemon', 'start.sh'), '# pane-remote-daemon-launcher-v2\n', 'utf8');
+
+    const health = collectRemoteDaemonExecutableHealth(fixture.paneDir, {
+      platform: 'linux',
+      homeDir: fixture.root,
+      procExecutablePath: fixture.proc,
+      candidates: [],
+      readLink: () => fixture.installed,
+      resolveCommandPath: (command) => command === 'pane' ? fixture.installed : null,
+    });
+
+    expect(health.processImage.installedPath).toBe(fixture.installed);
+    expect(health.restart.status).toBe('ready');
+    expect(health.restart.resolvedPath).toBe(fixture.installed);
+  });
+
   it('does not call a deleted process unsafe when the launcher can restart it', async () => {
     const fixture = await createFixture();
     await fs.writeFile(path.join(fixture.paneDir, 'remote-daemon', 'start.sh'), '# pane-remote-daemon-launcher-v2\n', 'utf8');
@@ -112,6 +130,45 @@ describe('collectRemoteDaemonExecutableHealth', () => {
     expect(health.restart.status).toBe('broken');
     expect(health.diagnosticCode).toBe('PANE_REMOTE_DAEMON_EXECUTABLE_DELETED');
     expect(health.recoveryCommand).toContain('runpane daemon repair');
+  });
+
+  it('reports a deleted process as doomed when a v2 launcher cannot resolve an executable', async () => {
+    const fixture = await createFixture();
+    await fs.writeFile(path.join(fixture.paneDir, 'remote-daemon', 'start.sh'), '# pane-remote-daemon-launcher-v2\n', 'utf8');
+
+    const health = collectRemoteDaemonExecutableHealth(fixture.paneDir, {
+      platform: 'linux',
+      homeDir: fixture.root,
+      candidates: [],
+      readLink: () => `${fixture.installed} (deleted)`,
+      resolveCommandPath: () => null,
+    });
+
+    expect(health.processImage.status).toBe('deleted');
+    expect(health.restart.status).toBe('broken');
+    expect(health.diagnosticCode).toBe('PANE_REMOTE_DAEMON_EXECUTABLE_DELETED');
+  });
+
+  it('parses a quoted legacy executable path containing spaces', async () => {
+    const fixture = await createFixture();
+    const installed = path.join(fixture.root, 'Pane App', 'Pane');
+    await fs.mkdir(path.dirname(installed), { recursive: true });
+    await fs.writeFile(installed, 'binary', { mode: 0o755 });
+    await fs.writeFile(
+      path.join(fixture.paneDir, 'remote-daemon', 'start.sh'),
+      `#!/bin/sh\nexec "${installed}" --daemon-headless\n`,
+      'utf8',
+    );
+
+    const health = collectRemoteDaemonExecutableHealth(fixture.paneDir, {
+      platform: 'darwin',
+      homeDir: fixture.root,
+      candidates: [],
+      resolveCommandPath: () => null,
+    });
+
+    expect(health.restart.status).toBe('ready');
+    expect(health.restart.resolvedPath).toBe(installed);
   });
 
   it('keeps a deleted legacy process restart-ready when its compatibility target exists', async () => {

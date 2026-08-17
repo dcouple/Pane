@@ -110,8 +110,12 @@ async function inspectRemoteDaemonService(
     }
   }
 
-  const resolvedPath = resolveFirstExecutable(context.executableCandidates);
-  const savedExecutablePath = launcherContents ? extractLegacyExecutablePath(launcherContents) : null;
+  const resolvedPath = resolveRemoteDaemonExecutablePath(
+    context.platform,
+    context.executableCandidates,
+    (command) => resolveCommandPath(command, context),
+  );
+  const savedExecutablePath = launcherContents ? extractLegacyRemoteDaemonExecutablePath(launcherContents) : null;
   const savedExecutableExists = savedExecutablePath ? isExecutableFile(savedExecutablePath) : null;
   const launcherCurrent = launcherContents?.includes(LAUNCHER_MARKER) === true;
   return {
@@ -429,6 +433,29 @@ function resolveFirstExecutable(candidates: string[]): string | null {
   return candidates.find(isExecutableFile) ?? null;
 }
 
+export function resolveRemoteDaemonExecutablePath(
+  platform: NodeJS.Platform,
+  candidates: string[],
+  commandResolver?: (command: string) => string | null,
+): string | null {
+  const fixedCandidate = resolveFirstExecutable(candidates);
+  if (fixedCandidate) return fixedCandidate;
+
+  const resolveCommand = commandResolver ?? ((command: string) => {
+    const result = platform === 'win32'
+      ? runCommand('where', [command])
+      : runCommand('sh', ['-lc', `command -v ${quoteForPosix(command)}`]);
+    const firstLine = result.ok ? result.stdout.split(/\r?\n/).map((line) => line.trim()).find(Boolean) : undefined;
+    return firstLine ? safeRealpath(firstLine) : null;
+  });
+  const commandNames = platform === 'win32' ? ['pane.exe', 'Pane.exe'] : ['pane', 'Pane'];
+  return commandNames
+    .map(resolveCommand)
+    .filter((candidate): candidate is string => candidate !== null)
+    .find(isExecutableFile)
+    ?? null;
+}
+
 function resolveCommandPath(command: string, context: ServiceContext): string | null {
   const result = context.platform === 'win32'
     ? context.runCommand('where', [command])
@@ -454,16 +481,18 @@ function isExecutableFile(filePath: string): boolean {
   }
 }
 
-function extractLegacyExecutablePath(contents: string): string | null {
-  const match = contents.match(/(?:'|")?(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))(?:'|")?/);
-  return match?.[1] ?? null;
+export function extractLegacyRemoteDaemonExecutablePath(contents: string): string | null {
+  const quotedMatch = contents.match(/(["'])([^"'\r\n]*[\\/](?:Pane\.exe|Pane|pane))\1/);
+  if (quotedMatch) return quotedMatch[2];
+  return contents.match(/(\/opt\/Pane\/(?:Pane|pane)|[^\s'"]+[\\/](?:Pane\.exe|Pane|pane))/)?.[1] ?? null;
 }
 
 function omitLauncherContents(
   inspection: RemoteDaemonServiceInspection & { launcherContents?: string },
 ): RemoteDaemonServiceInspection {
-  const { launcherContents: _launcherContents, ...rest } = inspection;
-  return rest;
+  const result = { ...inspection };
+  delete result.launcherContents;
+  return result;
 }
 
 function findSourceRoot(startDir: string): string | null {
