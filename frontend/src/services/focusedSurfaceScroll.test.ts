@@ -102,8 +102,10 @@ describe('FocusedSurfaceScrollCoordinator', () => {
 
     harness.runFrame(50);
     harness.runFrame(100);
+    harness.runFrame(150);
     expect(lines[1]).toBeGreaterThan(0);
     expect(lines[2]).toBeGreaterThan(lines[1]);
+    expect(lines[3]).toBe(3);
 
     coordinator.stop();
     expect(harness.frames.size).toBe(0);

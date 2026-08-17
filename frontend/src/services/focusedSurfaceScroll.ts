@@ -20,7 +20,7 @@ export interface ScrollRuntime {
   requestFrame: (callback: FrameRequestCallback) => number;
 }
 
-const FULL_SPEED_LINES_PER_SECOND = 30;
+const FULL_SPEED_LINES_PER_SECOND = 60;
 const RAMP_DURATION_MS = 150;
 const INITIAL_SPEED_RATIO = 0.2;
 const MAX_FRAME_SECONDS = 0.05;
