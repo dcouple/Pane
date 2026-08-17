@@ -83,12 +83,18 @@ const mainRepoPanels = [{
   sessionId: mainRepoSession.id,
 }];
 
+const mainRepoSessionWithBranch = {
+  ...mainRepoSession,
+  baseBranch: 'main-a',
+};
+
 const secondMainRepoSession = {
   ...mainRepoSession,
   id: 'usage-main-session-b',
   name: 'Usage fixture B (Main)',
   worktreePath: secondProject.path,
   projectId: secondProject.id,
+  baseBranch: 'main-b',
 };
 
 const secondMainRepoPanels = [{
@@ -258,7 +264,7 @@ test('main-repository branch detection never renders the previous repository bra
   await page.setViewportSize({ width: 1_600, height: 900 });
   await installElectronApiMock(page, {
     initialProjects: [project, secondProject],
-    initialSessions: [mainRepoSession, secondMainRepoSession],
+    initialSessions: [mainRepoSessionWithBranch, secondMainRepoSession],
     initialPanels: [...mainRepoPanels, ...secondMainRepoPanels],
     activeProjectId: project.id,
     detectedBranchByPath: {
@@ -286,6 +292,9 @@ test('main-repository branch detection never renders the previous repository bra
   });
 
   expect(renderedPreviousBranch).toBe(false);
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(250);
+  await expect(detailPanel.getByText('main-a', { exact: true })).toHaveCount(0);
+  await page.waitForTimeout(400);
+  await expect(detailPanel.getByText('main-b', { exact: true })).toBeVisible();
   await expect(detailPanel.getByText('main-a', { exact: true })).toHaveCount(0);
 });

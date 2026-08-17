@@ -36,13 +36,13 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     branch: string | null;
   }>({ projectId, worktreePath: null, branch: null });
   const [isLoadingSession, setIsLoadingSession] = useState(false);
-  const currentWorktreePath = mainRepoSession?.projectId === projectId
-    ? mainRepoSession.worktreePath ?? null
-    : null;
-  const currentBranch = branchState.projectId === projectId
-    && branchState.worktreePath === currentWorktreePath
+  const activeMainRepoSession = mainRepoSession?.projectId === projectId ? mainRepoSession : null;
+  const activeWorktreePath = activeMainRepoSession?.worktreePath ?? null;
+  const detectedBranch = branchState.projectId === projectId
+    && branchState.worktreePath === activeWorktreePath
     ? branchState.branch
     : null;
+  const displayBranch = activeMainRepoSession?.baseBranch ?? detectedBranch;
   // Panel store state and actions
   const {
     panels,
@@ -119,35 +119,36 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   );
 
   const detailSession = useMemo(() => {
-    if (!mainRepoSession || mainRepoSession.baseBranch || !currentBranch) return mainRepoSession;
-    return { ...mainRepoSession, baseBranch: currentBranch };
-  }, [currentBranch, mainRepoSession]);
+    if (!activeMainRepoSession || !displayBranch) return activeMainRepoSession;
+    if (activeMainRepoSession.baseBranch === displayBranch) return activeMainRepoSession;
+    return { ...activeMainRepoSession, baseBranch: displayBranch };
+  }, [activeMainRepoSession, displayBranch]);
 
   useEffect(() => {
-    if (!currentWorktreePath) {
+    if (!activeWorktreePath) {
       setBranchState({ projectId, worktreePath: null, branch: null });
       return;
     }
 
-    setBranchState({ projectId, worktreePath: currentWorktreePath, branch: null });
+    setBranchState({ projectId, worktreePath: activeWorktreePath, branch: null });
     let cancelled = false;
-    window.electronAPI.projects.detectBranch(currentWorktreePath).then(result => {
+    window.electronAPI.projects.detectBranch(activeWorktreePath).then(result => {
       if (cancelled) return;
       setBranchState({
         projectId,
-        worktreePath: currentWorktreePath,
+        worktreePath: activeWorktreePath,
         branch: result.success && typeof result.data === 'string' ? result.data : null,
       });
     }).catch(() => {
       if (!cancelled) {
-        setBranchState({ projectId, worktreePath: currentWorktreePath, branch: null });
+        setBranchState({ projectId, worktreePath: activeWorktreePath, branch: null });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [currentWorktreePath, projectId]);
+  }, [activeWorktreePath, projectId]);
   
   // Panel event handlers
   const handlePanelSelect = useCallback(
