@@ -22,14 +22,14 @@ describe('AGENT_LAUNCH_PRESETS', () => {
     expect(new Set(AGENT_LAUNCH_PRESETS.map(p => p.hotkeyId)).size).toBe(AGENT_LAUNCH_PRESETS.length);
   });
 
-  it('hides cursor on Windows and keeps it on macOS/Linux', () => {
+  it('supports cursor on POSIX hosts and WSL repos, but not native Windows', () => {
     expect(agentPresetsForPlatform('win32').map(p => p.id)).toEqual(['claude', 'codex']);
     expect(agentPresetsForPlatform('darwin').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(agentPresetsForPlatform('linux').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(agentPresetsForPlatform('windows').map(p => p.id)).toEqual(['claude', 'codex']);
     expect(agentPresetsForPlatform('macos').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
-    expect(agentPresetsForPlatform('wsl').map(p => p.id)).toEqual(['claude', 'codex']);
+    expect(agentPresetsForPlatform('wsl').map(p => p.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(isAgentSupportedOnPlatform('cursor', 'windows')).toBe(false);
-    expect(isAgentSupportedOnPlatform('cursor', 'wsl')).toBe(false);
+    expect(isAgentSupportedOnPlatform('cursor', 'wsl')).toBe(true);
   });
 });

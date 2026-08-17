@@ -1216,8 +1216,10 @@ describe('runpane IPC handlers', () => {
     expect((result as { warnings?: string[] }).warnings?.some((w) => w.includes('PATH'))).toBe(true);
   });
 
-  it('reports cursor as unsupported for WSL repos', async () => {
-    const execAsync = vi.fn(async () => ({ stdout: '', stderr: '' }));
+  it('finds cursor installed inside a WSL repo environment', async () => {
+    const execAsync = vi.fn(async (command: string) => command.includes('--version')
+      ? { stdout: '2026.08.11-e8db854\n', stderr: '' }
+      : { stdout: '/home/user/.local/bin/cursor-agent\n', stderr: '' });
     const base = createServices();
     const services = createServices({
       // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
@@ -1244,17 +1246,17 @@ describe('runpane IPC handlers', () => {
     }]);
 
     expect(result).toMatchObject({
-      ok: false,
+      ok: true,
       agent: 'cursor',
-      available: false,
-      checks: expect.arrayContaining([
-        expect.objectContaining({ name: 'platform', ok: false }),
-      ]),
+      environment: 'wsl',
+      available: true,
+      executablePath: '/home/user/.local/bin/cursor-agent',
+      version: '2026.08.11-e8db854',
     });
-    expect(execAsync).not.toHaveBeenCalled();
+    expect(execAsync).toHaveBeenCalledWith('command -v cursor-agent', project.path, expect.any(Object));
   });
 
-  it('rejects cursor pane creation for WSL repos before creating a session', async () => {
+  it('allows cursor pane creation for WSL repos', async () => {
     const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
     const base = createServices();
     const services = createServices({
@@ -1267,20 +1269,25 @@ describe('runpane IPC handlers', () => {
 
     const result = await createRegistry(services).invoke('runpane:panes:create', [{
       repo: 'active',
+      dryRun: true,
       panes: [{ name: 'cursor-wsl', tool: { agent: 'cursor' } }],
     }]);
 
     expect(result).toMatchObject({
-      ok: false,
+      ok: true,
       items: [{
-        ok: false,
-        error: { message: 'Cursor is not supported on wsl repos.' },
+        ok: true,
+        tool: {
+          title: 'Cursor',
+          command: 'cursor-agent --force --trust',
+          agent: 'cursor',
+        },
       }],
     });
     expect(services.taskQueue?.createSessionAndWait).not.toHaveBeenCalled();
   });
 
-  it('rejects cursor panel creation for WSL repos before creating a panel', async () => {
+  it('allows cursor panel creation for WSL repos', async () => {
     const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
     const base = createServices();
     const services = createServices({
@@ -1288,14 +1295,45 @@ describe('runpane IPC handlers', () => {
       sessionManager: {
         ...base.sessionManager,
         getProjectForSession: vi.fn(() => wslProject),
+        getProjectContext: vi.fn(() => ({
+          commandRunner: {
+            wslContext: {
+              enabled: true,
+              distribution: 'Ubuntu',
+              linuxPath: session.worktreePath,
+            },
+          },
+        })),
       } as never,
     });
 
-    await expect(createRegistry(services).invoke('runpane:panels:create', [{
+    vi.mocked(panelManager.createPanel).mockResolvedValue({
+      ...terminalPanel,
+      title: 'Cursor',
+      state: { isActive: false },
+    });
+
+    const result = await createRegistry(services).invoke('runpane:panels:create', [{
       paneId: session.id,
       tool: { agent: 'cursor' },
-    }])).rejects.toThrow('Cursor is not supported on wsl repos.');
-    expect(panelManager.createPanel).not.toHaveBeenCalled();
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      paneId: session.id,
+      panelId: terminalPanel.id,
+      tool: {
+        title: 'Cursor',
+        command: 'cursor-agent --force --trust',
+        agent: 'cursor',
+      },
+    });
+    expect(panelManager.createPanel).toHaveBeenCalled();
+    expect(terminalPanelManager.initializeTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: terminalPanel.id }),
+      session.worktreePath,
+      expect.objectContaining({ enabled: true, distribution: 'Ubuntu' }),
+    );
   });
 
   it('creates a session, terminal panel, and initial-input state', async () => {

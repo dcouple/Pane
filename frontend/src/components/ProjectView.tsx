@@ -14,10 +14,12 @@ import { useResizable } from '../hooks/useResizable';
 import { CommitMessageDialog } from './session/CommitMessageDialog';
 import { SetTrackingBranchDialog } from './session/SetTrackingBranchDialog';
 import { useMainRepoGitActions } from '../hooks/useMainRepoGitActions';
+import type { ProjectEnvironment } from '../../../shared/types/panels';
 
 interface ProjectViewProps {
   projectId: number;
   projectName: string;
+  projectEnvironment: ProjectEnvironment | undefined;
   configuredIDECommand?: string | null;
   onConfigureIDE: () => void;
 }
@@ -25,6 +27,7 @@ interface ProjectViewProps {
 export const ProjectView: React.FC<ProjectViewProps> = ({ 
   projectId, 
   projectName,
+  projectEnvironment,
   configuredIDECommand,
   onConfigureIDE,
 }) => {
@@ -327,6 +330,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             onPanelSelect={handlePanelSelect}
             onPanelClose={handlePanelClose}
             onPanelCreate={handlePanelCreate}
+            projectEnvironment={projectEnvironment}
             context="project"
             onToggleDetailPanel={() => setDetailVisible(v => !v)}
             detailPanelVisible={detailVisible}

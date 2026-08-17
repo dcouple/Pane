@@ -13,8 +13,6 @@ import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
 import { visibleAgentPresets } from '../../utils/agentPresets';
-
-const agentPresets = visibleAgentPresets();
 import { PanelTabStrip } from './PanelTabStrip';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
 
@@ -69,6 +67,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   onPanelSelect,
   onPanelClose,
   onPanelCreate,
+  projectEnvironment,
   context = 'worktree',  // Default to worktree for backward compatibility
   onToggleDetailPanel,
   detailPanelVisible,
@@ -86,6 +85,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   draggedPanelId,
   getPanelTabPresentation,
 }) => {
+  const agentPresets = useMemo(
+    () => visibleAgentPresets(projectEnvironment),
+    [projectEnvironment],
+  );
   const sessionContext = useSession();
   const session = sessionContext?.session;
   const [resolvedRunScript, setResolvedRunScript] = useState<{ command: string; source: string } | null>(null);

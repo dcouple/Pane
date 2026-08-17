@@ -1,4 +1,4 @@
-import { ToolPanel, ToolPanelType } from '../../../shared/types/panels';
+import { ProjectEnvironment, ToolPanel, ToolPanelType } from '../../../shared/types/panels';
 
 type PanelContext = 'project' | 'worktree';
 
@@ -21,6 +21,7 @@ export interface PanelTabBarProps {
   onPanelSelect: (panel: ToolPanel) => void;
   onPanelClose: (panel: ToolPanel) => void;
   onPanelCreate: (type: ToolPanelType, options?: PanelCreateOptions) => void;
+  projectEnvironment?: ProjectEnvironment;
   context?: PanelContext;  // Optional context to filter available panels
   onToggleDetailPanel?: () => void;
   detailPanelVisible?: boolean;

@@ -49,8 +49,6 @@ import {
 import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
 import { getCliBrandIcon } from './ui/BrandIcons';
 import { visibleAgentPresets } from '../utils/agentPresets';
-
-const agentPresets = visibleAgentPresets();
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';
 import { useConfigStore } from '../stores/configStore';
@@ -101,6 +99,13 @@ export const SessionView = memo(() => {
     // Otherwise look in regular sessions
     return state.sessions.find(session => session.id === state.activeSessionId);
   });
+  const activeProjectEnvironment = sessionProject && sessionProject.id === activeSession?.projectId
+    ? sessionProject.environment
+    : undefined;
+  const agentPresets = useMemo(
+    () => visibleAgentPresets(activeProjectEnvironment),
+    [activeProjectEnvironment],
+  );
   const lastAnnouncedSessionStateRef = useRef<string | null>(activeSession?.status ?? null);
   const [sessionStatusAnnouncement, setSessionStatusAnnouncement] = useState('');
 
@@ -1148,11 +1153,10 @@ export const SessionView = memo(() => {
       });
     }
     return () => { ids.forEach(id => unregisterHotkey(id)); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [agentPresets, registerHotkey, unregisterHotkey]);
 
   useEffect(() => {
-    const CUSTOM_CMD_START = 3 + agentPresets.length; // mod+alt+1-2 are panels, then one slot per agent
+    const CUSTOM_CMD_START = 6; // mod+alt+3-5 stay reserved for built-in agents on every platform
     const maxSlots = Math.min(customCommands.length, 10 - CUSTOM_CMD_START);
     const ids: string[] = [];
 
@@ -1631,6 +1635,7 @@ export const SessionView = memo(() => {
         <ProjectView
           projectId={activeProjectId}
           projectName={projectData.name || 'Project'}
+          projectEnvironment={projectData.environment}
           configuredIDECommand={projectData.open_ide_command}
           onConfigureIDE={() => setShowProjectSettings(true)}
         />
@@ -1675,6 +1680,7 @@ export const SessionView = memo(() => {
           onPanelSelect={handlePanelSelect}
           onPanelClose={handlePanelClose}
           onPanelCreate={handlePanelCreate}
+          projectEnvironment={activeProjectEnvironment}
           onToggleDetailPanel={handleToggleDetailPanel}
           detailPanelVisible={detailVisible}
           detailPanelToggleDisabled={immersiveMode}

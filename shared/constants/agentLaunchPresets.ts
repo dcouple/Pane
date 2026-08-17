@@ -39,7 +39,7 @@ export const AGENT_LAUNCH_PRESETS: readonly AgentLaunchPreset[] = [
     iconKey: 'cursor',
     hotkeyId: 'add-tool-terminal-cursor',
     hotkey: 'mod+alt+5',
-    platforms: ['darwin', 'linux'],
+    platforms: ['darwin', 'linux', 'wsl'],
   },
 ];
 

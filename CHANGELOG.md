@@ -5,10 +5,11 @@ All notable changes to Pane will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Cursor Agent CLI (`cursor-agent`) as a third built-in agent tool: launch pill/menu entries with `mod+alt+5`, prompt-as-argument delivery, chat pre-creation with resume-after-restart, at-a-glance status detection, RunPane `--agent cursor` support with a doctor fallback probe for `~/.local/bin`, and a Cursor option for the Pane Chat orchestrator. macOS/Linux only; the tool is hidden on Windows.
+- Cursor Agent CLI (`cursor-agent`) as a third built-in agent tool: launch pill/menu entries with `mod+alt+5`, prompt-as-argument delivery, chat pre-creation with resume-after-restart, at-a-glance status detection, RunPane `--agent cursor` support with a doctor fallback probe for `~/.local/bin`, and a Cursor option for the Pane Chat orchestrator. Pane supports Cursor in macOS, Linux, and WSL repositories. Native Windows launches stay disabled.
 
 ### Changed
 - Custom-command keyboard shortcuts moved from `mod+alt+5..9` to `mod+alt+6..9` to make room for the Cursor slot.
+- Cursor Agent is now available inside WSL repositories.
 
 ## [1.1.123] - 2026-04-25
 
