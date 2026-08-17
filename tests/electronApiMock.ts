@@ -34,6 +34,8 @@ type ElectronApiMockOptions = {
   agentUsageDelayBySessionId?: Record<string, number>;
   forcedAgentUsageError?: string;
   detectedBranch?: string | null;
+  detectedBranchByPath?: Record<string, string | null>;
+  mainRepoSessionDelayByProjectId?: Record<number, number>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -483,7 +485,12 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           mockActiveProjectId = Number(projectId);
           return success();
         },
-        detectBranch: () => success(mockOptions.detectedBranch === undefined ? 'main' : mockOptions.detectedBranch),
+        detectBranch: (path: string) => success(
+          mockOptions.detectedBranchByPath
+            && Object.prototype.hasOwnProperty.call(mockOptions.detectedBranchByPath, path)
+            ? mockOptions.detectedBranchByPath[path]
+            : (mockOptions.detectedBranch === undefined ? 'main' : mockOptions.detectedBranch),
+        ),
         listBranches: () => success([
           { name: 'origin/main', isCurrent: false, hasWorktree: false, isRemote: true },
           { name: 'main', isCurrent: true, hasWorktree: false, isRemote: false },
@@ -504,9 +511,13 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         stopActive: () => success(),
       }),
       sessions: namespace({
-        getOrCreateMainRepoSession: (projectId: number) => success(clone(
-          mockSessions.find((session) => session.projectId === projectId && session.isMainRepo === true) ?? null,
-        )),
+        getOrCreateMainRepoSession: async (projectId: number) => {
+          const delayMs = mockOptions.mainRepoSessionDelayByProjectId?.[projectId] ?? 0;
+          if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+          return success(clone(
+            mockSessions.find((session) => session.projectId === projectId && session.isMainRepo === true) ?? null,
+          ));
+        },
         delete: (sessionId: string) => {
           sessionDeleteCalls.push(sessionId);
           return success();

@@ -118,8 +118,7 @@ export function escapeForBashDoubleQuote(str: string): string {
 export function getWSLExecArgs(command: string, distro: string, cwd?: string, extraEnv?: Record<string, string>): { file: string; args: string[] } {
   let bashCommand = command;
   if (cwd) {
-    const escapedCwd = escapeForBashDoubleQuote(cwd);
-    bashCommand = `cd '${escapedCwd}' && ${command}`;
+    bashCommand = `cd ${escapeForBash(cwd)} && ${command}`;
   }
   if (extraEnv && Object.keys(extraEnv).length > 0) {
     const exports = Object.entries(extraEnv)

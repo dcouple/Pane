@@ -30,8 +30,19 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 }) => {
   const [mainRepoSessionId, setMainRepoSessionId] = useState<string | null>(null);
   const [mainRepoSession, setMainRepoSession] = useState<Session | null>(null);
-  const [currentBranch, setCurrentBranch] = useState<string | null>(null);
+  const [branchState, setBranchState] = useState<{
+    projectId: number;
+    worktreePath: string | null;
+    branch: string | null;
+  }>({ projectId, worktreePath: null, branch: null });
   const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const currentWorktreePath = mainRepoSession?.projectId === projectId
+    ? mainRepoSession.worktreePath ?? null
+    : null;
+  const currentBranch = branchState.projectId === projectId
+    && branchState.worktreePath === currentWorktreePath
+    ? branchState.branch
+    : null;
   // Panel store state and actions
   const {
     panels,
@@ -113,25 +124,30 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   }, [currentBranch, mainRepoSession]);
 
   useEffect(() => {
-    const worktreePath = mainRepoSession?.worktreePath;
-    if (!worktreePath) {
-      setCurrentBranch(null);
+    if (!currentWorktreePath) {
+      setBranchState({ projectId, worktreePath: null, branch: null });
       return;
     }
 
-    setCurrentBranch(null);
+    setBranchState({ projectId, worktreePath: currentWorktreePath, branch: null });
     let cancelled = false;
-    window.electronAPI.projects.detectBranch(worktreePath).then(result => {
+    window.electronAPI.projects.detectBranch(currentWorktreePath).then(result => {
       if (cancelled) return;
-      setCurrentBranch(result.success && typeof result.data === 'string' ? result.data : null);
+      setBranchState({
+        projectId,
+        worktreePath: currentWorktreePath,
+        branch: result.success && typeof result.data === 'string' ? result.data : null,
+      });
     }).catch(() => {
-      if (!cancelled) setCurrentBranch(null);
+      if (!cancelled) {
+        setBranchState({ projectId, worktreePath: currentWorktreePath, branch: null });
+      }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [mainRepoSession?.worktreePath]);
+  }, [currentWorktreePath, projectId]);
   
   // Panel event handlers
   const handlePanelSelect = useCallback(

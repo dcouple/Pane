@@ -10,6 +10,14 @@ const project = {
   updated_at: new Date(0).toISOString(),
 };
 
+const secondProject = {
+  ...project,
+  id: 732,
+  name: 'Usage fixture B',
+  path: '/tmp/usage-fixture-b',
+  active: false,
+};
+
 const session = {
   id: 'usage-session',
   name: 'Track Codex limits',
@@ -73,6 +81,20 @@ const mainRepoPanels = [{
   ...panels[0],
   id: 'usage-main-terminal',
   sessionId: mainRepoSession.id,
+}];
+
+const secondMainRepoSession = {
+  ...mainRepoSession,
+  id: 'usage-main-session-b',
+  name: 'Usage fixture B (Main)',
+  worktreePath: secondProject.path,
+  projectId: secondProject.id,
+};
+
+const secondMainRepoPanels = [{
+  ...mainRepoPanels[0],
+  id: 'usage-main-terminal-b',
+  sessionId: secondMainRepoSession.id,
 }];
 
 const usage = {
@@ -167,7 +189,7 @@ test('Codex usage is available from a main-repository pane', async ({ page }, te
   });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
 
-  await page.getByRole('button', { name: `Repository actions for ${project.name}` }).click();
+  await page.getByRole('button', { name: `Repository actions for ${project.name}`, exact: true }).click();
   await page.getByText('Open session on main', { exact: true }).click();
 
   const toggle = page.getByRole('button', { name: 'Enable Codex usage widget', exact: true });
@@ -232,18 +254,38 @@ test('Codex usage hides the previous snapshot while a new session loads', async 
   await expect(widget.getByText('12% left', { exact: true })).toBeVisible();
 });
 
-test('main-repository branch detection clears an invalid result', async ({ page }) => {
+test('main-repository branch detection never renders the previous repository branch', async ({ page }) => {
   await page.setViewportSize({ width: 1_600, height: 900 });
   await installElectronApiMock(page, {
-    initialProjects: [project],
-    initialSessions: [mainRepoSession],
-    initialPanels: mainRepoPanels,
+    initialProjects: [project, secondProject],
+    initialSessions: [mainRepoSession, secondMainRepoSession],
+    initialPanels: [...mainRepoPanels, ...secondMainRepoPanels],
     activeProjectId: project.id,
-    detectedBranch: null,
+    detectedBranchByPath: {
+      [project.path]: 'main-a',
+      [secondProject.path]: null,
+    },
+    mainRepoSessionDelayByProjectId: { [secondProject.id]: 500 },
   });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await page.getByRole('button', { name: `Repository actions for ${project.name}` }).click();
+  await page.getByRole('button', { name: `Repository actions for ${project.name}`, exact: true }).click();
   await page.getByText('Open session on main', { exact: true }).click();
+  await page.getByRole('button', { name: 'Show details', exact: true }).click();
+  const detailPanel = page.locator('.pane-detail-panel-vertical');
+  await expect(detailPanel.getByText('main-a', { exact: true })).toBeVisible();
 
-  await expect(page.locator('.pane-detail-panel-vertical').getByText('main', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: `Repository actions for ${secondProject.name}`, exact: true }).click();
+  const renderedPreviousBranch = await page.evaluate(async () => {
+    const openMainButton = Array.from(document.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'Open session on main',
+    );
+    if (!openMainButton) throw new Error('Open session on main action not found');
+    openMainButton.click();
+    await Promise.resolve();
+    return document.querySelector('.pane-detail-panel-vertical')?.textContent?.includes('main-a') ?? false;
+  });
+
+  expect(renderedPreviousBranch).toBe(false);
+  await page.waitForTimeout(100);
+  await expect(detailPanel.getByText('main-a', { exact: true })).toHaveCount(0);
 });

@@ -143,12 +143,12 @@ describe('AgentUsageService', () => {
 describe('probeCodexUsage', () => {
   it('runs WSL Codex from the pane Linux working directory', () => {
     const command = getCodexSpawnCommand({
-      cacheKey: 'wsl:Ubuntu:/home/dev/pane',
-      cwd: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\pane',
+      cacheKey: "wsl:Ubuntu:/home/dev/o'connor/pane",
+      cwd: "\\\\wsl.localhost\\Ubuntu\\home\\dev\\o'connor\\pane",
       wslContext: {
         enabled: true,
         distribution: 'Ubuntu',
-        linuxPath: '/home/dev/pane',
+        linuxPath: "/home/dev/o'connor/pane",
       },
     });
 
@@ -160,7 +160,7 @@ describe('probeCodexUsage', () => {
         '--',
         'bash',
         '-c',
-        "cd '/home/dev/pane' && codex app-server --listen stdio://",
+        "cd '/home/dev/o'\\''connor/pane' && codex app-server --listen stdio://",
       ],
       cwd: undefined,
     });
