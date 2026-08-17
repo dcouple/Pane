@@ -10,7 +10,8 @@ const AGENT_EXECUTABLES: Readonly<Record<string, CliAgentType>> = {
   codex: 'codex',
 };
 
-const SIMPLE_COMMAND_WRAPPERS = new Set(['command', 'exec', 'nohup', 'nice', 'time']);
+const OPTIONLESS_COMMAND_WRAPPERS = new Set(['command', 'exec', 'nohup']);
+const COMMAND_STRING_SHELLS = new Set(['bash', 'dash', 'fish', 'ksh', 'sh', 'zsh']);
 const ENVIRONMENT_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
 const ENV_OPTIONS_WITH_SEPARATE_OPERAND = new Set([
   '-u',
@@ -146,6 +147,105 @@ function expandEnvArguments(
   return tokens.slice(index);
 }
 
+function expandNiceArguments(tokens: string[]): string[] {
+  let index = 0;
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === '--') return tokens.slice(index + 1);
+    if (token === '-n' || token === '--adjustment') {
+      index += 2;
+      continue;
+    }
+    if (/^-(?:n\d+|\d+)$/.test(token) || token.startsWith('--adjustment=')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  return tokens.slice(index);
+}
+
+function expandSudoArguments(tokens: string[]): string[] {
+  let index = 0;
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === '--') return tokens.slice(index + 1);
+    if (token === '-E' || token === '--preserve-env') {
+      index += 1;
+      continue;
+    }
+    if (token === '-u' || token === '--user') {
+      index += 2;
+      continue;
+    }
+    if ((token.startsWith('-u') && token.length > 2) || token.startsWith('--user=')) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  return tokens.slice(index);
+}
+
+function expandTimeArguments(tokens: string[]): string[] {
+  let index = 0;
+
+  while (index < tokens.length) {
+    const token = tokens[index];
+    if (token === '--') return tokens.slice(index + 1);
+    if (token === '-p' || token === '--portability') {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+
+  return tokens.slice(index);
+}
+
+function expandShellCommandString(
+  tokens: string[],
+  platformHint: NodeJS.Platform,
+): string[] | undefined {
+  for (let index = 0; index < tokens.length; index += 1) {
+    const option = tokens[index];
+    if (!option.startsWith('-')) return undefined;
+    if (/^-[^-]+$/.test(option) && option.slice(1).includes('c')) {
+      const commandString = tokens[index + 1];
+      return commandString ? tokenizeShellCommand(commandString, platformHint) : undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function expandWrapperArguments(
+  wrapper: string,
+  tokens: string[],
+  platformHint: NodeJS.Platform,
+): string[] | undefined {
+  if (OPTIONLESS_COMMAND_WRAPPERS.has(wrapper)) return tokens;
+  if (wrapper === '&') return platformHint === 'win32' ? tokens : undefined;
+  if (wrapper === 'nice') return expandNiceArguments(tokens);
+  if (wrapper === 'sudo') return expandSudoArguments(tokens);
+  if (wrapper === 'time') return expandTimeArguments(tokens);
+  if (COMMAND_STRING_SHELLS.has(wrapper)) return expandShellCommandString(tokens, platformHint);
+
+  if (wrapper === 'cmd') {
+    if (platformHint !== 'win32' || tokens[0]?.toLowerCase() !== '/c') return undefined;
+    const commandTokens = tokens.slice(1);
+    return commandTokens.length === 1
+      ? tokenizeShellCommand(commandTokens[0], platformHint)
+      : commandTokens;
+  }
+
+  return undefined;
+}
+
 function resolveExecutableToken(command: string, platformHint: NodeJS.Platform): string | undefined {
   let tokens = tokenizeShellCommand(command.trim(), platformHint);
   let index = 0;
@@ -156,14 +256,20 @@ function resolveExecutableToken(command: string, platformHint: NodeJS.Platform):
       continue;
     }
 
-    if (SIMPLE_COMMAND_WRAPPERS.has(tokens[index].toLowerCase())) {
-      index += 1;
+    const commandWord = tokens[index].toLowerCase();
+    if (commandWord === 'env') {
+      const expandedArguments = expandEnvArguments(tokens.slice(index + 1), platformHint);
+      if (!expandedArguments) return undefined;
+      tokens = [...tokens.slice(0, index), ...expandedArguments];
       continue;
     }
 
-    if (tokens[index].toLowerCase() === 'env') {
-      const expandedArguments = expandEnvArguments(tokens.slice(index + 1), platformHint);
-      if (!expandedArguments) return undefined;
+    const expandedArguments = expandWrapperArguments(
+      commandWord,
+      tokens.slice(index + 1),
+      platformHint,
+    );
+    if (expandedArguments) {
       tokens = [...tokens.slice(0, index), ...expandedArguments];
       continue;
     }
