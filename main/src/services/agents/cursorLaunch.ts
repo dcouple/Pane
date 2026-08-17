@@ -17,7 +17,7 @@ function quoteShellArgument(value: string): string {
 }
 
 function stripAnsiSequences(output: string): string {
-  // eslint-disable-next-line no-control-regex
+  // oxlint-disable-next-line no-control-regex -- ANSI stripping intentionally matches ESC and BEL.
   return output.replace(/\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))/g, '');
 }
 
