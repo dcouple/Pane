@@ -45,6 +45,7 @@ const rateLimitsResponse = {
 };
 
 function createFakeChild(stdin: Writable): ChildProcessWithoutNullStreams {
+  // SAFETY: The service test exercises only these modeled child-process streams, state fields, and kill method.
   return Object.assign(new EventEmitter(), {
     stdin,
     stdout: new PassThrough(),

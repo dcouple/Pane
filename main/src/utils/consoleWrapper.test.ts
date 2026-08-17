@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const savedConsole = { ...console };
 
+function throwingConsoleMethod(error: Error): typeof console.log {
+  return vi.fn(() => {
+    throw error;
+  });
+}
+
 async function loadConsoleWrapperWithOriginals(originals: Partial<Console>) {
   vi.resetModules();
   Object.assign(console, originals);
@@ -17,12 +23,8 @@ describe('setupConsoleWrapper', () => {
   it('ignores EPIPE from closed stdout or stderr streams', async () => {
     const epipe = Object.assign(new Error('write EPIPE'), { code: 'EPIPE' });
     const { setupConsoleWrapper } = await loadConsoleWrapperWithOriginals({
-      log: vi.fn(() => {
-        throw epipe;
-      }) as unknown as typeof console.log,
-      error: vi.fn(() => {
-        throw epipe;
-      }) as unknown as typeof console.error,
+      log: throwingConsoleMethod(epipe),
+      error: throwingConsoleMethod(epipe),
     });
 
     setupConsoleWrapper();
@@ -33,9 +35,7 @@ describe('setupConsoleWrapper', () => {
 
   it('preserves unexpected console write failures', async () => {
     const { setupConsoleWrapper } = await loadConsoleWrapperWithOriginals({
-      log: vi.fn(() => {
-        throw new Error('unexpected console failure');
-      }) as unknown as typeof console.log,
+      log: throwingConsoleMethod(new Error('unexpected console failure')),
     });
 
     setupConsoleWrapper();

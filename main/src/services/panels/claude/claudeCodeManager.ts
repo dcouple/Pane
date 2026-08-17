@@ -15,6 +15,12 @@ import { AbstractCliManager } from '../cli/AbstractCliManager';
 import { withLock } from '../../../utils/mutex';
 import { getAppDirectory } from '../../../utils/appDirectory';
 import { escapeForBash } from '../../../utils/wslUtils';
+import { boundary, decodeBoundary, type JsonObject } from '../../../../../shared/validation/boundaryDecoder';
+
+function getPanelManagerModule(): typeof import('../../panelManager') {
+  // SAFETY: CommonJS require returns the statically typed local panelManager module.
+  return require('../../panelManager') as typeof import('../../panelManager');
+}
 
 // Extend global object for MCP configuration storage  
 interface GlobalMcpStorage {
@@ -203,7 +209,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
       let finalPrompt = prompt;
 
       // Add system prompts for new sessions
-      const systemPromptAppend = this.buildSystemPromptAppend(dbSession ? { ...dbSession, project_id: dbSession.project_id } : { id: sessionId });
+      const systemPromptAppend = this.buildSystemPromptAppend({ project_id: dbSession?.project_id });
       if (systemPromptAppend) {
         finalPrompt = `${finalPrompt}\n\n${systemPromptAppend}`;
       }
@@ -575,10 +581,13 @@ export class ClaudeCodeManager extends AbstractCliManager {
   protected override isSpawnInProgress(panelId: string): boolean {
     // Use synchronous cache-hit path; panelManager.getPanel is sync.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { panelManager } = require('../../panelManager') as typeof import('../../panelManager');
+    const { panelManager } = getPanelManagerModule();
     const panel = panelManager.getPanel(panelId);
     if (!panel) return false;
-    const cs = (panel.state.customState || {}) as { isCliReady?: boolean; isCliPanel?: boolean };
+    const cs = decodeBoundary(panel.state.customState ?? {}, boundary.object({
+      isCliReady: boundary.optional(boundary.boolean),
+      isCliPanel: boundary.optional(boundary.boolean),
+    }));
     // Only consider "in progress" if this is a CLI panel but the CLI has not
     // reported ready yet. Non-CLI callers shouldn't hit this (Claude entries
     // are always CLI) but guard anyway.
@@ -593,8 +602,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
    * original prompt meaningfully after a mid-spawn crash.
    */
   protected override isNonInteractiveSpawn(options: import('../cli/AbstractCliManager').CliSpawnOptions): boolean {
-    const opts = options as ClaudeSpawnOptions;
-    return opts.isInteractive !== true;
+    return options.isInteractive !== true;
   }
 
   // Implementation of abstract methods from AbstractCliManager
@@ -629,7 +637,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
         let finalPrompt = prompt;
 
         // Add system prompts for new sessions
-        const systemPromptAppend = this.buildSystemPromptAppend(dbSession ? { ...dbSession, project_id: dbSession.project_id } : { id: sessionId });
+        const systemPromptAppend = this.buildSystemPromptAppend({ project_id: dbSession?.project_id });
         if (systemPromptAppend) {
           finalPrompt = `${finalPrompt}\n\n${systemPromptAppend}`;
         }
@@ -677,7 +685,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
       // Check if we should skip --resume flag this time (after prompt compaction)
       const skipContinueRaw = dbSession?.skip_continue_next;
-      const shouldSkipContinue = skipContinueRaw === true || (typeof skipContinueRaw === 'number' && skipContinueRaw === 1);
+      const shouldSkipContinue = skipContinueRaw === true;
 
       // Check if interactive mode is enabled
       const config = this.configManager?.getConfig();
@@ -794,8 +802,8 @@ export class ClaudeCodeManager extends AbstractCliManager {
    * When running in a worktree, Claude doesn't see MCP servers from the base project
    * because it uses the worktree path as the project key.
    */
-  private getBaseProjectMcpServers(sessionId: string): { mcpServers: Record<string, unknown>; mcpJsonPath?: string } {
-    const result: { mcpServers: Record<string, unknown>; mcpJsonPath?: string } = { mcpServers: {} };
+  private getBaseProjectMcpServers(sessionId: string): { mcpServers: JsonObject; mcpJsonPath?: string } {
+    const result: { mcpServers: JsonObject; mcpJsonPath?: string } = { mcpServers: {} };
 
     try {
       // Get the session to find the project
@@ -823,7 +831,9 @@ export class ClaudeCodeManager extends AbstractCliManager {
         // Also parse it to merge with other servers
         try {
           const mcpJsonContent = fs.readFileSync(mcpJsonFsPath, 'utf8');
-          const mcpJson = JSON.parse(mcpJsonContent) as { mcpServers?: Record<string, unknown> };
+          const mcpJson = decodeBoundary(JSON.parse(mcpJsonContent), boundary.object({
+            mcpServers: boundary.optional(boundary.jsonObject),
+          }));
           if (mcpJson.mcpServers) {
             Object.assign(result.mcpServers, mcpJson.mcpServers);
           }
@@ -837,13 +847,17 @@ export class ClaudeCodeManager extends AbstractCliManager {
       if (fs.existsSync(claudeConfigPath)) {
         try {
           const claudeConfig = fs.readFileSync(claudeConfigPath, 'utf8');
-          const config = JSON.parse(claudeConfig) as {
-            projects?: Record<string, { mcpServers?: Record<string, unknown> }>;
-            mcpServers?: Record<string, unknown>;
-          };
+          const config = decodeBoundary(JSON.parse(claudeConfig), boundary.object({
+            projects: boundary.optional(boundary.jsonObject),
+            mcpServers: boundary.optional(boundary.jsonObject),
+          }));
 
           // Get project-specific MCP servers
-          const projectConfig = config.projects?.[baseProjectPath];
+          const projectConfig = config.projects?.[baseProjectPath]
+            ? decodeBoundary(config.projects[baseProjectPath], boundary.object({
+              mcpServers: boundary.optional(boundary.jsonObject),
+            }))
+            : undefined;
           if (projectConfig?.mcpServers && Object.keys(projectConfig.mcpServers).length > 0) {
             this.logger?.verbose(`[MCP] Found ${Object.keys(projectConfig.mcpServers).length} project-specific MCP servers in ~/.claude.json`);
             Object.assign(result.mcpServers, projectConfig.mcpServers);
@@ -876,7 +890,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return result;
   }
 
-  private buildSystemPromptAppend(dbSession: { project_id?: number | null; [key: string]: unknown }): string | undefined {
+  private buildSystemPromptAppend(dbSession: { project_id?: number | null }): string | undefined {
     const systemPromptParts: string[] = [];
 
     // Add global system prompt first
@@ -1026,7 +1040,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
     // Start with base project MCP servers
     const baseProjectMcp = this.getBaseProjectMcpServers(sessionId);
-    const mcpConfig: { mcpServers: Record<string, unknown> } = {
+    const mcpConfig: { mcpServers: JsonObject } = {
       "mcpServers": {
         // Include base project MCP servers first
         ...baseProjectMcp.mcpServers,
@@ -1061,9 +1075,8 @@ export class ClaudeCodeManager extends AbstractCliManager {
     try {
       const testCmd = `"${nodePath}" "${mcpBridgePath}" --version`;
       execSync(testCmd, { encoding: 'utf8', timeout: 2000 });
-    } catch (testError: unknown) {
-      const error = testError as { code?: string; message?: string };
-      if (error.code === 'EACCES' || (error.message && error.message.includes('EACCES'))) {
+    } catch (testError) {
+      if (String(testError).includes('EACCES')) {
         this.logger?.error(`[MCP] Permission denied executing MCP bridge script`);
         throw new Error('MCP bridge script is not executable');
       }

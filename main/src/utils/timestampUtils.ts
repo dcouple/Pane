@@ -11,13 +11,17 @@ export function formatForDatabase(date: Date = new Date()): string {
   return date.toISOString();
 }
 
+function toDate(timestamp: string | Date): Date {
+  return timestamp instanceof Date ? timestamp : new Date(timestamp);
+}
+
 /**
  * Formats a timestamp for display to users
  * @param timestamp - The timestamp string from database or Date object
  * @returns Localized time string
  */
 export function formatForDisplay(timestamp: string | Date): string {
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const date = toDate(timestamp);
   return date.toLocaleTimeString();
 }
 
@@ -27,7 +31,7 @@ export function formatForDisplay(timestamp: string | Date): string {
  * @returns Localized date and time string
  */
 function formatFullDateTime(timestamp: string | Date): string {
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const date = toDate(timestamp);
   return date.toLocaleString();
 }
 
@@ -55,7 +59,7 @@ function getCurrentTimestamp(): string {
  */
 export function isValidTimestamp(timestamp: string | Date | null | undefined): boolean {
   if (!timestamp) return false;
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const date = toDate(timestamp);
   return !isNaN(date.getTime());
 }
 
@@ -65,7 +69,7 @@ export function isValidTimestamp(timestamp: string | Date | null | undefined): b
  * @returns UTC ISO string
  */
 function toUTC(timestamp: string | Date): string {
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const date = toDate(timestamp);
   return date.toISOString();
 }
 
@@ -76,8 +80,8 @@ function toUTC(timestamp: string | Date): string {
  * @returns Duration in milliseconds
  */
 export function getTimeDifference(start: string | Date, end: string | Date = new Date()): number {
-  const startDate = typeof start === 'string' ? new Date(start) : start;
-  const endDate = typeof end === 'string' ? new Date(end) : end;
+  const startDate = toDate(start);
+  const endDate = toDate(end);
   return endDate.getTime() - startDate.getTime();
 }
 

@@ -54,6 +54,7 @@ import type {
   PtyHostRequest,
   PtyHostSpawnOpts,
 } from './types';
+import { boundary, decodeBoundary, type BoundarySchema, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 /** Max restart attempts before we give up and leave the host down. */
 const MAX_RESTART_ATTEMPTS = 5;
@@ -71,29 +72,28 @@ const STARTUP_READY_TIMEOUT_MS = 5_000;
  * four kinds: the two heartbeat events, data/exit events, and RPC responses.
  * The rest is handled in `onRpcMessage` via the shared `isPtyHostResponse`.
  */
-function isHeartbeatPong(frame: unknown): frame is { type: 'heartbeat-pong' } {
-  return typeof frame === 'object' && frame !== null && (frame as { type?: unknown }).type === 'heartbeat-pong';
-}
+const heartbeatPongSchema = boundary.object({ type: boundary.literal('heartbeat-pong') });
+const hostReadySchema = boundary.object({ type: boundary.literal('host-ready') });
+const dataEventSchema = boundary.object({
+  type: boundary.literal('data'), ptyId: boundary.string, data: boundary.string,
+});
+const exitEventSchema = boundary.object({
+  type: boundary.literal('exit'),
+  ptyId: boundary.string,
+  exitCode: boundary.nullable(boundary.number),
+  signal: boundary.nullable(boundary.number),
+});
+const rendererFrameSchema = boundary.union(
+  boundary.object({ type: boundary.literal('ack'), ptyId: boundary.string, bytes: boundary.number }),
+  boundary.object({ type: boundary.literal('write'), ptyId: boundary.string, data: boundary.string }),
+);
 
-function isHostReady(frame: unknown): frame is { type: 'host-ready' } {
-  return typeof frame === 'object' && frame !== null && (frame as { type?: unknown }).type === 'host-ready';
-}
-
-function isDataEvent(frame: unknown): frame is Extract<PtyHostEvent, { type: 'data' }> {
-  if (typeof frame !== 'object' || frame === null) return false;
-  const f = frame as { type?: unknown; ptyId?: unknown; data?: unknown };
-  return f.type === 'data' && typeof f.ptyId === 'string' && typeof f.data === 'string';
-}
-
-function isExitEvent(frame: unknown): frame is Extract<PtyHostEvent, { type: 'exit' }> {
-  if (typeof frame !== 'object' || frame === null) return false;
-  const f = frame as { type?: unknown; ptyId?: unknown; exitCode?: unknown; signal?: unknown };
-  return (
-    f.type === 'exit' &&
-    typeof f.ptyId === 'string' &&
-    (typeof f.exitCode === 'number' || f.exitCode === null) &&
-    (typeof f.signal === 'number' || f.signal === null)
-  );
+function decodeFrame<Value>(frame: JsonValue, schema: BoundarySchema<Value>): Value | undefined {
+  try {
+    return decodeBoundary(frame, schema);
+  } catch {
+    return undefined;
+  }
 }
 
 /** Listener signatures kept explicit so `PtyHandle` type stays analyzable. */
@@ -314,15 +314,22 @@ export class PtyHostSupervisor extends EventEmitter {
     // can interleave with the listener install (plan gotchas line 322, 738).
     this.rpcPort.start();
     this.rpcPort.on('message', (event: Electron.MessageEvent) => {
-      this.onRpcMessage(event.data);
+      try {
+        this.onRpcMessage(decodeBoundary(event.data, boundary.json));
+      } catch {
+        console.log('[ptyHost] malformed RPC frame, dropping');
+      }
     });
 
-    this.proc.on('message', (message: unknown) => {
-      if (isHostReady(message)) {
-        this.hostReadyResolve?.();
-        this.hostReadyResolve = null;
-        this.hostReadyReject = null;
-      }
+    this.proc.on('message', (message) => {
+      try {
+        const ready = decodeFrame(decodeBoundary(message, boundary.json), hostReadySchema);
+        if (ready) {
+          this.hostReadyResolve?.();
+          this.hostReadyResolve = null;
+          this.hostReadyReject = null;
+        }
+      } catch { /* Ignore non-JSON utility-process control messages. */ }
     });
 
     this.proc.on('exit', (code: number | null) => {
@@ -383,8 +390,8 @@ export class PtyHostSupervisor extends EventEmitter {
    * - `exit` event → fan to `PtyHandle.emitExit`, drop from `liveHandles`
    * - `PtyHostResponse` → dispatch via `RpcDispatcher`
    */
-  private onRpcMessage(data: unknown): void {
-    if (isHeartbeatPong(data)) {
+  private onRpcMessage(data: JsonValue): void {
+    if (decodeFrame(data, heartbeatPongSchema)) {
       if (this.pongTimer) {
         clearTimeout(this.pongTimer);
         this.pongTimer = null;
@@ -392,10 +399,11 @@ export class PtyHostSupervisor extends EventEmitter {
       return;
     }
 
-    if (isDataEvent(data)) {
-      const handle = this.liveHandles.get(data.ptyId);
+    const dataEvent = decodeFrame(data, dataEventSchema);
+    if (dataEvent) {
+      const handle = this.liveHandles.get(dataEvent.ptyId);
       if (handle) {
-        handle.emitData(data.data);
+        handle.emitData(dataEvent.data);
       }
       // Data frames are NOT auto-teed to renderers here. Main-side managers
       // (`terminalPanelManager.setupTerminalHandlers`) subscribe via the
@@ -405,17 +413,18 @@ export class PtyHostSupervisor extends EventEmitter {
       return;
     }
 
-    if (isExitEvent(data)) {
-      const handle = this.liveHandles.get(data.ptyId);
+    const exitEvent = decodeFrame(data, exitEventSchema);
+    if (exitEvent) {
+      const handle = this.liveHandles.get(exitEvent.ptyId);
       if (handle) {
-        handle.emitExit(data.exitCode, data.signal);
-        this.liveHandles.delete(data.ptyId);
+        handle.emitExit(exitEvent.exitCode, exitEvent.signal);
+        this.liveHandles.delete(exitEvent.ptyId);
       }
       // Exit frames ARE mirrored to renderers so `electronAPI.ptyHost.onExit`
       // subscribers fire. No main-side filtering is required for exit frames;
       // the preload dispatches by ptyId. Stale listeners (e.g. for a ptyId
       // whose panel already unmounted) drop the frame on the floor.
-      this.broadcastToRenderers(data);
+      this.broadcastToRenderers(exitEvent);
       return;
     }
 
@@ -533,7 +542,7 @@ export class PtyHostSupervisor extends EventEmitter {
     }
     const req: Omit<PtyHostRequest, 'id'> = { method: 'spawn', args: opts };
     const result = await this.dispatcher.send(this.rpcPort, req);
-    const spawned = result as { ptyId: string; pid: number };
+    const spawned = decodeBoundary(result, boundary.object({ ptyId: boundary.string, pid: boundary.number }));
     const handle = new PtyHandle(spawned.ptyId, spawned.pid, this);
     this.liveHandles.set(spawned.ptyId, handle);
     return spawned;
@@ -616,7 +625,11 @@ export class PtyHostSupervisor extends EventEmitter {
     // frames from the renderer in Chunk D.
     mainPort.start();
     mainPort.on('message', (event: Electron.MessageEvent) => {
-      this.onRendererMessage(webContents.id, event.data);
+      try {
+        this.onRendererMessage(webContents.id, decodeBoundary(event.data, boundary.json));
+      } catch {
+        /* Ignore malformed renderer frames at the port boundary. */
+      }
     });
 
     // Hand the renderer end to the window. The preload listener for
@@ -641,12 +654,12 @@ export class PtyHostSupervisor extends EventEmitter {
    * managers track flow-control state on the main side via
    * `acknowledgeBytes()` elsewhere.
    */
-  private onRendererMessage(webContentsId: number, data: unknown): void {
+  private onRendererMessage(webContentsId: number, data: JsonValue): void {
     void webContentsId;
-    if (typeof data !== 'object' || data === null) return;
-    const frame = data as { type?: unknown; ptyId?: unknown; bytes?: unknown; data?: unknown };
+    const frame = decodeFrame(data, rendererFrameSchema);
+    if (!frame) return;
 
-    if (frame.type === 'ack' && typeof frame.ptyId === 'string' && typeof frame.bytes === 'number') {
+    if (frame.type === 'ack') {
       // Managers still track flow control on the main side. Emit first so
       // TerminalPanelManager can decrement pending bytes and resume the PTY.
       this.emit('renderer-ack', frame.ptyId, frame.bytes);
@@ -659,7 +672,7 @@ export class PtyHostSupervisor extends EventEmitter {
       return;
     }
 
-    if (frame.type === 'write' && typeof frame.ptyId === 'string' && typeof frame.data === 'string') {
+    if (frame.type === 'write') {
       this.write(frame.ptyId, frame.data).catch(() => {
         /* ignore; stale write after host restart */
       });

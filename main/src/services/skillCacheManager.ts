@@ -6,6 +6,7 @@ import { promisify } from 'util';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { getAppDirectory } from '../utils/appDirectory';
 import type { Logger } from '../utils/logger';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const execFileAsync = promisify(execFile);
 
@@ -227,7 +228,10 @@ export class SkillCacheManager {
       await execFileAsync('git', ['clone', '--depth', '1', UPSTREAM_REPO_URL, this.sourceRoot], { timeout: 180_000 });
       return true;
     } catch (error) {
-      this.logWarn('Git skill sync unavailable; falling back to raw file download', error);
+      this.logWarn(
+        'Git skill sync unavailable; falling back to raw file download',
+        error instanceof Error ? error : new Error(String(error)),
+      );
       return false;
     }
   }
@@ -261,7 +265,10 @@ export class SkillCacheManager {
         if (REQUIRED_FALLBACK_RAW_FILE_SET.has(relativePath)) {
           requiredDownloadFailures.push(`${relativePath}: ${message}`);
         }
-        this.logWarn(`Failed to download skill cache file ${relativePath}`, error);
+        this.logWarn(
+          `Failed to download skill cache file ${relativePath}`,
+          error instanceof Error ? error : new Error(String(error)),
+        );
       }
     }
 
@@ -801,7 +808,12 @@ step.
   private async readSyncState(): Promise<SkillSyncState> {
     try {
       const raw = await fs.readFile(this.syncStatePath, 'utf8');
-      return JSON.parse(raw) as SkillSyncState;
+      return decodeBoundary(JSON.parse(raw), boundary.object({
+        lastAttemptAt: boundary.optional(boundary.string),
+        lastSuccessAt: boundary.optional(boundary.string),
+        sourceCommit: boundary.optional(boundary.string),
+        lastError: boundary.optional(boundary.string),
+      }));
     } catch {
       return {};
     }
@@ -817,9 +829,8 @@ step.
     await fs.writeFile(filePath, contents, 'utf8');
   }
 
-  private logWarn(message: string, error?: unknown): void {
-    const normalized = error instanceof Error ? error : undefined;
-    this.logger?.warn(`[SkillCache] ${message}`, normalized);
+  private logWarn(message: string, error?: Error): void {
+    this.logger?.warn(`[SkillCache] ${message}`, error);
     if (!this.logger) console.warn(`[SkillCache] ${message}`, error);
   }
 }

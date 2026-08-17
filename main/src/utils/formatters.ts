@@ -1,5 +1,15 @@
 import { formatForDisplay, isValidTimestamp } from './timestampUtils';
 import type { ClaudeJsonMessage, MessageContent } from '../types/session';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+
+function isStringContent(item: MessageContent | string): item is string {
+  try {
+    decodeBoundary(item, boundary.string);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function formatJsonForOutput(jsonMessage: ClaudeJsonMessage): string {
   // Safely parse timestamp
@@ -39,7 +49,7 @@ export function formatJsonForOutput(jsonMessage: ClaudeJsonMessage): string {
       if (Array.isArray(jsonMessage.message.content)) {
         content = jsonMessage.message.content
           .map((item: MessageContent | string) => {
-            if (typeof item === 'string') return item;
+            if (isStringContent(item)) return item;
             if (item.type === 'text') return item.text;
             if (item.type === 'tool_result') {
               // Limit tool results to 10 lines
@@ -54,7 +64,7 @@ export function formatJsonForOutput(jsonMessage: ClaudeJsonMessage): string {
             return JSON.stringify(item);
           })
           .join(' ');
-      } else if (typeof jsonMessage.message.content === 'string') {
+      } else {
         content = jsonMessage.message.content;
       }
     }
@@ -73,7 +83,7 @@ export function formatJsonForOutput(jsonMessage: ClaudeJsonMessage): string {
       if (Array.isArray(jsonMessage.message.content)) {
         content = jsonMessage.message.content
           .map((item: MessageContent | string) => {
-            if (typeof item === 'string') return item;
+            if (isStringContent(item)) return item;
             if (item.type === 'text') {
               // Don't truncate text content
               return item.text;
@@ -91,7 +101,7 @@ export function formatJsonForOutput(jsonMessage: ClaudeJsonMessage): string {
             return JSON.stringify(item);
           })
           .join('\n\n');
-      } else if (typeof jsonMessage.message.content === 'string') {
+      } else {
         content = jsonMessage.message.content;
       }
     }

@@ -32,12 +32,14 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { boundary, decodeBoundary, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 // node-pty's CommonJS export shape matches what main uses at
 // `terminalPanelManager.ts:1`. We use a typed `require` here because this
 // UtilityProcess entry is deliberately self-contained; importing via
 // `import * as pty` would couple to main's module graph.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+// SAFETY: This package's CommonJS entry exports the same typed node-pty API.
 const pty = require('@lydell/node-pty') as typeof import('@lydell/node-pty');
 
 // Electron exposes UtilityProcess parentPort on `process.parentPort` in this
@@ -45,7 +47,8 @@ const pty = require('@lydell/node-pty') as typeof import('@lydell/node-pty');
 // compatibility without depending on a named export that Electron's main
 // process type surface does not expose.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const electron = require('electron') as { parentPort?: unknown };
+// SAFETY: Electron's UtilityProcess runtime exposes the documented HostPort surface.
+const electron = require('electron') as { parentPort?: HostPort };
 
 import type {
   PtyHostRequest,
@@ -80,6 +83,12 @@ interface HeartbeatPing {
   type: 'heartbeat-ping';
 }
 
+interface SpawnFailure {
+  message: string;
+  code?: string;
+  errno?: number;
+}
+
 /**
  * Minimal typing for the MessagePortMain we receive from Electron's `parentPort`.
  * We intentionally avoid importing `electron`'s types here so this module can
@@ -89,9 +98,32 @@ interface HeartbeatPing {
  */
 interface HostPort {
   start(): void;
-  postMessage(message: unknown): void;
-  on(event: 'message', listener: (event: { data: unknown; ports: unknown[] }) => void): void;
+  postMessage(message: PtyHostResponse | PtyHostEvent | { type: 'heartbeat-pong' } | { type: 'host-ready' }): void;
+  on(event: 'message', listener: (event: { data: JsonValue; ports: HostPort[] }) => void): void;
 }
+
+type PtyHostEvent = import('./types').PtyHostEvent;
+
+const initSchema = boundary.object({ type: boundary.literal('init') });
+const heartbeatSchema = boundary.object({ type: boundary.literal('heartbeat-ping') });
+const spawnOptsSchema = boundary.object({
+  shell: boundary.string,
+  args: boundary.array(boundary.string),
+  cwd: boundary.optional(boundary.string),
+  cols: boundary.number,
+  rows: boundary.number,
+  env: boundary.jsonObject,
+  name: boundary.optional(boundary.string),
+});
+const requestSchema = boundary.union(
+  boundary.object({ id: boundary.number, method: boundary.literal('spawn'), args: spawnOptsSchema }),
+  boundary.object({ id: boundary.number, method: boundary.literal('write'), args: boundary.object({ ptyId: boundary.string, data: boundary.string }) }),
+  boundary.object({ id: boundary.number, method: boundary.literal('resize'), args: boundary.object({ ptyId: boundary.string, cols: boundary.number, rows: boundary.number }) }),
+  boundary.object({ id: boundary.number, method: boundary.literal('kill'), args: boundary.object({ ptyId: boundary.string, signal: boundary.optional(boundary.string) }) }),
+  boundary.object({ id: boundary.number, method: boundary.literal('ack'), args: boundary.object({ ptyId: boundary.string, bytes: boundary.number }) }),
+  boundary.object({ id: boundary.number, method: boundary.literal('pause'), args: boundary.object({ ptyId: boundary.string }) }),
+  boundary.object({ id: boundary.number, method: boundary.literal('resume'), args: boundary.object({ ptyId: boundary.string }) }),
+);
 
 // Module-scoped port and PTY map. Both MUST live at module scope: the port
 // would otherwise be collected and close the channel; the PTY map must
@@ -107,6 +139,8 @@ const ptyMap = new Map<string, HostPty>();
  * the attached `MessagePortMain`.
  */
 function bootstrap(): void {
+  // SAFETY: Electron UtilityProcess injects a MessagePort-compatible
+  // `process.parentPort`; the fallback exposes the same documented surface.
   const parent = (
     (process as unknown as { parentPort?: unknown }).parentPort ?? electron.parentPort
   ) as (HostPort & { once: HostPort['on'] }) | undefined;
@@ -116,13 +150,13 @@ function bootstrap(): void {
     return;
   }
 
-  parent.once('message', (event: { data: unknown; ports: unknown[] }) => {
-    if (!isInitMessage(event.data)) {
+  parent.once('message', (event) => {
+    if (!decodeFrame(event.data, initSchema)) {
       console.error('[ptyHost] first parentPort message was not { type: "init" }; exiting', event.data);
       process.exit(1);
       return;
     }
-    const [port] = event.ports as HostPort[];
+    const [port] = event.ports;
     if (!port) {
       console.error('[ptyHost] init message arrived without a MessagePort; exiting');
       process.exit(1);
@@ -148,15 +182,16 @@ function bootstrap(): void {
  * requests carry `id` (number) and `method` (string). Everything else is
  * logged and dropped.
  */
-function handleInboundFrame(frame: unknown): void {
-  if (isHeartbeatPing(frame)) {
+function handleInboundFrame(frame: JsonValue): void {
+  if (decodeFrame(frame, heartbeatSchema)) {
     if (rpcPort) {
       rpcPort.postMessage({ type: 'heartbeat-pong' });
     }
     return;
   }
-  if (isPtyHostRequest(frame)) {
-    handleRequest(frame).catch((err: unknown) => {
+  const request = decodeRequest(frame);
+  if (request) {
+    handleRequest(request).catch((err) => {
       console.error('[ptyHost] unhandled error in request dispatch', err);
     });
     return;
@@ -206,17 +241,26 @@ function handleSpawn(id: number, opts: PtyHostSpawnOpts): void {
   const ptyId = randomUUID();
   let ptyProcess: HostPty;
   try {
-    // Cast via `unknown` to keep the HostPty shape narrow; node-pty's own
-    // `IPty` is a superset we don't need here.
     ptyProcess = pty.spawn(opts.shell, opts.args, {
       name: opts.name ?? 'xterm-256color',
       cwd: opts.cwd,
       cols: opts.cols,
       rows: opts.rows,
       env: opts.env,
-    }) as unknown as HostPty;
+    });
   } catch (err) {
-    const classified = classifySpawnError(err);
+    let failure: SpawnFailure;
+    try {
+      const decoded = decodeBoundary(err, boundary.object({
+        message: boundary.optional(boundary.string),
+        code: boundary.optional(boundary.string),
+        errno: boundary.optional(boundary.number),
+      }));
+      failure = { ...decoded, message: decoded.message ?? String(err) };
+    } catch {
+      failure = { message: err instanceof Error ? err.message : String(err) };
+    }
+    const classified = classifySpawnError(failure);
     console.error(`[ptyHost] spawn failed: code=${classified.code} message=${classified.message}`);
     respondErr(id, classified);
     return;
@@ -260,7 +304,7 @@ function handleWrite(id: number, ptyId: string, data: string): void {
     p.write(data);
     respondOk(id, undefined);
   } catch (err) {
-    respondErr(id, { code: 'OTHER', message: errorMessage(err) });
+    respondErr(id, { code: 'OTHER', message: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
@@ -274,11 +318,11 @@ function handleResize(id: number, ptyId: string, cols: number, rows: number): vo
     p.resize(cols, rows);
     respondOk(id, undefined);
   } catch (err) {
-    respondErr(id, { code: 'OTHER', message: errorMessage(err) });
+    respondErr(id, { code: 'OTHER', message: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
-function handleKill(id: number, ptyId: string, signal: NodeJS.Signals | undefined): void {
+function handleKill(id: number, ptyId: string, signal: string | undefined): void {
   const p = ptyMap.get(ptyId);
   if (!p) {
     respondErr(id, { code: 'OTHER', message: `unknown ptyId: ${ptyId}` });
@@ -290,7 +334,7 @@ function handleKill(id: number, ptyId: string, signal: NodeJS.Signals | undefine
     p.kill(signal);
     respondOk(id, undefined);
   } catch (err) {
-    respondErr(id, { code: 'OTHER', message: errorMessage(err) });
+    respondErr(id, { code: 'OTHER', message: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
@@ -304,7 +348,7 @@ function handlePause(id: number, ptyId: string): void {
     p.pause();
     respondOk(id, undefined);
   } catch (err) {
-    respondErr(id, { code: 'OTHER', message: errorMessage(err) });
+    respondErr(id, { code: 'OTHER', message: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
@@ -318,7 +362,7 @@ function handleResume(id: number, ptyId: string): void {
     p.resume();
     respondOk(id, undefined);
   } catch (err) {
-    respondErr(id, { code: 'OTHER', message: errorMessage(err) });
+    respondErr(id, { code: 'OTHER', message: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
@@ -327,10 +371,9 @@ function handleResume(id: number, ptyId: string): void {
  * path at `AbstractCliManager.ts:604-717, 781-795` recognizes. Mirrors the
  * substring checks at lines 717-722.
  */
-function classifySpawnError(err: unknown): PtyHostSpawnError {
-  const message = errorMessage(err);
-  const errObj = err as { code?: unknown; errno?: unknown } | undefined;
-  const code = typeof errObj?.code === 'string' ? errObj.code : undefined;
+function classifySpawnError(err: SpawnFailure): PtyHostSpawnError {
+  const message = err.message;
+  const code = err.code;
 
   // Windows error 193 ("not a valid Win32 application"): `code === 'UNKNOWN'`
   // with `errno === -4094` historically, but the classifier in AbstractCli
@@ -338,7 +381,7 @@ function classifySpawnError(err: unknown): PtyHostSpawnError {
   if (
     message.includes('error code: 193') ||
     message.includes('not a valid Win32 application') ||
-    (code === 'UNKNOWN' && (errObj?.errno === 193 || errObj?.errno === -193))
+    (code === 'UNKNOWN' && (err.errno === 193 || err.errno === -193))
   ) {
     return { code: 'E193', message };
   }
@@ -387,51 +430,26 @@ function respondErr(id: number, error: PtyHostSpawnError): void {
   rpcPort.postMessage(frame);
 }
 
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) {
-    return err.message;
-  }
-  if (typeof err === 'string') {
-    return err;
-  }
+function decodeFrame<Value>(frame: JsonValue, schema: import('../../../shared/validation/boundaryDecoder').BoundarySchema<Value>): Value | undefined {
   try {
-    return JSON.stringify(err);
+    return decodeBoundary(frame, schema);
   } catch {
-    return String(err);
+    return undefined;
   }
 }
 
-function isInitMessage(frame: unknown): frame is InitMessage {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
-  const candidate = frame as { type?: unknown };
-  return candidate.type === 'init';
-}
+function decodeRequest(frame: JsonValue): PtyHostRequest | undefined {
+  const decoded = decodeFrame(frame, requestSchema);
+  if (!decoded) return undefined;
+  if (decoded.method !== 'spawn') return decoded;
 
-function isHeartbeatPing(frame: unknown): frame is HeartbeatPing {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(decoded.args.env)) {
+    const text = decodeFrame(value, boundary.string);
+    if (text === undefined) return undefined;
+    env[key] = text;
   }
-  const candidate = frame as { type?: unknown };
-  return candidate.type === 'heartbeat-ping';
-}
-
-/**
- * Cheap structural check; mirrors the shape guard in `rpc.ts` but lives here
- * so this file stays self-contained relative to any main-side helpers.
- */
-function isPtyHostRequest(frame: unknown): frame is PtyHostRequest {
-  if (typeof frame !== 'object' || frame === null) {
-    return false;
-  }
-  const candidate = frame as { id?: unknown; method?: unknown; args?: unknown };
-  return (
-    typeof candidate.id === 'number' &&
-    typeof candidate.method === 'string' &&
-    typeof candidate.args === 'object' &&
-    candidate.args !== null
-  );
+  return { ...decoded, args: { ...decoded.args, env } };
 }
 
 bootstrap();

@@ -9,13 +9,14 @@ import {
   CliManagerFactory as ManagerFactoryFunction,
   CLI_OUTPUT_FORMATS 
 } from './cliToolRegistry';
+import { boundary, decodeBoundary, type JsonObject } from '../../../shared/validation/boundaryDecoder';
 
 /**
  * Factory configuration for CLI manager creation
  */
 export interface CliManagerFactoryConfig {
   /** Session manager instance */
-  sessionManager: unknown;
+  sessionManager: SessionManager;
 
   /** Logger instance */
   logger?: Logger;
@@ -24,7 +25,7 @@ export interface CliManagerFactoryConfig {
   configManager?: ConfigManager;
 
   /** Additional tool-specific options */
-  additionalOptions?: Record<string, unknown>;
+  additionalOptions?: JsonObject;
 
   /** Skip tool availability validation (useful for startup) */
   skipValidation?: boolean;
@@ -71,7 +72,7 @@ export class CliManagerFactory {
 
       const manager = await this.registry.createManager(
         toolId,
-        config.sessionManager as SessionManager,
+        config.sessionManager,
         config.additionalOptions,
         config.skipValidation
       );
@@ -193,20 +194,25 @@ export class CliManagerFactory {
    */
   private registerClaudeTool(): void {
     const claudeManagerFactory: ManagerFactoryFunction = (
-      sessionManager: unknown,
+      sessionManager: SessionManager | null,
       logger?: Logger,
       configManager?: ConfigManager,
-      additionalOptions?: unknown
+      additionalOptions?: JsonObject
     ) => {
-      // Extract Claude-specific options
-      const options = additionalOptions as Record<string, unknown> | undefined;
-      const permissionIpcPath = options?.permissionIpcPath || null;
+      let permissionIpcPath: string | null = null;
+      if (additionalOptions?.permissionIpcPath !== undefined) {
+        permissionIpcPath = decodeBoundary(additionalOptions.permissionIpcPath, boundary.string);
+      }
+
+      // SAFETY: A null manager is created only for the availability probe,
+      // which calls no session-dependent operations before disposal.
+      const availabilitySessionManager = sessionManager as SessionManager;
       
       return new ClaudeCodeManager(
-        sessionManager as SessionManager,
+        availabilitySessionManager,
         logger,
         configManager,
-        (typeof permissionIpcPath === 'string' ? permissionIpcPath : null) as string | null
+        permissionIpcPath
       );
     };
 

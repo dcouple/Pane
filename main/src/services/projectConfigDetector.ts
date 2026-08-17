@@ -33,6 +33,7 @@ import { posixJoin } from '../utils/wslUtils';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { ProjectEnvironment } from '../utils/pathResolver';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 // Internal schema interfaces — NOT exported
 interface PaneJsonSchema {
@@ -55,6 +56,26 @@ interface DevcontainerJsonSchema {
   postCreateCommand?: string | string[];
   postStartCommand?: string | string[];
 }
+
+const paneJsonSchema = boundary.object({
+  scripts: boundary.optional(boundary.object({
+    setup: boundary.optional(boundary.string),
+    run: boundary.optional(boundary.string),
+    archive: boundary.optional(boundary.string),
+  })),
+  runScriptMode: boundary.optional(boundary.enumeration('concurrent', 'nonconcurrent')),
+});
+const gitpodYmlSchema = boundary.object({
+  tasks: boundary.optional(boundary.array(boundary.object({
+    init: boundary.optional(boundary.string),
+    command: boundary.optional(boundary.string),
+  }))),
+});
+const commandSchema = boundary.union(boundary.string, boundary.array(boundary.string));
+const devcontainerJsonSchema = boundary.object({
+  postCreateCommand: boundary.optional(commandSchema),
+  postStartCommand: boundary.optional(commandSchema),
+});
 
 function envJoin(environment: ProjectEnvironment, ...segments: string[]): string {
   if (environment === 'wsl') {
@@ -144,9 +165,7 @@ export async function detectProjectConfig(
 }
 
 function parsePaneJson(content: string, source: string): DetectedProjectConfig | null {
-  const raw = JSON.parse(content) as unknown;
-  if (!raw || typeof raw !== 'object') return null;
-  const json = raw as PaneJsonSchema;
+  const json: PaneJsonSchema = decodeBoundary(JSON.parse(content), paneJsonSchema);
   return {
     setup: json.scripts?.setup,
     run: json.scripts?.run,
@@ -161,9 +180,7 @@ function parseConductorJson(content: string, source: string): DetectedProjectCon
 }
 
 function parseGitpodYml(content: string, source: string): DetectedProjectConfig | null {
-  const raw = yaml.load(content) as unknown;
-  if (!raw || typeof raw !== 'object') return null;
-  const doc = raw as GitpodYmlSchema;
+  const doc: GitpodYmlSchema = decodeBoundary(yaml.load(content), gitpodYmlSchema);
   const firstTask = doc.tasks?.[0];
   if (!firstTask) return { source };
   return {
@@ -175,9 +192,7 @@ function parseGitpodYml(content: string, source: string): DetectedProjectConfig 
 
 function parseDevcontainerJson(content: string, source: string): DetectedProjectConfig | null {
   const stripped = stripJsonComments(content);
-  const raw = JSON.parse(stripped) as unknown;
-  if (!raw || typeof raw !== 'object') return null;
-  const json = raw as DevcontainerJsonSchema;
+  const json: DevcontainerJsonSchema = decodeBoundary(JSON.parse(stripped), devcontainerJsonSchema);
   return {
     setup: normalizeCommand(json.postCreateCommand),
     run: normalizeCommand(json.postStartCommand),
@@ -186,9 +201,8 @@ function parseDevcontainerJson(content: string, source: string): DetectedProject
 }
 
 function normalizeCommand(cmd: string | string[] | undefined): string | undefined {
-  if (typeof cmd === 'string') return cmd;
   if (Array.isArray(cmd)) return cmd.join(' && ');
-  return undefined;
+  return cmd;
 }
 
 function stripJsonComments(text: string): string {

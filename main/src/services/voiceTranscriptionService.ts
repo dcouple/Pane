@@ -9,6 +9,13 @@ import type {
   VoiceTranscriptionUsage,
   VoiceStreamingFinalizeRequest,
 } from '../../../shared/types/voiceTranscription';
+import {
+  boundary,
+  decodeBoundary,
+  type BoundarySchema,
+  type JsonObject,
+  type JsonValue,
+} from '../../../shared/validation/boundaryDecoder';
 
 const FAL_WIZPER_ENDPOINT = 'https://fal.run/fal-ai/wizper';
 const FAL_STORAGE_UPLOAD_INITIATE_ENDPOINT = 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3';
@@ -96,34 +103,56 @@ interface ValidatedStreamingFinalizeInput {
   metadata?: VoiceDeepgramStreamingMetadata;
 }
 
-interface FalWizperResponse {
-  text?: unknown;
-  chunks?: unknown;
-  languages?: unknown;
-  usage?: unknown;
-  cost?: unknown;
-  metadata?: unknown;
-  metrics?: unknown;
+const falWizperResponseSchema = boundary.object({
+  text: boundary.string,
+  chunks: boundary.optional(boundary.array(boundary.json)),
+  languages: boundary.optional(boundary.array(boundary.json)),
+  usage: boundary.optional(boundary.json),
+  cost: boundary.optional(boundary.json),
+  metadata: boundary.optional(boundary.json),
+  metrics: boundary.optional(boundary.json),
+});
+const falStorageInitiateResponseSchema = boundary.object({
+  file_url: boundary.string,
+  upload_url: boundary.string,
+});
+const openRouterResponseSchema = boundary.object({
+  choices: boundary.array(boundary.object({
+    message: boundary.object({ content: boundary.string }),
+  })),
+  usage: boundary.optional(boundary.json),
+});
+const deepgramGrantResponseSchema = boundary.object({
+  access_token: boundary.nonEmptyString,
+  expires_in: boundary.optional(boundary.number),
+});
+
+interface UsageNumbers {
+  cost?: number;
+  cost_usd?: number;
+  total_cost?: number;
+  total_cost_usd?: number;
+  upstream_inference_cost?: number;
+  upstream_inference_completions_cost?: number;
+  prompt_tokens?: number;
+  input_tokens?: number;
+  completion_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
 }
 
-interface FalStorageInitiateResponse {
-  file_url?: unknown;
-  upload_url?: unknown;
+interface ProviderUsagePayload {
+  usage?: JsonValue;
+  cost?: JsonValue;
+  metadata?: JsonValue;
+  metrics?: JsonValue;
 }
 
-interface OpenRouterResponse {
-  choices?: Array<{
-    message?: {
-      content?: unknown;
-    };
-  }>;
-  usage?: unknown;
-}
-
-interface DeepgramGrantResponse {
-  access_token?: unknown;
-  expires_in?: unknown;
-}
+const usageKeySchema = boundary.enumeration(
+  'cost', 'cost_usd', 'total_cost', 'total_cost_usd',
+  'upstream_inference_cost', 'upstream_inference_completions_cost',
+  'prompt_tokens', 'input_tokens', 'completion_tokens', 'output_tokens', 'total_tokens',
+);
 
 type ProviderUsage = VoiceTranscriptionUsage;
 
@@ -197,12 +226,8 @@ export class VoiceTranscriptionService {
         Authorization: `Token ${deepgramApiKey}`,
       },
     });
-    const payload = await readProviderJson<DeepgramGrantResponse>(response, 'Deepgram token grant failed');
-    if (typeof payload.access_token !== 'string' || payload.access_token.trim().length === 0) {
-      throw new Error('Deepgram token grant response did not include an access token.');
-    }
-
-    const expiresIn = typeof payload.expires_in === 'number' && Number.isFinite(payload.expires_in)
+    const payload = await readProviderJson(response, 'Deepgram token grant failed', deepgramGrantResponseSchema);
+    const expiresIn = payload.expires_in !== undefined && Number.isFinite(payload.expires_in)
       ? payload.expires_in
       : 30;
 
@@ -301,10 +326,7 @@ export class VoiceTranscriptionService {
       }),
     });
 
-    const payload = await readProviderJson<FalWizperResponse>(response, 'Fal Wizper transcription failed');
-    if (typeof payload.text !== 'string') {
-      throw new Error('Fal Wizper transcription response did not include text.');
-    }
+    const payload = await readProviderJson(response, 'Fal Wizper transcription failed', falWizperResponseSchema);
 
     return {
       text: payload.text,
@@ -328,13 +350,11 @@ export class VoiceTranscriptionService {
       }),
     });
 
-    const initiatePayload = await readProviderJson<FalStorageInitiateResponse>(
+    const initiatePayload = await readProviderJson(
       initiateResponse,
       'Fal audio upload initialization failed',
+      falStorageInitiateResponseSchema,
     );
-    if (typeof initiatePayload.file_url !== 'string' || typeof initiatePayload.upload_url !== 'string') {
-      throw new Error('Fal audio upload initialization response did not include upload URLs.');
-    }
 
     const uploadResponse = await fetch(initiatePayload.upload_url, {
       method: 'PUT',
@@ -376,9 +396,9 @@ export class VoiceTranscriptionService {
       }),
     });
 
-    const payload = await readProviderJson<OpenRouterResponse>(response, 'OpenRouter transcript cleanup failed');
+    const payload = await readProviderJson(response, 'OpenRouter transcript cleanup failed', openRouterResponseSchema);
     const content = payload.choices?.[0]?.message?.content;
-    if (typeof content !== 'string') {
+    if (content === undefined) {
       throw new Error('OpenRouter cleanup response did not include text.');
     }
 
@@ -409,7 +429,7 @@ export class VoiceTranscriptionService {
 
     try {
       const totalCost = sumDefinedNumbers(rawUsage?.cost, cleanupUsage?.cost);
-      const audioDurationMs = typeof requestedDurationMs === 'number' ? Math.max(0, Math.round(requestedDurationMs)) : undefined;
+      const audioDurationMs = requestedDurationMs !== undefined ? Math.max(0, Math.round(requestedDurationMs)) : undefined;
       const audioSeconds = audioDurationMs !== undefined ? Math.round(audioDurationMs / 100) / 10 : undefined;
       this.analyticsManager.track('voice_transcription_used', {
         mode: result.mode,
@@ -466,15 +486,11 @@ export class VoiceTranscriptionService {
 }
 
 function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): ValidatedAudioInput {
-  if (!request || typeof request !== 'object') {
-    throw new Error('Voice transcription request is invalid.');
-  }
-
-  if (typeof request.audioDataUrl !== 'string' || request.audioDataUrl.trim().length === 0) {
+  if (request.audioDataUrl.trim().length === 0) {
     throw new Error('Voice transcription audio data is required.');
   }
 
-  if (typeof request.mimeType !== 'string' || request.mimeType.trim().length === 0) {
+  if (request.mimeType.trim().length === 0) {
     throw new Error('Voice transcription audio MIME type is required.');
   }
 
@@ -516,12 +532,6 @@ function validateVoiceTranscriptionRequest(request: VoiceTranscriptionRequest): 
 }
 
 function validateVoiceStreamingFinalizeRequest(request: VoiceStreamingFinalizeRequest): ValidatedStreamingFinalizeInput {
-  if (!request || typeof request !== 'object') {
-    throw new Error('Voice streaming finalization request is invalid.');
-  }
-  if (typeof request.rawText !== 'string') {
-    throw new Error('Voice streaming finalization requires a transcript.');
-  }
   if (request.durationMs !== undefined && request.durationMs > MAX_AUDIO_DURATION_MS + 5_000) {
     throw new Error('Streaming recording is too long. Keep voice clips under 60 seconds.');
   }
@@ -531,7 +541,7 @@ function validateVoiceStreamingFinalizeRequest(request: VoiceStreamingFinalizeRe
 
   return {
     rawText: request.rawText,
-    durationMs: typeof request.durationMs === 'number'
+    durationMs: request.durationMs !== undefined
       ? Math.max(0, Math.round(request.durationMs))
       : undefined,
     language: request.language ?? 'en',
@@ -541,7 +551,7 @@ function validateVoiceStreamingFinalizeRequest(request: VoiceStreamingFinalizeRe
 }
 
 function normalizeStreamingTimings(timings: VoiceStreamingFinalizeRequest['timings']): ValidatedStreamingFinalizeInput['timings'] {
-  if (!timings || typeof timings !== 'object') {
+  if (!timings) {
     return undefined;
   }
 
@@ -554,32 +564,36 @@ function normalizeStreamingTimings(timings: VoiceStreamingFinalizeRequest['timin
     : undefined;
 }
 
-function normalizeOptionalMs(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value)
+function normalizeOptionalMs(value: number | undefined): number | undefined {
+  return value !== undefined && Number.isFinite(value)
     ? Math.max(0, Math.round(value))
     : undefined;
 }
 
 function normalizeDeepgramMetadata(metadata: VoiceStreamingFinalizeRequest['metadata']): VoiceDeepgramStreamingMetadata | undefined {
-  if (!metadata || typeof metadata !== 'object') {
+  if (!metadata) {
     return undefined;
   }
 
   return {
-    requestId: typeof metadata.requestId === 'string' ? metadata.requestId : undefined,
-    duration: typeof metadata.duration === 'number' && Number.isFinite(metadata.duration) ? metadata.duration : undefined,
-    cost: typeof metadata.cost === 'number' && Number.isFinite(metadata.cost) ? metadata.cost : undefined,
-    modelName: typeof metadata.modelName === 'string' ? metadata.modelName : undefined,
-    modelVersion: typeof metadata.modelVersion === 'string' ? metadata.modelVersion : undefined,
+    requestId: metadata.requestId,
+    duration: metadata.duration !== undefined && Number.isFinite(metadata.duration) ? metadata.duration : undefined,
+    cost: metadata.cost !== undefined && Number.isFinite(metadata.cost) ? metadata.cost : undefined,
+    modelName: metadata.modelName,
+    modelVersion: metadata.modelVersion,
   };
 }
 
-async function readProviderJson<T>(response: Response, fallbackMessage: string): Promise<T> {
-  let payload: unknown = null;
+async function readProviderJson<Value>(
+  response: Response,
+  fallbackMessage: string,
+  schema: BoundarySchema<Value>,
+): Promise<Value> {
+  let payload: JsonValue = null;
   const text = await response.text();
   if (text.trim().length > 0) {
     try {
-      payload = JSON.parse(text) as unknown;
+      payload = decodeBoundary(JSON.parse(text), boundary.json);
     } catch {
       if (!response.ok) {
         throw new Error(`${fallbackMessage}: HTTP ${response.status}`);
@@ -592,15 +606,23 @@ async function readProviderJson<T>(response: Response, fallbackMessage: string):
     throw new Error(`${fallbackMessage}: ${extractProviderMessage(payload) ?? `HTTP ${response.status}`}`);
   }
 
-  return (payload ?? {}) as T;
+  try {
+    return decodeBoundary(payload ?? {}, schema);
+  } catch {
+    throw new Error(`${fallbackMessage}: invalid response shape.`);
+  }
 }
 
-function extractProviderMessage(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') {
+function extractProviderMessage(payload: JsonValue): string | null {
+  if (payload === null || Array.isArray(payload)) {
     return null;
   }
-
-  const record = payload as Record<string, unknown>;
+  let record: JsonObject;
+  try {
+    record = decodeBoundary(payload, boundary.jsonObject);
+  } catch {
+    return null;
+  }
   const candidates = [
     record.message,
     record.error,
@@ -608,15 +630,10 @@ function extractProviderMessage(payload: unknown): string | null {
   ];
 
   for (const candidate of candidates) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return truncateProviderError(candidate.trim());
-    }
-    if (candidate && typeof candidate === 'object') {
-      const nested = candidate as Record<string, unknown>;
-      if (typeof nested.message === 'string' && nested.message.trim()) {
-        return truncateProviderError(nested.message.trim());
-      }
-    }
+    const message = decodeOptionalBoundary(candidate, boundary.string);
+    if (message?.trim()) return truncateProviderError(message.trim());
+    const nested = decodeOptionalBoundary(candidate, boundary.object({ message: boundary.string }));
+    if (nested?.message.trim()) return truncateProviderError(nested.message.trim());
   }
 
   return truncateProviderError(JSON.stringify(payload));
@@ -628,21 +645,15 @@ function truncateProviderError(message: string): string {
     : message;
 }
 
-function parseFalChunks(value: unknown): VoiceTranscriptionChunk[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
+function parseFalChunks(value: JsonValue[] | undefined): VoiceTranscriptionChunk[] | undefined {
+  if (!value) return undefined;
   const chunks: VoiceTranscriptionChunk[] = [];
   for (const item of value) {
-    if (!item || typeof item !== 'object') {
-      continue;
-    }
-    const record = item as Record<string, unknown>;
-    if (typeof record.text !== 'string') {
-      continue;
-    }
-
+    const record = decodeOptionalBoundary(item, boundary.object({
+      text: boundary.string,
+      timestamp: boundary.optional(boundary.json),
+    }));
+    if (!record) continue;
     const timestamp = parseTimestamp(record.timestamp);
     chunks.push(timestamp ? { text: record.text, timestamp } : { text: record.text });
   }
@@ -650,27 +661,21 @@ function parseFalChunks(value: unknown): VoiceTranscriptionChunk[] | undefined {
   return chunks.length > 0 ? chunks : undefined;
 }
 
-function parseTimestamp(value: unknown): [number, number] | undefined {
-  if (!Array.isArray(value) || value.length !== 2) {
-    return undefined;
-  }
-
-  const [start, end] = value;
-  return typeof start === 'number' && typeof end === 'number'
-    ? [start, end]
-    : undefined;
+function parseTimestamp(value: JsonValue | undefined): [number, number] | undefined {
+  const decoded = decodeOptionalBoundary(value, boundary.array(boundary.number));
+  return decoded?.length === 2 ? [decoded[0], decoded[1]] : undefined;
 }
 
-function parseStringArray(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-
-  const values = value.filter((item): item is string => typeof item === 'string');
+function parseStringArray(value: JsonValue[] | undefined): string[] | undefined {
+  if (!value) return undefined;
+  const values = value.flatMap((item) => {
+    const decoded = decodeOptionalBoundary(item, boundary.string);
+    return decoded === undefined ? [] : [decoded];
+  });
   return values.length > 0 ? values : undefined;
 }
 
-function parseProviderUsage(value: unknown): ProviderUsage | undefined {
+function parseProviderUsage(value: JsonValue | VoiceDeepgramStreamingMetadata | ProviderUsagePayload | undefined): ProviderUsage | undefined {
   const values = collectUsageNumbers(value);
   const usage: ProviderUsage = {
     cost: firstDefinedNumber(
@@ -704,10 +709,10 @@ function getDeepgramUsage(
     };
   }
 
-  const durationSeconds = typeof durationMs === 'number'
+  const durationSeconds = durationMs !== undefined
     ? durationMs / 1000
     : metadata?.duration;
-  if (typeof durationSeconds === 'number' && Number.isFinite(durationSeconds) && durationSeconds > 0) {
+  if (durationSeconds !== undefined && Number.isFinite(durationSeconds) && durationSeconds > 0) {
     return {
       cost: Number(((durationSeconds / 3600) * DEEPGRAM_NOVA3_STREAMING_COST_PER_HOUR_USD).toFixed(8)),
       costSource: 'estimate',
@@ -719,40 +724,52 @@ function getDeepgramUsage(
   };
 }
 
-function collectUsageNumbers(value: unknown): Record<string, number> {
-  const numbers: Record<string, number> = {};
-  const seen = new Set<unknown>();
-  const visit = (candidate: unknown) => {
-    if (!candidate || typeof candidate !== 'object' || seen.has(candidate)) {
-      return;
-    }
-    seen.add(candidate);
-
-    for (const [key, nestedValue] of Object.entries(candidate as Record<string, unknown>)) {
-      if (typeof nestedValue === 'number' && Number.isFinite(nestedValue)) {
-        numbers[key] ??= nestedValue;
-      } else if (typeof nestedValue === 'string' && nestedValue.trim() && Number.isFinite(Number(nestedValue))) {
-        numbers[key] ??= Number(nestedValue);
-      } else if (
-        nestedValue
-        && typeof nestedValue === 'object'
-        && ['usage', 'cost', 'metadata', 'metrics'].includes(key)
-      ) {
-        visit(nestedValue);
-      }
+function collectUsageNumbers(value: JsonValue | VoiceDeepgramStreamingMetadata | ProviderUsagePayload | undefined): UsageNumbers {
+  const jsonValue = value === undefined ? undefined : decodeOptionalBoundary(value, boundary.json);
+  const numbers: UsageNumbers = {};
+  if (jsonValue === undefined) return numbers;
+  const visit = (candidate: JsonValue): void => {
+    const record = decodeOptionalBoundary(candidate, boundary.jsonObject);
+    if (!record) return;
+    for (const key of Object.keys(record)) {
+      const nestedValue = record[key];
+      const numeric = decodeUsageNumber(nestedValue);
+      const usageKey = decodeOptionalBoundary(key, usageKeySchema);
+      if (usageKey !== undefined && numeric !== undefined) numbers[usageKey] ??= numeric;
+      if (['usage', 'cost', 'metadata', 'metrics'].includes(key)) visit(nestedValue);
     }
   };
-
-  visit(value);
+  visit(jsonValue);
   return numbers;
 }
 
+function decodeUsageNumber(value: JsonValue): number | undefined {
+  const numeric = decodeOptionalBoundary(value, boundary.number);
+  if (numeric !== undefined && Number.isFinite(numeric)) return numeric;
+  const text = decodeOptionalBoundary(value, boundary.string)?.trim();
+  if (!text) return undefined;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function decodeOptionalBoundary<Value>(
+  value: JsonValue | VoiceDeepgramStreamingMetadata | ProviderUsagePayload | undefined,
+  schema: BoundarySchema<Value>,
+): Value | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return decodeBoundary(value, schema);
+  } catch {
+    return undefined;
+  }
+}
+
 function firstDefinedNumber(...values: Array<number | undefined>): number | undefined {
-  return values.find((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  return values.find((value): value is number => value !== undefined && Number.isFinite(value));
 }
 
 function sumDefinedNumbers(...values: Array<number | undefined>): number | undefined {
-  const numbers = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const numbers = values.filter((value): value is number => value !== undefined && Number.isFinite(value));
   if (numbers.length === 0) {
     return undefined;
   }

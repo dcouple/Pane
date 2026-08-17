@@ -1,4 +1,5 @@
 import { DatabaseService } from '../database/database';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 type SidebarSection = 'pinned' | 'repositories';
 
@@ -48,8 +49,7 @@ class UIStateManager {
     const value = this.db.getUIState(SIDEBAR_SECTION_KEYS[section]);
     if (!value) return true;
     try {
-      const parsed = JSON.parse(value);
-      return typeof parsed === 'boolean' ? parsed : true;
+      return decodeBoundary(JSON.parse(value), boundary.boolean);
     } catch {
       return true;
     }

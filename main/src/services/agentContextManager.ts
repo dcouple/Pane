@@ -4,6 +4,7 @@ import path from 'path';
 import type { Project } from '../database/models';
 import type { AppConfig } from '../types/config';
 import { PathResolver } from '../utils/pathResolver';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 
 export const PANE_AGENT_CONTEXT_START = '<!-- pane-agent-context:start -->';
@@ -123,7 +124,13 @@ async function findExistingAgentsFile(root: string): Promise<{ filePath?: string
   try {
     entries = await fs.readdir(root);
   } catch (error) {
-    if (isNotFound(error)) {
+    let code: string | undefined;
+    try {
+      code = decodeBoundary(error, boundary.object({ code: boundary.optional(boundary.string) })).code;
+    } catch {
+      code = undefined;
+    }
+    if (code === 'ENOENT') {
       return { hasUnsafeCandidate: false };
     }
     throw error;
@@ -157,7 +164,13 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
       await handle.close();
     }
   } catch (error) {
-    if (isNotFound(error)) {
+    let code: string | undefined;
+    try {
+      code = decodeBoundary(error, boundary.object({ code: boundary.optional(boundary.string) })).code;
+    } catch {
+      code = undefined;
+    }
+    if (code === 'ENOENT') {
       return undefined;
     }
     throw error;
@@ -169,7 +182,13 @@ async function inspectAgentsFile(filePath: string): Promise<'file' | 'missing' |
     const stat = await fs.lstat(filePath);
     return stat.isFile() ? 'file' : 'unsafe';
   } catch (error) {
-    if (isNotFound(error)) {
+    let code: string | undefined;
+    try {
+      code = decodeBoundary(error, boundary.object({ code: boundary.optional(boundary.string) })).code;
+    } catch {
+      code = undefined;
+    }
+    if (code === 'ENOENT') {
       return 'missing';
     }
     throw error;
@@ -208,10 +227,4 @@ function consumeTrailingNewline(value: string, index: number): number {
     return index + 1;
   }
   return index;
-}
-
-function isNotFound(error: unknown): boolean {
-  return error instanceof Error
-    && 'code' in error
-    && (error as NodeJS.ErrnoException).code === 'ENOENT';
 }

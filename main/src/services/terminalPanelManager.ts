@@ -22,6 +22,7 @@ import { AgentStatusMonitor } from './agentStatus/agentStatusMonitor';
 import { detectAgentState } from './agentStatus/manifestEngine';
 import { getManifestForAgent } from './agentStatus/manifests';
 import type { AgentState, PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
+import type { PaneEventArgument } from '../core/eventSink';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -50,8 +51,14 @@ import { buildCursorLaunchCommand, createCursorReadyDetector, extractCursorChatI
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function isValidUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_PATTERN.test(value);
+function isValidUuid(value: string | undefined): value is string {
+  return value !== undefined && UUID_PATTERN.test(value);
+}
+
+function terminalCustomState(state: ToolPanel['state']): TerminalPanelState {
+  // SAFETY: TerminalPanelManager owns terminal panels and persists this exact
+  // custom-state contract; non-terminal panel states never enter these paths.
+  return (state.customState ?? {}) as TerminalPanelState;
 }
 
 export interface TerminalPanelSnapshot {
@@ -128,7 +135,7 @@ class PtyHandleShim implements pty.IPty {
         this.cols = columns;
         this.rows = rows;
       }
-    }).catch((err: unknown) => {
+    }).catch((err) => {
       console.warn('[ptyHost] resize failed', err);
     });
   }
@@ -138,26 +145,28 @@ class PtyHandleShim implements pty.IPty {
   }
 
   write(data: string | Buffer): void {
-    const str = typeof data === 'string' ? data : data.toString();
-    this.handle.write(str).catch((err: unknown) => {
+    const str = Buffer.isBuffer(data) ? data.toString() : data;
+    this.handle.write(str).catch((err) => {
       console.warn('[ptyHost] write failed', err);
     });
   }
 
   kill(signal?: string): void {
-    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err: unknown) => {
+    // SAFETY: IPty supplies Node signal names; the ptyHost handle narrows the
+    // legacy node-pty string signature to NodeJS.Signals.
+    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err) => {
       console.warn('[ptyHost] kill failed', err);
     });
   }
 
   pause(): void {
-    this.handle.pause().catch((err: unknown) => {
+    this.handle.pause().catch((err) => {
       console.warn('[ptyHost] pause failed', err);
     });
   }
 
   resume(): void {
-    this.handle.resume().catch((err: unknown) => {
+    this.handle.resume().catch((err) => {
       console.warn('[ptyHost] resume failed', err);
     });
   }
@@ -404,7 +413,7 @@ export class TerminalPanelManager {
     }
 
     const state = currentPanel.state;
-    const customState = (state.customState || {}) as TerminalPanelState;
+    const customState = terminalCustomState(state);
     if (!customState.initialInput || customState.initialInputSentAt) {
       return null;
     }
@@ -418,15 +427,15 @@ export class TerminalPanelManager {
     return { input, submitStrategy };
   }
 
-  private async markInitialInputError(panelId: string, error: unknown): Promise<void> {
+  private async markInitialInputError(panelId: string, errorMessage: string): Promise<void> {
     const currentPanel = panelManager.getPanel(panelId);
     if (!currentPanel) {
       return;
     }
 
     const state = currentPanel.state;
-    const customState = (state.customState || {}) as TerminalPanelState;
-    customState.initialInputError = error instanceof Error ? error.message : String(error);
+    const customState = terminalCustomState(state);
+    customState.initialInputError = errorMessage;
     state.customState = customState;
     await panelManager.updatePanel(panelId, { state });
   }
@@ -440,7 +449,7 @@ export class TerminalPanelManager {
       this.writeInitialInput(panelId, delivery.input, delivery.submitStrategy);
     }).catch((error) => {
       console.warn(`[TerminalPanelManager] Failed to send initial input for panel ${panelId}:`, error);
-      this.markInitialInputError(panelId, error).catch(() => {});
+      this.markInitialInputError(panelId, error instanceof Error ? error.message : String(error)).catch(() => {});
     });
   }
 
@@ -449,7 +458,8 @@ export class TerminalPanelManager {
       return;
     }
     const currentPanel = panelManager.getPanel(panelId);
-    const customState = (currentPanel?.state.customState || {}) as TerminalPanelState;
+    if (!currentPanel) return;
+    const customState = terminalCustomState(currentPanel.state);
     if (customState.isCliReady !== true) {
       return;
     }
@@ -530,7 +540,7 @@ export class TerminalPanelManager {
     const panel = panelManager.getPanel(terminal.panelId);
     if (!panel) return;
 
-    const customState = (panel.state.customState || {}) as TerminalPanelState;
+    const customState = terminalCustomState(panel.state);
     const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
     if (agentType !== terminal.agentType || customState.agentSessionId === agentSessionId) return;
 
@@ -540,7 +550,7 @@ export class TerminalPanelManager {
       ...customState,
       agentType,
       agentSessionId
-    } as TerminalPanelState;
+    };
 
     void panelManager.updatePanel(terminal.panelId, { state: panel.state }).catch(error => {
       console.warn(`[TerminalPanelManager] Failed to persist ${agentType} session id for panel ${terminal.panelId}:`, error);
@@ -552,11 +562,11 @@ export class TerminalPanelManager {
     this.analyticsManager = analyticsManager;
   }
 
-  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+  private sendRendererEvent(channel: string, ...args: PaneEventArgument[]): void {
     getPaneEventSink().send(channel, ...args);
   }
 
-  private sendDaemonEvent(channel: string, ...args: unknown[]): void {
+  private sendDaemonEvent(channel: string, ...args: PaneEventArgument[]): void {
     getPaneDaemonEventSink().send(channel, ...args);
   }
 
@@ -721,7 +731,7 @@ export class TerminalPanelManager {
     if (terminal.isPtyHost && terminal.ptyId) {
       const supervisor = getPtyHostRuntime();
       if (supervisor) {
-        return supervisor.pause(terminal.ptyId).catch((err: unknown) => {
+        return supervisor.pause(terminal.ptyId).catch((err) => {
           console.warn('[TerminalPanelManager] ptyHost pause failed', err);
         });
       }
@@ -737,7 +747,7 @@ export class TerminalPanelManager {
     if (terminal.isPtyHost && terminal.ptyId) {
       const supervisor = getPtyHostRuntime();
       if (supervisor) {
-        supervisor.resume(terminal.ptyId).catch((err: unknown) => {
+        supervisor.resume(terminal.ptyId).catch((err) => {
           console.warn('[TerminalPanelManager] ptyHost resume failed', err);
         });
         return;
@@ -960,7 +970,7 @@ export class TerminalPanelManager {
     // both the legacy `pty.spawn` path and the ptyHost path see the same shape.
     const baseEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {
-      if (typeof value === 'string') {
+      if (value !== undefined) {
         baseEnv[key] = value;
       }
     }
@@ -1055,7 +1065,7 @@ export class TerminalPanelManager {
       activityStatus: 'idle',
       idleTimer: null,
       inSyncBlock: false,
-      agentType: this.resolveTerminalAgentType(panel.state.customState as TerminalPanelState | undefined),
+      agentType: this.resolveTerminalAgentType(terminalCustomState(panel.state)),
       agentSessionScrapeBuffer: ''
     };
 
@@ -1078,7 +1088,7 @@ export class TerminalPanelManager {
     }
     
     // Get initialCommand from existing state before updating
-    const existingState = panel.state.customState as TerminalPanelState | undefined;
+    const existingState = terminalCustomState(panel.state);
     const initialCommand = existingState?.initialCommand;
     const initialInput = existingState?.initialInput;
 
@@ -1121,7 +1131,7 @@ export class TerminalPanelManager {
             const currentPanel = panelManager.getPanel(panelId);
             if (currentPanel) {
               const ps = currentPanel.state;
-              const cs2 = (ps.customState || {}) as TerminalPanelState;
+              const cs2 = terminalCustomState(ps);
               cs2.isCliReady = true;
               ps.customState = cs2;
               panelManager.updatePanel(panelId, { state: ps }); // async, not awaited
@@ -1170,7 +1180,7 @@ export class TerminalPanelManager {
       cwd: cwd,
       shellType: path.basename(shellPath),
       dimensions: { cols: initialDimensions?.cols || 80, rows: initialDimensions?.rows || 30 }
-    } as TerminalPanelState;
+    };
 
     await panelManager.updatePanel(panel.id, { state });
 
@@ -1490,7 +1500,7 @@ export class TerminalPanelManager {
       state.customState = {
         ...state.customState,
         dimensions: { cols, rows }
-      } as TerminalPanelState;
+      };
       panelManager.updatePanel(panelId, { state });
     }
   }
@@ -1550,7 +1560,7 @@ export class TerminalPanelManager {
       ...(terminal.capturedAgentSessionId && terminal.agentType
         ? { agentType: terminal.agentType, agentSessionId: terminal.capturedAgentSessionId }
         : {})
-    } as TerminalPanelState;
+    };
     
     await panelManager.updatePanel(panelId, { state });
     
@@ -1583,13 +1593,11 @@ export class TerminalPanelManager {
     if (!terminal) return;
     
     // Restore scrollback buffer (handle both string and array formats)
-    if (typeof state.scrollbackBuffer === 'string') {
-      terminal.scrollbackBuffer = state.scrollbackBuffer;
-    } else if (Array.isArray(state.scrollbackBuffer)) {
+    if (Array.isArray(state.scrollbackBuffer)) {
       // Convert legacy array format to string
       terminal.scrollbackBuffer = state.scrollbackBuffer.join('\n');
     } else {
-      terminal.scrollbackBuffer = '';
+      terminal.scrollbackBuffer = state.scrollbackBuffer;
     }
     terminal.alternateScreenBuffer = state.alternateScreenBuffer || '';
     terminal.commandHistory = state.commandHistory || [];
@@ -1602,9 +1610,9 @@ export class TerminalPanelManager {
     // `terminal:output` IPC for legacy subscribers, ptyHost port for flag-on.
     if (state.scrollbackBuffer) {
       // Cap the renderer replay at the formal ceiling; main's own buffer (set above) keeps full content.
-      const rawScrollback = typeof state.scrollbackBuffer === 'string'
-        ? state.scrollbackBuffer
-        : state.scrollbackBuffer.join('\n');
+      const rawScrollback = Array.isArray(state.scrollbackBuffer)
+        ? state.scrollbackBuffer.join('\n')
+        : state.scrollbackBuffer;
       const output = this.trimAnsiSafe(rawScrollback, MAX_RESTORE_PAYLOAD_SIZE) + restorationMsg;
       this.sendRendererEvent('terminal:output', {
         sessionId: panel.sessionId,
@@ -1663,7 +1671,7 @@ export class TerminalPanelManager {
     if (!terminal) return null;
 
     const panel = panelManager.getPanel(panelId);
-    const customState = (panel?.state.customState || {}) as TerminalPanelState;
+    const customState = panel ? terminalCustomState(panel.state) : {};
     const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
 
     return {
@@ -1698,7 +1706,7 @@ export class TerminalPanelManager {
       ...(state.customState ?? {}),
       scrollbackBuffer: '',
       serializedBuffer: undefined,
-    } as TerminalPanelState;
+    };
 
     await panelManager.updatePanel(panelId, { state });
   }
@@ -1915,7 +1923,7 @@ export class TerminalPanelManager {
 
       // Read state for respawn: cwd is persisted on panel state by
       // `initializeTerminal` (see lines 616-622). Dimensions likewise.
-      const cs = (panel.state.customState || {}) as TerminalPanelState;
+      const cs = terminalCustomState(panel.state);
       const cwd = cs.cwd || process.cwd();
       const dimensions = cs.dimensions || { cols: 80, rows: 30 };
 

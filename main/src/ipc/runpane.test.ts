@@ -691,6 +691,7 @@ describe('runpane IPC handlers', () => {
         customState: {
           ...terminalPanel.state.customState,
           scrollbackBuffer: 'persisted one\npersisted two\n',
+          serializedBuffer: undefined,
         },
       },
     };

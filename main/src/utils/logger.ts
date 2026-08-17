@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { getAppSubdirectory } from './appDirectory';
 import { formatForDatabase } from './timestampUtils';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 // Capture the ORIGINAL console methods immediately when this module loads
 // This must happen before any other code can override them
@@ -290,14 +291,23 @@ export class Logger {
       // Always log to console using the original console method to avoid recursion
       this.originalConsole.log(consoleMessage);
     } catch (consoleError: unknown) {
+      let decodedError: { code?: string; message?: string } = {};
+      try {
+        decodedError = decodeBoundary(consoleError, boundary.object({
+          code: boundary.optional(boundary.string),
+          message: boundary.optional(boundary.string),
+        }));
+      } catch {
+        decodedError = {};
+      }
       // If console logging fails (e.g., EPIPE), just write to file
-      if ((consoleError as NodeJS.ErrnoException)?.code !== 'EPIPE' && !this.isInErrorHandler) {
+      if (decodedError.code !== 'EPIPE' && !this.isInErrorHandler) {
         // Prevent recursion by setting flag
         this.isInErrorHandler = true;
         try {
           // For non-EPIPE errors, try to at least write the error to file
           // Use a direct write to avoid potential recursion through writeToFile
-          const errorMessage = `[${timestamp}] ERROR: Failed to write to console: ${(consoleError as Error)?.message || 'Unknown error'}`;
+          const errorMessage = `[${timestamp}] ERROR: Failed to write to console: ${decodedError.message || 'Unknown error'}`;
           if (this.logStream && !this.logStream.destroyed) {
             this.logStream.write(`${this.truncateForFile(errorMessage)}\n`);
           }

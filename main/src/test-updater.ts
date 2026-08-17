@@ -16,6 +16,7 @@ export function setupTestUpdater() {
   // Log all events for debugging
   autoUpdater.logger = console;
   // Set debug level for winston-based loggers if available
+  // SAFETY: electron-updater accepts Logger but exposes the configured winston transport only at runtime.
   const logger = autoUpdater.logger as { transports?: { file?: { level: string } } };
   if (logger && logger.transports && logger.transports.file) {
     logger.transports.file.level = 'debug';

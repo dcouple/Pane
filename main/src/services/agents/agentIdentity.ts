@@ -1,4 +1,6 @@
 import { TerminalPanelState } from '../../../../shared/types/panels';
+import type { PaneCommandValue } from '../../daemon/commandRegistry';
+import { boundary, decodeBoundary } from '../../../../shared/validation/boundaryDecoder';
 
 export type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
 
@@ -285,8 +287,13 @@ function resolveExecutableToken(command: string, platformHint: NodeJS.Platform):
   return tokens[index];
 }
 
-export function isCliAgentType(value: unknown): value is CliAgentType {
-  return typeof value === 'string' && (CLI_AGENT_TYPES as readonly string[]).includes(value);
+export function isCliAgentType(value: PaneCommandValue): value is CliAgentType {
+  try {
+    decodeBoundary(value, boundary.enumeration(...CLI_AGENT_TYPES));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

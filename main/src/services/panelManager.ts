@@ -5,6 +5,24 @@ import { databaseService } from './database';
 import { panelEventBus } from './panelEventBus';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
+import type { PaneEventArgument } from '../core/eventSink';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+
+type PersistedPanelValue = ToolPanelState | ToolPanelMetadata | string;
+
+function serializedPanelValue(value: PersistedPanelValue): string | null {
+  try {
+    return decodeBoundary(value, boundary.string);
+  } catch {
+    return null;
+  }
+}
+
+function logsPanelState(panel: ToolPanel): LogsPanelState {
+  // SAFETY: Callers first discriminate `panel.type === 'logs'`; this state is
+  // created and persisted by the logs manager as LogsPanelState.
+  return panel.state.customState as LogsPanelState;
+}
 
 class PanelManager {
   private panels = new Map<string, ToolPanel>();
@@ -21,7 +39,7 @@ class PanelManager {
     this.analyticsManager = analyticsManager;
   }
 
-  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+  private sendRendererEvent(channel: string, ...args: PaneEventArgument[]): void {
     getPaneEventSink().send(channel, ...args);
   }
 
@@ -41,7 +59,7 @@ class PanelManager {
     // Clean up any stale running states in logs panels
     allPanels.forEach(panel => {
       if (panel.type === 'logs' && panel.state?.customState) {
-        const logsState = panel.state.customState as LogsPanelState;
+        const logsState = logsPanelState(panel);
         if (logsState.isRunning) {
           // Reset the running state since processes don't survive app restarts
           logsState.isRunning = false;
@@ -76,9 +94,9 @@ class PanelManager {
       
       // Create initial state
       // Handle both formats: { customState: {...} } and direct panel state {...}
-      const providedState = request.initialState as Record<string, unknown> | undefined;
+      const providedState = request.initialState;
       const customState = (providedState && 'customState' in providedState)
-        ? providedState.customState as Record<string, unknown>
+        ? decodeBoundary(providedState.customState, boundary.jsonObject)
         : providedState ?? {};
 
       const state: ToolPanelState = {
@@ -350,17 +368,19 @@ class PanelManager {
     const panel = databaseService.getPanel(panelId);
     if (panel) {
       // Fix any panels that have state stored as a string (defensive programming)
-      if (typeof panel.state === 'string') {
+      const serializedState = serializedPanelValue(panel.state);
+      if (serializedState !== null) {
         try {
-          panel.state = JSON.parse(panel.state);
+          panel.state = JSON.parse(serializedState);
         } catch (e) {
           console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
           panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
         }
       }
-      if (typeof panel.metadata === 'string') {
+      const serializedMetadata = serializedPanelValue(panel.metadata);
+      if (serializedMetadata !== null) {
         try {
-          panel.metadata = JSON.parse(panel.metadata);
+          panel.metadata = JSON.parse(serializedMetadata);
         } catch (e) {
           console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
           panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
@@ -389,17 +409,19 @@ class PanelManager {
 
     // Fix any panels that have state stored as a string (defensive programming)
     panels.forEach(panel => {
-      if (typeof panel.state === 'string') {
+      const serializedState = serializedPanelValue(panel.state);
+      if (serializedState !== null) {
         try {
-          panel.state = JSON.parse(panel.state);
+          panel.state = JSON.parse(serializedState);
         } catch (e) {
           console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
           panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
         }
       }
-      if (typeof panel.metadata === 'string') {
+      const serializedMetadata = serializedPanelValue(panel.metadata);
+      if (serializedMetadata !== null) {
         try {
-          panel.metadata = JSON.parse(panel.metadata);
+          panel.metadata = JSON.parse(serializedMetadata);
         } catch (e) {
           console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
           panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
@@ -419,7 +441,7 @@ class PanelManager {
     return panels.filter(p => p.type === type);
   }
   
-  async emitPanelEvent(panelId: string, eventType: PanelEventType, data: unknown): Promise<void> {
+  async emitPanelEvent(panelId: string, eventType: PanelEventType, data: PaneEventArgument): Promise<void> {
     const panel = this.getPanel(panelId);
     if (!panel) {
       console.warn(`[PanelManager] Panel ${panelId} not found for event emission`);

@@ -178,7 +178,7 @@ export class SpotlightManager extends EventEmitter {
     } catch (error) {
       this.logger?.error(
         `[SpotlightManager] Failed to restore original state for session ${sessionId}:`,
-        error as Error
+        new Error(String(error))
       );
       // Don't throw - we still want to clean up the spotlight state
     }
@@ -228,7 +228,7 @@ export class SpotlightManager extends EventEmitter {
       } catch (error) {
         this.logger?.error(
           `[SpotlightManager] Failed to restore original state for project ${projectId}:`,
-          error as Error
+          new Error(String(error))
         );
         // Continue with other spotlights
       }
@@ -243,7 +243,7 @@ export class SpotlightManager extends EventEmitter {
         unlinkSync(this.SPOTLIGHT_STATE_FILE);
       }
     } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to delete state file:', error as Error);
+      this.logger?.error('[SpotlightManager] Failed to delete state file:', new Error(String(error)));
     }
 
     this.logger?.info('[SpotlightManager] All spotlights disabled');
@@ -321,7 +321,7 @@ export class SpotlightManager extends EventEmitter {
         return; // Don't set syncInProgress to false yet
       }
 
-      this.logger?.error(`[SpotlightManager] Sync error for project ${projectId}:`, error as Error);
+      this.logger?.error(`[SpotlightManager] Sync error for project ${projectId}:`, new Error(String(error)));
 
       // Send sync error event
       const mainWindow = this.getMainWindow();
@@ -395,7 +395,7 @@ export class SpotlightManager extends EventEmitter {
       writeFileSync(this.SPOTLIGHT_STATE_FILE, JSON.stringify(persisted, null, 2));
       this.logger?.info('[SpotlightManager] State persisted successfully');
     } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to persist state:', error as Error);
+      this.logger?.error('[SpotlightManager] Failed to persist state:', new Error(String(error)));
     }
   }
 
@@ -408,7 +408,7 @@ export class SpotlightManager extends EventEmitter {
         this.logger?.info('[SpotlightManager] State file loaded successfully');
       }
     } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to load state file:', error as Error);
+      this.logger?.error('[SpotlightManager] Failed to load state file:', new Error(String(error)));
     }
   }
 
@@ -451,7 +451,7 @@ export class SpotlightManager extends EventEmitter {
         } catch (error) {
           this.logger?.error(
             `[SpotlightManager] Failed to restore spotlight for project ${projectIdStr}:`,
-            error as Error
+            new Error(String(error))
           );
           // Continue with other entries
         }
@@ -459,7 +459,7 @@ export class SpotlightManager extends EventEmitter {
 
       this.logger?.info('[SpotlightManager] Spotlight state restoration complete');
     } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to restore spotlight state:', error as Error);
+      this.logger?.error('[SpotlightManager] Failed to restore spotlight state:', new Error(String(error)));
     }
   }
 }

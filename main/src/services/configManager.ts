@@ -12,6 +12,7 @@ import os from 'os';
 import { randomUUID } from 'crypto';
 import { getAppDirectory } from '../utils/appDirectory';
 import { clearShellPathCache } from '../utils/shellPath';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const DEFAULT_POSTHOG_API_KEY = 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1';
 const LEGACY_POSTHOG_HOST = 'https://us.i.posthog.com';
@@ -128,10 +129,15 @@ export class ConfigManager extends EventEmitter {
       // Migrate legacy notification fields from older config files.
       // notifyWhenBackgrounded -> enabled (if enabled is not explicitly set)
       // notifyWhenViewingOtherPanel is dropped silently.
-      const incomingNotifications = loadedConfig.notifications as (
-        Partial<{ playSound: boolean; enabled: boolean }> &
-        { notifyWhenBackgrounded?: boolean; notifyWhenViewingOtherPanel?: boolean }
-      ) | undefined;
+      const incomingNotifications = decodeBoundary(
+        loadedConfig.notifications,
+        boundary.optional(boundary.object({
+          playSound: boundary.optional(boundary.boolean),
+          enabled: boundary.optional(boundary.boolean),
+          notifyWhenBackgrounded: boundary.optional(boundary.boolean),
+          notifyWhenViewingOtherPanel: boundary.optional(boundary.boolean),
+        })),
+      );
       const migratedNotifications = incomingNotifications
         ? {
             playSound: incomingNotifications.playSound ?? this.config.notifications!.playSound,
@@ -183,7 +189,15 @@ export class ConfigManager extends EventEmitter {
         await this.saveConfig();
       }
     } catch (error: unknown) {
-      const isNotFound = error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
+      let errorCode: string | undefined;
+      try {
+        errorCode = decodeBoundary(error, boundary.object({
+          code: boundary.optional(boundary.string),
+        })).code;
+      } catch {
+        errorCode = undefined;
+      }
+      const isNotFound = errorCode === 'ENOENT';
       if (isNotFound) {
         // Config file doesn't exist — create with defaults
         await this.saveConfig();

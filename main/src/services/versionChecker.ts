@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import { ConfigManager } from './configManager';
 import { Logger } from '../utils/logger';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 export interface VersionInfo {
   current: string;
@@ -50,7 +51,19 @@ export class VersionChecker {
         throw new Error(`GitHub API returned ${response.status}: ${response.statusText}`);
       }
 
-      const release = await response.json() as GitHubRelease;
+      const release = decodeBoundary(await response.json(), boundary.object({
+        tag_name: boundary.string,
+        name: boundary.string,
+        body: boundary.string,
+        html_url: boundary.string,
+        published_at: boundary.string,
+        prerelease: boundary.boolean,
+        draft: boundary.boolean,
+        assets: boundary.optional(boundary.array(boundary.object({
+          name: boundary.string,
+          browser_download_url: boundary.string,
+        }))),
+      }));
       
       // Skip pre-releases and drafts
       if (release.prerelease || release.draft) {
@@ -74,7 +87,7 @@ export class VersionChecker {
         publishedAt: release.published_at
       };
     } catch (error) {
-      this.logger.error(`[Version Checker] Failed to check for updates:`, error as Error);
+      this.logger.error(`[Version Checker] Failed to check for updates:`, error instanceof Error ? error : new Error(String(error)));
       
       // Return current version info without update on error
       return {
@@ -92,10 +105,12 @@ export class VersionChecker {
       if (versionInfo.hasUpdate) {
         this.logger.info(`[Version Checker] Update available on startup: ${versionInfo.latest}`);
         // Emit event for UI notification
-        (process as NodeJS.Process & { emit(event: 'version-update-available', data: VersionInfo): boolean }).emit('version-update-available', versionInfo);
+        // SAFETY: Pane registers this application-owned process event and its VersionInfo payload in events.ts.
+        (process as NodeJS.Process & { emit(event: 'version-update-available', data: VersionInfo): boolean })
+          .emit('version-update-available', versionInfo);
       }
     } catch (error) {
-      this.logger.error(`[Version Checker] Startup check failed:`, error as Error);
+      this.logger.error(`[Version Checker] Startup check failed:`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -133,10 +148,12 @@ export class VersionChecker {
       if (versionInfo.hasUpdate) {
         this.logger.info(`[Version Checker] Update available: ${versionInfo.latest}`);
         // Emit event for UI notification
-        (process as NodeJS.Process & { emit(event: 'version-update-available', data: VersionInfo): boolean }).emit('version-update-available', versionInfo);
+        // SAFETY: Pane registers this application-owned process event and its VersionInfo payload in events.ts.
+        (process as NodeJS.Process & { emit(event: 'version-update-available', data: VersionInfo): boolean })
+          .emit('version-update-available', versionInfo);
       }
     } catch (error) {
-      this.logger.error(`[Version Checker] Periodic check failed:`, error as Error);
+      this.logger.error(`[Version Checker] Periodic check failed:`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -183,7 +200,7 @@ export class VersionChecker {
 
       return false; // Versions are equal
     } catch (error) {
-      this.logger.error(`[Version Checker] Failed to compare versions ${latest} vs ${current}:`, error as Error);
+      this.logger.error(`[Version Checker] Failed to compare versions ${latest} vs ${current}:`, error instanceof Error ? error : new Error(String(error)));
       return false;
     }
   }

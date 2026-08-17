@@ -2,6 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigManager } from './configManager';
 import type { AnalyticsManager } from './analyticsManager';
 import { VoiceTranscriptionService } from './voiceTranscriptionService';
+import { boundary, decodeBoundary, type BoundarySchema } from '../../../shared/validation/boundaryDecoder';
+
+function requestBody<Value>(init: RequestInit | undefined, schema: BoundarySchema<Value>): Value {
+  return decodeBoundary(JSON.parse(String(init?.body)), schema);
+}
+
+function partialMock<Contract>(implementation: Partial<Contract>): Contract {
+  // SAFETY: Each test supplies every dependency method reached by its scenario;
+  // unexpected calls fail immediately instead of crossing a real boundary.
+  return implementation as Contract;
+}
 
 describe('VoiceTranscriptionService', () => {
   afterEach(() => {
@@ -12,7 +23,7 @@ describe('VoiceTranscriptionService', () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const urlText = String(url);
       if (urlText.includes('/storage/upload/initiate')) {
-        const body = JSON.parse(String(init?.body)) as { file_name?: string; content_type?: string };
+        const body = requestBody(init, boundary.object({ file_name: boundary.string, content_type: boundary.string }));
         expect(body.content_type).toBe('audio/webm');
         expect(body.file_name).toMatch(/^pane-voice-\d+\.webm$/);
         return new Response(JSON.stringify({
@@ -31,7 +42,7 @@ describe('VoiceTranscriptionService', () => {
       }
 
       if (urlText.includes('fal.run')) {
-        const body = JSON.parse(String(init?.body)) as { audio_url?: string };
+        const body = requestBody(init, boundary.object({ audio_url: boundary.string }));
         expect(body.audio_url).toBe('https://v3b.fal.media/files/test/pane-voice.webm');
         return new Response(JSON.stringify({
           text: 'we should use type script with open router',
@@ -45,9 +56,9 @@ describe('VoiceTranscriptionService', () => {
       }
 
       expect(urlText).toContain('openrouter.ai');
-      const body = JSON.parse(String(init?.body)) as {
-        messages?: Array<{ role: string; content: string }>;
-      };
+      const body = requestBody(init, boundary.object({
+        messages: boundary.array(boundary.object({ role: boundary.string, content: boundary.string })),
+      }));
       expect(body.messages?.[0]?.content).toContain('GPT-5.5');
       expect(body.messages?.[0]?.content).toContain('medium-high');
       return new Response(JSON.stringify({
@@ -70,17 +81,17 @@ describe('VoiceTranscriptionService', () => {
     vi.stubGlobal('fetch', fetchMock);
     const analyticsTrack = vi.fn();
 
-    const service = new VoiceTranscriptionService({
+    const service = new VoiceTranscriptionService(partialMock<ConfigManager>({
       getConfig: () => ({
         falApiKey: 'fal-test-key',
         openRouterApiKey: 'openrouter-test-key',
       }),
       isVerbose: () => false,
-    } as ConfigManager, {
+    }), partialMock<AnalyticsManager>({
       track: analyticsTrack,
       categorizeDuration: (seconds: number) => `${seconds}s`,
       categorizeNumber: (value: number) => `${value} bytes`,
-    } as unknown as AnalyticsManager);
+    }));
 
     await expect(service.transcribe({
       audioDataUrl: 'data:audio/webm;codecs=opus;base64,AAAA',
@@ -134,12 +145,12 @@ describe('VoiceTranscriptionService', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const service = new VoiceTranscriptionService({
+    const service = new VoiceTranscriptionService(partialMock<ConfigManager>({
       getConfig: () => ({
         deepgramApiKey: 'deepgram-test-key',
       }),
       isVerbose: () => false,
-    } as ConfigManager);
+    }));
 
     await expect(service.getDeepgramStreamingToken()).resolves.toMatchObject({
       accessToken: 'temporary-jwt',
@@ -150,10 +161,10 @@ describe('VoiceTranscriptionService', () => {
   });
 
   it('requires a Deepgram API key before granting streaming tokens', async () => {
-    const service = new VoiceTranscriptionService({
+    const service = new VoiceTranscriptionService(partialMock<ConfigManager>({
       getConfig: () => ({}),
       isVerbose: () => false,
-    } as ConfigManager);
+    }));
 
     await expect(service.getDeepgramStreamingToken()).rejects.toThrow('Deepgram API key is not configured');
   });
@@ -161,9 +172,9 @@ describe('VoiceTranscriptionService', () => {
   it('finalizes streaming transcripts through OpenRouter cleanup and tracks Deepgram metadata', async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       expect(String(url)).toContain('openrouter.ai');
-      const body = JSON.parse(String(init?.body)) as {
-        messages?: Array<{ role: string; content: string }>;
-      };
+      const body = requestBody(init, boundary.object({
+        messages: boundary.array(boundary.object({ role: boundary.string, content: boundary.string })),
+      }));
       expect(body.messages?.[0]?.content).toContain('GPT-5.5');
       expect(body.messages?.[1]?.content).toBe('i use gpt five point five medium high with claude opus');
       return new Response(JSON.stringify({
@@ -186,16 +197,16 @@ describe('VoiceTranscriptionService', () => {
     vi.stubGlobal('fetch', fetchMock);
     const analyticsTrack = vi.fn();
 
-    const service = new VoiceTranscriptionService({
+    const service = new VoiceTranscriptionService(partialMock<ConfigManager>({
       getConfig: () => ({
         openRouterApiKey: 'openrouter-test-key',
       }),
       isVerbose: () => false,
-    } as ConfigManager, {
+    }), partialMock<AnalyticsManager>({
       track: analyticsTrack,
       categorizeDuration: (seconds: number) => `${seconds}s`,
       categorizeNumber: (value: number) => `${value} bytes`,
-    } as unknown as AnalyticsManager);
+    }));
 
     await expect(service.finalizeStreaming({
       rawText: 'i use gpt five point five medium high with claude opus',

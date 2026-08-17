@@ -45,10 +45,12 @@ export type PtyHostRequest =
   | { id: number; method: 'spawn'; args: PtyHostSpawnOpts }
   | { id: number; method: 'write'; args: { ptyId: string; data: string } }
   | { id: number; method: 'resize'; args: { ptyId: string; cols: number; rows: number } }
-  | { id: number; method: 'kill'; args: { ptyId: string; signal?: NodeJS.Signals } }
+  | { id: number; method: 'kill'; args: { ptyId: string; signal?: string } }
   | { id: number; method: 'ack'; args: { ptyId: string; bytes: number } }
   | { id: number; method: 'pause'; args: { ptyId: string } }
   | { id: number; method: 'resume'; args: { ptyId: string } };
+
+export type PtyHostSuccessResult = { ptyId: string; pid: number } | void;
 
 /**
  * Classified spawn error.
@@ -75,7 +77,7 @@ export type PtyHostSpawnError = {
  * Failure always carries a `PtyHostSpawnError`.
  */
 export type PtyHostResponse =
-  | { id: number; ok: true; result: { ptyId: string; pid: number } | void }
+  | { id: number; ok: true; result: PtyHostSuccessResult }
   | { id: number; ok: false; error: PtyHostSpawnError };
 
 /**

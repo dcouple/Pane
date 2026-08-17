@@ -19,7 +19,9 @@ import type {
   PtyHostRequest,
   PtyHostResponse,
   PtyHostSpawnError,
+  PtyHostSuccessResult,
 } from './types';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 /**
  * Minimal poster contract; anything with a `postMessage(msg)` method fits.
@@ -30,7 +32,7 @@ import type {
  * `transfer` argument is compatible with a single-argument call).
  */
 export interface RpcPoster {
-  postMessage(message: unknown): void;
+  postMessage(message: PtyHostRequest): void;
 }
 
 /**
@@ -59,7 +61,7 @@ class RpcIdAllocator {
  * the response handler.
  */
 export type PendingResolver = {
-  resolve: (result: unknown) => void;
+  resolve: (result: PtyHostSuccessResult) => void;
   reject: (error: Error) => void;
 };
 
@@ -82,13 +84,15 @@ export class RpcDispatcher {
    * The caller provides the request minus its `id`; the dispatcher allocates
    * an id, stores the promise resolvers, and posts the fully-formed frame.
    */
-  send<Req extends Omit<PtyHostRequest, 'id'>>(
+  send(
     poster: RpcPoster,
-    request: Req,
-  ): Promise<unknown> {
+    request: Omit<PtyHostRequest, 'id'>,
+  ): Promise<PtyHostSuccessResult> {
     return new Promise((resolve, reject) => {
       const id = this.ids.allocate();
       this.pending.set(id, { resolve, reject });
+      // SAFETY: `request` is the id-less form of Pane's closed request union;
+      // adding the dispatcher-owned numeric id reconstructs a request frame.
       const framed = { id, ...request } as PtyHostRequest;
       try {
         poster.postMessage(framed);
@@ -147,12 +151,27 @@ export class RpcDispatcher {
  * the frame has a numeric `id` and an `ok` boolean; the minimum shape a
  * response must satisfy.
  */
-export function isPtyHostResponse(frame: unknown): frame is PtyHostResponse {
-  if (typeof frame !== 'object' || frame === null) {
+export function isPtyHostResponse(frame: Parameters<typeof decodeBoundary>[0]): frame is PtyHostResponse {
+  try {
+    decodeBoundary(frame, boundary.union(
+      boundary.object({
+        id: boundary.number,
+        ok: boundary.literal(true),
+        result: boundary.optional(boundary.object({ ptyId: boundary.string, pid: boundary.number })),
+      }),
+      boundary.object({
+        id: boundary.number,
+        ok: boundary.literal(false),
+        error: boundary.object({
+          code: boundary.enumeration('ENOENT', 'E193', 'SHEBANG', 'OTHER'),
+          message: boundary.string,
+        }),
+      }),
+    ));
+    return true;
+  } catch {
     return false;
   }
-  const candidate = frame as { id?: unknown; ok?: unknown };
-  return typeof candidate.id === 'number' && typeof candidate.ok === 'boolean';
 }
 
 /**
@@ -162,7 +181,11 @@ export function isPtyHostResponse(frame: unknown): frame is PtyHostResponse {
  * message string.
  */
 function toError(spawnError: PtyHostSpawnError): Error {
-  const err = new Error(spawnError.message) as Error & { code: PtyHostSpawnError['code'] };
-  err.code = spawnError.code;
-  return err;
+  return new PtyHostRpcError(spawnError.message, spawnError.code);
+}
+
+class PtyHostRpcError extends Error {
+  constructor(message: string, readonly code: PtyHostSpawnError['code']) {
+    super(message);
+  }
 }

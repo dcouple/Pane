@@ -18,6 +18,7 @@ import { worktreeFileSyncService, type WorktreeFileSyncFailure } from './worktre
 import { terminalPanelManager } from './terminalPanelManager';
 import { detectProjectConfig } from './projectConfigDetector';
 import { emitFolderCreatedEvent } from './folderEvents';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -41,6 +42,27 @@ interface CreateSessionJob {
   toolType?: 'claude' | 'none';
   startPinned?: boolean;
   activateOnCreate?: boolean;
+}
+
+interface SessionCreationJob {
+  id: string | number;
+  data: CreateSessionJob;
+  status?: string;
+  result?: CreateSessionQueueResult;
+  error?: Error;
+  finished?: () => Promise<CreateSessionQueueResult>;
+}
+
+interface SessionCreationQueue {
+  add(data: CreateSessionJob): Promise<SessionCreationJob>;
+  process(concurrency: number, processor: (job: SessionCreationJob) => Promise<CreateSessionQueueResult>): void;
+  on(event: 'active' | 'waiting', listener: (job: SessionCreationJob) => void): this;
+  on(event: 'completed', listener: (job: SessionCreationJob, result: CreateSessionQueueResult) => void): this;
+  on(event: 'failed', listener: (job: SessionCreationJob, error: Error) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  removeListener(event: 'completed', listener: (job: SessionCreationJob, result: CreateSessionQueueResult) => void): this;
+  removeListener(event: 'failed', listener: (job: SessionCreationJob, error: Error) => void): this;
+  close(): Promise<void>;
 }
 
 interface ContinueSessionJob {
@@ -73,7 +95,7 @@ export interface CreateSessionQueueResult {
 }
 
 export class TaskQueue {
-  private sessionQueue: Bull.Queue<CreateSessionJob> | SimpleQueue<CreateSessionJob>;
+  private sessionQueue: SessionCreationQueue;
   private inputQueue: Bull.Queue<SendInputJob> | SimpleQueue<SendInputJob>;
   private continueQueue: Bull.Queue<ContinueSessionJob> | SimpleQueue<ContinueSessionJob>;
   private useSimpleQueue: boolean;
@@ -95,7 +117,7 @@ export class TaskQueue {
     if (this.useSimpleQueue) {
       console.log('[TaskQueue] Using SimpleQueue for local in-process queue');
       
-      this.sessionQueue = new SimpleQueue<CreateSessionJob>('session-creation', sessionConcurrency);
+      this.sessionQueue = new SimpleQueue<CreateSessionJob, CreateSessionQueueResult>('session-creation', sessionConcurrency);
       this.inputQueue = new SimpleQueue<SendInputJob>('session-input', 10);
       this.continueQueue = new SimpleQueue<ContinueSessionJob>('session-continue', 10);
     } else {
@@ -129,25 +151,19 @@ export class TaskQueue {
     }
     
     // Add event handlers for debugging
-    this.sessionQueue.on('active', (...args: unknown[]) => {
-      const job = args[0] as { id: string | number };
+    this.sessionQueue.on('active', (job: { id: string | number }) => {
       // Job active tracking removed - verbose debug logging
     });
     
-    this.sessionQueue.on('completed', (...args: unknown[]) => {
-      const job = args[0] as { id: string | number };
-      const result = args[1];
+    this.sessionQueue.on('completed', (job: SessionCreationJob, result: CreateSessionQueueResult) => {
       // Job completion tracking removed - verbose debug logging
     });
     
-    this.sessionQueue.on('failed', (...args: unknown[]) => {
-      const job = args[0] as { id: string | number };
-      const err = args[1] as Error;
+    this.sessionQueue.on('failed', (job: { id: string | number }, err: Error) => {
       console.error(`[TaskQueue] Job ${job.id} failed:`, err);
     });
     
-    this.sessionQueue.on('error', (...args: unknown[]) => {
-      const error = args[0] as Error;
+    this.sessionQueue.on('error', (error: Error) => {
       console.error('[TaskQueue] Queue error:', error);
     });
 
@@ -499,7 +515,7 @@ export class TaskQueue {
     });
   }
 
-  async createSession(data: CreateSessionJob): Promise<Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string }> {
+  async createSession(data: CreateSessionJob): Promise<SessionCreationJob> {
     const job = await this.sessionQueue.add(data);
     return job;
   }
@@ -513,19 +529,18 @@ export class TaskQueue {
   }
 
   private async waitForSessionCreationJob(
-    job: Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string; result?: unknown; error?: Error },
+    job: SessionCreationJob,
     timeoutMs: number,
   ): Promise<CreateSessionQueueResult> {
-    const bullJob = job as Bull.Job<CreateSessionJob> & { finished?: () => Promise<unknown> };
-    if (typeof bullJob.finished === 'function') {
+    if (job.finished) {
       return this.withSessionCreationTimeout(
-        bullJob.finished().then(result => this.parseSessionCreationResult(result, job.id)),
+        job.finished().then(result => this.parseSessionCreationResult(result, job.id)),
         timeoutMs,
         job.id,
       );
     }
 
-    const simpleJob = job as { id: string; status: string; result?: unknown; error?: Error };
+    const simpleJob = job;
     if (simpleJob.status === 'completed') {
       return this.parseSessionCreationResult(simpleJob.result, simpleJob.id);
     }
@@ -535,7 +550,7 @@ export class TaskQueue {
 
     let cleanup: () => void = () => {};
     return this.withSessionCreationTimeout(new Promise<CreateSessionQueueResult>((resolve, reject) => {
-      const handleCompleted = (completedJob: unknown, result: unknown) => {
+      const handleCompleted = (completedJob: SessionCreationJob, result: CreateSessionQueueResult) => {
         const completedJobId = this.getQueueJobId(completedJob);
         if (completedJobId !== String(simpleJob.id)) {
           return;
@@ -548,7 +563,7 @@ export class TaskQueue {
         }
       };
 
-      const handleFailed = (failedJob: unknown, error: unknown) => {
+      const handleFailed = (failedJob: { id: string | number }, error: Error) => {
         const failedJobId = this.getQueueJobId(failedJob);
         if (failedJobId !== String(simpleJob.id)) {
           return;
@@ -567,16 +582,12 @@ export class TaskQueue {
     }), timeoutMs, simpleJob.id, cleanup);
   }
 
-  private parseSessionCreationResult(result: unknown, jobId: string | number): CreateSessionQueueResult {
-    if (
-      typeof result === 'object' &&
-      result !== null &&
-      typeof (result as { sessionId?: unknown }).sessionId === 'string'
-    ) {
-      return { sessionId: (result as { sessionId: string }).sessionId };
+  private parseSessionCreationResult(result: CreateSessionQueueResult | undefined, jobId: string | number): CreateSessionQueueResult {
+    try {
+      return decodeBoundary(result, boundary.object({ sessionId: boundary.string }));
+    } catch {
+      throw new Error(`Session creation job ${jobId} completed without a sessionId`);
     }
-
-    throw new Error(`Session creation job ${jobId} completed without a sessionId`);
   }
 
   private withSessionCreationTimeout<T>(
@@ -600,13 +611,8 @@ export class TaskQueue {
     });
   }
 
-  private getQueueJobId(job: unknown): string | null {
-    if (typeof job !== 'object' || job === null) {
-      return null;
-    }
-
-    const id = (job as { id?: unknown }).id;
-    return typeof id === 'string' || typeof id === 'number' ? String(id) : null;
+  private getQueueJobId(job: { id: string | number }): string {
+    return String(job.id);
   }
 
   async createMultipleSessions(
@@ -620,7 +626,7 @@ export class TaskQueue {
     providedFolderId?: string,
     isMainRepo?: boolean,
     startPinned?: boolean
-  ): Promise<(Bull.Job<CreateSessionJob> | { id: string; data: CreateSessionJob; status: string })[]> {
+  ): Promise<SessionCreationJob[]> {
     let folderId: string | undefined = providedFolderId;
     let generatedBaseName: string | undefined;
     
@@ -638,11 +644,11 @@ export class TaskQueue {
     if (!providedFolderId && count > 1 && projectId) {
       try {
         const { sessionManager } = this.options;
-        const db = sessionManager.db as DatabaseService;
+        const db = sessionManager.db;
         const folderName = worktreeTemplate || generatedBaseName || 'Multi-session prompt';
         
         // Ensure projectId is a number
-        const numericProjectId = typeof projectId === 'string' ? parseInt(projectId, 10) : projectId;
+        const numericProjectId = projectId;
         if (isNaN(numericProjectId)) {
           throw new Error(`Invalid project ID: ${projectId}`);
         }

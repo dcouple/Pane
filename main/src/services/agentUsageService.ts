@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/types/agentUsage';
 import { getShellPath } from '../utils/shellPath';
 import { getWSLExecArgs, type WSLContext } from '../utils/wslUtils';
+import { boundary, decodeBoundary, type JsonObject, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 const CACHE_TTL_MS = 60_000;
 const PROBE_TIMEOUT_MS = 12_000;
@@ -25,19 +26,19 @@ interface CachedSnapshot {
 
 interface JsonRpcMessage {
   id?: number | string;
-  result?: unknown;
-  error?: unknown;
+  result?: JsonValue;
+  error?: JsonValue;
 }
 
 interface JsonRpcRequest {
   method: string;
   id?: number | string;
-  params?: Record<string, unknown>;
+  params?: JsonObject;
 }
 
 interface CodexProbeResult {
-  account: unknown;
-  rateLimits: unknown;
+  account: JsonValue | undefined;
+  rateLimits: JsonValue | undefined;
 }
 
 type CodexProbe = (target: AgentUsageTarget) => Promise<CodexProbeResult>;
@@ -51,16 +52,30 @@ interface CodexSpawnCommand {
   cwd: string | undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function optionalObject(value: JsonValue | undefined): JsonObject | null {
+  try {
+    return decodeBoundary(value, boundary.jsonObject);
+  } catch {
+    return null;
+  }
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+function optionalString(value: JsonValue | undefined): string | null {
+  try {
+    const decoded = decodeBoundary(value, boundary.string).trim();
+    return decoded || null;
+  } catch {
+    return null;
+  }
 }
 
-function optionalNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+function optionalNumber(value: JsonValue | undefined): number | null {
+  try {
+    const decoded = decodeBoundary(value, boundary.number);
+    return Number.isFinite(decoded) ? decoded : null;
+  } catch {
+    return null;
+  }
 }
 
 function titleCaseIdentifier(value: string): string {
@@ -88,14 +103,15 @@ function normalizeWindow(
   limitId: string,
   limitName: string | null,
   windowKind: 'primary' | 'secondary',
-  value: unknown,
+  value: JsonValue | undefined,
 ): AgentUsageLimit | null {
-  if (!isRecord(value)) return null;
-  const usedPercent = optionalNumber(value.usedPercent);
+  const record = optionalObject(value);
+  if (!record) return null;
+  const usedPercent = optionalNumber(record.usedPercent);
   if (usedPercent === null) return null;
 
-  const windowDurationMinutes = optionalNumber(value.windowDurationMins);
-  const resetSeconds = optionalNumber(value.resetsAt);
+  const windowDurationMinutes = optionalNumber(record.windowDurationMins);
+  const resetSeconds = optionalNumber(record.resetsAt);
   const windowName = formatWindowName(windowDurationMinutes);
   const name = limitName
     ? windowDurationMinutes === null ? limitName : `${limitName} ${windowName.toLowerCase()}`
@@ -110,33 +126,37 @@ function normalizeWindow(
   };
 }
 
-function normalizeLimitSnapshot(value: unknown, fallbackId: string): AgentUsageLimit[] {
-  if (!isRecord(value)) return [];
-  const limitId = optionalString(value.limitId) ?? fallbackId;
-  const limitName = optionalString(value.limitName);
-  const primary = normalizeWindow(limitId, limitName, 'primary', value.primary);
-  const secondary = normalizeWindow(limitId, limitName, 'secondary', value.secondary);
+function normalizeLimitSnapshot(value: JsonValue | undefined, fallbackId: string): AgentUsageLimit[] {
+  const record = optionalObject(value);
+  if (!record) return [];
+  const limitId = optionalString(record.limitId) ?? fallbackId;
+  const limitName = optionalString(record.limitName);
+  const primary = normalizeWindow(limitId, limitName, 'primary', record.primary);
+  const secondary = normalizeWindow(limitId, limitName, 'secondary', record.secondary);
   return [primary, secondary].filter((limit): limit is AgentUsageLimit => limit !== null);
 }
 
 export function normalizeCodexUsage(
-  accountPayload: unknown,
-  rateLimitsPayload: unknown,
+  accountPayload: JsonValue | undefined,
+  rateLimitsPayload: JsonValue | undefined,
   fetchedAt = new Date(),
 ): AgentUsageProviderSnapshot {
-  if (!isRecord(accountPayload) || !isRecord(rateLimitsPayload)) {
+  const accountResponse = optionalObject(accountPayload);
+  const rateLimitsResponse = optionalObject(rateLimitsPayload);
+  if (!accountResponse || !rateLimitsResponse) {
     throw new Error('Codex returned an invalid account usage response');
   }
 
-  const account = isRecord(accountPayload.account) ? accountPayload.account : null;
+  const account = optionalObject(accountResponse.account);
   const rawPlan = optionalString(account?.planType);
 
-  const buckets = isRecord(rateLimitsPayload.rateLimitsByLimitId)
-    ? Object.entries(rateLimitsPayload.rateLimitsByLimitId)
+  const rateLimitsById = optionalObject(rateLimitsResponse.rateLimitsByLimitId);
+  const buckets = rateLimitsById
+    ? Object.entries(rateLimitsById)
     : [];
   const rawLimits = buckets.length > 0
     ? buckets
-    : [['codex', rateLimitsPayload.rateLimits] as const];
+    : [['codex', rateLimitsResponse.rateLimits] as const];
   const limits = rawLimits.flatMap(([limitId, value]) => normalizeLimitSnapshot(value, limitId));
   limits.sort((left, right) => {
     const leftDefault = left.id.startsWith('codex:') ? 0 : 1;
@@ -188,7 +208,7 @@ function createCodexProcess(target: AgentUsageTarget): ChildProcessWithoutNullSt
     cwd: command.cwd,
     env,
     windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'] satisfies ['pipe', 'pipe', 'pipe'],
   };
   return spawn(command.file, command.args, spawnOptions);
 }
@@ -279,8 +299,8 @@ export async function probeCodexUsage(
     const child = createProcess(target);
     let stdoutBuffer = '';
     let stderr = '';
-    let account: unknown;
-    let rateLimits: unknown;
+    let account: JsonValue | undefined;
+    let rateLimits: JsonValue | undefined;
     let settled = false;
 
     const finish = (error?: Error) => {
@@ -334,7 +354,11 @@ export async function probeCodexUsage(
 
         let message: JsonRpcMessage;
         try {
-          message = JSON.parse(line) as JsonRpcMessage;
+          message = decodeBoundary(JSON.parse(line), boundary.object({
+            id: boundary.optional(boundary.union(boundary.number, boundary.string)),
+            result: boundary.optional(boundary.json),
+            error: boundary.optional(boundary.json),
+          }));
         } catch {
           continue;
         }

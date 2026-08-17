@@ -131,7 +131,7 @@ export class PaneRemoteTransportController {
           flow: 'setup',
           result: 'failed',
           failure_stage: 'start_host_transport',
-          failure_category: getRemoteFailureCategory(error),
+          failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
         });
         throw error;
       }

@@ -6,6 +6,7 @@ describe('ResourceMonitorService', () => {
     const service = new ResourceMonitorService();
     service.initialize();
 
+    // SAFETY: The assertion exposes one private pure query solely to verify the no-app initialization path.
     expect((service as { getElectronMetrics(): unknown[] }).getElectronMetrics()).toEqual([]);
   });
 });

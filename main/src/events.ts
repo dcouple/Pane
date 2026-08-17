@@ -14,6 +14,8 @@ import type { GitCommit } from './services/gitDiffManager';
 import type { Project } from './database/models';
 import type { GitStatus } from './types/session';
 import { resourceMonitorService } from './services/resourceMonitorService';
+import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
+import type { PaneEventArgument } from './core/eventSink';
 
 function isArchivedSessionOutputValidation(validation: { error?: string; sessionId?: string }): boolean {
   return Boolean(
@@ -22,7 +24,7 @@ function isArchivedSessionOutputValidation(validation: { error?: string; session
   );
 }
 
-function sendRendererEvent(channel: string, ...args: unknown[]): void {
+function sendRendererEvent(channel: string, ...args: PaneEventArgument[]): void {
   try {
     getPaneEventSink().send(channel, ...args);
   } catch (error) {
@@ -50,7 +52,7 @@ export function setupEventListeners(services: AppServices): void {
   }
 
   // Bridge resource monitor events to renderer
-  resourceMonitorService.on('resource-update', (snapshot: unknown) => {
+  resourceMonitorService.on('resource-update', (snapshot: ResourceSnapshot) => {
     sendRendererEvent('resource-monitor:update', snapshot);
   });
 

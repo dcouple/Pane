@@ -9,25 +9,36 @@ interface GitFileWatcherInternals {
   getGitignoredDirs(watchPath: string): Set<string>;
   transitionToPolling(sessionId: string, worktreePath: string, err: Error): void;
   pollStatusSnapshot(sessionId: string): void;
-  handleWatcherFailure(sessionId: string, err: unknown): void;
+  handleWatcherFailure(sessionId: string, err: Error): void;
   watchedSessions: Map<string, { mode: string; watcherErrorLogged: boolean; lastStatusSnapshot?: string }>;
+}
+
+function partialMock<Contract>(implementation: Partial<Contract>): Contract {
+  // SAFETY: These fixtures implement every collaborator member exercised by
+  // the watcher scenarios; unexpected calls fail immediately.
+  return implementation as Contract;
+}
+
+function watcherInternals(watcher: GitFileWatcher): GitFileWatcherInternals {
+  // SAFETY: The interface above mirrors the private pure/test seam exactly.
+  return watcher as GitFileWatcherInternals;
 }
 
 function makeLogger(): Logger & { warns: string[]; errors: string[] } {
   const warns: string[] = [];
   const errors: string[] = [];
-  return {
+  return partialMock<Logger & { warns: string[]; errors: string[] }>({
     warns,
     errors,
     info: vi.fn(),
     verbose: vi.fn(),
     warn: (m: string) => warns.push(m),
     error: (m: string) => errors.push(m),
-  } as unknown as Logger & { warns: string[]; errors: string[] };
+  });
 }
 
 function makeCommandRunner(exec: (command: string, cwd: string) => string): CommandRunner {
-  return { exec, wslContext: undefined } as unknown as CommandRunner;
+  return partialMock<CommandRunner>({ exec, wslContext: undefined });
 }
 
 describe('GitFileWatcher pure logic', () => {
@@ -47,7 +58,7 @@ describe('GitFileWatcher pure logic', () => {
 
   function build(exec: (command: string, cwd: string) => string = () => ''): void {
     watcher = new GitFileWatcher(logger, makeCommandRunner(exec));
-    internals = watcher as unknown as GitFileWatcherInternals;
+    internals = watcherInternals(watcher);
   }
 
   describe('isIgnoredEventPath', () => {

@@ -9,14 +9,14 @@ export class CommandRunner {
   }
 
   /** Execute command synchronously, wrapping for WSL if needed */
-  exec(command: string, cwd: string, options?: { encoding?: string; maxBuffer?: number; silent?: boolean; env?: Record<string, string> }): string {
+  exec(command: string, cwd: string, options?: { encoding?: BufferEncoding; maxBuffer?: number; silent?: boolean; env?: Record<string, string> }): string {
     return commandExecutor.execSync(command, {
       cwd,
-      encoding: (options?.encoding || 'utf-8') as BufferEncoding,
+      encoding: options?.encoding || 'utf-8',
       maxBuffer: options?.maxBuffer,
       silent: options?.silent,
       env: options?.env ? { ...process.env, ...options.env } : undefined,
-    }, this.wslContext) as string;
+    }, this.wslContext);
   }
 
   /** Execute command asynchronously, wrapping for WSL if needed */

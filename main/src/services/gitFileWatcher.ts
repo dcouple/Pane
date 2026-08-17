@@ -5,6 +5,7 @@ import type { Stats } from 'fs';
 // node:fs recursive watcher — aliased so it doesn't collide with chokidar's
 // imported `watch`/`FSWatcher`. Used for the darwin/win32 native path.
 import { watch as fsWatch, type FSWatcher as NodeFsWatcher, type WatchEventType } from 'node:fs';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import { spawn, type ChildProcess } from 'child_process';
 import { execSync } from '../utils/commandExecutor';
 import type { CommandRunner } from '../utils/commandRunner';
@@ -150,14 +151,16 @@ export class GitFileWatcher extends EventEmitter {
           // polling it would be a silent no-op loop, so log and give up (the
           // pre-native behavior). Everything else (EMFILE/ENOSPC-style handle
           // exhaustion) degrades to polling before any record exists.
-          if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          const normalizedError = err instanceof Error ? err : new Error(String(err));
+          const code = decodeBoundary(err, boundary.object({ code: boundary.optional(boundary.string) })).code;
+          if (code === 'ENOENT') {
             this.logger?.error(
               `[GitFileWatcher] Failed to start watching session ${sessionId} (worktree missing):`,
-              err as Error,
+              normalizedError,
             );
             return;
           }
-          this.transitionToPolling(sessionId, worktreePath, err as Error);
+          this.transitionToPolling(sessionId, worktreePath, normalizedError);
           return;
         }
         nativeWatcher.on('error', (err) => this.handleWatcherFailure(sessionId, err));
@@ -230,17 +233,18 @@ export class GitFileWatcher extends EventEmitter {
         // via ErrnoException cast (the no-any-compliant route). Only the
         // handle-exhaustion errors degrade to polling — other chokidar errors
         // stay log-only to avoid over-eager fallback on transient stat blips.
-        const code = (err as NodeJS.ErrnoException).code;
+        const code = decodeBoundary(err, boundary.object({ code: boundary.optional(boundary.string) })).code;
+        const normalizedError = err instanceof Error ? err : new Error(String(err));
         if (code === 'EMFILE' || code === 'ENOSPC') {
-          this.logger?.error(`[GitFileWatcher] worktree watcher error`, err as Error);
-          this.handleWatcherFailure(sessionId, err);
+          this.logger?.error(`[GitFileWatcher] worktree watcher error`, normalizedError);
+          this.handleWatcherFailure(sessionId, normalizedError);
           return;
         }
         // log-only errors are rate-limited to the first per session — repeated
         // transient blips must not turn into a sustained logger/IPC storm
         if (!session.nonFatalErrorLogged) {
           session.nonFatalErrorLogged = true;
-          this.logger?.error(`[GitFileWatcher] worktree watcher error`, err as Error);
+          this.logger?.error(`[GitFileWatcher] worktree watcher error`, normalizedError);
         }
       });
 
@@ -269,7 +273,7 @@ export class GitFileWatcher extends EventEmitter {
     } catch (error) {
       this.logger?.error(
         `[GitFileWatcher] Failed to start watching session ${sessionId}:`,
-        error as Error
+        error instanceof Error ? error : new Error(String(error))
       );
     }
   }
@@ -467,7 +471,7 @@ export class GitFileWatcher extends EventEmitter {
         this.logger?.info(`[GitFileWatcher] Session ${sessionId} no refresh needed`);
       }
     } catch (error) {
-      this.logger?.error(`[GitFileWatcher] Error checking session ${sessionId}:`, error as Error);
+      this.logger?.error(`[GitFileWatcher] Error checking session ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
       // On error, emit refresh to be safe
       this.emit('needs-refresh', sessionId);
     }
@@ -478,7 +482,7 @@ export class GitFileWatcher extends EventEmitter {
     if (this.commandRunner) {
       return this.commandRunner.exec(command, cwd, { silent: true });
     }
-    return execSync(command, { cwd, encoding: 'utf8', silent: true }) as string;
+    return execSync(command, { cwd, encoding: 'utf8', silent: true });
   }
 
   /**
@@ -591,13 +595,13 @@ export class GitFileWatcher extends EventEmitter {
    * EMFILE error events collapse to a single degrade. Reads worktreePath from
    * the session record and normalizes non-Error values.
    */
-  private handleWatcherFailure(sessionId: string, err: unknown): void {
+  private handleWatcherFailure(sessionId: string, err: Error): void {
     const session = this.watchedSessions.get(sessionId);
     if (!session || session.mode === 'polling') return; // already degraded (or torn down); swallow the storm
     this.transitionToPolling(
       sessionId,
       session.worktreePath,
-      err instanceof Error ? err : new Error(String(err)),
+      err,
     );
   }
 
@@ -702,7 +706,7 @@ export class GitFileWatcher extends EventEmitter {
       // today; do NOT route to handleWatcherFailure or a stat blip on
       // refs/heads would needlessly degrade a healthy session to polling
       gitWatcher.on('error', (err) => {
-        this.logger?.error(`[GitFileWatcher] .git watcher error`, err as Error);
+        this.logger?.error(`[GitFileWatcher] .git watcher error`, err instanceof Error ? err : new Error(String(err)));
       });
       return gitWatcher;
     } catch (gitDirErr) {
@@ -710,7 +714,7 @@ export class GitFileWatcher extends EventEmitter {
         `[GitFileWatcher] Failed to resolve gitdir for ${sessionId}, ` +
           `narrow .git watcher disabled (metadata-only operations will ` +
           `not trigger refresh until worktree watcher fires):`,
-        gitDirErr as Error,
+        gitDirErr instanceof Error ? gitDirErr : new Error(String(gitDirErr)),
       );
       return undefined;
     }
@@ -760,7 +764,7 @@ export class GitFileWatcher extends EventEmitter {
       return false;
     } catch (error) {
       // If any command fails unexpectedly, assume refresh is needed
-      this.logger?.warn(`[GitFileWatcher] Unexpected refresh check failure for ${worktreePath}; scheduling refresh`, error as Error);
+      this.logger?.warn(`[GitFileWatcher] Unexpected refresh check failure for ${worktreePath}; scheduling refresh`, error instanceof Error ? error : new Error(String(error)));
       return true;
     }
   }

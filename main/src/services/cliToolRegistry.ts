@@ -3,6 +3,7 @@ import type { Logger } from '../utils/logger';
 import type { ConfigManager } from './configManager';
 import { AbstractCliManager } from './panels/cli/AbstractCliManager';
 import type { SessionManager } from './sessionManager';
+import type { JsonObject } from '../../../shared/validation/boundaryDecoder';
 
 /**
  * Defines the capabilities and features of a CLI tool
@@ -28,6 +29,9 @@ export interface CliToolDefinition {
   
   /** Factory function to create the CLI manager instance */
   managerFactory: CliManagerFactory;
+
+  /** Selection priority assigned at registration. */
+  priority?: number;
 }
 
 /**
@@ -112,7 +116,7 @@ export type CliManagerFactory = (
   sessionManager: SessionManager | null,
   logger?: Logger,
   configManager?: ConfigManager,
-  additionalOptions?: Record<string, unknown>
+  additionalOptions?: JsonObject
 ) => AbstractCliManager;
 
 /**
@@ -146,7 +150,7 @@ export interface ToolAvailabilityResult {
   path?: string;
   
   /** Additional metadata */
-  metadata?: Record<string, unknown>;
+  metadata?: JsonObject;
 }
 
 /**
@@ -303,7 +307,7 @@ export class CliToolRegistry extends EventEmitter {
   public async createManager(
     toolId: string,
     sessionManager: SessionManager,
-    additionalOptions?: Record<string, unknown>,
+    additionalOptions?: JsonObject,
     skipValidation = false
   ): Promise<AbstractCliManager> {
     const tool = this.tools.get(toolId);
@@ -385,8 +389,7 @@ export class CliToolRegistry extends EventEmitter {
     try {
       // Create a temporary manager instance to test availability
       const tempManager = tool.managerFactory(null, this.logger, this.configManager);
-      // Access the protected method via type assertion as a temporary workaround
-      const result = await (tempManager as AbstractCliManager & { getCachedAvailability(): Promise<ToolAvailabilityResult> }).getCachedAvailability();
+      const result = await tempManager.getCachedAvailability();
 
       // Cache the result
       this.availabilityCache.set(toolId, {
@@ -452,8 +455,8 @@ export class CliToolRegistry extends EventEmitter {
    * Get the default CLI tool (first available tool with highest priority)
    */
   public async getDefaultTool(): Promise<CliToolDefinition | null> {
-    const tools = Array.from(this.tools.values()).sort((a, b) => 
-      ((b as CliToolDefinition & { priority?: number }).priority || 0) - ((a as CliToolDefinition & { priority?: number }).priority || 0)
+    const tools = Array.from(this.tools.values()).sort((a, b) =>
+      (b.priority || 0) - (a.priority || 0)
     );
 
     for (const tool of tools) {
@@ -493,35 +496,13 @@ export class CliToolRegistry extends EventEmitter {
    * Validate a tool definition for completeness and consistency
    */
   private validateToolDefinition(definition: CliToolDefinition): void {
-    const required = ['id', 'name', 'description', 'version', 'capabilities', 'config', 'managerFactory'];
-    
-    for (const field of required) {
-      if (!(field in definition) || definition[field as keyof CliToolDefinition] == null) {
-        throw new Error(`CLI tool definition missing required field: ${field}`);
-      }
-    }
-
-    if (typeof definition.managerFactory !== 'function') {
-      throw new Error(`CLI tool definition managerFactory must be a function`);
-    }
-
     if (!definition.config.defaultExecutable) {
       throw new Error(`CLI tool definition must specify a defaultExecutable`);
     }
 
-    // Validate capabilities
     const capabilities = definition.capabilities;
-    if (typeof capabilities !== 'object') {
-      throw new Error(`CLI tool capabilities must be an object`);
-    }
-
-    // Validate output formats
-    if (!Array.isArray(capabilities.outputFormats)) {
-      throw new Error(`CLI tool capabilities.outputFormats must be an array`);
-    }
-
     for (const format of capabilities.outputFormats) {
-      if (!format.id || !format.name || typeof format.isStructured !== 'boolean') {
+      if (!format.id || !format.name) {
         throw new Error(`Invalid output format definition: ${JSON.stringify(format)}`);
       }
     }

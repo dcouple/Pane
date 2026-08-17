@@ -4,6 +4,8 @@ import {
   createDefaultCloudVmState,
   normalizeCloudVmConfig,
   type CloudVmConfig,
+  type CloudVmState,
+  type VmStatus,
 } from '../../../shared/types/cloud';
 import {
   createDefaultRemoteDaemonConfig,
@@ -11,6 +13,26 @@ import {
 } from '../../../shared/types/remoteDaemon';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { CloudVmManager } from './cloudVmManager';
+import type { ConfigManager } from './configManager';
+
+interface CloudVmManagerTestAccess {
+  fetchVmStatus(config: CloudVmConfig): Promise<VmStatus>;
+  checkTunnelHealth(port: number): Promise<boolean>;
+  gcpAction(config: CloudVmConfig, action: 'start' | 'stop'): Promise<void>;
+  waitForStatus(config: CloudVmConfig, targetStatus: VmStatus, timeoutMs: number): Promise<CloudVmState>;
+}
+
+function createManager(configManager: ConfigManagerStub): CloudVmManager {
+  // SAFETY: The stub implements the EventEmitter and configuration methods
+  // CloudVmManager reaches in these isolated lifecycle tests.
+  return new CloudVmManager(configManager as ConfigManager);
+}
+
+function managerAccess(manager: CloudVmManager): CloudVmManagerTestAccess {
+  // SAFETY: This interface mirrors only the private lifecycle methods that
+  // these tests intentionally replace with deterministic spies.
+  return manager as CloudVmManagerTestAccess;
+}
 
 class ConfigManagerStub extends EventEmitter {
   constructor(
@@ -124,7 +146,7 @@ describe('CloudVmManager', () => {
   });
 
   it('returns the default hosted workspace state when cloud is not configured', async () => {
-    const manager = new CloudVmManager(new ConfigManagerStub() as never);
+    const manager = createManager(new ConfigManagerStub());
 
     await expect(manager.getState()).resolves.toEqual(createDefaultCloudVmState());
   });
@@ -147,7 +169,7 @@ describe('CloudVmManager', () => {
       lastError: null,
     });
 
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       apiToken: 'secret-token',
       serverId: 'pane-user123',
@@ -160,10 +182,10 @@ describe('CloudVmManager', () => {
       linkedRemoteProfileId: 'remote-profile-1',
       preferredAccess: 'daemon',
       allowNoVncFallback: false,
-    }), remoteDaemonConfig) as never);
+    }), remoteDaemonConfig));
 
-    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
-    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
+    vi.spyOn(managerAccess(manager), 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(managerAccess(manager), 'checkTunnelHealth').mockResolvedValue(true);
 
     const state = await manager.getState();
 
@@ -202,15 +224,15 @@ describe('CloudVmManager', () => {
       lastError: null,
     });
 
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       serverId: 'pane-user123',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
-    }), remoteDaemonConfig) as never);
+    }), remoteDaemonConfig));
 
-    const fetchVmStatusSpy = vi.spyOn(manager as never, 'fetchVmStatus');
+    const fetchVmStatusSpy = vi.spyOn(managerAccess(manager), 'fetchVmStatus');
 
     const state = await manager.getState();
 
@@ -233,16 +255,16 @@ describe('CloudVmManager', () => {
   });
 
   it('surfaces daemon-backed hosted workspace state when lifecycle fields are incomplete', async () => {
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       apiToken: 'stale-token',
       serverId: 'pane-user123',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
-    })) as never);
+    })));
 
-    const fetchVmStatusSpy = vi.spyOn(manager as never, 'fetchVmStatus');
+    const fetchVmStatusSpy = vi.spyOn(managerAccess(manager), 'fetchVmStatus');
 
     const state = await manager.getState();
 
@@ -260,7 +282,7 @@ describe('CloudVmManager', () => {
   });
 
   it('falls back to daemon-backed hosted workspace state when lifecycle status fetch fails', async () => {
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       apiToken: 'stale-token',
       serverId: 'pane-user123',
@@ -269,9 +291,9 @@ describe('CloudVmManager', () => {
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
-    })) as never);
+    })));
 
-    vi.spyOn(manager as never, 'fetchVmStatus').mockRejectedValue(new Error('401 Unauthorized'));
+    vi.spyOn(managerAccess(manager), 'fetchVmStatus').mockRejectedValue(new Error('401 Unauthorized'));
 
     const state = await manager.getState();
 
@@ -323,9 +345,9 @@ describe('CloudVmManager', () => {
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
     }), remoteDaemonConfig);
-    const manager = new CloudVmManager(configManager as never);
-    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
-    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
+    const manager = createManager(configManager);
+    vi.spyOn(managerAccess(manager), 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(managerAccess(manager), 'checkTunnelHealth').mockResolvedValue(true);
 
     const state = await manager.connectWorkspace();
 
@@ -375,13 +397,13 @@ describe('CloudVmManager', () => {
       lastError: null,
     });
 
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       serverId: 'pane-user123',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://new.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
-    }), remoteDaemonConfig) as never);
+    }), remoteDaemonConfig));
 
     const state = await manager.getState();
 
@@ -405,13 +427,13 @@ describe('CloudVmManager', () => {
       lastError: null,
     });
 
-    const manager = new CloudVmManager(new ConfigManagerStub(normalizeCloudVmConfig({
+    const manager = createManager(new ConfigManagerStub(normalizeCloudVmConfig({
       provider: 'gcp',
       serverId: 'pane-user123',
       daemonStatus: 'ready',
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
-    }), remoteDaemonConfig) as never);
+    }), remoteDaemonConfig));
 
     const state = await manager.getState();
 
@@ -463,9 +485,9 @@ describe('CloudVmManager', () => {
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
     }), remoteDaemonConfig);
-    const manager = new CloudVmManager(configManager as never);
-    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
-    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
+    const manager = createManager(configManager);
+    vi.spyOn(managerAccess(manager), 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(managerAccess(manager), 'checkTunnelHealth').mockResolvedValue(true);
 
     const state = await manager.disconnectWorkspace();
 
@@ -520,11 +542,11 @@ describe('CloudVmManager', () => {
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
     }), remoteDaemonConfig);
-    const manager = new CloudVmManager(configManager as never);
-    vi.spyOn(manager as never, 'fetchVmStatus').mockResolvedValue('running');
-    vi.spyOn(manager as never, 'checkTunnelHealth').mockResolvedValue(true);
-    vi.spyOn(manager as never, 'gcpAction').mockResolvedValue(undefined);
-    vi.spyOn(manager as never, 'waitForStatus').mockResolvedValue({
+    const manager = createManager(configManager);
+    vi.spyOn(managerAccess(manager), 'fetchVmStatus').mockResolvedValue('running');
+    vi.spyOn(managerAccess(manager), 'checkTunnelHealth').mockResolvedValue(true);
+    vi.spyOn(managerAccess(manager), 'gcpAction').mockResolvedValue(undefined);
+    vi.spyOn(managerAccess(manager), 'waitForStatus').mockResolvedValue({
       ...createDefaultCloudVmState(),
       status: 'off',
     });
@@ -571,8 +593,8 @@ describe('CloudVmManager', () => {
       daemonBaseUrl: 'https://pane.example.com/daemon/',
       linkedRemoteProfileId: 'remote-profile-1',
     }), remoteDaemonConfig);
-    const manager = new CloudVmManager(configManager as never);
-    const gcpAction = vi.spyOn(manager as never, 'gcpAction').mockResolvedValue(undefined);
+    const manager = createManager(configManager);
+    const gcpAction = vi.spyOn(managerAccess(manager), 'gcpAction').mockResolvedValue(undefined);
 
     await expect(manager.stopVm()).rejects.toThrow('config write failed');
 

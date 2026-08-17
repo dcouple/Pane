@@ -1,12 +1,13 @@
 import * as path from 'path';
 import { formatJsonForOutput } from './formatters';
 import type { ClaudeJsonMessage } from '../types/session';
+import { boundary, decodeBoundary, type JsonObject, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 interface ToolCall {
   type: 'tool_use';
   id: string;
   name: string;
-  input: Record<string, unknown>;
+  input: JsonObject;
 }
 
 interface ToolResult {
@@ -37,13 +38,36 @@ interface TextItem {
 
 type ContentItem = ThinkingItem | TextItem | ToolCall | ToolResult;
 
+const contentItemSchema = boundary.union(
+  boundary.object({ type: boundary.literal('thinking'), thinking: boundary.optional(boundary.string) }),
+  boundary.object({ type: boundary.literal('text'), text: boundary.optional(boundary.string) }),
+  boundary.object({
+    type: boundary.literal('tool_use'), id: boundary.string, name: boundary.string, input: boundary.jsonObject,
+  }),
+  boundary.object({
+    type: boundary.literal('tool_result'), tool_use_id: boundary.string, content: boundary.string,
+  }),
+);
+
+function readString(record: JsonObject, key: string): string | undefined {
+  return decodeOptional(record[key], boundary.string);
+}
+
+function readNumber(record: JsonObject, key: string): number | undefined {
+  return decodeOptional(record[key], boundary.number);
+}
+
+function readObject(record: JsonObject, key: string): JsonObject | undefined {
+  return decodeOptional(record[key], boundary.jsonObject);
+}
+
 // Store pending tool calls to match with their results
 const pendingToolCalls = new Map<string, PendingToolCall>();
 
 /**
  * Recursively filter out base64 data from any object structure
  */
-function filterBase64Data(obj: unknown): unknown {
+function filterBase64Data(obj: JsonValue): JsonValue {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -54,18 +78,22 @@ function filterBase64Data(obj: unknown): unknown {
   }
 
   // Handle objects
-  if (typeof obj === 'object') {
-    const filtered: Record<string, unknown> = {};
-    const objRecord = obj as Record<string, unknown>;
+  try {
+    const objRecord = decodeBoundary(obj, boundary.jsonObject);
+    const filtered: JsonObject = {};
     
     for (const key in objRecord) {
       if (Object.prototype.hasOwnProperty.call(objRecord, key)) {
         // Check if this is a base64 source object
-        const sourceObj = objRecord[key] as Record<string, unknown>;
-        if (key === 'source' && sourceObj?.type === 'base64' && sourceObj?.data) {
+        const sourceRecord = decodeOptional(objRecord[key], boundary.jsonObject);
+        const sourceObj = decodeOptional(objRecord[key], boundary.object({
+          type: boundary.optional(boundary.string),
+          data: boundary.optional(boundary.string),
+        }));
+        if (key === 'source' && sourceObj?.type === 'base64' && sourceObj.data) {
           // Replace base64 data with placeholder
           filtered[key] = {
-            ...sourceObj,
+            ...sourceRecord,
             data: '[Base64 data filtered]'
           };
         } else {
@@ -76,26 +104,35 @@ function filterBase64Data(obj: unknown): unknown {
     }
     
     return filtered;
-  }
+  } catch { /* Primitive JSON values pass through unchanged. */ }
 
   // Return primitive values as-is
   return obj;
 }
 
+function decodeOptional<Value>(value: JsonValue | undefined, schema: import('../../../shared/validation/boundaryDecoder').BoundarySchema<Value>): Value | undefined {
+  if (value === undefined) return undefined;
+  try {
+    return decodeBoundary(value, schema);
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Convert absolute file paths to relative paths based on the git repository root
  */
-function makePathsRelative(content: unknown, gitRepoPath?: string): string {
+function makePathsRelative(content: JsonValue, gitRepoPath?: string): string {
   // Handle non-string content
   let stringContent: string;
-  if (typeof content !== 'string') {
-    if (content === null || content === undefined) {
+  const decodedString = decodeOptional(content, boundary.string);
+  if (decodedString === undefined) {
+    if (content === null) {
       return '';
     }
-    // Convert to string if it's an object or array
-    stringContent = typeof content === 'object' ? JSON.stringify(content, null, 2) : String(content);
+    stringContent = JSON.stringify(content, null, 2);
   } else {
-    stringContent = content;
+    stringContent = decodedString;
   }
   
   if (!gitRepoPath) return stringContent;
@@ -174,9 +211,10 @@ function formatToolInteraction(
       }
     } else if (toolCall.name === 'Read' && toolCall.input.file_path) {
       output += `\x1b[90m│  File: ${makePathsRelative(toolCall.input.file_path, gitRepoPath)}\x1b[0m\r\n`;
-      if (toolCall.input.offset && typeof toolCall.input.offset === 'number') {
-        const limit = typeof toolCall.input.limit === 'number' ? toolCall.input.limit : 2000;
-        output += `\x1b[90m│  Lines: ${toolCall.input.offset}-${toolCall.input.offset + limit}\x1b[0m\r\n`;
+      const offset = decodeOptional(toolCall.input.offset, boundary.number);
+      if (offset) {
+        const limit = decodeOptional(toolCall.input.limit, boundary.number) ?? 2000;
+        output += `\x1b[90m│  Lines: ${offset}-${offset + limit}\x1b[0m\r\n`;
       }
     } else if (toolCall.name === 'Edit' && toolCall.input.file_path) {
       output += `\x1b[90m│  File: ${makePathsRelative(toolCall.input.file_path, gitRepoPath)}\x1b[0m\r\n`;
@@ -185,14 +223,18 @@ function formatToolInteraction(
       output += `\x1b[90m│  $ ${toolCall.input.command}\x1b[0m\r\n`;
     } else if (toolCall.name === 'TodoWrite' && toolCall.input.todos) {
       output += `\x1b[90m│  Tasks updated:\x1b[0m\r\n`;
-      (toolCall.input.todos as Array<{status: string; content: string}>).forEach((todo) => {
+      const todos = decodeOptional(toolCall.input.todos, boundary.array(boundary.object({
+        status: boundary.string,
+        content: boundary.string,
+      }))) ?? [];
+      todos.forEach((todo) => {
         const status = todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '→' : '○';
         const statusColor = todo.status === 'completed' ? '\x1b[32m' : todo.status === 'in_progress' ? '\x1b[33m' : '\x1b[90m';
         output += `\x1b[90m│    ${statusColor}${status}\x1b[0m ${todo.content}\x1b[0m\r\n`;
       });
     } else if (toolCall.name === 'Write' && toolCall.input.file_path) {
       output += `\x1b[90m│  File: ${makePathsRelative(toolCall.input.file_path, gitRepoPath)}\x1b[0m\r\n`;
-      const content = typeof toolCall.input.content === 'string' ? toolCall.input.content : '';
+      const content = decodeOptional(toolCall.input.content, boundary.string) ?? '';
       const lines = content.split('\n');
       output += `\x1b[90m│  Size: ${lines.length} lines\x1b[0m\r\n`;
     } else if (toolCall.name === 'Glob' && toolCall.input.pattern) {
@@ -412,24 +454,26 @@ function formatToolInteraction(
 /**
  * Enhanced JSON to output formatter that unifies tool calls and responses
  */
-export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>, gitRepoPath?: string): string {
+export function formatJsonForOutputEnhanced(jsonMessage: JsonObject, gitRepoPath?: string): string {
   // CODEX COMPATIBILITY: Unwrap old Codex format {"id":"0","msg":{...}}
   let unwrappedMessage = jsonMessage;
-  if (jsonMessage.id !== undefined && jsonMessage.msg && typeof jsonMessage.msg === 'object') {
+  const wrappedMessage = readObject(jsonMessage, 'msg');
+  if (jsonMessage.id !== undefined && wrappedMessage) {
     console.log('[Codex] Detected old Codex format, unwrapping msg property');
-    unwrappedMessage = { ...jsonMessage.msg as Record<string, unknown>, timestamp: jsonMessage.timestamp };
+    unwrappedMessage = { ...wrappedMessage, timestamp: jsonMessage.timestamp };
   }
 
   // Ensure we have a valid timestamp
   let timestamp: string;
   try {
-    if (unwrappedMessage.timestamp && typeof unwrappedMessage.timestamp === 'string') {
+    const providedTimestamp = readString(unwrappedMessage, 'timestamp');
+    if (providedTimestamp) {
       // Validate the provided timestamp
-      const date = new Date(unwrappedMessage.timestamp);
+      const date = new Date(providedTimestamp);
       if (isNaN(date.getTime())) {
         throw new Error('Invalid timestamp');
       }
-      timestamp = unwrappedMessage.timestamp;
+      timestamp = providedTimestamp;
     } else {
       // Use current time if no timestamp provided
       timestamp = new Date().toISOString();
@@ -440,7 +484,7 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
   }
 
   // CODEX COMPATIBILITY: Handle new Codex protocol message types
-  const messageType = unwrappedMessage.type as string;
+  const messageType = readString(unwrappedMessage, 'type');
 
   // Handle thread lifecycle messages
   if (messageType === 'thread.started' || messageType === 'turn.started') {
@@ -450,22 +494,22 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
 
   // Handle item messages (reasoning, command execution, etc.)
   if (messageType === 'item.started' || messageType === 'item.completed') {
-    const item = unwrappedMessage.item as Record<string, unknown> | undefined;
+    const item = readObject(unwrappedMessage, 'item');
     if (!item) return '';
 
-    const itemType = item.type as string;
+    const itemType = readString(item, 'type');
     const time = new Date(timestamp).toLocaleTimeString();
 
     if (itemType === 'reasoning') {
-      const reasoningText = item.text as string || '';
+      const reasoningText = readString(item, 'text') || '';
       return `\r\n\x1b[36m[${time}]\x1b[0m \x1b[1m\x1b[96m🧠 ${reasoningText}\x1b[0m\r\n`;
     }
 
     if (itemType === 'command_execution') {
-      const command = item.command as string || '';
-      const status = item.status as string || '';
-      const exitCode = item.exit_code as number | undefined;
-      const aggregatedOutput = item.aggregated_output as string || '';
+      const command = readString(item, 'command') || '';
+      const status = readString(item, 'status') || '';
+      const exitCode = readNumber(item, 'exit_code');
+      const aggregatedOutput = readString(item, 'aggregated_output') || '';
 
       if (messageType === 'item.started') {
         return `\r\n\x1b[36m[${time}]\x1b[0m \x1b[1m\x1b[33m🔧 Executing: ${command}\x1b[0m\r\n`;
@@ -497,14 +541,14 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
     }
 
     if (itemType === 'text_delta') {
-      const text = item.text as string || '';
+      const text = readString(item, 'text') || '';
       if (!text.trim()) return '';
 
       return `\x1b[37m${text}\x1b[0m`;
     }
 
     if (itemType === 'message') {
-      const text = item.text as string || '';
+      const text = readString(item, 'text') || '';
       if (!text.trim()) return '';
 
       const time = new Date(timestamp).toLocaleTimeString();
@@ -518,13 +562,13 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
   }
 
   if (messageType === 'agent_reasoning') {
-    const reasoningText = unwrappedMessage.text as string || '';
+    const reasoningText = readString(unwrappedMessage, 'text') || '';
     const time = new Date(timestamp).toLocaleTimeString();
     return `\r\n\x1b[36m[${time}]\x1b[0m \x1b[1m\x1b[96m🧠 ${reasoningText}\x1b[0m\r\n`;
   }
 
   if (messageType === 'agent_message') {
-    const messageText = unwrappedMessage.message as string || '';
+    const messageText = readString(unwrappedMessage, 'message') || '';
     const time = new Date(timestamp).toLocaleTimeString();
     return `\r\n\x1b[36m[${time}]\x1b[0m \x1b[1m\x1b[35m🤖 ${messageText}\x1b[0m\r\n\r\n`;
   }
@@ -540,8 +584,8 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
 
   // Handle messages from assistant (Claude Code format)
   if (unwrappedMessage.type === 'assistant') {
-    const messageObj = unwrappedMessage.message as {content?: unknown} | undefined;
-    const content = messageObj?.content;
+    const messageObj = readObject(unwrappedMessage, 'message');
+    const content: ContentItem[] | undefined = decodeOptional(messageObj?.content, boundary.array(contentItemSchema));
     
     if (Array.isArray(content)) {
       let output = '';
@@ -619,8 +663,8 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
 
   // Handle tool results from user
   if (unwrappedMessage.type === 'user') {
-    const messageObj = unwrappedMessage.message as {content?: unknown} | undefined;
-    const content = messageObj?.content;
+    const messageObj = readObject(unwrappedMessage, 'message');
+    const content: ContentItem[] | undefined = decodeOptional(messageObj?.content, boundary.array(contentItemSchema));
     
     if (Array.isArray(content)) {
       const toolResults = content.filter((item: ContentItem): item is ToolResult => item.type === 'tool_result');
@@ -659,9 +703,10 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
             const filteredContent = filterBase64Data(content);
             
             // Then convert to string for display
-            if (typeof filteredContent === 'string') {
-              content = makePathsRelative(filteredContent, gitRepoPath);
-            } else if (filteredContent !== null && filteredContent !== undefined) {
+            const filteredText = decodeOptional(filteredContent, boundary.string);
+            if (filteredText !== undefined) {
+              content = makePathsRelative(filteredText, gitRepoPath);
+            } else if (filteredContent !== null) {
               // Convert filtered object/array to string
               content = JSON.stringify(filteredContent, null, 2);
               content = makePathsRelative(content, gitRepoPath);
@@ -699,7 +744,11 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
 
   // Handle session messages (like errors)
   if (unwrappedMessage.type === 'session') {
-    const data = (unwrappedMessage.data as {status?: string; message?: string; details?: string}) || {};
+    const data: { status?: string; message?: string; details?: string } = decodeOptional(unwrappedMessage.data, boundary.object({
+      status: boundary.optional(boundary.string),
+      message: boundary.optional(boundary.string),
+      details: boundary.optional(boundary.string),
+    })) || {};
     const time = (() => {
       try {
         const date = new Date(timestamp);
@@ -719,7 +768,10 @@ export function formatJsonForOutputEnhanced(jsonMessage: Record<string, unknown>
   }
   
   // Fall back to original formatter for other message types
-  return formatJsonForOutput(unwrappedMessage as ClaudeJsonMessage);
+  const legacyMessage = { ...unwrappedMessage, type: unwrappedMessage.type, timestamp };
+  // SAFETY: The legacy formatter reads the same finite Claude message fields
+  // decoded above; unrecognized protocol fields are ignored by that formatter.
+  return formatJsonForOutput(legacyMessage as ClaudeJsonMessage);
 }
 
 // Re-export the original formatter for backwards compatibility

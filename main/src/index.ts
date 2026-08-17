@@ -5,6 +5,8 @@ import { hasHeadlessDaemonLaunchArg, hasRemoteSetupLaunchArg } from './utils/run
 import { getAppDirectory } from './utils/appDirectory';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { boundary, decodeBoundary } from '../../shared/validation/boundaryDecoder';
+import type { PaneEventArgument } from './core/eventSink';
 
 const launchHeadlessDaemon = hasHeadlessDaemonLaunchArg();
 const launchRemoteSetup = hasRemoteSetupLaunchArg();
@@ -21,9 +23,9 @@ if (process.platform === 'darwin') {
 
 function getStartupTerminalPowerMode(): 'performance' | 'batterySaver' {
   try {
-    const rawConfig = JSON.parse(
+    const rawConfig = decodeBoundary(JSON.parse(
       readFileSync(join(getAppDirectory(), 'config.json'), 'utf-8'),
-    ) as { terminalPowerMode?: unknown };
+    ), boundary.object({ terminalPowerMode: boundary.optional(boundary.string) }));
 
     return rawConfig.terminalPowerMode === 'batterySaver'
       ? 'batterySaver'
@@ -126,12 +128,12 @@ type RendererDiagnosticPayload = {
   column?: number;
 };
 
-function safeDiagnosticValue(value: unknown, maxLength = 4_000): string {
+function safeDiagnosticValue(value: PaneEventArgument, maxLength = 4_000): string {
   let serialized: string;
   if (value instanceof Error) {
     serialized = `${value.name}: ${value.message}\n${value.stack || ''}`;
-  } else if (typeof value === 'string') {
-    serialized = value;
+  } else if (decodeString(value) !== undefined) {
+    serialized = decodeString(value) ?? '';
   } else {
     try {
       serialized = JSON.stringify(value);
@@ -143,6 +145,14 @@ function safeDiagnosticValue(value: unknown, maxLength = 4_000): string {
   return serialized.length > maxLength
     ? `${serialized.slice(0, maxLength)} ... [truncated ${serialized.length - maxLength} chars]`
     : serialized;
+}
+
+function decodeString(value: PaneEventArgument): string | undefined {
+  try {
+    return decodeBoundary(value, boundary.string);
+  } catch {
+    return undefined;
+  }
 }
 
 function formatRendererDiagnostic(payload: RendererDiagnosticPayload): string {
@@ -220,6 +230,7 @@ const originalLog: typeof console.log = console.log;
 const originalError: typeof console.error = console.error;
 const originalWarn: typeof console.warn = console.warn;
 const originalInfo: typeof console.info = console.info;
+let isHandlingConsoleError = false;
 
 const isDevelopment = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 
@@ -505,7 +516,7 @@ async function createWindow() {
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to open inline devtools:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -528,7 +539,7 @@ async function createWindow() {
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to close devtools:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   } // end devToolsHandlersRegistered guard
@@ -556,21 +567,6 @@ async function createWindow() {
     await mainWindow.loadURL(`http://localhost:${devPort}`);
     mainWindow.webContents.openDevTools();
     
-    // Enable IPC debugging in development
-    
-    // Log all IPC calls in main process
-    const originalHandle = ipcMain.handle;
-    ipcMain.handle = function(channel: string, listener: (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown> | unknown) {
-      const wrappedListener = async (event: IpcMainInvokeEvent, ...args: unknown[]) => {
-        if (channel.startsWith('stravu:')) {
-        }
-        const result = await listener(event, ...args);
-        if (channel.startsWith('stravu:')) {
-        }
-        return result;
-      };
-      return originalHandle.call(this, channel, wrappedListener);
-    };
   } else {
     // In production, use app.getAppPath() to get the root directory
     // This works correctly whether the app is packaged in ASAR or not
@@ -650,11 +646,9 @@ async function createWindow() {
   });
 
   // Override console methods to forward to renderer and logger
-  console.log = (...args: unknown[]) => {
+  console.log = (...args: PaneEventArgument[]) => {
     // Format the message
-    const message = args.map(arg =>
-      typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-    ).join(' ');
+    const message = args.map(arg => safeDiagnosticValue(arg)).join(' ');
 
     // Write to logger if available
     if (logger) {
@@ -689,13 +683,13 @@ async function createWindow() {
     }
   };
 
-  console.error = (...args: unknown[]) => {
+  console.error = (...args: PaneEventArgument[]) => {
     // Prevent infinite recursion by checking if we're already in an error handler
-    if ((console.error as typeof console.error & { __isHandlingError?: boolean }).__isHandlingError) {
+    if (isHandlingConsoleError) {
       return originalError.apply(console, args);
     }
     
-    (console.error as typeof console.error & { __isHandlingError?: boolean }).__isHandlingError = true;
+    isHandlingConsoleError = true;
     
     try {
       // If logger is not initialized or we're in the logger itself, use original console
@@ -704,23 +698,10 @@ async function createWindow() {
         return;
       }
 
-      const message = args.map(arg => {
-        if (typeof arg === 'object' && arg !== null) {
-          if (arg instanceof Error) {
-            return `Error: ${arg.message}\nStack: ${arg.stack}`;
-          }
-          try {
-            return JSON.stringify(arg, null, 2);
-          } catch (e) {
-            // Handle circular structure
-            return `[Object with circular structure: ${arg.constructor?.name || 'Object'}]`;
-          }
-        }
-        return String(arg);
-      }).join(' ');
+      const message = args.map(arg => safeDiagnosticValue(arg)).join(' ');
 
       // Extract Error object if present
-      const errorObj = args.find(arg => arg instanceof Error) as Error | undefined;
+      const errorObj = args.find((arg): arg is Error => arg instanceof Error);
 
       // Use logger but with recursion protection
       logger.error(message, errorObj);
@@ -752,28 +733,15 @@ async function createWindow() {
       // If anything fails in the error handler, fall back to original
       originalError.apply(console, args);
     } finally {
-      (console.error as typeof console.error & { __isHandlingError?: boolean }).__isHandlingError = false;
+      isHandlingConsoleError = false;
     }
   };
 
-  console.warn = (...args: unknown[]) => {
-    const message = args.map(arg => {
-      if (typeof arg === 'object' && arg !== null) {
-        if (arg instanceof Error) {
-          return `Error: ${arg.message}\nStack: ${arg.stack}`;
-        }
-        try {
-          return JSON.stringify(arg, null, 2);
-        } catch (e) {
-          // Handle circular structure
-          return `[Object with circular structure: ${arg.constructor?.name || 'Object'}]`;
-        }
-      }
-      return String(arg);
-    }).join(' ');
+  console.warn = (...args: PaneEventArgument[]) => {
+    const message = args.map(arg => safeDiagnosticValue(arg)).join(' ');
 
     // Extract Error object if present for warnings too
-    const errorObj = args.find(arg => arg instanceof Error) as Error | undefined;
+    const errorObj = args.find((arg): arg is Error => arg instanceof Error);
 
     if (logger) {
       logger.warn(message, errorObj);
@@ -806,21 +774,8 @@ async function createWindow() {
     }
   };
 
-  console.info = (...args: unknown[]) => {
-    const message = args.map(arg => {
-      if (typeof arg === 'object' && arg !== null) {
-        if (arg instanceof Error) {
-          return `Error: ${arg.message}\nStack: ${arg.stack}`;
-        }
-        try {
-          return JSON.stringify(arg, null, 2);
-        } catch (e) {
-          // Handle circular structure
-          return `[Object with circular structure: ${arg.constructor?.name || 'Object'}]`;
-        }
-      }
-      return String(arg);
-    }).join(' ');
+  console.info = (...args: PaneEventArgument[]) => {
+    const message = args.map(arg => safeDiagnosticValue(arg)).join(' ');
 
     if (logger) {
       logger.info(message);
@@ -853,21 +808,8 @@ async function createWindow() {
     }
   };
 
-  console.debug = (...args: unknown[]) => {
-    const message = args.map(arg => {
-      if (typeof arg === 'object' && arg !== null) {
-        if (arg instanceof Error) {
-          return `Error: ${arg.message}\nStack: ${arg.stack}`;
-        }
-        try {
-          return JSON.stringify(arg, null, 2);
-        } catch (e) {
-          // Handle circular structure
-          return `[Object with circular structure: ${arg.constructor?.name || 'Object'}]`;
-        }
-      }
-      return String(arg);
-    }).join(' ');
+  console.debug = (...args: PaneEventArgument[]) => {
+    const message = args.map(arg => safeDiagnosticValue(arg)).join(' ');
 
     // In development, also write to backend debug log file
     if (isDevelopment) {
@@ -963,7 +905,7 @@ async function createWindow() {
 
 async function initializeServices() {
   const electronPaneEventSink = {
-    send(channel: string, ...args: unknown[]) {
+    send(channel: string, ...args: PaneEventArgument[]) {
       if (!remotePaneClientController.shouldForwardLocalRendererEvent(channel)) {
         return;
       }
@@ -986,6 +928,9 @@ async function initializeServices() {
   });
 
   const services = paneDaemonHost.services;
+  if (!services.logger || !services.archiveProgressManager || !services.analyticsManager) {
+    throw new Error('Pane daemon host did not initialize required core services');
+  }
   configManager = services.configManager;
   databaseService = services.databaseService;
   sessionManager = services.sessionManager;
@@ -994,9 +939,9 @@ async function initializeServices() {
   gitStatusManager = services.gitStatusManager;
   runCommandManager = services.runCommandManager;
   versionChecker = services.versionChecker;
-  logger = services.logger as Logger;
-  archiveProgressManager = services.archiveProgressManager as ArchiveProgressManager;
-  analyticsManager = services.analyticsManager as AnalyticsManager;
+  logger = services.logger;
+  archiveProgressManager = services.archiveProgressManager;
+  analyticsManager = services.analyticsManager;
   powerSaveManager = new PowerSaveManager(configManager, sessionManager);
   powerSaveManager.sync();
 
@@ -1388,13 +1333,15 @@ if (launchRemoteSetup) {
       const panel = panelManager.getPanel(panelId);
       if (!panel) continue;
 
-      const customState = (panel.state?.customState || {}) as TerminalPanelState;
-      const agentType = customState.agentType ?? resolveAgentTypeFromCommand(customState.initialCommand);
+      const customState = decodeBoundary(panel.state?.customState ?? {}, boundary.jsonObject);
+      const resumeState = decodeBoundary(customState, boundary.object({
+        agentType: boundary.optional(boundary.enumeration('claude', 'codex', 'cursor')),
+        initialCommand: boundary.optional(boundary.string),
+      }));
+      const agentType = resumeState.agentType ?? resolveAgentTypeFromCommand(resumeState.initialCommand);
 
       if (isCliAgentType(agentType)) {
-        customState.wasInterrupted = true;
-        customState.agentType = agentType;
-        panel.state.customState = customState;
+        panel.state.customState = { ...customState, wasInterrupted: true, agentType };
         await panelManager.updatePanel(panelId, { state: panel.state });
 
         const existing = interruptedPanels.get(panel.sessionId);

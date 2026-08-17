@@ -10,12 +10,28 @@ function normalizePathSeparators(value: string): string {
   return value.replace(/\\/g, '/');
 }
 
+function mockRequest(emitter: EventEmitter): ReturnType<typeof https.get> {
+  // SAFETY: The download code only consumes EventEmitter request behavior in
+  // these tests; no socket methods are reached.
+  return emitter as ReturnType<typeof https.get>;
+}
+
+function mockResponse(emitter: EventEmitter): IncomingMessageLike {
+  // SAFETY: Tests install statusCode, headers, and resume before delivery.
+  return emitter as IncomingMessageLike;
+}
+
+function managerDownloads(manager: SkillCacheManager): Promise<void> {
+  // SAFETY: This deliberate test seam mirrors the private fallback downloader.
+  return (manager as { downloadFallbackFiles: () => Promise<void> }).downloadFallbackFiles();
+}
+
 function mockRawDownloads(failures = new Set<string>()) {
   return vi.spyOn(https, 'get').mockImplementation((url, callback) => {
-    const request = new EventEmitter() as ReturnType<typeof https.get>;
+    const request = mockRequest(new EventEmitter());
     const pathname = new URL(String(url)).pathname;
     const relativePath = decodeURIComponent(pathname.replace('/dcouple/skills/main/', ''));
-    const response = new EventEmitter() as IncomingMessageLike;
+    const response = mockResponse(new EventEmitter());
 
     response.headers = {};
     response.resume = vi.fn();
@@ -216,7 +232,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
     const httpsGet = mockRawDownloads();
 
     try {
-      await (manager as unknown as { downloadFallbackFiles: () => Promise<void> }).downloadFallbackFiles();
+      await managerDownloads(manager);
       await manager.ensurePaneChatGuide();
     } finally {
       httpsGet.mockRestore();
@@ -250,7 +266,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
 
     try {
       await expect(
-        (manager as unknown as { downloadFallbackFiles: () => Promise<void> }).downloadFallbackFiles(),
+        managerDownloads(manager),
       ).rejects.toThrow(`Required download failures: ${requiredPath}`);
     } finally {
       httpsGet.mockRestore();

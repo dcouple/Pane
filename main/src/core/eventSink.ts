@@ -6,8 +6,10 @@
  * WebSocket, or relay-backed client can subscribe to the same runtime events.
  * Auth, pairing, relay policy, and hosted VM lifecycle stay above this seam.
  */
+export type PaneEventArgument = object | string | number | boolean | bigint | symbol | null | undefined;
+
 export interface PaneEventSink {
-  send(channel: string, ...args: unknown[]): void;
+  send(channel: string, ...args: PaneEventArgument[]): void;
 }
 
 /**
@@ -24,14 +26,14 @@ export const noopPaneEventSink: PaneEventSink = {
  */
 export function createFanoutEventSink(sinks: readonly PaneEventSink[]): PaneEventSink {
   return {
-    send(channel: string, ...args: unknown[]) {
-      let firstError: unknown;
+    send(channel: string, ...args: PaneEventArgument[]) {
+      let firstError: Error | string | number | boolean | object | null | undefined;
 
       for (const sink of sinks) {
         try {
           sink.send(channel, ...args);
-        } catch (error) {
-          firstError ??= error;
+      } catch (error) {
+          firstError ??= error instanceof Error ? error : new Error(String(error));
         }
       }
 

@@ -268,7 +268,7 @@ export interface RemoteDaemonHeartbeatPayload {
 
 export interface RemoteDaemonEventEnvelope {
   channel: string;
-  args: unknown[];
+  args: Array<JsonValue | object>;
   timestamp: string;
 }
 

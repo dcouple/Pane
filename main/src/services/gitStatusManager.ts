@@ -10,6 +10,15 @@ import { GitStatusLogger } from './gitStatusLogger';
 import { GitFileWatcher } from './gitFileWatcher';
 import { fastCheckWorkingDirectory, fastGetAheadBehind, fastGetDiffStats } from './gitPlumbingCommands';
 import { escapeShellArg } from '../utils/shellEscape';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+
+const githubPrListSchema = boundary.array(boundary.object({
+  number: boundary.optional(boundary.number),
+  url: boundary.optional(boundary.string),
+  title: boundary.optional(boundary.string),
+  state: boundary.optional(boundary.string),
+  body: boundary.optional(boundary.string),
+}));
 
 interface GitStatusCache {
   [sessionId: string]: {
@@ -114,7 +123,7 @@ export class GitStatusManager extends EventEmitter {
         this.logger?.info(`[GitStatus] Hydrated ${cachedStatuses.length} cached git statuses`);
       }
     } catch (error) {
-      this.logger?.error('[GitStatus] Failed to hydrate persisted git status cache:', error as Error);
+      this.logger?.error('[GitStatus] Failed to hydrate persisted git status cache:', error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -122,7 +131,7 @@ export class GitStatusManager extends EventEmitter {
     try {
       this.databaseService?.saveSessionGitStatusCache(sessionId, status, lastChecked);
     } catch (error) {
-      this.logger?.error(`[GitStatus] Failed to persist status cache for ${sessionId}:`, error as Error);
+      this.logger?.error(`[GitStatus] Failed to persist status cache for ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -168,7 +177,7 @@ export class GitStatusManager extends EventEmitter {
         this.logger?.info(`[GitStatus] Started file watching for session ${sessionId}`);
       }
     } catch (error) {
-      this.logger?.error(`[GitStatus] Failed to start file watching for session ${sessionId}:`, error as Error);
+      this.logger?.error(`[GitStatus] Failed to start file watching for session ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
     }
   }
   
@@ -288,7 +297,7 @@ export class GitStatusManager extends EventEmitter {
         })
       ));
     } catch (error) {
-      this.logger?.error(`[GitStatus] Failed to refresh git status for project ${projectId}:`, error as Error);
+      this.logger?.error(`[GitStatus] Failed to refresh git status for project ${projectId}:`, error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -339,7 +348,7 @@ export class GitStatusManager extends EventEmitter {
       
       this.logger?.info(`[GitStatus] Updated all sessions in project ${projectId} after main branch update`);
     } catch (error) {
-      this.logger?.error(`[GitStatus] Error updating project statuses after main update:`, error as Error);
+      this.logger?.error(`[GitStatus] Error updating project statuses after main update:`, error instanceof Error ? error : new Error(String(error)));
       // Fall back to refreshing all
       await this.refreshGitStatusForProject(projectId);
     }
@@ -423,7 +432,7 @@ export class GitStatusManager extends EventEmitter {
       
       this.logger?.info(`[GitStatus] Updated status after ${rebaseType} rebase for session ${sessionId}`);
     } catch (error) {
-      this.logger?.error(`[GitStatus] Error updating status after rebase for session ${sessionId}:`, error as Error);
+      this.logger?.error(`[GitStatus] Error updating status after rebase for session ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
       // Fall back to full refresh on error
       await this.refreshSessionGitStatus(sessionId, false);
     }
@@ -552,7 +561,7 @@ export class GitStatusManager extends EventEmitter {
               }
             }
           } catch (error) {
-            this.logger?.error(`[GitStatus] Error fetching status for session ${sessionId}:`, error as Error);
+            this.logger?.error(`[GitStatus] Error fetching status for session ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
           }
         })
       );
@@ -600,7 +609,7 @@ export class GitStatusManager extends EventEmitter {
         projectPath,
         { timeout: 5000 }
       );
-      const prs = JSON.parse(result.stdout.trim() || '[]') as Array<{ number?: number; url?: string; title?: string; state?: string; body?: string }>;
+      const prs = decodeBoundary(JSON.parse(result.stdout.trim() || '[]'), githubPrListSchema);
       const pr = prs[0];
       const entry = {
         prNumber: pr?.number,
@@ -777,7 +786,7 @@ export class GitStatusManager extends EventEmitter {
       
       this.gitLogger.logPollComplete(successCount, errorCount);
     } catch (error) {
-      this.logger?.error('[GitStatus] Critical error during refresh:', error as Error);
+      this.logger?.error('[GitStatus] Critical error during refresh:', error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -1010,7 +1019,7 @@ export class GitStatusManager extends EventEmitter {
         return null;
       }
       
-      this.gitLogger.logSessionError(sessionId, error as Error);
+      this.gitLogger.logSessionError(sessionId, error instanceof Error ? error : new Error(String(error)));
       return {
         state: 'unknown',
         lastChecked: new Date().toISOString()
@@ -1111,7 +1120,7 @@ export class GitStatusManager extends EventEmitter {
     try {
       this.databaseService?.deleteSessionGitStatusCache(sessionId);
     } catch (error) {
-      this.logger?.error(`[GitStatus] Failed to delete persisted status cache for ${sessionId}:`, error as Error);
+      this.logger?.error(`[GitStatus] Failed to delete persisted status cache for ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
     }
 
     // L3: stop the file watcher for this session. No-op for
@@ -1129,7 +1138,7 @@ export class GitStatusManager extends EventEmitter {
     try {
       this.databaseService?.clearSessionGitStatusCache();
     } catch (error) {
-      this.logger?.error('[GitStatus] Failed to clear persisted status cache:', error as Error);
+      this.logger?.error('[GitStatus] Failed to clear persisted status cache:', error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -1204,7 +1213,7 @@ export class GitStatusManager extends EventEmitter {
         const nextOp = this.operationQueue.shift();
         if (nextOp) {
           nextOp().catch(error => {
-            this.logger?.error('[GitStatus] Queued operation failed:', error as Error);
+            this.logger?.error('[GitStatus] Queued operation failed:', error instanceof Error ? error : new Error(String(error)));
           });
         }
       }

@@ -23,8 +23,8 @@ const PANE_CHAT_TITLE = 'Pane Chat';
 const PANE_CHAT_BOOTSTRAP_VERSION = 9;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-function isValidUuid(value: unknown): value is string {
-  return typeof value === 'string' && UUID_PATTERN.test(value);
+function isValidUuid(value: string | undefined): value is string {
+  return value !== undefined && UUID_PATTERN.test(value);
 }
 
 export class PaneChatManager {
@@ -138,6 +138,7 @@ export class PaneChatManager {
   }
 
   private async updatePanelLaunchState(panel: ToolPanel, agent: PaneChatAgent, guidePath: string): Promise<void> {
+    // SAFETY: Pane Chat owns this terminal panel and writes its custom state exclusively as TerminalPanelState.
     const previousCustomState = panel.state.customState as TerminalPanelState | undefined;
     const shouldRefreshBootstrap = this.needsBootstrapRefresh(previousCustomState);
     const shouldResetClaudeLaunch = agent === 'claude' && (
@@ -214,6 +215,7 @@ export class PaneChatManager {
   }
 
   private needsLaunchStateRepair(panel: ToolPanel, agent: PaneChatAgent): boolean {
+    // SAFETY: Pane Chat owns this terminal panel and writes its custom state exclusively as TerminalPanelState.
     const customState = panel.state.customState as TerminalPanelState | undefined;
     return this.needsBootstrapRefresh(customState) || (agent === 'claude' && (
       !isValidUuid(customState?.agentSessionId) ||
@@ -232,6 +234,7 @@ export class PaneChatManager {
   }
 
   private resolvePanelAgent(panel: ToolPanel): PaneChatAgent | undefined {
+    // SAFETY: Pane Chat owns this terminal panel and writes its custom state exclusively as TerminalPanelState.
     const customState = panel.state.customState as TerminalPanelState | undefined;
     return isCliAgentType(customState?.agentType) ? customState?.agentType : undefined;
   }

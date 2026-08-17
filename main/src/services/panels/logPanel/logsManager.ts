@@ -6,7 +6,14 @@ import { panelManager } from '../../panelManager';
 import { addSessionLog, cleanupSessionLogs } from '../../../ipc/logs';
 import { getShellPath } from '../../../utils/shellPath';
 import type { AnalyticsManager } from '../../analyticsManager';
+import type { PaneEventArgument } from '../../../core/eventSink';
 import { WSLContext, buildWSLENV } from '../../../utils/wslUtils';
+
+function getLogsPanelState(panel: ToolPanel): LogsPanelState {
+  // SAFETY: This manager only creates and receives panels with type `logs`,
+  // whose custom state is owned here and always initialized as LogsPanelState.
+  return panel.state.customState as LogsPanelState;
+}
 
 class LogsManager {
   private static instance: LogsManager;
@@ -28,7 +35,7 @@ class LogsManager {
     this.analyticsManager = analyticsManager;
   }
 
-  private sendRendererEvent(channel: string, ...args: unknown[]): void {
+  private sendRendererEvent(channel: string, ...args: PaneEventArgument[]): void {
     getPaneEventSink().send(channel, ...args);
   }
 
@@ -84,7 +91,7 @@ class LogsManager {
           errorCount: 0,
           warningCount: 0,
           lastActivityTime: undefined
-        } as LogsPanelState
+        }
       }
     });
   }
@@ -122,7 +129,7 @@ class LogsManager {
           errorCount: 0,
           warningCount: 0,
           lastActivityTime: startTime
-        } as LogsPanelState
+        }
       }
     });
 
@@ -189,9 +196,9 @@ class LogsManager {
         state: {
           ...panel.state,
           customState: {
-            ...(panel.state.customState as LogsPanelState),
+            ...getLogsPanelState(panel),
             processId: childProcess.pid
-          } as LogsPanelState
+          }
         }
       });
       
@@ -409,7 +416,7 @@ class LogsManager {
     // Update panel state
     const panel = await panelManager.getPanel(panelId);
     if (panel) {
-      const currentState = panel.state.customState as LogsPanelState || {};
+      const currentState = getLogsPanelState(panel);
       const outputBuffer = currentState.outputBuffer || [];
       outputBuffer.push(content);
       
@@ -438,7 +445,7 @@ class LogsManager {
             errorCount,
             warningCount,
             lastActivityTime: new Date().toISOString()
-          } as LogsPanelState
+          }
         }
       });
     }
@@ -469,7 +476,7 @@ class LogsManager {
     // Update panel state
     const panel = await panelManager.getPanel(panelId);
     if (panel) {
-      const currentState = panel.state.customState as LogsPanelState || {};
+      const currentState = getLogsPanelState(panel);
       await panelManager.updatePanel(panelId, {
         state: {
           ...panel.state,
@@ -478,7 +485,7 @@ class LogsManager {
             isRunning: false,
             endTime: new Date().toISOString(),
             exitCode: code ?? undefined
-          } as LogsPanelState
+          }
         }
       });
     }
@@ -517,7 +524,7 @@ class LogsManager {
     
     if (!logsPanel) return false;
     
-    const state = logsPanel.state.customState as LogsPanelState;
+    const state = getLogsPanelState(logsPanel);
     return state?.isRunning || false;
   }
   

@@ -2,6 +2,7 @@ import type { App } from 'electron';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const LINUX_AUTOSTART_FILENAME = 'com.dcouple.pane.desktop';
 
@@ -17,7 +18,13 @@ function syncLinuxAutoStart(enabled: boolean): void {
     try {
       fs.unlinkSync(desktopFilePath);
     } catch (error) {
-      if (!(error instanceof Error) || !('code' in error) || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      let code: string | undefined;
+      try {
+        code = decodeBoundary(error, boundary.object({ code: boundary.optional(boundary.string) })).code;
+      } catch {
+        code = undefined;
+      }
+      if (code !== 'ENOENT') {
         console.warn('[AutoStart] Failed to remove Linux autostart entry:', error);
       }
     }

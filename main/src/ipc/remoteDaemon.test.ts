@@ -599,6 +599,27 @@ describe('remote daemon IPC', () => {
     }));
   });
 
+  it('accepts explicitly undefined optional setup fields from the Remote Access UI', async () => {
+    const ipcMain = createIpcMainStub();
+    const configManager = createConfigManagerStub();
+    vi.mocked(setupRemoteHost).mockResolvedValue(createSetupResult());
+
+    registerRemoteDaemonHandlers(ipcMain, { configManager });
+
+    const setupHost = ipcMain.handlers.get('remote-daemon:setup-host');
+    const response = await setupHost?.({}, {
+      dataDirectoryMode: 'current',
+      paneDir: undefined,
+      preferTunnel: 'auto',
+      baseUrl: undefined,
+    });
+
+    expect(response).toMatchObject({ success: true });
+    expect(setupRemoteHost).toHaveBeenCalledWith(expect.objectContaining({
+      preferTunnel: 'auto',
+    }));
+  });
+
   it('rejects non-loopback HTTP manual setup URLs', async () => {
     const ipcMain = createIpcMainStub();
     const configManager = createConfigManagerStub();

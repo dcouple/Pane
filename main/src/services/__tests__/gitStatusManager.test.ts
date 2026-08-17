@@ -29,6 +29,25 @@ interface GitStatusManagerPrivates {
   activeSessionId: string | null;
 }
 
+function managerPrivates(manager: GitStatusManager): GitStatusManagerPrivates {
+  // SAFETY: These tests intentionally exercise GitStatusManager's private state;
+  // the interface above mirrors only the members used by this test suite.
+  return manager as GitStatusManagerPrivates;
+}
+
+function partialMock<Contract>(implementation: Partial<Contract>): Contract {
+  // SAFETY: Tests supply the subset invoked by each scenario, and Vitest fails
+  // immediately if the subject reaches an unstubbed contract member.
+  return implementation as Contract;
+}
+
+function requireValue<Value>(value: Value | null | undefined): Value {
+  if (value === null || value === undefined) {
+    throw new Error('Expected test subject to return a value');
+  }
+  return value;
+}
+
 // Mock modules
 vi.mock('../../utils/commandExecutor');
 vi.mock('fs');
@@ -101,27 +120,27 @@ describe('GitStatusManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    mockSessionManager = {
+    mockSessionManager = partialMock<SessionManager>({
       getSession: vi.fn().mockResolvedValue(mockSession),
       getProjectContext: vi.fn().mockReturnValue(mockProjectContext),
       getProjectForSession: vi.fn().mockReturnValue(mockProject),
       getAllSessions: vi.fn().mockResolvedValue([]),
-    } as Partial<SessionManager> as SessionManager;
+    });
 
-    mockWorktreeManager = {
+    mockWorktreeManager = partialMock<WorktreeManager>({
       getProjectMainBranch: vi.fn().mockResolvedValue('main'),
       getSessionComparisonBranch: vi.fn().mockResolvedValue('main'),
-    } as Partial<WorktreeManager> as WorktreeManager;
+    });
 
-    mockGitDiffManager = {} as Partial<GitDiffManager> as GitDiffManager;
+    mockGitDiffManager = partialMock<GitDiffManager>({});
 
-    mockLogger = {
+    mockLogger = partialMock<Logger>({
       info: vi.fn(),
       error: vi.fn(),
       warn: vi.fn(),
       debug: vi.fn(),
       verbose: vi.fn(),
-    } as Partial<Logger> as Logger;
+    });
 
     mockDatabaseService = {
       getAllSessionGitStatusCache: vi.fn().mockReturnValue([]),
@@ -135,59 +154,59 @@ describe('GitStatusManager', () => {
       mockWorktreeManager,
       mockGitDiffManager,
       mockLogger,
-      mockDatabaseService as DatabaseService
+      partialMock<DatabaseService>(mockDatabaseService)
     );
 
     // Default: no uncommitted changes, no ahead/behind
-    (fastCheckWorkingDirectory as Mock).mockReturnValue(cleanIndexStatus);
-    (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 0 });
-    (fastGetDiffStats as Mock).mockReturnValue({ additions: 0, deletions: 0, filesChanged: 0 });
+    vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
+    vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
+    vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 0, deletions: 0, filesChanged: 0 });
 
     // Default execSync returns empty buffer
-    (execSync as Mock).mockReturnValue(Buffer.from(''));
+    vi.mocked(execSync).mockReturnValue(Buffer.from(''));
 
     // Default commandRunner.exec returns empty string
-    (mockProjectContext.commandRunner.exec as Mock).mockReturnValue('');
+    vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('');
   });
 
   describe('fetchGitStatus via getGitStatus (cache miss scenarios)', () => {
     it('returns clean state when no changes, no ahead/behind, no untracked', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue(cleanIndexStatus);
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
       expect(status).not.toBeNull();
-      expect(status!.state).toBe('clean');
-      expect(status!.ahead).toBeUndefined();
-      expect(status!.behind).toBeUndefined();
-      expect(status!.hasUncommittedChanges).toBe(false);
-      expect(status!.hasUntrackedFiles).toBe(false);
+      expect(requireValue(status).state).toBe('clean');
+      expect(requireValue(status).ahead).toBeUndefined();
+      expect(requireValue(status).behind).toBeUndefined();
+      expect(requireValue(status).hasUncommittedChanges).toBe(false);
+      expect(requireValue(status).hasUntrackedFiles).toBe(false);
     });
 
     it('returns modified state when uncommitted changes exist', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
         hasModified: true,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: false,
       });
-      (fastGetDiffStats as Mock).mockReturnValue({ additions: 15, deletions: 5, filesChanged: 3 });
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 15, deletions: 5, filesChanged: 3 });
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('modified');
-      expect(status!.hasUncommittedChanges).toBe(true);
-      expect(status!.filesChanged).toBe(3);
-      expect(status!.additions).toBe(15);
-      expect(status!.deletions).toBe(5);
+      expect(requireValue(status).state).toBe('modified');
+      expect(requireValue(status).hasUncommittedChanges).toBe(true);
+      expect(requireValue(status).filesChanged).toBe(3);
+      expect(requireValue(status).additions).toBe(15);
+      expect(requireValue(status).deletions).toBe(5);
     });
 
     it('returns ahead state when commits ahead of main', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue(cleanIndexStatus);
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 3, behind: 0 });
-      (mockProjectContext.commandRunner.exec as Mock).mockImplementation((cmd: string) => {
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 3, behind: 0 });
+      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 5 files changed, 20 insertions(+), 10 deletions(-)';
         }
@@ -197,32 +216,32 @@ describe('GitStatusManager', () => {
         return '';
       });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('ahead');
-      expect(status!.ahead).toBe(3);
-      expect(status!.totalCommits).toBe(3);
-      expect(status!.isReadyToMerge).toBe(true);
-      expect(status!.commitFilesChanged).toBe(5);
-      expect(status!.commitAdditions).toBe(20);
-      expect(status!.commitDeletions).toBe(10);
+      expect(requireValue(status).state).toBe('ahead');
+      expect(requireValue(status).ahead).toBe(3);
+      expect(requireValue(status).totalCommits).toBe(3);
+      expect(requireValue(status).isReadyToMerge).toBe(true);
+      expect(requireValue(status).commitFilesChanged).toBe(5);
+      expect(requireValue(status).commitAdditions).toBe(20);
+      expect(requireValue(status).commitDeletions).toBe(10);
     });
 
     it('returns behind state when commits behind main', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue(cleanIndexStatus);
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 5 });
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 5 });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('behind');
-      expect(status!.behind).toBe(5);
-      expect(status!.ahead).toBeUndefined();
+      expect(requireValue(status).state).toBe('behind');
+      expect(requireValue(status).behind).toBe(5);
+      expect(requireValue(status).ahead).toBeUndefined();
     });
 
     it('returns diverged state when both ahead and behind', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue(cleanIndexStatus);
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 2, behind: 3 });
-      (mockProjectContext.commandRunner.exec as Mock).mockImplementation((cmd: string) => {
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 2, behind: 3 });
+      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 4 files changed, 15 insertions(+), 8 deletions(-)';
         }
@@ -232,60 +251,60 @@ describe('GitStatusManager', () => {
         return '';
       });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('diverged');
-      expect(status!.ahead).toBe(2);
-      expect(status!.behind).toBe(3);
+      expect(requireValue(status).state).toBe('diverged');
+      expect(requireValue(status).ahead).toBe(2);
+      expect(requireValue(status).behind).toBe(3);
     });
 
     it('returns conflict state when merge conflicts exist', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
         hasModified: false,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: true,
       });
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('conflict');
+      expect(requireValue(status).state).toBe('conflict');
     });
 
     it('returns untracked state when only untracked files exist', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
         hasModified: false,
         hasStaged: false,
         hasUntracked: true,
         hasConflicts: false,
       });
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('untracked');
-      expect(status!.hasUntrackedFiles).toBe(true);
+      expect(requireValue(status).state).toBe('untracked');
+      expect(requireValue(status).hasUntrackedFiles).toBe(true);
     });
 
     it('returns null when session is not found', async () => {
-      (mockSessionManager.getSession as Mock).mockResolvedValue(null);
+      vi.mocked(mockSessionManager.getSession).mockResolvedValue(null);
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
       expect(status).toBeNull();
     });
 
     it('sets modified as primary state and ahead as secondary when uncommitted changes and ahead', async () => {
-      (fastCheckWorkingDirectory as Mock).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
         hasModified: true,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: false,
       });
-      (fastGetDiffStats as Mock).mockReturnValue({ additions: 5, deletions: 2, filesChanged: 2 });
-      (fastGetAheadBehind as Mock).mockReturnValue({ ahead: 2, behind: 0 });
-      (mockProjectContext.commandRunner.exec as Mock).mockImplementation((cmd: string) => {
+      vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 5, deletions: 2, filesChanged: 2 });
+      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 2, behind: 0 });
+      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 3 files changed, 10 insertions(+), 5 deletions(-)';
         }
@@ -295,23 +314,23 @@ describe('GitStatusManager', () => {
         return '';
       });
 
-      const status = await (gitStatusManager as unknown as GitStatusManagerPrivates).fetchGitStatus('test-session');
+      const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
-      expect(status!.state).toBe('modified');
-      expect(status!.secondaryStates).toContain('ahead');
+      expect(requireValue(status).state).toBe('modified');
+      expect(requireValue(status).secondaryStates).toContain('ahead');
     });
   });
 
   describe('caching', () => {
     it('returns cached status within TTL without re-fetching', async () => {
       const cachedStatus: GitStatus = { state: 'clean', lastChecked: new Date().toISOString() };
-      (gitStatusManager as unknown as GitStatusManagerPrivates).cache['test-session'] = {
+      managerPrivates(gitStatusManager).cache['test-session'] = {
         status: cachedStatus,
         lastChecked: Date.now(),
       };
 
       const fetchSpy = vi.spyOn(
-        gitStatusManager as unknown as GitStatusManagerPrivates,
+        managerPrivates(gitStatusManager),
         'fetchGitStatus'
       );
 
@@ -323,14 +342,14 @@ describe('GitStatusManager', () => {
 
     it('fetches fresh status after TTL has expired', async () => {
       const expiredStatus: GitStatus = { state: 'clean', lastChecked: new Date().toISOString() };
-      (gitStatusManager as unknown as GitStatusManagerPrivates).cache['test-session'] = {
+      managerPrivates(gitStatusManager).cache['test-session'] = {
         status: expiredStatus,
         lastChecked: Date.now() - 10000, // 10s ago — beyond the 5s TTL
       };
 
       const freshStatus: GitStatus = { state: 'modified', lastChecked: new Date().toISOString() };
       vi.spyOn(
-        gitStatusManager as unknown as GitStatusManagerPrivates,
+        managerPrivates(gitStatusManager),
         'fetchGitStatus'
       ).mockResolvedValue(freshStatus);
 
@@ -352,9 +371,9 @@ describe('GitStatusManager', () => {
         mockWorktreeManager,
         mockGitDiffManager,
         mockLogger,
-        mockDatabaseService as DatabaseService,
+        partialMock<DatabaseService>(mockDatabaseService),
       );
-      const privates = manager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(manager);
 
       expect(privates.cache['cached-session']).toEqual({
         status: cachedStatus,
@@ -363,7 +382,7 @@ describe('GitStatusManager', () => {
     });
 
     it('persists successful cache updates', () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       const status: GitStatus = { state: 'modified', hasUncommittedChanges: true };
 
       privates.updateCache('test-session', status);
@@ -376,7 +395,7 @@ describe('GitStatusManager', () => {
     });
 
     it('preserves cached PR fields when local status refresh has no PR fields', () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       privates.cache['test-session'] = {
         status: {
           state: 'ahead',
@@ -416,9 +435,9 @@ describe('GitStatusManager', () => {
 
   describe('PR enrichment', () => {
     it('caches PR misses for 20 seconds', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       const commandRunner = mockProjectContext.commandRunner;
-      (commandRunner.execAsync as Mock).mockResolvedValue({ stdout: '[]' });
+      vi.mocked(commandRunner.execAsync).mockResolvedValue({ stdout: '[]' });
 
       await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
       await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
@@ -433,9 +452,9 @@ describe('GitStatusManager', () => {
     });
 
     it('keeps PR hits cached longer than misses', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       const commandRunner = mockProjectContext.commandRunner;
-      (commandRunner.execAsync as Mock).mockResolvedValue({
+      vi.mocked(commandRunner.execAsync).mockResolvedValue({
         stdout: JSON.stringify([{
           number: 12,
           url: 'https://github.com/example/repo/pull/12',
@@ -462,10 +481,10 @@ describe('GitStatusManager', () => {
     });
 
     it('invalidates active-session PR misses when the app regains focus', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       privates.activeSessionId = 'test-session';
       privates.prCache.set(`${mockProject.path}:feature-branch`, { fetchedAt: Date.now() });
-      (mockProjectContext.commandRunner.exec as Mock).mockReturnValue('feature-branch\n');
+      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
       const refreshSpy = vi
         .spyOn(gitStatusManager, 'refreshSessionGitStatus')
         .mockResolvedValue({ state: 'clean', lastChecked: new Date().toISOString() });
@@ -478,17 +497,17 @@ describe('GitStatusManager', () => {
     });
 
     it('uses the checked-out git branch when enriching PR data', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       privates.cache['test-session'] = {
         status: { state: 'ahead', lastChecked: new Date().toISOString() },
         lastChecked: Date.now(),
       };
-      (mockSessionManager.getSession as Mock).mockResolvedValue({
+      vi.mocked(mockSessionManager.getSession).mockResolvedValue({
         ...mockSession,
         worktreePath: '/test/worktrees/not-the-branch',
       });
-      (mockProjectContext.commandRunner.exec as Mock).mockReturnValue('real-feature-branch\n');
-      (mockProjectContext.commandRunner.execAsync as Mock).mockResolvedValue({
+      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('real-feature-branch\n');
+      vi.mocked(mockProjectContext.commandRunner.execAsync).mockResolvedValue({
         stdout: JSON.stringify([{
           number: 12,
           url: 'https://github.com/example/repo/pull/12',
@@ -514,13 +533,13 @@ describe('GitStatusManager', () => {
         mockProject.path,
         { timeout: 5000 }
       );
-      expect((mockProjectContext.commandRunner.execAsync as Mock).mock.calls[0][0]).not.toContain('not-the-branch');
+      expect(vi.mocked(mockProjectContext.commandRunner.execAsync).mock.calls[0][0]).not.toContain('not-the-branch');
       expect(status.prNumber).toBe(12);
       expect(status.prUrl).toBe('https://github.com/example/repo/pull/12');
     });
 
     it('clears cached PR fields on a confirmed PR miss', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       privates.cache['test-session'] = {
         status: {
           state: 'ahead',
@@ -533,8 +552,8 @@ describe('GitStatusManager', () => {
         },
         lastChecked: Date.now(),
       };
-      (mockProjectContext.commandRunner.exec as Mock).mockReturnValue('feature-branch\n');
-      (mockProjectContext.commandRunner.execAsync as Mock).mockResolvedValue({ stdout: '[]' });
+      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
+      vi.mocked(mockProjectContext.commandRunner.execAsync).mockResolvedValue({ stdout: '[]' });
 
       const updated = new Promise<GitStatus>((resolve) => {
         gitStatusManager.once('git-status-updated', (_sessionId, status) => resolve(status));
@@ -556,7 +575,7 @@ describe('GitStatusManager', () => {
     });
 
     it('keeps cached PR fields when PR lookup fails', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       const cachedStatus: GitStatus = {
         state: 'ahead',
         ahead: 1,
@@ -570,8 +589,8 @@ describe('GitStatusManager', () => {
         status: cachedStatus,
         lastChecked: Date.now(),
       };
-      (mockProjectContext.commandRunner.exec as Mock).mockReturnValue('feature-branch\n');
-      (mockProjectContext.commandRunner.execAsync as Mock).mockRejectedValue(new Error('gh unavailable'));
+      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
+      vi.mocked(mockProjectContext.commandRunner.execAsync).mockRejectedValue(new Error('gh unavailable'));
 
       await privates.enrichWithPrData('test-session');
 
@@ -580,7 +599,7 @@ describe('GitStatusManager', () => {
     });
 
     it('schedules staggered PR enrichment for non-active relevant initial-load status', async () => {
-      const privates = gitStatusManager as unknown as GitStatusManagerPrivates;
+      const privates = managerPrivates(gitStatusManager);
       privates.initialLoadQueue.push('test-session');
       privates.activeSessionId = null;
       const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0);

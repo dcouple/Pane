@@ -16,6 +16,7 @@ vi.mock('../utils/shellPath', () => ({
 const execFileSyncMock = vi.mocked(execFileSync);
 
 function mockCommandOutput(outputs: Record<string, string>): void {
+  // SAFETY: The mock implements only the string-returning execFileSync overload used by analyticsIdentity.
   execFileSyncMock.mockImplementation(((command: string, args: string[]) => {
     const key = `${command} ${args.join(' ')}`;
     if (key in outputs) {

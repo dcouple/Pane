@@ -2,9 +2,18 @@ import { execSync as nodeExecSync, execFileSync as nodeExecFileSync, ExecSyncOpt
 import { promisify } from 'util';
 import { getShellPath } from './shellPath';
 import { WSLContext, getWSLExecArgs } from './wslUtils';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const nodeExecAsync = promisify(exec);
 const nodeExecFileAsync = promisify(execFile);
+
+function decodeStringCwd(cwd: string | URL): string | undefined {
+  try {
+    return decodeBoundary(cwd, boundary.string);
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Compute env vars that differ from the current process.env.
@@ -43,7 +52,7 @@ class CommandExecutor {
     // Log the command being executed (unless silent mode requested)
     const cwd = options?.cwd || process.cwd();
 
-    const extendedOptions = options as ExtendedExecSyncOptions;
+    const extendedOptions = options;
     const silentMode = extendedOptions?.silent === true;
 
     // Get enhanced shell PATH
@@ -54,8 +63,8 @@ class CommandExecutor {
       // avoiding all cmd.exe escaping issues (%, ^, &, etc.)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { cwd: _cwd, silent: _silent, ...cleanOptions } = extendedOptions || {};
-      const wslCwd = typeof cwd === 'string' ? cwd : undefined;
-      const extraEnv = getExtraEnvVars(cleanOptions?.env as Record<string, string | undefined>);
+      const wslCwd = decodeStringCwd(cwd);
+      const extraEnv = getExtraEnvVars(cleanOptions?.env);
       const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
 
       if (!silentMode) {
@@ -65,7 +74,7 @@ class CommandExecutor {
       const wslOptions = {
         ...cleanOptions,
         maxBuffer: cleanOptions?.maxBuffer || 10 * 1024 * 1024,
-        encoding: (cleanOptions?.encoding || 'utf-8') as BufferEncoding,
+        encoding: cleanOptions?.encoding || 'utf-8',
         env: { ...process.env, ...cleanOptions?.env, PATH: shellPath },
       };
 
@@ -108,7 +117,7 @@ class CommandExecutor {
     };
 
     try {
-      const result = nodeExecSync(command, enhancedOptions as ExecSyncOptions);
+      const result = nodeExecSync(command, enhancedOptions);
 
       // Log success with a preview of the result (unless silent mode)
       if (result && !silentMode) {
@@ -140,8 +149,8 @@ class CommandExecutor {
       // Invoke wsl.exe directly via execFile — bypasses cmd.exe entirely
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { cwd: _cwd, silent: _silent, ...cleanOptions } = options || {};
-      const wslCwd = typeof cwd === 'string' ? cwd : undefined;
-      const extraEnv = getExtraEnvVars(cleanOptions?.env as Record<string, string | undefined>);
+      const wslCwd = decodeStringCwd(cwd);
+      const extraEnv = getExtraEnvVars(cleanOptions?.env);
       const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
 
       if (!silentMode) {

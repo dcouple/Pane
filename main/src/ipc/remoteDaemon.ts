@@ -213,7 +213,7 @@ export function registerRemoteDaemonHandlers(
         ...(request ? getRemoteSetupProperties(request) : { surface: 'desktop', role: 'host', flow: 'setup' }),
         result: 'failed',
         failure_stage: 'setup_host',
-        failure_category: getRemoteFailureCategory(error),
+        failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
       });
       return { success: false, error: getErrorMessage(error, 'Failed to set up remote daemon host') };
     }
@@ -393,7 +393,7 @@ export function registerRemoteDaemonHandlers(
         ...(payload ? getRemoteImportProperties(payload) : { surface: 'desktop', role: 'client', flow: 'connect' }),
         result: 'failed',
         failure_stage: 'import_connection_code',
-        failure_category: getRemoteFailureCategory(error),
+        failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
       });
       return { success: false, error: getErrorMessage(error, 'Failed to import remote daemon connection code') };
     }
@@ -614,7 +614,7 @@ export function registerRemoteDaemonHandlers(
         flow: 'connect',
         result: 'failed',
         failure_stage: 'update_client_state',
-        failure_category: getRemoteFailureCategory(error),
+        failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
         client_kind: 'desktop',
       });
       return { success: false, error: getErrorMessage(error, 'Failed to update remote daemon client state') };
@@ -725,7 +725,18 @@ function parseRemoteHostSetupRequest(input: PaneCommandValue): RemoteHostSetupRe
   if (input === undefined || input === null) {
     return {};
   }
-  const requestInput = decodeBoundary(input, boundary.jsonObject);
+  const requestInput = decodeBoundary(input, boundary.object({
+    dataDirectoryMode: boundary.optional(boundary.nullable(boundary.string)),
+    paneDir: boundary.optional(boundary.nullable(boundary.string)),
+    label: boundary.optional(boundary.nullable(boundary.string)),
+    listenPort: boundary.optional(boundary.nullable(boundary.union(boundary.number, boundary.string))),
+    channel: boundary.optional(boundary.nullable(boundary.string)),
+    repoRef: boundary.optional(boundary.nullable(boundary.string)),
+    installService: boundary.optional(boundary.nullable(boundary.boolean)),
+    exposeTailscale: boundary.optional(boundary.nullable(boundary.boolean)),
+    preferTunnel: boundary.optional(boundary.nullable(boundary.string)),
+    baseUrl: boundary.optional(boundary.nullable(boundary.string)),
+  }));
 
   const request: RemoteHostSetupRequest = {};
   const dataDirectoryMode = readOptionalDataDirectoryMode(requestInput.dataDirectoryMode);

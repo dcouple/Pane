@@ -20,6 +20,14 @@ import type {
 import type { ToolPanel } from '../../shared/types/panels';
 import type { PanelAgentStatusEvent } from '../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
+import type { CloudVmState } from '../../shared/types/cloud';
+import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
+import type {
+  PanePermissionRequest as PermissionRequest,
+  PanePermissionResponse as PermissionResponse,
+  PanePermissionResolvedEvent as PermissionResolvedEvent,
+} from '../../shared/types/permissions';
+import { boundary, decodeBoundary, type JsonObject } from '../../shared/validation/boundaryDecoder';
 
 interface LogEntry {
   timestamp: string;
@@ -31,11 +39,11 @@ interface LogEntry {
 // Buffer analytics events that arrive before the renderer registers its callback.
 // This prevents race conditions where main-process events (e.g. app_opened) are
 // sent before the React useEffect listener is attached.
-type AnalyticsEvent = { eventName: string; properties: Record<string, unknown> };
+type AnalyticsEvent = { eventName: string; properties: JsonObject };
 const analyticsEventBuffer: AnalyticsEvent[] = [];
 let analyticsForwardCallback: ((event: AnalyticsEvent) => void) | null = null;
 
-ipcRenderer.on('analytics:main-event', (_event: unknown, data: AnalyticsEvent) => {
+ipcRenderer.on('analytics:main-event', (_event: Electron.IpcRendererEvent, data: AnalyticsEvent) => {
   if (analyticsForwardCallback) {
     analyticsForwardCallback(data);
   } else {
@@ -97,25 +105,6 @@ interface VersionInfo {
   releaseNotes?: string;
 }
 
-interface PermissionRequest {
-  id: string;
-  sessionId: string;
-  toolName: string;
-  input: Record<string, unknown>;
-  timestamp: number;
-}
-
-interface PermissionResponse {
-  behavior: 'allow' | 'deny';
-  updatedInput?: Record<string, unknown>;
-  message?: string;
-}
-
-interface PermissionResolvedEvent {
-  request: PermissionRequest;
-  response: PermissionResponse;
-}
-
 interface UpdaterInfo {
   version: string;
   releaseDate?: string;
@@ -170,6 +159,7 @@ const DAEMON_OWNED_EXACT_CHANNELS = [
   'file:write-binary',
   'file:write-project',
 ] as const;
+const DAEMON_OWNED_EXACT_CHANNEL_SET = new Set<string>(DAEMON_OWNED_EXACT_CHANNELS);
 
 const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
   'file:showInFolder',
@@ -185,7 +175,7 @@ function isDaemonOwnedChannel(channel: string): boolean {
     return false;
   }
 
-  if (DAEMON_OWNED_EXACT_CHANNELS.includes(channel as (typeof DAEMON_OWNED_EXACT_CHANNELS)[number])) {
+  if (DAEMON_OWNED_EXACT_CHANNEL_SET.has(channel)) {
     return true;
   }
 
@@ -215,6 +205,15 @@ type PtyHostExitFrame = {
   signal: number | null;
 };
 type PtyHostInboundFrame = PtyHostDataFrame | PtyHostExitFrame;
+const ptyHostInboundSchema = boundary.union(
+  boundary.object({ type: boundary.literal('data'), ptyId: boundary.string, data: boundary.string }),
+  boundary.object({
+    type: boundary.literal('exit'),
+    ptyId: boundary.string,
+    exitCode: boundary.nullable(boundary.number),
+    signal: boundary.nullable(boundary.number),
+  }),
+);
 
 type PtyDataCallback = (data: string) => void;
 type PtyExitCallback = (exitCode: number | null, signal: number | null) => void;
@@ -222,13 +221,6 @@ type PtyExitCallback = (exitCode: number | null, signal: number | null) => void;
 let ptyHostPort: MessagePort | null = null;
 const ptyDataSubscribers = new Map<string, Set<PtyDataCallback>>();
 const ptyExitSubscribers = new Map<string, Set<PtyExitCallback>>();
-
-function isPtyHostInboundFrame(frame: unknown): frame is PtyHostInboundFrame {
-  if (typeof frame !== 'object' || frame === null) return false;
-  const f = frame as { type?: unknown; ptyId?: unknown };
-  if (typeof f.ptyId !== 'string') return false;
-  return f.type === 'data' || f.type === 'exit';
-}
 
 ipcRenderer.on('ptyHost-port', (event) => {
   const [port] = event.ports;
@@ -239,8 +231,10 @@ ipcRenderer.on('ptyHost-port', (event) => {
   // Renderer-world MessagePort is DOM-style: use .start() + .onmessage.
   port.start();
   port.onmessage = (e: MessageEvent) => {
-    const frame = e.data as unknown;
-    if (!isPtyHostInboundFrame(frame)) {
+    let frame: PtyHostInboundFrame;
+    try {
+      frame = decodeBoundary(e.data, ptyHostInboundSchema);
+    } catch {
       return;
     }
     if (frame.type === 'data') {
@@ -319,7 +313,7 @@ try {
     }
   });
 
-  ipcRenderer.on('resource-monitor:update', (_event: Electron.IpcRendererEvent, data: unknown) => {
+  ipcRenderer.on('resource-monitor:update', (_event: Electron.IpcRendererEvent, data: ResourceSnapshot) => {
     try {
       window.dispatchEvent(new CustomEvent('resource-monitor:update', { detail: data }));
     } catch (e) {
@@ -347,7 +341,7 @@ try {
       console.error('Failed to dispatch synthetic-keydown to window:', e);
     }
   });
-  ipcRenderer.on('browser-panel:popup-requested', (_event: unknown, data: { url: string; sourceSessionId: string; sourcePanelId: string }) => {
+  ipcRenderer.on('browser-panel:popup-requested', (_event: Electron.IpcRendererEvent, data: { url: string; sourceSessionId: string; sourcePanelId: string }) => {
     try {
       window.dispatchEvent(new CustomEvent('browser-panel:popup-requested', { detail: data }));
     } catch (e) {
@@ -370,24 +364,15 @@ if (process.env.NODE_ENV !== 'production') {
 
   // Override console methods to capture frontend logs
   (['log', 'warn', 'error', 'info', 'debug'] as const).forEach(level => {
-    (console as unknown as Record<string, (...args: unknown[]) => void>)[level] = (...args: unknown[]) => {
+    console[level] = (...args: Parameters<typeof console.log>) => {
       // Call original console first so they still appear in DevTools
-      (originalConsole as unknown as Record<string, (...args: unknown[]) => void>)[level](...args);
+      originalConsole[level](...args);
       
       // Send to main process for file logging
       try {
         invokeIpc('console:log', {
           level,
-          args: args.map(arg => {
-            if (typeof arg === 'object') {
-              try {
-                return JSON.stringify(arg, null, 2);
-              } catch (e) {
-                return String(arg);
-              }
-            }
-            return String(arg);
-          }),
+          args: args.map(arg => serializeConsoleArg(arg)),
           timestamp: new Date().toISOString(),
           source: 'renderer'
         });
@@ -397,6 +382,18 @@ if (process.env.NODE_ENV !== 'production') {
       }
     };
   });
+}
+
+function serializeConsoleArg(arg: Parameters<typeof console.log>[number]): string {
+  try {
+    return decodeBoundary(arg, boundary.string);
+  } catch {
+    try {
+      return JSON.stringify(arg, null, 2);
+    } catch {
+      return String(arg);
+    }
+  }
 }
 
 // Response type for IPC calls
@@ -1016,7 +1013,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Panels API for Claude panels and other panel types
   panels: {
-    createPanel: (sessionId: string, type: string, name: string, config?: Record<string, unknown>): Promise<IPCResponse> => 
+    createPanel: (sessionId: string, type: string, name: string, config?: JsonObject): Promise<IPCResponse> =>
       invokeIpc('panels:create', { sessionId, type, title: name, initialState: config }),
     getSessionPanels: (sessionId: string): Promise<IPCResponse> => invokeIpc('panels:list', sessionId),
     deletePanel: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:delete', panelId),
@@ -1053,7 +1050,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Analytics tracking
   analytics: {
     getIdentity: () => invokeIpc('analytics:get-identity'),
-    onMainEvent: (callback: (event: { eventName: string; properties: Record<string, unknown> }) => void) => {
+    onMainEvent: (callback: (event: AnalyticsEvent) => void) => {
       // Replay any events that arrived before this callback was registered
       for (const buffered of analyticsEventBuffer) {
         callback(buffered);
@@ -1088,8 +1085,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     disconnectWorkspace: (): Promise<IPCResponse> => invokeIpc('cloud:disconnect-workspace'),
     startPolling: (): Promise<IPCResponse> => invokeIpc('cloud:start-polling'),
     stopPolling: (): Promise<IPCResponse> => invokeIpc('cloud:stop-polling'),
-    onStateChanged: (callback: (state: unknown) => void): (() => void) => {
-      const wrappedCallback = (_event: unknown, state: unknown) => callback(state);
+    onStateChanged: (callback: (state: CloudVmState) => void): (() => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, state: CloudVmState) => callback(state);
       ipcRenderer.on('cloud:state-changed', wrappedCallback);
       return () => ipcRenderer.removeListener('cloud:state-changed', wrappedCallback);
     },
@@ -1110,7 +1107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Window state queries (invoke, not event subscriptions)
   window: {
-    isFocused: (): Promise<boolean> => invokeIpc('window:is-focused') as Promise<boolean>,
+    isFocused: async (): Promise<boolean> => decodeBoundary(await invokeIpc('window:is-focused'), boundary.boolean),
   },
 
   // ptyHost: typed wrapper over the per-window MessagePort. The raw port is

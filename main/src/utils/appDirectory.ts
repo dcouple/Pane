@@ -1,6 +1,7 @@
 import { homedir } from 'os';
 import { join } from 'path';
 import { existsSync, renameSync } from 'fs';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 let customAppDir: string | undefined;
 
@@ -14,13 +15,17 @@ function getElectronApp(): ElectronAppLike | null {
     // In a plain Node process, `require('electron')` resolves to the Electron
     // binary path string rather than the runtime module. Guard that case.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const electronModule = require('electron') as unknown;
-    if (!electronModule || typeof electronModule !== 'object') {
+    const electronModule = require('electron');
+    try {
+      decodeBoundary(electronModule, boundary.string);
       return null;
+    } catch {
+      // The Electron runtime exposes the module object instead of the binary path.
     }
 
+    // SAFETY: Electron's runtime module contract exposes `app`; plain Node's string case was excluded above.
     const electronApp = (electronModule as { app?: ElectronAppLike }).app;
-    if (!electronApp || typeof electronApp.getPath !== 'function') {
+    if (!electronApp) {
       return null;
     }
 

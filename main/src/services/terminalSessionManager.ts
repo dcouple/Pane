@@ -54,7 +54,7 @@ class TerminalSessionPtyShim implements pty.IPty {
   resize(columns: number, rows: number): void {
     this.cols = columns;
     this.rows = rows;
-    this.handle.resize(columns, rows).catch((err: unknown) => {
+    this.handle.resize(columns, rows).catch((err: Error) => {
       console.warn('[ptyHost] terminal-session resize failed', err);
     });
   }
@@ -64,26 +64,28 @@ class TerminalSessionPtyShim implements pty.IPty {
   }
 
   write(data: string | Buffer): void {
-    const str = typeof data === 'string' ? data : data.toString();
-    this.handle.write(str).catch((err: unknown) => {
+    const str = Buffer.isBuffer(data) ? data.toString() : data;
+    this.handle.write(str).catch((err: Error) => {
       console.warn('[ptyHost] terminal-session write failed', err);
     });
   }
 
   kill(signal?: string): void {
-    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err: unknown) => {
+    // SAFETY: node-pty declares this shim method as string, while callers pass
+    // Node signal names and the host handle accepts that same finite set.
+    this.handle.kill(signal as NodeJS.Signals | undefined).catch((err: Error) => {
       console.warn('[ptyHost] terminal-session kill failed', err);
     });
   }
 
   pause(): void {
-    this.handle.pause().catch((err: unknown) => {
+    this.handle.pause().catch((err: Error) => {
       console.warn('[ptyHost] terminal-session pause failed', err);
     });
   }
 
   resume(): void {
-    this.handle.resume().catch((err: unknown) => {
+    this.handle.resume().catch((err: Error) => {
       console.warn('[ptyHost] terminal-session resume failed', err);
     });
   }
@@ -159,7 +161,7 @@ export class TerminalSessionManager extends EventEmitter {
       // RPC DTO requires `Record<string, string>`; drop undefined keys.
       const envStr: Record<string, string> = {};
       for (const [key, value] of Object.entries(rawEnv)) {
-        if (typeof value === 'string') {
+        if (value !== undefined) {
           envStr[key] = value;
         }
       }
@@ -185,7 +187,7 @@ export class TerminalSessionManager extends EventEmitter {
         cwd: worktreePath,
         cols: spawnCols,
         rows: spawnRows,
-        env: rawEnv as { [key: string]: string },
+        env: Object.fromEntries(Object.entries(rawEnv).filter((entry): entry is [string, string] => entry[1] !== undefined)),
       });
     }
 

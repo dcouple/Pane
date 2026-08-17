@@ -4,7 +4,7 @@
  */
 
 // Check if ReadableStream is already available
-if (typeof globalThis.ReadableStream === 'undefined') {
+if (!globalThis.ReadableStream) {
   try {
     // Try to import from Node.js built-in stream/web module (Node 16.5+)
     const { ReadableStream, WritableStream, TransformStream } = require('stream/web');

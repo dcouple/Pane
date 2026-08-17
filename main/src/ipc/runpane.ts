@@ -1593,11 +1593,6 @@ function getPanelScrollback(panel: ToolPanel): string | null {
     return liveScrollback;
   }
 
-  const customState = panel.state.customState;
-  if (!isRecord(customState) || !('scrollbackBuffer' in customState)) {
-    return null;
-  }
-
   const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
   if (persisted) return persisted;
 

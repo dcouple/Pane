@@ -1,7 +1,11 @@
 // Simple console wrapper to reduce logging in production
 // This follows the existing pattern in the codebase
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
-const isDevelopment = process.env.NODE_ENV !== 'production' && !((global as { isPackaged?: boolean }).isPackaged);
+const runtimeGlobal = decodeBoundary(global, boundary.object({
+  isPackaged: boundary.optional(boundary.boolean),
+}));
+const isDevelopment = process.env.NODE_ENV !== 'production' && !runtimeGlobal.isPackaged;
 
 // Store original console methods
 const originalConsole = {
@@ -12,15 +16,17 @@ const originalConsole = {
   debug: console.debug
 };
 
-function isBrokenPipeError(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | undefined)?.code === 'EPIPE';
-}
-
 function writeOriginalConsole(method: (...args: unknown[]) => void, args: unknown[]): void {
   try {
     method(...args);
   } catch (error) {
-    if (!isBrokenPipeError(error)) {
+    let code: string | undefined;
+    try {
+      code = decodeBoundary(error, boundary.object({ code: boundary.optional(boundary.string) })).code;
+    } catch {
+      code = undefined;
+    }
+    if (code !== 'EPIPE') {
       throw error;
     }
   }
@@ -30,29 +36,35 @@ function writeOriginalConsole(method: (...args: unknown[]) => void, args: unknow
 function shouldLog(level: 'log' | 'info' | 'debug', args: unknown[]): boolean {
   if (args.length === 0) return false;
   const firstArg = args[0];
-  if (typeof firstArg === 'string') {
+  let message: string | undefined;
+  try {
+    message = decodeBoundary(firstArg, boundary.string);
+  } catch {
+    message = undefined;
+  }
+  if (message !== undefined) {
     // Always log [Main] messages as they're important startup info
-    if (firstArg.includes('[Main]')) return true;
+    if (message.includes('[Main]')) return true;
     // Always log errors from any component
-    if (firstArg.includes('Error') || firstArg.includes('Failed')) return true;
+    if (message.includes('Error') || message.includes('Failed')) return true;
     
     // Skip verbose logging from these components in both dev and production
-    if (firstArg.includes('[CommandExecutor]')) return false;
-    if (firstArg.includes('[ShellPath]')) return false;
-    if (firstArg.includes('[Database] Getting folders')) return false;
-    if (firstArg.includes('[WorktreeManager]') && firstArg.includes('called with')) return false;
+    if (message.includes('[CommandExecutor]')) return false;
+    if (message.includes('[ShellPath]')) return false;
+    if (message.includes('[Database] Getting folders')) return false;
+    if (message.includes('[WorktreeManager]') && message.includes('called with')) return false;
     // Skip git status polling logs
-    if (firstArg.includes('[GitStatus]') && !firstArg.includes('error') && !firstArg.includes('failed')) return false;
-    if (firstArg.includes('[Git]') && firstArg.includes('Refreshing git status')) return false;
+    if (message.includes('[GitStatus]') && !message.includes('error') && !message.includes('failed')) return false;
+    if (message.includes('[Git]') && message.includes('Refreshing git status')) return false;
     // Skip individual git status updates from frontend
-    if (firstArg.includes('Git status updated:')) return false;
-    if (firstArg.includes('Git status:') && firstArg.includes('→')) return false;
+    if (message.includes('Git status updated:')) return false;
+    if (message.includes('Git status:') && message.includes('→')) return false;
     // Skip verbose git status manager logs
-    if (firstArg.includes('Polling git status for')) return false;
-    if (firstArg.includes('Using cached status for')) return false;
-    if (firstArg.includes('[IPC:git] Getting commits')) return false;
-    if (firstArg.includes('[IPC:git] Project path:')) return false;
-    if (firstArg.includes('[IPC:git] Using main branch:')) return false;
+    if (message.includes('Polling git status for')) return false;
+    if (message.includes('Using cached status for')) return false;
+    if (message.includes('[IPC:git] Getting commits')) return false;
+    if (message.includes('[IPC:git] Project path:')) return false;
+    if (message.includes('[IPC:git] Using main branch:')) return false;
     
     // In development, log everything else
     if (isDevelopment) {

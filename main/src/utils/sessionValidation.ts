@@ -110,7 +110,12 @@ export function validateSessionIsActive(sessionId: string): ValidationResult {
 /**
  * Validates that an event matches the expected session context
  */
-export function validateEventContext(eventData: Record<string, unknown>, expectedSessionId?: string): ValidationResult {
+interface SessionEventContext {
+  readonly sessionId?: string;
+  readonly panelId?: string;
+}
+
+export function validateEventContext(eventData: SessionEventContext, expectedSessionId?: string): ValidationResult {
   if (!eventData) {
     return { valid: false, error: 'Event data is required' };
   }
@@ -120,7 +125,7 @@ export function validateEventContext(eventData: Record<string, unknown>, expecte
     if (!eventData.sessionId) {
       return { valid: false, error: 'Event must contain sessionId' };
     }
-    return validateSessionExists(String(eventData.sessionId));
+    return validateSessionExists(eventData.sessionId);
   }
 
   // Validate event session matches expected session
@@ -148,7 +153,7 @@ export function validateEventContext(eventData: Record<string, unknown>, expecte
  * Validates that a panel event matches the expected context
  */
 export function validatePanelEventContext(
-  eventData: Record<string, unknown>, 
+  eventData: SessionEventContext,
   expectedPanelId?: string, 
   expectedSessionId?: string
 ): ValidationResult {

@@ -708,7 +708,7 @@ export class RemotePaneClientController extends EventEmitter {
           flow: 'connect',
           result: 'failed',
           failure_stage: 'initial_connect_retrying',
-          failure_category: getRemoteFailureCategory(error),
+          failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
           client_kind: 'desktop',
         });
         this.setConnectionState({
@@ -735,7 +735,7 @@ export class RemotePaneClientController extends EventEmitter {
         flow: 'connect',
         result: 'failed',
         failure_stage: 'initial_connect',
-        failure_category: getRemoteFailureCategory(error),
+        failure_category: getRemoteFailureCategory(error instanceof Error ? error.message : String(error)),
         client_kind: 'desktop',
       });
       this.setConnectionState({
