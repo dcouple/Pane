@@ -36,6 +36,7 @@ type ElectronApiMockOptions = {
   detectedBranch?: string | null;
   detectedBranchByPath?: Record<string, string | null>;
   mainRepoSessionDelayByProjectId?: Record<number, number>;
+  mainRepoSessionErrorByProjectId?: Record<number, string>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
 };
@@ -514,6 +515,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getOrCreateMainRepoSession: async (projectId: number) => {
           const delayMs = mockOptions.mainRepoSessionDelayByProjectId?.[projectId] ?? 0;
           if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+          const error = mockOptions.mainRepoSessionErrorByProjectId?.[projectId];
+          if (error) throw new Error(error);
           return success(clone(
             mockSessions.find((session) => session.projectId === projectId && session.isMainRepo === true) ?? null,
           ));

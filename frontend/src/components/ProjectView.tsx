@@ -35,8 +35,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     worktreePath: string | null;
     branch: string | null;
   }>({ projectId, worktreePath: null, branch: null });
-  const [isLoadingSession, setIsLoadingSession] = useState(false);
+  const [sessionLoadingState, setSessionLoadingState] = useState({ projectId, isLoading: true });
   const sessionRequestGeneration = useRef(0);
+  const isLoadingSession = sessionLoadingState.projectId !== projectId || sessionLoadingState.isLoading;
   const activeMainRepoSession = mainRepoSession?.projectId === projectId ? mainRepoSession : null;
   const activeWorktreePath = activeMainRepoSession?.worktreePath ?? null;
   const detectedBranch = branchState.projectId === projectId
@@ -241,7 +242,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
     // Create main repo session when component mounts to support panels
     const getMainRepoSession = async () => {
-      setIsLoadingSession(true);
+      setSessionLoadingState({ projectId, isLoading: true });
       try {
         const response = await API.sessions.getOrCreateMainRepoSession(projectId);
         if (!isLatestRequest()) return;
@@ -257,12 +258,14 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           }
           
           // Set as active session
-          useSessionStore.getState().setActiveSession(response.data.id);
+          if (!isLatestRequest()) return;
+          await useSessionStore.getState().setActiveSession(response.data.id);
+          if (!isLatestRequest()) return;
         }
       } catch (error) {
         if (isLatestRequest()) console.error('Failed to get main repo session:', error);
       } finally {
-        if (isLatestRequest()) setIsLoadingSession(false);
+        if (isLatestRequest()) setSessionLoadingState({ projectId, isLoading: false });
       }
     };
 
@@ -406,7 +409,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       )}
 
       {/* Loading state when no session yet */}
-      {!activeMainRepoSession && (
+      {!activeMainRepoSession && isLoadingSession && (
         <div
           role="status"
           aria-label="Loading main repository session"
@@ -426,6 +429,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
             <div className="h-3 w-1/2 bg-surface-tertiary rounded" />
           </div>
+        </div>
+      )}
+
+      {!activeMainRepoSession && !isLoadingSession && (
+        <div className="flex-1 flex items-center justify-center text-text-secondary">
+          No session selected
         </div>
       )}
     </div>
