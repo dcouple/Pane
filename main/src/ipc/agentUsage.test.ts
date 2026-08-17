@@ -1,6 +1,6 @@
 import * as os from 'os';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { PaneCommandRegistry, type PaneCommandValue } from '../daemon/commandRegistry';
 import { agentUsageService } from '../services/agentUsageService';
 import { registerAgentUsageHandlers, resolveAgentUsageTargets } from './agentUsage';
 import type { AppServices } from './types';
@@ -10,9 +10,10 @@ vi.mock('../services/agentUsageService', () => ({
 }));
 
 describe('registerAgentUsageHandlers', () => {
-  const bound = new Map<string, (_event: unknown, ...args: unknown[]) => unknown>();
+  interface TestIpcEvent { readonly sender?: { readonly id?: number } }
+  const bound = new Map<string, (_event: TestIpcEvent, ...args: PaneCommandValue[]) => PaneCommandValue | Promise<PaneCommandValue>>();
   const ipcMain = {
-    handle: vi.fn((channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown) => {
+    handle: vi.fn((channel: string, listener: (_event: TestIpcEvent, ...args: PaneCommandValue[]) => PaneCommandValue | Promise<PaneCommandValue>) => {
       bound.set(channel, listener);
     }),
   };
@@ -22,6 +23,7 @@ describe('registerAgentUsageHandlers', () => {
     { path: '/home/dev/repo-c', wsl_enabled: true, wsl_distribution: 'Ubuntu' },
     { path: '/home/dev/repo-d', wsl_enabled: true, wsl_distribution: 'Debian' },
   ];
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   const services = {
     databaseService: { getAllProjects: vi.fn(() => projects) },
   } as unknown as AppServices;
@@ -41,7 +43,9 @@ describe('registerAgentUsageHandlers', () => {
 
   it('probes the daemon host independently of any pane', async () => {
     const registry = new PaneCommandRegistry();
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(agentUsageService.getSnapshot).mockResolvedValue(available as never);
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerAgentUsageHandlers(ipcMain as never, services, registry, 'darwin');
 
     const result = await registry.invoke('agent-usage:get', [true]);
@@ -59,7 +63,9 @@ describe('registerAgentUsageHandlers', () => {
   it('falls back to known WSL distributions on Windows and returns the first available login', async () => {
     const registry = new PaneCommandRegistry();
     vi.mocked(agentUsageService.getSnapshot).mockImplementation(async target =>
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       (target.cacheKey === 'wsl:Debian' ? available : unavailable) as never);
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerAgentUsageHandlers(ipcMain as never, services, registry, 'win32');
 
     const result = await registry.invoke('agent-usage:get', [false]);
@@ -76,7 +82,9 @@ describe('registerAgentUsageHandlers', () => {
 
   it('returns the host snapshot when no target reports an available login', async () => {
     const registry = new PaneCommandRegistry();
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(agentUsageService.getSnapshot).mockResolvedValue(unavailable as never);
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerAgentUsageHandlers(ipcMain as never, services, registry, 'win32');
 
     await expect(registry.invoke('agent-usage:get', [false])).resolves.toEqual({ success: true, data: unavailable });
@@ -93,7 +101,9 @@ describe('registerAgentUsageHandlers', () => {
 
   it('defaults to a cached read when no refresh flag is passed', async () => {
     const registry = new PaneCommandRegistry();
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(agentUsageService.getSnapshot).mockResolvedValue(available as never);
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerAgentUsageHandlers(ipcMain as never, services, registry, 'darwin');
 
     await expect(registry.invoke('agent-usage:get', [])).resolves.toEqual({ success: true, data: available });
@@ -102,6 +112,7 @@ describe('registerAgentUsageHandlers', () => {
 
   it('rejects invalid refresh inputs', async () => {
     const registry = new PaneCommandRegistry();
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerAgentUsageHandlers(ipcMain as never, services, registry, 'darwin');
 
     await expect(registry.invoke('agent-usage:get', ['yes'])).resolves.toMatchObject({ success: false });

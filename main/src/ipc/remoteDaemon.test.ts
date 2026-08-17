@@ -12,6 +12,7 @@ import { remoteHostRuntimeStateStore } from '../daemon/remoteHostRuntimeState';
 import { disconnectActiveRemoteHostClients } from '../daemon/remoteTransportController';
 import { readConfiguredTailscaleServeAccess, setupRemoteHost } from '../daemon/setupRemoteHost';
 import { registerRemoteDaemonHandlers } from './remoteDaemon';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
 
 vi.mock('../daemon/setupRemoteHost', () => ({
   readConfiguredTailscaleServeAccess: vi.fn(),
@@ -25,8 +26,8 @@ vi.mock('../daemon/remoteTransportController', () => ({
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 
 interface IpcMainStub {
-  handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
+  handlers: Map<string, (_event: { readonly sender: object }, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>;
+  handle(channel: string, listener: (_event: { readonly sender: object }, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>): void;
 }
 
 interface ConfigManagerStub {
@@ -35,7 +36,7 @@ interface ConfigManagerStub {
 }
 
 function createIpcMainStub(): IpcMainStub {
-  const handlers = new Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>();
+  const handlers = new Map<string, (_event: { readonly sender: object }, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>();
 
   return {
     handlers,
@@ -158,6 +159,7 @@ describe('remote daemon IPC', () => {
 
     registerRemoteDaemonHandlers(ipcMain, {
       configManager,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
     });
 
@@ -336,6 +338,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager, app: { isPackaged: false } });
 
     const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-setup-command');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const response = await getCommand?.({}, {
       label: 'Windows WSL Smoke',
       listenPort: 42139,
@@ -366,6 +369,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-client-setup-command');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const response = await getCommand?.({}) as { success?: boolean; data?: { command?: string } };
 
     expect(response).toMatchObject({
@@ -386,6 +390,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const getCommand = ipcMain.handlers.get('remote-daemon:get-interactive-client-setup-command');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const response = await getCommand?.({}) as { success?: boolean; data?: { command?: string } };
 
     expect(response).toMatchObject({
@@ -472,6 +477,7 @@ describe('remote daemon IPC', () => {
 
     registerRemoteDaemonHandlers(ipcMain, {
       configManager,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
     });
 
@@ -523,10 +529,12 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const importCode = ipcMain.handlers.get('remote-daemon:import-connection-code');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const firstResponse = await importCode?.({}, {
       code: connectionCode,
       connect: false,
     }) as { success?: boolean; data?: { profile?: { id?: string } } };
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const secondResponse = await importCode?.({}, {
       code: connectionCode,
       connect: false,
@@ -637,6 +645,7 @@ describe('remote daemon IPC', () => {
 
     registerRemoteDaemonHandlers(ipcMain, {
       configManager,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
     });
 
@@ -687,6 +696,7 @@ describe('remote daemon IPC', () => {
 
     registerRemoteDaemonHandlers(ipcMain, {
       configManager,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
     });
 
@@ -738,6 +748,7 @@ describe('remote daemon IPC', () => {
 
     registerRemoteDaemonHandlers(ipcMain, {
       configManager,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       getMainWindow: () => ({ isDestroyed: () => false, webContents: { send } }) as never,
     });
 
@@ -806,6 +817,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const response = await createCode?.({}, { label: 'Office Mac mini' }) as {
       success?: boolean;
       data?: { connectionCode?: string };
@@ -850,6 +862,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const response = await createCode?.({}, {}) as {
       success?: boolean;
       data?: { connectionCode?: string };
@@ -882,6 +895,7 @@ describe('remote daemon IPC', () => {
     registerRemoteDaemonHandlers(ipcMain, { configManager });
 
     const createCode = ipcMain.handlers.get('remote-daemon:create-host-connection-code');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const firstResponse = await createCode?.({}, { label: 'Office Mac mini' }) as {
       success?: boolean;
       data?: { connectionCode?: string };
@@ -900,6 +914,7 @@ describe('remote daemon IPC', () => {
     });
     expectConnectionCodeForbidden(configManager, firstResponse.data?.connectionCode);
 
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const secondResponse = await createCode?.({}, { label: 'Office Mac mini' }) as {
       success?: boolean;
       data?: { connectionCode?: string };

@@ -1,10 +1,11 @@
 import type { IpcMain } from 'electron';
 import * as os from 'os';
-import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { PaneCommandRegistry, type PaneCommandValue } from '../daemon/commandRegistry';
 import { agentUsageService, type AgentUsageTarget } from '../services/agentUsageService';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import { getWSLContextFromProject } from '../utils/wslUtils';
 import type { AppServices } from './types';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const DAEMON_AGENT_USAGE_CHANNELS = ['agent-usage:get'] as const;
 
@@ -48,8 +49,11 @@ export function registerAgentUsageHandlers(
   commandRegistry: PaneCommandRegistry,
   platform: NodeJS.Platform = process.platform,
 ): void {
-  commandRegistry.register('agent-usage:get', async (force = false) => {
-    if (typeof force !== 'boolean') {
+  commandRegistry.register('agent-usage:get', async (force: PaneCommandValue = false) => {
+    let refreshRequested: boolean;
+    try {
+      refreshRequested = decodeBoundary(force, boundary.boolean);
+    } catch {
       return { success: false, error: 'Invalid agent usage refresh request' };
     }
 
@@ -57,7 +61,7 @@ export function registerAgentUsageHandlers(
       const targets = resolveAgentUsageTargets(platform, services.databaseService.getAllProjects());
       let hostSnapshot: AgentUsageSnapshot | null = null;
       for (const target of targets) {
-        const snapshot = await agentUsageService.getSnapshot(target, force);
+        const snapshot = await agentUsageService.getSnapshot(target, refreshRequested);
         hostSnapshot ??= snapshot;
         if (hasAvailableProvider(snapshot)) return { success: true, data: snapshot };
       }

@@ -24,6 +24,8 @@ import {
   type RemoteSetupDataDirectoryMode,
   type RemoteSetupTunnelPreference,
 } from '../../../shared/types/remoteDaemon';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
+import { boundary, decodeBoundary, type JsonObject } from '../../../shared/validation/boundaryDecoder';
 import os from 'os';
 import path from 'path';
 import type { AppServices } from './types';
@@ -47,7 +49,10 @@ import {
 } from '../services/remoteAnalytics';
 
 interface IpcMainHandleLike {
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
+  handle(
+    channel: string,
+    listener: (_event: { readonly sender: object }, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>,
+  ): void;
 }
 
 interface RemoteDaemonHandlerServices {
@@ -121,7 +126,7 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:get-interactive-setup-command', async (_event, input: unknown) => {
+  ipcMain.handle('remote-daemon:get-interactive-setup-command', async (_event, input: PaneCommandValue) => {
     try {
       const request = parseRemoteHostSetupRequest(input);
       const shellName = process.platform === 'win32'
@@ -157,7 +162,7 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:setup-host', async (_event, input: unknown) => {
+  ipcMain.handle('remote-daemon:setup-host', async (_event, input: PaneCommandValue) => {
     let request: RemoteHostSetupRequest | null = null;
     try {
       request = parseRemoteHostSetupRequest(input);
@@ -214,14 +219,14 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:create-connection-pair', async (_event, input: unknown) => {
+  ipcMain.handle('remote-daemon:create-connection-pair', async (_event, input: PaneCommandValue) => {
     try {
-      if (!isRecord(input)) {
-        throw new Error('Remote daemon connection pair request must be an object');
-      }
-
-      const label = typeof input.label === 'string' ? input.label.trim() : '';
-      const baseUrl = typeof input.baseUrl === 'string' ? input.baseUrl.trim() : '';
+      const requestInput = decodeBoundary(input, boundary.object({
+        label: boundary.string,
+        baseUrl: boundary.string,
+      }));
+      const label = requestInput.label.trim();
+      const baseUrl = requestInput.baseUrl.trim();
       if (label.length === 0) {
         throw new Error('Remote daemon connection pair label is required');
       }
@@ -263,7 +268,7 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:create-host-connection-code', async (_event, input: unknown) => {
+  ipcMain.handle('remote-daemon:create-host-connection-code', async (_event, input: PaneCommandValue) => {
     try {
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
       const label = readOptionalConnectionCodeLabel(input) ?? `${os.hostname()} Pane daemon`;
@@ -317,19 +322,19 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:import-connection-code', async (_event, input: unknown) => {
+  ipcMain.handle('remote-daemon:import-connection-code', async (_event, input: PaneCommandValue) => {
     let payload: PaneRemoteConnectionImportPayload | null = null;
     try {
-      if (!isRecord(input)) {
-        throw new Error('Remote daemon import request must be an object');
-      }
-
-      const code = typeof input.code === 'string' ? input.code.trim() : '';
+      const requestInput = decodeBoundary(input, boundary.object({
+        code: boundary.string,
+        connect: boundary.optional(boundary.boolean),
+      }));
+      const code = requestInput.code.trim();
       if (code.length === 0) {
         throw new Error('Remote daemon import code is required');
       }
 
-      const connect = input.connect !== false;
+      const connect = requestInput.connect !== false;
       const importPayload = decodePaneRemoteConnection(code);
       payload = importPayload;
       let profile = remoteImportPayloadToProfile(importPayload);
@@ -394,11 +399,9 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:update-host-config', async (_event, updates: unknown) => {
+  ipcMain.handle('remote-daemon:update-host-config', async (_event, updates: PaneCommandValue) => {
     try {
-      if (!isRecord(updates)) {
-        throw new Error('Remote daemon host config update must be an object');
-      }
+      const decodedUpdates = decodeBoundary(updates, boundary.jsonObject);
 
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
       const next = normalizeRemoteDaemonConfig({
@@ -407,7 +410,7 @@ export function registerRemoteDaemonHandlers(
           ...current.host,
           config: {
             ...current.host.config,
-            ...updates,
+            ...decodedUpdates,
           },
         },
       });
@@ -449,7 +452,7 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:disconnect-host-clients', async (_event, clientIds: unknown) => {
+  ipcMain.handle('remote-daemon:disconnect-host-clients', async (_event, clientIds: PaneCommandValue) => {
     try {
       const parsedClientIds = parseOptionalClientIds(clientIds);
       const disconnectedCount = disconnectActiveRemoteHostClients(parsedClientIds);
@@ -466,7 +469,7 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:upsert-client-record', async (_event, record: unknown) => {
+  ipcMain.handle('remote-daemon:upsert-client-record', async (_event, record: PaneCommandValue) => {
     try {
       if (!isRemoteDaemonClientRecord(record)) {
         throw new Error('Remote daemon client record is invalid');
@@ -489,30 +492,28 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:delete-client-record', async (_event, clientId: unknown) => {
+  ipcMain.handle('remote-daemon:delete-client-record', async (_event, clientId: PaneCommandValue) => {
     try {
-      if (typeof clientId !== 'string' || clientId.length === 0) {
-        throw new Error('Remote daemon client record id must be a non-empty string');
-      }
+      const decodedClientId = decodeBoundary(clientId, boundary.nonEmptyString);
 
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
       const next = normalizeRemoteDaemonConfig({
         ...current,
         host: {
           ...current.host,
-          clients: current.host.clients.filter((client) => client.id !== clientId),
+          clients: current.host.clients.filter((client) => client.id !== decodedClientId),
         },
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
-      disconnectActiveRemoteHostClients([clientId]);
+      disconnectActiveRemoteHostClients([decodedClientId]);
       return { success: true, data: next.host.clients };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to delete remote daemon client record') };
     }
   });
 
-  ipcMain.handle('remote-daemon:upsert-connection-profile', async (_event, profile: unknown) => {
+  ipcMain.handle('remote-daemon:upsert-connection-profile', async (_event, profile: PaneCommandValue) => {
     try {
       if (!isRemotePaneConnectionProfile(profile)) {
         throw new Error('Remote daemon connection profile is invalid');
@@ -535,15 +536,13 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:delete-connection-profile', async (_event, profileId: unknown) => {
+  ipcMain.handle('remote-daemon:delete-connection-profile', async (_event, profileId: PaneCommandValue) => {
     try {
-      if (typeof profileId !== 'string' || profileId.length === 0) {
-        throw new Error('Remote daemon connection profile id must be a non-empty string');
-      }
+      const decodedProfileId = decodeBoundary(profileId, boundary.nonEmptyString);
 
       const next = await applyRemoteClientTransition(async (current) => {
-        const isActiveRemoteProfile = current.client.mode === 'remote' && current.client.activeProfileId === profileId;
-        const activeProfileId = current.client.activeProfileId === profileId
+        const isActiveRemoteProfile = current.client.mode === 'remote' && current.client.activeProfileId === decodedProfileId;
+        const activeProfileId = current.client.activeProfileId === decodedProfileId
           ? null
           : current.client.activeProfileId;
         const mode = activeProfileId ? current.client.mode : 'local';
@@ -557,7 +556,7 @@ export function registerRemoteDaemonHandlers(
             ...current,
             client: {
               ...current.client,
-              profiles: current.client.profiles.filter((profile) => profile.id !== profileId),
+          profiles: current.client.profiles.filter((profile) => profile.id !== decodedProfileId),
               activeProfileId,
               mode,
             },
@@ -577,14 +576,12 @@ export function registerRemoteDaemonHandlers(
     }
   });
 
-  ipcMain.handle('remote-daemon:update-client-state', async (_event, updates: unknown) => {
+  ipcMain.handle('remote-daemon:update-client-state', async (_event, updates: PaneCommandValue) => {
     try {
-      if (!isRecord(updates)) {
-        throw new Error('Remote daemon client state update must be an object');
-      }
+      const decodedUpdates = decodeBoundary(updates, boundary.jsonObject);
 
       const next = await applyRemoteClientTransition(async (current) => {
-        const nextState = buildNextClientState(current.client, updates);
+        const nextState = buildNextClientState(current.client, decodedUpdates);
         const candidate = normalizeRemoteDaemonConfig({
           ...current,
           client: {
@@ -625,45 +622,32 @@ export function registerRemoteDaemonHandlers(
   });
 }
 
-function parseOptionalClientIds(value: unknown): string[] | undefined {
+function parseOptionalClientIds(value: PaneCommandValue): string[] | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
 
-  if (!Array.isArray(value)) {
-    throw new Error('Remote daemon client ids must be an array');
-  }
-
-  const clientIds = value.map((clientId) => {
-    if (typeof clientId !== 'string' || clientId.trim().length === 0) {
-      throw new Error('Remote daemon client id must be a non-empty string');
-    }
-
-    return clientId.trim();
-  });
+  const clientIds = decodeBoundary(value, boundary.array(boundary.nonEmptyString))
+    .map((clientId) => clientId.trim());
 
   return clientIds.length > 0 ? clientIds : undefined;
 }
 
-function getRemoteDaemonConfig(value: unknown): RemoteDaemonConfig {
+function getRemoteDaemonConfig(value: PaneCommandValue): RemoteDaemonConfig {
   return normalizeRemoteDaemonConfig(value);
 }
 
-function readOptionalConnectionCodeLabel(input: unknown): string | undefined {
+function readOptionalConnectionCodeLabel(input: PaneCommandValue): string | undefined {
   if (input === undefined || input === null) {
     return undefined;
   }
-  if (!isRecord(input)) {
-    throw new Error('Remote connection code request must be an object');
-  }
-  if (input.label === undefined || input.label === null) {
+  const requestInput = decodeBoundary(input, boundary.object({
+    label: boundary.optional(boundary.nullable(boundary.string)),
+  }));
+  if (requestInput.label === undefined || requestInput.label === null) {
     return undefined;
   }
-  if (typeof input.label !== 'string') {
-    throw new Error('Remote connection code label must be a string');
-  }
-
-  const label = input.label.trim();
+  const label = requestInput.label.trim();
   return label.length > 0 ? label : undefined;
 }
 
@@ -684,7 +668,7 @@ function resolveCurrentHostAccess(current: RemoteDaemonConfig): RemoteDaemonHost
 
 function buildNextClientState(
   current: RemoteDaemonClientSettings,
-  updates: Record<string, unknown>,
+  updates: JsonObject,
 ): Pick<RemoteDaemonClientSettings, 'activeProfileId' | 'mode'> {
   const nextMode: RemoteDaemonClientMode =
     updates.mode === 'remote' || updates.mode === 'local'
@@ -694,8 +678,12 @@ function buildNextClientState(
   let nextActiveProfileId = current.activeProfileId;
   if (updates.activeProfileId === null) {
     nextActiveProfileId = null;
-  } else if (typeof updates.activeProfileId === 'string') {
-    nextActiveProfileId = updates.activeProfileId;
+  } else {
+    try {
+      nextActiveProfileId = decodeBoundary(updates.activeProfileId, boundary.string);
+    } catch {
+      // Preserve the current profile when the optional update is malformed.
+    }
   }
 
   if (nextMode === 'remote' && !nextActiveProfileId) {
@@ -733,58 +721,54 @@ function attachRemoteHostStateForwarder(getMainWindow?: AppServices['getMainWind
   remoteHostRuntimeStateStore.on('state-changed', remoteHostStateForwarder);
 }
 
-function parseRemoteHostSetupRequest(input: unknown): RemoteHostSetupRequest {
+function parseRemoteHostSetupRequest(input: PaneCommandValue): RemoteHostSetupRequest {
   if (input === undefined || input === null) {
     return {};
   }
-  if (!isRecord(input)) {
-    throw new Error('Remote daemon host setup request must be an object');
-  }
+  const requestInput = decodeBoundary(input, boundary.jsonObject);
 
   const request: RemoteHostSetupRequest = {};
-  const dataDirectoryMode = readOptionalDataDirectoryMode(input.dataDirectoryMode);
+  const dataDirectoryMode = readOptionalDataDirectoryMode(requestInput.dataDirectoryMode);
   if (dataDirectoryMode) {
     request.dataDirectoryMode = dataDirectoryMode;
   }
 
-  const paneDir = readOptionalTrimmedString(input.paneDir);
+  const paneDir = readOptionalTrimmedString(requestInput.paneDir);
   if (paneDir) {
     request.paneDir = paneDir;
   }
 
-  const label = readOptionalTrimmedString(input.label);
+  const label = readOptionalTrimmedString(requestInput.label);
   if (label) {
     request.label = label;
   }
 
-  const listenPort = readOptionalPort(input.listenPort);
+  const listenPort = readOptionalPort(requestInput.listenPort);
   if (listenPort !== undefined) {
     request.listenPort = listenPort;
   }
 
-  const channel = readOptionalChannel(input.channel);
+  const channel = readOptionalChannel(requestInput.channel);
   if (channel) {
     request.channel = channel;
   }
 
-  const repoRef = readOptionalTrimmedString(input.repoRef);
+  const repoRef = readOptionalTrimmedString(requestInput.repoRef);
   if (repoRef) {
     request.repoRef = repoRef;
   }
 
-  if (typeof input.installService === 'boolean') {
-    request.installService = input.installService;
-  }
-  if (typeof input.exposeTailscale === 'boolean') {
-    request.exposeTailscale = input.exposeTailscale;
-  }
+  const installService = decodeOptionalBoolean(requestInput.installService);
+  if (installService !== undefined) request.installService = installService;
+  const exposeTailscale = decodeOptionalBoolean(requestInput.exposeTailscale);
+  if (exposeTailscale !== undefined) request.exposeTailscale = exposeTailscale;
 
-  const preferTunnel = readOptionalTunnelPreference(input.preferTunnel);
+  const preferTunnel = readOptionalTunnelPreference(requestInput.preferTunnel);
   if (preferTunnel) {
     request.preferTunnel = preferTunnel;
   }
 
-  const baseUrl = readOptionalTrimmedString(input.baseUrl);
+  const baseUrl = readOptionalTrimmedString(requestInput.baseUrl);
   if (baseUrl) {
     normalizePaneRemoteConnectionImportPayload({
       v: 1,
@@ -883,14 +867,11 @@ function buildInteractiveClientSetupCommand(shellName?: string): string {
   return 'echo "Install Tailscale from https://tailscale.com/download, sign in, then retry the Pane remote connection."';
 }
 
-function readOptionalTrimmedString(value: unknown): string | undefined {
+function readOptionalTrimmedString(value: PaneCommandValue): string | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
-  if (typeof value !== 'string') {
-    throw new Error('Remote daemon host setup string fields must be strings');
-  }
-  const trimmed = value.trim();
+  const trimmed = decodeBoundary(value, boundary.string).trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
@@ -902,22 +883,19 @@ function quoteTerminalArg(value: string, shellName?: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function readOptionalPort(value: unknown): number | undefined {
+function readOptionalPort(value: PaneCommandValue): number | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
-  const port = typeof value === 'number'
-    ? value
-    : typeof value === 'string'
-      ? Number(value)
-      : Number.NaN;
+  const decoded = decodeBoundary(value, boundary.union(boundary.number, boundary.string));
+  const port = Number(decoded);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     throw new Error('Remote daemon listen port must be between 1 and 65535');
   }
   return port;
 }
 
-function readOptionalDataDirectoryMode(value: unknown): RemoteSetupDataDirectoryMode | undefined {
+function readOptionalDataDirectoryMode(value: PaneCommandValue): RemoteSetupDataDirectoryMode | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
@@ -927,7 +905,7 @@ function readOptionalDataDirectoryMode(value: unknown): RemoteSetupDataDirectory
   throw new Error('Remote daemon data directory mode must be "current" or "isolated"');
 }
 
-function readOptionalChannel(value: unknown): RemoteSetupChannel | undefined {
+function readOptionalChannel(value: PaneCommandValue): RemoteSetupChannel | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
@@ -937,7 +915,7 @@ function readOptionalChannel(value: unknown): RemoteSetupChannel | undefined {
   throw new Error('Remote daemon setup channel must be "stable" or "nightly"');
 }
 
-function readOptionalTunnelPreference(value: unknown): RemoteSetupTunnelPreference | undefined {
+function readOptionalTunnelPreference(value: PaneCommandValue): RemoteSetupTunnelPreference | undefined {
   if (value === undefined || value === null || value === '') {
     return undefined;
   }
@@ -977,10 +955,11 @@ function findMatchingConnectionProfile(
   ));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function decodeOptionalBoolean(value: PaneCommandValue): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  return decodeBoundary(value, boundary.boolean);
 }
 
-function getErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+function getErrorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof Error ? cause.message : fallback;
 }

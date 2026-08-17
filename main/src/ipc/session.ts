@@ -27,6 +27,7 @@ import {
 } from '../utils/sessionValidation';
 import type { SerializedArchiveTask } from '../services/archiveProgressManager';
 import { detectProjectConfig } from '../services/projectConfigDetector';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const DAEMON_SESSION_CHANNELS = [
   'sessions:get-all',
@@ -329,7 +330,12 @@ export function registerSessionHandlers(
         errorDetails = error.stack || error.toString();
 
         // Check if it's a git command error
-        const gitError = error as Error & { gitCommand?: string; cmd?: string; gitOutput?: string; stderr?: string };
+        const gitError = decodeBoundary(error, boundary.object({
+          gitCommand: boundary.optional(boundary.string),
+          cmd: boundary.optional(boundary.string),
+          gitOutput: boundary.optional(boundary.string),
+          stderr: boundary.optional(boundary.string),
+        }));
         if (gitError.gitCommand) {
           command = gitError.gitCommand;
         } else if (gitError.cmd) {
@@ -639,7 +645,7 @@ export function registerSessionHandlers(
         console.error(`[Session IPC] cleanupSessionPanelsInMemory failed for permanently deleted session ${sessionId}:`, err);
       }
 
-      await cleanupPermanentDeleteFiles(session as unknown as DatabaseSession);
+      await cleanupPermanentDeleteFiles(session);
 
       const deleted = databaseService.deleteArchivedSessionPermanently(sessionId);
       if (!deleted) {
@@ -671,7 +677,7 @@ export function registerSessionHandlers(
           console.error(`[Session IPC] cleanupSessionPanelsInMemory failed for permanently deleted session ${session.id}:`, err);
         }
 
-        await cleanupPermanentDeleteFiles(session as unknown as DatabaseSession);
+        await cleanupPermanentDeleteFiles(session);
       }
 
       const deletedCount = databaseService.deleteArchivedSessionsPermanently();
@@ -960,7 +966,9 @@ export function registerSessionHandlers(
         const transformedBatch = batch.map(output => {
           if (output.type === 'json') {
             // Generate formatted output from JSON
-            const outputText = formatJsonForOutputEnhanced(output.data as Record<string, unknown>);
+            const outputText = formatJsonForOutputEnhanced(
+              decodeBoundary(output.data, boundary.jsonObject),
+            );
             if (outputText) {
               // Return as stdout for the Output view
               return {
@@ -1085,38 +1093,25 @@ export function registerSessionHandlers(
       const jsonMessages = outputs
         .filter(output => output.type === 'json')
         .map(output => {
-          // Return the unwrapped message data with timestamp
-          // The message transformer expects the actual message object, not wrapped in { type: 'json', data: ... }
-          if (output.data && typeof output.data === 'object') {
+          const timestamp = output.timestamp instanceof Date
+            ? output.timestamp.toISOString()
+            : output.timestamp;
+          try {
             return {
-              ...output.data as Record<string, unknown>,
-              timestamp: output.timestamp instanceof Date
-                ? output.timestamp.toISOString()
-                : (typeof output.timestamp === 'string' ? output.timestamp : '')
+              ...decodeBoundary(output.data, boundary.jsonObject),
+              timestamp,
             };
-          }
-          // If data is a string, try to parse it
-          if (typeof output.data === 'string') {
+          } catch {
             try {
-              const parsed = JSON.parse(output.data);
+              const serialized = decodeBoundary(output.data, boundary.string);
               return {
-                ...parsed,
-                timestamp: output.timestamp instanceof Date
-                  ? output.timestamp.toISOString()
-                  : (typeof output.timestamp === 'string' ? output.timestamp : '')
+                ...decodeBoundary(JSON.parse(serialized), boundary.jsonObject),
+                timestamp,
               };
             } catch {
-              // If parsing fails, return as-is with timestamp
-              return {
-                data: output.data,
-                timestamp: output.timestamp instanceof Date
-                  ? output.timestamp.toISOString()
-                  : (typeof output.timestamp === 'string' ? output.timestamp : '')
-              };
+              return { data: String(output.data), timestamp };
             }
           }
-          // Fallback
-          return output.data;
         });
 
       console.log(`[IPC] Returning ${jsonMessages.length} JSON messages for panel ${panelId}`);
@@ -1284,7 +1279,6 @@ export function registerSessionHandlers(
       const updatedSession = databaseService.getSession(sessionId);
       console.log('[IPC] Verified skip_continue_next flag after update:', {
         raw_value: updatedSession?.skip_continue_next,
-        type: typeof updatedSession?.skip_continue_next,
         is_truthy: !!updatedSession?.skip_continue_next
       });
       console.log('[IPC] Generated compacted context summary and set skip_continue_next flag');
@@ -1335,15 +1329,22 @@ export function registerSessionHandlers(
 
       // Filter to JSON messages, error messages, and git operation stdout/stderr messages
       const jsonMessages = outputs
-        .filter(output =>
-          output.type === 'json' ||
-          output.type === 'error' ||
-          ((output.type === 'stdout' || output.type === 'stderr') && isGitOperation(output.data as string))
-        )
+        .filter(output => {
+          if (output.type === 'json' || output.type === 'error') return true;
+          if (output.type !== 'stdout' && output.type !== 'stderr') return false;
+          try {
+            return isGitOperation(decodeBoundary(output.data, boundary.string));
+          } catch {
+            return false;
+          }
+        })
         .map(output => {
           if (output.type === 'error') {
             // Transform error outputs to a format that RichOutputView can handle
-            const errorData = output.data as Record<string, unknown>;
+            const errorData = decodeBoundary(output.data, boundary.object({
+              error: boundary.string,
+              details: boundary.optional(boundary.string),
+            }));
             return {
               type: 'system',
               subtype: 'error',
@@ -1354,22 +1355,23 @@ export function registerSessionHandlers(
             };
           } else if (output.type === 'stdout' || output.type === 'stderr') {
             // Transform git operation stdout/stderr to system messages that RichOutputView can display
-            const isError = output.type === 'stderr' || (output.data as string).includes('failed:') || (output.data as string).includes('✗');
+            const outputText = decodeBoundary(output.data, boundary.string);
+            const isError = output.type === 'stderr' || outputText.includes('failed:') || outputText.includes('✗');
             return {
               type: 'system',
               subtype: isError ? 'git_error' : 'git_operation',
               timestamp: output.timestamp.toISOString(),
-              message: output.data,
+              message: outputText,
               // Add raw data for processing
-              raw_output: output.data
+              raw_output: outputText
             };
           } else {
             // Regular JSON messages - safe to spread since we know it's a Record
-            const jsonData = output.data as Record<string, unknown>;
+            const jsonData = decodeBoundary(output.data, boundary.jsonObject);
             return {
               ...jsonData,
               timestamp: output.timestamp.toISOString()
-            } as Record<string, unknown>;
+            };
           }
         });
 

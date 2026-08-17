@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 interface MainBranchStatus {
   status: 'up-to-date' | 'behind' | 'ahead' | 'diverged';
@@ -690,13 +691,18 @@ async function getSessionBranchInfoAsync(
       const prOutput = prResult.stdout.trim();
 
       if (prOutput) {
-        const prs = JSON.parse(prOutput);
+        const prs = decodeBoundary(JSON.parse(prOutput), boundary.array(boundary.object({
+          number: boundary.number,
+          title: boundary.string,
+          state: boundary.enumeration('OPEN', 'CLOSED', 'MERGED'),
+          url: boundary.string,
+        })));
         if (prs.length > 0) {
           const pr = prs[0];
           pullRequest = {
             number: pr.number,
             title: pr.title,
-            state: pr.state.toLowerCase() as 'open' | 'closed' | 'merged',
+            state: pr.state === 'OPEN' ? 'open' : pr.state === 'CLOSED' ? 'closed' : 'merged',
             url: pr.url
           };
         }

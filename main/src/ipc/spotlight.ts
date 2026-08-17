@@ -8,7 +8,7 @@ export function registerSpotlightHandlers(ipcMain: IpcMain, services: AppService
       return { success: true };
     } catch (error) {
       console.error('[Spotlight IPC] Enable failed:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -18,7 +18,7 @@ export function registerSpotlightHandlers(ipcMain: IpcMain, services: AppService
       return { success: true };
     } catch (error) {
       console.error('[Spotlight IPC] Disable failed:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -28,7 +28,7 @@ export function registerSpotlightHandlers(ipcMain: IpcMain, services: AppService
       return { success: true, data: spotlight || { active: false } };
     } catch (error) {
       console.error('[Spotlight IPC] Get status failed:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 }

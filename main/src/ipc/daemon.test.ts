@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { PaneCommandRegistry } from '../daemon/commandRegistry';
+import { PaneCommandRegistry, type PaneCommandValue } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 
+interface TestIpcEvent { readonly sender?: { readonly id?: number } }
 interface IpcMainStub {
-  handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
+  handlers: Map<string, (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>;
+  handle(channel: string, listener: (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>): void;
 }
 
 function createIpcMainStub(): IpcMainStub {
-  const handlers = new Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>();
+  const handlers = new Map<string, (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>();
 
   return {
     handlers,

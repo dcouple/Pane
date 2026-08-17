@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
-import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
 import { PathResolver, ProjectEnvironment } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { panelManager } from '../services/panelManager';
@@ -17,6 +17,7 @@ import type { Session, SessionOutput } from '../types/session';
 import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../../shared/types/panels';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { isAgentSupportedOnPlatform } from '../../../shared/constants/agentLaunchPresets';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type {
   RunpaneAgentId,
   RunpaneAgentDoctorRequest,
@@ -154,7 +155,7 @@ export function registerRunpaneHandlers(
     }, result => ({ resultCount: result.repos.length }));
   });
 
-  commandRegistry.register('runpane:repos:add', async (request: unknown): Promise<RunpaneRepoAddResult> => {
+  commandRegistry.register('runpane:repos:add', async (request: PaneCommandValue): Promise<RunpaneRepoAddResult> => {
     return withRunpaneAction(services, 'repos:add', {}, async () => {
       const normalized = parseRepoAddRequest(request);
       const existing = resolveProjectByPath(databaseService.getAllProjects(), normalized.path);
@@ -219,7 +220,7 @@ export function registerRunpaneHandlers(
     }, result => ({ repoId: result.repo?.id, resultCount: result.created ? 1 : 0 }));
   });
 
-  commandRegistry.register('runpane:panes:list', async (request: unknown = {}): Promise<RunpanePaneListResult> => {
+  commandRegistry.register('runpane:panes:list', async (request: PaneCommandValue = {}): Promise<RunpanePaneListResult> => {
     return withRunpaneAction(services, 'panes:list', {}, () => {
       const normalized = parsePaneListRequest(request);
       const projects = databaseService.getAllProjects();
@@ -243,7 +244,7 @@ export function registerRunpaneHandlers(
     }, result => ({ repoId: result.repo?.id, resultCount: result.panes.length }));
   });
 
-  commandRegistry.register('runpane:panes:pin', async (request: unknown): Promise<RunpanePanePinResult> => {
+  commandRegistry.register('runpane:panes:pin', async (request: PaneCommandValue): Promise<RunpanePanePinResult> => {
     return withRunpaneAction(services, 'panes:pin', {}, () => {
       const normalized = parsePanePinRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
@@ -275,7 +276,7 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.paneId }));
   });
 
-  commandRegistry.register('runpane:panes:rename', async (request: unknown): Promise<RunpanePaneRenameResult> => {
+  commandRegistry.register('runpane:panes:rename', async (request: PaneCommandValue): Promise<RunpanePaneRenameResult> => {
     return withRunpaneAction(services, 'panes:rename', {}, () => {
       const normalized = parsePaneRenameRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
@@ -307,7 +308,7 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.pane.paneId }));
   });
 
-  commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
+  commandRegistry.register('runpane:panes:create', async (request: PaneCommandValue): Promise<RunpanePaneCreateResult> => {
     return withRunpaneAction(services, 'panes:create', {}, async () => {
       const normalized = parsePaneCreateRequest(request);
       const repo = resolveRepoSelector(databaseService.getAllProjects(), normalized.repo);
@@ -349,7 +350,7 @@ export function registerRunpaneHandlers(
     }, result => ({ repoId: result.repo.id, resultCount: result.items.length }));
   });
 
-  commandRegistry.register('runpane:panes:archive', async (request: unknown): Promise<RunpanePaneArchiveResult> => {
+  commandRegistry.register('runpane:panes:archive', async (request: PaneCommandValue): Promise<RunpanePaneArchiveResult> => {
     return withRunpaneAction(services, 'panes:archive', {}, async () => {
       const normalized = parsePaneArchiveRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
@@ -384,8 +385,13 @@ export function registerRunpaneHandlers(
         ? waitForArchiveProgressCompletion(services.archiveProgressManager, normalized.paneId, DEFAULT_ARCHIVE_CLEANUP_TIMEOUT_MS)
         : null;
 
-      const deleteResult = await commandRegistry.invoke('sessions:delete', [normalized.paneId]) as
-        { success: boolean; error?: string };
+      const deleteResult = decodeBoundary(
+        await commandRegistry.invoke('sessions:delete', [normalized.paneId]),
+        boundary.object({
+          success: boundary.boolean,
+          error: boundary.optional(boundary.string),
+        }),
+      );
       if (!deleteResult.success) {
         throw new Error(deleteResult.error ?? `Failed to archive pane ${normalized.paneId}`);
       }
@@ -412,7 +418,7 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.paneId, ok: result.ok }));
   });
 
-  commandRegistry.register('runpane:panels:list', async (request: unknown): Promise<RunpanePanelListResult> => {
+  commandRegistry.register('runpane:panels:list', async (request: PaneCommandValue): Promise<RunpanePanelListResult> => {
     return withRunpaneAction(services, 'panels:list', {}, () => {
       const normalized = parsePanelListRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
@@ -426,7 +432,7 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.paneId, resultCount: result.panels.length }));
   });
 
-  commandRegistry.register('runpane:panels:create', async (request: unknown): Promise<RunpanePanelCreateResult> => {
+  commandRegistry.register('runpane:panels:create', async (request: PaneCommandValue): Promise<RunpanePanelCreateResult> => {
     return withRunpaneAction(services, 'panels:create', {}, async () => {
       const normalized = parsePanelCreateRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
@@ -461,7 +467,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:output', async (request: unknown): Promise<RunpanePanelOutputResult> => {
+  commandRegistry.register('runpane:panels:output', async (request: PaneCommandValue): Promise<RunpanePanelOutputResult> => {
     return withRunpaneAction(services, 'panels:output', {}, () => {
       const normalized = parsePanelOutputRequest(request);
       const panel = resolvePanel(normalized.panelId);
@@ -510,7 +516,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:input', async (request: unknown): Promise<RunpanePanelInputResult> => {
+  commandRegistry.register('runpane:panels:input', async (request: PaneCommandValue): Promise<RunpanePanelInputResult> => {
     return withRunpaneAction(services, 'panels:input', {}, () => {
       const normalized = parsePanelInputRequest(request);
       const panel = resolvePanel(normalized.panelId);
@@ -539,7 +545,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:screen', async (request: unknown): Promise<RunpanePanelScreenResult> => {
+  commandRegistry.register('runpane:panels:screen', async (request: PaneCommandValue): Promise<RunpanePanelScreenResult> => {
     return withRunpaneAction(services, 'panels:screen', {}, async () => {
       const normalized = parsePanelScreenRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
@@ -552,7 +558,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:submit', async (request: unknown): Promise<RunpanePanelSubmitResult> => {
+  commandRegistry.register('runpane:panels:submit', async (request: PaneCommandValue): Promise<RunpanePanelSubmitResult> => {
     return withRunpaneAction(services, 'panels:submit', {}, () => {
       const normalized = parsePanelSubmitRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
@@ -579,7 +585,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:submit-composer', async (request: unknown): Promise<RunpanePanelSubmitComposerResult> => {
+  commandRegistry.register('runpane:panels:submit-composer', async (request: PaneCommandValue): Promise<RunpanePanelSubmitComposerResult> => {
     return withRunpaneAction(services, 'panels:submit-composer', {}, async () => {
       const normalized = parsePanelSubmitComposerRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
@@ -596,7 +602,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:wait', async (request: unknown): Promise<RunpanePanelWaitResult> => {
+  commandRegistry.register('runpane:panels:wait', async (request: PaneCommandValue): Promise<RunpanePanelWaitResult> => {
     return withRunpaneAction(services, 'panels:wait', {}, async () => {
       const normalized = parsePanelWaitRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
@@ -611,7 +617,7 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:agents:doctor', async (request: unknown): Promise<RunpaneAgentDoctorResult> => {
+  commandRegistry.register('runpane:agents:doctor', async (request: PaneCommandValue): Promise<RunpaneAgentDoctorResult> => {
     return withRunpaneAction(services, 'agents:doctor', {}, async () => {
       const normalized = parseAgentDoctorRequest(request);
       const repo = normalized.repo
@@ -662,10 +668,8 @@ function sessionToPaneSummary(session: Session, project: Project) {
 
 function panelToSummary(panel: ToolPanel) {
   const customState = isRecord(panel.state.customState) ? panel.state.customState : {};
-  const agentType = typeof customState.agentType === 'string' && AGENT_IDS.has(customState.agentType)
-    ? customState.agentType as RunpaneAgentId
-    : undefined;
-  const isCliPanel = typeof customState.isCliPanel === 'boolean' ? customState.isCliPanel : undefined;
+  const agentType = optionalAgentId(customState.agentType);
+  const isCliPanel = optionalBoolean(customState.isCliPanel);
 
   return {
     id: panel.id,
@@ -677,7 +681,7 @@ function panelToSummary(panel: ToolPanel) {
     initialized: panel.type === 'terminal' ? terminalPanelManager.isTerminalInitialized(panel.id) : undefined,
     agentType,
     isCliPanel,
-    position: typeof panel.metadata.position === 'number' ? panel.metadata.position : undefined,
+    position: optionalNumber(panel.metadata.position),
     createdAt: toIsoString(panel.metadata.createdAt),
     lastActiveAt: toIsoString(panel.metadata.lastActiveAt),
   };
@@ -1124,9 +1128,7 @@ function panelStateSummary(
   snapshot: TerminalPanelSnapshot | null,
   customState: TerminalPanelState = getTerminalCustomState(panel),
 ): RunpanePanelStateSummary {
-  const customAgentType = typeof customState.agentType === 'string' && AGENT_IDS.has(customState.agentType)
-    ? customState.agentType as RunpaneAgentId
-    : undefined;
+  const customAgentType = optionalAgentId(customState.agentType);
   const hasLiveTerminal = Boolean(snapshot || terminalPanelManager.isTerminalInitialized(panel.id));
 
   return {
@@ -1141,13 +1143,24 @@ function panelStateSummary(
 }
 
 function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
-  return (isRecord(panel.state.customState) ? panel.state.customState : {}) as TerminalPanelState;
+  try {
+    return decodeBoundary(panel.state.customState, boundary.object({
+      alternateScreenBuffer: boundary.optional(boundary.string),
+      isAlternateScreen: boundary.optional(boundary.boolean),
+      scrollbackBuffer: boundary.optional(boundary.union(boundary.string, boundary.array(boundary.string))),
+      agentType: boundary.optional(boundary.enumeration(...RUNPANE_CONTRACT.enums.agents)),
+      isCliReady: boundary.optional(boundary.boolean),
+      isCliPanel: boundary.optional(boundary.boolean),
+      lastActivityTime: boundary.optional(boundary.string),
+    }));
+  } catch {
+    return {};
+  }
 }
 
 function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
-  if (typeof value === 'string') {
-    return value;
-  }
+  const stringValue = optionalString(value);
+  if (stringValue !== undefined) return stringValue;
   if (Array.isArray(value)) {
     return value.join('\n');
   }
@@ -1539,8 +1552,10 @@ function outputToRecord(output: SessionOutput): RunpanePanelOutputRecord {
 }
 
 function outputToText(output: SessionOutput): string {
-  if (typeof output.data === 'string') {
-    return output.data;
+  try {
+    return decodeBoundary(output.data, boundary.string);
+  } catch {
+    // Non-string output is serialized below.
   }
 
   try {
@@ -1580,7 +1595,7 @@ function getPanelScrollback(panel: ToolPanel): string | null {
     return null;
   }
 
-  const persisted = normalizeScrollbackBuffer((customState as TerminalPanelState).scrollbackBuffer);
+  const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
   if (persisted) return persisted;
 
   return null;
@@ -1598,7 +1613,7 @@ function panelWaitCommand(panelId: string, condition: RunpanePanelWaitCondition 
   return `runpane panels wait --panel ${panelId} --for ${condition} --timeout-ms ${DEFAULT_PANEL_WAIT_TIMEOUT_MS} --json`;
 }
 
-function parsePaneListRequest(value: unknown): RunpanePaneListRequest {
+function parsePaneListRequest(value: PaneCommandValue): RunpanePaneListRequest {
   if (value === undefined || value === null) {
     return {};
   }
@@ -1614,7 +1629,7 @@ function parsePaneListRequest(value: unknown): RunpanePaneListRequest {
   };
 }
 
-function parsePaneCreateRequest(value: unknown): RunpanePaneCreateRequest {
+function parsePaneCreateRequest(value: PaneCommandValue): RunpanePaneCreateRequest {
   if (!isRecord(value)) {
     throw new Error('Pane create request must be an object');
   }
@@ -1634,18 +1649,18 @@ function parsePaneCreateRequest(value: unknown): RunpanePaneCreateRequest {
   return {
     repo,
     panes: panesValue.map(parsePaneCreateItem),
-    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
-    timeoutMs: typeof value.timeoutMs === 'number' ? value.timeoutMs : undefined,
-    waitReady: typeof value.waitReady === 'boolean' ? value.waitReady : undefined,
+    dryRun: optionalBoolean(value.dryRun),
+    timeoutMs: optionalNumber(value.timeoutMs),
+    waitReady: optionalBoolean(value.waitReady),
     readyTimeoutMs: parsePositiveInteger(value.readyTimeoutMs, 'readyTimeoutMs'),
     concurrency: parsePositiveInteger(value.concurrency, 'concurrency'),
-    noFocus: typeof value.noFocus === 'boolean' ? value.noFocus : undefined,
-    focus: typeof value.focus === 'boolean' ? value.focus : undefined,
+    noFocus: optionalBoolean(value.noFocus),
+    focus: optionalBoolean(value.focus),
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
   };
 }
 
-function parsePanelListRequest(value: unknown): RunpanePanelListRequest {
+function parsePanelListRequest(value: PaneCommandValue): RunpanePanelListRequest {
   if (!isRecord(value)) {
     throw new Error('Panel list request must be an object');
   }
@@ -1658,7 +1673,7 @@ function parsePanelListRequest(value: unknown): RunpanePanelListRequest {
   return { paneId };
 }
 
-function parsePanelCreateRequest(value: unknown): RunpanePanelCreateRequest {
+function parsePanelCreateRequest(value: PaneCommandValue): RunpanePanelCreateRequest {
   if (!isRecord(value)) {
     throw new Error('Panel create request must be an object');
   }
@@ -1681,15 +1696,15 @@ function parsePanelCreateRequest(value: unknown): RunpanePanelCreateRequest {
     paneId,
     type: 'terminal',
     tool: parseRunpaneToolSpec(value.tool, 'Panel create request'),
-    noFocus: typeof value.noFocus === 'boolean' ? value.noFocus : undefined,
-    focus: typeof value.focus === 'boolean' ? value.focus : undefined,
+    noFocus: optionalBoolean(value.noFocus),
+    focus: optionalBoolean(value.focus),
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
-    waitReady: typeof value.waitReady === 'boolean' ? value.waitReady : undefined,
+    waitReady: optionalBoolean(value.waitReady),
     readyTimeoutMs: parsePositiveInteger(value.readyTimeoutMs, 'readyTimeoutMs'),
   };
 }
 
-function parsePanelOutputRequest(value: unknown): RunpanePanelOutputRequest {
+function parsePanelOutputRequest(value: PaneCommandValue): RunpanePanelOutputRequest {
   if (!isRecord(value)) {
     throw new Error('Panel output request must be an object');
   }
@@ -1705,7 +1720,7 @@ function parsePanelOutputRequest(value: unknown): RunpanePanelOutputRequest {
   };
 }
 
-function parsePanelInputRequest(value: unknown): RunpanePanelInputRequest {
+function parsePanelInputRequest(value: PaneCommandValue): RunpanePanelInputRequest {
   if (!isRecord(value)) {
     throw new Error('Panel input request must be an object');
   }
@@ -1714,17 +1729,18 @@ function parsePanelInputRequest(value: unknown): RunpanePanelInputRequest {
   if (!panelId) {
     throw new Error('Panel input request must include panelId');
   }
-  if (typeof value.input !== 'string') {
+  const input = optionalString(value.input);
+  if (input === undefined) {
     throw new Error('Panel input request must include input');
   }
 
   return {
     panelId,
-    input: value.input,
+    input,
   };
 }
 
-function parsePanelScreenRequest(value: unknown): RunpanePanelScreenRequest {
+function parsePanelScreenRequest(value: PaneCommandValue): RunpanePanelScreenRequest {
   if (!isRecord(value)) {
     throw new Error('Panel screen request must be an object');
   }
@@ -1740,7 +1756,7 @@ function parsePanelScreenRequest(value: unknown): RunpanePanelScreenRequest {
   };
 }
 
-function parsePanelSubmitRequest(value: unknown): RunpanePanelSubmitRequest {
+function parsePanelSubmitRequest(value: PaneCommandValue): RunpanePanelSubmitRequest {
   if (!isRecord(value)) {
     throw new Error('Panel submit request must be an object');
   }
@@ -1749,17 +1765,18 @@ function parsePanelSubmitRequest(value: unknown): RunpanePanelSubmitRequest {
   if (!panelId) {
     throw new Error('Panel submit request must include panelId');
   }
-  if (typeof value.input !== 'string') {
+  const input = optionalString(value.input);
+  if (input === undefined) {
     throw new Error('Panel submit request must include input');
   }
 
   return {
     panelId,
-    input: value.input,
+    input,
   };
 }
 
-function parsePanelSubmitComposerRequest(value: unknown): RunpanePanelSubmitComposerRequest {
+function parsePanelSubmitComposerRequest(value: PaneCommandValue): RunpanePanelSubmitComposerRequest {
   if (!isRecord(value)) {
     throw new Error('Panel submit-composer request must be an object');
   }
@@ -1779,11 +1796,13 @@ function parsePanelSubmitComposerRequest(value: unknown): RunpanePanelSubmitComp
 
   return {
     panelId,
-    strategy: value.strategy as RunpanePanelSubmitComposerStrategy | undefined,
+    strategy: value.strategy === undefined
+      ? undefined
+      : decodeBoundary(value.strategy, boundary.enumeration('auto', 'codex-ctrl-enter', 'enter')),
   };
 }
 
-function parsePanelWaitRequest(value: unknown): RunpanePanelWaitRequest {
+function parsePanelWaitRequest(value: PaneCommandValue): RunpanePanelWaitRequest {
   if (!isRecord(value)) {
     throw new Error('Panel wait request must be an object');
   }
@@ -1808,23 +1827,24 @@ function parsePanelWaitRequest(value: unknown): RunpanePanelWaitRequest {
   };
 }
 
-function parseAgentDoctorRequest(value: unknown): RunpaneAgentDoctorRequest {
+function parseAgentDoctorRequest(value: PaneCommandValue): RunpaneAgentDoctorRequest {
   if (!isRecord(value)) {
     throw new Error('Agent doctor request must be an object');
   }
-  if (typeof value.agent !== 'string' || !AGENT_IDS.has(value.agent)) {
+  const agent = optionalAgentId(value.agent);
+  if (!agent) {
     throw new Error(`Agent doctor request must include agent: ${[...AGENT_IDS].join(', ')}`);
   }
 
   return {
-    agent: value.agent as RunpaneAgentId,
+    agent,
     repo: value.repo === undefined || value.repo === null || value.repo === ''
       ? undefined
       : parseRepoSelector(value.repo),
   };
 }
 
-function parseWaitCondition(value: unknown, contains?: string): RunpanePanelWaitCondition | undefined {
+function parseWaitCondition(value: PaneCommandValue, contains?: string): RunpanePanelWaitCondition | undefined {
   if (value === undefined || value === null || value === '') {
     return contains ? 'text' : undefined;
   }
@@ -1834,23 +1854,24 @@ function parseWaitCondition(value: unknown, contains?: string): RunpanePanelWait
   throw new Error('Panel wait condition must be one of: initialized, ready, idle, text');
 }
 
-function parseRepoAddRequest(value: unknown): Required<Pick<RunpaneRepoAddRequest, 'path' | 'name'>> & Pick<RunpaneRepoAddRequest, 'dryRun'> {
+function parseRepoAddRequest(value: PaneCommandValue): Required<Pick<RunpaneRepoAddRequest, 'path' | 'name'>> & Pick<RunpaneRepoAddRequest, 'dryRun'> {
   if (!isRecord(value)) {
     throw new Error('Repo add request must be an object');
   }
 
-  if (typeof value.path !== 'string' || value.path.trim().length === 0) {
+  const requestedPath = optionalString(value.path)?.trim();
+  if (!requestedPath) {
     throw new Error('Repo add request must include a path');
   }
 
-  const repoPath = path.resolve(value.path);
+  const repoPath = path.resolve(requestedPath);
   const providedName = optionalString(value.name)?.trim();
   const defaultName = path.basename(repoPath) || repoPath;
 
   return {
     path: repoPath,
     name: providedName && providedName.length > 0 ? providedName : defaultName,
-    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+    dryRun: optionalBoolean(value.dryRun),
   };
 }
 
@@ -1989,7 +2010,7 @@ async function waitForWorktreeRemovalByPolling(
   return fs.existsSync(worktreePath) ? 'timeout' : 'completed';
 }
 
-function parsePaneArchiveRequest(value: unknown): RunpanePaneArchiveRequest {
+function parsePaneArchiveRequest(value: PaneCommandValue): RunpanePaneArchiveRequest {
   if (!isRecord(value)) {
     throw new Error('Pane archive request must be an object');
   }
@@ -2004,12 +2025,12 @@ function parsePaneArchiveRequest(value: unknown): RunpanePaneArchiveRequest {
 
   return {
     paneId,
-    force: typeof value.force === 'boolean' ? value.force : undefined,
+    force: optionalBoolean(value.force),
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
   };
 }
 
-function parsePanePinRequest(value: unknown): RunpanePanePinRequest {
+function parsePanePinRequest(value: PaneCommandValue): RunpanePanePinRequest {
   if (!isRecord(value)) {
     throw new Error('Pane pin request must be an object');
   }
@@ -2018,18 +2039,19 @@ function parsePanePinRequest(value: unknown): RunpanePanePinRequest {
   if (!paneId) {
     throw new Error('Pane pin request must include a paneId');
   }
-  if (typeof value.pinned !== 'boolean') {
+  const pinned = optionalBoolean(value.pinned);
+  if (pinned === undefined) {
     throw new Error('Pane pin request must include pinned as a boolean');
   }
 
   return {
     paneId,
-    pinned: value.pinned,
-    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+    pinned,
+    dryRun: optionalBoolean(value.dryRun),
   };
 }
 
-function parsePaneRenameRequest(value: unknown): RunpanePaneRenameRequest {
+function parsePaneRenameRequest(value: PaneCommandValue): RunpanePaneRenameRequest {
   if (!isRecord(value)) {
     throw new Error('Pane rename request must be an object');
   }
@@ -2046,7 +2068,7 @@ function parsePaneRenameRequest(value: unknown): RunpanePaneRenameRequest {
   return {
     paneId,
     name,
-    dryRun: typeof value.dryRun === 'boolean' ? value.dryRun : undefined,
+    dryRun: optionalBoolean(value.dryRun),
   };
 }
 
@@ -2058,21 +2080,22 @@ function resolvePanel(panelId: string): ToolPanel {
   return panel;
 }
 
-function parsePaneCreateItem(value: unknown, index: number): RunpanePaneCreateItem {
+function parsePaneCreateItem(value: PaneCommandValue, index: number): RunpanePaneCreateItem {
   if (!isRecord(value)) {
     throw new Error(`Pane create item ${index} must be an object`);
   }
 
-  if (typeof value.name !== 'string' || value.name.trim().length === 0) {
+  const name = optionalString(value.name);
+  if (!name || name.trim().length === 0) {
     throw new Error(`Pane create item ${index} must include a name`);
   }
 
   return {
-    name: value.name,
+    name,
     worktreeName: optionalString(value.worktreeName),
     baseBranch: optionalString(value.baseBranch),
     sessionPrompt: optionalString(value.sessionPrompt),
-    pinned: typeof value.pinned === 'boolean' ? value.pinned : undefined,
+    pinned: optionalBoolean(value.pinned),
     tool: parseRunpaneToolSpec(value.tool, `Pane create item ${index}`),
   };
 }
@@ -2104,25 +2127,24 @@ function validateRepositoryPath(repoPath: string): void {
   }
 }
 
-function parseRunpaneToolSpec(value: unknown, label: string): RunpaneToolSpec {
+function parseRunpaneToolSpec(value: PaneCommandValue, label: string): RunpaneToolSpec {
   if (!isRecord(value)) {
     throw new Error(`${label} must include a tool object`);
   }
 
-  if (typeof value.agent === 'string') {
-    if (!AGENT_IDS.has(value.agent)) {
-      throw new Error(`Unsupported agent "${value.agent}" in ${label}`);
-    }
+  const agent = optionalAgentId(value.agent);
+  if (agent) {
     return {
-      agent: value.agent as RunpaneAgentId,
+      agent,
       title: optionalString(value.title),
       initialInput: optionalString(value.initialInput),
     };
   }
 
-  if (typeof value.command === 'string' && value.command.trim().length > 0) {
+  const command = optionalString(value.command);
+  if (command && command.trim().length > 0) {
     return {
-      command: value.command,
+      command,
       title: optionalString(value.title),
       initialInput: optionalString(value.initialInput),
     };
@@ -2131,24 +2153,20 @@ function parseRunpaneToolSpec(value: unknown, label: string): RunpaneToolSpec {
   throw new Error(`${label} tool must include agent or command`);
 }
 
-function parseRepoSelector(value: unknown): RunpaneRepoSelector {
-  if (typeof value === 'string') {
-    return value;
-  }
+function parseRepoSelector(value: PaneCommandValue): RunpaneRepoSelector {
+  const selectorText = optionalString(value);
+  if (selectorText !== undefined) return selectorText;
 
   if (!isRecord(value)) {
     throw new Error('Pane create request must include a repo selector');
   }
 
-  if (typeof value.id === 'number') {
-    return { id: value.id };
-  }
-  if (typeof value.path === 'string') {
-    return { path: value.path };
-  }
-  if (typeof value.name === 'string') {
-    return { name: value.name };
-  }
+  const id = optionalNumber(value.id);
+  if (id !== undefined) return { id };
+  const selectorPath = optionalString(value.path);
+  if (selectorPath !== undefined) return { path: selectorPath };
+  const name = optionalString(value.name);
+  if (name !== undefined) return { name };
   if (value.active === true) {
     return { active: true };
   }
@@ -2157,44 +2175,52 @@ function parseRepoSelector(value: unknown): RunpaneRepoSelector {
 }
 
 function resolveRepoSelector(projects: Project[], selector: RunpaneRepoSelector): Project {
-  if (typeof selector === 'string') {
-    if (selector === 'active' || selector === 'default') {
+  const selectorText = optionalString(selector);
+  if (selectorText !== undefined) {
+    if (selectorText === 'active' || selectorText === 'default') {
       return resolveActiveProject(projects);
     }
 
-    if (/^\d+$/.test(selector)) {
-      const byId = projects.find(project => project.id === Number(selector));
+    if (/^\d+$/.test(selectorText)) {
+      const byId = projects.find(project => project.id === Number(selectorText));
       if (byId) {
         return byId;
       }
     }
 
-    const byPath = resolveProjectByPath(projects, selector);
+    const byPath = resolveProjectByPath(projects, selectorText);
     if (byPath) {
       return byPath;
     }
 
-    return resolveProjectByName(projects, selector);
+    return resolveProjectByName(projects, selectorText);
   }
 
-  if ('id' in selector) {
-    const project = projects.find(candidate => candidate.id === selector.id);
+  const selectorObject = decodeBoundary(selector, boundary.object({
+    id: boundary.optional(boundary.number),
+    path: boundary.optional(boundary.string),
+    name: boundary.optional(boundary.string),
+    active: boundary.optional(boundary.literal(true)),
+  }));
+
+  if (selectorObject.id !== undefined) {
+    const project = projects.find(candidate => candidate.id === selectorObject.id);
     if (!project) {
-      throw new Error(`No Pane repo found with id ${selector.id}`);
+      throw new Error(`No Pane repo found with id ${selectorObject.id}`);
     }
     return project;
   }
 
-  if ('path' in selector) {
-    const project = resolveProjectByPath(projects, selector.path);
+  if (selectorObject.path !== undefined) {
+    const project = resolveProjectByPath(projects, selectorObject.path);
     if (!project) {
-      throw new Error(`No Pane repo found at path ${selector.path}`);
+      throw new Error(`No Pane repo found at path ${selectorObject.path}`);
     }
     return project;
   }
 
-  if ('name' in selector) {
-    return resolveProjectByName(projects, selector.name);
+  if (selectorObject.name !== undefined) {
+    return resolveProjectByName(projects, selectorObject.name);
   }
 
   return resolveActiveProject(projects);
@@ -2253,26 +2279,27 @@ function describeTool(tool: RunpaneResolvedTool): { title: string; command: stri
   };
 }
 
-function createFailureItem(index: number, item: RunpanePaneCreateItem, error: unknown): RunpanePaneCreateFailureItem {
+function createFailureItem(index: number, item: RunpanePaneCreateItem, cause: unknown): RunpanePaneCreateFailureItem {
   return {
     ok: false,
     index,
     name: item.name,
     error: {
-      message: error instanceof Error ? error.message : String(error),
+      message: cause instanceof Error ? cause.message : String(cause),
       code: 'ERR_RUNPANE_PANE_CREATE_FAILED',
     },
   };
 }
 
-function parsePositiveInteger(value: unknown, label: string): number | undefined {
+function parsePositiveInteger(value: PaneCommandValue, label: string): number | undefined {
   if (value === undefined || value === null) {
     return undefined;
   }
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+  const numberValue = optionalNumber(value);
+  if (numberValue === undefined || !Number.isInteger(numberValue) || numberValue <= 0) {
     throw new Error(`${label} must be a positive integer`);
   }
-  return value;
+  return numberValue;
 }
 
 function toIsoString(value: Date | string | undefined): string | undefined {
@@ -2312,7 +2339,7 @@ interface RunpaneActionMetadata {
   environment?: string;
 }
 
-async function withRunpaneAction<T>(
+async function withRunpaneAction<T extends { ok: boolean }>(
   services: AppServices,
   action: string,
   metadata: RunpaneActionMetadata,
@@ -2322,7 +2349,7 @@ async function withRunpaneAction<T>(
   const startedAt = Date.now();
   try {
     const result = await handler();
-    const commandOk = isRecord(result) && typeof result.ok === 'boolean' ? result.ok : true;
+    const commandOk = result.ok;
     trackRunpaneAction(services, action, 'success', Date.now() - startedAt, {
       ...metadata,
       ok: commandOk,
@@ -2344,13 +2371,13 @@ function trackRunpaneAction(
   status: 'success' | 'failure',
   durationMs: number,
   metadata: RunpaneActionMetadata,
-  error?: unknown,
+  cause?: unknown,
 ): void {
   const analyticsManager = services.analyticsManager;
   const paneIdHash = metadata.paneId && analyticsManager?.hashSessionId(metadata.paneId);
   const panelIdHash = metadata.panelId && analyticsManager?.hashSessionId(metadata.panelId);
-  const errorMessage = error instanceof Error ? error.message : error ? String(error) : undefined;
-  const errorType = error instanceof Error ? error.name : error ? 'Error' : undefined;
+  const errorMessage = cause instanceof Error ? cause.message : cause ? String(cause) : undefined;
+  const errorType = cause instanceof Error ? cause.name : cause ? 'Error' : undefined;
 
   analyticsManager?.track('runpane_local_control', {
     action,
@@ -2410,15 +2437,21 @@ function firstNonEmptyLine(value: string | undefined): string | undefined {
     .find(line => line.length > 0);
 }
 
-function commandErrorMessage(error: unknown, fallback: string): string {
-  if (isRecord(error)) {
-    const stderr = firstNonEmptyLine(typeof error.stderr === 'string' ? error.stderr : undefined);
-    const stdout = firstNonEmptyLine(typeof error.stdout === 'string' ? error.stdout : undefined);
+function commandErrorMessage(cause: unknown, fallback: string): string {
+  try {
+    const details = decodeBoundary(cause, boundary.object({
+      stderr: boundary.optional(boundary.string),
+      stdout: boundary.optional(boundary.string),
+    }));
+    const stderr = firstNonEmptyLine(details.stderr);
+    const stdout = firstNonEmptyLine(details.stdout);
     if (stderr) return stderr;
     if (stdout) return stdout;
+  } catch {
+    // Fall through to the standard Error contract.
   }
-  if (error instanceof Error && error.message) {
-    return error.message;
+  if (cause instanceof Error && cause.message) {
+    return cause.message;
   }
   return fallback;
 }
@@ -2427,10 +2460,43 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
+function optionalString(value: PaneCommandValue): string | undefined {
+  try {
+    return decodeBoundary(value, boundary.string);
+  } catch {
+    return undefined;
+  }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function isRecord(value: PaneCommandValue): value is Record<string, PaneCommandValue> {
+  try {
+    decodeBoundary(value, boundary.jsonObject);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function optionalBoolean(value: PaneCommandValue): boolean | undefined {
+  try {
+    return decodeBoundary(value, boundary.boolean);
+  } catch {
+    return undefined;
+  }
+}
+
+function optionalNumber(value: PaneCommandValue): number | undefined {
+  try {
+    return decodeBoundary(value, boundary.number);
+  } catch {
+    return undefined;
+  }
+}
+
+function optionalAgentId(value: PaneCommandValue): RunpaneAgentId | undefined {
+  try {
+    return decodeBoundary(value, boundary.enumeration(...RUNPANE_CONTRACT.enums.agents));
+  } catch {
+    return undefined;
+  }
 }

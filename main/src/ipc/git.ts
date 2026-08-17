@@ -6,31 +6,13 @@ import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { buildGitCommitCommand } from '../utils/shellEscape';
 import { getPaneEventSink } from '../core/runtime';
 import { panelEventBus } from '../services/panelEventBus';
-import { PanelEventType, ToolPanelType, PanelEvent } from '../../../shared/types/panels';
+import { PanelEventType, PanelEvent } from '../../../shared/types/panels';
 import type { Session } from '../types/session';
 import type { GitCommit, GitGraphCommit } from '../services/gitDiffManager';
 import { CommandRunner } from '../utils/commandRunner';
 import { getShellPath } from '../utils/shellPath';
 import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
-
-// Extended type for git system virtual panels
-type SystemPanelType = ToolPanelType | 'git';
-
-// Interface for custom git errors that contain additional context
-interface GitError extends Error {
-  gitCommands?: string[];
-  gitOutput?: string;
-  workingDirectory?: string;
-  projectPath?: string;
-  originalError?: Error;
-}
-
-// Interface for process errors that have stdout/stderr properties
-interface ProcessError {
-  stdout?: string;
-  stderr?: string;
-  message?: string;
-}
+import { boundary, decodeBoundary, type JsonObject } from '../../../shared/validation/boundaryDecoder';
 
 // Interface for generic error objects with git-related properties
 interface ErrorWithGitContext {
@@ -38,8 +20,25 @@ interface ErrorWithGitContext {
   gitCommands?: string[];
   gitOutput?: string;
   workingDirectory?: string;
-  originalError?: Error;
-  [key: string]: unknown;
+  projectPath?: string;
+  originalError?: { message?: string };
+}
+
+function decodeGitError(cause: unknown): ErrorWithGitContext {
+  try {
+    return decodeBoundary(cause, boundary.object({
+      gitCommand: boundary.optional(boundary.string),
+      gitCommands: boundary.optional(boundary.array(boundary.string)),
+      gitOutput: boundary.optional(boundary.string),
+      workingDirectory: boundary.optional(boundary.string),
+      projectPath: boundary.optional(boundary.string),
+      originalError: boundary.optional(boundary.object({
+        message: boundary.optional(boundary.string),
+      })),
+    }));
+  } catch {
+    return {};
+  }
 }
 
 // Interface for raw commit data from worktreeManager
@@ -115,7 +114,7 @@ export function registerGitHandlers(
   const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager, databaseService } = services;
 
   // Helper function to emit git operation events to all sessions in a project
-  const emitGitOperationToProject = (sessionId: string, eventType: PanelEventType, message: string, details?: Record<string, unknown>) => {
+  const emitGitOperationToProject = (sessionId: string, eventType: PanelEventType, message: string, details?: JsonObject) => {
     try {
       const session = sessionManager.getSession(sessionId);
       if (!session) return;
@@ -124,11 +123,11 @@ export function registerGitHandlers(
       if (!project) return;
       
       // Create a virtual event as if it came from the git system
-      const event = {
+      const event: PanelEvent = {
         type: eventType,
         source: {
           panelId: 'git-system', // Special panel ID for git operations
-          panelType: 'git' as SystemPanelType, // Virtual panel type
+          panelType: 'git', // Virtual panel type
           sessionId: sessionId // The session that triggered the operation
         },
         data: {
@@ -143,7 +142,7 @@ export function registerGitHandlers(
       
       // Emit the event once to the panel event bus
       // All Claude panels that have subscribed will receive it
-      panelEventBus.emitPanelEvent(event as PanelEvent);
+      panelEventBus.emitPanelEvent(event);
 
       // Also forward to renderer so UI components listening for window 'panel:event' receive it
       try {
@@ -462,14 +461,24 @@ export function registerGitHandlers(
         return { success: true };
       } catch (commitError: unknown) {
         // Check if it's a pre-commit hook failure
-        if ((commitError && typeof commitError === 'object' && 'stdout' in commitError && (commitError as ProcessError).stdout?.includes('pre-commit')) || (commitError && typeof commitError === 'object' && 'stderr' in commitError && (commitError as ProcessError).stderr?.includes('pre-commit'))) {
+        const processError = decodeBoundary(commitError, boundary.object({
+          stdout: boundary.optional(boundary.string),
+          stderr: boundary.optional(boundary.string),
+        }));
+        if (processError.stdout?.includes('pre-commit') || processError.stderr?.includes('pre-commit')) {
           return { success: false, error: 'Pre-commit hooks failed. Please fix the issues and try again.' };
         }
         throw commitError;
       }
     } catch (error: unknown) {
       console.error('Failed to commit changes:', error);
-      const errorMessage = (error instanceof Error ? error.message : '') || (error && typeof error === 'object' && 'stderr' in error ? (error as ProcessError).stderr : '') || 'Failed to commit changes';
+      let stderr = '';
+      try {
+        stderr = decodeBoundary(error, boundary.object({ stderr: boundary.optional(boundary.string) })).stderr ?? '';
+      } catch {
+        // Preserve the standard error fallback below.
+      }
+      const errorMessage = (error instanceof Error ? error.message : '') || stderr || 'Failed to commit changes';
       return { success: false, error: errorMessage };
     }
   });
@@ -884,8 +893,8 @@ export function registerGitHandlers(
 
       const comparisonBranch = await Promise.race([
         worktreeManager.getSessionComparisonBranch(session, ctx),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionComparisonBranch timeout')), 30000))
-      ]) as string;
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('getSessionComparisonBranch timeout')), 30000))
+      ]);
 
       // Check for conflicts before attempting rebase
       const conflictCheck = await worktreeManager.checkForRebaseConflicts(session.worktreePath, comparisonBranch, ctx.commandRunner);
@@ -932,7 +941,7 @@ export function registerGitHandlers(
           operation: 'rebase_from_main',
           comparisonBranch,
           hasConflicts: true,
-          conflictingFiles: conflictCheck.conflictingFiles
+          conflictingFiles: conflictCheck.conflictingFiles ?? null
         });
 
         // Return detailed conflict information
@@ -978,17 +987,18 @@ export function registerGitHandlers(
       return { success: true, data: { message: `Successfully rebased ${comparisonBranch} into worktree` } };
     } catch (error: unknown) {
       console.error(`[IPC:git] Failed to rebase main into worktree for session ${sessionId}:`, error);
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Rebase failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
-                          (error && typeof error === 'object' && 'gitOutput' in error && (error as GitError).gitOutput ? `\n\nGit output:\n${(error as GitError).gitOutput}` : '');
+                          (gitError.gitOutput ? `\n\nGit output:\n${gitError.gitOutput}` : '');
       
       // Don't let this block the error response either
       try {
         emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
           operation: 'rebase_from_main',
           error: error instanceof Error ? error.message : String(error),
-          gitOutput: error && typeof error === 'object' && 'gitOutput' in error ? (error as GitError).gitOutput : undefined
+          gitOutput: gitError.gitOutput ?? null
         });
       } catch (outputError) {
         console.error(`[IPC:git] Failed to emit git error event for session ${sessionId}:`, outputError);
@@ -999,10 +1009,10 @@ export function registerGitHandlers(
         success: false,
         error: error instanceof Error ? error.message : 'Failed to rebase main into worktree',
         gitError: {
-          command: error && typeof error === 'object' && 'gitCommand' in error ? (error as ErrorWithGitContext).gitCommand : undefined,
-          output: error && typeof error === 'object' && 'gitOutput' in error ? (error as ErrorWithGitContext).gitOutput : (error instanceof Error ? error.message : String(error)),
-          workingDirectory: error && typeof error === 'object' && 'workingDirectory' in error ? (error as ErrorWithGitContext).workingDirectory : undefined,
-          originalError: error && typeof error === 'object' && 'originalError' in error ? (error as ErrorWithGitContext).originalError?.message : undefined
+          command: gitError.gitCommand,
+          output: gitError.gitOutput || (error instanceof Error ? error.message : String(error)),
+          workingDirectory: gitError.workingDirectory,
+          originalError: gitError.originalError?.message
         }
       };
     }
@@ -1119,8 +1129,8 @@ export function registerGitHandlers(
       // and silently fast-forwards detached HEAD instead of the local target.
       const localBaseBranch = await Promise.race([
         worktreeManager.getSessionLocalBaseBranch(session, ctx),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('getSessionLocalBaseBranch timeout')), 30000))
-      ]) as string;
+        new Promise<string>((_, reject) => setTimeout(() => reject(new Error('getSessionLocalBaseBranch timeout')), 30000))
+      ]);
 
       // Emit git operation started event to all sessions in project
       const startMessage = `🔄 GIT OPERATION\nSquashing commits and merging to ${localBaseBranch}...\nCommit message: ${commitMessage.split('\n')[0]}${commitMessage.includes('\n') ? '...' : ''}`;
@@ -1156,24 +1166,24 @@ export function registerGitHandlers(
       return { success: true, data: { message: `Successfully squashed and merged worktree to ${localBaseBranch}` } };
     } catch (error: unknown) {
       console.error(`[IPC:git] Failed to squash and merge worktree to main for session ${sessionId}:`, error);
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Merge failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
-                          (error && typeof error === 'object' && 'gitOutput' in error && (error as GitError).gitOutput ? `\n\nGit output:\n${(error as GitError).gitOutput}` : '');
+                          (gitError.gitOutput ? `\n\nGit output:\n${gitError.gitOutput}` : '');
 
       // Don't let this block the error response either
       try {
         emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
           operation: 'squash_and_merge',
           error: error instanceof Error ? error.message : String(error),
-          gitOutput: error && typeof error === 'object' && 'gitOutput' in error ? (error as GitError).gitOutput : undefined
+          gitOutput: gitError.gitOutput ?? null
         });
       } catch (outputError) {
         console.error(`[IPC:git] Failed to emit git error event for session ${sessionId}:`, outputError);
       }
 
       // Pass detailed git error information to frontend
-      const gitError = error as GitError;
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to squash and merge worktree to main',
@@ -1249,7 +1259,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to merge worktree to main:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       // Add error message to session output
       const errorMessage = `✗ Merge failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1320,14 +1330,14 @@ export function registerGitHandlers(
       console.error('Failed to pull from remote:', error);
 
       // Emit git operation failed event
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
       
       const errorMessage = `✗ Pull failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
                           (gitError.gitOutput ? `\n\nGit output:\n${gitError.gitOutput}` : '');
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'pull',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       // Check if it's a merge conflict
@@ -1409,7 +1419,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to push to remote:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
       
       // Emit git operation failed event
       const errorMessage = `✗ Push failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1417,7 +1427,7 @@ export function registerGitHandlers(
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'push',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -1480,14 +1490,14 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to soft reset:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       const errorMessage = `✗ Undo commit failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
                           (gitError.gitOutput ? `\n\nGit output:\n${gitError.gitOutput}` : '');
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'soft-reset',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -1539,7 +1549,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to fetch from remote:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Fetch failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1547,7 +1557,7 @@ export function registerGitHandlers(
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'fetch',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -1599,7 +1609,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to stash changes:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Stash failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1607,7 +1617,7 @@ export function registerGitHandlers(
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'stash',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -1659,7 +1669,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to pop stash:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Stash pop failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1667,7 +1677,7 @@ export function registerGitHandlers(
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'stash_pop',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -1728,7 +1738,7 @@ export function registerGitHandlers(
       return { success: true, data: result };
     } catch (error: unknown) {
       console.error('Failed to set upstream:', error);
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to set upstream',
@@ -1829,7 +1839,7 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to commit changes:', error);
 
-      const gitError = error as GitError;
+      const gitError = decodeGitError(error);
 
       // Emit git operation failed event
       const errorMessage = `✗ Commit failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
@@ -1837,7 +1847,7 @@ export function registerGitHandlers(
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'commit',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
@@ -2022,7 +2032,7 @@ export function registerGitHandlers(
       }
     } catch (error) {
       console.error('Error getting git status:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -2039,7 +2049,7 @@ export function registerGitHandlers(
       return { success: true };
     } catch (error) {
       console.error('Error cancelling git status:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -2120,7 +2130,7 @@ export function registerGitHandlers(
       await commandRunner.execAsync(
         `git clone "${escapedUrl}" "${escapedPath}"`,
         actualDestDir,
-        { timeout: 300000, env: { ...process.env, PATH: getShellPath() } as Record<string, string> }
+        { timeout: 300000, env: { ...process.env, PATH: getShellPath() } }
       );
 
       // Return the original (non-WSL-translated) path so the frontend can use it directly

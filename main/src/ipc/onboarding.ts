@@ -2,16 +2,18 @@ import { clipboard, IpcMain, IpcMainInvokeEvent } from 'electron';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
-import { execFile, execSync, spawn } from 'child_process';
+import { execFile, execSync, spawn, type ExecSyncOptionsWithStringEncoding } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as pty from '@lydell/node-pty';
 import type { AppServices } from './types';
 import { getAppDirectory } from '../utils/appDirectory';
 import { CommandRunner } from '../utils/commandRunner';
 import { getShellPath } from '../utils/shellPath';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 /** Returns exec options that include the user's full shell PATH (Homebrew, nvm, etc.). */
-function shellExecOpts(extra?: Record<string, unknown>): Record<string, unknown> {
+function shellExecOpts<Options extends object>(extra: Options): Options & { env: NodeJS.ProcessEnv } {
   return { ...extra, env: { ...process.env, PATH: getShellPath() } };
 }
 
@@ -95,7 +97,7 @@ function detectEnvironment(): EnvironmentInfo {
   try {
     authStatusOutput = execSync(
       `gh auth status -h ${GITHUB_HOST}`,
-      shellExecOpts({ encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }) as { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe']; env: NodeJS.ProcessEnv }
+      shellExecOpts({ encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] } satisfies ExecSyncOptionsWithStringEncoding)
     );
     result.ghAuthenticated = true;
   } catch {
@@ -150,7 +152,7 @@ function getGitHubCliScopes(authStatusOutput: string): string[] {
   try {
     const apiOutput = execSync(
       `gh api -i /user --silent --hostname ${GITHUB_HOST}`,
-      shellExecOpts({ encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 }) as { encoding: 'utf-8'; stdio: ['pipe', 'pipe', 'pipe']; timeout: number; env: NodeJS.ProcessEnv }
+      shellExecOpts({ encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], timeout: 15000 } satisfies ExecSyncOptionsWithStringEncoding)
     );
     const scopes = parseScopesFromHeaders(apiOutput);
     if (scopes.length > 0) return scopes;
@@ -223,9 +225,17 @@ function buildWindowsInteractiveCommand(command: string): string {
   return `${command} & echo. & echo GitHub setup finished. You can return to Pane. & pause`;
 }
 
-function normalizeTerminalDimensions(cols: unknown, rows: unknown): { cols: number; rows: number } {
-  const parsedCols = typeof cols === 'number' && Number.isFinite(cols) ? Math.floor(cols) : 80;
-  const parsedRows = typeof rows === 'number' && Number.isFinite(rows) ? Math.floor(rows) : 18;
+function normalizeTerminalDimensions(cols: PaneCommandValue, rows: PaneCommandValue): { cols: number; rows: number } {
+  const parseDimension = (value: PaneCommandValue, fallback: number): number => {
+    try {
+      const decoded = decodeBoundary(value, boundary.number);
+      return Number.isFinite(decoded) ? Math.floor(decoded) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  const parsedCols = parseDimension(cols, 80);
+  const parsedRows = parseDimension(rows, 18);
 
   return {
     cols: Math.min(Math.max(parsedCols, 20), 240),
@@ -236,7 +246,7 @@ function normalizeTerminalDimensions(cols: unknown, rows: unknown): { cols: numb
 function buildGitHubAuthPtyEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (typeof value === 'string') {
+    if (value !== undefined) {
       env[key] = value;
     }
   }
@@ -333,7 +343,7 @@ function isPaneRepo(repoPath: string): boolean {
   if (!existsSync(join(repoPath, '.git'))) return false;
   try {
     execSync('git rev-parse --is-inside-work-tree', shellExecOpts({ cwd: repoPath, stdio: 'ignore' }));
-    const execOpts = shellExecOpts({ cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }) as { cwd: string; encoding: 'utf-8' };
+    const execOpts = shellExecOpts({ cwd: repoPath, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] } satisfies ExecSyncOptionsWithStringEncoding);
     const canonicalPattern = /[/:]dcouple-inc\/pane(\.git)?$/i;
     // Fork pattern: any GitHub-hosted repo named exactly "Pane" (gh repo clone sets origin to user's fork)
     const forkPattern = /github\.com[/:][\w.-]+\/pane(\.git)?$/i;
@@ -543,7 +553,7 @@ export function registerOnboardingHandlers(ipcMain: IpcMain, services: AppServic
                 const jqFilter = `.[] | select(.parent.nameWithOwner == \\"${PANE_REPO}\\") | .nameWithOwner`;
                 const forkName = execSync(
                   `gh repo list --fork --limit 1000 --json nameWithOwner,parent --jq "${jqFilter}"`,
-                  shellExecOpts({ encoding: 'utf-8', timeout: 30000 }) as { encoding: 'utf-8'; timeout: number }
+                  shellExecOpts({ encoding: 'utf-8', timeout: 30000 } satisfies ExecSyncOptionsWithStringEncoding)
                 ).trim();
 
                 if (forkName) {

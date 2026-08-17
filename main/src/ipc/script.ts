@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
-import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import { getShellPath, findExecutableInPath } from '../utils/shellPath';
 import { logsManager } from '../services/panels/logPanel/logsManager';
 import { panelManager } from '../services/panelManager';
@@ -71,7 +72,8 @@ export function registerScriptHandlers(
         if (runningScript.type === 'session') {
           console.log('[Script] Stopping session script via logs panel');
           // Find and stop the logs panel for this session
-          const panels = await panelManager.getPanelsForSession(runningScript.id as string);
+          const sessionScriptId = decodeBoundary(runningScript.id, boundary.string);
+          const panels = await panelManager.getPanelsForSession(sessionScriptId);
           const logsPanel = panels?.find((p: { type: string }) => p.type === 'logs');
           if (logsPanel) {
             console.log('[Script] Found logs panel, stopping:', logsPanel.id);
@@ -139,7 +141,8 @@ export function registerScriptHandlers(
         // If it's a session script, stop the logs panel process (critical!)
         if (runningScript && runningScript.type === 'session') {
           console.log('[Script] Finding logs panel for session:', runningScript.id);
-          const panels = await panelManager.getPanelsForSession(runningScript.id as string);
+          const sessionScriptId = decodeBoundary(runningScript.id, boundary.string);
+          const panels = await panelManager.getPanelsForSession(sessionScriptId);
           const logsPanel = panels?.find((p: { type: string }) => p.type === 'logs');
           if (logsPanel) {
             console.log('[Script] Stopping logs panel:', logsPanel.id);
@@ -227,7 +230,7 @@ export function registerScriptHandlers(
   };
 
   // Opening a local IDE is a client-local adapter action, not daemon-owned runtime behavior.
-  ipcMain.handle('sessions:open-ide', async (_event, sessionId: string, ideKey?: unknown) => {
+  ipcMain.handle('sessions:open-ide', async (_event, sessionId: string, ideKey?: PaneCommandValue) => {
     try {
       const session = await sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
@@ -236,7 +239,12 @@ export function registerScriptHandlers(
 
       const project = sessionManager.getProjectForSession(sessionId);
       // Resolve command: use allowlisted key, fall back to project config
-      const safeKey = typeof ideKey === 'string' ? ideKey : undefined;
+      let safeKey: string | undefined;
+      try {
+        safeKey = decodeBoundary(ideKey, boundary.optional(boundary.string));
+      } catch {
+        safeKey = undefined;
+      }
       const ideCommand = (safeKey && IDE_COMMANDS[safeKey]) || project?.open_ide_command;
       if (!ideCommand) {
         return { success: false, error: 'No IDE command configured for this project' };

@@ -11,8 +11,10 @@ import {
   PANE_AGENT_CONTEXT_START,
 } from '../services/agentContextManager';
 import { registerConfigHandlers } from './config';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
 
-type IpcHandler = (_event: unknown, ...args: unknown[]) => unknown;
+interface TestIpcEvent { readonly sender?: { readonly id?: number } }
+type IpcHandler = (_event: TestIpcEvent, ...args: PaneCommandValue[]) => PaneCommandValue | Promise<PaneCommandValue>;
 
 interface IpcMainStub {
   handlers: Map<string, IpcHandler>;
@@ -45,8 +47,10 @@ async function createTempProject(id: number): Promise<Project> {
 }
 
 function createServicesStub(projects: Project[]): AppServices {
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   let config = { agentContext: { managedAgentsMd: true } } as AppConfig;
 
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   return {
     app: {},
     sessionManager: {
@@ -109,6 +113,7 @@ describe('config IPC handlers', () => {
 
     const ipcMain = createIpcMainStub();
     registerConfigHandlers(
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       ipcMain as unknown as IpcMain,
       createServicesStub([activeProject, inactiveProject]),
     );

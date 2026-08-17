@@ -101,7 +101,9 @@ function terminalSnapshot(
 }
 
 function createServices(overrides: Partial<AppServices> = {}): AppServices {
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   return {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     app: {
       getVersion: vi.fn(() => '2.3.8'),
       isPackaged: false,
@@ -193,6 +195,7 @@ function createTempGitRepo(name = 'repo'): string {
 
 function createRegistry(services = createServices()): PaneCommandRegistry {
   const registry = new PaneCommandRegistry();
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   registerRunpaneHandlers({} as never, services, registry);
   return registry;
 }
@@ -290,7 +293,9 @@ describe('runpane IPC handlers', () => {
         ]),
       },
     });
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:panes:rename');
   });
 
@@ -314,10 +319,12 @@ describe('runpane IPC handlers', () => {
   it('dry-runs adding an existing git repository without saving it', async () => {
     const repoPath = createTempGitRepo('pane-addon');
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         getAllProjects: vi.fn(() => []),
         createProject: vi.fn(),
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSessionsForProject: vi.fn(() => []),
@@ -355,6 +362,7 @@ describe('runpane IPC handlers', () => {
     };
     const projects: Project[] = [];
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         getAllProjects: vi.fn(() => projects),
         createProject: vi.fn((name: string, savedPath: string): Project => {
@@ -363,6 +371,7 @@ describe('runpane IPC handlers', () => {
           return created;
         }),
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSessionsForProject: vi.fn(() => []),
@@ -406,6 +415,7 @@ describe('runpane IPC handlers', () => {
     const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-test-'));
     tempDirs.push(parent);
     const registry = createRegistry(createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         getAllProjects: vi.fn(() => []),
         createProject: vi.fn(),
@@ -578,6 +588,7 @@ describe('runpane IPC handlers', () => {
 
   it('reads panel output as records and concatenated text', async () => {
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getPanelOutputs: vi.fn(() => [{
@@ -739,6 +750,7 @@ describe('runpane IPC handlers', () => {
 
   it('marks panel output as having more history when the internal fetch finds an extra record', async () => {
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getPanelOutputs: vi.fn(() => [{
@@ -1120,6 +1132,7 @@ describe('runpane IPC handlers', () => {
       return { stdout: '', stderr: '' };
     });
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getProjectContextByProjectId: vi.fn(() => ({
@@ -1170,6 +1183,7 @@ describe('runpane IPC handlers', () => {
       return { stdout: '', stderr: '' };
     });
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getProjectContextByProjectId: vi.fn(() => ({
@@ -1198,6 +1212,7 @@ describe('runpane IPC handlers', () => {
       executablePath: '/home/user/.local/bin/cursor-agent',
       version: '2026.08.11-e8db854',
     });
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     expect((result as { warnings?: string[] }).warnings?.some((w) => w.includes('PATH'))).toBe(true);
   });
 
@@ -1205,10 +1220,12 @@ describe('runpane IPC handlers', () => {
     const execAsync = vi.fn(async () => ({ stdout: '', stderr: '' }));
     const base = createServices();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...base.databaseService,
         getAllProjects: vi.fn(() => [{ ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' }]),
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...base.sessionManager,
         getProjectContextByProjectId: vi.fn(() => ({
@@ -1241,6 +1258,7 @@ describe('runpane IPC handlers', () => {
     const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
     const base = createServices();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...base.databaseService,
         getAllProjects: vi.fn(() => [wslProject]),
@@ -1266,6 +1284,7 @@ describe('runpane IPC handlers', () => {
     const wslProject = { ...project, wsl_enabled: true, wsl_distribution: 'Ubuntu' };
     const base = createServices();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...base.sessionManager,
         getProjectForSession: vi.fn(() => wslProject),
@@ -1280,6 +1299,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('creates a session, terminal panel, and initial-input state', async () => {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
       sessionId: session.id,
@@ -1359,13 +1379,16 @@ describe('runpane IPC handlers', () => {
     const databaseRow = {
       id: session.id,
       is_favorite: 0,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       favorite_pinned_at: null as string | null,
     };
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         getSession: vi.fn(() => databaseRow),
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       taskQueue: {
         createSessionAndWait: vi.fn(async (request: { startPinned?: boolean }) => {
           databaseRow.is_favorite = request.startPinned ? 1 : 0;
@@ -1404,6 +1427,7 @@ describe('runpane IPC handlers', () => {
     const databaseRow = {
       id: session.id,
       is_favorite: 0,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       favorite_pinned_at: null as string | null,
     };
     const setSessionFavorite = vi.fn((_id: string, pinned: boolean) => {
@@ -1415,10 +1439,12 @@ describe('runpane IPC handlers', () => {
     });
     const emit = vi.fn();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         setSessionFavorite,
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         emit,
@@ -1462,6 +1488,7 @@ describe('runpane IPC handlers', () => {
     const databaseRow = {
       id: session.id,
       is_favorite: 0,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       favorite_pinned_at: null as string | null,
     };
     const setSessionFavorite = vi.fn((_id: string, pinned: boolean) => {
@@ -1471,10 +1498,12 @@ describe('runpane IPC handlers', () => {
     });
     const emit = vi.fn();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         setSessionFavorite,
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         emit,
@@ -1515,10 +1544,12 @@ describe('runpane IPC handlers', () => {
     const updateSession = vi.fn(() => ({ id: session.id, name: 'renamed pane' }));
     const emit = vi.fn();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         updateSession,
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSession: vi.fn(() => renamedSession),
@@ -1546,10 +1577,12 @@ describe('runpane IPC handlers', () => {
     const updateSession = vi.fn();
     const emit = vi.fn();
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         updateSession,
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSession: vi.fn(() => originalSession),
@@ -1579,10 +1612,12 @@ describe('runpane IPC handlers', () => {
     const renamedSession = { ...session };
     const updateSession = vi.fn(() => ({ id: session.id, name: longName }));
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       databaseService: {
         ...createServices().databaseService,
         updateSession,
       } as never,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSession: vi.fn(() => renamedSession),
@@ -1602,6 +1637,7 @@ describe('runpane IPC handlers', () => {
 
   it('rejects rename for a pane id that does not exist', async () => {
     const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       sessionManager: {
         ...createServices().sessionManager,
         getSession: vi.fn(() => undefined),
@@ -1614,6 +1650,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('serializes multi-pane session creation before enqueueing the next pane', async () => {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
       sessionId: session.id,
@@ -1634,6 +1671,7 @@ describe('runpane IPC handlers', () => {
       activeCreates -= 1;
       return { sessionId: session.id };
     });
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const services = createServices({
       taskQueue: {
         createSessionAndWait,
@@ -1659,6 +1697,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('creates panes with readiness validation when requested', async () => {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(panelManager.createPanel).mockResolvedValue({
       id: 'panel-1',
       sessionId: session.id,
@@ -1719,6 +1758,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('reports earned Claude argument delivery during wait-ready pane creation', async () => {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const claudePanel = {
       id: 'panel-1',
       sessionId: session.id,
@@ -1790,6 +1830,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('marks pane creation unsuccessful when Claude argument delivery is unverified', async () => {
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     const claudePanel = {
       id: 'panel-1',
       sessionId: session.id,
@@ -2237,7 +2278,9 @@ describe('runpane IPC handlers', () => {
       execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
 
       const cleanSession: Session = { ...session, worktreePath: repoPath };
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => cleanSession),
@@ -2269,6 +2312,7 @@ describe('runpane IPC handlers', () => {
 
     it('rejects archiving a pane that is already archived', async () => {
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => ({ ...session, archived: true })),
@@ -2284,6 +2328,7 @@ describe('runpane IPC handlers', () => {
 
     it('rejects archiving an unknown pane id', async () => {
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => undefined),
@@ -2304,6 +2349,7 @@ describe('runpane IPC handlers', () => {
 
       const dirtySession: Session = { ...session, worktreePath: repoPath };
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => dirtySession),
@@ -2341,7 +2387,9 @@ describe('runpane IPC handlers', () => {
       fs.writeFileSync(path.join(repoPath, 'tracked.txt'), 'modified');
 
       const dirtySession: Session = { ...session, worktreePath: repoPath };
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => dirtySession),
@@ -2376,10 +2424,12 @@ describe('runpane IPC handlers', () => {
 
       const unpushedSession: Session = { ...session, worktreePath: repoPath };
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => unpushedSession),
         } as never,
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         worktreeManager: {
           getUpstream: vi.fn(async () => 'origin/main'),
         } as never,
@@ -2411,11 +2461,14 @@ describe('runpane IPC handlers', () => {
       execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: repoPath, stdio: 'ignore' });
 
       const mergedSession: Session = { ...session, worktreePath: repoPath };
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => mergedSession),
         } as never,
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         worktreeManager: {
           getUpstream: vi.fn(async () => 'origin/main'),
         } as never,
@@ -2447,6 +2500,7 @@ describe('runpane IPC handlers', () => {
 
       const mainRepoSession: Session = { ...session, worktreePath: repoPath, isMainRepo: true };
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => mainRepoSession),
@@ -2471,6 +2525,7 @@ describe('runpane IPC handlers', () => {
 
     it('fails safe with status-unknown when git status cannot be determined', async () => {
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         worktreeManager: {
           getUpstream: vi.fn(async () => {
             throw new Error('git command failed');
@@ -2501,7 +2556,9 @@ describe('runpane IPC handlers', () => {
       execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
 
       const cleanSession: Session = { ...session, worktreePath: repoPath };
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => cleanSession),
@@ -2530,7 +2587,9 @@ describe('runpane IPC handlers', () => {
       const repoPath = createTempGitRepo('polling-repo');
       execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
       const pollingSession: Session = { ...session, worktreePath: repoPath };
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => pollingSession),

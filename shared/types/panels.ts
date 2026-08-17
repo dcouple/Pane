@@ -187,7 +187,7 @@ export interface PanelEvent {
   type: PanelEventType;
   source: {
     panelId: string;
-    panelType: ToolPanelType;
+    panelType: ToolPanelType | 'git';
     sessionId: string;
   };
   data: unknown;

@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudVmManager } from '../services/cloudVmManager';
 import { registerCloudHandlers } from './cloud';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
 
 vi.mock('../services/cloudVmManager', () => ({
   CloudVmManager: vi.fn(),
 }));
 
+interface TestIpcEvent { readonly sender?: { readonly id?: number } }
 interface IpcMainStub {
-  handlers: Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>;
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => Promise<unknown>): void;
+  handlers: Map<string, (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>;
+  handle(channel: string, listener: (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>): void;
 }
 
 function createIpcMainStub(): IpcMainStub {
-  const handlers = new Map<string, (_event: unknown, ...args: unknown[]) => Promise<unknown>>();
+  const handlers = new Map<string, (_event: TestIpcEvent, ...args: PaneCommandValue[]) => Promise<PaneCommandValue>>();
 
   return {
     handlers,
@@ -52,6 +54,7 @@ describe('cloud IPC', () => {
       remoteConnectionStatus: 'available',
     });
 
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     vi.mocked(CloudVmManager).mockImplementation(() => ({
       connectWorkspace,
       disconnectWorkspace,
@@ -63,6 +66,7 @@ describe('cloud IPC', () => {
     const ipcMain = createIpcMainStub();
     const send = vi.fn();
 
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerCloudHandlers(ipcMain, {
       configManager: {
         startWatching: vi.fn(),

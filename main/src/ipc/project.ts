@@ -14,6 +14,7 @@ import { detectProjectConfig } from '../services/projectConfigDetector';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import type { ConfigManager } from '../services/configManager';
 import type { Project } from '../database/models';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 // Helper function to stop a running project script
 async function stopProjectScriptInternal(projectId?: number): Promise<{ success: boolean; error?: string }> {
@@ -27,7 +28,7 @@ async function stopProjectScriptInternal(projectId?: number): Promise<{ success:
 
     // If there's a running project script, stop it
     if (runningScript && runningScript.type === 'project' && runningScript.sessionId) {
-      const projectIdToStop = runningScript.id as number;
+      const projectIdToStop = decodeBoundary(runningScript.id, boundary.number);
 
       // Mark as closing
       scriptExecutionTracker.markClosing('project', projectIdToStop);
@@ -239,7 +240,11 @@ export function registerProjectHandlers(
         errorDetails = error.stack || error.toString();
 
         // Check if it's a command error
-        const cmdError = error as Error & { cmd?: string; stderr?: string; stdout?: string };
+        const cmdError = decodeBoundary(error, boundary.object({
+          cmd: boundary.optional(boundary.string),
+          stderr: boundary.optional(boundary.string),
+          stdout: boundary.optional(boundary.string),
+        }));
         if (cmdError.cmd) {
           command = cmdError.cmd;
         }
@@ -708,13 +713,14 @@ export function registerProjectHandlers(
         // Stop the script based on its type
         if (runningScript.type === 'project') {
           // Call internal stop function
-          const stopResult = await stopProjectScriptInternal(runningScript.id as number);
+          const projectScriptId = decodeBoundary(runningScript.id, boundary.number);
+          const stopResult = await stopProjectScriptInternal(projectScriptId);
           if (!stopResult?.success) {
             console.warn('[Main] Failed to stop running project script, continuing anyway');
           }
         } else if (runningScript.type === 'session') {
           // Stop session script through logs panel
-          const sessionIdToStop = runningScript.id as string;
+          const sessionIdToStop = decodeBoundary(runningScript.id, boundary.string);
           const panels = await panelManager.getPanelsForSession(sessionIdToStop);
           const logsPanel = panels?.find((p: { type: string }) => p.type === 'logs');
           if (logsPanel) {

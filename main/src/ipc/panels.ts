@@ -10,13 +10,41 @@ import { getPaneWebviewContextMap } from '../core/runtime';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
-import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
+import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel, type PanelLayoutNode, type ToolPanelState } from '../../../shared/types/panels';
 import type { AppServices } from './types';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { getWSLHome, linuxToUNCPath, posixJoin } from '../utils/wslUtils';
+import { boundary, decodeBoundary, type BoundarySchema } from '../../../shared/validation/boundaryDecoder';
 
 const execFileAsync = promisify(execFile);
+
+const panelLayoutNodeSchema: BoundarySchema<PanelLayoutNode> = {
+  decode(cursor) {
+    return boundary.union(
+      boundary.object({
+        type: boundary.literal('group'),
+        id: boundary.string,
+        panelIds: boundary.array(boundary.string),
+        activePanelId: boundary.nullable(boundary.string),
+      }),
+      boundary.object({
+        type: boundary.literal('split'),
+        id: boundary.string,
+        direction: boundary.enumeration('row', 'column'),
+        children: boundary.array(panelLayoutNodeSchema),
+        sizes: boundary.array(boundary.number),
+      }),
+    ).decode(cursor);
+  },
+};
+
+const sessionPanelLayoutSchema: BoundarySchema<SessionPanelLayout> = boundary.object({
+  version: boundary.literal(1),
+  root: panelLayoutNodeSchema,
+  focusedGroupId: boundary.optional(boundary.string),
+  zoomedGroupId: boundary.optional(boundary.nullable(boundary.string)),
+});
 
 /**
  * Convert a Windows path to a WSL mount path.
@@ -72,6 +100,25 @@ function resolveTerminalInitializationCwd(
   }
 
   return requestedCwd;
+}
+
+type PersistedCustomState = NonNullable<ToolPanelState['customState']>;
+
+function readPersistedScrollback(customState: PersistedCustomState | undefined): string | null {
+  try {
+    const state = decodeBoundary(customState, boundary.object({
+      scrollbackBuffer: boundary.optional(boundary.union(
+        boundary.string,
+        boundary.array(boundary.string),
+      )),
+    }));
+    if (state.scrollbackBuffer === undefined) return null;
+    return Array.isArray(state.scrollbackBuffer)
+      ? state.scrollbackBuffer.join('\n')
+      : state.scrollbackBuffer;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -370,7 +417,7 @@ export function registerPanelHandlers(
       return { success: true, data: panel };
     } catch (error) {
       console.error('[IPC] Failed to create panel:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -386,7 +433,7 @@ export function registerPanelHandlers(
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to delete panel:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -406,7 +453,7 @@ export function registerPanelHandlers(
       return { success: true, data: result };
     } catch (error) {
       console.error('[IPC] Failed to update panel:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -416,7 +463,7 @@ export function registerPanelHandlers(
       return { success: true, data: panels };
     } catch (error) {
       console.error('[IPC] Failed to list panels:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -426,7 +473,7 @@ export function registerPanelHandlers(
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to set active panel:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -440,7 +487,7 @@ export function registerPanelHandlers(
       const raw = databaseService.getSessionPanelLayout(sessionId);
       if (!raw) return { success: true, data: null };
       try {
-        const parsed = JSON.parse(raw) as SessionPanelLayout;
+        const parsed = decodeBoundary(JSON.parse(raw), sessionPanelLayoutSchema);
         return { success: true, data: parsed };
       } catch {
         // Malformed JSON should never brick a session
@@ -449,7 +496,7 @@ export function registerPanelHandlers(
       }
     } catch (error) {
       console.error('[IPC] Failed to get panel layout:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -503,7 +550,7 @@ export function registerPanelHandlers(
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to set panel layout:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -580,7 +627,7 @@ export function registerPanelHandlers(
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to resize terminal:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -590,7 +637,7 @@ export function registerPanelHandlers(
       return { success: true };
     } catch (error) {
       console.error('[IPC] Failed to send terminal input:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
   
@@ -643,9 +690,9 @@ export function registerPanelHandlers(
   // output cadence can drop to OUTPUT_BATCH_INTERVAL_HIDDEN while hidden.
   // No-op when the panel's PTY isn't in the map (pre-init / post-destroy).
   commandRegistry.register('terminal:setVisibility', async (panelId: string, isVisible: boolean, viewerId?: string) => {
-    const scopedViewerId = typeof viewerId === 'string' && viewerId.includes(':')
+    const scopedViewerId = viewerId?.includes(':')
       ? viewerId
-      : typeof viewerId === 'string'
+      : viewerId
         ? `local:${viewerId}`
         : undefined;
     terminalPanelManager.setVisibility(panelId, !!isVisible, scopedViewerId);
@@ -673,15 +720,7 @@ export function registerPanelHandlers(
       // Fall back to persisted scrollback for lazy/inactive terminals
       if (rawScrollback === null) {
         const panel = panelManager.getPanel(panelId);
-        const customState = panel?.state?.customState;
-        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
-          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
-          if (typeof persisted === 'string') {
-            rawScrollback = persisted;
-          } else if (Array.isArray(persisted)) {
-            rawScrollback = persisted.join('\n');
-          }
-        }
+        rawScrollback = readPersistedScrollback(panel?.state?.customState);
       }
 
       if (rawScrollback === null || rawScrollback === '') {
@@ -699,7 +738,7 @@ export function registerPanelHandlers(
       return { success: true, data: { content, lineCount: lastLines.length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to get clean scrollback:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 
@@ -782,15 +821,7 @@ export function registerPanelHandlers(
 
       if (rawScrollback === null) {
         const panel = panelManager.getPanel(panelId);
-        const customState = panel?.state?.customState;
-        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
-          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
-          if (typeof persisted === 'string') {
-            rawScrollback = persisted;
-          } else if (Array.isArray(persisted)) {
-            rawScrollback = persisted.join('\n');
-          }
-        }
+        rawScrollback = readPersistedScrollback(panel?.state?.customState);
       }
 
       if (rawScrollback === null || rawScrollback === '') {
@@ -815,7 +846,7 @@ export function registerPanelHandlers(
       return { success: true, data: { filePath: resolvedPath, lineCount: lastLines.length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to save scrollback:', error);
-      return { success: false, error: (error as Error).message };
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

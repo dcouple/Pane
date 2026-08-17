@@ -232,20 +232,23 @@ const GIT_CHANNELS = [
   ...GIT_MUTATION_CHANNELS,
 ] as const;
 
+interface TestIpcEvent { readonly sender?: { readonly id?: number } }
+type TestIpcHandler = (_event: TestIpcEvent, ...args: PaneCommandValue[]) => PaneCommandValue | Promise<PaneCommandValue>;
+
 interface IpcMainStub {
   boundChannels: string[];
-  listeners: Map<string, (_event: unknown, ...args: unknown[]) => unknown>;
-  handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown): void;
+  listeners: Map<string, TestIpcHandler>;
+  handle(channel: string, listener: TestIpcHandler): void;
 }
 
 function createIpcMainStub(): IpcMainStub {
   const boundChannels: string[] = [];
-  const listeners = new Map<string, (_event: unknown, ...args: unknown[]) => unknown>();
+  const listeners = new Map<string, TestIpcHandler>();
 
   return {
     boundChannels,
     listeners,
-    handle(channel: string, listener: (_event: unknown, ...args: unknown[]) => unknown) {
+    handle(channel: string, listener: TestIpcHandler) {
       boundChannels.push(channel);
       listeners.set(channel, listener);
     },
@@ -253,6 +256,7 @@ function createIpcMainStub(): IpcMainStub {
 }
 
 function createServicesStub(overrides: Partial<AppServices> = {}): AppServices {
+  // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   return {
     sessionManager: {},
     gitStatusManager: {},
@@ -287,6 +291,7 @@ describe('daemon registry IPC bindings', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
 
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerConfigHandlers(ipcMain, createServicesStub({
       configManager: {
         getConfig: () => ({
@@ -350,6 +355,7 @@ describe('daemon registry IPC bindings', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();
 
+    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerVoiceHandlers(ipcMain, createServicesStub({
       configManager: {
         getConfig: () => ({}),
@@ -445,6 +451,7 @@ describe('daemon registry IPC bindings', () => {
 
     registerSessionHandlers(
       ipcMain,
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       createServicesStub({ gitStatusManager: { setActiveSession } } as Partial<AppServices>),
       registry,
     );

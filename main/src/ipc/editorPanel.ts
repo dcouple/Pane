@@ -2,6 +2,10 @@ import { IpcMain } from 'electron';
 import * as path from 'path';
 import { panelManager } from '../services/panelManager';
 import type { AppServices } from './types';
+import { boundary, decodeBoundary, type JsonObject } from '../../../shared/validation/boundaryDecoder';
+import type { ToolPanelState } from '../../../shared/types/panels';
+
+type PersistedCustomState = NonNullable<ToolPanelState['customState']>;
 
 interface OpenFileInEditorRequest {
   sessionId: string;
@@ -13,6 +17,16 @@ interface CreateEditorPanelRequest {
   sessionId: string;
   filePath?: string; // Optional: file to open initially
   title?: string; // Optional: custom title
+}
+
+function editorFilePath(customState: PersistedCustomState | undefined): string | undefined {
+  try {
+    return decodeBoundary(customState, boundary.optional(boundary.object({
+      filePath: boundary.optional(boundary.string),
+    })))?.filePath;
+  } catch {
+    return undefined;
+  }
 }
 
 export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServices): void {
@@ -71,7 +85,7 @@ export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServi
       // If no panel specified, find an existing editor panel or create one
       if (!targetPanelId) {
         const panels = panelManager.getPanelsForSession(sessionId);
-        const editorPanel = panels.find(p => p.type === 'explorer' && !(p.state?.customState as {filePath?: string})?.filePath);
+        const editorPanel = panels.find(p => p.type === 'explorer' && !editorFilePath(p.state?.customState));
         
         if (editorPanel) {
           targetPanelId = editorPanel.id;
@@ -135,7 +149,7 @@ export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServi
   });
   
   // Update editor-specific panel state
-  ipcMain.handle('editor:updatePanelState', async (_, panelId: string, state: Record<string, unknown>) => {
+  ipcMain.handle('editor:updatePanelState', async (_, panelId: string, state: JsonObject) => {
     try {
       const panel = panelManager.getPanel(panelId);
       if (!panel) {
