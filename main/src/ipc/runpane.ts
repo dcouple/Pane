@@ -40,6 +40,8 @@ import type {
   RunpanePanePinResult,
   RunpanePaneRenameRequest,
   RunpanePaneRenameResult,
+  RunpanePaneFocusRequest,
+  RunpanePaneFocusResult,
   RunpanePaneCreateFailureItem,
   RunpanePaneCreateItem,
   RunpanePaneCreateRequest,
@@ -88,6 +90,7 @@ const RUNPANE_CHANNELS = [
   'runpane:panes:create',
   'runpane:panes:pin',
   'runpane:panes:rename',
+  'runpane:panes:focus',
   'runpane:panes:archive',
   'runpane:panels:create',
   'runpane:panels:list',
@@ -323,7 +326,48 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.pane.paneId }));
   });
 
-  commandRegistry.register('runpane:panes:create', async (request: PaneCommandValue): Promise<RunpanePaneCreateResult> => {
+  commandRegistry.register('runpane:panes:focus', async (request: unknown): Promise<RunpanePaneFocusResult> => {
+    return withRunpaneAction(services, 'panes:focus', {}, () => {
+      const normalized = parsePaneFocusRequest(request);
+      const pane = resolvePane(sessionManager, normalized.paneId);
+
+      if (pane.archived) {
+        throw new Error(`Pane ${normalized.paneId} is archived and cannot be focused`);
+      }
+
+      if (normalized.panelId) {
+        const panel = resolvePanel(normalized.panelId);
+        if (panel.sessionId !== pane.id) {
+          throw new Error(`Panel ${normalized.panelId} does not belong to Pane ${pane.id}`);
+        }
+      }
+
+      const window = services.getMainWindow();
+      if (!window) {
+        throw new Error('Pane window is not available to focus');
+      }
+
+      if (window.isMinimized()) {
+        window.restore();
+      }
+      window.show();
+      window.focus();
+
+      window.webContents.send('pane:focus-requested', {
+        paneId: pane.id,
+        panelId: normalized.panelId,
+      });
+
+      return {
+        ok: true,
+        paneId: pane.id,
+        panelId: normalized.panelId,
+        focused: true,
+      };
+    }, result => ({ paneId: result.paneId, ok: result.ok }));
+  });
+
+  commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
     return withRunpaneAction(services, 'panes:create', {}, async () => {
       const normalized = parsePaneCreateRequest(request);
       const repo = resolveRepoSelector(databaseService.getAllProjects(), normalized.repo);
@@ -2098,6 +2142,27 @@ function parsePaneRenameRequest(value: PaneCommandValue): RunpanePaneRenameReque
     paneId,
     name,
     dryRun: optionalBoolean(value.dryRun),
+  };
+}
+
+function parsePaneFocusRequest(value: unknown): RunpanePaneFocusRequest {
+  if (!isRecord(value)) {
+    throw new Error('Pane focus request must be an object');
+  }
+
+  const paneId = optionalString(value.paneId)?.trim();
+  if (!paneId) {
+    throw new Error('Pane focus request must include a paneId');
+  }
+  const panelId = optionalString(value.panelId)?.trim();
+  if (value.source !== undefined && value.source !== 'user' && value.source !== 'agent') {
+    throw new Error('Pane focus source must be user or agent');
+  }
+
+  return {
+    paneId,
+    panelId: panelId || undefined,
+    source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
   };
 }
 

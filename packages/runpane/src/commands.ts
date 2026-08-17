@@ -434,6 +434,7 @@ function isRunpaneLocalCommand(command: RunpaneCommand): boolean {
     || command === 'panes pin'
     || command === 'panes unpin'
     || command === 'panes rename'
+    || command === 'panes focus'
     || command === 'panels create'
     || command === 'panels list'
     || command === 'panels output'

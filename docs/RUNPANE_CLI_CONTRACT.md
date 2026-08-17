@@ -152,6 +152,8 @@ For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is repor
 
 `runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.
 
+`runpane panes focus` raises the Pane window and selects a Pane (and optionally one of its panels) exactly like clicking it in the UI. Because it steals the user's window focus, run it only on an explicit user request to open, focus, show, or switch to a Pane; never focus a Pane proactively, the same doctrine that keeps `panes create` background/no-focus for `--source agent`.
+
 `runpane panels list` lists tool panels inside one Pane session.
 
 `runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.
@@ -200,6 +202,7 @@ Brief tools:
 - `panes pin`: Declaratively pin a Pane (the Pane UI's favorite/pin star) without changing focus.
 - `panes unpin`: Declaratively unpin a Pane (the Pane UI's favorite/pin star) without changing focus.
 - `panes rename`: Rename a Pane without changing its worktree, branch, panels, or focus.
+- `panes focus`: Raise the Pane window and select a Pane (and optionally a panel) on explicit user request.
 - `panels create`: Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.
 - `panels list`: List tool panels inside a Pane session.
 - `panels output`: Read recent terminal output from a panel.

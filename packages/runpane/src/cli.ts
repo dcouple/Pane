@@ -30,6 +30,7 @@ import {
   runPanesList,
   runPanesPin,
   runPanesRename,
+  runPanesFocus,
   runReposAdd,
   runReposList
 } from './localControl';
@@ -127,6 +128,10 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   if (parsed.command === 'panes rename') {
     return runPanesRename(parsed);
+  }
+
+  if (parsed.command === 'panes focus') {
+    return runPanesFocus(parsed);
   }
 
   if (parsed.command === 'panels list') {

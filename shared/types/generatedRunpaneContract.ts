@@ -250,6 +250,18 @@ export const RUNPANE_CONTRACT = {
       ]
     },
     {
+      "name": "panes focus",
+      "summary": "Raise the Pane window and select a Pane (and optionally one of its panels) on explicit user request.",
+      "usage": [
+        "runpane panes focus --pane <pane-id> [--panel <panel-id>] --source user|agent --yes [--json]"
+      ],
+      "mutates": true,
+      "jsonSchemas": [
+        "paneFocusRequest",
+        "paneFocusResult"
+      ]
+    },
+    {
       "name": "panels create",
       "summary": "Create a terminal-backed tool panel inside an existing Pane session.",
       "usage": [
@@ -868,6 +880,20 @@ export const RUNPANE_CONTRACT = {
         "  --dry-run                      Validate and preview without renaming the pane",
         "  --yes                          Skip confirmation for mutating commands"
       ],
+      "panes focus": [
+        "Usage:",
+        "  runpane panes focus --pane <pane-id> [--panel <panel-id>] --source user|agent --yes [--json]",
+        "",
+        "Raises the Pane window and selects a Pane (and optionally one of its panels) exactly like clicking it in the UI. Steals window focus, so run it only on an explicit user request to open, focus, or show a Pane, never proactively.",
+        "",
+        "Options:",
+        "  --pane <pane-id>               Pane/session id to focus",
+        "  --panel <panel-id>             Optional panel/tab id inside the Pane to select",
+        "  --source <user|agent>          Mutation source; does not change focus behavior",
+        "  --pane-dir <path>              Connect to a specific Pane data directory",
+        "  --json                         Print machine-readable output",
+        "  --yes                          Skip confirmation for mutating commands"
+      ],
       "panels": [
         "Terminal-backed panel commands.",
         "",
@@ -1295,6 +1321,20 @@ export const RUNPANE_CONTRACT = {
         "  --dry-run",
         "  --yes"
       ],
+      "panes focus": [
+        "Usage:",
+        "  runpane panes focus --pane <pane-id> [--panel <panel-id>] --source user|agent --yes [--json]",
+        "",
+        "Raises the Pane window and selects a Pane (and optionally one of its panels) exactly like clicking it in the UI. Steals window focus, so run it only on an explicit user request to open, focus, or show a Pane, never proactively.",
+        "",
+        "Options:",
+        "  --pane <pane-id>",
+        "  --panel <panel-id>",
+        "  --source <user|agent>",
+        "  --pane-dir <path>",
+        "  --json",
+        "  --yes"
+      ],
       "panels": [
         "Terminal-backed panel commands.",
         "",
@@ -1554,6 +1594,7 @@ export const RUNPANE_CONTRACT = {
       "For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.",
       "`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.",
       "`runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.",
+      "`runpane panes focus` raises the Pane window and selects a Pane (and optionally one of its panels) exactly like clicking it in the UI. Because it steals the user's window focus, run it only on an explicit user request to open, focus, show, or switch to a Pane; never focus a Pane proactively, the same doctrine that keeps `panes create` background/no-focus for `--source agent`.",
       "`runpane panels list` lists tool panels inside one Pane session.",
       "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
       "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
@@ -1769,6 +1810,18 @@ export const RUNPANE_CONTRACT = {
         "session-1",
         "--name",
         "issue-393",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panes",
+        "focus",
+        "--pane",
+        "session-1",
+        "--panel",
+        "panel-1",
+        "--source",
+        "user",
         "--yes",
         "--json"
       ],
@@ -3101,6 +3154,50 @@ export const RUNPANE_CONTRACT = {
       },
       "additionalProperties": false
     },
+    "paneFocusRequest": {
+      "type": "object",
+      "required": [
+        "paneId"
+      ],
+      "properties": {
+        "paneId": {
+          "type": "string"
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "user",
+            "agent"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "paneFocusResult": {
+      "type": "object",
+      "required": [
+        "ok",
+        "paneId",
+        "focused"
+      ],
+      "properties": {
+        "ok": {
+          "const": true
+        },
+        "paneId": {
+          "type": "string"
+        },
+        "panelId": {
+          "type": "string"
+        },
+        "focused": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
     "paneArchiveResult": {
       "oneOf": [
         {
@@ -4317,6 +4414,17 @@ export const RUNPANE_CONTRACT = {
           ]
         },
         {
+          "name": "panes focus",
+          "summary": "Raise the Pane window and select a Pane (and optionally a panel) on explicit user request.",
+          "arguments": [
+            "--pane <pane-id>",
+            "--panel <panel-id>",
+            "--source <user|agent>",
+            "--yes",
+            "--json"
+          ]
+        },
+        {
           "name": "panels create",
           "summary": "Create reviewer/helper terminal tabs inside an existing Pane; they share that Pane's worktree.",
           "arguments": [
@@ -5093,6 +5201,56 @@ export const RUNPANE_CONTRACT = {
         "notes": [
           "Empty and whitespace-only names are rejected; no additional maximum length is imposed beyond the existing UI and database behavior.",
           "The JSON result includes the updated pane summary so callers do not need a second panes list request."
+        ]
+      },
+      "panes focus": {
+        "name": "panes focus",
+        "summary": "Raise the Pane window and select a Pane (and optionally one of its panels).",
+        "details": "Brings the Pane desktop window to the foreground and selects the requested Pane exactly like clicking it in the sidebar; when --panel is given it also selects that panel/tab inside the Pane. This steals window focus, so it must only be run on an explicit user request to open, focus, or show a Pane, never proactively. Focusing does not change the Pane's worktree, branch, panels, or pinned state.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--pane",
+            "value": "<pane-id>",
+            "required": true,
+            "description": "Pane/session id to focus. Must be an active (non-archived) Pane."
+          },
+          {
+            "name": "--panel",
+            "value": "<panel-id>",
+            "required": false,
+            "description": "Optional panel/tab id inside the Pane to select; must belong to the focused Pane."
+          },
+          {
+            "name": "--source",
+            "value": "<user|agent>",
+            "required": false,
+            "description": "Mutation source; does not change focus behavior."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation for mutating commands; required in non-interactive contexts because focusing steals window focus."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
+        ],
+        "examples": [
+          "runpane panes focus --pane <pane-id> --source user --yes --json",
+          "runpane panes focus --pane <pane-id> --panel <panel-id> --source user --yes --json"
+        ],
+        "jsonSchemas": [
+          "paneFocusRequest",
+          "paneFocusResult"
+        ],
+        "notes": [
+          "Run this only when the user explicitly asks to open, focus, show, or switch to a Pane; never focus a Pane proactively because it steals the user's window focus.",
+          "Archived Panes cannot be focused; the command fails clearly instead of falling back to focusing another Pane.",
+          "If --panel does not belong to the focused Pane, the command fails clearly rather than selecting a different panel."
         ]
       },
       "panels list": {
