@@ -6,7 +6,7 @@ import { useTree } from '@headless-tree/react';
 import { asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature, expandAllFeature } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
 import { MonacoErrorBoundary } from '../../MonacoErrorBoundary';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { isLightTheme, useTheme } from '../../../contexts/ThemeContext';
 import { debounce } from '../../../utils/debounce';
 import { devLog } from '../../../utils/console';
 import { MarkdownPreview } from '../../MarkdownPreview';
@@ -1233,7 +1233,7 @@ export function FileEditor({
   }, [binaryBlobUrl]);
 
   const { theme } = useTheme();
-  const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
+  const isDarkMode = !isLightTheme(theme);
   const hasUnsavedChanges = fileContent !== originalContent;
   
   // Wrap onResize callback to avoid recreating

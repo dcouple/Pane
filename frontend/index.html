@@ -11,7 +11,7 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'haar', 'abyss', 'understory'];
       const themeClasses = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -25,6 +25,9 @@
         'night-owl': ['dark', 'night-owl'],
         'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
         'terracotta': ['dark', 'terracotta'],
+        'haar': ['light', 'haar'],
+        'abyss': ['dark', 'abyss'],
+        'understory': ['dark', 'understory'],
       };
       const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
       document.documentElement.classList.add(...themeClasses[theme]);
@@ -37,7 +40,7 @@
     <script>
       // Also apply to body (mirrors the head script logic)
       const t = localStorage.getItem('theme');
-      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'haar', 'abyss', 'understory'];
       const tc = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -51,6 +54,9 @@
         'night-owl': ['dark', 'night-owl'],
         'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
         'terracotta': ['dark', 'terracotta'],
+        'haar': ['light', 'haar'],
+        'abyss': ['dark', 'abyss'],
+        'understory': ['dark', 'understory'],
       };
       const bt = vt.includes(t) ? t : 'light-rounded';
       document.body.classList.add(...tc[bt]);

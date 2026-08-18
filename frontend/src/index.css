@@ -62,6 +62,27 @@ body.light-rounded {
     linear-gradient(180deg, #f7fafc 0%, #eef3f7 100%);
 }
 
+/* Haar — a fog bank thins toward the top of the frame */
+body.haar {
+  background:
+    radial-gradient(circle at top center, rgba(255, 255, 255, 0.55), transparent 34%),
+    linear-gradient(180deg, #f1f4f7 0%, #e6ebf0 100%);
+}
+
+/* Abyss — faint bioluminescent bloom rising from the deep */
+body.abyss {
+  background:
+    radial-gradient(circle at bottom center, rgba(77, 184, 171, 0.10), transparent 36%),
+    linear-gradient(180deg, #07111c 0%, #050c15 100%);
+}
+
+/* Understory — light filtering down through a canopy onto bark */
+body.understory {
+  background:
+    radial-gradient(circle at top center, rgba(211, 221, 168, 0.07), transparent 32%),
+    linear-gradient(180deg, #1e1914 0%, #131911 100%);
+}
+
 /* Scrollbars stay functional but visually hidden */
 ::-webkit-scrollbar {
   width: 0;
@@ -98,7 +119,9 @@ body.light-rounded {
 :root.ember .panel-tab-bar [aria-selected="true"],
 :root.night-owl .panel-tab-bar [aria-selected="true"],
 :root.night-owl-oled .panel-tab-bar [aria-selected="true"],
-:root.terracotta .panel-tab-bar [aria-selected="true"] {
+:root.terracotta .panel-tab-bar [aria-selected="true"],
+:root.abyss .panel-tab-bar [aria-selected="true"],
+:root.understory .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -129,6 +152,9 @@ body.light-rounded {
 :root.night-owl .pane-sidebar-shell,
 :root.night-owl-oled .pane-sidebar-shell,
 :root.terracotta .pane-sidebar-shell,
+:root.haar .pane-sidebar-shell,
+:root.abyss .pane-sidebar-shell,
+:root.understory .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
   border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
@@ -143,6 +169,9 @@ body.light-rounded {
 :root.night-owl .pane-session-shell,
 :root.night-owl-oled .pane-session-shell,
 :root.terracotta .pane-session-shell,
+:root.haar .pane-session-shell,
+:root.abyss .pane-session-shell,
+:root.understory .pane-session-shell,
 :root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
@@ -154,6 +183,9 @@ body.light-rounded {
 :root.night-owl .panel-tab-bar,
 :root.night-owl-oled .panel-tab-bar,
 :root.terracotta .panel-tab-bar,
+:root.haar .panel-tab-bar,
+:root.abyss .panel-tab-bar,
+:root.understory .panel-tab-bar,
 :root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -168,6 +200,9 @@ body.light-rounded {
 :root.night-owl .pane-editor-stage,
 :root.night-owl-oled .pane-editor-stage,
 :root.terracotta .pane-editor-stage,
+:root.haar .pane-editor-stage,
+:root.abyss .pane-editor-stage,
+:root.understory .pane-editor-stage,
 :root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -182,6 +217,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-dock,
 :root.night-owl-oled .pane-terminal-dock,
 :root.terracotta .pane-terminal-dock,
+:root.haar .pane-terminal-dock,
+:root.abyss .pane-terminal-dock,
+:root.understory .pane-terminal-dock,
 :root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
@@ -197,6 +235,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail,
 :root.night-owl-oled .pane-terminal-rail,
 :root.terracotta .pane-terminal-rail,
+:root.haar .pane-terminal-rail,
+:root.abyss .pane-terminal-rail,
+:root.understory .pane-terminal-rail,
 :root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
@@ -205,6 +246,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel,
 :root.night-owl-oled .pane-detail-panel,
 :root.terracotta .pane-detail-panel,
+:root.haar .pane-detail-panel,
+:root.abyss .pane-detail-panel,
+:root.understory .pane-detail-panel,
 :root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
@@ -217,6 +261,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.haar .pane-terminal-rail-shell,
+:root.abyss .pane-terminal-rail-shell,
+:root.understory .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
@@ -225,6 +272,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-inner,
+:root.haar .pane-detail-panel-inner,
+:root.abyss .pane-detail-panel-inner,
+:root.understory .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -239,6 +289,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.haar .pane-terminal-rail-shell,
+:root.abyss .pane-terminal-rail-shell,
+:root.understory .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
@@ -247,6 +300,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.haar .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.abyss .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.understory .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
@@ -258,6 +314,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.haar .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.abyss .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.understory .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
@@ -319,6 +378,45 @@ body.light-rounded {
     inset 0 1px 0 rgba(192, 112, 80, 0.06);
 }
 
+:root.haar .panel-tab-bar,
+:root.haar .pane-editor-stage,
+:root.haar .pane-terminal-dock,
+:root.haar .pane-terminal-rail-shell,
+:root.haar .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(37, 45, 54, 0.12);
+  box-shadow:
+    0 8px 20px rgba(21, 27, 33, 0.07),
+    0 0 0 1px rgba(255, 255, 255, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+:root.abyss .panel-tab-bar,
+:root.abyss .pane-editor-stage,
+:root.abyss .pane-terminal-dock,
+:root.abyss .pane-terminal-rail-shell,
+:root.abyss .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(77, 184, 171, 0.16);
+  box-shadow:
+    0 12px 26px rgba(1, 4, 8, 0.4),
+    0 0 0 1px rgba(77, 184, 171, 0.04),
+    inset 0 1px 0 rgba(159, 227, 216, 0.05);
+}
+
+:root.understory .panel-tab-bar,
+:root.understory .pane-editor-stage,
+:root.understory .pane-terminal-dock,
+:root.understory .pane-terminal-rail-shell,
+:root.understory .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(70, 57, 46, 0.7);
+  box-shadow:
+    0 10px 22px rgba(4, 6, 3, 0.3),
+    0 0 0 1px rgba(166, 181, 109, 0.03),
+    inset 0 1px 0 rgba(211, 221, 168, 0.04);
+}
+
 :root.ember .panel-tab-bar,
 :root.ember .pane-editor-stage,
 :root.ember .pane-terminal-dock,
@@ -373,6 +471,12 @@ body.light-rounded {
 }
 
 :root.terracotta .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.haar .xterm,
+:root.abyss .xterm,
+:root.understory .xterm {
   border-radius: var(--panel-shell-radius);
 }
 
@@ -796,6 +900,30 @@ body.light-rounded {
   --vscode-editor-foreground: #1f2328 !important;
   --vscode-editorWidget-background: #ffffff !important;
   --vscode-editorWidget-foreground: #1f2328 !important;
+}
+
+/* Abyss theme overrides — trench editor colors */
+:root.abyss {
+  --vscode-editor-background: #04090f !important;
+  --vscode-editor-foreground: #dbeaf1 !important;
+  --vscode-editorWidget-background: #04090f !important;
+  --vscode-editorWidget-foreground: #dbeaf1 !important;
+}
+
+/* Understory theme overrides — moss floor editor colors */
+:root.understory {
+  --vscode-editor-background: #0d110c !important;
+  --vscode-editor-foreground: #e4e9d9 !important;
+  --vscode-editorWidget-background: #0d110c !important;
+  --vscode-editorWidget-foreground: #e4e9d9 !important;
+}
+
+/* Haar theme overrides — fog editor colors (after .light so the theme wins) */
+:root.haar {
+  --vscode-editor-background: #f5f7f9 !important;
+  --vscode-editor-foreground: #252d36 !important;
+  --vscode-editorWidget-background: #f5f7f9 !important;
+  --vscode-editorWidget-foreground: #252d36 !important;
 }
 
 /* Additional Monaco editor style overrides */

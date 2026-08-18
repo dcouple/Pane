@@ -131,3 +131,36 @@
   --app-frame-gap: var(--space-2-5);
   --panel-shell-gap: var(--space-2-5);
 }
+
+/* Haar — airy fog spacing, islanded shells */
+:root.haar {
+  --panel-tab-height: 2.5rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Abyss — medium density, islanded shells */
+:root.abyss {
+  --panel-tab-height: 2.25rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Understory — medium density, islanded shells */
+:root.understory {
+  --panel-tab-height: 2.25rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}

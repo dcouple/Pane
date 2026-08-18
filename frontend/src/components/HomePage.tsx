@@ -11,6 +11,7 @@ import { Toggle } from './ui/Toggle';
 import { AddProjectDialog } from './AddProjectDialog';
 import { CloneFromGitHubDialog } from './CloneFromGitHubDialog';
 import { formatDistanceToNow, isValidTimestamp } from '../utils/timestampUtils';
+import { THEME_OPTIONS, getThemeLabel } from '../utils/themeOptions';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 
@@ -314,27 +315,19 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta' }[theme]}</span>
+                    <span>{getThemeLabel(theme)}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
-                items={[
-                  { id: 'light-rounded', label: 'Light (rounded)', onClick: () => setTheme('light-rounded') },
-                  { id: 'forge', label: 'Forge', onClick: () => setTheme('forge') },
-                  { id: 'night-owl', label: 'Night Owl', onClick: () => setTheme('night-owl') },
-                  { id: 'night-owl-oled', label: 'Night Owl (OLED)', onClick: () => setTheme('night-owl-oled') },
-                  { id: 'dusk-oled', label: 'Dusk (OLED)', onClick: () => setTheme('dusk-oled') },
-                  { id: 'dusk', label: 'Dusk', onClick: () => setTheme('dusk') },
-                  { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
-                  { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
-                  { id: 'terracotta', label: 'Terracotta', onClick: () => setTheme('terracotta') },
-                  { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
-                  { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
-                  { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },
-                ]}
+                items={THEME_OPTIONS.map((option) => ({
+                  id: option.id,
+                  label: option.label,
+                  description: option.description,
+                  onClick: () => setTheme(option.id),
+                }))}
                 selectedId={theme}
                 position="bottom-right"
-                width="sm"
+                width="lg"
               />
             </div>
 

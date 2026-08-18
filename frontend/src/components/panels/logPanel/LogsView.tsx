@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, X, Download, Trash2, ChevronUp, ChevronDown, Filter, Copy, Check } from 'lucide-react';
 import { cn } from '../../../utils/cn';
 import AnsiToHtml from 'ansi-to-html';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { isLightTheme, useTheme } from '../../../contexts/ThemeContext';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
@@ -48,7 +48,7 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
 
   // Create ANSI to HTML converter with theme-aware colors
   const ansiConverter = useMemo(() => {
-    const isLight = theme === 'light' || theme === 'light-rounded';
+    const isLight = isLightTheme(theme);
     return new AnsiToHtml({
       fg: isLight ? '#1f2328' : '#e5e7eb',
       bg: isLight ? '#ffffff' : '#0a0a0a',

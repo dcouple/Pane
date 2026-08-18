@@ -156,6 +156,68 @@
   --terra-accent8: #d68e6e;
   --terra-accent9: #dea080;
   --terra-accent10: #e6b498;
+
+  /* Haar primitives — cold pre-dawn sea fog (light ramp, blue-grey neutrals) */
+  --haar-50: #f5f7f9;
+  --haar-100: #eceff3;
+  --haar-150: #e2e7ec;
+  --haar-200: #d5dce3;
+  --haar-300: #c1cad3;
+  --haar-400: #93a1ad;
+  --haar-500: #66727e;
+  --haar-600: #505c68;
+  --haar-700: #3a4550;
+  --haar-800: #252d36;
+  --haar-900: #151b21;
+
+  /* Haar accent ramp — steel blue seen through fog */
+  --haar-steel-300: #a9bccf;
+  --haar-steel-400: #7c96ad;
+  --haar-steel-500: #4f6d8a;
+  --haar-steel-600: #3e5a75;
+  --haar-steel-700: #304a62;
+
+  /* Abyss primitives — deep-ocean navy ramp */
+  --abyss-950: #04090f;
+  --abyss-900: #07111c;
+  --abyss-850: #0b1826;
+  --abyss-800: #102030;
+  --abyss-700: #172d40;
+  --abyss-600: #203c52;
+  --abyss-500: #325670;
+  --abyss-400: #6389a2;
+  --abyss-300: #8fb0c5;
+  --abyss-200: #b6cedb;
+  --abyss-100: #dbeaf1;
+
+  /* Abyss accent ramp — bioluminescent sea-glass teal */
+  --abyss-glow-300: #9fe3d8;
+  --abyss-glow-400: #6fcfc1;
+  --abyss-glow-500: #4db8ab;
+
+  /* Understory primitives — moss floor ramp (green-black neutrals) */
+  --under-950: #0d110c;
+  --under-900: #131911;
+  --under-850: #192117;
+  --under-800: #20291d;
+  --under-700: #2a3626;
+  --under-600: #374532;
+  --under-500: #55654c;
+  --under-400: #7f8f73;
+  --under-300: #a4b297;
+  --under-200: #c5ceb8;
+  --under-100: #e4e9d9;
+
+  /* Understory bark ramp — warm brown chrome */
+  --under-bark-850: #1e1914;
+  --under-bark-800: #27201a;
+  --under-bark-700: #352c23;
+  --under-bark-600: #46392e;
+
+  /* Understory accent ramp — pale lichen */
+  --under-lichen-300: #d3dda8;
+  --under-lichen-400: #bfcc8b;
+  --under-lichen-500: #a6b56d;
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -1719,6 +1781,485 @@
   --color-terminal-bright-white: #F2E4D6;
 }
 
+/* Haar Theme — cold pre-dawn sea fog: blue-white surfaces, ink text (light base) */
+:root.haar {
+  /* Backgrounds — fog bank (chrome) vs. clearing (editor) */
+  --color-bg-primary: var(--haar-100);
+  --color-bg-secondary: var(--haar-150);
+  --color-bg-tertiary: var(--haar-200);
+  --color-bg-hover: var(--haar-200);
+  --color-bg-active: var(--haar-300);
+  --color-bg-chrome: var(--haar-150);
+  --color-bg-editor: var(--haar-50);   /* brightest — the clearing */
+
+  /* Surfaces */
+  --color-surface-primary: var(--haar-50);
+  --color-surface-secondary: var(--haar-100);
+  --color-surface-tertiary: var(--haar-150);
+  --color-surface-hover: var(--haar-200);
+
+  /* Text — ink on fog */
+  --color-text-primary: var(--haar-800);
+  --color-text-secondary: var(--haar-700);
+  --color-text-tertiary: var(--haar-600);
+  --color-text-muted: #5b6874;  /* 4.95:1 on --haar-100 (AA) */
+  --color-text-disabled: var(--haar-400);
+
+  /* Borders — cold, visible like frost lines */
+  --color-border-primary: rgba(37, 45, 54, 0.16);
+  --color-border-secondary: rgba(37, 45, 54, 0.10);
+  --color-border-tertiary: rgba(37, 45, 54, 0.06);
+  --color-border-hover: rgba(37, 45, 54, 0.24);
+  --color-border-focus: var(--haar-steel-500);
+
+  /* Interactive — steel blue through fog */
+  --color-interactive: var(--haar-steel-500);
+  --color-interactive-primary: var(--haar-steel-500);
+  --color-interactive-hover: var(--haar-steel-600);
+  --color-interactive-active: var(--haar-steel-700);
+  --color-interactive-text: var(--haar-steel-700);
+  --color-focus-ring: var(--haar-steel-500);
+  --color-interactive-rgb: 79 109 138;
+
+  /* Interactive on dark (used by dark-surface accents inside a light theme) */
+  --color-text-interactive-on-dark: var(--haar-steel-300);
+  --color-text-interactive-on-dark-hover: var(--haar-steel-400);
+  --color-text-interactive-on-dark-active: var(--haar-steel-300);
+  --color-text-interactive-on-dark-focus: var(--haar-steel-300);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--haar-100);
+  --color-surface-interactive-hover: var(--haar-150);
+  --color-interactive-surface: rgba(79, 109, 138, 0.14);
+  --color-interactive-surface-hover: rgba(79, 109, 138, 0.22);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(37, 45, 54, 0.08);
+  --color-border-interactive: rgba(37, 45, 54, 0.16);
+  --color-interactive-border: var(--haar-steel-500);
+  --color-interactive-border-hover: var(--haar-steel-600);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: #5b6874;  /* 4.95:1 on --haar-100 (AA) */
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(79, 109, 138, 0.4);
+
+  /* Status — muted, photographic */
+  --color-status-success: #2f7a45;
+  --color-status-success-hover: #276638;
+  --color-status-warning: #85611a;
+  --color-status-warning-hover: #6f5013;
+  --color-status-error: #b23b3b;
+  --color-status-error-hover: #952f2f;
+  --color-status-info: var(--haar-steel-600);
+  --color-status-neutral: var(--haar-500);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--haar-800);
+  --color-text-on-secondary: var(--haar-800);
+  --color-text-on-tertiary: var(--haar-700);
+  --color-text-on-surface: var(--haar-800);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(255 255 255);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--haar-800);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--haar-steel-500);
+  --color-button-primary-hover: var(--haar-steel-600);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--haar-150);
+  --color-button-secondary-hover: var(--haar-200);
+  --color-button-secondary-text: var(--haar-800);
+  --color-button-ghost-hover: var(--haar-200);
+  --color-button-ghost-text: var(--haar-700);
+
+  /* Cards */
+  --color-card-bg: var(--haar-50);
+  --color-card-border: rgba(37, 45, 54, 0.14);
+  --color-card-nested-bg: var(--haar-100);
+
+  /* Forms */
+  --color-input-bg: var(--haar-50);
+  --color-input-border: rgba(37, 45, 54, 0.18);
+  --color-input-focus: var(--haar-steel-500);
+  --color-input-text: var(--haar-800);
+  --color-input-placeholder: #5b6874;
+
+  /* Modal */
+  --color-modal-overlay: rgba(21, 27, 33, 0.45);
+  --color-modal-bg: var(--haar-50);
+
+  /* Navigation — denser fog in the sidebar */
+  --color-surface-navigation: var(--haar-150);
+  --color-surface-navigation-hover: var(--haar-200);
+  --color-surface-navigation-active: var(--haar-300);
+  --color-surface-navigation-selected: rgba(79, 109, 138, 0.16);
+  --color-surface-navigation-selected-hover: rgba(79, 109, 138, 0.24);
+  --color-text-navigation-primary: var(--haar-800);
+  --color-text-navigation-secondary: var(--haar-700);
+  --color-text-navigation-muted: #57636f;  /* 4.9:1 on --haar-150 (AA) */
+  --color-text-navigation-selected: var(--haar-900);
+  --color-text-navigation-hover: var(--haar-900);
+  --color-text-navigation-section: #57636f;  /* 4.9:1 on --haar-150 (AA) */
+  --color-text-navigation-brand: var(--haar-600);
+  --color-border-navigation: rgba(37, 45, 54, 0.12);
+  --color-divider-navigation: rgba(37, 45, 54, 0.10);
+  --color-divider-navigation-subtle: rgba(37, 45, 54, 0.06);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--haar-150);
+  --color-scrollbar-thumb: var(--haar-300);
+  --color-scrollbar-thumb-hover: var(--haar-400);
+
+  /* Tab indicator (fill mode) */
+  --tab-indicator-color: transparent;
+  --tab-indicator-height: 0px;
+
+  /* Terminal — ink on fog, desaturated ANSI (all >= 3:1, normal set >= 4.5:1) */
+  --color-terminal-bg: #e6ebef;
+  --color-terminal-fg: #1d252d;
+  --color-terminal-cursor: var(--haar-steel-600);
+  --color-terminal-black: #e6ebef;
+  --color-terminal-red: #a63b3b;
+  --color-terminal-green: #3b7448;
+  --color-terminal-yellow: #82611a;
+  --color-terminal-blue: #35618c;
+  --color-terminal-magenta: #7a4f8e;
+  --color-terminal-cyan: #24707a;
+  --color-terminal-white: #1d252d;
+  --color-terminal-bright-black: #5b6874;
+  --color-terminal-bright-red: #bd4a45;
+  --color-terminal-bright-green: #4a8b58;
+  --color-terminal-bright-yellow: #986f1e;
+  --color-terminal-bright-blue: #4373a5;
+  --color-terminal-bright-magenta: #8d60a2;
+  --color-terminal-bright-cyan: #2c8590;
+  --color-terminal-bright-white: #0b0f13;
+  --color-terminal-selection-bg: #4f6d8a40;
+}
+
+/* Abyss Theme — deep ocean: near-black navy, bioluminescent teal accent (dark base) */
+:root.abyss {
+  /* Backgrounds — TWO-TONE: navy chrome, deeper editor */
+  --color-bg-primary: var(--abyss-900);
+  --color-bg-secondary: var(--abyss-850);
+  --color-bg-tertiary: var(--abyss-700);
+  --color-bg-hover: var(--abyss-700);
+  --color-bg-active: var(--abyss-600);
+  --color-bg-chrome: var(--abyss-900);
+  --color-bg-editor: var(--abyss-950);   /* SUNKEN — the trench */
+
+  /* Surfaces */
+  --color-surface-primary: var(--abyss-850);
+  --color-surface-secondary: var(--abyss-800);
+  --color-surface-tertiary: var(--abyss-700);
+  --color-surface-hover: rgba(159, 227, 216, 0.05);
+
+  /* Text — cold water whites */
+  --color-text-primary: var(--abyss-100);
+  --color-text-secondary: var(--abyss-200);
+  --color-text-tertiary: var(--abyss-300);
+  --color-text-muted: #7897ab;  /* 6.2:1 on --abyss-900 (AA) */
+  --color-text-disabled: var(--abyss-500);
+
+  /* Borders — faint, lit by the accent */
+  --color-border-primary: rgba(159, 227, 216, 0.10);
+  --color-border-secondary: rgba(159, 227, 216, 0.06);
+  --color-border-hover: rgba(159, 227, 216, 0.16);
+  --color-border-focus: var(--abyss-glow-500);
+
+  /* Interactive — single bioluminescent teal accent */
+  --color-interactive-primary: var(--abyss-glow-500);
+  --color-interactive-hover: var(--abyss-glow-400);
+  --color-interactive-active: var(--abyss-glow-300);
+  --color-interactive-text: var(--abyss-glow-400);
+  --color-focus-ring: var(--abyss-glow-500);
+  --color-interactive-rgb: 77 184 171;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--abyss-glow-400);
+  --color-text-interactive-on-dark-hover: var(--abyss-glow-300);
+  --color-text-interactive-on-dark-active: var(--abyss-glow-400);
+  --color-text-interactive-on-dark-focus: var(--abyss-glow-400);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--abyss-850);
+  --color-surface-interactive-hover: var(--abyss-700);
+  --color-interactive-surface: rgba(77, 184, 171, 0.14);
+  --color-interactive-surface-hover: rgba(77, 184, 171, 0.24);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(159, 227, 216, 0.06);
+  --color-border-interactive: rgba(159, 227, 216, 0.10);
+  --color-interactive-border: rgba(77, 184, 171, 0.5);
+  --color-interactive-border-hover: rgba(77, 184, 171, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: #7897ab;  /* 6.2:1 on --abyss-900 (AA) */
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(77, 184, 171, 0.4);
+
+  /* Status — sea-life tones, dark text on fills */
+  --color-status-success: #6cbf8a;
+  --color-status-success-hover: #57a976;
+  --color-status-warning: #d9b567;
+  --color-status-warning-hover: #c4a052;
+  --color-status-error: #e07a6e;
+  --color-status-error-hover: #cc6559;
+  --color-status-info: var(--abyss-glow-400);
+  --color-status-neutral: var(--abyss-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--abyss-100);
+  --color-text-on-secondary: var(--abyss-200);
+  --color-text-on-tertiary: var(--abyss-200);
+  --color-text-on-surface: var(--abyss-200);
+  --color-text-on-interactive: var(--abyss-950);
+  --color-text-on-status-success: var(--abyss-950);
+  --color-text-on-status-warning: var(--abyss-950);
+  --color-text-on-status-error: var(--abyss-950);
+  --color-text-on-status-info: var(--abyss-950);
+  --color-text-on-navigation: var(--abyss-200);
+
+  /* Buttons — glowing teal fill carries ink text (8:1) */
+  --color-button-primary-bg: var(--abyss-glow-500);
+  --color-button-primary-hover: var(--abyss-glow-400);
+  --color-button-primary-text: var(--abyss-950);
+  --color-button-secondary-bg: var(--abyss-700);
+  --color-button-secondary-hover: var(--abyss-600);
+  --color-button-secondary-text: var(--abyss-100);
+  --color-button-ghost-hover: var(--abyss-800);
+  --color-button-ghost-text: var(--abyss-300);
+
+  /* Cards */
+  --color-card-bg: var(--abyss-850);
+  --color-card-border: rgba(159, 227, 216, 0.10);
+  --color-card-nested-bg: var(--abyss-800);
+
+  /* Forms */
+  --color-input-bg: var(--abyss-950);
+  --color-input-border: rgba(159, 227, 216, 0.14);
+  --color-input-focus: var(--abyss-glow-500);
+  --color-input-text: var(--abyss-100);
+  --color-input-placeholder: #7b9aae;  /* 6.7:1 on --abyss-950 (AA) */
+
+  /* Modal */
+  --color-modal-overlay: rgba(2, 6, 12, 0.7);
+  --color-modal-bg: var(--abyss-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--abyss-900);
+  --color-surface-navigation-hover: var(--abyss-850);
+  --color-surface-navigation-active: var(--abyss-700);
+  --color-surface-navigation-selected: rgba(77, 184, 171, 0.14);
+  --color-surface-navigation-selected-hover: rgba(77, 184, 171, 0.20);
+  --color-text-navigation-primary: var(--abyss-200);
+  --color-text-navigation-secondary: var(--abyss-300);
+  --color-text-navigation-muted: #7897ab;  /* 6.2:1 on --abyss-900 (AA) */
+  --color-text-navigation-selected: var(--abyss-100);
+  --color-text-navigation-hover: var(--abyss-100);
+  --color-text-navigation-section: #7897ab;  /* 6.2:1 on --abyss-900 (AA) */
+  --color-text-navigation-brand: var(--abyss-300);
+  --color-border-navigation: rgba(159, 227, 216, 0.08);
+  --color-divider-navigation: rgba(159, 227, 216, 0.06);
+  --color-divider-navigation-subtle: rgba(159, 227, 216, 0.03);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--abyss-900);
+  --color-scrollbar-thumb: rgba(159, 227, 216, 0.14);
+  --color-scrollbar-thumb-hover: rgba(159, 227, 216, 0.28);
+
+  /* Tab indicator — UNDERLINE mode (glow line) */
+  --tab-indicator-color: var(--abyss-glow-500);
+  --tab-indicator-height: 3px;
+
+  /* Terminal — trench black, sea-life ANSI (all >= 3:1 on bg) */
+  --color-terminal-bg: var(--abyss-950);
+  --color-terminal-fg: var(--abyss-100);
+  --color-terminal-cursor: var(--abyss-glow-400);
+  --color-terminal-black: var(--abyss-950);
+  --color-terminal-red: #d9776b;
+  --color-terminal-green: #6dbf8d;
+  --color-terminal-yellow: #d6b56c;
+  --color-terminal-blue: #6ea3d4;
+  --color-terminal-magenta: #b391c8;
+  --color-terminal-cyan: #5fcabf;
+  --color-terminal-white: var(--abyss-100);
+  --color-terminal-bright-black: var(--abyss-400);
+  --color-terminal-bright-red: #ea9084;
+  --color-terminal-bright-green: #8dd3a6;
+  --color-terminal-bright-yellow: #e5c98a;
+  --color-terminal-bright-blue: #8ebae2;
+  --color-terminal-bright-magenta: #c9abd9;
+  --color-terminal-bright-cyan: #8ce0d6;
+  --color-terminal-bright-white: #f2f9fb;
+  --color-terminal-selection-bg: #4db8ab40;
+}
+
+/* Understory Theme — forest floor: moss greens, bark-brown chrome, lichen accent (dark base) */
+:root.understory {
+  /* Backgrounds — TWO-TONE: bark chrome, moss floor editor */
+  --color-bg-primary: var(--under-900);
+  --color-bg-secondary: var(--under-850);
+  --color-bg-tertiary: var(--under-700);
+  --color-bg-hover: var(--under-700);
+  --color-bg-active: var(--under-600);
+  --color-bg-chrome: var(--under-bark-850);   /* bark */
+  --color-bg-editor: var(--under-950);        /* SUNKEN — moss floor */
+
+  /* Surfaces */
+  --color-surface-primary: var(--under-850);
+  --color-surface-secondary: var(--under-800);
+  --color-surface-tertiary: var(--under-700);
+  --color-surface-hover: rgba(211, 221, 168, 0.05);
+
+  /* Text — pale lichen-cream */
+  --color-text-primary: var(--under-100);
+  --color-text-secondary: var(--under-200);
+  --color-text-tertiary: var(--under-300);
+  --color-text-muted: #85937a;  /* 5.5:1 on --under-900 (AA) */
+  --color-text-disabled: var(--under-500);
+
+  /* Borders — bark lines */
+  --color-border-primary: var(--under-bark-700);
+  --color-border-secondary: var(--under-bark-800);
+  --color-border-hover: var(--under-bark-600);
+  --color-border-focus: var(--under-lichen-500);
+
+  /* Interactive — single lichen accent */
+  --color-interactive-primary: var(--under-lichen-500);
+  --color-interactive-hover: var(--under-lichen-400);
+  --color-interactive-active: var(--under-lichen-300);
+  --color-interactive-text: var(--under-lichen-400);
+  --color-focus-ring: var(--under-lichen-500);
+  --color-interactive-rgb: 166 181 109;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--under-lichen-400);
+  --color-text-interactive-on-dark-hover: var(--under-lichen-300);
+  --color-text-interactive-on-dark-active: var(--under-lichen-400);
+  --color-text-interactive-on-dark-focus: var(--under-lichen-400);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--under-850);
+  --color-surface-interactive-hover: var(--under-700);
+  --color-interactive-surface: rgba(166, 181, 109, 0.14);
+  --color-interactive-surface-hover: rgba(166, 181, 109, 0.24);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(211, 221, 168, 0.06);
+  --color-border-interactive: rgba(211, 221, 168, 0.10);
+  --color-interactive-border: rgba(166, 181, 109, 0.5);
+  --color-interactive-border-hover: rgba(166, 181, 109, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: #85937a;  /* 5.5:1 on --under-900 (AA) */
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(166, 181, 109, 0.4);
+
+  /* Status — moss, lichen gold, rust; dark text on fills */
+  --color-status-success: #8bb56e;
+  --color-status-success-hover: #78a25c;
+  --color-status-warning: #d1b35c;
+  --color-status-warning-hover: #bd9f49;
+  --color-status-error: #d0705b;
+  --color-status-error-hover: #bb5c48;
+  --color-status-info: var(--under-lichen-400);
+  --color-status-neutral: var(--under-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--under-100);
+  --color-text-on-secondary: var(--under-200);
+  --color-text-on-tertiary: var(--under-200);
+  --color-text-on-surface: var(--under-200);
+  --color-text-on-interactive: var(--under-950);
+  --color-text-on-status-success: var(--under-950);
+  --color-text-on-status-warning: var(--under-950);
+  --color-text-on-status-error: var(--under-950);
+  --color-text-on-status-info: var(--under-950);
+  --color-text-on-navigation: var(--under-200);
+
+  /* Buttons — lichen fill carries moss-black text (9:1) */
+  --color-button-primary-bg: var(--under-lichen-500);
+  --color-button-primary-hover: var(--under-lichen-400);
+  --color-button-primary-text: var(--under-950);
+  --color-button-secondary-bg: var(--under-700);
+  --color-button-secondary-hover: var(--under-600);
+  --color-button-secondary-text: var(--under-100);
+  --color-button-ghost-hover: var(--under-800);
+  --color-button-ghost-text: var(--under-300);
+
+  /* Cards */
+  --color-card-bg: var(--under-850);
+  --color-card-border: var(--under-bark-700);
+  --color-card-nested-bg: var(--under-800);
+
+  /* Forms */
+  --color-input-bg: var(--under-950);
+  --color-input-border: var(--under-bark-600);
+  --color-input-focus: var(--under-lichen-500);
+  --color-input-text: var(--under-100);
+  --color-input-placeholder: #88967d;  /* 6.1:1 on --under-950 (AA) */
+
+  /* Modal */
+  --color-modal-overlay: rgba(6, 8, 5, 0.65);
+  --color-modal-bg: var(--under-850);
+
+  /* Navigation — bark sidebar */
+  --color-surface-navigation: var(--under-bark-850);
+  --color-surface-navigation-hover: var(--under-bark-800);
+  --color-surface-navigation-active: var(--under-bark-700);
+  --color-surface-navigation-selected: rgba(166, 181, 109, 0.14);
+  --color-surface-navigation-selected-hover: rgba(166, 181, 109, 0.20);
+  --color-text-navigation-primary: var(--under-200);
+  --color-text-navigation-secondary: var(--under-300);
+  --color-text-navigation-muted: #85937a;  /* 5.4:1 on --under-bark-850 (AA) */
+  --color-text-navigation-selected: var(--under-100);
+  --color-text-navigation-hover: var(--under-100);
+  --color-text-navigation-section: #85937a;  /* 5.4:1 on --under-bark-850 (AA) */
+  --color-text-navigation-brand: var(--under-300);
+  --color-border-navigation: var(--under-bark-700);
+  --color-divider-navigation: var(--under-bark-800);
+  --color-divider-navigation-subtle: rgba(211, 221, 168, 0.03);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--under-900);
+  --color-scrollbar-thumb: rgba(211, 221, 168, 0.14);
+  --color-scrollbar-thumb-hover: rgba(211, 221, 168, 0.28);
+
+  /* Tab indicator — UNDERLINE mode (lichen line) */
+  --tab-indicator-color: var(--under-lichen-500);
+  --tab-indicator-height: 3px;
+
+  /* Terminal — moss floor, woodland ANSI (all >= 3:1 on bg) */
+  --color-terminal-bg: var(--under-950);
+  --color-terminal-fg: var(--under-100);
+  --color-terminal-cursor: var(--under-lichen-400);
+  --color-terminal-black: var(--under-950);
+  --color-terminal-red: #d0705b;
+  --color-terminal-green: #8bb56e;
+  --color-terminal-yellow: #cdb35c;
+  --color-terminal-blue: #7d9fb3;
+  --color-terminal-magenta: #b48ea6;
+  --color-terminal-cyan: #78b3a2;
+  --color-terminal-white: var(--under-100);
+  --color-terminal-bright-black: var(--under-400);
+  --color-terminal-bright-red: #e08b78;
+  --color-terminal-bright-green: #a6cb8a;
+  --color-terminal-bright-yellow: #dcc57e;
+  --color-terminal-bright-blue: #9ab7c8;
+  --color-terminal-bright-magenta: #c9a9bd;
+  --color-terminal-bright-cyan: #98c9ba;
+  --color-terminal-bright-white: #f3f5ec;
+  --color-terminal-selection-bg: #a6b56d40;
+}
+
 /* Light Rounded — inherits light tokens, overrides shell/chrome behavior */
 :root.light-rounded {
   --color-bg-chrome: var(--gh-light-50);
@@ -1827,4 +2368,28 @@
   --color-text-interactive-muted: #b59888;
   --color-text-navigation-muted: #b59888;
   --color-text-navigation-section: #b59888;
+}
+
+/* Haar */
+:root.high-contrast.haar {
+  --color-text-muted: #414b55;              /* 7.7:1 on --haar-100 */
+  --color-text-interactive-muted: #414b55;
+  --color-text-navigation-muted: #414b55;   /* 7.1:1 on --haar-150 */
+  --color-text-navigation-section: #414b55;
+}
+
+/* Abyss */
+:root.high-contrast.abyss {
+  --color-text-muted: #8aa7ba;              /* 7.5:1 on --abyss-900 */
+  --color-text-interactive-muted: #8aa7ba;
+  --color-text-navigation-muted: #8aa7ba;
+  --color-text-navigation-section: #8aa7ba;
+}
+
+/* Understory */
+:root.high-contrast.understory {
+  --color-text-muted: #a8b59b;              /* 8.3:1 on --under-900 */
+  --color-text-interactive-muted: #a8b59b;
+  --color-text-navigation-muted: #a8b59b;   /* 8.1:1 on --under-bark-850 */
+  --color-text-navigation-section: #a8b59b;
 }
