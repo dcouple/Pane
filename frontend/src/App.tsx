@@ -877,6 +877,7 @@ function App() {
             setIsKeyboardShortcutsOpen(true);
           }}
           onUpdate={handleUpdateRequest}
+          onSendFeedback={() => setIsFeedbackOpen(true)}
         />
         <AnalyticsConsentDialog
           isOpen={isAnalyticsConsentOpen}

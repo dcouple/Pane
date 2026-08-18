@@ -49,9 +49,10 @@ interface SettingsProps {
   onOpenRequestHandled: () => void;
   onShowKeyboardShortcuts: () => void;
   onUpdate: (versionInfo: VersionInfo) => void;
+  onSendFeedback: () => void;
 }
 
-export function Settings({ isOpen, onClose, category, onCategoryChange, openRequest, onOpenRequestHandled, onShowKeyboardShortcuts, onUpdate }: SettingsProps) {
+export function Settings({ isOpen, onClose, category, onCategoryChange, openRequest, onOpenRequestHandled, onShowKeyboardShortcuts, onUpdate, onSendFeedback }: SettingsProps) {
   const persistence = useSettingsPersistence(isOpen);
   const dirtyForms = useDirtySettingsForms();
   const {
@@ -176,7 +177,7 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
     const sharedDirtyProps = { onDirtyChange: setDirty };
     switch (category) {
       case 'general':
-        return <GeneralSettings persistence={persistence} onUpdate={showUpdate} />;
+        return <GeneralSettings persistence={persistence} onUpdate={showUpdate} onSendFeedback={onSendFeedback} />;
       case 'appearance':
         return <AppearanceSettings persistence={persistence} />;
       case 'terminal':

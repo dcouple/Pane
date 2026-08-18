@@ -90,6 +90,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
       size="md"
       initialFocusRef={bodyRef}
       closeOnOverlayClick={false}
+      showCloseButton={false}
     >
       <ModalHeader
         title="Send feedback"
@@ -115,6 +116,9 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
                 </button>
               </div>
             </div>
+            <p className="text-sm text-text-secondary">
+              Screenshots help. Open the issue and paste images into a comment — GitHub uploads them for you.
+            </p>
           </ModalBody>
           <ModalFooter>
             <Button type="button" variant="secondary" className="text-text-primary" onClick={() => dispatch({ type: 'reset' })}>

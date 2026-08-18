@@ -29,10 +29,10 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategoryDefinition[] = [
   {
     id: 'general',
     label: 'General',
-    description: 'Startup and application updates.',
+    description: 'Startup, application updates, and feedback.',
     icon: Settings,
-    settingIds: ['automatic-updates', 'check-updates-now', 'start-on-login', 'keep-awake'],
-    aliases: ['startup', 'updates', 'login', 'sleep', 'caffeinate', 'awake', 'power'],
+    settingIds: ['automatic-updates', 'check-updates-now', 'send-feedback', 'start-on-login', 'keep-awake'],
+    aliases: ['startup', 'updates', 'feedback', 'bug report', 'feature request', 'github issue', 'login', 'sleep', 'caffeinate', 'awake', 'power'],
   },
   {
     id: 'appearance',

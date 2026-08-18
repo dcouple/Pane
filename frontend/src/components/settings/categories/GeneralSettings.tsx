@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { Download, MessageSquareText, RefreshCw } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { SettingsSection } from '../../ui/SettingsSection';
 import { SettingRow, SettingsPage } from '../SettingRow';
@@ -11,9 +11,10 @@ import { API } from '../../../utils/api';
 interface GeneralSettingsProps {
   persistence: SettingsPersistence;
   onUpdate: (versionInfo: VersionInfo) => void;
+  onSendFeedback: () => void;
 }
 
-export function GeneralSettings({ persistence, onUpdate }: GeneralSettingsProps) {
+export function GeneralSettings({ persistence, onUpdate, onSendFeedback }: GeneralSettingsProps) {
   const config = persistence.config!;
   const [updateInfo, setUpdateInfo] = useState<VersionInfo | null>(null);
   const [updateResult, setUpdateResult] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export function GeneralSettings({ persistence, onUpdate }: GeneralSettingsProps)
   };
 
   return (
-    <SettingsPage title="General" description="Application startup and update behavior.">
+    <SettingsPage title="General" description="Application startup, update, and feedback behavior.">
       <SettingsSection title="Updates" description="Keep Pane current with release checks from GitHub.">
         <SettingRow
           settingId="automatic-updates"
@@ -69,6 +70,24 @@ export function GeneralSettings({ persistence, onUpdate }: GeneralSettingsProps)
             onClick={updateInfo?.hasUpdate ? () => onUpdate(updateInfo) : checkNow}
           >
             {updateInfo?.hasUpdate ? 'Update Pane' : updateInfo ? 'Check Again' : 'Check Now'}
+          </Button>
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection title="Feedback" description="Tell the Pane maintainers what is working and what is not.">
+        <SettingRow
+          settingId="send-feedback"
+          label="Send feedback"
+          description="Report a bug, request a feature, or share general feedback. Pane files a public GitHub issue in dcouple/Pane with your GitHub CLI account."
+        >
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<MessageSquareText className="h-4 w-4" />}
+            onClick={onSendFeedback}
+          >
+            Send Feedback
           </Button>
         </SettingRow>
       </SettingsSection>
