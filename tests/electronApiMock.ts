@@ -345,7 +345,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       checkForUpdates: () => success({ hasUpdate: false }),
       openExternal: (url: string) => {
         openedExternalUrls.push(url);
-        return undefined;
+        // Matches preload's Promise<IPCResponse> contract; callers await this result.
+        return success();
       },
       feedback: namespace({
         submit: (request: SubmitFeedbackRequest) => {

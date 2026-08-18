@@ -101,6 +101,8 @@ test.describe('Feedback entry points', () => {
     await dialog.getByRole('button', { name: 'Open pre-filled issue in browser' }).click();
     const opened = await readOpenedUrls(page);
     expect(opened).toEqual(['https://github.com/dcouple/Pane/issues/new?title=Prefilled']);
+    // Handing off to the browser must not surface a second error over the first one.
+    await expect(dialog.getByRole('alert')).toContainText('GitHub CLI is not authenticated.');
   });
 
   test('settings General exposes the feedback entry and opens the same dialog', async ({ page }, testInfo) => {
