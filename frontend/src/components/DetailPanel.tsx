@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, ArrowLeftRight, Code2, GitBranch, Link, Settings, TerminalSquare } from 'lucide-react';
-import { useSession } from '../contexts/SessionContext';
+import { useSession } from '../contexts/useSession';
 import { useNavigationStore } from '../stores/navigationStore';
 import { DetailPanelGitActions } from './DetailPanelGitActions';
 import { GitHistoryGraph } from './GitHistoryGraph';

@@ -1,7 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
-
-type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
+import { ThemeContext, type Theme } from './themeContextValue';
 
 const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta']);
 const THEME_CLASSES = {
@@ -19,16 +18,6 @@ const THEME_CLASSES = {
   'terracotta': ['dark', 'terracotta'],
 } satisfies Record<Theme, string[]>;
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
-
-interface ThemeContextType {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  // Read-only here: the Appearance settings toggle writes it through
-  // persistence.saveConfig, and it flows back via the config sync effect.
-  highContrast: boolean;
-}
-
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { config, updateConfig } = useConfigStore();
@@ -97,12 +86,4 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       {children}
     </ThemeContext.Provider>
   );
-};
-
-export const useTheme = () => {
-  const context = useContext(ThemeContext);
-  if (!context) {
-    throw new Error('useTheme must be used within ThemeProvider');
-  }
-  return context;
 };

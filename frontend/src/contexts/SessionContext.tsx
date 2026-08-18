@@ -1,35 +1,7 @@
-import React, { createContext, useContext, ReactNode } from 'react';
+import React, { ReactNode } from 'react';
 import { Session, GitCommands } from '../types/session';
 import type { LucideIcon } from 'lucide-react';
-
-interface SessionContextValue {
-  sessionId: string;
-  workingDirectory: string;
-  projectId: string;
-  projectName?: string;
-  session: Session;
-  gitBranchActions?: Array<{
-    id: string;
-    label: string;
-    icon: LucideIcon;
-    onClick: () => void;
-    disabled: boolean;
-    variant: 'default' | 'success' | 'danger';
-    description: string;
-    shortcut?: string;
-    disabledReason?: string;
-  }>;
-  isMerging?: boolean;
-  gitCommands?: GitCommands;
-  onOpenIDEWithCommand?: (command?: string) => void;
-  onConfigureIDE?: () => void;
-  onSetTracking?: () => void;
-  trackingBranch?: string | null;
-  configuredIDECommand?: string | null;
-  isRemoteMode?: boolean;
-}
-
-const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+import { SessionContext, type SessionContextValue } from './sessionContextValue';
 
 export const SessionProvider: React.FC<{
   children: ReactNode;
@@ -87,9 +59,4 @@ export const SessionProvider: React.FC<{
       {children}
     </SessionContext.Provider>
   );
-};
-
-// Safe hook that doesn't throw
-export const useSession = (): SessionContextValue | null => {
-  return useContext(SessionContext) || null;
 };

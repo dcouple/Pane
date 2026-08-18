@@ -2,7 +2,7 @@ import React, { forwardRef } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../utils/cn';
-import { usePortalContainer } from '../../contexts/PortalContainerContext';
+import { usePortalContainer } from '../../contexts/usePortalContainer';
 
 const Select = SelectPrimitive.Root;
 

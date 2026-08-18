@@ -4,7 +4,7 @@ import type { CombinedDiffViewHandle } from './CombinedDiffView';
 import type { ToolPanel, DiffPanelState } from '../../../../../shared/types/panels';
 import type { GitStatus } from '../../../types/session';
 import { AlertCircle, GitBranch, Globe } from 'lucide-react';
-import { useSession } from '../../../contexts/SessionContext';
+import { useSession } from '../../../contexts/useSession';
 import { cn } from '../../../utils/cn';
 import BrowserSurface from '../browser/BrowserSurface';
 import {

@@ -1,9 +1,3 @@
-import { createContext, useContext } from 'react';
-
-const PortalContainerContext = createContext<HTMLElement | null>(null);
+import { PortalContainerContext } from './portalContainerContextValue';
 
 export const PortalContainerProvider = PortalContainerContext.Provider;
-
-export function usePortalContainer(): HTMLElement | null {
-  return useContext(PortalContainerContext);
-}

@@ -9,11 +9,10 @@ import {
 } from './components/RemoteConnectionScreen';
 import { RemoteCreateSessionDialog } from './components/RemoteCreateSessionDialog';
 import {
-  getRemotePanelTabId,
-  getRemotePanelTabPanelId,
   RemotePanelTabs,
   type RemoteTerminalCreateOptions,
 } from './components/RemotePanelTabs';
+import { getRemotePanelTabId, getRemotePanelTabPanelId } from './components/remotePanelTabIds';
 import { RemoteSessionList } from './components/RemoteSessionList';
 import { RemoteSidebar } from './components/RemoteSidebar';
 import { RemoteStatusBar } from './components/RemoteStatusBar';

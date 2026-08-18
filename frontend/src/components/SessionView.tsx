@@ -20,7 +20,7 @@ import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
 import { usePanelStore } from '../stores/panelStore';
 import { panelApi } from '../services/panelApi';
-import { setPendingViewCommit } from './panels/diff/CombinedDiffView';
+import { setPendingViewCommit } from './panels/diff/pendingViewCommit';
 import { requestLocalReviewMode } from './panels/diff/reviewModePreference';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';

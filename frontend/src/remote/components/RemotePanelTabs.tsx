@@ -5,6 +5,7 @@ import type { RemotePwaCustomCommand } from '../../../../shared/types/remoteDaem
 import type { ToolPanel } from '../../../../shared/types/panels';
 import { AGENT_LAUNCH_PRESETS } from '../../../../shared/constants/agentLaunchPresets';
 import { getCliBrandIcon } from '../../components/ui/brandIconRegistry';
+import { getRemotePanelTabId, getRemotePanelTabPanelId } from './remotePanelTabIds';
 
 // The remote host executes these commands. Until its platform capabilities are
 // exposed here, the viewer's browser platform must not hide valid host tools.
@@ -229,16 +230,4 @@ function AddToolMenuItem({
       </span>
     </button>
   );
-}
-
-function toDomId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
-}
-
-export function getRemotePanelTabId(panelId: string): string {
-  return `remote-panel-tab-${toDomId(panelId)}`;
-}
-
-export function getRemotePanelTabPanelId(panelId: string): string {
-  return `remote-panel-tabpanel-${toDomId(panelId)}`;
 }

@@ -17,6 +17,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { getCliBrandIcon } from '../ui/brandIconRegistry';
 import { PanelTabStatusDot } from './PanelTabStatusDot';
 import type { PanelTabPresentationResolver } from '../../types/panelComponents';
+import { getPanelTabId, getPanelTabPanelId } from './panelTabIds';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,18 +60,6 @@ export interface PanelTabStripProps {
   getPanelTabPresentation?: PanelTabPresentationResolver;
   /** Stable group/strip namespace used for tab and tabpanel relationships. */
   idNamespace: string;
-}
-
-function safeDomId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
-}
-
-export function getPanelTabId(namespace: string, panelId: string): string {
-  return `panel-tab-${safeDomId(namespace)}-${safeDomId(panelId)}`;
-}
-
-export function getPanelTabPanelId(namespace: string, panelId: string): string {
-  return `panel-content-${safeDomId(namespace)}-${safeDomId(panelId)}`;
 }
 
 // ---------------------------------------------------------------------------

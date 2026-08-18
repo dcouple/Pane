@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { AlertTriangle, ArrowLeftRight, ChevronDown, ChevronUp, Code2, GitBranch, Settings, TerminalSquare } from 'lucide-react';
-import { useSession } from '../contexts/SessionContext';
+import { useSession } from '../contexts/useSession';
 import { useNavigationStore } from '../stores/navigationStore';
 import { Button } from './ui/Button';
 import { Dropdown, DropdownMenuItem } from './ui/Dropdown';

@@ -6,7 +6,7 @@ import { useTree } from '@headless-tree/react';
 import { asyncDataLoaderFeature, selectionFeature, hotkeysCoreFeature, expandAllFeature } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
 import { MonacoErrorBoundary } from '../../MonacoErrorBoundary';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { useTheme } from '../../../contexts/useTheme';
 import { debounce } from '../../../utils/debounce';
 import { MarkdownPreview } from '../../MarkdownPreview';
 import { NotebookPreview } from './NotebookPreview';

@@ -14,7 +14,8 @@
  */
 
 import React, { useCallback, useMemo } from 'react';
-import { getPanelTabId, getPanelTabPanelId, PanelTabStrip } from './PanelTabStrip';
+import { PanelTabStrip } from './PanelTabStrip';
+import { getPanelTabId, getPanelTabPanelId } from './panelTabIds';
 import { PanelContainer } from './PanelContainer';
 import type { ToolPanel, PanelGroupNode } from '../../../../shared/types/panels';
 import { dropZoneFor, subsetInsertIndex, type DropZone } from '../../utils/panelLayout';

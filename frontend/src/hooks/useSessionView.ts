@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/useTheme';
 import { useErrorStore } from '../stores/errorStore';
 import { API, GitErrorResponse } from '../utils/api';
 import { Terminal } from '@xterm/xterm';

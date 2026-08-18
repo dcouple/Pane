@@ -5,7 +5,7 @@ import { cn } from '../../utils/cn';
 import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { Kbd } from './Kbd';
 import { initialActiveIndex } from './dropdownNavigation';
-import { usePortalContainer } from '../../contexts/PortalContainerContext';
+import { usePortalContainer } from '../../contexts/usePortalContainer';
 
 export interface DropdownItem {
   id: string;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, X, Download, Trash2, ChevronUp, ChevronDown, Filter, Copy, Check } from 'lucide-react';
 import { cn } from '../../../utils/cn';
 import AnsiToHtml from 'ansi-to-html';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { useTheme } from '../../../contexts/useTheme';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
