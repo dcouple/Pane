@@ -1206,8 +1206,10 @@ async function waitForPanel(panel: ToolPanel, request: RunpanePanelWaitRequest):
   const intervalMs = request.intervalMs ?? DEFAULT_PANEL_WAIT_INTERVAL_MS;
   let lastScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
   let condition = request.condition ?? defaultWaitCondition(lastScreen.state);
+  let requiresFirstEvaluation = true;
 
-  while (Date.now() - startedAt <= timeoutMs) {
+  while (requiresFirstEvaluation || Date.now() - startedAt <= timeoutMs) {
+    requiresFirstEvaluation = false;
     lastScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
     condition = request.condition ?? defaultWaitCondition(lastScreen.state);
     const blocked = detectPanelBlocker(lastScreen.text, lastScreen.state.agentType, panel.id);
