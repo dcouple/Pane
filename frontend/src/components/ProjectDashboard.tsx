@@ -19,6 +19,15 @@ interface ProjectDashboardProps {
   projectName: string;
 }
 
+function isProjectDashboardSeed(data: Partial<ProjectDashboardData>): data is ProjectDashboardData {
+  return data.projectId !== undefined
+    && Boolean(data.projectName)
+    && Boolean(data.projectPath)
+    && Boolean(data.mainBranch)
+    && Array.isArray(data.sessionBranches)
+    && Boolean(data.lastRefreshed);
+}
+
 export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ projectId, projectName }) => {
   const [dashboardData, setDashboardData] = useState<ProjectDashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -136,9 +145,8 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
     const unsubscribeUpdate = API.dashboard.onUpdate((event) => {
       if (event.projectId === projectId) {
         setDashboardData(prevData => {
-          if (!prevData && !event.isPartial) {
-            // Initial data
-            return event.data;
+          if (!prevData) {
+            return isProjectDashboardSeed(event.data) ? event.data : null;
           } else if (prevData && event.isPartial) {
             // Merge partial update
             return { ...prevData, ...event.data };
@@ -164,9 +172,8 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
     // Handle individual session updates with debouncing
     const unsubscribeSession = API.dashboard.onSessionUpdate((event) => {
       if (event.projectId === projectId) {
-        const sessionData = event.data;
         // Add to pending updates
-        pendingSessionUpdatesRef.current.set(event.sessionId, sessionData);
+        pendingSessionUpdatesRef.current.set(event.session.sessionId, event.session);
         // Trigger debounced update
         applyPendingSessionUpdates();
       }

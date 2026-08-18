@@ -52,8 +52,6 @@ export type ProjectDashboardUpdateEvent =
   | { projectId: number; isPartial: false; data: ProjectDashboardData };
 
 export interface ProjectDashboardSessionUpdateEvent {
-  type: string;
   projectId: number;
-  sessionId: string;
-  data: SessionBranchInfo;
+  session: SessionBranchInfo;
 }
