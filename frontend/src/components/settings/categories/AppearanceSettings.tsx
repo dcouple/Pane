@@ -30,6 +30,9 @@ const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string; descri
   { id: 'synthwave', label: 'Synthwave', description: 'Violet-black with magenta and cyan neon accents.' },
   { id: 'acid', label: 'Acid Terminal', description: 'Charcoal-black with electric lime and amber accents.' },
   { id: 'tokyo-rain', label: 'Tokyo Rain', description: 'Blue-black with pink and blue signage accents.' },
+  { id: 'amber-crt', label: 'Amber CRT', description: 'Amber phosphor on black-brown glass' },
+  { id: 'teletype', label: 'Teletype', description: 'Brown ink on warm paper, burnt-orange accents' },
+  { id: 'dot-matrix', label: 'Dot Matrix', description: 'Monochrome LCD green on olive-black' },
   { id: 'dark', label: 'Dark (sharp)' },
   { id: 'oled', label: 'OLED Black (sharp)' },
 ];

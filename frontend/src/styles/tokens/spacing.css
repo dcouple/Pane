@@ -165,3 +165,36 @@
   --app-frame-gap: var(--space-2-5);
   --panel-shell-gap: var(--space-2-5);
 }
+
+/* Amber CRT — medium density, islanded shells */
+:root.amber-crt {
+  --panel-tab-height: 2.25rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Teletype — roomy paper margins */
+:root.teletype {
+  --panel-tab-height: 2.5rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Dot Matrix — compact LCD density */
+:root.dot-matrix {
+  --panel-tab-height: 1.875rem;      /* 30px */
+  --button-padding-x: var(--space-3);
+  --button-padding-y: var(--space-1-5);
+  --card-padding: var(--space-2);
+  --app-frame-padding: var(--space-2);
+  --app-frame-gap: var(--space-2);
+  --panel-shell-gap: var(--space-2);
+}

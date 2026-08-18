@@ -76,6 +76,18 @@ body.tokyo-rain {
     linear-gradient(180deg, #0d1120 0%, #0a0e1b 100%);
 }
 
+body.amber-crt {
+  background:
+    radial-gradient(ellipse at top center, rgba(255, 176, 0, 0.05), transparent 36%),
+    linear-gradient(180deg, #140f08 0%, #100c06 100%);
+}
+
+body.teletype {
+  background:
+    radial-gradient(circle at top center, rgba(181, 69, 27, 0.05), transparent 30%),
+    linear-gradient(180deg, #f5efe2 0%, #ece4d2 100%);
+}
+
 /* Scrollbars stay functional but visually hidden */
 ::-webkit-scrollbar {
   width: 0;
@@ -118,7 +130,10 @@ body.tokyo-rain {
 :root.tokyo-rain .panel-tab-bar [aria-selected="true"],
 :root.folio .panel-tab-bar [aria-selected="true"],
 :root.newsprint .panel-tab-bar [aria-selected="true"],
-:root.walnut .panel-tab-bar [aria-selected="true"] {
+:root.walnut .panel-tab-bar [aria-selected="true"],
+:root.amber-crt .panel-tab-bar [aria-selected="true"],
+:root.teletype .panel-tab-bar [aria-selected="true"],
+:root.dot-matrix .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -155,6 +170,9 @@ body.tokyo-rain {
 :root.synthwave .pane-sidebar-shell,
 :root.acid .pane-sidebar-shell,
 :root.tokyo-rain .pane-sidebar-shell,
+:root.amber-crt .pane-sidebar-shell,
+:root.teletype .pane-sidebar-shell,
+:root.dot-matrix .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
   border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
@@ -172,6 +190,9 @@ body.tokyo-rain {
 :root.synthwave .pane-session-shell,
 :root.acid .pane-session-shell,
 :root.tokyo-rain .pane-session-shell,
+:root.amber-crt .pane-session-shell,
+:root.teletype .pane-session-shell,
+:root.dot-matrix .pane-session-shell,
 :root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
@@ -186,6 +207,9 @@ body.tokyo-rain {
 :root.synthwave .panel-tab-bar,
 :root.acid .panel-tab-bar,
 :root.tokyo-rain .panel-tab-bar,
+:root.amber-crt .panel-tab-bar,
+:root.teletype .panel-tab-bar,
+:root.dot-matrix .panel-tab-bar,
 :root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -203,6 +227,9 @@ body.tokyo-rain {
 :root.synthwave .pane-editor-stage,
 :root.acid .pane-editor-stage,
 :root.tokyo-rain .pane-editor-stage,
+:root.amber-crt .pane-editor-stage,
+:root.teletype .pane-editor-stage,
+:root.dot-matrix .pane-editor-stage,
 :root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -220,6 +247,9 @@ body.tokyo-rain {
 :root.synthwave .pane-terminal-dock,
 :root.acid .pane-terminal-dock,
 :root.tokyo-rain .pane-terminal-dock,
+:root.amber-crt .pane-terminal-dock,
+:root.teletype .pane-terminal-dock,
+:root.dot-matrix .pane-terminal-dock,
 :root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
@@ -238,6 +268,9 @@ body.tokyo-rain {
 :root.synthwave .pane-terminal-rail,
 :root.acid .pane-terminal-rail,
 :root.tokyo-rain .pane-terminal-rail,
+:root.amber-crt .pane-terminal-rail,
+:root.teletype .pane-terminal-rail,
+:root.dot-matrix .pane-terminal-rail,
 :root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
@@ -249,6 +282,9 @@ body.tokyo-rain {
 :root.synthwave .pane-detail-panel,
 :root.acid .pane-detail-panel,
 :root.tokyo-rain .pane-detail-panel,
+:root.amber-crt .pane-detail-panel,
+:root.teletype .pane-detail-panel,
+:root.dot-matrix .pane-detail-panel,
 :root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
@@ -264,6 +300,9 @@ body.tokyo-rain {
 :root.synthwave .pane-terminal-rail-shell,
 :root.acid .pane-terminal-rail-shell,
 :root.tokyo-rain .pane-terminal-rail-shell,
+:root.amber-crt .pane-terminal-rail-shell,
+:root.teletype .pane-terminal-rail-shell,
+:root.dot-matrix .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
@@ -275,6 +314,9 @@ body.tokyo-rain {
 :root.synthwave .pane-detail-panel-inner,
 :root.acid .pane-detail-panel-inner,
 :root.tokyo-rain .pane-detail-panel-inner,
+:root.amber-crt .pane-detail-panel-inner,
+:root.teletype .pane-detail-panel-inner,
+:root.dot-matrix .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -292,6 +334,9 @@ body.tokyo-rain {
 :root.synthwave .pane-terminal-rail-shell,
 :root.acid .pane-terminal-rail-shell,
 :root.tokyo-rain .pane-terminal-rail-shell,
+:root.amber-crt .pane-terminal-rail-shell,
+:root.teletype .pane-terminal-rail-shell,
+:root.dot-matrix .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
@@ -303,6 +348,9 @@ body.tokyo-rain {
 :root.synthwave .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.acid .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.tokyo-rain .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.amber-crt .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.teletype .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.dot-matrix .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
@@ -317,6 +365,9 @@ body.tokyo-rain {
 :root.synthwave .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.acid .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.tokyo-rain .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.amber-crt .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.teletype .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.dot-matrix .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
@@ -405,6 +456,42 @@ body.tokyo-rain {
   border-color: rgba(255, 79, 154, 0.18);
 }
 
+:root.amber-crt .panel-tab-bar,
+:root.amber-crt .pane-editor-stage,
+:root.amber-crt .pane-terminal-dock,
+:root.amber-crt .pane-terminal-rail-shell,
+:root.amber-crt .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(255, 176, 0, 0.16);
+  box-shadow:
+    0 0 22px rgba(255, 176, 0, 0.06),
+    0 0 0 1px rgba(255, 176, 0, 0.04),
+    inset 0 1px 0 rgba(255, 176, 0, 0.06);
+}
+
+:root.teletype .panel-tab-bar,
+:root.teletype .pane-editor-stage,
+:root.teletype .pane-terminal-dock,
+:root.teletype .pane-terminal-rail-shell,
+:root.teletype .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(43, 33, 22, 0.14);
+  box-shadow:
+    0 8px 20px rgba(43, 33, 22, 0.08),
+    0 0 0 1px rgba(255, 252, 245, 0.7),
+    inset 0 1px 0 rgba(255, 252, 245, 0.9);
+}
+
+:root.dot-matrix .panel-tab-bar,
+:root.dot-matrix .pane-editor-stage,
+:root.dot-matrix .pane-terminal-dock,
+:root.dot-matrix .pane-terminal-rail-shell,
+:root.dot-matrix .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: rgba(155, 188, 15, 0.22);
+  box-shadow: none;
+}
+
 :root.ember .panel-tab-bar,
 :root.ember .pane-editor-stage,
 :root.ember .pane-terminal-dock,
@@ -465,6 +552,12 @@ body.tokyo-rain {
 :root.synthwave .xterm,
 :root.acid .xterm,
 :root.tokyo-rain .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.amber-crt .xterm,
+:root.teletype .xterm,
+:root.dot-matrix .xterm {
   border-radius: var(--panel-shell-radius);
 }
 
@@ -906,6 +999,22 @@ body.tokyo-rain {
   --vscode-editorWidget-foreground: #e6ebf4 !important;
 }
 
+/* Amber CRT theme overrides — amber phosphor on glass */
+:root.amber-crt {
+  --vscode-editor-background: #0c0905 !important;
+  --vscode-editor-foreground: #f0d9a8 !important;
+  --vscode-editorWidget-background: #0c0905 !important;
+  --vscode-editorWidget-foreground: #f0d9a8 !important;
+}
+
+/* Dot Matrix theme overrides — LCD green on olive-black */
+:root.dot-matrix {
+  --vscode-editor-background: #0a0d08 !important;
+  --vscode-editor-foreground: #dcecb0 !important;
+  --vscode-editorWidget-background: #0a0d08 !important;
+  --vscode-editorWidget-foreground: #dcecb0 !important;
+}
+
 /* Light theme overrides */
 :root.light {
   --vscode-editor-background: #ffffff !important;
@@ -936,6 +1045,14 @@ body.tokyo-rain {
   --vscode-editor-foreground: #ede1cd !important;
   --vscode-editorWidget-background: #120e0b !important;
   --vscode-editorWidget-foreground: #ede1cd !important;
+}
+
+/* Teletype theme overrides — ink on paper */
+:root.teletype {
+  --vscode-editor-background: #fbf8f1 !important;
+  --vscode-editor-foreground: #2b2116 !important;
+  --vscode-editorWidget-background: #fbf8f1 !important;
+  --vscode-editorWidget-foreground: #2b2116 !important;
 }
 
 /* Additional Monaco editor style overrides */

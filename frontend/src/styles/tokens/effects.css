@@ -298,3 +298,44 @@
   --card-shadow: var(--shadow-xs);
   --dropdown-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
 }
+
+/* Amber CRT — soft bezel radii, warm phosphor glow instead of drop shadows */
+:root.amber-crt {
+  --button-radius: var(--radius-md);
+  --card-radius: var(--radius-lg);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --app-shell-radius: var(--radius-xl);
+  --panel-shell-radius: var(--radius-lg);
+  --panel-shell-shadow: 0 0 22px rgba(255, 176, 0, 0.06);
+}
+
+/* Teletype — Braun-style rounded shells, quiet paper shadows */
+:root.teletype {
+  --button-radius: var(--radius-lg);
+  --card-radius: var(--radius-xl);
+  --input-radius: var(--radius-lg);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-sm);
+  --app-shell-radius: var(--radius-2xl);
+  --panel-shell-radius: var(--radius-xl);
+  --panel-shell-shadow: var(--shadow-sm);
+}
+
+/* Dot Matrix — tight pixel radii, no shadows (LCD has no depth) */
+:root.dot-matrix {
+  --button-radius: var(--radius-sm);
+  --card-radius: var(--radius-default);
+  --input-radius: var(--radius-sm);
+  --modal-radius: var(--radius-default);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --modal-shadow: var(--shadow-none);
+  --app-shell-radius: var(--radius-md);
+  --panel-shell-radius: var(--radius-default);
+  --panel-shell-shadow: var(--shadow-none);
+}

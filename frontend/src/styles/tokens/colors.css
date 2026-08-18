@@ -277,6 +277,56 @@
   --brass-400: #d6b262;
   --brass-600: #bd9440;
   --brass-text: #d4ae5c;         /* links — 8.3:1 on --walnut-900 */
+
+  /* Amber CRT primitives — black-brown glass ramp + amber-phosphor accent */
+  --crt-950: #0c0905;
+  --crt-900: #140f08;
+  --crt-850: #1b140a;
+  --crt-800: #241a0d;
+  --crt-700: #332512;
+  --crt-600: #46331a;
+  --crt-500: #66501f;
+  --crt-400: #a07d3a;
+  --crt-300: #b8933d;
+  --crt-200: #d9b25a;
+  --crt-100: #f0d9a8;
+  --crt-amber: #ffb000;         /* P3 phosphor */
+  --crt-amber-bright: #ffc233;
+  --crt-amber-deep: #e69e00;
+
+  /* Teletype primitives — warm paper ramp + brown ink ramp */
+  --tty-paper-50: #fbf8f1;
+  --tty-paper-100: #f5efe2;
+  --tty-paper-200: #ece4d2;
+  --tty-paper-300: #e0d5be;
+  --tty-paper-400: #cdbfa2;
+  --tty-ink-900: #2b2116;
+  --tty-ink-700: #5a4a36;
+  --tty-ink-600: #63533e;
+  --tty-ink-500: #6b5b45;
+  --tty-ink-400: #a3947c;
+  --tty-orange-600: #b5451b;    /* burnt orange — 5.5:1 with white text */
+  --tty-orange-700: #9a3412;
+  --tty-orange-500: #c2410c;
+  --tty-orange-text: #a63a0c;   /* 5.7:1 on --tty-paper-100 */
+  --tty-olive: #4f6b12;
+
+  /* Dot Matrix primitives — deep olive-black ramp + 4-step LCD green ramp */
+  --lcd-950: #0a0d08;
+  --lcd-900: #10150c;
+  --lcd-850: #161d10;
+  --lcd-800: #1c2514;
+  --lcd-700: #27331b;
+  --lcd-600: #354523;
+  --lcd-500: #4b6030;
+  --lcd-green-1: #7f9a52;       /* muted — 5.9:1 on --lcd-900 */
+  --lcd-green-2: #8bac0f;       /* accent */
+  --lcd-green-3: #b9d36a;       /* secondary text */
+  --lcd-green-4: #dcecb0;       /* primary text */
+  --lcd-green-accent-hover: #9bbc0f;
+  --lcd-green-accent-active: #7a9a0c;
+  --lcd-green-text: #a9cd3a;    /* interactive text — 10:1 on --lcd-900 */
+  --lcd-hot: #ff5c72;           /* the one hot accent — errors only */
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -2800,6 +2850,475 @@
   --color-terminal-selection-bg: #c9a24d40;
 }
 
+/* Amber CRT Theme — amber-phosphor monitor on black-brown glass, single amber hue */
+:root.amber-crt {
+  /* Backgrounds — chrome sits on the glass, editor/terminal are sunken */
+  --color-bg-primary: var(--crt-900);
+  --color-bg-secondary: var(--crt-850);
+  --color-bg-tertiary: var(--crt-700);
+  --color-bg-hover: var(--crt-700);
+  --color-bg-active: var(--crt-600);
+  --color-bg-chrome: var(--crt-900);
+  --color-bg-editor: var(--crt-950);
+
+  /* Surfaces */
+  --color-surface-primary: var(--crt-850);
+  --color-surface-secondary: var(--crt-800);
+  --color-surface-tertiary: var(--crt-700);
+  --color-surface-hover: rgba(255, 176, 0, 0.06);
+
+  /* Text — pale amber ramp */
+  --color-text-primary: var(--crt-100);
+  --color-text-secondary: var(--crt-200);
+  --color-text-tertiary: var(--crt-300);
+  --color-text-muted: var(--crt-400);        /* 5.0:1 on --crt-900, 4.8:1 on --crt-850 */
+  --color-text-disabled: var(--crt-500);
+
+  /* Borders */
+  --color-border-primary: var(--crt-700);
+  --color-border-secondary: var(--crt-800);
+  --color-border-hover: var(--crt-600);
+  --color-border-focus: var(--crt-amber);
+
+  /* Interactive — amber phosphor, dark text on the accent */
+  --color-interactive-primary: var(--crt-amber);
+  --color-interactive-hover: var(--crt-amber-bright);
+  --color-interactive-active: var(--crt-amber-deep);
+  --color-interactive-text: var(--crt-amber);
+  --color-focus-ring: var(--crt-amber);
+  --color-interactive-rgb: 255 176 0;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--crt-amber);
+  --color-text-interactive-on-dark-hover: var(--crt-amber-bright);
+  --color-text-interactive-on-dark-active: var(--crt-amber-deep);
+  --color-text-interactive-on-dark-focus: var(--crt-amber);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--crt-850);
+  --color-surface-interactive-hover: var(--crt-700);
+  --color-interactive-surface: rgba(255, 176, 0, 0.14);
+  --color-interactive-surface-hover: rgba(255, 176, 0, 0.22);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(255, 176, 0, 0.08);
+  --color-border-interactive: rgba(255, 176, 0, 0.14);
+  --color-interactive-border: rgba(255, 176, 0, 0.5);
+  --color-interactive-border-hover: rgba(255, 176, 0, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--crt-400);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(255, 176, 0, 0.4);
+
+  /* Status — warm-shifted, dark text on every status fill */
+  --color-status-success: #8fbf6a;
+  --color-status-success-hover: #a3cc80;
+  --color-status-warning: #ffcf4d;
+  --color-status-warning-hover: #ffda75;
+  --color-status-error: #ff6b4a;
+  --color-status-error-hover: #ff8a6e;
+  --color-status-info: var(--crt-amber);
+  --color-status-neutral: var(--crt-400);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--crt-100);
+  --color-text-on-secondary: var(--crt-200);
+  --color-text-on-tertiary: var(--crt-200);
+  --color-text-on-surface: var(--crt-200);
+  --color-text-on-interactive: var(--crt-900);
+  --color-text-on-status-success: var(--crt-900);
+  --color-text-on-status-warning: var(--crt-900);
+  --color-text-on-status-error: var(--crt-900);
+  --color-text-on-status-info: var(--crt-900);
+  --color-text-on-navigation: var(--crt-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--crt-amber);
+  --color-button-primary-hover: var(--crt-amber-bright);
+  --color-button-primary-text: var(--crt-900);
+  --color-button-secondary-bg: var(--crt-700);
+  --color-button-secondary-hover: var(--crt-600);
+  --color-button-secondary-text: var(--crt-200);
+  --color-button-ghost-hover: var(--crt-800);
+  --color-button-ghost-text: var(--crt-300);
+
+  /* Cards */
+  --color-card-bg: var(--crt-850);
+  --color-card-border: var(--crt-700);
+  --color-card-nested-bg: var(--crt-700);
+
+  /* Forms */
+  --color-input-bg: var(--crt-950);
+  --color-input-border: var(--crt-600);
+  --color-input-focus: var(--crt-amber);
+  --color-input-text: var(--crt-100);
+  --color-input-placeholder: var(--crt-400);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.65);
+  --color-modal-bg: var(--crt-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--crt-900);
+  --color-surface-navigation-hover: var(--crt-850);
+  --color-surface-navigation-active: var(--crt-700);
+  --color-surface-navigation-selected: rgba(255, 176, 0, 0.14);
+  --color-surface-navigation-selected-hover: rgba(255, 176, 0, 0.2);
+  --color-text-navigation-primary: var(--crt-200);
+  --color-text-navigation-secondary: var(--crt-300);
+  --color-text-navigation-muted: var(--crt-400);
+  --color-text-navigation-selected: var(--crt-100);
+  --color-text-navigation-hover: var(--crt-100);
+  --color-text-navigation-section: var(--crt-400);
+  --color-text-navigation-brand: var(--crt-300);
+  --color-border-navigation: var(--crt-700);
+  --color-divider-navigation: var(--crt-800);
+  --color-divider-navigation-subtle: rgba(255, 176, 0, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--crt-900);
+  --color-scrollbar-thumb: rgba(255, 176, 0, 0.18);
+  --color-scrollbar-thumb-hover: rgba(255, 176, 0, 0.32);
+
+  /* Tab indicator — amber underline */
+  --tab-indicator-color: var(--crt-amber);
+  --tab-indicator-height: 3px;
+
+  /* Terminal — amber phosphor on glass; blue/magenta/cyan collapse into the warm ramp */
+  --color-terminal-bg: var(--crt-950);
+  --color-terminal-fg: var(--crt-100);
+  --color-terminal-cursor: var(--crt-amber);
+  --color-terminal-black: var(--crt-950);
+  --color-terminal-red: #ff6b4a;
+  --color-terminal-green: #b8c65a;
+  --color-terminal-yellow: #ffcf4d;
+  --color-terminal-blue: #e0a040;
+  --color-terminal-magenta: #e39a86;
+  --color-terminal-cyan: #cbb98a;
+  --color-terminal-white: var(--crt-100);
+  --color-terminal-bright-black: var(--crt-400);
+  --color-terminal-bright-red: #ff8a6e;
+  --color-terminal-bright-green: #cdd97a;
+  --color-terminal-bright-yellow: #ffe08a;
+  --color-terminal-bright-blue: #f0b860;
+  --color-terminal-bright-magenta: #f0b0a0;
+  --color-terminal-bright-cyan: #e0d0a8;
+  --color-terminal-bright-white: #fff3d6;
+  --color-terminal-selection-bg: #ffb00040;
+}
+
+/* Teletype Theme — 1970s terminal on paper: warm off-white, brown ink, burnt-orange & olive accents */
+:root.teletype {
+  /* Backgrounds — paper primary, beige chrome */
+  --color-bg-primary: var(--tty-paper-100);
+  --color-bg-secondary: var(--tty-paper-200);
+  --color-bg-tertiary: var(--tty-paper-200);
+  --color-bg-hover: var(--tty-paper-300);
+  --color-bg-active: var(--tty-paper-400);
+  --color-bg-chrome: var(--tty-paper-200);
+  --color-bg-editor: var(--tty-paper-50);
+
+  /* Surfaces */
+  --color-surface-primary: var(--tty-paper-50);
+  --color-surface-secondary: var(--tty-paper-100);
+  --color-surface-tertiary: var(--tty-paper-200);
+  --color-surface-hover: var(--tty-paper-300);
+
+  /* Text — brown ink ramp */
+  --color-text-primary: var(--tty-ink-900);
+  --color-text-secondary: var(--tty-ink-700);   /* 7.4:1 on paper */
+  --color-text-tertiary: var(--tty-ink-600);    /* 6.5:1 on paper */
+  --color-text-muted: var(--tty-ink-500);       /* 5.7:1 on paper, 5.2:1 on chrome */
+  --color-text-disabled: var(--tty-ink-400);
+
+  /* Borders — visible ruled lines */
+  --color-border-primary: rgba(43, 33, 22, 0.16);
+  --color-border-secondary: rgba(43, 33, 22, 0.10);
+  --color-border-tertiary: rgba(43, 33, 22, 0.06);
+  --color-border-hover: rgba(43, 33, 22, 0.24);
+  --color-border-focus: var(--tty-orange-600);
+
+  /* Interactive — burnt orange */
+  --color-interactive: var(--tty-orange-600);
+  --color-interactive-primary: var(--tty-orange-600);
+  --color-interactive-hover: var(--tty-orange-700);
+  --color-interactive-active: var(--tty-orange-500);
+  --color-interactive-text: var(--tty-orange-text);
+  --color-interactive-rgb: 181 69 27;
+
+  /* Status — ink colours */
+  --color-status-success: var(--tty-olive);
+  --color-status-success-hover: #3d5a0a;
+  --color-status-warning: #8a5a00;
+  --color-status-warning-hover: #6e4700;
+  --color-status-error: #b3261e;
+  --color-status-error-hover: #8f1d17;
+  --color-status-info: var(--tty-orange-text);
+  --color-status-neutral: var(--tty-ink-500);
+
+  /* Special UI States */
+  --color-modal-overlay: rgba(43, 33, 22, 0.5);
+  --color-focus-ring: var(--tty-orange-600);   /* 4.8:1 on paper */
+
+  /* Interactive tokens */
+  --color-surface-interactive: var(--tty-paper-50);
+  --color-surface-interactive-hover: var(--tty-paper-200);
+  --color-interactive-surface: rgba(181, 69, 27, 0.12);
+  --color-interactive-surface-hover: rgba(181, 69, 27, 0.2);
+  --color-border-interactive-subtle: rgba(43, 33, 22, 0.08);
+  --color-border-interactive: rgba(43, 33, 22, 0.16);
+  --color-interactive-border: var(--tty-orange-600);
+  --color-interactive-border-hover: var(--tty-orange-700);
+  --color-text-interactive-muted: var(--tty-ink-500);
+  --color-focus-ring-subtle: rgba(181, 69, 27, 0.4);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--tty-ink-900);
+  --color-text-on-secondary: var(--tty-ink-900);
+  --color-text-on-tertiary: var(--tty-ink-700);
+  --color-text-on-surface: var(--tty-ink-900);
+  --color-text-on-interactive: rgb(255 255 255);   /* 5.5:1 on burnt orange */
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(255 255 255);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--tty-ink-900);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--tty-orange-600);
+  --color-button-primary-hover: var(--tty-orange-700);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--tty-paper-200);
+  --color-button-secondary-hover: var(--tty-paper-300);
+  --color-button-secondary-text: var(--tty-ink-900);
+  --color-button-ghost-hover: var(--tty-paper-300);
+  --color-button-ghost-text: var(--tty-ink-700);
+
+  /* Cards */
+  --color-card-bg: var(--tty-paper-50);
+  --color-card-border: rgba(43, 33, 22, 0.16);
+  --color-card-nested-bg: var(--tty-paper-100);
+
+  /* Forms */
+  --color-input-bg: var(--tty-paper-50);
+  --color-input-border: rgba(43, 33, 22, 0.2);
+  --color-input-focus: var(--tty-orange-600);
+  --color-input-text: var(--tty-ink-900);
+  --color-input-placeholder: var(--tty-ink-500);
+
+  /* Modal */
+  --color-modal-bg: var(--tty-paper-50);
+
+  /* Navigation — beige rail */
+  --color-surface-navigation: var(--tty-paper-200);
+  --color-surface-navigation-hover: var(--tty-paper-300);
+  --color-surface-navigation-active: var(--tty-paper-400);
+  --color-surface-navigation-selected: rgba(181, 69, 27, 0.14);
+  --color-surface-navigation-selected-hover: rgba(181, 69, 27, 0.2);
+  --color-text-navigation-primary: var(--tty-ink-900);
+  --color-text-navigation-secondary: var(--tty-ink-700);
+  --color-text-navigation-muted: var(--tty-ink-500);      /* 5.2:1 on chrome */
+  --color-text-navigation-selected: var(--tty-ink-900);
+  --color-text-navigation-hover: var(--tty-ink-900);
+  --color-text-navigation-section: var(--tty-ink-600);    /* 5.9:1 on chrome */
+  --color-text-navigation-brand: var(--tty-ink-700);
+  --color-border-navigation: rgba(43, 33, 22, 0.14);
+  --color-divider-navigation: rgba(43, 33, 22, 0.10);
+  --color-divider-navigation-subtle: rgba(43, 33, 22, 0.06);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--tty-paper-200);
+  --color-scrollbar-thumb: var(--tty-paper-400);
+  --color-scrollbar-thumb-hover: #b3a283;
+
+  /* Tab indicator — orange underline */
+  --tab-indicator-color: var(--tty-orange-600);
+  --tab-indicator-height: 3px;
+
+  /* Terminal — ink on paper (light-theme convention: black = paper, white = ink) */
+  --color-terminal-bg: #f3ecdc;
+  --color-terminal-fg: var(--tty-ink-900);
+  --color-terminal-cursor: var(--tty-orange-600);
+  --color-terminal-black: #f3ecdc;
+  --color-terminal-red: #b3261e;
+  --color-terminal-green: var(--tty-olive);
+  --color-terminal-yellow: #8a5a00;
+  --color-terminal-blue: #35597a;
+  --color-terminal-magenta: #8f3f71;
+  --color-terminal-cyan: #2a6f6a;
+  --color-terminal-white: var(--tty-ink-900);
+  --color-terminal-bright-black: var(--tty-ink-500);
+  --color-terminal-bright-red: #8f1d17;
+  --color-terminal-bright-green: #3d5a0a;
+  --color-terminal-bright-yellow: #6e4700;
+  --color-terminal-bright-blue: #244a6a;
+  --color-terminal-bright-magenta: #73305a;
+  --color-terminal-bright-cyan: #1f5955;
+  --color-terminal-bright-white: #1a120a;
+  --color-terminal-selection-bg: #b5451b40;
+}
+
+/* Dot Matrix Theme — monochrome-green LCD: deep olive-black, 4-step green ramp, one hot accent for errors */
+:root.dot-matrix {
+  /* Backgrounds */
+  --color-bg-primary: var(--lcd-900);
+  --color-bg-secondary: var(--lcd-850);
+  --color-bg-tertiary: var(--lcd-700);
+  --color-bg-hover: var(--lcd-700);
+  --color-bg-active: var(--lcd-600);
+  --color-bg-chrome: var(--lcd-900);
+  --color-bg-editor: var(--lcd-950);
+
+  /* Surfaces */
+  --color-surface-primary: var(--lcd-850);
+  --color-surface-secondary: var(--lcd-800);
+  --color-surface-tertiary: var(--lcd-700);
+  --color-surface-hover: rgba(155, 188, 15, 0.07);
+
+  /* Text — the 4-step green ramp */
+  --color-text-primary: var(--lcd-green-4);
+  --color-text-secondary: var(--lcd-green-3);
+  --color-text-tertiary: #9fbf58;              /* 8.9:1 on --lcd-900 */
+  --color-text-muted: var(--lcd-green-1);      /* 5.9:1 on --lcd-900, 5.5:1 on --lcd-850 */
+  --color-text-disabled: var(--lcd-500);
+
+  /* Borders */
+  --color-border-primary: var(--lcd-700);
+  --color-border-secondary: var(--lcd-800);
+  --color-border-hover: var(--lcd-600);
+  --color-border-focus: var(--lcd-green-2);
+
+  /* Interactive — LCD green, dark text on the accent */
+  --color-interactive-primary: var(--lcd-green-2);
+  --color-interactive-hover: var(--lcd-green-accent-hover);
+  --color-interactive-active: var(--lcd-green-accent-active);
+  --color-interactive-text: var(--lcd-green-text);
+  --color-focus-ring: var(--lcd-green-2);
+  --color-interactive-rgb: 139 172 15;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--lcd-green-text);
+  --color-text-interactive-on-dark-hover: var(--lcd-green-accent-hover);
+  --color-text-interactive-on-dark-active: var(--lcd-green-text);
+  --color-text-interactive-on-dark-focus: var(--lcd-green-text);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--lcd-850);
+  --color-surface-interactive-hover: var(--lcd-700);
+  --color-interactive-surface: rgba(139, 172, 15, 0.14);
+  --color-interactive-surface-hover: rgba(139, 172, 15, 0.22);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(155, 188, 15, 0.08);
+  --color-border-interactive: rgba(155, 188, 15, 0.14);
+  --color-interactive-border: rgba(139, 172, 15, 0.5);
+  --color-interactive-border-hover: rgba(139, 172, 15, 0.7);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--lcd-green-1);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(139, 172, 15, 0.4);
+
+  /* Status — everything stays green except the hot error accent */
+  --color-status-success: var(--lcd-green-2);
+  --color-status-success-hover: var(--lcd-green-accent-hover);
+  --color-status-warning: #d9d15a;
+  --color-status-warning-hover: #e8e27a;
+  --color-status-error: var(--lcd-hot);
+  --color-status-error-hover: #ff8a9a;
+  --color-status-info: var(--lcd-green-text);
+  --color-status-neutral: var(--lcd-green-1);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--lcd-green-4);
+  --color-text-on-secondary: var(--lcd-green-3);
+  --color-text-on-tertiary: var(--lcd-green-3);
+  --color-text-on-surface: var(--lcd-green-3);
+  --color-text-on-interactive: var(--lcd-950);
+  --color-text-on-status-success: var(--lcd-950);
+  --color-text-on-status-warning: var(--lcd-950);
+  --color-text-on-status-error: var(--lcd-950);
+  --color-text-on-status-info: var(--lcd-950);
+  --color-text-on-navigation: var(--lcd-green-3);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--lcd-green-2);
+  --color-button-primary-hover: var(--lcd-green-accent-hover);
+  --color-button-primary-text: var(--lcd-950);
+  --color-button-secondary-bg: var(--lcd-700);
+  --color-button-secondary-hover: var(--lcd-600);
+  --color-button-secondary-text: var(--lcd-green-3);
+  --color-button-ghost-hover: var(--lcd-800);
+  --color-button-ghost-text: #9fbf58;
+
+  /* Cards */
+  --color-card-bg: var(--lcd-850);
+  --color-card-border: var(--lcd-700);
+  --color-card-nested-bg: var(--lcd-700);
+
+  /* Forms */
+  --color-input-bg: var(--lcd-950);
+  --color-input-border: var(--lcd-600);
+  --color-input-focus: var(--lcd-green-2);
+  --color-input-text: var(--lcd-green-4);
+  --color-input-placeholder: var(--lcd-green-1);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.65);
+  --color-modal-bg: var(--lcd-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--lcd-900);
+  --color-surface-navigation-hover: var(--lcd-850);
+  --color-surface-navigation-active: var(--lcd-700);
+  --color-surface-navigation-selected: rgba(139, 172, 15, 0.14);
+  --color-surface-navigation-selected-hover: rgba(139, 172, 15, 0.2);
+  --color-text-navigation-primary: var(--lcd-green-3);
+  --color-text-navigation-secondary: #9fbf58;
+  --color-text-navigation-muted: var(--lcd-green-1);
+  --color-text-navigation-selected: var(--lcd-green-4);
+  --color-text-navigation-hover: var(--lcd-green-4);
+  --color-text-navigation-section: var(--lcd-green-1);
+  --color-text-navigation-brand: #9fbf58;
+  --color-border-navigation: var(--lcd-700);
+  --color-divider-navigation: var(--lcd-800);
+  --color-divider-navigation-subtle: rgba(155, 188, 15, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--lcd-900);
+  --color-scrollbar-thumb: rgba(155, 188, 15, 0.18);
+  --color-scrollbar-thumb-hover: rgba(155, 188, 15, 0.32);
+
+  /* Tab indicator — green underline */
+  --tab-indicator-color: var(--lcd-green-2);
+  --tab-indicator-height: 3px;
+
+  /* Terminal — LCD greens; blue/cyan lean teal-mint, magenta is a desaturated sage-lilac, red is the hot accent */
+  --color-terminal-bg: var(--lcd-950);
+  --color-terminal-fg: var(--lcd-green-4);
+  --color-terminal-cursor: var(--lcd-green-accent-hover);
+  --color-terminal-black: var(--lcd-950);
+  --color-terminal-red: var(--lcd-hot);
+  --color-terminal-green: var(--lcd-green-accent-hover);
+  --color-terminal-yellow: #d9d15a;
+  --color-terminal-blue: #6fc0ad;
+  --color-terminal-magenta: #b3aac4;
+  --color-terminal-cyan: #8de0c8;
+  --color-terminal-white: var(--lcd-green-4);
+  --color-terminal-bright-black: var(--lcd-green-1);
+  --color-terminal-bright-red: #ff8a9a;
+  --color-terminal-bright-green: #b5d94a;
+  --color-terminal-bright-yellow: #e8e27a;
+  --color-terminal-bright-blue: #8fd6c4;
+  --color-terminal-bright-magenta: #ccc4dc;
+  --color-terminal-bright-cyan: #a8ecd8;
+  --color-terminal-bright-white: #f0f8dc;
+  --color-terminal-selection-bg: #9bbc0f40;
+}
+
 /* Light Rounded — inherits light tokens, overrides shell/chrome behavior */
 :root.light-rounded {
   --color-bg-chrome: var(--gh-light-50);
@@ -2956,4 +3475,28 @@
   --color-text-interactive-muted: #bba992;
   --color-text-navigation-muted: #bba992;
   --color-text-navigation-section: #bba992;
+}
+
+/* Amber CRT */
+:root.high-contrast.amber-crt {
+  --color-text-muted: #c09a42;              /* 7.2:1 on --crt-900 */
+  --color-text-interactive-muted: #c09a42;
+  --color-text-navigation-muted: #c09a42;
+  --color-text-navigation-section: #c09a42;
+}
+
+/* Teletype */
+:root.high-contrast.teletype {
+  --color-text-muted: #5c4c37;              /* 7.2:1 on --tty-paper-100 */
+  --color-text-interactive-muted: #5c4c37;
+  --color-text-navigation-muted: #5c4c37;
+  --color-text-navigation-section: #5c4c37;
+}
+
+/* Dot Matrix */
+:root.high-contrast.dot-matrix {
+  --color-text-muted: #8fac5c;              /* 7.3:1 on --lcd-900 */
+  --color-text-interactive-muted: #8fac5c;
+  --color-text-navigation-muted: #8fac5c;
+  --color-text-navigation-section: #8fac5c;
 }

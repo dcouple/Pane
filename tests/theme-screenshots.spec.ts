@@ -1,38 +1,41 @@
 import { mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import path from 'node:path';
+import { expect, test, type Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 
 /**
- * Captures one screenshot per theme of the main app view (sidebar + session
- * with the diff panel and the terminal dock) plus the Appearance picker.
+ * Theme evidence screenshots.
  *
- * By default the PNGs land in the Playwright output dir and are attached to
- * the report. Set THEME_SCREENSHOT_DIR (e.g. `screenshots/themes`) to write
- * them to a stable path for committing as PR evidence:
- *
- *   THEME_SCREENSHOT_DIR=screenshots/themes pnpm test -- tests/theme-screenshots.spec.ts
+ * Opt-in: `pnpm theme:screenshots` (sets PANE_THEME_SCREENSHOTS=1). Writes one
+ * capture per theme in THEMES to screenshots/themes/<id>.png — sidebar, a
+ * pane with the Review diff open and the bottom terminal showing the 16 ANSI
+ * colours — plus screenshots/themes/appearance-picker.png with the Appearance
+ * settings theme picker open.
  */
 
-const THEMES = ['folio', 'newsprint', 'walnut'] as const;
+const OUTPUT_DIR = path.resolve(process.cwd(), 'screenshots/themes');
+const THEMES = ['amber-crt', 'teletype', 'dot-matrix'] as const;
+
+test.skip(!process.env.PANE_THEME_SCREENSHOTS, 'Set PANE_THEME_SCREENSHOTS=1 (pnpm theme:screenshots) to regenerate theme evidence.');
+test.use({ viewport: { width: 1440, height: 900 } });
 
 const project = {
-  id: 501,
+  id: 700,
   name: 'pane',
   path: '/tmp/pane',
   active: true,
-  created_at: '2026-08-01T00:00:00.000Z',
-  updated_at: '2026-08-01T00:00:00.000Z',
+  created_at: new Date(0).toISOString(),
+  updated_at: new Date(0).toISOString(),
 };
 
 const session = {
-  id: 'themes-editorial',
-  name: 'themes-editorial',
-  worktreePath: '/tmp/pane/themes-editorial',
-  prompt: 'Add three editorial themes',
+  id: 'themes-retro',
+  name: 'themes-retro',
+  worktreePath: '/tmp/pane/worktrees/themes-retro',
+  prompt: 'Add three retro computing colour themes',
   status: 'stopped',
-  createdAt: '2026-08-01T00:00:00.000Z',
-  lastActivity: '2026-08-01T00:00:00.000Z',
+  createdAt: new Date(0).toISOString(),
+  lastActivity: new Date(0).toISOString(),
   output: [],
   jsonMessages: [],
   isRunning: false,
@@ -43,24 +46,17 @@ const session = {
   toolType: 'none',
   archived: false,
   gitStatus: {
-    state: 'ahead',
-    ahead: 2,
+    state: 'clean',
+    ahead: 1,
     behind: 0,
-    hasUncommittedChanges: true,
+    hasUncommittedChanges: false,
     hasUntrackedFiles: false,
-    filesChanged: 3,
-    additions: 42,
-    deletions: 7,
-    totalCommits: 2,
+    filesChanged: 2,
+    additions: 5,
+    deletions: 2,
+    totalCommits: 1,
   },
 };
-
-const panelMeta = (position: number) => ({
-  createdAt: '2026-08-01T00:00:00.000Z',
-  lastActiveAt: '2026-08-01T00:00:00.000Z',
-  position,
-  permanent: true,
-});
 
 const panels = [
   {
@@ -69,7 +65,7 @@ const panels = [
     type: 'terminal',
     title: 'Terminal',
     state: { isActive: false, hasBeenViewed: true, customState: { isInitialized: true } },
-    metadata: panelMeta(0),
+    metadata: { createdAt: new Date(0).toISOString(), lastActiveAt: new Date(0).toISOString(), position: 0, permanent: true },
   },
   {
     id: 'themes-explorer',
@@ -77,7 +73,7 @@ const panels = [
     type: 'explorer',
     title: 'Explorer',
     state: { isActive: false, hasBeenViewed: true },
-    metadata: panelMeta(1),
+    metadata: { createdAt: new Date(1).toISOString(), lastActiveAt: new Date(1).toISOString(), position: 1, permanent: true },
   },
   {
     id: 'themes-diff',
@@ -85,7 +81,7 @@ const panels = [
     type: 'diff',
     title: 'Diff',
     state: { isActive: true, hasBeenViewed: true },
-    metadata: panelMeta(2),
+    metadata: { createdAt: new Date(2).toISOString(), lastActiveAt: new Date(2).toISOString(), position: 2, permanent: true },
   },
 ];
 
@@ -93,101 +89,65 @@ const executions = [{
   id: 1,
   session_id: session.id,
   execution_sequence: 1,
-  after_commit_hash: 'abcdef1234567890',
-  commit_message: 'Add Folio, Newsprint and Walnut themes',
+  after_commit_hash: 'a1b2c3d4e5f60718',
+  commit_message: 'Add retro computing themes',
   timestamp: '2026-08-17T12:00:00.000Z',
-  stats_additions: 42,
-  stats_deletions: 7,
-  stats_files_changed: 3,
-  author: 'Pane',
+  stats_additions: 5,
+  stats_deletions: 2,
+  stats_files_changed: 2,
+  author: 'Pane QA',
   comparison_branch: 'origin/main',
   history_source: 'branch',
 }];
 
 const combinedDiff = {
   diff: [
-    'diff --git a/frontend/src/contexts/themeContextValue.ts b/frontend/src/contexts/themeContextValue.ts',
+    'diff --git a/frontend/src/contexts/ThemeProvider.tsx b/frontend/src/contexts/ThemeProvider.tsx',
     'index 1111111..2222222 100644',
-    '--- a/frontend/src/contexts/themeContextValue.ts',
-    '+++ b/frontend/src/contexts/themeContextValue.ts',
-    '@@ -1,6 +1,9 @@',
-    " import { createContext } from 'react';",
-    ' ',
-    "-export type Theme = 'light' | 'dark' | 'dusk' | 'forge' | 'terracotta';",
-    "+export type Theme =",
-    "+  | 'light' | 'dark' | 'dusk' | 'forge' | 'terracotta'",
-    "+  | 'folio' | 'newsprint' | 'walnut';",
-    ' ',
-    ' export interface ThemeContextType {',
-    '   theme: Theme;',
-    'diff --git a/frontend/src/styles/tokens/colors.css b/frontend/src/styles/tokens/colors.css',
+    '--- a/frontend/src/contexts/ThemeProvider.tsx',
+    '+++ b/frontend/src/contexts/ThemeProvider.tsx',
+    '@@ -15,6 +15,9 @@ const THEME_CLASSES = {',
+    "   'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],",
+    "   'terracotta': ['dark', 'terracotta'],",
+    "+  'amber-crt': ['dark', 'amber-crt'],",
+    "+  'teletype': ['light', 'teletype'],",
+    "+  'dot-matrix': ['dark', 'dot-matrix'],",
+    ' } satisfies Record<Theme, string[]>;',
+    'diff --git a/frontend/src/hooks/usePaneLogo.ts b/frontend/src/hooks/usePaneLogo.ts',
     'index 3333333..4444444 100644',
-    '--- a/frontend/src/styles/tokens/colors.css',
-    '+++ b/frontend/src/styles/tokens/colors.css',
-    '@@ -158,6 +158,14 @@',
-    '   --terra-accent10: #e6b498;',
-    '+',
-    '+  /* Folio primitives — warm cream paper and near-black ink (print) */',
-    '+  --folio-paper: #f6f0e4;',
-    '+  --folio-sheet: #fbf7ee;',
-    '+  --folio-ink: #1f1b17;',
-    '+  --folio-rubric: #b3321c;',
+    '--- a/frontend/src/hooks/usePaneLogo.ts',
+    '+++ b/frontend/src/hooks/usePaneLogo.ts',
+    '@@ -1,7 +1,7 @@',
+    " import paneLogoDark from '../assets/pane-logo-dark.svg';",
+    " import paneLogoLight from '../assets/pane-logo-light.svg';",
+    "-import { useTheme } from '../contexts/ThemeContext';",
+    "+import { isLightTheme, useTheme } from '../contexts/ThemeContext';",
+    ' ',
+    ' export function usePaneLogo(): string {',
+    '   const { theme } = useTheme();',
+    "-  return theme === 'light' || theme === 'light-rounded' ? paneLogoLight : paneLogoDark;",
+    '+  return isLightTheme(theme) ? paneLogoLight : paneLogoDark;',
     ' }',
   ].join('\n'),
-  stats: { additions: 42, deletions: 7, filesChanged: 3 },
-  changedFiles: ['frontend/src/contexts/themeContextValue.ts', 'frontend/src/styles/tokens/colors.css'],
+  stats: { additions: 5, deletions: 2, filesChanged: 2 },
+  changedFiles: ['frontend/src/contexts/ThemeProvider.tsx', 'frontend/src/hooks/usePaneLogo.ts'],
 };
 
-// ANSI sample replayed into the terminal dock so every palette slot is on screen.
 const ESC = '\u001b[';
-const ansi = (code: number | string, text: string) => `${ESC}${code}m${text}${ESC}0m`;
-const NAMES = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
-const swatchRow = (base: number, label: string) =>
-  `${label.padEnd(8)}${NAMES.map((name, i) => ansi(base + i, name.padEnd(9))).join('')}`;
-const terminalScrollback = [
-  `${ansi(2, '~/pane/themes-editorial')} ${ansi(1, '$')} pnpm --filter frontend test src/styles/themeContrast.test.ts`,
-  '',
-  ` ${ansi(32, '✓')} src/styles/themeContrast.test.ts ${ansi(2, '(45 tests) 26ms')}`,
-  '',
-  ` ${ansi(2, 'Test Files')}  ${ansi(1, '1 passed')} ${ansi(2, '(1)')}`,
-  ` ${ansi(2, '     Tests')}  ${ansi(1, '45 passed')} ${ansi(2, '(45)')}`,
-  '',
-  `${ansi(2, '~/pane/themes-editorial')} ${ansi(1, '$')} git status --short`,
-  `${ansi(32, 'M ')} frontend/src/styles/tokens/colors.css`,
-  `${ansi(32, 'A ')} frontend/src/styles/themeContrast.test.ts`,
-  `${ansi(31, '??')} screenshots/themes/`,
-  '',
-  swatchRow(30, 'normal'),
-  swatchRow(90, 'bright'),
-  `${ansi(2, 'dim')}     ${ansi(1, 'bold')}  ${ansi(3, 'italic')}  ${ansi(4, 'underline')}  ${ansi(7, ' inverse ')}  ${ansi('38;5;208', 'truecolor-ish')}`,
-  '',
-  `${ansi(2, '~/pane/themes-editorial')} ${ansi(1, '$')} `,
+const ansi = (code: number, text: string) => `${ESC}${code}m${text}${ESC}0m`;
+const swatches = (start: number) => [...Array(8).keys()].map((i) => ansi(start + i, '███')).join(' ');
+// Kept short so the whole thing fits the collapsed bottom terminal dock.
+const scrollback = [
+  `${ansi(1, '$')} ${ansi(36, 'pnpm')} theme:contrast amber-crt teletype dot-matrix`,
+  `${ansi(32, '✓')} amber-crt: 61 pairs pass   ${ansi(32, '✓')} teletype: 61 pairs pass   ${ansi(32, '✓')} dot-matrix: 61 pairs pass`,
+  `${ansi(1, '$')} ${ansi(36, 'git')} status --short`,
+  ` ${ansi(32, 'M')} frontend/src/styles/tokens/colors.css   ${ansi(31, '??')} screenshots/themes/`,
+  `${ansi(2, 'normal ')} ${swatches(30)}   ${ansi(33, 'warning')} ${ansi(31, 'error')} ${ansi(34, 'blue')} ${ansi(35, 'magenta')} ${ansi(36, 'cyan')}`,
+  `${ansi(2, 'bright ')} ${swatches(90)}   ${ansi(93, 'warning')} ${ansi(91, 'error')} ${ansi(94, 'blue')} ${ansi(95, 'magenta')} ${ansi(96, 'cyan')}`,
+  `${ansi(1, '$')} `,
 ].join('\r\n');
 
-function outputPathFor(testInfo: TestInfo, filename: string): string {
-  const dir = process.env.THEME_SCREENSHOT_DIR;
-  if (!dir) return testInfo.outputPath(filename);
-  const absolute = resolve(process.cwd(), dir);
-  mkdirSync(absolute, { recursive: true });
-  return resolve(absolute, filename);
-}
-
-async function capture(page: Page, testInfo: TestInfo, filename: string): Promise<void> {
-  // Park the pointer over inert editor space so no hover tooltip is in frame.
-  await page.mouse.move(1_100, 620);
-  await page.waitForTimeout(400);
-  const path = outputPathFor(testInfo, filename);
-  await page.screenshot({ path });
-  await testInfo.attach(filename, { path, contentType: 'image/png' });
-}
-
-async function bootTheme(page: Page, theme: (typeof THEMES)[number]): Promise<void> {
-  await page.addInitScript((value: string) => {
-    localStorage.setItem('theme', value);
-    // Taller terminal dock so the full ANSI sample is in frame.
-    localStorage.setItem('pane-bottom-terminal-height', '360');
-    localStorage.setItem('pane-terminal-collapsed', 'false');
-  }, theme);
+async function openThemedSession(page: Page, theme: (typeof THEMES)[number]) {
   await installElectronApiMock(page, {
     initialConfig: { theme },
     initialProjects: [project],
@@ -195,54 +155,63 @@ async function bootTheme(page: Page, theme: (typeof THEMES)[number]): Promise<vo
     initialPanels: panels,
     initialExecutions: executions,
     initialCombinedDiff: combinedDiff,
-    initialTerminalStates: { 'themes-terminal': { scrollbackBuffer: terminalScrollback } },
+    initialTerminalStates: { 'themes-terminal': { scrollbackBuffer: scrollback } },
     activeProjectId: project.id,
-    initialUiState: { expandedProjects: [project.id], repositoriesSectionExpanded: true },
+    initialUiState: { expandedProjects: [project.id], pinnedSectionExpanded: true, repositoriesSectionExpanded: true },
   });
-  await page.setViewportSize({ width: 1_600, height: 1_000 });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  await expect(page.locator('[data-testid="sidebar"]').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
+  await page.getByRole('button', { name: session.name, exact: true }).click();
+
+  const reviewTab = page.getByRole('tab', { name: 'Review', exact: true });
+  await expect(reviewTab).toBeVisible();
+  await reviewTab.click();
+  const firstFile = page.getByRole('button', { name: `Expand diff for ${combinedDiff.changedFiles[0]}`, exact: true });
+  await expect(firstFile).toBeVisible();
+  await firstFile.click();
+  await page.getByRole('button', { name: `Expand diff for ${combinedDiff.changedFiles[1]}`, exact: true }).click();
+
+  const expandTerminal = page.getByRole('button', { name: 'Expand terminal', exact: true });
+  if (await expandTerminal.isVisible().catch(() => false)) await expandTerminal.click();
+  await expect(page.locator('.pane-terminal-shell-body .xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('status', { name: 'Loading terminal' })).toHaveCount(0);
+  await page.mouse.move(1_400, 880);
+  await page.waitForTimeout(500);
 }
+
+test.beforeAll(() => {
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+});
 
 for (const theme of THEMES) {
-  test(`${theme}: session view with diff and terminal`, async ({ page }, testInfo) => {
-    await bootTheme(page, theme);
-    await page.getByRole('button', { name: session.name, exact: true }).click();
-    const reviewTab = page.getByRole('tab', { name: 'Review', exact: true });
-    await expect(reviewTab).toBeVisible();
-    await reviewTab.click();
-    // Open a file so the diff body (not just the file list) is in frame.
-    await page.getByRole('button', { name: /colors\.css/ }).first().click();
-    // The persistent terminal dock starts collapsed; expand it so the terminal surface shows.
-    const expandTerminal = page.getByRole('button', { name: 'Expand terminal' });
-    if (await expandTerminal.isVisible().catch(() => false)) await expandTerminal.click();
-    await expect(page.locator('.pane-terminal-dock')).toBeVisible();
-    await expect(page.locator('.pane-terminal-dock .xterm-screen')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('status', { name: 'Loading terminal' })).toHaveCount(0);
-    // Drop focus so no incidental focus ring from the last click is in frame.
-    await page.evaluate(() => {
-      const active = document.activeElement;
-      if (active instanceof HTMLElement) active.blur();
-    });
-    await page.waitForTimeout(800);
-    await capture(page, testInfo, `${theme}.png`);
+  test(`captures ${theme} session view`, async ({ page }) => {
+    await openThemedSession(page, theme);
+    await page.screenshot({ path: path.join(OUTPUT_DIR, `${theme}.png`) });
   });
 }
 
-test('appearance picker lists the editorial themes', async ({ page }, testInfo) => {
-  await bootTheme(page, 'folio');
+test('captures the Appearance theme picker with the retro themes', async ({ page }) => {
+  await installElectronApiMock(page, {
+    initialConfig: { theme: 'amber-crt' },
+    initialProjects: [project],
+    initialSessions: [session],
+    initialPanels: panels,
+    activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await expect(page.locator('[data-testid="sidebar"]').first()).toBeVisible({ timeout: 10_000 });
+  // The Settings entry point lives in the compact sidebar (mirrors tests/settings.spec.ts bootSettings).
   const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
   if (await collapse.isVisible().catch(() => false)) await collapse.click();
-  const settingsButton = page.getByRole('button', { name: 'Settings' }).first();
-  await expect(settingsButton).toBeVisible();
-  await settingsButton.click();
+  await page.getByRole('button', { name: 'Settings' }).first().click();
   await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toBeVisible();
   await page.getByRole('combobox', { name: 'Theme' }).click();
-  for (const name of ['Folio', 'Newsprint', 'Walnut']) {
-    await expect(page.getByRole('option', { name: new RegExp(`^${name}`) })).toBeVisible();
-  }
-  await capture(page, testInfo, 'appearance-picker.png');
+  const lastOption = page.getByRole('option', { name: /Dot Matrix/ });
+  await lastOption.scrollIntoViewIfNeeded();
+  await expect(lastOption).toBeVisible();
+  await expect(page.getByRole('option', { name: /Amber CRT/ })).toBeVisible();
+  await expect(page.getByRole('option', { name: /Teletype/ })).toBeVisible();
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(OUTPUT_DIR, 'appearance-picker.png') });
 });
