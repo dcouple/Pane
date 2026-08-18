@@ -366,7 +366,7 @@ export function getShellPath(): string {
         ];
         
         console.log(`[ShellPath] Checking shell config files: ${shellConfigPaths.join(', ')}`);
-        let extractedPaths: string[] = [];
+        const extractedPaths: string[] = [];
         
         for (const configPath of shellConfigPaths) {
           if (fs.existsSync(configPath)) {

@@ -287,7 +287,6 @@ export class TaskQueue {
             data: initialPromptDisplay,
             timestamp: new Date()
           });
-        } else {
         }
         
         // Ensure default panels exist for this session (run in parallel)

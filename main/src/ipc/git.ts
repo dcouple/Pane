@@ -55,7 +55,7 @@ interface RawCommitData {
 
 function isValidGitUrl(url: string): boolean {
   // Accept https://, ssh://, and scp-style git@host:path formats
-  return /^(https?:\/\/[\w.\-\/:@]+|ssh:\/\/[\w.\-\/:@]+|git@[\w.\-]+:[\w.\-\/]+)(\.git)?$/.test(url);
+  return /^(https?:\/\/[\w./:@-]+|ssh:\/\/[\w./:@-]+|git@[\w.-]+:[\w./-]+)(\.git)?$/.test(url);
 }
 
 function extractRepoName(url: string): string {

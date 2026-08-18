@@ -245,7 +245,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
   protected async getCliExecutablePath(): Promise<string> {
     // Use custom claude path if configured, otherwise find it in PATH
-    let claudeCommand = this.configManager?.getConfig()?.claudeExecutablePath;
+    const claudeCommand = this.configManager?.getConfig()?.claudeExecutablePath;
     if (claudeCommand) {
       this.logger?.info(`[ClaudeManager] Using custom Claude executable path: ${claudeCommand}`);
       return claudeCommand;
@@ -590,7 +590,6 @@ export class ClaudeCodeManager extends AbstractCliManager {
    */
   protected override isSpawnInProgress(panelId: string): boolean {
     // Use synchronous cache-hit path; panelManager.getPanel is sync.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { panelManager } = getPanelManagerModule();
     const panel = panelManager.getPanel(panelId);
     if (!panel) return false;

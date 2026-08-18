@@ -135,7 +135,7 @@ function parseShellBinStub(content: string, binDir: string): string | null {
   // Match patterns that reference a .js file with $basedir
   const patterns = [
     // Pattern: "$basedir/path/to/script.js" or "$basedir/../path/to/script.js"
-    /\$basedir['"\/]*([^"'\s]+\.js)/g,
+    /\$basedir['"/]*([^"'\s]+\.js)/g,
     // Pattern: node "path/to/script.js" (relative path)
     /node\s+["']?([^"'\s]+\.js)/g,
   ];
@@ -146,7 +146,7 @@ function parseShellBinStub(content: string, binDir: string): string | null {
       let jsPath = match[1];
 
       // Remove leading quotes or slashes
-      jsPath = jsPath.replace(/^["'\/]+/, '');
+      jsPath = jsPath.replace(/^["'/]+/, '');
 
       // Resolve the path relative to binDir
       // $basedir refers to the directory containing the bin stub

@@ -23,7 +23,7 @@ const URL_PATTERN = /https?:\/\/[^\s<>"{}|\\^`[\]]+/;
 // File path patterns - detect Unix paths, Windows paths, and relative paths with extensions
 const FILE_PATH_PATTERNS = [
   /^[.~]?\/[\w\-./]+/, // Unix absolute or relative paths starting with / ./ ~/
-  /^[A-Za-z]:[\\\/][\w\-.\\/]+/, // Windows absolute paths C:\ or C:/
+  /^[A-Za-z]:[\\/][\w\-.\\/]+/, // Windows absolute paths C:\ or C:/
   /^[\w\-./\\]+\.[a-z]{1,10}(:\d+)?$/i, // Relative paths with extension like foo.ts, foo.ts:42, or dir\foo.ts
 ];
 

@@ -365,10 +365,8 @@ export class ResourceMonitorService extends EventEmitter {
     const now = Date.now();
 
     // Lazy imports to avoid circular dependency at module load time
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     // SAFETY: This require targets the statically typed local module and selects its exported singleton.
     const { terminalPanelManager } = require('./terminalPanelManager') as { terminalPanelManager: { getSessionPids(): Map<string, number[]> } };
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     // SAFETY: This require targets the statically typed local module and selects its exported registry class.
     const { CliToolRegistry } = require('./cliToolRegistry') as { CliToolRegistry: { getInstance(): { getAllManagers(): { getSessionPids(): Map<string, number[]> }[] } } };
 

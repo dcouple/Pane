@@ -38,13 +38,11 @@ import { boundary, decodeBoundary, type JsonValue } from '../../../shared/valida
 // `terminalPanelManager.ts:1`. We use a typed `require` here because this
 // UtilityProcess entry is deliberately self-contained; importing via
 // `import * as pty` would couple to main's module graph.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 // SAFETY: This package's CommonJS entry exports the same typed node-pty API.
 const pty = require('@lydell/node-pty') as typeof import('@lydell/node-pty');
 
 // Electron exposes UtilityProcess parentPort on `process.parentPort` in this
 // runtime. Keep the module export as a compatibility fallback.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 // SAFETY: Electron's UtilityProcess runtime exposes the documented HostPort surface.
 const electron = require('electron') as { parentPort?: typeof process.parentPort };
 

@@ -1820,7 +1820,7 @@ export class SessionManager extends EventEmitter {
   }
 
   async sendTerminalInput(sessionId: string, data: string): Promise<void> {
-    let session = this.activeSessions.get(sessionId);
+    const session = this.activeSessions.get(sessionId);
     let worktreePath: string;
     
     if (!session) {
@@ -1873,7 +1873,7 @@ export class SessionManager extends EventEmitter {
   }
 
   async preCreateTerminalSession(sessionId: string): Promise<void> {
-    let session = this.activeSessions.get(sessionId);
+    const session = this.activeSessions.get(sessionId);
     let worktreePath: string;
 
     if (!session) {

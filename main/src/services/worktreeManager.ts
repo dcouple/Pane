@@ -539,7 +539,7 @@ export class WorktreeManager {
       for (const line of localLines) {
         const isCurrent = line.startsWith('*');
         // Remove leading *, +, and spaces. The + indicates uncommitted changes
-        const name = line.replace(/^[\*\+]?\s*[\+]?\s*/, '').trim();
+        const name = line.replace(/^[*+]?\s*[+]?\s*/, '').trim();
         if (name) {
           localBranches.push({
             name,
