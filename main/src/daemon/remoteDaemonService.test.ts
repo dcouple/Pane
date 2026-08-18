@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  findPaneSourceRoot,
   installRemoteDaemonService,
   repairRemoteDaemonService,
   renderPosixRemoteDaemonLauncher,
@@ -23,6 +24,16 @@ async function makeTempDir(prefix: string): Promise<string> {
 }
 
 describe('remote daemon service launchers', () => {
+  it('walks past nested package files without a name when locating the Pane source root', async () => {
+    const root = await makeTempDir('pane-source-root-');
+    const nested = path.join(root, 'packages', 'feature');
+    await fs.mkdir(nested, { recursive: true });
+    await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'Pane' }));
+    await fs.writeFile(path.join(nested, 'package.json'), JSON.stringify({ private: true }));
+
+    expect(findPaneSourceRoot(nested)).toBe(root);
+  });
+
   it.skipIf(process.platform === 'win32')('resolves the canonical executable at start time and preserves headless arguments', async () => {
     const root = await makeTempDir('pane-launcher-');
     const paneDir = path.join(root, "pane dir's data");

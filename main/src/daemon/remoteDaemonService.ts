@@ -250,7 +250,7 @@ function createContext(dependencies: RemoteDaemonServiceDependencies): ServiceCo
     platform,
     homeDir,
     executablePath: dependencies.executablePath ?? process.execPath,
-    sourceRoot: dependencies.sourceRoot === undefined ? findSourceRoot(process.cwd()) : dependencies.sourceRoot,
+    sourceRoot: dependencies.sourceRoot === undefined ? findPaneSourceRoot(process.cwd()) : dependencies.sourceRoot,
     executableCandidates: dependencies.executableCandidates ?? getRemoteDaemonExecutableCandidates(platform, homeDir),
     commandExists: dependencies.commandExists ?? commandExists,
     runCommand: dependencies.runCommand ?? runCommand,
@@ -497,7 +497,7 @@ function omitLauncherContents(
   return result;
 }
 
-function findSourceRoot(startDir: string): string | null {
+export function findPaneSourceRoot(startDir: string): string | null {
   let current = path.resolve(startDir);
   while (true) {
     const packagePath = path.join(current, 'package.json');
@@ -505,7 +505,7 @@ function findSourceRoot(startDir: string): string | null {
       try {
         const parsed = decodeBoundary(
           JSON.parse(readFileSync(packagePath, 'utf8')),
-          boundary.object({ name: boundary.string }),
+          boundary.object({ name: boundary.optional(boundary.json) }),
         );
         if (parsed.name === 'Pane') {
           return current;
