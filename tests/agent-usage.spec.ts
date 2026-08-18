@@ -277,6 +277,7 @@ test('latest main-repository lookup wins across A to delayed B to A', async ({ p
   const detailPanel = page.locator('.pane-detail-panel-vertical');
   await expect(detailPanel.getByText('main-a', { exact: true })).toBeVisible();
   await page.evaluate(() => {
+    // SAFETY: these properties are created and consumed within this page-evaluate fixture.
     const testWindow = window as typeof window & {
       __noSessionSelectedSeen: boolean;
       __noSessionSelectedObserver?: MutationObserver;
@@ -302,6 +303,7 @@ test('latest main-repository lookup wins across A to delayed B to A', async ({ p
   await page.waitForTimeout(700);
 
   const noSessionSelectedSeen = await page.evaluate(() => {
+    // SAFETY: these properties are created and consumed within this page-evaluate fixture.
     const testWindow = window as typeof window & {
       __noSessionSelectedSeen?: boolean;
       __noSessionSelectedObserver?: MutationObserver;

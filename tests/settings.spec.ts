@@ -1,9 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
 
 type SettingsMock = {
-  getConfig: () => Record<string, unknown>;
-  getConfigUpdates: () => Array<Record<string, unknown>>;
+  getConfig: () => JsonObject;
+  getConfigUpdates: () => JsonObject[];
   getPreferenceWrites: () => Array<{ key: string; value: string }>;
   failNextConfigUpdate: (error: string) => void;
   failNextPreferenceSet: (error: string) => void;
@@ -114,6 +115,7 @@ test.describe('Settings', () => {
     await toggle.click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const updates = await page.evaluate(() => (
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfigUpdates());
@@ -131,6 +133,7 @@ test.describe('Settings', () => {
     await expect(paletteToggle).toHaveAttribute('aria-checked', 'true');
     await paletteToggle.click();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const updates = await page.evaluate(() => (
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfigUpdates());
@@ -169,6 +172,7 @@ test.describe('Settings', () => {
     await expect(page.getByRole('radio', { name: 'Two rows' })).toHaveAttribute('aria-checked', 'true');
 
     const writes = await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & { __paneTestElectronMock: SettingsMock }).__paneTestElectronMock;
       return { config: mock.getConfigUpdates(), preferences: mock.getPreferenceWrites() };
     });
@@ -182,6 +186,7 @@ test.describe('Settings', () => {
     await page.getByRole('switch', { name: 'Keep computer awake while sessions are active' }).click();
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const updates = await page.evaluate(() => (
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfigUpdates());
@@ -191,6 +196,7 @@ test.describe('Settings', () => {
   test('announces a failed save and restores the authoritative value', async ({ page }) => {
     await bootSettings(page, { initialConfig: { autoCheckUpdates: true } });
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & { __paneTestElectronMock: SettingsMock }).__paneTestElectronMock;
       mock.failNextConfigUpdate('Disk is read-only');
     });
@@ -200,6 +206,7 @@ test.describe('Settings', () => {
 
     await expect(page.getByRole('alert')).toContainText('Disk is read-only');
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const config = await page.evaluate(() => (
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfig());
@@ -210,6 +217,7 @@ test.describe('Settings', () => {
     await bootSettings(page, { configGetFailures: 100 });
     await expect(page.getByRole('alert')).toContainText('Mock config read failed');
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & { __paneTestElectronMock: SettingsMock }).__paneTestElectronMock;
       mock.setConfigGetFailures(0);
     });
@@ -218,6 +226,7 @@ test.describe('Settings', () => {
 
     await page.getByRole('button', { name: 'Appearance', exact: true }).click();
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & { __paneTestElectronMock: SettingsMock }).__paneTestElectronMock;
       mock.failNextPreferenceSet('Preference database is read-only');
     });
@@ -235,6 +244,7 @@ test.describe('Settings', () => {
     await expect(page.getByText('Saved', { exact: true })).toBeVisible();
     await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const updates = await page.evaluate(() => (
       window as typeof window & { __paneTestElectronMock: SettingsMock }
     ).__paneTestElectronMock.getConfigUpdates());

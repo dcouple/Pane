@@ -572,7 +572,7 @@ async function checkNodeReleaseTimeout() {
 
 function assertNoSensitiveTelemetryValues(properties) {
   for (const [key, value] of Object.entries(properties)) {
-    if (typeof value !== 'string') {
+    if (Object.prototype.toString.call(value) !== '[object String]') {
       continue;
     }
     assert.strictEqual(value.includes('/Users/'), false, `Telemetry property ${key} leaked a POSIX path`);

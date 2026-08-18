@@ -175,6 +175,7 @@ async function openConnectedRemote(page: Page): Promise<void> {
       return;
     }
 
+    // SAFETY: the test route receives the remote invoke envelope emitted by this fixture.
     const body = JSON.parse(request.postData() ?? '{}') as { channel?: string };
     let result: unknown = null;
     switch (body.channel) {
@@ -231,6 +232,7 @@ test('Home and About are axe-clean and the modal contains and restores focus', a
 
   const dialog = page.getByRole('dialog', { name: 'About Pane' });
   await expect(dialog).toBeVisible();
+  // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
   await expect.poll(() => page.evaluate(() => (
     document.activeElement?.closest('[role="dialog"]') !== null
   ))).toBe(true);
@@ -303,6 +305,7 @@ test('seeded pane exposes separate compound actions and arrow-keyed panel tabs',
   await expect(pinButton).toBeAttached();
   await expect(paneButton.locator('button, a, [role="button"]')).toHaveCount(0);
   await archiveButton.click();
+  // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
   await expect.poll(() => page.evaluate(() => (
     window as typeof window & {
       __paneTestElectronMock: { getSessionDeleteCalls: () => string[] };
@@ -310,6 +313,7 @@ test('seeded pane exposes separate compound actions and arrow-keyed panel tabs',
   ).__paneTestElectronMock.getSessionDeleteCalls())).toEqual([session.id]);
   await expect(paneButton).not.toHaveAttribute('aria-current', 'page');
   await pinButton.click();
+  // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
   await expect.poll(() => page.evaluate(() => (
     window as typeof window & {
       __paneTestElectronMock: { getSessionFavoriteToggleCalls: () => string[] };

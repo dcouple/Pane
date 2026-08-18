@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
 
 test.beforeEach(async ({ page }) => {
@@ -29,7 +30,10 @@ async function clickDomNode(locator: ReturnType<Page['locator']>) {
 
 async function setInputValue(locator: ReturnType<Page['locator']>, value: string) {
   await locator.evaluate((node: HTMLElement, nextValue) => {
-    const input = node as HTMLInputElement | HTMLTextAreaElement;
+    if (!(node instanceof HTMLInputElement) && !(node instanceof HTMLTextAreaElement)) {
+      throw new Error('Expected an input or textarea element');
+    }
+    const input = node;
     const prototype = input instanceof HTMLTextAreaElement
       ? HTMLTextAreaElement.prototype
       : HTMLInputElement.prototype;
@@ -204,8 +208,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { emitPermissionRequest: (request: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { emitPermissionRequest: (request: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.emitPermissionRequest({
@@ -235,6 +240,7 @@ test.describe('Smoke Tests', () => {
     await page.waitForTimeout(250);
 
     const beforeCount = await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
         __paneTestElectronMock?: {
           emitRemoteDaemonResyncRequested: () => void;
@@ -248,6 +254,7 @@ test.describe('Smoke Tests', () => {
     });
 
     await expect.poll(async () => page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
         __paneTestElectronMock?: { getConfigReadCount: () => number };
       }).__paneTestElectronMock;
@@ -264,10 +271,11 @@ test.describe('Smoke Tests', () => {
     const staleSessionName = 'Remote stale pane';
 
     await page.evaluate((sessionName) => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
         __paneTestElectronMock?: {
           emitRemoteDaemonResyncRequested: () => void;
-          setSessions: (sessions: Array<Record<string, unknown>>) => void;
+          setSessions: (sessions: JsonObject[]) => void;
         };
       }).__paneTestElectronMock;
 
@@ -288,10 +296,11 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText(staleSessionName)).toBeVisible({ timeout: 5000 });
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
         __paneTestElectronMock?: {
           emitRemoteDaemonResyncRequested: () => void;
-          setSessions: (sessions: Array<Record<string, unknown>>) => void;
+          setSessions: (sessions: JsonObject[]) => void;
         };
       }).__paneTestElectronMock;
 
@@ -318,8 +327,9 @@ test.describe('Smoke Tests', () => {
     });
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -346,8 +356,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -374,8 +385,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -406,8 +418,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -431,8 +444,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -468,8 +482,9 @@ test.describe('Smoke Tests', () => {
     });
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -500,8 +515,9 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
-        __paneTestElectronMock?: { setCloudState: (updates: Record<string, unknown>) => void };
+        __paneTestElectronMock?: { setCloudState: (updates: JsonObject) => void };
       }).__paneTestElectronMock;
 
       mock?.setCloudState({
@@ -527,9 +543,10 @@ test.describe('Smoke Tests', () => {
     await dismissStartupDialogs(page);
 
     await page.evaluate(() => {
+      // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
       const mock = (window as typeof window & {
         __paneTestElectronMock?: {
-          setCloudState: (updates: Record<string, unknown>) => void;
+          setCloudState: (updates: JsonObject) => void;
           setCloudDisconnectError: (error: string | null) => void;
         };
       }).__paneTestElectronMock;

@@ -283,19 +283,23 @@ function collectAllLicenses() {
   return licenses;
 }
 
+function isPlainObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
 function formatLicenseEntry(info) {
   let entry = `Package: ${info.name}\n`;
   entry += `Version: ${info.version}\n`;
   
   if (info.author) {
-    const author = typeof info.author === 'object' ? info.author.name : info.author;
+    const author = isPlainObject(info.author) ? info.author.name : info.author;
     if (author) entry += `Author: ${author}\n`;
   }
   
   if (info.homepage) {
     entry += `Homepage: ${info.homepage}\n`;
   } else if (info.repository) {
-    const repo = typeof info.repository === 'object' ? info.repository.url : info.repository;
+    const repo = isPlainObject(info.repository) ? info.repository.url : info.repository;
     if (repo) entry += `Repository: ${repo}\n`;
   }
   
@@ -352,7 +356,7 @@ function generateNotices() {
       for (const { info } of packages) {
         notices += `  - ${info.name} (${info.version})`;
         if (info.author) {
-          const author = typeof info.author === 'object' ? info.author.name : info.author;
+          const author = isPlainObject(info.author) ? info.author.name : info.author;
           if (author) notices += ` - ${author}`;
         }
         notices += '\n';

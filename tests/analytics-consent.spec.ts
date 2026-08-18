@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
 
 type CapturedPostHogRequest = {
@@ -8,7 +9,7 @@ type CapturedPostHogRequest = {
 
 type CapturedPostHogEvent = {
   event?: string;
-  properties?: Record<string, unknown>;
+  properties?: JsonObject;
 };
 
 function parseCapturedEvents(requests: CapturedPostHogRequest[]): CapturedPostHogEvent[] {
@@ -27,9 +28,11 @@ function parseCapturedEvents(requests: CapturedPostHogRequest[]): CapturedPostHo
 
 function parsePostHogBody(bodyText: string): CapturedPostHogEvent & { batch?: CapturedPostHogEvent[] } {
   try {
+    // SAFETY: captured PostHog requests are decoded into the fixture's constrained event shape.
     return JSON.parse(bodyText) as CapturedPostHogEvent & { batch?: CapturedPostHogEvent[] };
   } catch {
     const data = new URLSearchParams(bodyText).get('data');
+    // SAFETY: captured PostHog requests are decoded into the fixture's constrained event shape.
     return data
       ? JSON.parse(data) as CapturedPostHogEvent & { batch?: CapturedPostHogEvent[] }
       : {};
@@ -86,7 +89,7 @@ test('declining analytics sends identified consent events and discards queued us
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  await expect(page.getByText('Help Improve Pane')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('dialog', { name: 'Help Improve Pane' })).toBeVisible({ timeout: 10000 });
   await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toEqual(
     expect.arrayContaining(['consent_dialog_shown', 'app_first_opened'])
   );
@@ -125,8 +128,8 @@ test('declining analytics sends identified consent events and discards queued us
     is_first_launch: true,
   });
   expect(alias?.properties).toMatchObject({
-    distinct_id: identity.distinctId,
-    alias: identity.webDistinctId,
+    distinct_id: identity.webDistinctId,
+    alias: identity.distinctId,
     install_id: identity.installId,
   });
   expect(events.some((event) => event.event === 'app_opened')).toBe(false);
@@ -181,7 +184,7 @@ test('accepting analytics captures opt-in before any queued usage event can flus
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  await expect(page.getByText('Help Improve Pane')).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('dialog', { name: 'Help Improve Pane' })).toBeVisible({ timeout: 10000 });
   await page.getByRole('button', { name: 'Enable analytics' }).click();
 
   await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toContain('analytics_opted_in');

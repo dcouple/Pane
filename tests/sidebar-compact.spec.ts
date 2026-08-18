@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
 
 const projects = [
@@ -24,7 +25,7 @@ function session(
   id: string,
   name: string,
   projectId: number,
-  overrides: Record<string, unknown> = {},
+  overrides: JsonObject = {},
 ) {
   return {
     id,
@@ -152,6 +153,7 @@ test.describe('compact sidebar', () => {
     await expect(menu.getByRole('menuitem').nth(1)).toHaveText('Pin');
     await menu.getByRole('menuitem', { name: 'Archive' }).click();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     await expect.poll(() => page.evaluate(() => (
       window as typeof window & {
         __paneTestElectronMock: { getSessionDeleteCalls: () => string[] };
@@ -168,6 +170,7 @@ test.describe('compact sidebar', () => {
     await expect(menu.getByRole('menuitem').nth(0)).toHaveText('Archive');
     await menu.getByRole('menuitem', { name: 'Unpin', exact: true }).click();
 
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     await expect.poll(() => page.evaluate(() => (
       window as typeof window & {
         __paneTestElectronMock: { getSessionFavoriteToggleCalls: () => string[] };

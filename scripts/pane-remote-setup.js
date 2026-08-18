@@ -19,7 +19,7 @@ function run(command, args) {
     process.exit(1);
   }
 
-  if (typeof result.status === 'number' && result.status !== 0) {
+  if (Number.isInteger(result.status) && result.status !== 0) {
     process.exit(result.status);
   }
 }

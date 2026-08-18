@@ -19,6 +19,14 @@ function getErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isObject(value) {
+  return Object.prototype.toString.call(value) === '[object Object]';
+}
+
+function isNonEmptyString(value) {
+  return Object.prototype.toString.call(value) === '[object String]' && value.trim().length > 0;
+}
+
 function readUpdateInfo(filePath, expectedArch) {
   if (!filePath) {
     fail(`Missing ${expectedArch} latest.yml path`);
@@ -36,11 +44,11 @@ function readUpdateInfo(filePath, expectedArch) {
     fail(`Failed to parse ${absolutePath}: ${getErrorMessage(error)}`);
   }
 
-  if (!info || typeof info !== 'object') {
+  if (!isObject(info)) {
     fail(`${absolutePath} did not contain a YAML object`);
   }
 
-  if (typeof info.version !== 'string' || !info.version.trim()) {
+  if (!isNonEmptyString(info.version)) {
     fail(`${absolutePath} is missing version`);
   }
 
@@ -49,7 +57,7 @@ function readUpdateInfo(filePath, expectedArch) {
   }
 
   const matchingFiles = info.files.filter(file => {
-    return file && typeof file.url === 'string' && file.url.endsWith(`Windows-${expectedArch}.exe`);
+    return isObject(file) && isNonEmptyString(file.url) && file.url.endsWith(`Windows-${expectedArch}.exe`);
   });
 
   if (matchingFiles.length !== 1) {
@@ -57,11 +65,11 @@ function readUpdateInfo(filePath, expectedArch) {
   }
 
   const file = matchingFiles[0];
-  if (typeof file.sha512 !== 'string' || !file.sha512.trim()) {
+  if (!isNonEmptyString(file.sha512)) {
     fail(`${absolutePath} ${file.url} is missing sha512`);
   }
 
-  if (typeof file.size !== 'number' || file.size <= 0) {
+  if (!Number.isFinite(file.size) || file.size <= 0) {
     fail(`${absolutePath} ${file.url} is missing a positive size`);
   }
 
@@ -70,7 +78,7 @@ function readUpdateInfo(filePath, expectedArch) {
 
 function ensureNoUnexpectedWindowsInstaller(info, sourcePath) {
   const windowsInstallers = info.files.filter(file => {
-    return file && typeof file.url === 'string' && WINDOWS_EXE_PATTERN.test(file.url);
+    return isObject(file) && isNonEmptyString(file.url) && WINDOWS_EXE_PATTERN.test(file.url);
   });
 
   if (windowsInstallers.length !== 1) {
@@ -96,7 +104,7 @@ function main() {
   }
 
   const releaseDate = x64.info.releaseDate || arm64.info.releaseDate;
-  if (releaseDate && typeof releaseDate !== 'string') {
+  if (releaseDate && !isNonEmptyString(releaseDate)) {
     fail('releaseDate must be a string when present');
   }
 

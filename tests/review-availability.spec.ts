@@ -1,4 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
 
 const project = {
@@ -117,8 +118,8 @@ async function openSession(
   gitStatus: ReviewGitStatus = baseGitStatus,
   options: {
     withLocalChanges?: boolean;
-    initialPanels?: Array<Record<string, unknown>>;
-    initialConfig?: Record<string, unknown>;
+    initialPanels?: JsonObject[];
+    initialConfig?: JsonObject;
   } = { withLocalChanges: true },
 ): Promise<void> {
   await installElectronApiMock(page, {
@@ -283,9 +284,10 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await capture(page, testInfo, '01-local-review-before-pr.png');
 
   await page.evaluate((gitStatus) => {
+    // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
     const mock = (window as typeof window & {
       __paneTestElectronMock: {
-        emitGitStatusUpdated: (sessionId: string, status: Record<string, unknown>) => void;
+        emitGitStatusUpdated: (sessionId: string, status: JsonObject) => void;
       };
     }).__paneTestElectronMock;
     mock.emitGitStatusUpdated('review-session', gitStatus);
