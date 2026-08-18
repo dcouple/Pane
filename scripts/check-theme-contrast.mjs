@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CSS_PATH = path.join(ROOT, 'frontend/src/styles/tokens/colors.css');
 
-// Mirrors THEME_CLASSES in frontend/src/contexts/ThemeProvider.tsx.
+// Mirrors THEME_CLASSES in frontend/src/contexts/themeContextValue.ts.
 const THEME_CLASSES = {
   'light': ['light'],
   'light-rounded': ['light', 'light-rounded'],
@@ -41,7 +41,9 @@ const THEME_CLASSES = {
 const TEXT = 4.5;   // WCAG AA body text
 const LARGE = 3;    // WCAG AA large text / UI components
 
-// [foreground token, background token, minimum ratio]
+// [foreground token, background token, minimum ratio, parent surface token?]
+// rgba() values are composited over the parent surface (default --color-bg-primary)
+// before measuring, so translucent tokens are judged against what they sit on.
 // Deliberately NOT gated: --color-text-disabled (WCAG 1.4.3 exempts disabled
 // controls — see the high-contrast note in colors.css) and 1px borders such as
 // --color-input-border, which no Pane theme holds to the 3:1 UI threshold.
@@ -87,8 +89,8 @@ const PAIRS = [
   ['--color-text-navigation-secondary', '--color-surface-navigation', TEXT],
   ['--color-text-navigation-muted', '--color-surface-navigation', TEXT],
   ['--color-text-navigation-section', '--color-surface-navigation', TEXT],
-  ['--color-text-navigation-selected', '--color-surface-navigation-selected', TEXT],
-  ['--color-text-navigation-hover', '--color-surface-navigation-hover', TEXT],
+  ['--color-text-navigation-selected', '--color-surface-navigation-selected', TEXT, '--color-surface-navigation'],
+  ['--color-text-navigation-hover', '--color-surface-navigation-hover', TEXT, '--color-surface-navigation'],
   ['--color-text-navigation-brand', '--color-surface-navigation', TEXT],
   ['--color-terminal-fg', '--color-terminal-bg', TEXT],
   ['--color-terminal-cursor', '--color-terminal-bg', LARGE],
@@ -225,7 +227,7 @@ function luminance({ r, g, b }) {
   return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b);
 }
 
-export function contrastRatio(fg, bg) {
+function contrastRatio(fg, bg) {
   const l1 = luminance(fg);
   const l2 = luminance(bg);
   const [hi, lo] = l1 > l2 ? [l1, l2] : [l2, l1];
@@ -258,18 +260,20 @@ function checkTheme(blocks, theme, highContrast) {
     return { color };
   };
 
-  // Every rgba() token is composited over the theme's own bg-primary before measuring.
-  const base = resolve('--color-bg-primary');
-  if (base.error) return { failures: [base.error], skipped, rows };
+  const root = resolve('--color-bg-primary');
+  if (root.error) return { failures: [root.error], skipped, rows };
 
-  for (const [fgName, bgName, min] of PAIRS) {
+  for (const [fgName, bgName, min, parentName] of PAIRS) {
     const fg = resolve(fgName);
     const bg = resolve(bgName);
-    if (fg.error || bg.error) {
-      skipped.push(`${fgName} on ${bgName}: ${fg.error ?? bg.error}`);
+    const parent = parentName ? resolve(parentName) : root;
+    if (fg.error || bg.error || parent.error) {
+      // A missing token is a coverage hole, not a pass — reported and counted as a failure below.
+      skipped.push(`${fgName} on ${bgName}: ${fg.error ?? bg.error ?? parent.error}`);
       continue;
     }
-    const bgFlat = composite(bg.color, base.color);
+    const parentFlat = composite(parent.color, root.color);
+    const bgFlat = composite(bg.color, parentFlat);
     const fgFlat = composite(fg.color, bgFlat);
     const ratio = contrastRatio(fgFlat, bgFlat);
     const ok = ratio >= min;
@@ -293,10 +297,11 @@ function main() {
   for (const theme of targets) {
     const { failures, skipped, rows } = checkTheme(blocks, theme, highContrast);
     const label = `${theme}${highContrast ? ' + high-contrast' : ''}`;
-    if (failures.length) {
+    if (failures.length || skipped.length) {
       failed = true;
-      console.log(`✗ ${label}: ${failures.length} failing pair(s)`);
+      console.log(`✗ ${label}: ${failures.length} failing pair(s), ${skipped.length} unresolved token(s)`);
       for (const f of failures) console.log(`    ${f}`);
+      for (const s of skipped) console.log(`    unresolved ${s}`);
     } else {
       console.log(`✓ ${label}: ${rows.length} pairs pass`);
     }
@@ -304,9 +309,6 @@ function main() {
       for (const r of rows) {
         console.log(`    ${r.ok ? ' ' : '!'} ${r.ratio.toFixed(2).padStart(6)} ≥ ${r.min}  ${r.fgName} (${r.fg}) on ${r.bgName} (${r.bg})`);
       }
-    }
-    if (skipped.length && verbose) {
-      for (const s of skipped) console.log(`    · skipped ${s}`);
     }
   }
   process.exit(failed ? 1 : 0);

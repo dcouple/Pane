@@ -1949,7 +1949,7 @@
   --color-text-primary: var(--tty-ink-900);
   --color-text-secondary: var(--tty-ink-700);   /* 7.4:1 on paper */
   --color-text-tertiary: var(--tty-ink-600);    /* 6.5:1 on paper */
-  --color-text-muted: var(--tty-ink-500);       /* 4.9:1 on paper, 5.2:1 on chrome */
+  --color-text-muted: var(--tty-ink-500);       /* 5.7:1 on paper, 5.2:1 on chrome */
   --color-text-disabled: var(--tty-ink-400);
 
   /* Borders — visible ruled lines */
