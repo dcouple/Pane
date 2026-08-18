@@ -72,6 +72,30 @@
   --vscode-editorWidget-foreground: #ede1cd !important;
 }
 
+/* Abyss theme overrides — trench editor colors */
+:root.abyss {
+  --vscode-editor-background: #04090f !important;
+  --vscode-editor-foreground: #dbeaf1 !important;
+  --vscode-editorWidget-background: #04090f !important;
+  --vscode-editorWidget-foreground: #dbeaf1 !important;
+}
+
+/* Understory theme overrides — moss floor editor colors */
+:root.understory {
+  --vscode-editor-background: #0d110c !important;
+  --vscode-editor-foreground: #e4e9d9 !important;
+  --vscode-editorWidget-background: #0d110c !important;
+  --vscode-editorWidget-foreground: #e4e9d9 !important;
+}
+
+/* Haar theme overrides — fog editor colors (after .light so the theme wins) */
+:root.haar {
+  --vscode-editor-background: #f5f7f9 !important;
+  --vscode-editor-foreground: #252d36 !important;
+  --vscode-editorWidget-background: #f5f7f9 !important;
+  --vscode-editorWidget-foreground: #252d36 !important;
+}
+
 /* Additional Monaco editor style overrides */
 .monaco-editor,
 .monaco-editor-background,

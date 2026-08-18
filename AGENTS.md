@@ -14,6 +14,7 @@
 - Lint: `pnpm lint`; Type-check: `pnpm typecheck` (runs per package). The root lint command is the single entry point for blocking Oxlint and Knip checks, residual ESLint, and advisory anti-slop checks.
 - Detailed advisory output: `pnpm lint:ox:extra:details`; accessibility scan: `pnpm a11y:scan` (install Chromium once with `pnpm exec playwright install chromium`); opt-in render evidence: `pnpm perf:scan`.
 - Tests (E2E): `pnpm test`, `pnpm test:ui`, CI configs in `playwright.ci*.config.ts`.
+- Themes: `pnpm theme:contrast [--high-contrast] [theme…]` gates theme token pairs in `frontend/src/styles/tokens/colors.css` (AA text/UI pairs, terminal ANSI palette, high-contrast overlay); `pnpm theme:screenshots` regenerates `screenshots/themes/`.
 - Main unit tests (if added): `pnpm --filter main test`, coverage: `pnpm --filter main run test:coverage`.
 - Releases must follow `docs/RELEASE_INSTRUCTIONS.md` and run from a clean `main` checkout whose `HEAD` matches `origin/main`.
 

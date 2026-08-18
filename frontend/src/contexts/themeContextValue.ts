@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 
-export type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix';
+export type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory';
 
 /**
  * Class list stamped on <html>/<body> per theme. Every theme composes on the
@@ -30,6 +30,9 @@ export const THEME_CLASSES = {
   'amber-crt': ['dark', 'amber-crt'],
   'teletype': ['light', 'teletype'],
   'dot-matrix': ['dark', 'dot-matrix'],
+  'haar': ['light', 'haar'],
+  'abyss': ['dark', 'abyss'],
+  'understory': ['dark', 'understory'],
 } satisfies Record<Theme, string[]>;
 
 export const isLightTheme = (theme: Theme): boolean => THEME_CLASSES[theme][0] === 'light';

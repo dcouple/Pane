@@ -11,6 +11,7 @@ import { Toggle } from './ui/Toggle';
 import { AddProjectDialog } from './AddProjectDialog';
 import { CloneFromGitHubDialog } from './CloneFromGitHubDialog';
 import { formatDistanceToNow, isValidTimestamp } from '../utils/timestampUtils';
+import { THEME_OPTIONS, getThemeLabel } from '../utils/themeOptions';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 
@@ -314,36 +315,19 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta', synthwave: 'Synthwave', acid: 'Acid Terminal', 'tokyo-rain': 'Tokyo Rain', folio: 'Folio', newsprint: 'Newsprint', walnut: 'Walnut', 'amber-crt': 'Amber CRT', teletype: 'Teletype', 'dot-matrix': 'Dot Matrix' }[theme]}</span>
+                    <span>{getThemeLabel(theme)}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
-                items={[
-                  { id: 'light-rounded', label: 'Light (rounded)', onClick: () => setTheme('light-rounded') },
-                  { id: 'forge', label: 'Forge', onClick: () => setTheme('forge') },
-                  { id: 'night-owl', label: 'Night Owl', onClick: () => setTheme('night-owl') },
-                  { id: 'night-owl-oled', label: 'Night Owl (OLED)', onClick: () => setTheme('night-owl-oled') },
-                  { id: 'dusk-oled', label: 'Dusk (OLED)', onClick: () => setTheme('dusk-oled') },
-                  { id: 'dusk', label: 'Dusk', onClick: () => setTheme('dusk') },
-                  { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
-                  { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
-                  { id: 'terracotta', label: 'Terracotta', onClick: () => setTheme('terracotta') },
-                  { id: 'synthwave', label: 'Synthwave', description: 'Violet-black with magenta and cyan neon accents.', onClick: () => setTheme('synthwave') },
-                  { id: 'acid', label: 'Acid Terminal', description: 'Charcoal-black with electric lime and amber accents.', onClick: () => setTheme('acid') },
-                  { id: 'tokyo-rain', label: 'Tokyo Rain', description: 'Blue-black with pink and blue signage accents.', onClick: () => setTheme('tokyo-rain') },
-                  { id: 'folio', label: 'Folio', description: 'Paper & ink — warm cream, near-black type, one vermilion accent.', onClick: () => setTheme('folio') },
-                  { id: 'newsprint', label: 'Newsprint', description: 'Cool grey stock, graphite type, halftone surfaces, ink-blue accent.', onClick: () => setTheme('newsprint') },
-                  { id: 'walnut', label: 'Walnut', description: 'Vellum & walnut — warm brown-black, parchment type, brass accent.', onClick: () => setTheme('walnut') },
-                  { id: 'amber-crt', label: 'Amber CRT', description: 'Amber phosphor on black-brown glass', onClick: () => setTheme('amber-crt') },
-                  { id: 'teletype', label: 'Teletype', description: 'Brown ink on warm paper, burnt-orange accents', onClick: () => setTheme('teletype') },
-                  { id: 'dot-matrix', label: 'Dot Matrix', description: 'Monochrome LCD green on olive-black', onClick: () => setTheme('dot-matrix') },
-                  { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
-                  { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
-                  { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },
-                ]}
+                items={THEME_OPTIONS.map((option) => ({
+                  id: option.id,
+                  label: option.label,
+                  description: option.description,
+                  onClick: () => setTheme(option.id),
+                }))}
                 selectedId={theme}
                 position="bottom-right"
-                width="sm"
+                width="lg"
               />
             </div>
 

@@ -344,7 +344,8 @@ test.describe('Settings', () => {
     await bootSettings(page, { initialConfig: { theme: 'light-rounded' } });
     await page.getByRole('button', { name: 'Appearance', exact: true }).click();
     await page.getByRole('combobox', { name: 'Theme' }).click();
-    await page.getByRole('option', { name: 'Night Owl', exact: true }).click();
+    // Options carry their picker description in the accessible name; match the label prefix (not the OLED variant).
+    await page.getByRole('option', { name: /^Night Owl(?! \(OLED\))/ }).click();
     await expect(page.locator('html')).toHaveClass(/night-owl/);
     await expect(page.getByRole('dialog', { name: 'Pane Settings' })).toBeVisible();
     await page.screenshot({ path: 'test-results/settings-dark.png' });

@@ -116,6 +116,8 @@ const SelectContent = forwardRef<
 });
 SelectContent.displayName = SelectPrimitive.Content.displayName;
 
+const SelectGroup = SelectPrimitive.Group;
+
 const SelectLabel = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
@@ -143,7 +145,8 @@ const SelectItem = forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
+      'relative flex w-full cursor-default select-none rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
+      description ? 'flex-col items-start gap-0.5' : 'items-center',
       'text-text-primary',
       'hover:bg-surface-secondary hover:text-text-primary',
       'focus:bg-surface-secondary focus:text-text-primary',
@@ -187,5 +190,7 @@ export {
   SelectValue,
   SelectTrigger,
   SelectContent,
+  SelectGroup,
+  SelectLabel,
   SelectItem,
 };

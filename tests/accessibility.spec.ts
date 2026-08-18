@@ -250,7 +250,7 @@ test('Home and About are axe-clean and the modal contains and restores focus', a
   await expect(dialog).toBeHidden();
   await expect(aboutButton).toBeFocused();
 
-  const themeTrigger = page.getByRole('button', { name: /\(sharp\)|\(rounded\)|OLED|Dusk|Forge|Ember|Aurora|Night Owl|Terracotta|Synthwave|Acid Terminal|Tokyo Rain|Folio|Newsprint|Walnut|Amber CRT|Teletype|Dot Matrix/ }).last();
+  const themeTrigger = page.getByRole('button', { name: /\(sharp\)|\(rounded\)|OLED|Dusk|Forge|Ember|Aurora|Night Owl|Terracotta|Synthwave|Acid Terminal|Tokyo Rain|Folio|Newsprint|Walnut|Amber CRT|Teletype|Dot Matrix|Haar|Abyss|Understory/ }).last();
   await themeTrigger.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menu')).toBeVisible();
@@ -262,9 +262,10 @@ test('Home and About are axe-clean and the modal contains and restores focus', a
 test('Night Owl recent-pane metadata remains axe-clean', async ({ page }) => {
   await openDesktop(page);
 
-  const themeTrigger = page.getByRole('button', { name: /\(sharp\)|\(rounded\)|OLED|Dusk|Forge|Ember|Aurora|Night Owl|Terracotta|Synthwave|Acid Terminal|Tokyo Rain|Folio|Newsprint|Walnut|Amber CRT|Teletype|Dot Matrix/ }).last();
+  const themeTrigger = page.getByRole('button', { name: /\(sharp\)|\(rounded\)|OLED|Dusk|Forge|Ember|Aurora|Night Owl|Terracotta|Synthwave|Acid Terminal|Tokyo Rain|Folio|Newsprint|Walnut|Amber CRT|Teletype|Dot Matrix|Haar|Abyss|Understory/ }).last();
   await themeTrigger.click();
-  await page.getByRole('menuitemradio', { name: 'Night Owl', exact: true }).click();
+  // Item names include the picker description, so match the label prefix (and not the OLED variant).
+  await page.getByRole('menuitemradio', { name: /^Night Owl(?! \(OLED\))/ }).click();
   await expect(themeTrigger).toHaveText(/Night Owl/);
   await expectNoAxeViolations(page);
 });
