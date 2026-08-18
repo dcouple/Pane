@@ -28,7 +28,8 @@ export function useAgentUsage() {
       setSnapshot(null);
       setError(requestError instanceof Error ? requestError.message : 'Codex usage is unavailable');
     } finally {
-      if (generation === requestGeneration.current) setIsLoading(false);
+      const ownsLoadingState = generation === requestGeneration.current;
+      setIsLoading(current => ownsLoadingState ? false : current);
     }
   }, []);
 

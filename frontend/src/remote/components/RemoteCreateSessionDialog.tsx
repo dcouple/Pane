@@ -10,6 +10,7 @@ import type { RemoteBranchInfo, RemoteProjectWithSessions, RemoteRuntimeAdapter 
  * desktop session preference store because it writes through window.electronAPI.
  */
 const REMOTE_START_PINNED_PREFERENCE_KEY = 'pane.remoteCreateSession.startPinned';
+const EMPTY_REMOTE_BRANCHES: RemoteBranchInfo[] = [];
 
 interface RemoteCreateSessionDialogProps {
   adapter: RemoteRuntimeAdapter;
@@ -28,13 +29,12 @@ export function RemoteCreateSessionDialog({
   onClose,
   onCreated,
 }: RemoteCreateSessionDialogProps) {
-  const [branches, setBranches] = useState<RemoteBranchInfo[]>([]);
+  const [loadedBranches, setLoadedBranches] = useState<RemoteBranchInfo[] | null>(null);
   const [baseBranch, setBaseBranch] = useState('');
   const [paneName, setPaneName] = useState('');
   const [branchSearch, setBranchSearch] = useState('');
   const [useWorktree, setUseWorktree] = useState(true);
   const [startPinned, setStartPinned] = useState(() => loadRemoteStartPinnedPreference());
-  const [loadingBranches, setLoadingBranches] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [branchOpen, setBranchOpen] = useState(false);
@@ -49,6 +49,8 @@ export function RemoteCreateSessionDialog({
   const nameHelpId = useId();
   const errorId = useId();
   const paneNameInvalid = error === 'Pane name is required.';
+  const branches = loadedBranches ?? EMPTY_REMOTE_BRANCHES;
+  const loadingBranches = loadedBranches === null;
 
   const existingNames = useMemo(() => new Set((project.sessions ?? []).map(session => session.name)), [project.sessions]);
 
@@ -87,7 +89,7 @@ export function RemoteCreateSessionDialog({
     let cancelled = false;
 
     async function loadBranches() {
-      setLoadingBranches(true);
+      setLoadedBranches(null);
       setError(null);
       try {
         const [branchList, detectedBranch] = await Promise.all([
@@ -96,7 +98,7 @@ export function RemoteCreateSessionDialog({
         ]);
         if (cancelled) return;
 
-        setBranches(branchList);
+        setLoadedBranches(branchList);
         const remoteMain = branchList.find(branch => branch.isRemote && (branch.name === 'origin/main' || branch.name === 'origin/master'));
         const detected = branchList.find(branch => branch.name === detectedBranch || branch.name === `origin/${detectedBranch}`);
         const current = branchList.find(branch => branch.isCurrent);
@@ -108,11 +110,8 @@ export function RemoteCreateSessionDialog({
         }
       } catch (loadError) {
         if (!cancelled) {
+          setLoadedBranches([]);
           setError(loadError instanceof Error ? loadError.message : 'Failed to load branches');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingBranches(false);
         }
       }
     }

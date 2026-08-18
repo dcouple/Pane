@@ -18,6 +18,25 @@ const DEFAULT_SIDEBAR_WIDTH = 300;
 const MIN_SIDEBAR_WIDTH = 150;
 const MAX_SIDEBAR_WIDTH = 600;
 
+type CommitDiffLoadResult =
+  | { success: true; data: GitDiffResult }
+  | { success: false; error: string };
+
+async function loadCommitDiff(sessionId: string, commitHash: string): Promise<CommitDiffLoadResult> {
+  try {
+    const response = await API.sessions.getCommitDiffByHash(sessionId, commitHash);
+    if (!response.success) {
+      return { success: false, error: response.error ?? 'Failed to load commit diff' };
+    }
+    return { success: true, data: response.data };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to load commit diff',
+    };
+  }
+}
+
 // --- Unified diff parser (single pass, shared between FileList and DiffViewer) ---
 
 function parseUnifiedDiffToFiles(diff: string): FileDiff[] {
@@ -283,9 +302,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         setError(err instanceof Error ? err.message : 'Failed to load executions');
       }
     } finally {
-      if (mountedRef.current && requestId === executionsRequestIdRef.current) {
-        setExecutionsLoading(false);
-      }
+      const ownsLoadingState = mountedRef.current && requestId === executionsRequestIdRef.current;
+      setExecutionsLoading(current => ownsLoadingState ? false : current);
     }
   }, [
     executionsRef,
@@ -343,24 +361,22 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     if (!viewingCommitHash) return;
     const requestId = ++commitDiffRequestIdRef.current;
     let cancelled = false;
-    const load = async () => {
-      setCommitDiffLoading(true);
-      setError(null);
-      try {
-        const response = await API.sessions.getCommitDiffByHash(sessionId, viewingCommitHash);
+    setCommitDiffLoading(true);
+    setError(null);
+    void loadCommitDiff(sessionId, viewingCommitHash)
+      .then(result => {
         if (cancelled || requestId !== commitDiffRequestIdRef.current) return;
-        if (!response.success) throw new Error(response.error);
-        setCombinedDiff(response.data);
-      } catch (err) {
-        if (!cancelled && requestId === commitDiffRequestIdRef.current) {
-          setError(err instanceof Error ? err.message : 'Failed to load commit diff');
+        if (result.success) {
+          setCombinedDiff(result.data);
+        } else {
+          setError(result.error);
           setCombinedDiff(null);
         }
-      } finally {
-        if (!cancelled && requestId === commitDiffRequestIdRef.current) setCommitDiffLoading(false);
-      }
-    };
-    load();
+      })
+      .finally(() => {
+        const ownsLoadingState = !cancelled && requestId === commitDiffRequestIdRef.current;
+        setCommitDiffLoading(current => ownsLoadingState ? false : current);
+      });
     return () => { cancelled = true; };
   }, [viewingCommitHash, sessionId]);
 
@@ -439,9 +455,8 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             setError(err instanceof Error ? err.message : 'Failed to load combined diff');
           }
         } finally {
-          if (!cancelled && requestId === combinedDiffRequestIdRef.current) {
-            setDiffLoading(false);
-          }
+          const ownsLoadingState = !cancelled && requestId === combinedDiffRequestIdRef.current;
+          setDiffLoading(current => ownsLoadingState ? false : current);
         }
       };
 
