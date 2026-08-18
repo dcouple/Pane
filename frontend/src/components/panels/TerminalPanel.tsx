@@ -39,6 +39,11 @@ import { areKeyboardShortcutsEnabled, useConfigStore } from '../../stores/config
 import type { InterceptorState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
+interface DropdownPosition {
+  x: number;
+  y: number;
+}
+
 // Hold the loading overlay at least this long past ready so the terminal
 // underneath finishes painting before it is revealed.
 const TERMINAL_OVERLAY_LINGER_MS = 150;
@@ -824,7 +829,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     }
   }, [keyboardShortcutsEnabled, openSearch]);
 
-  const getDropdownPosition = useCallback((): { x: number; y: number } => {
+  const getDropdownPosition = useCallback((): DropdownPosition => {
     const container = terminalRef.current;
     const terminal = xtermRef.current;
     if (!container) return { x: 0, y: 0 };

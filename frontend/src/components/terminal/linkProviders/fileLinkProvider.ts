@@ -2,6 +2,12 @@ import type { ILink, ILinkProvider } from '@xterm/xterm';
 import type { LinkProviderConfig } from './types';
 import { isMac, isWindows, getModifierKeyName } from '../../../utils/platformUtils';
 
+interface ParsedFilePath {
+  path: string;
+  line?: number;
+  col?: number;
+}
+
 /**
  * Parse a WSL UNC path to extract distribution name.
  * Handles \\wsl.localhost\Distro\... and \\wsl$\Distro\...
@@ -42,7 +48,7 @@ export function createFileLinkProvider(config: LinkProviderConfig): ILinkProvide
    * Parse line and column numbers from file path
    * Example: "file.ts:42:10" -> { path: "file.ts", line: 42, col: 10 }
    */
-  function parseFilePath(match: string): { path: string; line?: number; col?: number } {
+  function parseFilePath(match: string): ParsedFilePath {
     const lineMatch = match.match(/:(\d+)(?::(\d+))?$/);
     if (lineMatch) {
       return {

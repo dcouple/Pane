@@ -4,7 +4,7 @@ import { useConfigStore } from '../stores/configStore';
 type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
 
 const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta']);
-const THEME_CLASSES: Record<Theme, string[]> = {
+const THEME_CLASSES = {
   'light': ['light'],
   'light-rounded': ['light', 'light-rounded'],
   'dark': ['dark'],
@@ -17,7 +17,7 @@ const THEME_CLASSES: Record<Theme, string[]> = {
   'night-owl': ['dark', 'night-owl'],
   'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
   'terracotta': ['dark', 'terracotta'],
-};
+} satisfies Record<Theme, string[]>;
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
 
 interface ThemeContextType {

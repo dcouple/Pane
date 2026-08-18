@@ -53,7 +53,7 @@ const AiderIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
  * Lookup map: CLI command keyword -> brand icon component.
  * Used to dynamically show the right icon for any terminal panel.
  */
-export const CLI_BRAND_ICONS: Record<string, React.FC<BrandIconProps>> = {
+export const CLI_BRAND_ICONS = {
   claude: ClaudeIcon,
   codex: OpenAIIcon,
   cursor: CursorIcon,

@@ -24,7 +24,7 @@ export const CATEGORY_ORDER: HotkeyDefinition['category'][] = [
   'debug',
 ];
 
-export const CATEGORY_LABELS: Record<HotkeyDefinition['category'], string> = {
+export const CATEGORY_LABELS = {
   navigation: 'Navigation',
   session: 'Projects',
   tabs: 'Tabs',
@@ -32,7 +32,7 @@ export const CATEGORY_LABELS: Record<HotkeyDefinition['category'], string> = {
   tools: 'Add Tool',
   shortcuts: 'Shortcuts',
   debug: 'Debug',
-};
+} satisfies Record<HotkeyDefinition['category'], string>;
 
 export function formatKeyDisplay(keys: string): string {
   const isMacPlatform = isMac();

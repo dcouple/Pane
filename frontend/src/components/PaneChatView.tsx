@@ -24,11 +24,11 @@ const ALL_PANE_CHAT_AGENT_OPTIONS: Array<{
 const visiblePaneChatAgents = new Set(visibleAgentPresets().map(preset => preset.id));
 const PANE_CHAT_AGENT_OPTIONS = ALL_PANE_CHAT_AGENT_OPTIONS.filter(option => visiblePaneChatAgents.has(option.id));
 
-const PANE_CHAT_AGENT_LABELS: Record<PaneChatAgent, string> = {
+const PANE_CHAT_AGENT_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
   cursor: 'Cursor',
-};
+} satisfies Record<PaneChatAgent, string>;
 
 export function PaneChatView() {
   const [state, setState] = useState<PaneChatState<Session> | null>(null);

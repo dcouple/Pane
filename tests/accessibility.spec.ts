@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { expectNoAxeViolations } from './axeTest';
 import { installElectronApiMock } from './electronApiMock';
+import type { JsonValue } from '../shared/validation/boundaryDecoder';
 
 const project = {
   id: 1,
@@ -177,7 +178,7 @@ async function openConnectedRemote(page: Page): Promise<void> {
 
     // SAFETY: the test route receives the remote invoke envelope emitted by this fixture.
     const body = JSON.parse(request.postData() ?? '{}') as { channel?: string };
-    let result: unknown = null;
+    let result: JsonValue = null;
     switch (body.channel) {
       case 'sessions:get-all-with-projects':
         result = [remoteProject];

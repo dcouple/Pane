@@ -471,7 +471,12 @@ interface ParsedSseEvent {
   data: string;
 }
 
-export function parseSseEvents(buffer: string): { events: ParsedSseEvent[]; rest: string } {
+interface ParsedSseBatch {
+  events: ParsedSseEvent[];
+  rest: string;
+}
+
+export function parseSseEvents(buffer: string): ParsedSseBatch {
   const events: ParsedSseEvent[] = [];
   let rest = buffer;
   let boundary = rest.indexOf('\n\n');

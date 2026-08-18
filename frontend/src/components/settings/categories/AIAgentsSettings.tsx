@@ -10,11 +10,11 @@ import { API } from '../../../utils/api';
 import type { PaneChatAgent } from '../../../../../shared/types/paneChat';
 import { visibleAgentPresets } from '../../../utils/agentPresets';
 
-const PANE_CHAT_AGENT_LABELS: Record<PaneChatAgent, string> = {
+const PANE_CHAT_AGENT_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
   cursor: 'Cursor',
-};
+} satisfies Record<PaneChatAgent, string>;
 
 const paneChatAgentOptions = visibleAgentPresets().map(({ id }) => ({ id, label: PANE_CHAT_AGENT_LABELS[id] }));
 

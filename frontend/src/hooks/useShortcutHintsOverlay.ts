@@ -3,7 +3,11 @@ import { areKeyboardShortcutsEnabled, useConfigStore } from '../stores/configSto
 
 const HOLD_DELAY_MS = 300;
 
-export function useShortcutHintsOverlay(): { isVisible: boolean } {
+interface ShortcutHintsOverlayState {
+  isVisible: boolean;
+}
+
+export function useShortcutHintsOverlay(): ShortcutHintsOverlayState {
   const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   const [isVisible, setIsVisible] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

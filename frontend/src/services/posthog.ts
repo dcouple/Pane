@@ -31,8 +31,18 @@ export interface PostHogInitOptions {
   flushPendingEvents?: boolean;
 }
 
-function compactProperties(properties: AnalyticsProperties): Record<string, JsonValue> {
-  const compacted: Record<string, JsonValue> = {};
+interface CompactAnalyticsProperties {
+  [key: string]: JsonValue;
+}
+
+interface DirectCaptureTarget {
+  token: string;
+  host: string;
+  distinctId: string;
+}
+
+function compactProperties(properties: AnalyticsProperties): CompactAnalyticsProperties {
+  const compacted: CompactAnalyticsProperties = {};
   for (const [key, value] of Object.entries(properties)) {
     if (value !== undefined) compacted[key] = value;
   }
@@ -87,7 +97,7 @@ function identifyUser(config: PostHogConfig): void {
   posthog.identify(config.identity.distinctId, personProperties(config.identity));
 }
 
-function directCaptureTarget(identity = currentIdentity): { token: string; host: string; distinctId: string } {
+function directCaptureTarget(identity = currentIdentity): DirectCaptureTarget {
   const posthogDistinctId = posthog.get_distinct_id?.();
 
   return {

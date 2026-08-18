@@ -13,6 +13,11 @@ import type {
   SessionPanelLayout,
 } from '../../../shared/types/panels';
 
+interface ReconciledPanelLayout {
+  layout: SessionPanelLayout;
+  changed: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -446,7 +451,7 @@ export function removePanelFromLayout(
 export function reconcile(
   layout: SessionPanelLayout,
   livePanelIds: string[],
-): { layout: SessionPanelLayout; changed: boolean } {
+): ReconciledPanelLayout {
   const liveSet = new Set(livePanelIds);
   let changed = false;
   // A panel id may only appear once across the whole tree; keep the first

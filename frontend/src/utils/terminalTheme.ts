@@ -1,3 +1,9 @@
+import type { ITheme } from '@xterm/xterm';
+
+interface TerminalColorFallbacks {
+  [variable: string]: { light: string; dark: string };
+}
+
 // Convert rgb(r g b) format to hex format
 const rgbToHex = (rgb: string): string => {
   // Check if already in hex format
@@ -35,7 +41,7 @@ const getCSSVariable = (name: string): string => {
   const isForge = document.documentElement.classList.contains('forge');
 
   // Define theme-aware fallbacks (already in hex format)
-  const fallbacks: Record<string, { light: string; dark: string }> = {
+  const fallbacks: TerminalColorFallbacks = {
     '--color-terminal-bg': { light: '#ffffff', dark: '#111827' },
     '--color-terminal-fg': { light: '#1e2026', dark: '#f3f4f6' },
     '--color-terminal-cursor': { light: '#6366f1', dark: '#818cf8' },
@@ -58,12 +64,12 @@ const getCSSVariable = (name: string): string => {
 };
 
 // Terminal theme generator that reads from CSS variables
-export const getTerminalTheme = () => {
+export const getTerminalTheme = (): ITheme => {
   // Only set when the theme defines it (no fallback — dark themes keep xterm's default selection)
   const selectionBg = getComputedStyle(document.documentElement)
     .getPropertyValue('--color-terminal-selection-bg')
     .trim();
-  return {
+  const theme: ITheme = {
     background: getCSSVariable('--color-terminal-bg'),
     foreground: getCSSVariable('--color-terminal-fg'),
     cursor: getCSSVariable('--color-terminal-cursor'),
@@ -83,8 +89,9 @@ export const getTerminalTheme = () => {
     brightMagenta: getCSSVariable('--color-terminal-bright-magenta'),
     brightCyan: getCSSVariable('--color-terminal-bright-cyan'),
     brightWhite: getCSSVariable('--color-terminal-bright-white'),
-    ...(selectionBg ? { selectionBackground: selectionBg } : {}),
   };
+  if (selectionBg) theme.selectionBackground = selectionBg;
+  return theme;
 };
 
 // Script terminal theme (slightly different background for better UI integration)

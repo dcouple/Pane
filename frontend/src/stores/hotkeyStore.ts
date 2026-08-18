@@ -76,7 +76,11 @@ const MODIFIER_ORDER = ['mod', 'alt', 'shift'] as const;
 
 // Punctuation codes resolved via e.code when Alt is held; macOS Option modifies
 // e.key for these too (e.g. Option+/ produces '÷' on some layouts)
-const ALT_PUNCTUATION_CODES: Record<string, string> = {
+interface AlternatePunctuationCodes {
+  [code: string]: string;
+}
+
+const ALT_PUNCTUATION_CODES: AlternatePunctuationCodes = {
   Slash: '/',
   Comma: ',',
   Period: '.',

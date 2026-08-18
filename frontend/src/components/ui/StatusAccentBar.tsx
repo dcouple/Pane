@@ -9,12 +9,12 @@ interface StatusAccentBarProps {
   className?: string;
 }
 
-const barColor: Record<Exclude<AgentDisplayStatus, 'unknown'>, string> = {
+const barColor = {
   blocked: 'bg-status-error',
   working: 'bg-status-info',
   done: 'bg-status-info',
   idle: 'bg-status-success',
-};
+} satisfies Record<Exclude<AgentDisplayStatus, 'unknown'>, string>;
 
 /**
  * The always-present left accent bar on a session row. It follows the at-a-glance

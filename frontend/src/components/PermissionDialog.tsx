@@ -56,7 +56,7 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({ request, onR
   };
 
   const getToolDescription = (toolName: string) => {
-    const descriptions: Record<string, string> = {
+    const descriptions = {
       'Bash': 'Execute shell commands',
       'Write': 'Write files to disk',
       'Edit': 'Modify existing files',

@@ -65,14 +65,16 @@ function validateEventSession(eventData: ValidatedEventData, activeSessionId?: s
 
 
 // Throttle utility with external drain support
+interface ThrottledWithDrain<T extends (...args: never[]) => void> {
+  throttled: (...args: Parameters<T>) => void;
+  drain: (sessionId: string) => void;
+}
+
 function createThrottledWithDrain<T extends (...args: never[]) => void>(
   fn: T,
   delayMs: number,
   keyFn: (...args: Parameters<T>) => string,
-): {
-  throttled: (...args: Parameters<T>) => void;
-  drain: (sessionId: string) => void;
-} {
+): ThrottledWithDrain<T> {
   const pendingCalls = new Map<string, Parameters<T>>();
   let lastCallTime = 0;
   let timeoutId: NodeJS.Timeout | null = null;

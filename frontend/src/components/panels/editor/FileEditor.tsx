@@ -19,6 +19,10 @@ import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/con
 import { LiveRegion } from '../../ui/LiveRegion';
 import { boundary, decodeBoundary } from '../../../../../shared/validation/boundaryDecoder';
 
+interface LanguageByExtension {
+  [extension: string]: string;
+}
+
 interface FileItem {
   name: string;
   path: string;
@@ -1765,7 +1769,7 @@ export function FileEditor({
 
 function getLanguageFromPath(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase();
-  const languageMap: Record<string, string> = {
+  const languageMap: LanguageByExtension = {
     js: 'javascript',
     jsx: 'javascript',
     ts: 'typescript',

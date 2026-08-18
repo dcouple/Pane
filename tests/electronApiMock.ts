@@ -67,7 +67,10 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const listeners = new Map<string, Set<MockEventCallback>>();
     const pendingPermissions: PanePermissionRequest[] = [];
     const clone = <T>(value: T): T => structuredClone(value);
-    const preferences: Record<string, string> = {
+    interface MockPreferences {
+      [key: string]: string;
+    }
+    const preferences: MockPreferences = {
       analytics_consent_shown: mockOptions.analyticsConsentShown === false ? 'false' : 'true',
       ...clone(mockOptions.initialPreferences ?? {}),
     };
