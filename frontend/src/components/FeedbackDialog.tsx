@@ -87,7 +87,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
       <ModalHeader
         title="Send feedback"
         icon={<MessageSquareText className="h-5 w-5" />}
-        description="Create a public issue in dcouple/Pane."
+        description={<span className="text-text-primary">Create a public issue in dcouple/Pane.</span>}
         onClose={onClose}
       />
 
@@ -110,7 +110,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
             </div>
           </ModalBody>
           <ModalFooter>
-            <Button type="button" variant="secondary" onClick={() => dispatch({ type: 'reset' })}>
+            <Button type="button" variant="secondary" className="text-text-primary" onClick={() => dispatch({ type: 'reset' })}>
               Send another
             </Button>
             <Button type="button" onClick={onClose}>Done</Button>
@@ -119,11 +119,11 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
       ) : (
         <form onSubmit={submit}>
           <ModalBody className="space-y-4">
-            <p className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-text-secondary">
+            <p className="rounded-md border border-status-warning/30 bg-status-warning/10 px-3 py-2 text-xs text-text-primary">
               This issue will be PUBLIC on GitHub and posted using your authenticated GitHub account.
             </p>
 
-            <label className="block space-y-1.5 text-sm text-text-secondary">
+            <label className="block space-y-1.5 text-sm text-text-primary">
               <span>Type</span>
               <select
                 value={state.type}
@@ -139,8 +139,8 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
               </select>
             </label>
 
-            <label className="block space-y-1.5 text-sm text-text-secondary">
-              <span>Title <span className="text-text-tertiary">(optional)</span></span>
+            <label className="block space-y-1.5 text-sm text-text-primary">
+              <span>Title <span>(optional)</span></span>
               <input
                 type="text"
                 maxLength={120}
@@ -151,7 +151,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
               />
             </label>
 
-            <label className="block space-y-1.5 text-sm text-text-secondary">
+            <label className="block space-y-1.5 text-sm text-text-primary">
               <span>Feedback</span>
               <textarea
                 ref={bodyRef}
@@ -165,18 +165,18 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
               />
             </label>
 
-            <label className="flex cursor-pointer items-start gap-2 text-sm text-text-secondary">
+            <label className="flex cursor-pointer items-start gap-2 text-sm text-text-primary">
               <input
                 type="checkbox"
                 checked={state.includeAppDetails}
                 onChange={event => dispatch({ type: 'set-include-details', value: event.target.checked })}
                 className="mt-0.5 h-4 w-4 rounded border-border-primary accent-interactive"
               />
-              <span>Include app details <span className="text-text-tertiary">(version, commit, platform, architecture, and Electron version)</span></span>
+              <span>Include app details <span>(version, commit, platform, architecture, and Electron version)</span></span>
             </label>
 
             {state.status === 'error' && (
-              <div role="alert" className="rounded-md border border-status-error/30 bg-status-error/10 p-3 text-sm text-text-secondary">
+              <div role="alert" className="rounded-md border border-status-error/30 bg-status-error/10 p-3 text-sm text-text-primary">
                 <p>{state.error}</p>
                 {state.fallbackUrl && (
                   <button
@@ -192,7 +192,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="button" variant="secondary" className="text-text-primary" onClick={onClose}>Cancel</Button>
             <Button
               type="submit"
               disabled={!canSubmitFeedback(state) || (state.includeAppDetails && isLoadingAppDetails)}
