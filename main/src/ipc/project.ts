@@ -15,6 +15,9 @@ import { ensureProjectAgentContext } from '../services/agentContextManager';
 import type { ConfigManager } from '../services/configManager';
 import type { Project } from '../database/models';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { createRequire } from 'node:module';
+
+const loadProjectDependency = createRequire(__filename);
 
 // Helper function to stop a running project script
 async function stopProjectScriptInternal(projectId?: number): Promise<{ success: boolean; error?: string }> {
@@ -33,8 +36,7 @@ async function stopProjectScriptInternal(projectId?: number): Promise<{ success:
       // Mark as closing
       scriptExecutionTracker.markClosing('project', projectIdToStop);
 
-      const { panelManager } = require('../services/panelManager');
-      const { logsManager } = require('../services/panels/logPanel/logsManager');
+      const { logsManager } = loadProjectDependency('../services/panels/logPanel/logsManager');
 
       const panels = await panelManager.getPanelsForSession(runningScript.sessionId);
       const logsPanel = panels?.find((p: { type: string }) => p.type === 'logs');
@@ -724,7 +726,7 @@ export function registerProjectHandlers(
           const panels = await panelManager.getPanelsForSession(sessionIdToStop);
           const logsPanel = panels?.find((p: { type: string }) => p.type === 'logs');
           if (logsPanel) {
-            const { logsManager } = require('../services/panels/logPanel/logsManager');
+            const { logsManager } = loadProjectDependency('../services/panels/logPanel/logsManager');
             await logsManager.stopScript(logsPanel.id);
           }
           // Also try old mechanism as fallback
@@ -743,7 +745,7 @@ export function registerProjectHandlers(
       const sessionId = mainRepoSession.id;
 
       // Run the script in the project root using logsManager
-      const { logsManager } = require('../services/panels/logPanel/logsManager');
+      const { logsManager } = loadProjectDependency('../services/panels/logPanel/logsManager');
       const ctx = sessionManager.getProjectContextByProjectId(projectId);
       const wslContext = ctx ? ctx.commandRunner.wslContext : null;
       await logsManager.runScript(sessionId, runScript, project.path, wslContext);

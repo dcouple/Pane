@@ -19,10 +19,14 @@ import { withLock } from '../../../utils/mutex';
 import { getAppDirectory } from '../../../utils/appDirectory';
 import { escapeForBash } from '../../../utils/wslUtils';
 import { boundary, decodeBoundary, type JsonObject } from '../../../../../shared/validation/boundaryDecoder';
+import { createRequire } from 'node:module';
+import { logValidationFailure, validatePanelSessionOwnership } from '../../../utils/sessionValidation';
+
+const loadClaudeDependency = createRequire(__filename);
 
 function getPanelManagerModule(): typeof import('../../panelManager') {
   // SAFETY: CommonJS require returns the statically typed local panelManager module.
-  return require('../../panelManager') as typeof import('../../panelManager');
+  return loadClaudeDependency('../../panelManager') as typeof import('../../panelManager');
 }
 
 // Extend global object for MCP configuration storage  
@@ -608,7 +612,6 @@ export class ClaudeCodeManager extends AbstractCliManager {
   async startPanel(panelId: string, sessionId: string, worktreePath: string, prompt: string, permissionMode?: 'approve' | 'ignore', model?: string): Promise<void> {
     // Validate panel ownership before starting (skip for virtual session-based panel IDs)
     if (!panelId.startsWith('session-')) {
-      const { validatePanelSessionOwnership, logValidationFailure } = require('../../../utils/sessionValidation');
       const validation = validatePanelSessionOwnership(panelId, sessionId);
       if (!validation.valid) {
         logValidationFailure('ClaudeCodeManager.startPanel', validation);
@@ -667,7 +670,6 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return await withLock(`claude-continue-${panelId}`, async () => {
       // Validate panel ownership before continuing (skip for virtual session-based panel IDs)
       if (!panelId.startsWith('session-')) {
-        const { validatePanelSessionOwnership, logValidationFailure } = require('../../../utils/sessionValidation');
         const validation = validatePanelSessionOwnership(panelId, sessionId);
         if (!validation.valid) {
           logValidationFailure('ClaudeCodeManager.continuePanel', validation);

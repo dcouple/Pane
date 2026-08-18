@@ -3,11 +3,14 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { ShellDetector } from './shellDetector';
+import { createRequire } from 'node:module';
+
+const loadShellDependency = createRequire(__filename);
 
 // Try to import app from electron (might not be available in all contexts)
 let app: typeof import('electron').app | undefined;
 try {
-  app = require('electron').app;
+  app = loadShellDependency('electron').app;
 } catch {
   // Electron not available (e.g., in worker threads)
   app = undefined;
@@ -19,7 +22,7 @@ try {
   // Lazy import to avoid circular dependencies
   const getConfigManager = () => {
     try {
-      const { configManager } = require('../services/configManager');
+      const { configManager } = loadShellDependency('../services/configManager');
       return configManager;
     } catch {
       return null;

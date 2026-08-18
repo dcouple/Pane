@@ -4,7 +4,7 @@ import { getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type Pt
 import { getShellPath } from '../utils/shellPath';
 import { ShellDetector } from '../utils/shellDetector';
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import { getGitAttributionEnv } from '../utils/attribution';
 
@@ -298,7 +298,7 @@ export class TerminalSessionManager extends EventEmitter {
     try {
       if (platform === 'win32') {
         // Windows: Use WMIC to get child processes
-        const result = require('child_process').execSync(
+        const result = execSync(
           `wmic process where (ParentProcessId=${parentPid}) get ProcessId`,
           { encoding: 'utf8' }
         );
@@ -314,7 +314,7 @@ export class TerminalSessionManager extends EventEmitter {
         }
       } else {
         // Unix/Linux/macOS: Use ps command
-        const result = require('child_process').execSync(
+        const result = execSync(
           `ps -o pid= --ppid ${parentPid} 2>/dev/null || true`,
           { encoding: 'utf8' }
         );

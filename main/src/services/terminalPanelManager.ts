@@ -3,6 +3,7 @@ import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
 import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
 import * as path from 'path';
+import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 import { getShellPath } from '../utils/shellPath';
 import { ShellDetector } from '../utils/shellDetector';
@@ -1572,7 +1573,6 @@ export class TerminalPanelManager {
     // In production, you'd use more robust methods
     if (process.platform === 'darwin' || process.platform === 'linux') {
       try {
-        const fs = require('fs').promises;
         const cwdLink = `/proc/${pid}/cwd`;
         return await fs.readlink(cwdLink);
       } catch {

@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import { setupTestUpdater } from './test-updater';
 
 export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): void {
   // Only setup auto-updater for packaged apps (not development)
@@ -10,7 +11,6 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
 
   // TEST MODE: Use local server for testing
   if (process.env.TEST_UPDATES === 'true') {
-    const { setupTestUpdater } = require('./test-updater');
     setupTestUpdater();
     console.log('[AutoUpdater] Using test update server at:', process.env.UPDATE_SERVER_URL || 'http://localhost:8080');
   } else {
@@ -74,4 +74,4 @@ export function setupAutoUpdater(getMainWindow: () => BrowserWindow | null): voi
       // Let the renderer handle the UI - no native dialog
     }
   });
-} 
+}

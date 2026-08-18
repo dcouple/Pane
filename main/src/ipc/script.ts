@@ -5,7 +5,7 @@ import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDec
 import { getShellPath, findExecutableInPath } from '../utils/shellPath';
 import { logsManager } from '../services/panels/logPanel/logsManager';
 import { panelManager } from '../services/panelManager';
-import type { ExecException } from 'child_process';
+import { exec, type ExecException } from 'child_process';
 import { scriptExecutionTracker } from '../services/scriptExecutionTracker';
 
 const DAEMON_SCRIPT_CHANNELS = [
@@ -255,8 +255,6 @@ export function registerScriptHandlers(
       }
 
       // Execute the IDE command in the worktree directory
-      const { exec } = require('child_process');
-
       // Get enhanced shell PATH for packaged apps
       const shellPath = getShellPath();
 
@@ -270,7 +268,6 @@ export function registerScriptHandlers(
           ideCommand,
           {
             cwd: session.worktreePath,
-            shell: true,
             env: {
               ...process.env,
               PATH: shellPath  // Use enhanced PATH that includes user's shell PATH

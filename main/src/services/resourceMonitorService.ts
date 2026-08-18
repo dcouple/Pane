@@ -10,6 +10,9 @@ import type {
   ResourceSnapshot,
 } from '../../../shared/types/resourceMonitor';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { createRequire } from 'node:module';
+
+const loadResourceDependency = createRequire(__filename);
 
 const execFileAsync = promisify(execFile);
 
@@ -366,9 +369,9 @@ export class ResourceMonitorService extends EventEmitter {
 
     // Lazy imports to avoid circular dependency at module load time
     // SAFETY: This require targets the statically typed local module and selects its exported singleton.
-    const { terminalPanelManager } = require('./terminalPanelManager') as { terminalPanelManager: { getSessionPids(): Map<string, number[]> } };
+    const { terminalPanelManager } = loadResourceDependency('./terminalPanelManager') as { terminalPanelManager: { getSessionPids(): Map<string, number[]> } };
     // SAFETY: This require targets the statically typed local module and selects its exported registry class.
-    const { CliToolRegistry } = require('./cliToolRegistry') as { CliToolRegistry: { getInstance(): { getAllManagers(): { getSessionPids(): Map<string, number[]> }[] } } };
+    const { CliToolRegistry } = loadResourceDependency('./cliToolRegistry') as { CliToolRegistry: { getInstance(): { getAllManagers(): { getSessionPids(): Map<string, number[]> }[] } } };
 
     // Collect PIDs from all sources: terminal panels + CLI managers (Claude, Codex, etc.)
     const sessionPids = new Map<string, number[]>();

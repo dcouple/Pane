@@ -2,6 +2,7 @@ import * as path from 'path';
 import { formatJsonForOutput } from './formatters';
 import type { ClaudeJsonMessage } from '../types/session';
 import { boundary, decodeBoundary, type JsonObject, type JsonValue } from '../../../shared/validation/boundaryDecoder';
+import { formatForDisplay, isValidTimestamp } from './timestampUtils';
 
 interface ToolCall {
   type: 'tool_use';
@@ -281,7 +282,6 @@ function formatToolInteraction(
     let resultTime = '';
     if (resultTimestamp) {
       try {
-        const { formatForDisplay, isValidTimestamp } = require('./timestampUtils');
         if (isValidTimestamp(resultTimestamp)) {
           resultTime = ` (${formatForDisplay(resultTimestamp)})`;
         }

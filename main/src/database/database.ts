@@ -1,6 +1,8 @@
 import Database from "better-sqlite3-multiple-ciphers";
 import { readFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
+import { v4 as uuidv4 } from "uuid";
+import { createRequire } from "node:module";
 import type {
   Project,
   ProjectRunCommand,
@@ -27,6 +29,8 @@ import {
   decodeBoundary,
   type JsonObject,
 } from "../../../shared/validation/boundaryDecoder";
+
+const loadDatabaseDependency = createRequire(__filename);
 
 // Interface for legacy claude_panel_settings during migration
 interface ClaudePanelSetting {
@@ -571,7 +575,7 @@ export class DatabaseService {
         // Import existing config as default project if it exists
         try {
           const configManager =
-            require("../services/configManager").configManager;
+            loadDatabaseDependency("../services/configManager").configManager;
           const gitRepoPath = configManager.getGitRepoPath();
 
           if (gitRepoPath) {
@@ -1934,7 +1938,7 @@ export class DatabaseService {
             );
 
           // Create Claude panel settings with default model from config
-          const { configManager } = require("../services/configManager");
+          const { configManager } = loadDatabaseDependency("../services/configManager");
           const defaultModel =
             configManager.getDefaultModel() || "claude-3-opus-20240229";
           this.db
@@ -2049,7 +2053,7 @@ export class DatabaseService {
 
           if (!hasDiffPanel) {
             // Create diff panel for this session
-            const panelId = require("uuid").v4();
+            const panelId = uuidv4();
             const now = new Date().toISOString();
 
             this.db

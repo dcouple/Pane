@@ -7,6 +7,7 @@
 import { randomUUID } from 'crypto';
 import { EventEmitter } from 'events';
 import { spawn, ChildProcess, exec, execSync } from 'child_process';
+import { promisify } from 'util';
 import { getRuntimeConfigManager } from '../core/runtime';
 import { ShellDetector } from '../utils/shellDetector';
 import type { Session, SessionUpdate, SessionOutput } from '../types/session';
@@ -1470,8 +1471,6 @@ export class SessionManager extends EventEmitter {
   }
   
   private async execWithShellPath(command: string, options?: { cwd?: string }): Promise<{ stdout: string; stderr: string }> {
-    const { exec } = require('child_process');
-    const { promisify } = require('util');
     const execAsync = promisify(exec);
     
     const shellPath = getShellPath();

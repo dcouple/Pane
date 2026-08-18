@@ -3,11 +3,15 @@
  * This ensures the Web Streams API is available as a global
  */
 
+import { createRequire } from 'node:module';
+
+const loadStreamModule = createRequire(__filename);
+
 // Check if ReadableStream is already available
 if (!globalThis.ReadableStream) {
   try {
     // Try to import from Node.js built-in stream/web module (Node 16.5+)
-    const { ReadableStream, WritableStream, TransformStream } = require('stream/web');
+    const { ReadableStream, WritableStream, TransformStream } = loadStreamModule('stream/web');
     
     // Make them available globally
     globalThis.ReadableStream = ReadableStream;
@@ -18,7 +22,7 @@ if (!globalThis.ReadableStream) {
   } catch {
     // If stream/web is not available, use the web-streams-polyfill package
     try {
-      const streams = require('web-streams-polyfill/ponyfill');
+      const streams = loadStreamModule('web-streams-polyfill/ponyfill');
       
       globalThis.ReadableStream = streams.ReadableStream;
       globalThis.WritableStream = streams.WritableStream;

@@ -32,19 +32,22 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { boundary, decodeBoundary, type JsonValue } from '../../../shared/validation/boundaryDecoder';
+
+const loadHostModule = createRequire(__filename);
 
 // node-pty's CommonJS export shape matches what main uses at
 // `terminalPanelManager.ts:1`. We use a typed `require` here because this
 // UtilityProcess entry is deliberately self-contained; importing via
 // `import * as pty` would couple to main's module graph.
 // SAFETY: This package's CommonJS entry exports the same typed node-pty API.
-const pty = require('@lydell/node-pty') as typeof import('@lydell/node-pty');
+const pty = loadHostModule('@lydell/node-pty') as typeof import('@lydell/node-pty');
 
 // Electron exposes UtilityProcess parentPort on `process.parentPort` in this
 // runtime. Keep the module export as a compatibility fallback.
 // SAFETY: Electron's UtilityProcess runtime exposes the documented HostPort surface.
-const electron = require('electron') as { parentPort?: typeof process.parentPort };
+const electron = loadHostModule('electron') as { parentPort?: typeof process.parentPort };
 
 import type {
   PtyHostRequest,
