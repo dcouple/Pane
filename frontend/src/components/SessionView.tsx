@@ -115,7 +115,7 @@ export const SessionView = memo(() => {
     setSessionStatusAnnouncement(
       `${activeSession.name || 'Pane'} is ${activeSession.status}${activeSession.statusMessage ? `: ${activeSession.statusMessage}` : ''}`,
     );
-  }, [activeSession?.id, activeSession?.name, activeSession?.status, activeSession?.statusMessage]);
+  }, [activeSession]);
 
   // Panel store state and actions
   const {

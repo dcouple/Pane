@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useId, ReactNode, CSSProperties } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useId, useCallback, ReactNode, CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Slot } from '@radix-ui/react-slot';
 import { cn } from '../../utils/cn';
@@ -109,7 +109,7 @@ export function Dropdown({
     onOpenChange?.(newState);
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     // Focus inside the menu would land on <body> when it unmounts, so hand it back to
     // the trigger. Focus already moved elsewhere (a click on another control) is left alone.
     const focusWasInMenu = !!contentRef.current?.contains(document.activeElement);
@@ -120,7 +120,7 @@ export function Dropdown({
     if (focusWasInMenu) {
       triggerRef.current?.focus();
     }
-  };
+  }, [onOpenChange]);
 
   const handleItemClick = (item: DropdownItem) => {
     if (item.disabled) return;
@@ -292,7 +292,7 @@ export function Dropdown({
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isOpen]);
+  }, [isOpen, handleClose]);
 
   // Handle escape key
   useEffect(() => {
@@ -306,7 +306,7 @@ export function Dropdown({
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen]);
+  }, [isOpen, handleClose]);
 
   return (
     <div ref={dropdownRef} className={cn('relative', className)} style={style}>

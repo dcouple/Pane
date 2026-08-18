@@ -283,7 +283,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
     window.addEventListener('browser-panel:popup-requested', handler);
     return () => window.removeEventListener('browser-panel:popup-requested', handler);
-  }, [panel.sessionId, addPanel, setActivePanelInStore]);
+  }, [panel.id, panel.sessionId, addPanel, setActivePanelInStore]);
 
   // Listen for browser-panel:navigate CustomEvents (e.g., from SelectionPopover "Open in Browser")
   // Uses stopImmediatePropagation so only the first browser panel for a session handles the event,

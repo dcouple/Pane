@@ -72,7 +72,7 @@ export function useResizable({
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-  }, [isResizing, minWidth, maxWidth]);
+  }, [isResizing, minWidth, maxWidth, side]);
 
   return {
     width,

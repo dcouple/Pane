@@ -129,12 +129,12 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     return () => window.removeEventListener('project-settings-updated', handler);
   }, []);
   useEffect(() => {
-    if (!session) {
+    const currentSessionId = session?.id;
+    if (!currentSessionId) {
       setResolvedRunScript(null);
       return;
     }
     let cancelled = false;
-    const currentSessionId = session.id;
     window.electronAPI?.projects.resolveRunScript(currentSessionId).then((result: { success: boolean; data?: { command: string; source: string } | null }) => {
       if (cancelled) return;
       if (result?.success) {

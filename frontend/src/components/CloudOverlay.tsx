@@ -9,20 +9,21 @@ import { useCloudStore } from '../stores/cloudStore';
 export function CloudOverlay() {
   const { vmState, showCloudView, iframeReady, setIframeReady } = useCloudStore();
   const [hasEverBeenRunning, setHasEverBeenRunning] = useState(false);
+  const vmStatus = vmState?.status;
 
   // Once the VM is running and the user opens cloud view, mount the iframe permanently
   useEffect(() => {
-    if (vmState?.status === 'running' && showCloudView && !hasEverBeenRunning) {
+    if (vmStatus === 'running' && showCloudView && !hasEverBeenRunning) {
       setHasEverBeenRunning(true);
     }
-  }, [vmState?.status, showCloudView, hasEverBeenRunning]);
+  }, [vmStatus, showCloudView, hasEverBeenRunning]);
 
   // Reset when VM stops
   useEffect(() => {
-    if (vmState && vmState.status !== 'running' && vmState.status !== 'starting' && vmState.status !== 'initializing') {
+    if (vmStatus && vmStatus !== 'running' && vmStatus !== 'starting' && vmStatus !== 'initializing') {
       setHasEverBeenRunning(false);
     }
-  }, [vmState?.status]);
+  }, [vmStatus]);
 
   const noVncUrl = vmState?.noVncUrl;
 

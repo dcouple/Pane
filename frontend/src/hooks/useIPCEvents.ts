@@ -434,7 +434,7 @@ export function useIPCEvents() {
       // Clean up all event listeners
       unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
     };
-  }, [setSessions, loadSessions, addSession, updateSession, deleteSession, showError]);
+  }, [setSessions, loadSessions, addSession, updateSession, deleteSession, showError, gitStatusLoadingRef, gitStatusUpdatedRef]);
   
   // Return a mock socket object for compatibility
   return {

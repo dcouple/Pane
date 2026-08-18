@@ -102,7 +102,10 @@ export function RemotePwaApp() {
     return null;
   }, [projects, selectedSessionId]);
 
-  const selectedPanels = selectedSessionId ? panelsBySessionId[selectedSessionId] ?? [] : [];
+  const selectedPanels = useMemo(
+    () => selectedSessionId ? panelsBySessionId[selectedSessionId] ?? [] : [],
+    [panelsBySessionId, selectedSessionId],
+  );
   const terminalPanels = useMemo(
     () => selectedPanels.filter(panel => panel.type === 'terminal'),
     [selectedPanels],

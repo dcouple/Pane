@@ -1486,8 +1486,8 @@ export function FileEditor({
   };
 
   // Auto-save functionality
-  const autoSave = useCallback(
-    debounce(async () => {
+  const autoSave = useMemo(
+    () => debounce(async () => {
       if (!selectedFile || selectedFile.isDirectory || fileContent === originalContent) return;
       
       try {
@@ -1528,6 +1528,8 @@ export function FileEditor({
     }, 1000), // Auto-save after 1 second of inactivity
     [sessionId, selectedFile, fileContent, originalContent, onFileChange, onStateChange]
   );
+
+  useEffect(() => () => autoSave.cancel(), [autoSave]);
 
   // Trigger auto-save when content changes
   useEffect(() => {

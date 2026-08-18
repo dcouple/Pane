@@ -303,7 +303,7 @@ function App() {
         'Your OS may have been overloaded. Check RAM usage if this keeps happening.'
       );
     });
-  }, []);
+  }, [showNotification]);
 
   // Fetch projects for global shortcuts
   useEffect(() => {
