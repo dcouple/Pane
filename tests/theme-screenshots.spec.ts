@@ -4,26 +4,47 @@ import path from 'node:path';
 import { installElectronApiMock } from './electronApiMock';
 
 /**
- * Evidence screenshots for the accessibility-first themes.
+ * Evidence screenshots for the 15 batch themes (neon, editorial, retro,
+ * atmosphere and accessibility families).
  *
- * Writes `screenshots/themes/<theme-id>.png` (sidebar + session with the
- * terminal dock and the diff/review panel visible), colour-vision-deficiency
- * simulations for the colorblind-safe theme, and the Appearance picker
- * showing the three themes.
+ * Writes `screenshots/themes/batch/<theme-id>.png` (the same view for every
+ * theme: sidebar + a session with the terminal dock and the diff/review panel
+ * visible), `<theme-id>-high-contrast.png` for one light and one dark theme,
+ * colour-vision-deficiency simulations for the colorblind-safe theme, and the
+ * Appearance picker showing the full grouped list.
  *
  * Run: `pnpm theme:screenshots` (uses playwright.themes.config.ts, which sets
- * PANE_THEME_SCREENSHOTS=1 so the files land in screenshots/themes/). Under a
- * plain `pnpm test` the same assertions run but screenshots go to the Playwright
- * output directory. A Vite dev server is enough — the electron API is mocked.
+ * PANE_THEME_SCREENSHOTS=1 so the files land in screenshots/themes/batch/).
+ * Under a plain `pnpm test` the same assertions run but screenshots go to the
+ * Playwright output directory. A Vite dev server is enough — the electron API
+ * is mocked.
  */
 
-// Committed evidence lives in screenshots/themes/. Only the dedicated
+// Committed evidence lives in screenshots/themes/batch/. Only the dedicated
 // `pnpm theme:screenshots` config (playwright.themes.config.ts) sets
 // PANE_THEME_SCREENSHOTS, so a plain `pnpm test` never rewrites tracked PNGs.
 const WRITE_TO_REPO = process.env.PANE_THEME_SCREENSHOTS === '1';
-const OUTPUT_DIR = path.resolve(__dirname, '..', 'screenshots', 'themes');
-const A11Y_THEMES = ['colorblind-safe', 'low-fatigue', 'high-legibility'] as const;
-const PICKER_LABELS = ['Colorblind Safe', 'Low Fatigue', 'High Legibility'];
+const OUTPUT_DIR = path.resolve(__dirname, '..', 'screenshots', 'themes', 'batch');
+// Family order matches THEME_OPTIONS (frontend/src/utils/themeOptions.ts).
+const BATCH_THEMES = [
+  'synthwave', 'acid', 'tokyo-rain',
+  'folio', 'newsprint', 'walnut',
+  'amber-crt', 'teletype', 'dot-matrix',
+  'haar', 'abyss', 'understory',
+  'colorblind-safe', 'low-fatigue', 'high-legibility',
+] as const;
+type BatchTheme = (typeof BATCH_THEMES)[number];
+const CVD_THEME: BatchTheme = 'colorblind-safe';
+// High-contrast mode is asserted for every theme; captured for one light and one dark theme.
+const HIGH_CONTRAST_CAPTURES: readonly BatchTheme[] = ['folio', 'synthwave'];
+const PICKER_LABELS = [
+  'Synthwave', 'Acid Terminal', 'Tokyo Rain',
+  'Folio', 'Newsprint', 'Walnut',
+  'Amber CRT', 'Teletype', 'Dot Matrix',
+  'Haar', 'Abyss', 'Understory',
+  'Colorblind Safe', 'Low Fatigue', 'High Legibility',
+];
+const PICKER_GROUPS = ['Standard', 'Neon', 'Editorial', 'Retro', 'Atmosphere', 'Accessibility'];
 
 // Machado, Oliveira & Fernandes (2009) severity-1.0 matrices — the same ones
 // scripts/check-theme-contrast.mjs uses, applied here as an SVG feColorMatrix
@@ -60,9 +81,9 @@ const project = {
 
 const session = {
   id: 'theme-session',
-  name: 'themes-a11y',
-  worktreePath: '/tmp/theme-fixture/pane/worktrees/themes-a11y',
-  prompt: 'Add three accessibility-first themes',
+  name: 'themes-batch-15',
+  worktreePath: '/tmp/theme-fixture/pane/worktrees/themes-batch-15',
+  prompt: 'Add 15 themes: neon, editorial, retro, atmosphere, and accessibility families',
   status: 'stopped',
   createdAt: new Date(0).toISOString(),
   lastActivity: new Date(0).toISOString(),
@@ -130,8 +151,8 @@ const executions = [{
   id: 1,
   session_id: session.id,
   execution_sequence: 1,
-  after_commit_hash: 'a11ye5cafe',
-  commit_message: 'Add accessibility-first themes',
+  after_commit_hash: 'ba7c415e5c',
+  commit_message: 'Add 15 themes across five families',
   timestamp: '2026-08-18T12:00:00.000Z',
   stats_additions: 41,
   stats_deletions: 6,
@@ -156,12 +177,13 @@ const combinedDiff = {
     '+  | \'light-rounded\'',
     '+  | \'dark\'',
     '+  | \'terracotta\'',
-    '+  | \'colorblind-safe\'',
-    '+  | \'low-fatigue\'',
-    '+  | \'high-legibility\';',
+    '+  | \'synthwave\'',
+    '+  | \'folio\'',
+    '+  | \'amber-crt\'',
+    '+  | \'haar\'',
+    '+  | \'colorblind-safe\';',
     '+',
-    '+const LIGHT_THEMES: ReadonlySet<Theme> = new Set<Theme>([\'light\', \'light-rounded\', \'high-legibility\']);',
-    '+export const isLightTheme = (theme: Theme): boolean => LIGHT_THEMES.has(theme);',
+    '+export const isLightTheme = (theme: Theme): boolean => THEME_CLASSES[theme][0] === \'light\';',
     ' ',
     ' export interface ThemeContextType {',
     '   theme: Theme;',
@@ -187,16 +209,17 @@ const swatchRow = (label: string, base: number) => {
   return `${label} ${cells}`;
 };
 const terminalScrollback = [
-  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} ${ansi('1;34', 'git:(')}${ansi('1;31', 'themes-a11y')}${ansi('1;34', ')')} ${ansi('33', '✗')} git status --short`,
+  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} ${ansi('1;34', 'git:(')}${ansi('1;31', 'themes-batch-15')}${ansi('1;34', ')')} ${ansi('33', '✗')} git status --short`,
   ` ${ansi('32', 'M')} frontend/src/styles/tokens/colors.css`,
   ` ${ansi('32', 'M')} frontend/src/index.css`,
   `${ansi('31', '??')} scripts/check-theme-contrast.mjs`,
   '',
-  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} node scripts/check-theme-contrast.mjs --cvd`,
-  `${ansi('1', '== colorblind-safe (gated: text ≥ 4.5:1, UI ≥ 3:1, terminal ≥ 4.5:1) ==')}`,
+  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} pnpm theme:contrast`,
+  `${ansi('1', '== synthwave (gated: text ≥ 4.5:1, UI ≥ 3:1, terminal ≥ 4.5:1) ==')}`,
+  `  ${ansi('2', '138/138 checks pass')}`,
+  `${ansi('1', '== colorblind-safe (gated: text ≥ 4.5:1, UI ≥ 3:1, terminal ≥ 4.5:1, hairlines gated) ==')}`,
   `  ${ansi('32', 'ok')}   status       deuteranopia  ΔE  18.38  min 5.00:1`,
-  `  ${ansi('32', 'ok')}   ansi         tritanopia    ΔE  18.05  min 4.95:1`,
-  `  ${ansi('2', '141/141 checks pass')}`,
+  `  ${ansi('2', '148/148 checks pass')}`,
   '',
   `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} ${ansi('2', '# sample status lines (theme swatch, not a real run)')}`,
   `  ${ansi('32', 'ok  ')} success   ${ansi('2', 'sample line in the success colour')}`,
@@ -211,12 +234,14 @@ const terminalScrollback = [
   `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} ${ansi('2', 'claude')} `,
 ].join('\r\n');
 
-async function openSession(page: Page, theme: string): Promise<void> {
-  await page.addInitScript((themeId) => {
+async function openSession(page: Page, theme: string, opts: { highContrast?: boolean } = {}): Promise<void> {
+  const highContrast = opts.highContrast === true;
+  await page.addInitScript(({ themeId, hc }) => {
     window.localStorage.setItem('theme', themeId);
-  }, theme);
+    if (hc) window.localStorage.setItem('high-contrast', 'true');
+  }, { themeId: theme, hc: highContrast });
   await installElectronApiMock(page, {
-    initialConfig: { theme },
+    initialConfig: { theme, highContrast },
     initialProjects: [project],
     initialSessions: [session, secondSession],
     initialPanels: panels,
@@ -229,6 +254,7 @@ async function openSession(page: Page, theme: string): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await expect(page.locator('[data-testid="sidebar"]').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
+  if (highContrast) await expect(page.locator('html')).toHaveClass(/\bhigh-contrast\b/);
 
   const expandRepo = page.getByRole('button', { name: /^Expand repository pane$/ });
   if (await expandRepo.isVisible().catch(() => false)) await expandRepo.click();
@@ -280,14 +306,14 @@ const outputFile = (testInfo: TestInfo, name: string): string => (
   WRITE_TO_REPO ? path.join(OUTPUT_DIR, name) : testInfo.outputPath(name)
 );
 
-for (const theme of A11Y_THEMES) {
+for (const theme of BATCH_THEMES) {
   test(`${theme}: main view screenshot`, async ({ page }, testInfo) => {
     await openSession(page, theme);
     const file = outputFile(testInfo, `${theme}.png`);
     await page.screenshot({ path: file });
     await testInfo.attach(`${theme}.png`, { path: file, contentType: 'image/png' });
 
-    if (theme === 'colorblind-safe') {
+    if (theme === CVD_THEME) {
       for (const kind of CVD_KINDS) {
         await applyCvdFilter(page, kind);
         const simFile = outputFile(testInfo, `${theme}-${kind}.png`);
@@ -299,18 +325,7 @@ for (const theme of A11Y_THEMES) {
   });
 
   test(`${theme}: high-contrast mode composes on top`, async ({ page }, testInfo) => {
-    await page.addInitScript(() => { window.localStorage.setItem('high-contrast', 'true'); });
-    await installElectronApiMock(page, {
-      initialConfig: { theme, highContrast: true },
-      initialProjects: [project],
-      initialSessions: [session],
-      initialPanels: panels,
-      initialTerminalStates: { 'theme-terminal': { scrollbackBuffer: terminalScrollback } },
-      activeProjectId: project.id,
-    });
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
-    await expect(page.locator('html')).toHaveClass(/\bhigh-contrast\b/);
+    await openSession(page, theme, { highContrast: true });
     // The high-contrast block must actually change the muted token for this theme:
     // read it with the class on, then with the class removed, and require a difference.
     const [withHc, withoutHc] = await page.evaluate(() => {
@@ -324,10 +339,18 @@ for (const theme of A11Y_THEMES) {
     expect(withHc).not.toBe('');
     expect(withHc).not.toBe(withoutHc);
     testInfo.annotations.push({ type: 'muted-token', description: `${theme}: ${withoutHc} → ${withHc} with high-contrast` });
+
+    if (HIGH_CONTRAST_CAPTURES.includes(theme)) {
+      const file = outputFile(testInfo, `${theme}-high-contrast.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(`${theme}-high-contrast.png`, { path: file, contentType: 'image/png' });
+    }
   });
 }
 
-test('appearance picker shows the three themes with descriptions', async ({ page }, testInfo) => {
+test('appearance picker shows all 15 themes, grouped by family', async ({ page }, testInfo) => {
+  // Tall viewport so the whole grouped list is on screen for the capture.
+  await page.setViewportSize({ width: 1440, height: 1700 });
   await page.addInitScript(() => { window.localStorage.setItem('theme', 'colorblind-safe'); });
   await installElectronApiMock(page, {
     initialConfig: { theme: 'colorblind-safe' },
@@ -352,11 +375,48 @@ test('appearance picker shows the three themes with descriptions', async ({ page
   for (const label of PICKER_LABELS) {
     await expect(page.getByRole('option', { name: new RegExp(`^${label}`) })).toBeVisible();
   }
-  await page.getByRole('option', { name: /^High Legibility/ }).hover();
+  for (const group of PICKER_GROUPS) {
+    await expect(page.getByRole('group', { name: group })).toBeVisible();
+  }
+  // As the user sees it: the popover is a scroll box (SelectContent caps at max-h-96), opened
+  // at the current selection. Scroll to the top so the first groups are in frame.
+  await page.locator('[data-radix-select-viewport]').evaluate((el) => { el.scrollTop = 0; });
+  await page.getByRole('option', { name: /^Synthwave/ }).hover();
   await page.waitForTimeout(200);
   const file = outputFile(testInfo, 'appearance-picker.png');
   await page.screenshot({ path: file });
   await testInfo.attach('appearance-picker.png', { path: file, contentType: 'image/png' });
+
+  // Capture-only: lift the popover height cap and pin the popper near the top of a tall
+  // viewport so every group and entry is in one frame. (In the app the list scrolls;
+  // nothing here changes shipped styles — the override is removed again below.)
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 2400 });
+  await trigger.click();
+  await expect(page.getByRole('listbox')).toBeVisible();
+  await page.evaluate(() => {
+    const wrapper = document.querySelector<HTMLElement>('[data-radix-popper-content-wrapper]');
+    const left = wrapper ? Math.round(wrapper.getBoundingClientRect().left) : 0;
+    const style = document.createElement('style');
+    style.id = 'pane-picker-unroll';
+    style.textContent = [
+      '[data-radix-popper-content-wrapper], [data-radix-popper-content-wrapper] > *, [data-radix-select-viewport] { max-height: none !important; height: auto !important; }',
+      `[data-radix-popper-content-wrapper] { transform: translate(${left}px, 24px) !important; }`,
+    ].join('\n');
+    document.head.appendChild(style);
+  });
+  await expect(page.getByRole('option', { name: /^High Legibility/ })).toBeInViewport();
+  await page.waitForTimeout(400);
+  const fullFile = outputFile(testInfo, 'appearance-picker-full-list.png');
+  await page.screenshot({ path: fullFile });
+  await testInfo.attach('appearance-picker-full-list.png', { path: fullFile, contentType: 'image/png' });
+  await page.evaluate(() => document.getElementById('pane-picker-unroll')?.remove());
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+  await page.setViewportSize({ width: 1440, height: 1700 });
+  await trigger.click();
+  await expect(page.getByRole('listbox')).toBeVisible();
 
   // Selecting through the picker persists the id to config.
   await page.getByRole('option', { name: /^High Legibility/ }).click();
