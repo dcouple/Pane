@@ -6,7 +6,7 @@ import { TerminalStateEmulator } from './terminalStateEmulator';
 import type { TerminalPanelState } from '../../../shared/types/panels';
 
 import { TerminalPanelManager } from './terminalPanelManager';
-import { panelManager } from './panelManager';
+import { panelManager } from '../test/setup';
 
 vi.spyOn(panelManager, 'emitPanelEvent');
 vi.spyOn(panelManager, 'getPanel');

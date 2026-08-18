@@ -21,6 +21,12 @@ export const powerSaveBlocker = {
 
 export const BrowserWindow = vi.fn();
 
+export const panelManager = {
+  emitPanelEvent: vi.fn(),
+  getPanel: vi.fn(),
+  updatePanel: vi.fn(),
+};
+
 // Set up global test environment
 global.console = {
   ...console,
