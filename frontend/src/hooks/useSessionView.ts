@@ -28,6 +28,10 @@ export const useSessionView = (
 ) => {
   const { theme } = useTheme();
   const activeSessionId = activeSession?.id;
+  const activeSessionStatus = activeSession?.status;
+  const activeSessionOutputLength = activeSession?.output?.length ?? 0;
+  const activeSessionMessageLength = activeSession?.jsonMessages?.length ?? 0;
+  const activeSessionRunStartedAt = activeSession?.runStartedAt;
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
 
   // Terminal instances
@@ -82,7 +86,6 @@ export const useSessionView = (
   const lastProcessedScriptOutputLength = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const previousStatusRef = useRef<string | null>(null);
-  const [startTime, setStartTime] = useState<number | null>(null);
   const isContinuingConversationRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const outputLoadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -233,7 +236,7 @@ export const useSessionView = (
   useEffect(() => {
     if (!activeSessionId) return;
     // Performance optimization: Check session status only, not entire state
-    let previousStatus = activeSession?.status;
+    let previousStatus = activeSessionStatus;
     const unsubscribe = useSessionStore.subscribe((state) => {
       const updatedSession = state.activeMainRepoSession?.id === activeSessionId
         ? state.activeMainRepoSession
@@ -242,9 +245,9 @@ export const useSessionView = (
       // Only trigger update if status actually changed
       if (updatedSession && updatedSession.status !== previousStatus) {
         previousStatus = updatedSession.status;
-        if (activeSession?.status === 'initializing' && updatedSession.status === 'running') {
+        if (activeSessionStatus === 'initializing' && updatedSession.status === 'running') {
           // Only clear terminal and reload for new sessions, not when continuing conversations
-          const hasExistingOutput = activeSession.output && activeSession.output.length > 0;
+          const hasExistingOutput = (updatedSession.output?.length ?? 0) > 0;
           if (!hasExistingOutput && !isContinuingConversationRef.current) {
             setShouldReloadOutput(true);
           }
@@ -262,17 +265,17 @@ export const useSessionView = (
       // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       window.removeEventListener('session-status-changed', handleStatusChange as EventListener);
     };
-  }, [activeSessionId, activeSession?.status]);
+  }, [activeSessionId, activeSessionStatus]);
 
   useEffect(() => {
-    if (!activeSession) {
+    if (!activeSessionId) {
       setScriptOutput([]);
       return;
     }
     // Performance optimization: Track previous terminal output to avoid unnecessary updates
-    let previousOutput = useSessionStore.getState().terminalOutput[activeSession.id];
+    let previousOutput = useSessionStore.getState().terminalOutput[activeSessionId];
     const unsubscribe = useSessionStore.subscribe((state) => {
-      const sessionTerminalOutput = state.terminalOutput[activeSession.id] || [];
+      const sessionTerminalOutput = state.terminalOutput[activeSessionId] || [];
       // Only update if output actually changed
       if (sessionTerminalOutput !== previousOutput) {
         previousOutput = sessionTerminalOutput;
@@ -281,12 +284,12 @@ export const useSessionView = (
         // Users explicitly interact with the terminal, so they know when there's output
       }
     });
-    setScriptOutput(useSessionStore.getState().terminalOutput[activeSession.id] || []);
+    setScriptOutput(useSessionStore.getState().terminalOutput[activeSessionId] || []);
     return unsubscribe;
-  }, [activeSession?.id]);
+  }, [activeSessionId]);
 
   useEffect(() => {
-    const currentSessionId = activeSession?.id || null;
+    const currentSessionId = activeSessionId || null;
     if (currentSessionId === previousSessionIdRef.current) return;
 
     previousSessionIdRef.current = currentSessionId;
@@ -300,23 +303,26 @@ export const useSessionView = (
     setContextCompacted(false);
     setCompactedContext(null);
     
-    if (!activeSession) {
+    if (!activeSessionId) {
       // Clear any error states when no session is active
       setLoadError(null);
       setOutputLoadState('idle');
       return;
     }
+    let cancelled = false;
     
     // Check if session has conversation history
     const checkConversationHistory = async () => {
       try {
-        const response = await API.sessions.getConversationMessageCount(activeSession.id);
+        const response = await API.sessions.getConversationMessageCount(activeSessionId);
         const hasMessages = (response.data ?? 0) > 0;
+        if (cancelled) return;
         if (response.success) {
           setHasConversationHistory(hasMessages);
         }
       } catch (error) {
         console.error('Failed to check conversation history:', error);
+        if (cancelled) return;
         setHasConversationHistory(false);
       }
     };
@@ -330,24 +336,27 @@ export const useSessionView = (
     // Reset output tracking
     lastProcessedScriptOutputLength.current = 0;
 
-    const hasOutput = activeSession.output && activeSession.output.length > 0;
-    const hasMessages = activeSession.jsonMessages && activeSession.jsonMessages.length > 0;
-    const isNewSession = activeSession.status === 'initializing' || (activeSession.status === 'running' && !hasOutput && !hasMessages);
+    const hasOutput = activeSessionOutputLength > 0;
+    const hasMessages = activeSessionMessageLength > 0;
+    const isNewSession = activeSessionStatus === 'initializing' || (activeSessionStatus === 'running' && !hasOutput && !hasMessages);
     
     
     if (isNewSession) {
       setIsWaitingForFirstOutput(true);
-      setStartTime(Date.now());
     } else {
       setIsWaitingForFirstOutput(false);
     }
-  }, [activeSession?.id, forceResetLoadingState]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, activeSessionStatus, activeSessionOutputLength, activeSessionMessageLength, forceResetLoadingState]);
 
   // Consolidated effect for loading output
   useEffect(() => {
-    if (!activeSession) {
+    if (!activeSessionId) {
       return;
     }
+    let loadTimeout: NodeJS.Timeout | null = null;
     
     // Skip initial load if continuing conversation, but allow explicit reloads
     if (isContinuingConversationRef.current && outputLoadState === 'idle' && !shouldReloadOutput) {
@@ -370,7 +379,7 @@ export const useSessionView = (
     if (outputLoadState === 'idle') {
       // Always load when idle - let the backend be the source of truth
       shouldLoad = true;
-      loadDelay = activeSession.status === 'initializing' ? 500 : 200;
+      loadDelay = activeSessionStatus === 'initializing' ? 500 : 200;
     } else if (shouldReloadOutput) {
       // Explicit reload requested
       shouldLoad = true;
@@ -384,20 +393,29 @@ export const useSessionView = (
     
     if (shouldLoad && !loadingRef.current) {
       if (loadDelay > 0) {
-        outputLoadTimeoutRef.current = setTimeout(() => {
+        loadTimeout = setTimeout(() => {
           if (!loadingRef.current) {
-            loadOutputContent(activeSession.id);
+            loadOutputContent(activeSessionId);
           }
         }, loadDelay);
+        outputLoadTimeoutRef.current = loadTimeout;
       } else {
-        loadOutputContent(activeSession.id);
+        loadOutputContent(activeSessionId);
       }
     }
+    return () => {
+      if (loadTimeout) {
+        clearTimeout(loadTimeout);
+        if (outputLoadTimeoutRef.current === loadTimeout) {
+          outputLoadTimeoutRef.current = null;
+        }
+      }
+    };
   }, [
-    activeSession?.id,
-    activeSession?.status,
-    activeSession?.output?.length,
-    activeSession?.jsonMessages?.length,
+    activeSessionId,
+    activeSessionStatus,
+    activeSessionOutputLength,
+    activeSessionMessageLength,
     outputLoadState,
     shouldReloadOutput,
     loadOutputContent,
@@ -410,7 +428,11 @@ export const useSessionView = (
     let lastReloadTime = 0;
     // PERFORMANCE: Adaptive reload interval based on output size
     const getMinReloadInterval = () => {
-      const outputSize = activeSession?.output?.length || 0;
+      const sessionState = useSessionStore.getState();
+      const currentSession = sessionState.activeMainRepoSession?.id === activeSessionId
+        ? sessionState.activeMainRepoSession
+        : sessionState.sessions.find(session => session.id === activeSessionId);
+      const outputSize = currentSession?.output?.length ?? 0;
       if (outputSize > 2000) return 3000; // 3 seconds for very large outputs
       if (outputSize > 1000) return 2000; // 2 seconds for large outputs  
       if (outputSize > 500) return 1500;  // 1.5 seconds for medium outputs
@@ -422,7 +444,7 @@ export const useSessionView = (
       const { sessionId } = event.detail;
       
       // Check if this is for the active session
-      if (activeSession?.id === sessionId) {
+      if (activeSessionId === sessionId) {
         // Trigger reload if we're loaded or if we're continuing a conversation
         if (outputLoadState === 'loaded' || isContinuingConversationRef.current) {
           const now = Date.now();
@@ -457,12 +479,12 @@ export const useSessionView = (
         clearTimeout(reloadDebounceTimer);
       }
     };
-  }, [activeSession?.id, outputLoadState]);
+  }, [activeSessionId, outputLoadState]);
 
 
 
   useEffect(() => {
-    if (!scriptTerminalInstance.current || !activeSession) return;
+    if (!scriptTerminalInstance.current || !activeSessionId) return;
     // Don't reset terminal on session change - this causes the terminal to clear
     // scriptTerminalInstance.current.reset();
     // Instead, just reset the tracking counter
@@ -517,8 +539,8 @@ export const useSessionView = (
   }, [activeSessionId, fullScriptOutputMemo, activeSession]);
   
   useEffect(() => {
-    if (!scriptTerminalInstance.current || !activeSession) return;
-    const currentTerminalOutput = useSessionStore.getState().terminalOutput[activeSession.id] || [];
+    if (!scriptTerminalInstance.current || !activeSessionId) return;
+    const currentTerminalOutput = useSessionStore.getState().terminalOutput[activeSessionId] || [];
     if (lastProcessedScriptOutputLength.current === 0 && currentTerminalOutput.length > 0) {
       const existingOutput = currentTerminalOutput.join('');
       scriptTerminalInstance.current.write(existingOutput);
@@ -604,11 +626,9 @@ export const useSessionView = (
   }, [theme]);
 
   useEffect(() => {
-    if (!activeSession) return;
-    if (['running', 'initializing'].includes(activeSession.status)) {
-      const sessionStartTime = activeSession.runStartedAt ? new Date(activeSession.runStartedAt).getTime() : Date.now();
-      if (!startTime || startTime !== sessionStartTime) setStartTime(sessionStartTime);
-      
+    if (!activeSessionStatus) return;
+    if (['running', 'initializing'].includes(activeSessionStatus)) {
+      const sessionStartTime = activeSessionRunStartedAt ? new Date(activeSessionRunStartedAt).getTime() : Date.now();
       setElapsedTime(Math.floor((Date.now() - sessionStartTime) / 1000));
       // Use visibility-aware interval that slows down when tab is not visible
       const cleanup = createVisibilityAwareInterval(
@@ -618,31 +638,35 @@ export const useSessionView = (
       );
       return cleanup;
     } else {
-      setStartTime(null);
       setElapsedTime(0);
     }
-  }, [activeSession?.status, activeSession?.runStartedAt, activeSessionId]);
+  }, [activeSessionStatus, activeSessionRunStartedAt, activeSessionId]);
 
   useEffect(() => {
-    if (!activeSession) {
+    if (!activeSessionId) {
       setGitCommands(null);
       setHasChangesToRebase(false);
       setHasStash(false);
       return;
     }
+    let cancelled = false;
     const loadGitData = async () => {
       try {
         const [commandsResponse, changesResponse, stashResponse] = await Promise.all([
-          API.sessions.getGitCommands(activeSession.id),
-          API.sessions.hasChangesToRebase(activeSession.id),
-          API.sessions.hasStash(activeSession.id)
+          API.sessions.getGitCommands(activeSessionId),
+          API.sessions.hasChangesToRebase(activeSessionId),
+          API.sessions.hasStash(activeSessionId)
         ]);
+        if (cancelled) return;
         if (commandsResponse.success) setGitCommands(commandsResponse.data);
         if (changesResponse.success) setHasChangesToRebase(changesResponse.data);
         if (stashResponse.success) setHasStash(stashResponse.data);
       } catch (error) { console.error('Error loading git data:', error); }
     };
     loadGitData();
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -654,8 +678,8 @@ export const useSessionView = (
   }, [input]);
 
   useEffect(() => {
-    if (!activeSession) return;
-    const { status } = activeSession;
+    if (!activeSessionStatus) return;
+    const status = activeSessionStatus;
     const prevStatus = previousStatusRef.current;
     
     if (prevStatus === 'initializing' && status === 'running') {
@@ -675,7 +699,7 @@ export const useSessionView = (
     }
     
     previousStatusRef.current = status;
-  }, [activeSession?.status, activeSessionId]);
+  }, [activeSessionStatus, activeSessionId]);
   
   const isSessionBusy = activeSession?.status === 'running' || activeSession?.status === 'initializing';
   const getGitCommandDisabledReason = (command: 'commit' | 'push' | 'undo' | 'pull' | 'rebase' | 'merge'): string | null => {
