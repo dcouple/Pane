@@ -5031,7 +5031,7 @@ export class DatabaseService {
 
     // Process each message
     toolUseRows.forEach(
-      (row: { data: string; timestamp: string }, index: number) => {
+      (row: { data: string; timestamp: string }, _index: number) => {
         try {
           const data = decodeBoundary(JSON.parse(row.data), toolAnalyticsMessageSchema);
           const message = data.message;

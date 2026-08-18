@@ -150,11 +150,11 @@ export class TaskQueue {
     }
     
     // Add event handlers for debugging
-    this.sessionQueue.on('active', (job: { id: string | number }) => {
+    this.sessionQueue.on('active', (_job: { id: string | number }) => {
       // Job active tracking removed - verbose debug logging
     });
     
-    this.sessionQueue.on('completed', (job: SessionCreationJob, result: CreateSessionQueueResult) => {
+    this.sessionQueue.on('completed', (_job: SessionCreationJob, _result: CreateSessionQueueResult) => {
       // Job completion tracking removed - verbose debug logging
     });
     

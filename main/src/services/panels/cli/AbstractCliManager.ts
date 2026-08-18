@@ -1117,7 +1117,7 @@ export abstract class AbstractCliManager extends EventEmitter {
   /**
    * Handle process startup failure
    */
-  protected async handleProcessStartupFailure(exitCode: number | null, signal: number | undefined, panelId: string, sessionId: string, lastOutput: string): Promise<void> {
+  protected async handleProcessStartupFailure(exitCode: number | null, signal: number | undefined, panelId: string, sessionId: string, _lastOutput: string): Promise<void> {
     this.logger?.error(`No output received from ${this.getCliToolName()}. This might indicate a startup failure.`);
 
     const errorMessage = {

@@ -1161,7 +1161,7 @@ export function registerSessionHandlers(
   });
 
   // Generic panel input handlers that route to specific panel type handlers
-  commandRegistry.register('panels:send-input', async (panelId: string, input: string) => {
+  commandRegistry.register('panels:send-input', async (panelId: string, _input: string) => {
     try {
       console.log(`[IPC] panels:send-input called for panel: ${panelId}`);
 
@@ -1201,7 +1201,7 @@ export function registerSessionHandlers(
     }
   });
 
-  commandRegistry.register('panels:continue', async (panelId: string, input: string, model?: string) => {
+  commandRegistry.register('panels:continue', async (panelId: string, _input: string, _model?: string) => {
     try {
       console.log(`[IPC] panels:continue called for panel: ${panelId}`);
 

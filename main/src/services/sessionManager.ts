@@ -1061,7 +1061,7 @@ export class SessionManager extends EventEmitter {
     return this.db.getPanelPromptMarkers(panelId);
   }
 
-  addPanelInitialPromptMarker(panelId: string, prompt: string): void {
+  addPanelInitialPromptMarker(_panelId: string, _prompt: string): void {
     // Prompt markers are no longer needed for panels - using conversation_messages instead
     // The prompt is already being added to conversation_messages in addPanelConversationMessage
   }

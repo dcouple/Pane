@@ -425,7 +425,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     }
   }
 
-  protected async getCliEnvironment(options: ClaudeSpawnOptions): Promise<{ [key: string]: string }> {
+  protected async getCliEnvironment(_options: ClaudeSpawnOptions): Promise<{ [key: string]: string }> {
     // This is handled in initializeCliEnvironment for Claude
     return {};
   }
@@ -1112,7 +1112,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return mcpConfigPath;
   }
 
-  private async setupMcpConfiguration(sessionId: string, env: CliEnvironment): Promise<void> {
+  private async setupMcpConfiguration(_sessionId: string, _env: CliEnvironment): Promise<void> {
     // This method is called from initializeCliEnvironment but for Claude we handle MCP in spawnCliProcess
     // Just set up the basic environment variables here
     return;

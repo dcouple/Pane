@@ -245,7 +245,7 @@ export class ProgrammaticCompactor {
     };
   }
 
-  private detectInterruption(session: Session, prompts: PromptMarker[], outputs: SessionOutput[]): boolean {
+  private detectInterruption(session: Session, prompts: PromptMarker[], _outputs: SessionOutput[]): boolean {
     // Check if session ended without completing the last prompt
     if (prompts.length === 0) return false;
     
