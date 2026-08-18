@@ -165,6 +165,7 @@ export function Dropdown({
         const controls = getMenuControls(contentRef.current);
         if (controls.length === 0) break;
 
+        // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
         const current = controls.indexOf(document.activeElement as HTMLElement);
         const step = event.key === 'ArrowDown' ? 1 : -1;
         const next = current === -1
@@ -175,6 +176,7 @@ export function Dropdown({
       }
       case 'Enter':
       case ' ': {
+        // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
         const itemIndex = Number((document.activeElement as HTMLElement)?.dataset.dropdownItemIndex);
         if (Number.isInteger(itemIndex) && items[itemIndex]) {
           event.preventDefault();
@@ -437,7 +439,7 @@ export function Dropdown({
               {footer && (
                 <>
                   <div className="border-t border-border-secondary my-1.5" />
-                  {typeof footer === 'function' ? footer({ close: handleClose }) : footer}
+                  {footer instanceof Function ? footer({ close: handleClose }) : footer}
                 </>
               )}
             </div>

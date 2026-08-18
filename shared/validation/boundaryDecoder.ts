@@ -202,3 +202,15 @@ export function decodeBoundary<Value>(
 ): Value {
   return schema.decode(cursor(value));
 }
+
+export function decodeOptionalBoundary<Value>(
+  value: unknown,
+  schema: BoundarySchema<Value>,
+): Value | undefined {
+  try {
+    return decodeBoundary(value, schema);
+  } catch (error) {
+    if (error instanceof BoundaryDecodeError) return undefined;
+    throw error;
+  }
+}

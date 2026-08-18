@@ -1,3 +1,5 @@
+import type { JsonObject } from '../../../shared/validation/boundaryDecoder';
+
 // Claude message content types
 interface TextContent {
   type: 'text';
@@ -8,7 +10,7 @@ interface ToolUseContent {
   type: 'tool_use';
   id: string;
   name: string;
-  input: Record<string, unknown>;
+  input: JsonObject;
 }
 
 interface ToolResultContent {
@@ -24,8 +26,7 @@ type MessageContent = TextContent | ToolUseContent | ToolResultContent;
 interface ToolDefinition {
   name: string;
   description?: string;
-  input_schema?: Record<string, unknown>;
-  [key: string]: unknown;
+  input_schema?: JsonObject;
 }
 
 // MCP server definition interface  
@@ -34,7 +35,6 @@ interface McpServerDefinition {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
-  [key: string]: unknown;
 }
 
 // JSON message structure from Claude
@@ -43,13 +43,12 @@ export interface ClaudeJsonMessage {
   type: 'user' | 'assistant' | 'system' | 'tool_use' | 'tool_result' | 'result' | 'thinking';
   role?: 'user' | 'assistant' | 'system';
   content?: string | MessageContent[];
-  message?: { 
+  message?: {
     content?: string | MessageContent[];
-    [key: string]: unknown;
   };
   timestamp: string;
   name?: string;
-  input?: Record<string, unknown>;
+  input?: JsonObject;
   tool_use_id?: string;
   parent_tool_use_id?: string;
   session_id?: string;
@@ -71,7 +70,6 @@ export interface ClaudeJsonMessage {
   num_turns?: number;
   cost_usd?: number;
   thinking?: string;
-  [key: string]: unknown;
 }
 
 export interface Session {

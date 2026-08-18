@@ -2,8 +2,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { usePanelStore } from './panelStore';
 import type { ToolPanel } from '../../../shared/types/panels';
 
-const panel = (id: string, sessionId: string): ToolPanel =>
-  ({ id, sessionId, type: 'terminal', state: { isActive: false, customState: {} } } as unknown as ToolPanel);
+const panel = (id: string, sessionId: string): ToolPanel => ({
+  id,
+  sessionId,
+  type: 'terminal',
+  title: 'Terminal',
+  state: { isActive: false, customState: {} },
+  metadata: { createdAt: '', lastActiveAt: '', position: 0 },
+});
 
 const reset = () =>
   usePanelStore.setState({ panels: {}, activePanels: {}, activityStatus: {}, agentStatus: {}, agentStatusSession: {} });

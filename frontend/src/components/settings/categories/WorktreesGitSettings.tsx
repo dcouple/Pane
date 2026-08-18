@@ -22,6 +22,7 @@ export function WorktreesGitSettings({ persistence, onDirtyChange }: WorktreesGi
   const dirty = JSON.stringify(entries) !== persistedJson;
   const hasInvalidEntry = entries.some((entry) => entry.path.trim().length === 0);
 
+  // SAFETY: App-owned storage writes this value through the matching typed serializer.
   useEffect(() => setEntries(JSON.parse(persistedJson) as WorktreeFileSyncEntry[]), [persistedJson]);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);

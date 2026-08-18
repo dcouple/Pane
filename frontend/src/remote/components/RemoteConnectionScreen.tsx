@@ -30,7 +30,7 @@ export function RemoteConnectionScreen({
   const [mode, setMode] = useState<ConnectionScreenMode>(() => (
     savedProfiles.length > 0 ? 'connect' : 'menu'
   ));
-  const canReadClipboard = typeof navigator !== 'undefined' && Boolean(navigator.clipboard?.readText);
+  const canReadClipboard = Boolean(navigator.clipboard?.readText);
   const mobileInstallPlatform = getMobileInstallPlatform();
   const connectionErrorId = useId();
   const showConnectionTroubleshooting = Boolean(error && errorKind === 'connection');
@@ -295,10 +295,7 @@ function getMobileInstallSteps(platform: MobileInstallPlatform): string[] {
 }
 
 function getMobileInstallPlatform(): MobileInstallPlatform | null {
-  if (typeof navigator === 'undefined' || typeof window === 'undefined') {
-    return null;
-  }
-
+  // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
   if (isStandalone) {

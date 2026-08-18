@@ -19,6 +19,7 @@ export function AdvancedSettings({ persistence, platform, onDirtyChange }: Advan
   const [pathsText, setPathsText] = useState(persistedPaths.join('\n'));
   const dirty = pathsText !== persistedPaths.join('\n');
 
+  // SAFETY: App-owned storage writes this value through the matching typed serializer.
   useEffect(() => setPathsText((JSON.parse(persistedPathsKey) as string[]).join('\n')), [persistedPathsKey]);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);

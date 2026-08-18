@@ -10,15 +10,9 @@ import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 
 interface SessionEventData {
   sessionId: string;
-  [key: string]: unknown;
 }
 
 type ValidatedEventData = SessionEventData | SessionOutput;
-
-interface SessionDeletedEventData {
-  id?: string;
-  sessionId?: string;
-}
 
 async function resyncRemoteRuntimeState(loadSessions: (sessions: Session[]) => void): Promise<void> {
   await useConfigStore.getState().fetchConfig();
@@ -71,7 +65,7 @@ function validateEventSession(eventData: ValidatedEventData, activeSessionId?: s
 
 
 // Throttle utility with external drain support
-function createThrottledWithDrain<T extends (...args: Parameters<T>) => unknown>(
+function createThrottledWithDrain<T extends (...args: never[]) => void>(
   fn: T,
   delayMs: number,
   keyFn: (...args: Parameters<T>) => string,
@@ -210,10 +204,9 @@ export function useIPCEvents() {
     });
     unsubscribeFunctions.push(unsubscribeSessionUpdated);
 
-    const unsubscribeSessionDeleted = window.electronAPI.events.onSessionDeleted((sessionData: SessionDeletedEventData | string) => {
+    const unsubscribeSessionDeleted = window.electronAPI.events.onSessionDeleted((sessionData) => {
       console.log('[useIPCEvents] Session deleted:', sessionData);
-      // The backend sends just { id } for deleted sessions
-      const sessionId = typeof sessionData === 'string' ? sessionData : sessionData.id || sessionData.sessionId;
+      const sessionId = sessionData.id;
 
       // Drain any pending throttled git status calls for this session
       if (sessionId) {
@@ -227,7 +220,7 @@ export function useIPCEvents() {
       }));
 
       // Create a minimal session object for deletion
-      deleteSession({ id: sessionId } as Session);
+      deleteSession(sessionData);
     });
     unsubscribeFunctions.push(unsubscribeSessionDeleted);
 
@@ -271,19 +264,16 @@ export function useIPCEvents() {
     });
     unsubscribeFunctions.push(unsubscribeSessionOutput);
 
-    const unsubscribeTerminalOutput = window.electronAPI.events.onTerminalOutput((output: { sessionId: string; type: 'stdout' | 'stderr'; data: string }) => {
+    const unsubscribeTerminalOutput = window.electronAPI.events.onTerminalOutput((output) => {
       if (output.sessionId === PANE_CHAT_SESSION_ID) {
         return;
       }
 
-      // Validate event has required session context
-      if (!validateEventSession(output)) {
-        return; // Ignore invalid events
-      }
-
       console.log(`[useIPCEvents] Received terminal output for ${output.sessionId}`);
-      // Store terminal output in session store for display
-      useSessionStore.getState().addTerminalOutput(output);
+      const terminalOutput = 'output' in output
+        ? { sessionId: output.sessionId, type: 'stdout' as const, data: output.output }
+        : output;
+      useSessionStore.getState().addTerminalOutput(terminalOutput);
     });
     unsubscribeFunctions.push(unsubscribeTerminalOutput);
     

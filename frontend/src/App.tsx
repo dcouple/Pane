@@ -64,20 +64,23 @@ import type {
   PanePermissionInput,
 } from '../../shared/types/daemon';
 import { isMac } from './utils/platformUtils';
+import { boundary, decodeOptionalBoundary } from '../../shared/validation/boundaryDecoder';
 
 // Stable empty array to avoid creating new references in render
 const EMPTY_TERMINAL_SHORTCUTS: TerminalShortcut[] = [];
+// SAFETY: Electron supports WebkitAppRegion although React's CSS type omits it.
+const MAC_TITLE_BAR_STYLE = { height: 38, WebkitAppRegion: 'drag' } as React.CSSProperties;
 
-// Type for IPC response
-interface IPCResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
-
-interface OnboardingEnvironmentResult {
-  ghReady?: boolean;
-}
+const preferenceResponseSchema = boundary.object({
+  success: boundary.boolean,
+  data: boundary.optional(boundary.string),
+  error: boundary.optional(boundary.string),
+});
+const lastOpenResponseSchema = boundary.object({
+  success: boundary.boolean,
+  data: boundary.optional(boundary.object({ discord_shown: boundary.optional(boundary.boolean) })),
+  error: boundary.optional(boundary.string),
+});
 
 function App() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
@@ -204,7 +207,11 @@ function App() {
 
   useEffect(() => {
     const clearViewedCompletedActivity = (event: Event) => {
-      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!(event instanceof CustomEvent)) return;
+      const detail = decodeOptionalBoundary(event.detail, boundary.object({
+        sessionId: boundary.optional(boundary.string),
+      }));
+      const sessionId = detail?.sessionId;
       if (sessionId) {
         usePanelStore.getState().clearUnviewedCompletedActivity(sessionId);
       }
@@ -360,7 +367,10 @@ function App() {
       }
 
       try {
-        const consentResult = await window.electron.invoke('preferences:get', 'analytics_consent_shown') as IPCResponse<string>;
+        const consentResult = decodeOptionalBoundary(
+          await window.electron.invoke('preferences:get', 'analytics_consent_shown'),
+          preferenceResponseSchema,
+        );
         const hasShownConsent = consentResult?.data === 'true';
 
         if (!hasShownConsent) {
@@ -404,7 +414,10 @@ function App() {
       let consentDecided = false;
 
       try {
-        const consentResult = await window.electron?.invoke?.('preferences:get', 'analytics_consent_shown') as IPCResponse<string> | undefined;
+        const consentResult = decodeOptionalBoundary(
+          await window.electron?.invoke?.('preferences:get', 'analytics_consent_shown'),
+          preferenceResponseSchema,
+        );
         consentDecided = consentResult?.data === 'true';
       } catch (error) {
         console.error('[App] Error resolving analytics consent state:', error);
@@ -515,7 +528,10 @@ function App() {
         return;
       }
       try {
-        const result = await window.electron.invoke('preferences:get', ONBOARDING_REPO_SETUP_PREFERENCE) as IPCResponse<string>;
+        const result = decodeOptionalBoundary(
+          await window.electron.invoke('preferences:get', ONBOARDING_REPO_SETUP_PREFERENCE),
+          preferenceResponseSchema,
+        );
         if (result?.data !== 'true') {
           // Only show onboarding for truly new users (no existing projects).
           // Existing users who upgrade won't have this preference but already have projects.
@@ -551,9 +567,9 @@ function App() {
 
       try {
         // Get preferences from database
-        const hideWelcomeResult = await window.electron.invoke('preferences:get', 'hide_welcome') as IPCResponse<string>;
-        const welcomeShownResult = await window.electron.invoke('preferences:get', 'welcome_shown') as IPCResponse<string>;
-        const hideDiscordResult = await window.electron.invoke('preferences:get', 'hide_discord') as IPCResponse<string>;
+        const hideWelcomeResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'hide_welcome'), preferenceResponseSchema);
+        const welcomeShownResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'welcome_shown'), preferenceResponseSchema);
+        const hideDiscordResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'hide_discord'), preferenceResponseSchema);
 
         const hideWelcome = hideWelcomeResult?.data === 'true';
         const hasSeenWelcome = welcomeShownResult?.data === 'true';
@@ -600,7 +616,7 @@ function App() {
 
           try {
             // Get the last app open to see if Discord was already shown
-            const result = await window.electron.invoke('app:get-last-open') as IPCResponse<{ discord_shown?: boolean }>;
+            const result = decodeOptionalBoundary(await window.electron.invoke('app:get-last-open'), lastOpenResponseSchema);
 
             if (result?.success && result.data) {
               const lastOpen = result.data;
@@ -629,7 +645,7 @@ function App() {
             await window.electron.invoke('app:record-open', hideWelcome, false);
 
             // If we showed Discord popup and there was no previous app open, update the status
-            const result = await window.electron.invoke('app:get-last-open') as IPCResponse<{ discord_shown?: boolean }>;
+            const result = decodeOptionalBoundary(await window.electron.invoke('app:get-last-open'), lastOpenResponseSchema);
             if (!result?.data?.discord_shown && isDiscordOpen) {
               await window.electron.invoke('app:update-discord-shown');
             }
@@ -669,13 +685,13 @@ function App() {
       }
 
       try {
-        const onboardingResult = await window.electron.invoke('preferences:get', ONBOARDING_REPO_SETUP_PREFERENCE) as IPCResponse<string>;
+        const onboardingResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', ONBOARDING_REPO_SETUP_PREFERENCE), preferenceResponseSchema);
         if (onboardingResult?.data !== 'true') return;
 
-        const promptResult = await window.electron.invoke('preferences:get', ONBOARDING_GH_PROMPT_SHOWN_PREFERENCE) as IPCResponse<string>;
+        const promptResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', ONBOARDING_GH_PROMPT_SHOWN_PREFERENCE), preferenceResponseSchema);
         if (promptResult?.data === 'true') return;
 
-        const envResult = await window.electronAPI.onboarding.detectEnvironment() as IPCResponse<OnboardingEnvironmentResult>;
+        const envResult = await window.electronAPI.onboarding.detectEnvironment();
         if (!envResult.success || envResult.data?.ghReady !== true) return;
 
         await window.electron.invoke('preferences:set', ONBOARDING_GH_PROMPT_SHOWN_PREFERENCE, 'true');
@@ -712,7 +728,7 @@ function App() {
       try {
         const result = await window.electronAPI.sessions.getResumable();
         if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
-          setResumableSessions(result.data as ResumableSession[]);
+          setResumableSessions(result.data);
           setIsResumeDialogOpen(true);
         }
       } catch (error) {
@@ -822,7 +838,7 @@ function App() {
         {isMac() && (
           <div
             className="flex-shrink-0 bg-bg-primary"
-            style={{ height: 38, WebkitAppRegion: 'drag' } as React.CSSProperties}
+            style={MAC_TITLE_BAR_STYLE}
           />
         )}
         <div className="pane-main-layout flex flex-1 min-h-0">

@@ -7,7 +7,7 @@ import {
 } from './dropdownNavigation';
 
 const items = (spec: Array<string | { id: string; disabled: boolean }>): NavigableItem[] =>
-  spec.map((s) => (typeof s === 'string' ? { id: s } : s));
+  spec.map((item) => (item instanceof Object ? item : { id: item }));
 
 describe('firstEnabledIndex', () => {
   it('finds the first item of an all-enabled list', () => {

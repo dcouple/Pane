@@ -12,6 +12,7 @@ import {
   parseDeepgramLiveMessage,
   readResultsMetadata,
 } from '../utils/deepgramLive';
+import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 
 const MAX_RECORDING_MS = 60_000;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
@@ -162,7 +163,7 @@ export function useRemoteVoiceDictation({
       setError('Voice transcription is unavailable.');
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== 'function') {
+    if (!navigator.mediaDevices?.getUserMedia || !('MediaRecorder' in globalThis)) {
       setError('Voice recording is not supported in this browser.');
       return;
     }
@@ -249,7 +250,7 @@ export function useRemoteVoiceDictation({
       setError('Live voice transcription is unavailable.');
       return;
     }
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder !== 'function' || typeof WebSocket !== 'function') {
+    if (!navigator.mediaDevices?.getUserMedia || !('MediaRecorder' in globalThis) || !('WebSocket' in globalThis)) {
       setError('Live voice recording is not supported in this browser.');
       return;
     }
@@ -438,7 +439,7 @@ export function useRemoteVoiceDictation({
 }
 
 function selectRecordingMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+  if (!('MediaRecorder' in globalThis) || !MediaRecorder.isTypeSupported) {
     return undefined;
   }
 
@@ -449,8 +450,9 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
+      const dataUrl = decodeOptionalBoundary(reader.result, boundary.string);
+      if (dataUrl !== undefined) {
+        resolve(dataUrl);
       } else {
         reject(new Error('Failed to read voice recording.'));
       }
@@ -460,7 +462,7 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-function getVoiceErrorMessage(error: unknown): string {
+function getVoiceErrorMessage<ErrorValue>(error: ErrorValue): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
   }
@@ -497,9 +499,8 @@ function openStreamingSocket(
       reject(new Error('Failed to connect to Deepgram live transcription.'));
     }, { once: true });
     socket.addEventListener('message', (event) => {
-      if (typeof event.data === 'string') {
-        onMessage(event.data);
-      }
+      const message = decodeOptionalBoundary(event.data, boundary.string);
+      if (message !== undefined) onMessage(message);
     });
   });
 }
@@ -515,9 +516,7 @@ function closeSocket(socketRef: { current: WebSocket | null }): void {
 function stopRecorder(recorder: MediaRecorder): Promise<void> {
   return new Promise(resolve => {
     recorder.addEventListener('stop', () => resolve(), { once: true });
-    if (typeof recorder.requestData === 'function') {
-      recorder.requestData();
-    }
+    recorder.requestData();
     recorder.stop();
   });
 }

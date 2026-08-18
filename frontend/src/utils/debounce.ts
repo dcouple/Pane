@@ -1,10 +1,10 @@
-export interface DebouncedFunction<T extends (...args: never[]) => unknown> {
+export interface DebouncedFunction<T extends (...args: never[]) => void> {
   (...args: Parameters<T>): void;
   cancel: () => void;
   flush: () => void;
 }
 
-export function debounce<T extends (...args: never[]) => unknown>(
+export function debounce<T extends (...args: never[]) => void>(
   func: T,
   wait: number
 ): DebouncedFunction<T> {

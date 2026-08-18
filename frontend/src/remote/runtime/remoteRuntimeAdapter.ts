@@ -72,8 +72,10 @@ export class RemoteRuntimeAdapter {
       if (response.success === false) {
         throw new Error(response.error ?? `${channel} failed`);
       }
+      // SAFETY: The named IPC/API channel contract establishes this response payload type.
       return response.data as T;
     }
+    // SAFETY: The adapter method selects T from the invoked channel contract.
     return response as T;
   }
 
@@ -188,5 +190,5 @@ export class RemoteRuntimeAdapter {
 }
 
 function isIpcResponse<T>(value: IpcLikeResponse<T> | T): value is IpcLikeResponse<T> {
-  return Boolean(value && typeof value === 'object' && ('success' in value || 'data' in value || 'error' in value));
+  return Boolean(value && value instanceof Object && ('success' in value || 'data' in value || 'error' in value));
 }

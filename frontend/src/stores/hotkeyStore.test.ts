@@ -2,12 +2,49 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { areKeyboardShortcutsEnabled, isCommandPaletteShortcutEnabled, useConfigStore } from './configStore';
 import { useHotkeyStore } from './hotkeyStore';
 
+interface HotkeyTestTarget {
+  tagName: string;
+  isContentEditable: boolean;
+  classList?: { contains: (name: string) => boolean };
+  closest: (selector: string) => { matched: true } | null;
+}
+
+interface HotkeyTestEvent {
+  key: string;
+  code: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey: boolean;
+  target: HotkeyTestTarget;
+  getModifierState: (keyArg: string) => boolean;
+  preventDefault: () => void;
+}
+
+function keyboardEvent(
+  init: KeyboardEventInit,
+  target: HotkeyTestTarget,
+  preventDefault: () => void,
+): HotkeyTestEvent {
+  return {
+    key: init.key ?? '',
+    code: init.code ?? '',
+    ctrlKey: init.ctrlKey ?? false,
+    metaKey: init.metaKey ?? false,
+    altKey: init.altKey ?? false,
+    shiftKey: init.shiftKey ?? false,
+    target,
+    getModifierState: () => false,
+    preventDefault,
+  };
+}
+
 describe('hotkeyStore keyboard shortcut preference', () => {
-  let keydownListener: ((event: KeyboardEvent) => void) | undefined;
+  let keydownListener: ((event: HotkeyTestEvent) => void) | undefined;
 
   beforeEach(() => {
     vi.stubGlobal('window', {
-      addEventListener: (type: string, listener: (event: KeyboardEvent) => void) => {
+      addEventListener: (type: string, listener: (event: HotkeyTestEvent) => void) => {
         if (type === 'keydown') keydownListener = listener;
       },
       removeEventListener: vi.fn(),
@@ -33,17 +70,14 @@ describe('hotkeyStore keyboard shortcut preference', () => {
       action,
     });
 
-    keydownListener?.({
+    keydownListener?.(keyboardEvent({
       key: 'w',
       code: 'KeyW',
       ctrlKey: true,
       metaKey: false,
       altKey: false,
       shiftKey: false,
-      target: { tagName: 'DIV', isContentEditable: false, closest: () => null },
-      getModifierState: () => false,
-      preventDefault,
-    } as unknown as KeyboardEvent);
+    }, { tagName: 'DIV', isContentEditable: false, closest: () => null }, preventDefault));
 
     expect(action).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
@@ -68,17 +102,14 @@ describe('hotkeyStore keyboard shortcut preference', () => {
       action: paletteAction,
     });
 
-    keydownListener?.({
+    keydownListener?.(keyboardEvent({
       key: 'P',
       code: 'KeyP',
       ctrlKey: true,
       metaKey: false,
       altKey: false,
       shiftKey: true,
-      target: { tagName: 'DIV', isContentEditable: false, closest: () => null },
-      getModifierState: () => false,
-      preventDefault,
-    } as unknown as KeyboardEvent);
+    }, { tagName: 'DIV', isContentEditable: false, closest: () => null }, preventDefault));
 
     expect(paletteAction).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
@@ -89,17 +120,14 @@ describe('hotkeyStore keyboard shortcut preference', () => {
         commandPaletteShortcutEnabled: false,
       },
     });
-    keydownListener?.({
+    keydownListener?.(keyboardEvent({
       key: 'P',
       code: 'KeyP',
       ctrlKey: true,
       metaKey: false,
       altKey: false,
       shiftKey: true,
-      target: { tagName: 'DIV', isContentEditable: false, closest: () => null },
-      getModifierState: () => false,
-      preventDefault,
-    } as unknown as KeyboardEvent);
+    }, { tagName: 'DIV', isContentEditable: false, closest: () => null }, preventDefault));
 
     expect(paletteAction).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
@@ -128,24 +156,22 @@ describe('hotkeyStore keyboard shortcut preference', () => {
       preventDefault,
     };
 
-    keydownListener?.({
+    keydownListener?.(keyboardEvent({
       ...event,
-      target: {
+    }, {
         tagName: 'TEXTAREA',
         isContentEditable: false,
         classList: { contains: (name: string) => name === 'xterm-helper-textarea' },
         closest: () => null,
-      },
-    } as unknown as KeyboardEvent);
-    keydownListener?.({
+      }, preventDefault));
+    keydownListener?.(keyboardEvent({
       ...event,
-      target: {
+    }, {
         tagName: 'TEXTAREA',
         isContentEditable: false,
         classList: { contains: () => false },
         closest: () => null,
-      },
-    } as unknown as KeyboardEvent);
+      }, preventDefault));
 
     expect(action).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
@@ -162,21 +188,18 @@ describe('hotkeyStore keyboard shortcut preference', () => {
       category: 'view' as const,
       action,
     };
-    const dispatch = () => keydownListener?.({
+    const dispatch = () => keydownListener?.(keyboardEvent({
       key: 'ArrowUp',
       code: 'ArrowUp',
       ctrlKey: false,
       metaKey: false,
       altKey: false,
       shiftKey: true,
-      target: {
+    }, {
         tagName: 'DIV',
         isContentEditable: false,
-        closest: (selector: string) => selector === '[aria-modal="true"]' ? {} : null,
-      },
-      getModifierState: () => false,
-      preventDefault,
-    } as unknown as KeyboardEvent);
+        closest: (selector: string) => selector === '[aria-modal="true"]' ? { matched: true } : null,
+      }, preventDefault));
 
     useHotkeyStore.getState().register(definition);
     dispatch();

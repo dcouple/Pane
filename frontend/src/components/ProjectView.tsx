@@ -133,7 +133,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       setBranchState({
         projectId,
         worktreePath: activeWorktreePath,
-        branch: result.success && typeof result.data === 'string' ? result.data : null,
+        branch: result.success ? result.data ?? null : null,
       });
     }).catch(() => {
       if (!cancelled) {

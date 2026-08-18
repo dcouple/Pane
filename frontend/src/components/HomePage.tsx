@@ -184,6 +184,7 @@ export function HomePage() {
     try {
       const result = await API.projects.getAll();
       if (result.success && result.data) {
+        // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         setProjects(result.data as Project[]);
       }
     } catch {
@@ -253,6 +254,7 @@ export function HomePage() {
   const handleShellChange = async (shell: string) => {
     setPreferredShell(shell);
     await updateConfig({
+      // SAFETY: The value comes from the adjacent finite domain definition.
       preferredShell: shell as 'auto' | 'gitbash' | 'powershell' | 'pwsh' | 'cmd',
     }).catch(() => {});
   };

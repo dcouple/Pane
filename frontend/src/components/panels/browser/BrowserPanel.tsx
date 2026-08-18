@@ -31,6 +31,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   const [canGoBack, setCanGoBack] = useState(false);
   const [canGoForward, setCanGoForward] = useState(false);
   const [devToolsOpen, setDevToolsOpen] = useState(false);
+  // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
   const currentUrlFromPanelState = (panel.state.customState as BrowserPanelState | undefined)?.currentUrl;
 
   const webviewRef = useRef<Electron.WebviewTag>(null);
@@ -66,6 +67,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   useEffect(() => {
     if (!initRef.current) {
       initRef.current = true;
+      // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
       const savedState = panel.state.customState as BrowserPanelState | undefined;
       if (savedState?.currentUrl) {
         setUrl(savedState.currentUrl);
@@ -260,6 +262,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   // preventing duplicate popup panels when multiple browser panels exist in a session.
   useEffect(() => {
     const handler = (e: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const { url: popupUrl, sourceSessionId, sourcePanelId } = (e as CustomEvent<{ url: string; sourceSessionId: string; sourcePanelId: string }>).detail;
       if (sourceSessionId !== panel.sessionId || sourcePanelId !== panel.id) return;
       e.stopImmediatePropagation();
@@ -274,7 +277,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
         addPanel(newPanel);
         setActivePanelInStore(panel.sessionId, newPanel.id);
         await panelApi.setActivePanel(panel.sessionId, newPanel.id);
-      }).catch((err: unknown) => {
+      }).catch((err) => {
         console.error('[BrowserPanel] Failed to create popup panel:', err);
       });
     };
@@ -288,6 +291,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
   // Also auto-focuses this browser panel so the user sees the navigated page immediately.
   useEffect(() => {
     const handler = (e: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const customEvent = e as CustomEvent<{ url: string; sessionId: string }>;
       if (customEvent.detail.sessionId === panel.sessionId) {
         e.stopImmediatePropagation();
@@ -424,7 +428,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
             ref={webviewRef}
             src={url}
             partition={`persist:project-${projectId ?? panel.sessionId}`}
-            allowpopups={'true' as unknown as boolean}
+            allowpopups
             className="flex-1 border-0"
             style={{ display: 'inline-flex' }}
           />

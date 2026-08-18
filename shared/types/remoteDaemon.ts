@@ -272,6 +272,24 @@ export interface RemoteDaemonEventEnvelope {
   timestamp: string;
 }
 
+const remoteHeartbeatPayloadSchema: BoundarySchema<RemoteDaemonHeartbeatPayload> = boundary.object({
+  timestamp: boundary.nonEmptyString,
+});
+
+const remoteDaemonEventEnvelopeSchema = boundary.object({
+  channel: boundary.string,
+  args: boundary.array(boundary.json),
+  timestamp: boundary.string,
+});
+
+export function decodeRemoteHeartbeatPayload<Value>(value: Value): RemoteDaemonHeartbeatPayload {
+  return decodeBoundary(value, remoteHeartbeatPayloadSchema);
+}
+
+export function decodeRemoteDaemonEventEnvelope<Value>(value: Value): RemoteDaemonEventEnvelope {
+  return decodeBoundary(value, remoteDaemonEventEnvelopeSchema);
+}
+
 export const DEFAULT_REMOTE_DAEMON_HOST_CONFIG: RemoteDaemonHostConfig = {
   enabled: false,
   listenHost: '127.0.0.1',

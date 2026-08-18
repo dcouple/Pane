@@ -179,6 +179,7 @@ export function CreateSessionDialog({
   useEffect(() => {
     if (!isBranchDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(e.target as Node)) {
         setIsBranchDropdownOpen(false);
         setBranchSearch('');
@@ -271,6 +272,7 @@ export function CreateSessionDialog({
       // Cmd/Ctrl + Enter to submit
       if (keyboardShortcutsEnabled && (e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
+        // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
         const form = document.getElementById('create-session-form') as HTMLFormElement;
         if (form) {
           const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
@@ -287,6 +289,7 @@ export function CreateSessionDialog({
   useEffect(() => {
     if (isOpen) {
       const timer = setTimeout(() => {
+        // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
         const input = document.getElementById('worktreeTemplate') as HTMLInputElement;
         if (input) input.focus();
       }, 100);

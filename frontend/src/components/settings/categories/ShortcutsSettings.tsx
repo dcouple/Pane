@@ -22,6 +22,7 @@ export function ShortcutsSettings({ persistence, onDirtyChange, onShowKeyboardSh
   const [shortcuts, setShortcuts] = useState<TerminalShortcut[]>(persistedShortcuts);
   const dirty = JSON.stringify(shortcuts) !== persistedKey;
 
+  // SAFETY: App-owned storage writes this value through the matching typed serializer.
   useEffect(() => setShortcuts(JSON.parse(persistedKey) as TerminalShortcut[]), [persistedKey]);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);

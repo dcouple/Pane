@@ -18,7 +18,7 @@
  * @returns Human-readable time distance
  */
 export function formatDistanceToNow(date: Date | string): string {
-  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const dateObj = date instanceof Date ? date : new Date(date);
   const now = new Date();
   const diffMs = now.getTime() - dateObj.getTime();
   const diffSeconds = Math.floor(diffMs / 1000);
@@ -44,7 +44,7 @@ export function formatDistanceToNow(date: Date | string): string {
  */
 export function isValidTimestamp(timestamp: string | Date | null | undefined): boolean {
   if (!timestamp) return false;
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
   return !isNaN(date.getTime());
 }
 

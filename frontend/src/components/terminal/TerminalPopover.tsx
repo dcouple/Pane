@@ -69,6 +69,7 @@ export const TerminalPopover: React.FC<TerminalPopoverProps> = ({
     if (!visible) return;
 
     const handleClickOutside = (e: MouseEvent) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       if (ref.current && !ref.current.contains(e.target as Node)) {
         onClose();
       }

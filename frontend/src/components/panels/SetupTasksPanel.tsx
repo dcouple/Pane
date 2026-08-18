@@ -42,6 +42,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
       const response = await window.electronAPI.file.readProject(parseInt(projectId), '.gitignore');
       if (!response.success || !response.data) return false;
       
+      // SAFETY: The named IPC/API channel contract establishes this response payload type.
       const content = response.data as string;
       // Check for common worktree patterns
       return content.includes('/worktrees/') || 
@@ -63,6 +64,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
       const response = await API.projects.getAll();
       if (!response.success || !response.data) return false;
       
+      // SAFETY: The named IPC/API channel contract establishes this response payload type.
       const projects = response.data as Array<{ id: number; run_script?: string }>;      
       const project = projects.find(p => p.id === parseInt(projectId));
       return !!(project?.run_script && project.run_script.trim());
@@ -128,6 +130,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
       let content = '';
       
       if (readResponse.success && readResponse.data) {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         content = readResponse.data as string;
         console.log('[SetupTasksPanel] Current .gitignore length:', content.length);
       } else if (readResponse.success && readResponse.data === null) {

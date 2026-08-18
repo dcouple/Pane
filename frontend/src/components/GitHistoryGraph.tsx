@@ -203,6 +203,7 @@ export function GitHistoryGraph({ sessionId, baseBranch, layout = 'compact', onC
       setError(null);
       const response = await API.sessions.getGitGraph(sessionId);
       if (response.success && response.data) {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const data = response.data as GitGraphResponse;
         setRawEntries(data.entries);
         setCurrentBranch(data.currentBranch);
@@ -224,7 +225,9 @@ export function GitHistoryGraph({ sessionId, baseBranch, layout = 'compact', onC
   // Listen for git status updates to refresh the graph
   useEffect(() => {
     const handler = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const customEvent = event as CustomEvent;
+      // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
       const detail = customEvent.detail as { sessionId?: string } | undefined;
       if (detail?.sessionId === sessionId) {
         fetchGraph();
@@ -238,7 +241,9 @@ export function GitHistoryGraph({ sessionId, baseBranch, layout = 'compact', onC
   // Also listen for panel events (git operations)
   useEffect(() => {
     const handler = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const customEvent = event as CustomEvent;
+      // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
       const detail = customEvent.detail as { type?: string; sessionId?: string } | undefined;
       if (detail?.type === 'git:operation_completed' && (!detail.sessionId || detail.sessionId === sessionId)) {
         fetchGraph();

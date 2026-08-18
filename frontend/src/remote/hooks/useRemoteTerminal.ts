@@ -5,6 +5,7 @@ import type { ToolPanel } from '../../../../shared/types/panels';
 import type { RemotePaneConnectionStatus } from '../../../../shared/types/remoteDaemon';
 import type { SessionOutput } from '../../types/session';
 import type { RemoteRuntimeAdapter } from '../runtime/remoteRuntimeAdapter';
+import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 
 interface UseRemoteTerminalOptions {
   adapter: RemoteRuntimeAdapter;
@@ -14,9 +15,14 @@ interface UseRemoteTerminalOptions {
 }
 
 interface TerminalOutputPayload {
-  panelId?: string;
-  output?: string;
+  panelId: string;
+  output: string;
 }
+
+const terminalOutputPayloadSchema = boundary.object({
+  panelId: boundary.string,
+  output: boundary.string,
+});
 
 const VISIBILITY_REFRESH_MS = 60_000;
 const TERMINAL_VIEWER_ID = getTerminalViewerId();
@@ -112,8 +118,11 @@ export function useRemoteTerminal({
 
     const unsubscribe = adapter.onEvent(event => {
       if (event.channel !== 'terminal:output') return;
-      const payload = event.args[0] as TerminalOutputPayload | undefined;
-      if (!payload || payload.panelId !== panel.id || typeof payload.output !== 'string') return;
+      const payload: TerminalOutputPayload | undefined = decodeOptionalBoundary(
+        event.args[0],
+        terminalOutputPayloadSchema,
+      );
+      if (!payload || payload.panelId !== panel.id) return;
       terminal.write(payload.output);
       void adapter.ackTerminalOutput(panel.id, byteLength(payload.output)).catch(() => {});
     });
@@ -183,10 +192,7 @@ async function hydrateTerminal(adapter: RemoteRuntimeAdapter, panelId: string, t
 }
 
 function formatSessionOutput(output: SessionOutput): string {
-  if (typeof output.data === 'string') {
-    return output.data;
-  }
-  return `${JSON.stringify(output.data)}\r\n`;
+  return output.type === 'json' ? `${JSON.stringify(output.data)}\r\n` : String(output.data);
 }
 
 function byteLength(value: string): number {

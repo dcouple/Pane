@@ -86,6 +86,8 @@ interface SessionOutputData {
   panelId?: string;
 }
 
+type TerminalOutputEvent = import('../../shared/types/panels').TerminalOutputEvent;
+
 interface Folder {
   id: string;
   name: string;
@@ -770,8 +772,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('session:updated', wrappedCallback);
       return () => ipcRenderer.removeListener('session:updated', wrappedCallback);
     },
-    onSessionDeleted: (callback: (session: Session) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Session) => callback(session);
+    onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Pick<Session, 'id'>) => callback(session);
       ipcRenderer.on('session:deleted', wrappedCallback);
       return () => ipcRenderer.removeListener('session:deleted', wrappedCallback);
     },
@@ -875,8 +877,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('panel:response-added', wrappedCallback);
     },
     
-    onTerminalOutput: (callback: (output: SessionOutputData) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, output: SessionOutputData) => callback(output);
+    onTerminalOutput: (callback: (output: TerminalOutputEvent) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, output: TerminalOutputEvent) => callback(output);
       ipcRenderer.on('terminal:output', wrappedCallback);
       return () => ipcRenderer.removeListener('terminal:output', wrappedCallback);
     },

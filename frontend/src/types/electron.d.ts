@@ -24,13 +24,25 @@ import type {
   PanePermissionResolvedEvent,
   PanePermissionResponse,
 } from '../../../shared/types/daemon';
-import type { ToolPanel } from '../../../shared/types/panels';
+import type {
+  CreatePanelRequest,
+  PanelEventType,
+  ResumableSession,
+  SessionPanelLayout,
+  ToolPanel,
+} from '../../../shared/types/panels';
+import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
+import type {
+  ProjectDashboardData,
+  ProjectDashboardSessionUpdateEvent,
+  ProjectDashboardUpdateEvent,
+} from './projectDashboard';
 
 interface LogEntry {
   timestamp: string;
@@ -61,8 +73,14 @@ interface IPCResponse<T = any> {
 interface ElectronAPI {
   // Generic invoke method. Daemon-owned channels route through the main-process
   // daemon bridge while adapter-only channels stay on direct Electron IPC.
-  // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC bridge that returns different types based on channel
-  invoke: (channel: string, ...args: unknown[]) => Promise<any>;
+  invoke: {
+    (channel: 'panels:get-layout', sessionId: string): Promise<IPCResponse<SessionPanelLayout | null>>;
+    (channel: 'panels:set-layout', sessionId: string, layout: SessionPanelLayout | null): Promise<IPCResponse<void>>;
+    (channel: 'panels:emitEvent', panelId: string, eventType: PanelEventType, data: JsonValue): Promise<void>;
+    (channel: 'panels:clearUnviewedContent', panelId: string): Promise<IPCResponse<void>>;
+    // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC bridge fallback for channels without dedicated overloads
+    (channel: string, ...args: unknown[]): Promise<any>;
+  };
   
   // Basic app info
   getAppVersion: () => Promise<string>;
@@ -190,7 +208,7 @@ interface ElectronAPI {
     saveLargeText: (sessionId: string, text: string) => Promise<string>;
 
     // Resume session operations
-    getResumable: () => Promise<IPCResponse>;
+    getResumable: () => Promise<IPCResponse<ResumableSession[]>>;
     resumeInterrupted: (sessionIds: string[]) => Promise<IPCResponse>;
     dismissInterrupted: (sessionIds: string[]) => Promise<IPCResponse>;
   };
@@ -203,7 +221,7 @@ interface ElectronAPI {
     activate: (projectId: string) => Promise<IPCResponse>;
     update: (projectId: string, updates: Partial<Project>) => Promise<IPCResponse>;
     delete: (projectId: string) => Promise<IPCResponse>;
-    detectBranch: (path: string) => Promise<IPCResponse>;
+    detectBranch: (path: string) => Promise<IPCResponse<string>>;
     reorder: (projectOrders: Array<{ id: number; displayOrder: number }>) => Promise<IPCResponse>;
     listBranches: (projectId: string) => Promise<IPCResponse>;
     refreshGitStatus: (projectId: number) => Promise<IPCResponse>;
@@ -294,10 +312,10 @@ interface ElectronAPI {
 
   // Dashboard
   dashboard: {
-    getProjectStatus: (projectId: number) => Promise<IPCResponse>;
-    getProjectStatusProgressive: (projectId: number) => Promise<IPCResponse>;
-    onUpdate: (callback: (data: Record<string, unknown>) => void) => () => void;
-    onSessionUpdate: (callback: (data: { type: string; projectId?: number; sessionId?: string; data: unknown }) => void) => () => void;
+    getProjectStatus: (projectId: number) => Promise<IPCResponse<ProjectDashboardData>>;
+    getProjectStatusProgressive: (projectId: number) => Promise<IPCResponse<ProjectDashboardData>>;
+    onUpdate: (callback: (data: ProjectDashboardUpdateEvent) => void) => () => void;
+    onSessionUpdate: (callback: (data: ProjectDashboardSessionUpdateEvent) => void) => () => void;
   };
 
   // UI State management
@@ -322,7 +340,7 @@ interface ElectronAPI {
     onPermissionResolved: (callback: (event: PanePermissionResolvedEvent) => void) => () => void;
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
-    onSessionDeleted: (callback: (session: Session) => void) => () => void;
+    onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => () => void;
     onSessionsLoaded: (callback: (sessions: Session[]) => void) => () => void;
     onSessionOutput: (callback: (output: SessionOutput) => void) => () => void;
     onSessionLog: (callback: (data: { sessionId: string; entry: LogEntry }) => void) => () => void;
@@ -350,7 +368,7 @@ interface ElectronAPI {
     onPanelPromptAdded: (callback: (data: { panelId: string; content: string }) => void) => () => void;
     onPanelResponseAdded: (callback: (data: { panelId: string; content: string }) => void) => () => void;
     
-    onTerminalOutput: (callback: (output: { sessionId: string; data: string; type: 'stdout' | 'stderr' }) => void) => () => void;
+    onTerminalOutput: (callback: (output: import('../../../shared/types/panels').TerminalOutputEvent) => void) => () => void;
     onTerminalCliReady: (callback: (data: { panelId: string }) => void) => () => void;
     onTerminalExited: (callback: (data: { sessionId: string; panelId: string; exitCode: number; signal: number | null }) => void) => () => void;
     onTerminalAlternateScreen: (callback: (data: { panelId: string; active: boolean }) => void) => () => void;
@@ -393,8 +411,8 @@ interface ElectronAPI {
 
   // Panel operations
   panels: {
-    getSessionPanels: (sessionId: string) => Promise<IPCResponse>;
-    createPanel: (sessionId: string, type: string, name: string, config?: Record<string, unknown>) => Promise<IPCResponse>;
+    getSessionPanels: (sessionId: string) => Promise<IPCResponse<ToolPanel[]>>;
+    createPanel: (sessionId: string, type: string, name: string, config?: CreatePanelRequest['initialState']) => Promise<IPCResponse<ToolPanel>>;
     deletePanel: (panelId: string) => Promise<IPCResponse>;
     renamePanel: (panelId: string, name: string) => Promise<IPCResponse>;
     setActivePanel: (sessionId: string, panelId: string) => Promise<IPCResponse>;
@@ -448,14 +466,14 @@ interface ElectronAPI {
   // Analytics tracking
   analytics: {
     getIdentity: () => Promise<IPCResponse<import('./config').AnalyticsIdentity>>;
-    onMainEvent: (callback: (event: { eventName: string; properties: Record<string, unknown> }) => void) => () => void;
+    onMainEvent: (callback: (event: { eventName: string; properties: import('../../../shared/validation/boundaryDecoder').JsonObject }) => void) => () => void;
     syncDistinctId: (distinctId: string) => void;
     redeemAttribution: () => Promise<IPCResponse<void>>;
   };
 
   // Onboarding
   onboarding: {
-    detectEnvironment: () => Promise<IPCResponse>;
+    detectEnvironment: () => Promise<IPCResponse<{ ghReady?: boolean }>>;
     getGitHubAuthCommand: () => Promise<IPCResponse<{ command: string; reason: 'login' | 'refresh' | 'install-gh' | 'ready' }>>;
     openGitHubAuthTerminal: () => Promise<IPCResponse<{
       command: string;

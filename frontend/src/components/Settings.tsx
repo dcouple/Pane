@@ -76,13 +76,19 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
       setPlatform(currentPlatform);
       if (currentPlatform === 'win32') {
         const response = await API.config.getAvailableShells();
-        if (response.success && Array.isArray(response.data)) setAvailableShells(response.data as AvailableShell[]);
+        if (response.success && Array.isArray(response.data)) {
+          // SAFETY: The named IPC/API channel contract establishes this response payload type.
+          setAvailableShells(response.data as AvailableShell[]);
+        }
       }
     });
     if (!fontsLoadedRef.current) {
       fontsLoadedRef.current = true;
       void window.electronAPI.config.getMonospaceFonts().then((response) => {
-        if (response.success && Array.isArray(response.data)) setSystemMonoFonts(response.data as string[]);
+        if (response.success && Array.isArray(response.data)) {
+          // SAFETY: The named IPC/API channel contract establishes this response payload type.
+          setSystemMonoFonts(response.data as string[]);
+        }
       }).catch(() => undefined);
     }
   }, [isOpen]);

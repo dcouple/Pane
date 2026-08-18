@@ -10,6 +10,7 @@ interface LogsPanelProps {
 
 const LogsPanel: React.FC<LogsPanelProps> = ({ panel, isActive }) => {
   const [isRunning, setIsRunning] = useState(false);
+  // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
   const logsState = panel.state?.customState as LogsPanelState;
   
   // Set running state from panel state

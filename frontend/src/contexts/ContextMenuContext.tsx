@@ -64,6 +64,7 @@ export const ContextMenuProvider: React.FC<ContextMenuProviderProps> = ({ childr
   useEffect(() => {
     const handleGlobalClick = (event: MouseEvent) => {
       // Check if the click is on the context menu itself
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const target = event.target as HTMLElement;
       const isContextMenu = target?.closest?.('.context-menu');
       

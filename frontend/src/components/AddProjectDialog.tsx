@@ -122,6 +122,7 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
               <div className="flex justify-end">
                 <Button
                   onClick={async () => {
+                    // SAFETY: The named IPC/API channel contract establishes this response payload type.
                     const result = await window.electron?.invoke('dialog:open-directory') as { success: boolean; data?: string } | undefined;
                     if (result?.success && result.data) {
                       setNewProject({ ...newProject, path: result.data });

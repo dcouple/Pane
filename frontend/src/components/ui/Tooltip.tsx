@@ -126,6 +126,7 @@ export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(({
     cancelShow();
   }, [cancelHide, cancelShow]);
 
+  // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
   const existingDescription = (children.props as { 'aria-describedby'?: string })['aria-describedby'];
   const describedBy = [existingDescription, isOpen ? tooltipId : undefined]
     .filter(Boolean)
@@ -147,7 +148,7 @@ export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(({
 
   const setTriggerRef = useCallback((node: HTMLElement | null) => {
     triggerRef.current = node;
-    if (typeof forwardedRef === 'function') forwardedRef(node);
+    if (forwardedRef instanceof Function) forwardedRef(node);
     else if (forwardedRef) forwardedRef.current = node;
   }, [forwardedRef]);
 

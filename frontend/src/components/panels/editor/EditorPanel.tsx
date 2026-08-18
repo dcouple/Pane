@@ -18,6 +18,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   
   // Extract explorer state each render to ensure we get updates
   const explorerState = React.useMemo(() =>
+    // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
     panel.state?.customState as ExplorerPanelState,
     [panel.state?.customState]
   );
@@ -69,6 +70,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
         return;
       }
 
+      // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
       const currentCustomState = (currentPanel.state?.customState || {}) as ExplorerPanelState;
 
       const stateToSave = {

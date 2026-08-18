@@ -192,6 +192,7 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
     e.stopPropagation();
     // Prevent closing logs panel while it's running
     if (panel.type === 'logs') {
+      // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
       const logsState = panel.state?.customState as LogsPanelState;
       if (logsState?.isRunning) {
         alert('Cannot close logs panel while process is running. Please stop the process first.');

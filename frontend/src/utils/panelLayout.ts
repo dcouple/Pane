@@ -355,6 +355,7 @@ export function movePanel(
   const removed = removePanelFromTree(root);
   const normalized = normalize(removed);
 
+  // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
   const edgeTarget = target as MoveTargetEdge;
   const direction: 'row' | 'column' = (edgeTarget.edge === 'left' || edgeTarget.edge === 'right') ? 'row' : 'column';
   const after = edgeTarget.edge === 'right' || edgeTarget.edge === 'bottom';

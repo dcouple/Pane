@@ -1,5 +1,6 @@
 import posthog from 'posthog-js';
 import type { AnalyticsIdentity } from '../types/config';
+import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 const DEFAULT_API_KEY = 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1';
 const DEFAULT_HOST = 'https://runpane.com/api/c';
@@ -9,9 +10,12 @@ let currentHost: string | undefined;
 let currentEnabled: boolean | undefined;
 let currentIdentity: AnalyticsIdentity | undefined;
 
+type AnalyticsPropertyValue = JsonValue | undefined;
+export interface AnalyticsProperties { [key: string]: AnalyticsPropertyValue }
+
 export interface PendingAnalyticsEvent {
   eventName: string;
-  properties?: Record<string, unknown>;
+  properties?: AnalyticsProperties;
 }
 
 let pendingEvents: PendingAnalyticsEvent[] = [];
@@ -27,13 +31,15 @@ export interface PostHogInitOptions {
   flushPendingEvents?: boolean;
 }
 
-function compactProperties(properties: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(properties).filter(([, value]) => value !== undefined)
-  );
+function compactProperties(properties: AnalyticsProperties): Record<string, JsonValue> {
+  const compacted: Record<string, JsonValue> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    if (value !== undefined) compacted[key] = value;
+  }
+  return compacted;
 }
 
-function personProperties(identity?: AnalyticsIdentity): Record<string, unknown> {
+function personProperties(identity?: AnalyticsIdentity): Record<string, JsonValue> {
   if (!identity) return {};
 
   return compactProperties({
@@ -49,7 +55,7 @@ function personProperties(identity?: AnalyticsIdentity): Record<string, unknown>
   });
 }
 
-function contextProperties(identity = currentIdentity): Record<string, unknown> {
+function contextProperties(identity = currentIdentity): Record<string, JsonValue> {
   if (!identity) return {};
 
   return compactProperties({
@@ -88,9 +94,9 @@ function directCaptureTarget(identity = currentIdentity): { token: string; host:
     token: currentApiKey || DEFAULT_API_KEY,
     host: currentHost || DEFAULT_HOST,
     distinctId:
-      typeof identity?.distinctId === 'string' && identity.distinctId.length > 0
+      identity?.distinctId
         ? identity.distinctId
-        : typeof posthogDistinctId === 'string' && posthogDistinctId.length > 0
+        : posthogDistinctId
         ? posthogDistinctId
         : `anon_${crypto.randomUUID()}`,
   };
@@ -98,13 +104,13 @@ function directCaptureTarget(identity = currentIdentity): { token: string; host:
 
 async function directCapture(
   eventName: string,
-  properties?: Record<string, unknown>,
+  properties?: AnalyticsProperties,
   identity = currentIdentity,
   options: { processPersonProfile?: boolean; distinctId?: string } = {}
 ): Promise<void> {
   const { token, host, distinctId } = directCaptureTarget(identity);
   const eventDistinctId =
-    typeof options.distinctId === 'string' && options.distinctId.length > 0
+    options.distinctId
       ? options.distinctId
       : distinctId;
   const shouldProcessPersonProfile = Boolean(options.processPersonProfile && identity);
@@ -265,7 +271,7 @@ export async function aliasInstallIdentityDirect(identity = currentIdentity): Pr
  */
 export async function captureAndOptOut(
   eventName: string,
-  properties?: Record<string, unknown>,
+  properties?: AnalyticsProperties,
   identity = currentIdentity
 ): Promise<void> {
   currentIdentity = identity;
@@ -276,7 +282,7 @@ export async function captureAndOptOut(
   currentEnabled = false;
 }
 
-export function capture(eventName: string, properties?: Record<string, unknown>): void {
+export function capture(eventName: string, properties?: AnalyticsProperties): void {
   try {
     posthog.capture(eventName, compactProperties({
       ...contextProperties(),
@@ -301,7 +307,7 @@ export function capture(eventName: string, properties?: Record<string, unknown>)
  */
 export async function captureUnconditionally(
   eventName: string,
-  properties?: Record<string, unknown>,
+  properties?: AnalyticsProperties,
   identity = currentIdentity
 ): Promise<void> {
   currentIdentity = identity;

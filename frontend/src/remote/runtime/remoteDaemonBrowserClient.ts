@@ -1,8 +1,10 @@
-import type {
-  RemoteDaemonEventEnvelope,
-  RemoteDaemonHeartbeatPayload,
-  RemotePaneConnectionProfile,
-  RemotePaneConnectionStatus,
+import {
+  decodeRemoteDaemonEventEnvelope,
+  decodeRemoteHeartbeatPayload,
+  type RemoteDaemonEventEnvelope,
+  type RemoteDaemonHeartbeatPayload,
+  type RemotePaneConnectionProfile,
+  type RemotePaneConnectionStatus,
 } from '../../../../shared/types/remoteDaemon';
 
 type RemoteBrowserEvent =
@@ -93,7 +95,7 @@ export class RemoteDaemonBrowserClient {
   }
 
   async invoke<T = unknown>(channel: string, args: unknown[] = []): Promise<T> {
-    let lastError: unknown = null;
+    let lastError: Error | null = null;
     const signal = this.abortController?.signal;
     for (let attempt = 1; attempt <= INVOKE_ATTEMPTS; attempt += 1) {
       try {
@@ -121,6 +123,7 @@ export class RemoteDaemonBrowserClient {
           ...request,
         });
 
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
         if (response.ok && payload.ok) {
           return payload.result;
@@ -136,12 +139,12 @@ export class RemoteDaemonBrowserClient {
         if (!isRetryableResponse(response.status)) {
           throw new NonRetryableRemoteError(message);
         }
-        lastError = error;
+        lastError = error instanceof Error ? error : new Error('Remote request failed');
       } catch (error) {
         if (error instanceof RemoteAuthInvalidError || error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
         }
-        lastError = error;
+        lastError = error instanceof Error ? error : new Error('Remote request failed');
       }
 
       if (attempt < INVOKE_ATTEMPTS) {
@@ -163,7 +166,7 @@ export class RemoteDaemonBrowserClient {
   }
 
   private async checkHealth(signal: AbortSignal): Promise<void> {
-    let lastError: unknown = null;
+    let lastError: Error | null = null;
     for (let attempt = 1; attempt <= HEALTH_CHECK_ATTEMPTS; attempt += 1) {
       try {
         const response = await fetch(this.endpoint('health'), { signal, cache: 'no-store' });
@@ -175,7 +178,7 @@ export class RemoteDaemonBrowserClient {
         if (signal.aborted) {
           throw error;
         }
-        lastError = error;
+        lastError = error instanceof Error ? error : new Error('Remote health check failed');
       }
 
       if (attempt < HEALTH_CHECK_ATTEMPTS) {
@@ -188,7 +191,7 @@ export class RemoteDaemonBrowserClient {
 
   private async openEventStream(signal: AbortSignal): Promise<void> {
     try {
-      if (typeof EventSource === 'function') {
+      if (globalThis.EventSource !== undefined) {
         await this.assertEventStreamAuthenticated(signal);
         this.openNativeEventSource(signal);
         return;
@@ -368,14 +371,14 @@ export class RemoteDaemonBrowserClient {
 
   private handleSseEvent(event: ParsedSseEvent): void {
     if (event.event === 'heartbeat') {
-      const payload = parseEventData<RemoteDaemonHeartbeatPayload>(event.data);
+      const payload = decodeRemoteHeartbeatPayload(JSON.parse(event.data));
       this.setState({ lastSeenAt: payload.timestamp });
       this.emitEvent({ type: 'heartbeat', payload });
       return;
     }
 
     if (event.event === 'daemon-event') {
-      const payload = parseEventData<RemoteDaemonEventEnvelope>(event.data);
+      const payload = decodeRemoteDaemonEventEnvelope(JSON.parse(event.data));
       this.setState({ lastSeenAt: payload.timestamp });
       this.emitEvent({ type: 'daemon-event', payload });
       return;
@@ -449,7 +452,7 @@ export class RemoteDaemonBrowserClient {
     this.eventSource = null;
   }
 
-  private createHealthCheckError(error: unknown): Error {
+  private createHealthCheckError(error: Error | null): Error {
     if (error instanceof Error && isNetworkFailure(error) && isTailscaleUrl(this.profile.baseUrl)) {
       const hostname = getUrlHostname(this.profile.baseUrl);
       return new Error(
@@ -459,9 +462,7 @@ export class RemoteDaemonBrowserClient {
       );
     }
 
-    return error instanceof Error
-      ? error
-      : new Error('Remote health check failed');
+    return error ?? new Error('Remote health check failed');
   }
 }
 
@@ -506,10 +507,6 @@ function parseSseEvent(rawEvent: string): ParsedSseEvent | null {
   }
 
   return { event, data: data.join('\n') };
-}
-
-function parseEventData<T>(data: string): T {
-  return JSON.parse(data) as T;
 }
 
 function getRuntimeId(): string {

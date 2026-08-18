@@ -33,7 +33,7 @@ interface SessionStore {
   loadSessions: (sessions: Session[]) => void;
   addSession: (session: Session) => void;
   updateSession: (session: Session) => void;
-  deleteSession: (session: Session) => void;
+  deleteSession: (session: Pick<Session, 'id'>) => void;
   setActiveSession: (sessionId: string | null) => Promise<void>;
   addSessionOutput: (output: SessionOutput) => void;
   setSessionOutput: (sessionId: string, output: string) => void;
@@ -289,6 +289,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (normalizedOutput.type === 'json') {
       // Update jsonMessages array with limit
       const currentMessages = session.jsonMessages || [];
+      // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
       const newMessage = { ...(normalizedOutput.data as ClaudeJsonMessage), timestamp: normalizedOutput.timestamp };
       const newJsonMessages = currentMessages.length >= MAX_MESSAGES
         ? [...currentMessages.slice(1), newMessage] // Remove oldest when at limit
@@ -297,9 +298,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     } else {
       // Add stdout/stderr to output array with limit
       const currentOutput = session.output || [];
+      // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
+      const outputText = normalizedOutput.data as string;
       const newOutput = currentOutput.length >= MAX_OUTPUTS
-        ? [...currentOutput.slice(1), normalizedOutput.data as string] // Remove oldest when at limit
-        : [...currentOutput, normalizedOutput.data as string];
+        ? [...currentOutput.slice(1), outputText] // Remove oldest when at limit
+        : [...currentOutput, outputText];
       sessions[sessionIndex] = { ...session, output: newOutput };
     }
     
@@ -308,6 +311,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
     if (state.activeMainRepoSession && state.activeMainRepoSession.id === normalizedOutput.sessionId) {
       if (normalizedOutput.type === 'json') {
         const currentMessages = state.activeMainRepoSession.jsonMessages || [];
+        // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
         const newMessage = { ...(normalizedOutput.data as ClaudeJsonMessage), timestamp: normalizedOutput.timestamp };
         const newJsonMessages = currentMessages.length >= MAX_MESSAGES
           ? [...currentMessages.slice(1), newMessage]
@@ -315,9 +319,11 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
         updatedActiveMainRepoSession = { ...state.activeMainRepoSession, jsonMessages: newJsonMessages };
       } else {
         const currentOutput = state.activeMainRepoSession.output || [];
+        // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
+        const outputText = normalizedOutput.data as string;
         const newOutput = currentOutput.length >= MAX_OUTPUTS
-          ? [...currentOutput.slice(1), normalizedOutput.data as string]
-          : [...currentOutput, normalizedOutput.data as string];
+          ? [...currentOutput.slice(1), outputText]
+          : [...currentOutput, outputText];
         updatedActiveMainRepoSession = { ...state.activeMainRepoSession, output: newOutput };
       }
     }
@@ -367,8 +373,10 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       for (let i = batch; i < batchEnd; i++) {
         const output = normalizeSessionOutput(outputs[i]);
         if (output.type === 'json') {
+          // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
           jsonMessages.push({ ...(output.data as ClaudeJsonMessage), timestamp: output.timestamp });
         } else if (output.type === 'stdout' || output.type === 'stderr') {
+          // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
           stdOutputs.push(output.data as string);
         }
       }

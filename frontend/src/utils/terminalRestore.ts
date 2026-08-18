@@ -8,9 +8,8 @@ export interface TerminalRestoreContent {
 }
 
 function normalizeScrollback(scrollback: TerminalPanelState['scrollbackBuffer']): string {
-  if (typeof scrollback === 'string') return scrollback;
   if (Array.isArray(scrollback)) return scrollback.join('\n');
-  return '';
+  return scrollback ?? '';
 }
 
 /** Select the buffer that represents the live terminal's active screen. */

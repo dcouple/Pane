@@ -22,6 +22,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
       if (window.electron?.invoke) {
         try {
           console.log('[Discord] Loading hide_discord preference...');
+          // SAFETY: The named IPC/API channel contract establishes this response payload type.
           const result = await window.electron.invoke('preferences:get', 'hide_discord') as IPCResponse<string>;
           console.log('[Discord] Preference result:', result);
           
@@ -46,6 +47,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
   const handleClose = async () => {
     if (window.electron?.invoke) {
       try {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const result = await window.electron.invoke('preferences:set', 'hide_discord', dontShowAgain ? 'true' : 'false') as IPCResponse;
         if (!result?.success) {
           console.error('[Discord] Failed to set preference on close:', result?.error);
@@ -61,6 +63,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
     // Just close without setting the hide flag
     if (window.electron?.invoke) {
       try {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const result = await window.electron.invoke('preferences:set', 'hide_discord', 'false') as IPCResponse;
         if (!result?.success) {
           console.error('[Discord] Failed to set preference on remind later:', result?.error);
@@ -82,6 +85,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
     }
     if (dontShowAgain && window.electron?.invoke) {
       try {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const result = await window.electron.invoke('preferences:set', 'hide_discord', 'true') as IPCResponse;
         if (!result?.success) {
           console.error('[Discord] Failed to set preference on join discord:', result?.error);
@@ -152,6 +156,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
                 setDontShowAgain(newValue);
                 if (window.electron?.invoke) {
                   try {
+                    // SAFETY: The named IPC/API channel contract establishes this response payload type.
                     const result = await window.electron.invoke('preferences:set', 'hide_discord', newValue ? 'true' : 'false') as IPCResponse;
                     if (result?.success) {
                       console.log('[Discord] Successfully set hide_discord preference to', newValue);

@@ -327,6 +327,7 @@ export function RemotePwaApp() {
     if (!adapter) return;
     return adapter.onEvent(event => {
       if (event.channel === 'panel:created' || event.channel === 'panel:updated') {
+        // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         const panel = event.args[0] as ToolPanel | undefined;
         if (panel?.id && panel.sessionId) {
           upsertPanel(panel);
@@ -335,6 +336,7 @@ export function RemotePwaApp() {
       }
 
       if (event.channel === 'panel:deleted') {
+        // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         const payload = event.args[0] as { panelId?: string; sessionId?: string } | undefined;
         if (payload?.panelId && payload.sessionId) {
           removePanel(payload.sessionId, payload.panelId);
@@ -343,6 +345,7 @@ export function RemotePwaApp() {
       }
 
       if (event.channel === 'panel:activeChanged') {
+        // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         const payload = event.args[0] as { sessionId?: string; panelId?: string } | undefined;
         if (payload?.sessionId === selectedSessionId && payload.panelId) {
           setSelectedPanel(payload.panelId);

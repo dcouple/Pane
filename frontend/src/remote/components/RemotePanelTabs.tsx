@@ -43,6 +43,7 @@ export function RemotePanelTabs({
     if (!showAddMenu) return;
 
     const closeOnPointerDown = (event: PointerEvent) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       if (!menuRef.current?.contains(event.target as Node)) {
         setShowAddMenu(false);
       }
@@ -83,6 +84,7 @@ export function RemotePanelTabs({
 
   const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const items = menuItemRefs.current.filter((item): item is HTMLButtonElement => Boolean(item));
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
     let nextIndex: number | null = null;
 

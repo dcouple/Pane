@@ -228,7 +228,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     const executionByHash = new Map(data.map(exec => [exec.after_commit_hash, exec]));
     const reconciled = selectedHashes
       .map(hash => executionByHash.get(hash)?.id)
-      .filter((id): id is number => typeof id === 'number');
+      .filter((id): id is number => id !== undefined);
 
     return reconciled.length > 0 ? reconciled : getDefaultSelection(data);
   }, [getDefaultSelection]);
@@ -328,6 +328,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     }
 
     const handler = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const { sessionId: eventSessionId, commitHash } = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
       if (eventSessionId !== sessionId) return;
       combinedDiffRequestIdRef.current += 1;

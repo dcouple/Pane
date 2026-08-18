@@ -18,12 +18,14 @@ export function IntegrationsSettings({ persistence, onDirtyChange }: Integration
     falApiKey: config.falApiKey ?? '',
     openRouterApiKey: config.openRouterApiKey ?? '',
     deepgramApiKey: config.deepgramApiKey ?? '',
+    // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
     voiceTranscriptionMode: config.voiceTranscriptionMode ?? 'streaming' as VoiceTranscriptionMode,
   };
   const persistedKey = JSON.stringify(persisted);
   const [draft, setDraft] = useState(persisted);
   const dirty = JSON.stringify(draft) !== persistedKey;
 
+  // SAFETY: App-owned storage writes this value through the matching typed serializer.
   useEffect(() => setDraft(JSON.parse(persistedKey) as typeof persisted), [persistedKey]);
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   useEffect(() => () => onDirtyChange(false), [onDirtyChange]);

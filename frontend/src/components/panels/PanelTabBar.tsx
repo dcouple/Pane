@@ -351,6 +351,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   });
 
   // Get available panel types (excluding permanent panels, logs, and enforcing singleton)
+  // SAFETY: The value comes from the adjacent finite domain definition.
   const availablePanelTypes = (Object.keys(PANEL_CAPABILITIES) as ToolPanelType[])
     .filter(type => {
       const capabilities = PANEL_CAPABILITIES[type];

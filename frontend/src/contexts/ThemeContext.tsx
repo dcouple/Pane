@@ -3,7 +3,7 @@ import { useConfigStore } from '../stores/configStore';
 
 type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
 
-const VALID_THEMES: Theme[] = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta'];
+const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta']);
 const THEME_CLASSES: Record<Theme, string[]> = {
   'light': ['light'],
   'light-rounded': ['light', 'light-rounded'],
@@ -18,7 +18,7 @@ const THEME_CLASSES: Record<Theme, string[]> = {
   'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
   'terracotta': ['dark', 'terracotta'],
 };
-const isValidTheme = (t: string): t is Theme => VALID_THEMES.includes(t as Theme);
+const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
 
 interface ThemeContextType {
   theme: Theme;
@@ -51,7 +51,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Sync high contrast from config when it loads
   useEffect(() => {
-    if (typeof config?.highContrast === 'boolean') {
+    if (config?.highContrast !== undefined) {
       setHighContrast(config.highContrast);
       localStorage.setItem('high-contrast', String(config.highContrast));
     }

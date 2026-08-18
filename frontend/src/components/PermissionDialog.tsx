@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Check, X, Shield, AlertTriangle, Code, Edit } from 'lucide-react';
 import type { PanePermissionRequest } from '../../../shared/types/daemon';
+import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Textarea } from './ui/Textarea';
@@ -85,10 +86,8 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({ request, onR
     const { input, toolName } = request;
     
     // Helper to safely get string value
-    const getStringValue = (obj: Record<string, unknown>, key: string): string | undefined => {
-      const value = obj[key];
-      return typeof value === 'string' ? value : undefined;
-    };
+    const getStringValue = (obj: PanePermissionRequest['input'], key: string): string | undefined =>
+      decodeOptionalBoundary(obj[key], boundary.string);
     
     if (toolName.includes('Bash')) {
       const command = getStringValue(input, 'command');

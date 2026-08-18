@@ -18,6 +18,10 @@ interface SettingsLayoutProps {
   children: ReactNode;
 }
 export function SettingsLayout({ category, categories, onCategoryChange, children }: SettingsLayoutProps) {
+  const handleCategoryChange = (value: string) => {
+    // SAFETY: The Select items are generated exclusively from SettingsCategoryId values.
+    onCategoryChange(value as SettingsCategoryId);
+  };
   const scrollSurfaceRef = useScrollSurface<HTMLElement>({
     id: 'settings-content',
     priority: 80,
@@ -58,7 +62,7 @@ export function SettingsLayout({ category, categories, onCategoryChange, childre
         <label className="mb-1.5 block text-xs font-medium text-text-secondary" htmlFor="settings-category-select">
           Category
         </label>
-        <Select value={category} onValueChange={(value) => onCategoryChange(value as SettingsCategoryId)}>
+        <Select value={category} onValueChange={handleCategoryChange}>
           <SelectTrigger id="settings-category-select" aria-label="Settings category">
             <SelectValue />
           </SelectTrigger>

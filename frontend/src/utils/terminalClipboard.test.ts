@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isTerminalCopyShortcut } from './terminalClipboard';
 
 function key(overrides: Partial<KeyboardEvent> = {}): KeyboardEvent {
+  // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
   return {
     key: 'c',
     ctrlKey: false,

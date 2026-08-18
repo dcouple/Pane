@@ -28,7 +28,7 @@ const sizeStyles = {
 } as const;
 
 export function Kbd({ children, size = 'sm', variant = 'default', className }: KbdProps) {
-  const text = typeof children === 'string' ? children.trim() : null;
+  const text = children instanceof Object ? null : String(children ?? '').trim();
   const segments = text ? text.split(' + ').filter(Boolean) : null;
   const hasSegments = !!segments && segments.length > 1;
 

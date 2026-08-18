@@ -195,6 +195,7 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
       if (!commandResponse.success || !commandResponse.data?.command) throw new Error(commandResponse.error || 'Failed to prepare setup command');
       const sessionResponse = await API.sessions.getOrCreateMainRepoSession(projectId);
       if (!sessionResponse.success || !sessionResponse.data?.id) throw new Error(sessionResponse.error || 'Failed to open project terminal');
+      // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
       const sessionId = sessionResponse.data.id as string;
       const panel = await panelApi.createPanel({
         sessionId,

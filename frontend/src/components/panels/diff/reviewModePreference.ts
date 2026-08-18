@@ -10,7 +10,6 @@ function isReviewMode(value: string | null): value is ReviewMode {
 }
 
 export function getReviewDefaultMode(): ReviewMode {
-  if (typeof window === 'undefined') return 'github';
   const stored = window.localStorage.getItem(REVIEW_MODE_STORAGE_KEY);
   return isReviewMode(stored) ? stored : 'github';
 }
@@ -39,6 +38,7 @@ export function consumeLocalReviewModeRequest(sessionId: string): boolean {
 
 export function subscribeLocalReviewModeRequest(callback: (sessionId: string) => void): () => void {
   const handleOpenLocal = (event: Event) => {
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     const { sessionId } = (event as CustomEvent<{ sessionId?: string }>).detail || {};
     if (sessionId) callback(sessionId);
   };
@@ -49,6 +49,7 @@ export function subscribeLocalReviewModeRequest(callback: (sessionId: string) =>
 
 export function subscribeReviewDefaultMode(callback: (mode: ReviewMode) => void): () => void {
   const handleCustomEvent = (event: Event) => {
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     const mode = (event as CustomEvent<{ mode?: string }>).detail?.mode ?? null;
     if (isReviewMode(mode)) callback(mode);
   };

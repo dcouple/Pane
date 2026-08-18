@@ -139,6 +139,7 @@ function normalizeHotkeyString(keys: string): string {
   let key = '';
   for (const part of parts) {
     const lower = part.toLowerCase();
+    // SAFETY: The value comes from the adjacent finite domain definition.
     if ((MODIFIER_ORDER as readonly string[]).includes(lower)) {
       modifiers.push(lower);
     } else {
@@ -147,7 +148,9 @@ function normalizeHotkeyString(keys: string): string {
   }
   modifiers.sort(
     (a, b) =>
+      // SAFETY: The value comes from the adjacent finite domain definition.
       (MODIFIER_ORDER as readonly string[]).indexOf(a) -
+      // SAFETY: The value comes from the adjacent finite domain definition.
       (MODIFIER_ORDER as readonly string[]).indexOf(b)
   );
   return [...modifiers, key].join('+');
@@ -176,6 +179,7 @@ function isXtermHelperTarget(target: HTMLElement): boolean {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+  // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
   const target = e.target as HTMLElement;
   const isInput =
     target.tagName === 'INPUT' ||

@@ -64,6 +64,20 @@ export interface TerminalPanelState {
   isCliReady?: boolean;              // True after the CLI tool has started responding
 }
 
+export interface TerminalPanelOutputEvent {
+  sessionId: string;
+  panelId: string;
+  output: string;
+}
+
+export interface TerminalSessionOutputEvent {
+  sessionId: string;
+  type: 'stdout' | 'stderr';
+  data: string;
+}
+
+export type TerminalOutputEvent = TerminalPanelOutputEvent | TerminalSessionOutputEvent;
+
 export interface DiffPanelState {
   lastRefresh?: string;            // Last time diff was refreshed
   currentDiff?: string;             // Cached diff content

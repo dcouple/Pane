@@ -36,10 +36,12 @@ function KeyboardShortcutsSection() {
           </div>
         </div>
         {/* Dynamic shortcuts from registry */}
-        {Object.entries(grouped).map(([category, hotkeys]) => (
-          <div key={category}>
+        {Object.entries(grouped).map(([category, hotkeys]) => {
+          // SAFETY: grouped is keyed by HotkeyDefinition category values.
+          const hotkeyCategory = category as HotkeyDefinition['category'];
+          return <div key={category}>
             <h4 className="text-sm font-medium text-text-tertiary mb-2">
-              {CATEGORY_LABELS[category as HotkeyDefinition['category']] ?? category}
+              {CATEGORY_LABELS[hotkeyCategory] ?? category}
             </h4>
             <div className="space-y-2">
               {hotkeys.map((hotkey) => (
@@ -55,8 +57,8 @@ function KeyboardShortcutsSection() {
                 </div>
               ))}
             </div>
-          </div>
-        ))}
+          </div>;
+        })}
       </div>
     </section>
   );

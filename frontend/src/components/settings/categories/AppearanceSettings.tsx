@@ -33,6 +33,10 @@ export function AppearanceSettings({ persistence }: { persistence: SettingsPersi
   const scale = config.uiScale ?? 1;
 
   const saveScale = (value: number) => persistence.saveConfig('ui-scale', { uiScale: value });
+  const saveTheme = (value: string) => {
+    // SAFETY: Theme values come from the THEMES list, whose ids match AppConfig.theme.
+    return persistence.saveConfig('theme', { theme: value as AppConfig['theme'] });
+  };
 
   return (
     <SettingsPage title="Appearance" description="Application-wide interface and sidebar presentation.">
@@ -46,7 +50,7 @@ export function AppearanceSettings({ persistence }: { persistence: SettingsPersi
           <div className="w-full min-w-[220px] sm:w-60">
             <Select
               value={config.theme ?? 'light-rounded'}
-              onValueChange={(value) => void persistence.saveConfig('theme', { theme: value as AppConfig['theme'] })}
+              onValueChange={(value) => void saveTheme(value)}
             >
               <SelectTrigger aria-label="Theme"><SelectValue /></SelectTrigger>
               <SelectContent>

@@ -30,6 +30,14 @@ interface TerminalSettingsProps {
 
 export function TerminalSettings({ persistence, platform, availableShells, systemMonoFonts }: TerminalSettingsProps) {
   const config = persistence.config!;
+  const saveTerminalLineCount = (value: number) => {
+    // SAFETY: SegmentedControl values are generated from the four supported line-count literals below.
+    return persistence.savePreference('atTerminalLineCount', value as 100 | 300 | 500 | -1);
+  };
+  const savePreferredShell = (value: string) => {
+    // SAFETY: Select options use only PreferredShell identifiers supplied by the backend.
+    return persistence.saveConfig('terminal-shell', { preferredShell: value as PreferredShell });
+  };
   const [customFont, setCustomFont] = useState(config.terminalFontFamily ?? 'Geist Mono');
   useEffect(() => setCustomFont(config.terminalFontFamily ?? 'Geist Mono'), [config.terminalFontFamily]);
   const fontSize = config.terminalFontSize ?? 14;
@@ -142,7 +150,7 @@ export function TerminalSettings({ persistence, platform, availableShells, syste
             value={persistence.preferences.atTerminalLineCount}
             columns={4}
             options={[100, 300, 500, -1].map((value) => ({ id: value, label: value === -1 ? 'All' : String(value) }))}
-            onChange={(value) => void persistence.savePreference('atTerminalLineCount', value as 100 | 300 | 500 | -1)}
+            onChange={(value) => void saveTerminalLineCount(value)}
           />
         </SettingRow>
       </SettingsSection>
@@ -158,7 +166,7 @@ export function TerminalSettings({ persistence, platform, availableShells, syste
             <div className="w-full min-w-[220px] sm:w-72">
               <Select
                 value={config.preferredShell ?? 'auto'}
-                onValueChange={(value) => void persistence.saveConfig('terminal-shell', { preferredShell: value as PreferredShell })}
+                onValueChange={(value) => void savePreferredShell(value)}
               >
                 <SelectTrigger aria-label="Default Windows terminal shell"><SelectValue /></SelectTrigger>
                 <SelectContent>

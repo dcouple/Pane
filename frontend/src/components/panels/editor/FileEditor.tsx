@@ -17,6 +17,7 @@ import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
 import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { LiveRegion } from '../../ui/LiveRegion';
+import { boundary, decodeBoundary } from '../../../../../shared/validation/boundaryDecoder';
 
 interface FileItem {
   name: string;
@@ -30,6 +31,10 @@ const ROOT_ID = '\0root';
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp']);
 const PDF_EXTENSIONS = new Set(['pdf']);
+
+function containsEventTarget(container: Node, target: EventTarget | null): boolean {
+  return target instanceof Node && container.contains(target);
+}
 
 interface HeadlessFileTreeProps {
   sessionId: string;
@@ -381,7 +386,7 @@ function HeadlessFileTree({
         return;
       }
 
-      const newPath = result.path as string;
+      const newPath = decodeBoundary(result.path, boundary.string);
       refreshAfterPathsChanged([file.path, newPath]);
       setSelectedItems([newPath]);
       if (selectedPath === file.path) {
@@ -405,7 +410,7 @@ function HeadlessFileTree({
         return;
       }
 
-      refreshAfterPathsChanged([file.path, result.path as string]);
+      refreshAfterPathsChanged([file.path, decodeBoundary(result.path, boundary.string)]);
     } catch (err) {
       console.error('Failed to duplicate:', err);
       setError(err instanceof Error ? err.message : 'Failed to duplicate item');
@@ -524,6 +529,7 @@ function HeadlessFileTree({
       const reader = new FileReader();
       reader.onload = async () => {
         try {
+          // SAFETY: readAsDataURL completes with a string result before onload fires.
           const base64 = (reader.result as string).split(',')[1]; // Strip data URL prefix
           const result = await window.electronAPI.invoke('file:write-binary', {
             sessionId: sessionIdRef.current,
@@ -618,7 +624,7 @@ function HeadlessFileTree({
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+    if (!containsEventTarget(e.currentTarget, e.relatedTarget)) {
       setIsDragOver(false);
     }
   }, []);
@@ -643,7 +649,7 @@ function HeadlessFileTree({
     const internalPayload = e.dataTransfer.getData('application/x-pane-file-paths');
     if (internalPayload) {
       try {
-        const paths = JSON.parse(internalPayload) as string[];
+        const paths = decodeBoundary(JSON.parse(internalPayload), boundary.array(boundary.string));
         const files = paths
           .map(filePath => tree.getItemInstance(filePath)?.getItemData())
           .filter((item): item is FileItem => !!item);
@@ -700,7 +706,7 @@ function HeadlessFileTree({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
+      const target = e.target instanceof HTMLElement ? e.target : null;
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || !!target?.isContentEditable;
       if (isEditingText && e.key !== 'Escape') return;
 
@@ -917,7 +923,7 @@ function HeadlessFileTree({
           e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-pane-file-paths') ? 'move' : 'copy';
         }}
         onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverPath(null);
+          if (!containsEventTarget(e.currentTarget, e.relatedTarget)) setDragOverPath(null);
         }}
         onDrop={(e) => handleInternalDrop(e, '')}
       >
@@ -964,7 +970,7 @@ function HeadlessFileTree({
                 e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-pane-file-paths') ? 'move' : 'copy';
               }}
               onDragLeave={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOverPath(null);
+                if (!containsEventTarget(e.currentTarget, e.relatedTarget)) setDragOverPath(null);
               }}
               onDrop={(e) => {
                 if (!isFolder) return;
@@ -1529,7 +1535,8 @@ export function FileEditor({
   // Re-check git status when git operations complete (e.g. commit from diff panel or terminal)
   useEffect(() => {
     if (!selectedFile) return;
-    const handlePanelEvent = (event: CustomEvent) => {
+    const handlePanelEvent = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
       const { type } = event.detail || {};
       if (type === 'git:operation_completed' || type === 'diff:refreshed' || type === 'terminal:command_executed' || type === 'files:changed') {
         window.electronAPI.invoke('git:file-status', sessionId, selectedFile.path).then((statusResult: { success: boolean; data?: { status: 'clean' | 'modified' | 'untracked' } }) => {
@@ -1539,8 +1546,8 @@ export function FileEditor({
         });
       }
     };
-    window.addEventListener('panel:event', handlePanelEvent as EventListener);
-    return () => window.removeEventListener('panel:event', handlePanelEvent as EventListener);
+    window.addEventListener('panel:event', handlePanelEvent);
+    return () => window.removeEventListener('panel:event', handlePanelEvent);
   }, [selectedFile, sessionId]);
   
   // Load initial file if provided
@@ -1575,14 +1582,10 @@ export function FileEditor({
     return () => {
       // Cleanup Monaco editor models when component unmounts or file changes
       try {
-        if (editorRef.current && typeof editorRef.current === 'object' && editorRef.current !== null && 'getModel' in editorRef.current) {
-          const editor = editorRef.current as { getModel: () => unknown, dispose?: () => void };
-          const model = editor.getModel();
-          if (model && typeof model === 'object' && model !== null && 'dispose' in model) {
-            const typedModel = model as { dispose: () => void };
-            console.log('[FileEditor] Disposing Monaco model');
-            typedModel.dispose();
-          }
+        const model = editorRef.current?.getModel();
+        if (model) {
+          console.log('[FileEditor] Disposing Monaco model');
+          model.dispose();
         }
       } catch (error) {
         console.warn('[FileEditor] Error during Monaco cleanup:', error);

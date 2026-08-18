@@ -96,6 +96,7 @@ export function ProjectSessionList({
 
     const loadSidebarPaneRowLayout = async () => {
       try {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const result = await window.electron?.invoke(
           'preferences:get',
           SETTINGS_PREFERENCE_KEYS.sidebarPaneRowLayout
@@ -109,7 +110,8 @@ export function ProjectSessionList({
     };
 
     const handlePreferenceChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ layout?: unknown }>).detail;
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
+      const detail = (event as CustomEvent<{ layout?: SidebarPaneRowLayout }>).detail;
       setSidebarPaneRowLayout(normalizeSidebarPaneRowLayout(detail?.layout));
     };
 
@@ -664,6 +666,7 @@ function SessionRow({
     const fetchStatus = async () => {
       try {
         if (!window.electron?.invoke) return;
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         const res = await window.electron.invoke(
           'sessions:get-git-status',
           session.id,
@@ -688,6 +691,7 @@ function SessionRow({
   // Listen for background git status updates (e.g., PR enrichment)
   useEffect(() => {
     const handler = (e: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const detail = (e as CustomEvent<{ sessionId: string; gitStatus: GitStatus }>).detail;
       if (detail?.sessionId === session.id && detail?.gitStatus) {
         setLocalGitStatus(detail.gitStatus);
@@ -805,6 +809,7 @@ export function ArchivedSessions() {
       setIsLoadingArchived(true);
       const response = await API.sessions.getArchivedWithProjects();
       if (response.success && response.data) {
+        // SAFETY: The named IPC/API channel contract establishes this response payload type.
         setArchivedProjects(response.data as Array<Project & { sessions: Session[] }>);
       }
     } catch (e) {

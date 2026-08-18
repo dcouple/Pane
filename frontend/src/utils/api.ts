@@ -6,22 +6,17 @@ import type { SessionCreationPreferences } from '../stores/sessionPreferencesSto
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type {
   RemoteDaemonClientRecord,
-  RemoteDaemonConnectionPair,
   RemoteDaemonClientSettings,
   RemoteDaemonHostConfig,
   RemoteDaemonHostRuntimeState,
-  RemoteHostConnectionCodeResult,
-  RemoteDaemonImportResult,
   RemoteHostSetupRequest,
-  RemoteHostSetupResult,
-  RemoteHostSetupTerminalCommandResult,
   RemotePaneConnectionState,
   RemotePaneConnectionProfile,
 } from '../../../shared/types/remoteDaemon';
 import type {
-  PanePermissionRequest,
   PanePermissionResponse,
 } from '../../../shared/types/daemon';
+import type { ProjectDashboardSessionUpdateEvent, ProjectDashboardUpdateEvent } from '../types/projectDashboard';
 
 // Type for IPC response
 // oxlint-disable-next-line typescript/no-explicit-any -- Generic type parameter default for flexible API responses
@@ -53,7 +48,7 @@ export interface GitErrorResponse extends IPCResponse {
 
 // Check if we're running in Electron
 const isElectron = () => {
-  return typeof window !== 'undefined' && window.electronAPI;
+  return Boolean(window.electronAPI);
 };
 
 // Wrapper class for API calls that provides error handling and consistent interface
@@ -518,36 +513,32 @@ export class API {
 
     async getHostState() {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.getHostState() as Promise<IPCResponse<RemoteDaemonHostRuntimeState>>;
+      return window.electronAPI.remoteDaemon.getHostState();
     },
 
     async setupHost(input: RemoteHostSetupRequest) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.setupHost(input) as Promise<IPCResponse<RemoteHostSetupResult>>;
+      return window.electronAPI.remoteDaemon.setupHost(input);
     },
 
     async getInteractiveSetupCommand(input: RemoteHostSetupRequest) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.getInteractiveSetupCommand(input) as Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
+      return window.electronAPI.remoteDaemon.getInteractiveSetupCommand(input);
     },
 
     async getInteractiveClientSetupCommand() {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.getInteractiveClientSetupCommand() as Promise<IPCResponse<RemoteHostSetupTerminalCommandResult>>;
+      return window.electronAPI.remoteDaemon.getInteractiveClientSetupCommand();
     },
 
     async createConnectionPair(input: { label: string; baseUrl: string }) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.createConnectionPair(input) as Promise<{
-        success: boolean;
-        data?: RemoteDaemonConnectionPair;
-        error?: string;
-      }>;
+      return window.electronAPI.remoteDaemon.createConnectionPair(input);
     },
 
     async createHostConnectionCode(input?: { label?: string }) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.createHostConnectionCode(input) as Promise<IPCResponse<RemoteHostConnectionCodeResult>>;
+      return window.electronAPI.remoteDaemon.createHostConnectionCode(input);
     },
 
     async updateHostConfig(updates: Partial<RemoteDaemonHostConfig>) {
@@ -582,7 +573,7 @@ export class API {
 
     async importConnectionCode(code: string, options?: { connect?: boolean }) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.remoteDaemon.importConnectionCode(code, options) as Promise<IPCResponse<RemoteDaemonImportResult>>;
+      return window.electronAPI.remoteDaemon.importConnectionCode(code, options);
     },
 
     async deleteConnectionProfile(profileId: string) {
@@ -621,12 +612,12 @@ export class API {
 
   // Dialog
   static dialog = {
-    async openFile(options?: Record<string, unknown>) {
+    async openFile(options?: Electron.OpenDialogOptions) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.dialog.openFile(options);
     },
 
-    async openDirectory(options?: Record<string, unknown>) {
+    async openDirectory(options?: Electron.OpenDialogOptions) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.dialog.openDirectory(options);
     },
@@ -641,7 +632,7 @@ export class API {
 
     async getPending() {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.permissions.getPending() as Promise<IPCResponse<PanePermissionRequest[]>>;
+      return window.electronAPI.permissions.getPending();
     },
   };
 
@@ -668,12 +659,12 @@ export class API {
       return window.electronAPI.dashboard.getProjectStatusProgressive(projectId);
     },
 
-    onUpdate(callback: (data: Record<string, unknown>) => void) {
+    onUpdate(callback: (data: ProjectDashboardUpdateEvent) => void) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.dashboard.onUpdate(callback);
     },
 
-    onSessionUpdate(callback: (data: { type: string; projectId?: number; sessionId?: string; data: unknown }) => void) {
+    onSessionUpdate(callback: (data: ProjectDashboardSessionUpdateEvent) => void) {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.dashboard.onSessionUpdate(callback);
     },

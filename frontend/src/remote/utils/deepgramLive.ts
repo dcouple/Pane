@@ -1,4 +1,8 @@
 import type { VoiceDeepgramStreamingMetadata } from '../../../../shared/types/voiceTranscription';
+import {
+  boundary,
+  decodeOptionalBoundary,
+} from '../../../../shared/validation/boundaryDecoder';
 
 const DEEPGRAM_STREAMING_KEYTERMS = [
   'Doozy',
@@ -55,6 +59,36 @@ export type DeepgramLiveMessage =
   | { type: 'error'; message: string }
   | { type: 'other' };
 
+const transcriptMessageSchema = boundary.object({
+  type: boundary.literal('Results'),
+  is_final: boundary.optional(boundary.boolean),
+  speech_final: boundary.optional(boundary.boolean),
+  channel: boundary.object({
+    alternatives: boundary.array(boundary.object({ transcript: boundary.string })),
+  }),
+});
+
+const metadataMessageSchema = boundary.object({
+  type: boundary.literal('Metadata'),
+  request_id: boundary.optional(boundary.string),
+  duration: boundary.optional(boundary.number),
+});
+
+const errorMessageSchema = boundary.object({
+  type: boundary.literal('Error'),
+  message: boundary.optional(boundary.string),
+});
+
+const resultsMetadataSchema = boundary.object({
+  metadata: boundary.object({
+    request_id: boundary.optional(boundary.string),
+    model_info: boundary.optional(boundary.object({
+      name: boundary.optional(boundary.string),
+      version: boundary.optional(boundary.string),
+    })),
+  }),
+});
+
 export function buildDeepgramListenUrl(keyterms = DEEPGRAM_STREAMING_KEYTERMS): string {
   const url = new URL('wss://api.deepgram.com/v1/listen');
   url.searchParams.set('model', 'nova-3');
@@ -74,44 +108,40 @@ export function buildDeepgramListenUrl(keyterms = DEEPGRAM_STREAMING_KEYTERMS): 
 export function parseDeepgramLiveMessage(data: string): DeepgramLiveMessage {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(data) as unknown;
+    parsed = JSON.parse(data);
   } catch {
     return { type: 'other' };
   }
 
-  if (!parsed || typeof parsed !== 'object') {
-    return { type: 'other' };
-  }
-
-  const record = parsed as Record<string, unknown>;
-  if (record.type === 'Results') {
-    const transcript = readTranscript(record);
-    if (!transcript) {
-      return { type: 'other' };
-    }
+  const transcriptMessage = decodeOptionalBoundary(parsed, transcriptMessageSchema);
+  if (transcriptMessage) {
+    const transcript = transcriptMessage.channel.alternatives[0]?.transcript.trim();
+    if (!transcript) return { type: 'other' };
     return {
       type: 'transcript',
       update: {
         transcript,
-        isFinal: record.is_final === true,
-        speechFinal: record.speech_final === true,
+        isFinal: transcriptMessage.is_final === true,
+        speechFinal: transcriptMessage.speech_final === true,
       },
     };
   }
 
-  if (record.type === 'Metadata') {
+  const metadataMessage = decodeOptionalBoundary(parsed, metadataMessageSchema);
+  if (metadataMessage) {
     return {
       type: 'metadata',
       metadata: {
-        requestId: typeof record.request_id === 'string' ? record.request_id : undefined,
-        duration: typeof record.duration === 'number' ? record.duration : undefined,
+        requestId: metadataMessage.request_id,
+        duration: metadataMessage.duration,
       },
     };
   }
 
-  if (record.type === 'Error') {
-    const message = typeof record.message === 'string' && record.message.trim()
-      ? record.message.trim()
+  const errorMessage = decodeOptionalBoundary(parsed, errorMessageSchema);
+  if (errorMessage) {
+    const message = errorMessage.message?.trim()
+      ? errorMessage.message.trim()
       : 'Deepgram live transcription failed.';
     return {
       type: 'error',
@@ -125,48 +155,16 @@ export function parseDeepgramLiveMessage(data: string): DeepgramLiveMessage {
 export function readResultsMetadata(data: string): VoiceDeepgramStreamingMetadata | undefined {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(data) as unknown;
+    parsed = JSON.parse(data);
   } catch {
     return undefined;
   }
-  if (!parsed || typeof parsed !== 'object') {
-    return undefined;
-  }
-
-  const metadata = (parsed as Record<string, unknown>).metadata;
-  if (!metadata || typeof metadata !== 'object') {
-    return undefined;
-  }
-
-  const record = metadata as Record<string, unknown>;
-  const modelInfo = record.model_info && typeof record.model_info === 'object'
-    ? record.model_info as Record<string, unknown>
-    : undefined;
+  const result = decodeOptionalBoundary(parsed, resultsMetadataSchema);
+  if (!result) return undefined;
+  const { metadata } = result;
   return {
-    requestId: typeof record.request_id === 'string' ? record.request_id : undefined,
-    modelName: typeof modelInfo?.name === 'string' ? modelInfo.name : undefined,
-    modelVersion: typeof modelInfo?.version === 'string' ? modelInfo.version : undefined,
+    requestId: metadata.request_id,
+    modelName: metadata.model_info?.name,
+    modelVersion: metadata.model_info?.version,
   };
-}
-
-function readTranscript(record: Record<string, unknown>): string | null {
-  const channel = record.channel;
-  if (!channel || typeof channel !== 'object') {
-    return null;
-  }
-
-  const alternatives = (channel as Record<string, unknown>).alternatives;
-  if (!Array.isArray(alternatives)) {
-    return null;
-  }
-
-  const first = alternatives[0];
-  if (!first || typeof first !== 'object') {
-    return null;
-  }
-
-  const transcript = (first as Record<string, unknown>).transcript;
-  return typeof transcript === 'string' && transcript.trim()
-    ? transcript.trim()
-    : null;
 }

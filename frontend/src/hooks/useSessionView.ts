@@ -255,9 +255,11 @@ export const useSessionView = (
     const handleStatusChange = (event: CustomEvent) => {
       if (event.detail.sessionId === activeSessionId) forceUpdate({});
     };
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     window.addEventListener('session-status-changed', handleStatusChange as EventListener);
     return () => {
       unsubscribe();
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       window.removeEventListener('session-status-changed', handleStatusChange as EventListener);
     };
   }, [activeSessionId, activeSession?.status]);
@@ -446,8 +448,10 @@ export const useSessionView = (
       }
     };
     
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     window.addEventListener('session-output-available', handleOutputAvailable as EventListener);
     return () => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       window.removeEventListener('session-output-available', handleOutputAvailable as EventListener);
       if (reloadDebounceTimer) {
         clearTimeout(reloadDebounceTimer);
@@ -559,9 +563,11 @@ export const useSessionView = (
       }
     };
 
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     window.addEventListener('session-deleted', handleSessionDeleted as EventListener);
 
     return () => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       window.removeEventListener('session-deleted', handleSessionDeleted as EventListener);
       // Cancel any pending operations
       if (abortControllerRef.current) {

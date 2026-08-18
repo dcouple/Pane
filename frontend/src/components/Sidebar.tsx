@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
@@ -20,6 +21,9 @@ import { SessionStatusBadge } from './SessionStatusBadge';
 import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
+
+// SAFETY: Electron supports WebkitAppRegion although React's CSSProperties omits the vendor property.
+const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
@@ -316,6 +320,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     });
 
     const handleClickOutside = (event: MouseEvent) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const target = event.target as Node;
       if (
         resourceMenuButtonRef.current && !resourceMenuButtonRef.current.contains(target) &&
@@ -487,7 +492,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         >
           {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
           {!isMac() && (
-            <div className="h-3 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+            <div className="h-3 flex-shrink-0" style={dragRegionStyle} />
           )}
           {/* Logo */}
           <div className="flex shrink-0 items-center justify-center border-b border-border-primary px-1 py-2">
@@ -775,7 +780,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
       >
         {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
         {!isMac() && (
-          <div className="h-3 flex-shrink-0" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
+          <div className="h-3 flex-shrink-0" style={dragRegionStyle} />
         )}
         {/* Resize handle */}
         <div

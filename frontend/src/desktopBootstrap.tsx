@@ -9,17 +9,22 @@ import './styles/notebook-preview.css';
 
 let mounted = false;
 
-function getErrorMessage(value: unknown): string {
+interface RendererErrorDetails {
+  toString(): string;
+}
+
+type RendererErrorValue = Error | string | RendererErrorDetails | null | undefined;
+
+function getErrorMessage(value: RendererErrorValue): string {
   if (value instanceof Error) return value.message;
-  if (typeof value === 'string') return value;
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value) || String(value);
   } catch {
     return String(value);
   }
 }
 
-function getErrorStack(value: unknown): string | undefined {
+function getErrorStack(value: RendererErrorValue): string | undefined {
   return value instanceof Error ? value.stack : undefined;
 }
 

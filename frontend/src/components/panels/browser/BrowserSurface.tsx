@@ -83,6 +83,7 @@ const BrowserSurface: React.FC<BrowserSurfaceProps> = ({
 
   useEffect(() => {
     const handler = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const { url: popupUrl, sourceSessionId, sourcePanelId } = (event as CustomEvent<{
         url: string;
         sourceSessionId: string;
@@ -107,7 +108,7 @@ const BrowserSurface: React.FC<BrowserSurfaceProps> = ({
         addPanel(newPanel);
         setActivePanelInStore(sessionId, newPanel.id);
         await panelApi.setActivePanel(sessionId, newPanel.id);
-      }).catch((error: unknown) => {
+      }).catch((error) => {
         console.error('[BrowserSurface] Failed to create popup panel:', error);
       });
     };
@@ -171,7 +172,7 @@ const BrowserSurface: React.FC<BrowserSurfaceProps> = ({
         src={url}
         // Review uses a shared Pane browser profile so GitHub auth persists across panes.
         partition={SHARED_PANE_BROWSER_PARTITION}
-        allowpopups={'true' as unknown as boolean}
+        allowpopups
         className="flex-1 border-0"
         style={{ display: 'inline-flex' }}
       />

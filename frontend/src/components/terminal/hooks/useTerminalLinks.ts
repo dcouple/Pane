@@ -208,7 +208,8 @@ export function useTerminalLinks(terminal: Terminal | null, config: UseTerminalL
 
     let browserPanel: ToolPanel;
     if (existingPanel) {
-      const existingCustomState = (existingPanel.state.customState ?? {}) as BrowserPanelState & Record<string, unknown>;
+      // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
+      const existingCustomState = (existingPanel.state.customState ?? {}) as BrowserPanelState;
       browserPanel = {
         ...existingPanel,
         state: {

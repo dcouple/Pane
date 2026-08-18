@@ -54,6 +54,22 @@ function layoutOf(root: PanelLayoutNode, extra?: Partial<SessionPanelLayout>): S
   return { version: 1, root, focusedGroupId: primaryGroup(root).id, ...extra };
 }
 
+function requireGroup(node: PanelLayoutNode): PanelGroupNode {
+  if (node.type !== 'group') throw new Error(`Expected group, received ${node.type}`);
+  return node;
+}
+
+function requireSplit(node: PanelLayoutNode): PanelSplitNode {
+  if (node.type !== 'split') throw new Error(`Expected split, received ${node.type}`);
+  return node;
+}
+
+function requireFoundGroup(node: PanelLayoutNode, id: string): PanelGroupNode {
+  const found = findGroup(node, id);
+  if (!found) throw new Error(`Expected group ${id}`);
+  return found;
+}
+
 // ---------------------------------------------------------------------------
 // Tree queries
 // ---------------------------------------------------------------------------
@@ -92,33 +108,33 @@ describe('createSingleGroupLayout', () => {
   it('uses the requested active panel when present', () => {
     const layout = createSingleGroupLayout(['a', 'b'], 'b');
     expect(layout.root.type).toBe('group');
-    expect((layout.root as PanelGroupNode).activePanelId).toBe('b');
+    expect(requireGroup(layout.root).activePanelId).toBe('b');
     expect(layout.focusedGroupId).toBe(layout.root.id);
   });
 
   it('falls back to the first panel when the active id is unknown', () => {
     const layout = createSingleGroupLayout(['a', 'b'], 'zzz');
-    expect((layout.root as PanelGroupNode).activePanelId).toBe('a');
+    expect(requireGroup(layout.root).activePanelId).toBe('a');
   });
 
   it('handles an empty panel list', () => {
     const layout = createSingleGroupLayout([], null);
-    expect((layout.root as PanelGroupNode).panelIds).toEqual([]);
-    expect((layout.root as PanelGroupNode).activePanelId).toBeNull();
+    expect(requireGroup(layout.root).panelIds).toEqual([]);
+    expect(requireGroup(layout.root).activePanelId).toBeNull();
   });
 });
 
 describe('addPanelToGroup', () => {
   it('appends the panel and makes it active', () => {
     const root = group('g1', ['a'], 'a');
-    const next = addPanelToGroup(root, 'g1', 'b') as PanelGroupNode;
+    const next = requireGroup(addPanelToGroup(root, 'g1', 'b'));
     expect(next.panelIds).toEqual(['a', 'b']);
     expect(next.activePanelId).toBe('b');
   });
 
   it('appends the panel without activating it when requested', () => {
     const root = group('g1', ['a'], 'a');
-    const next = addPanelToGroup(root, 'g1', 'b', { activate: false }) as PanelGroupNode;
+    const next = requireGroup(addPanelToGroup(root, 'g1', 'b', { activate: false }));
     expect(next.panelIds).toEqual(['a', 'b']);
     expect(next.activePanelId).toBe('a');
   });
@@ -152,7 +168,7 @@ describe('normalize', () => {
       group('g1', ['a']),
       split('s2', 'row', [group('g2', ['b']), group('g3', ['c'])], [0.5, 0.5]),
     ], [0.5, 0.5]);
-    const result = normalize(tree) as PanelSplitNode;
+    const result = requireSplit(normalize(tree));
     expect(result.children.map(c => c.id)).toEqual(['g1', 'g2', 'g3']);
     expect(result.sizes).toEqual([0.5, 0.25, 0.25]);
   });
@@ -162,13 +178,13 @@ describe('normalize', () => {
       group('g1', ['a']),
       split('s2', 'column', [group('g2', ['b']), group('g3', ['c'])]),
     ]);
-    const result = normalize(tree) as PanelSplitNode;
+    const result = requireSplit(normalize(tree));
     expect(result.children.map(c => c.id)).toEqual(['g1', 's2']);
   });
 
   it('renormalizes sizes to sum 1', () => {
     const tree = split('s1', 'row', [group('g1', ['a']), group('g2', ['b'])], [2, 6]);
-    const result = normalize(tree) as PanelSplitNode;
+    const result = requireSplit(normalize(tree));
     expect(result.sizes).toEqual([0.25, 0.75]);
   });
 });
@@ -180,11 +196,14 @@ describe('normalize', () => {
 describe('splitGroup', () => {
   it('wraps a root group into a 50/50 split', () => {
     const root = group('g1', ['a', 'b'], 'a');
-    const result = splitGroup(root, 'g1', 'a', 'row') as PanelSplitNode;
+    const result = requireSplit(splitGroup(root, 'g1', 'a', 'row'));
     expect(result.type).toBe('split');
     expect(result.direction).toBe('row');
     expect(result.sizes).toEqual([0.5, 0.5]);
-    const [left, right] = result.children as PanelGroupNode[];
+    const [leftNode, rightNode] = result.children;
+    if (!leftNode || !rightNode) throw new Error('Expected both split children');
+    const left = requireGroup(leftNode);
+    const right = requireGroup(rightNode);
     expect(left.id).toBe('g1');
     expect(left.panelIds).toEqual(['b']);
     expect(left.activePanelId).toBe('b');
@@ -194,7 +213,7 @@ describe('splitGroup', () => {
 
   it('inserts an n-ary sibling in a same-direction split, halving the source size', () => {
     const root = split('s1', 'row', [group('g1', ['a', 'b']), group('g2', ['c'])], [0.6, 0.4]);
-    const result = splitGroup(root, 'g1', 'a', 'row') as PanelSplitNode;
+    const result = requireSplit(splitGroup(root, 'g1', 'a', 'row'));
     expect(result.id).toBe('s1');
     expect(result.children).toHaveLength(3);
     expect(result.children.map(c => c.id)).toEqual(['g1', result.children[1].id, 'g2']);
@@ -203,9 +222,11 @@ describe('splitGroup', () => {
 
   it('nests a new split when the direction differs', () => {
     const root = split('s1', 'row', [group('g1', ['a', 'b']), group('g2', ['c'])]);
-    const result = splitGroup(root, 'g1', 'a', 'column') as PanelSplitNode;
+    const result = requireSplit(splitGroup(root, 'g1', 'a', 'column'));
     expect(result.id).toBe('s1');
-    const nested = result.children[0] as PanelSplitNode;
+    const firstChild = result.children[0];
+    if (!firstChild) throw new Error('Expected nested split');
+    const nested = requireSplit(firstChild);
     expect(nested.type).toBe('split');
     expect(nested.direction).toBe('column');
     expect(allPanelIds(nested)).toEqual(['b', 'a']);
@@ -226,9 +247,9 @@ describe('splitGroup', () => {
 describe('movePanel center drops', () => {
   it('moves a panel into another group at the given index', () => {
     const root = split('s1', 'row', [group('g1', ['a', 'b'], 'a'), group('g2', ['c'], 'c')]);
-    const result = movePanel(root, 'a', { groupId: 'g2', index: 0 }) as PanelSplitNode;
-    const g1 = findGroup(result, 'g1')!;
-    const g2 = findGroup(result, 'g2')!;
+    const result = requireSplit(movePanel(root, 'a', { groupId: 'g2', index: 0 }));
+    const g1 = requireFoundGroup(result, 'g1');
+    const g2 = requireFoundGroup(result, 'g2');
     expect(g1.panelIds).toEqual(['b']);
     expect(g1.activePanelId).toBe('b');
     expect(g2.panelIds).toEqual(['a', 'c']);
@@ -238,28 +259,28 @@ describe('movePanel center drops', () => {
   it('same-group rightward reorder lands at the drop indicator, not one past it', () => {
     const root = group('g1', ['a', 'b', 'c']);
     // Indicator before 'c' (index 2): expect [b, a, c]
-    const result = movePanel(root, 'a', { groupId: 'g1', index: 2 }) as PanelGroupNode;
+    const result = requireGroup(movePanel(root, 'a', { groupId: 'g1', index: 2 }));
     expect(result.panelIds).toEqual(['b', 'a', 'c']);
   });
 
   it('same-group move to the end (index = length) appends', () => {
     const root = group('g1', ['a', 'b', 'c']);
-    const result = movePanel(root, 'a', { groupId: 'g1', index: 3 }) as PanelGroupNode;
+    const result = requireGroup(movePanel(root, 'a', { groupId: 'g1', index: 3 }));
     expect(result.panelIds).toEqual(['b', 'c', 'a']);
   });
 
   it('same-group leftward reorder needs no index adjustment', () => {
     const root = group('g1', ['a', 'b', 'c']);
-    const result = movePanel(root, 'c', { groupId: 'g1', index: 0 }) as PanelGroupNode;
+    const result = requireGroup(movePanel(root, 'c', { groupId: 'g1', index: 0 }));
     expect(result.panelIds).toEqual(['c', 'a', 'b']);
   });
 
   it('dropping a panel on its own position is a no-op order-wise', () => {
     const root = group('g1', ['a', 'b', 'c']);
-    expect((movePanel(root, 'a', { groupId: 'g1', index: 0 }) as PanelGroupNode).panelIds)
+    expect(requireGroup(movePanel(root, 'a', { groupId: 'g1', index: 0 })).panelIds)
       .toEqual(['a', 'b', 'c']);
     // Right half of its own tab resolves to index 1, adjusted back to 0
-    expect((movePanel(root, 'a', { groupId: 'g1', index: 1 }) as PanelGroupNode).panelIds)
+    expect(requireGroup(movePanel(root, 'a', { groupId: 'g1', index: 1 })).panelIds)
       .toEqual(['a', 'b', 'c']);
   });
 
@@ -268,25 +289,30 @@ describe('movePanel center drops', () => {
     const result = movePanel(root, 'a', { groupId: 'g2', index: 1 });
     expect(result.type).toBe('group');
     expect(result.id).toBe('g2');
-    expect((result as PanelGroupNode).panelIds).toEqual(['b', 'a']);
+    expect(requireGroup(result).panelIds).toEqual(['b', 'a']);
   });
 });
 
 describe('movePanel edge drops', () => {
   it('splits against the target group in the edge direction', () => {
     const root = split('s1', 'row', [group('g1', ['a', 'b'], 'a'), group('g2', ['c'])]);
-    const result = movePanel(root, 'a', { groupId: 'g2', edge: 'bottom' }) as PanelSplitNode;
+    const result = requireSplit(movePanel(root, 'a', { groupId: 'g2', edge: 'bottom' }));
     expect(result.id).toBe('s1');
-    const nested = result.children[1] as PanelSplitNode;
+    const secondChild = result.children[1];
+    if (!secondChild) throw new Error('Expected nested split');
+    const nested = requireSplit(secondChild);
     expect(nested.type).toBe('split');
     expect(nested.direction).toBe('column');
-    expect((nested.children[0] as PanelGroupNode).panelIds).toEqual(['c']);
-    expect((nested.children[1] as PanelGroupNode).panelIds).toEqual(['a']);
+    const firstNestedChild = nested.children[0];
+    const secondNestedChild = nested.children[1];
+    if (!firstNestedChild || !secondNestedChild) throw new Error('Expected both nested groups');
+    expect(requireGroup(firstNestedChild).panelIds).toEqual(['c']);
+    expect(requireGroup(secondNestedChild).panelIds).toEqual(['a']);
   });
 
   it('inserts an n-ary sibling when the edge matches the parent direction', () => {
     const root = split('s1', 'row', [group('g1', ['a', 'b']), group('g2', ['c'])], [0.5, 0.5]);
-    const result = movePanel(root, 'a', { groupId: 'g2', edge: 'right' }) as PanelSplitNode;
+    const result = requireSplit(movePanel(root, 'a', { groupId: 'g2', edge: 'right' }));
     expect(result.id).toBe('s1');
     expect(result.children).toHaveLength(3);
     expect(allPanelIds(result)).toEqual(['b', 'c', 'a']);
@@ -307,7 +333,9 @@ describe('movePanel edge drops', () => {
 describe('removePanelFromLayout', () => {
   it('removes a panel and reassigns the group active id', () => {
     const root = group('g1', ['a', 'b'], 'a');
-    const result = removePanelFromLayout(root, 'a') as PanelGroupNode;
+    const removed = removePanelFromLayout(root, 'a');
+    if (!removed) throw new Error('Expected surviving group');
+    const result = requireGroup(removed);
     expect(result.panelIds).toEqual(['b']);
     expect(result.activePanelId).toBe('b');
   });
@@ -382,10 +410,10 @@ describe('reconcile', () => {
     const layout = layoutOf(group('g1', ['a', 'b'], 'b'));
     const { layout: result, changed } = reconcile({
       ...layout,
-      root: { ...(layout.root as PanelGroupNode), activePanelId: 'dead' },
+      root: { ...requireGroup(layout.root), activePanelId: 'dead' },
     }, ['a', 'b']);
     expect(changed).toBe(true);
-    expect((result.root as PanelGroupNode).activePanelId).toBe('a');
+    expect(requireGroup(result.root).activePanelId).toBe('a');
   });
 });
 
@@ -399,9 +427,11 @@ describe('updateSizes', () => {
       group('g1', ['a']),
       split('s2', 'column', [group('g2', ['b']), group('g3', ['c'])], [0.5, 0.5]),
     ], [0.5, 0.5]);
-    const result = updateSizes(root, 's2', [0.7, 0.3]) as PanelSplitNode;
+    const result = requireSplit(updateSizes(root, 's2', [0.7, 0.3]));
     expect(result.sizes).toEqual([0.5, 0.5]);
-    expect((result.children[1] as PanelSplitNode).sizes).toEqual([0.7, 0.3]);
+    const nested = result.children[1];
+    if (!nested) throw new Error('Expected nested split');
+    expect(requireSplit(nested).sizes).toEqual([0.7, 0.3]);
   });
 });
 
@@ -502,7 +532,26 @@ describe('subsetInsertIndex', () => {
 // ---------------------------------------------------------------------------
 
 describe('dropZoneFor', () => {
-  const rect = { left: 0, top: 0, width: 100, height: 100 } as DOMRect;
+  const rect: DOMRect = {
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 100,
+    bottom: 100,
+    width: 100,
+    height: 100,
+    toJSON: () => ({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 100,
+      bottom: 100,
+      width: 100,
+      height: 100,
+    }),
+  };
 
   it('returns center inside the inner band', () => {
     expect(dropZoneFor(50, 50, rect)).toBe('center');

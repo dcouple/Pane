@@ -1,4 +1,10 @@
-import { CreatePanelRequest, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
+import {
+  CreatePanelRequest,
+  PanelEventType,
+  SessionPanelLayout,
+  ToolPanel,
+} from '../../../shared/types/panels';
+import { JsonValue } from '../../../shared/validation/boundaryDecoder';
 
 export const panelApi = {
   async createPanel(request: CreatePanelRequest): Promise<ToolPanel> {
@@ -6,7 +12,7 @@ export const panelApi = {
       request.sessionId, 
       request.type, 
       request.title || '', 
-      request.initialState as Record<string, unknown> | undefined
+      request.initialState
     );
     if (!response.success || !response.data) {
       throw new Error(response.error || 'Failed to create panel');
@@ -57,14 +63,12 @@ export const panelApi = {
     }
   },
   
-  async emitPanelEvent(panelId: string, eventType: string, data: Record<string, unknown>): Promise<void> {
-    // Use direct invoke for event emission as there's no typed wrapper for this
-    // oxlint-disable-next-line typescript/no-explicit-any -- IPC event emission returns void
-    return window.electron!.invoke('panels:emitEvent', panelId, eventType, data) as unknown as void;
+  async emitPanelEvent(panelId: string, eventType: PanelEventType, data: JsonValue): Promise<void> {
+    await window.electronAPI.invoke('panels:emitEvent', panelId, eventType, data);
   },
 
   async getLayout(sessionId: string): Promise<SessionPanelLayout | null> {
-    const response = await window.electronAPI.invoke('panels:get-layout', sessionId) as { success: boolean; data?: SessionPanelLayout | null; error?: string };
+    const response = await window.electronAPI.invoke('panels:get-layout', sessionId);
     if (!response.success) {
       throw new Error(response.error || 'Failed to get panel layout');
     }
@@ -72,7 +76,7 @@ export const panelApi = {
   },
 
   async setLayout(sessionId: string, layout: SessionPanelLayout | null): Promise<void> {
-    const response = await window.electronAPI.invoke('panels:set-layout', sessionId, layout) as { success: boolean; error?: string };
+    const response = await window.electronAPI.invoke('panels:set-layout', sessionId, layout);
     if (!response.success) {
       throw new Error(response.error || 'Failed to set panel layout');
     }
@@ -80,7 +84,7 @@ export const panelApi = {
 
   async clearPanelUnviewedContent(panelId: string): Promise<void> {
     // Clear the hasUnviewedContent flag and set status to 'stopped' for AI panels
-    const response = await window.electron!.invoke('panels:clearUnviewedContent', panelId);
+    const response = await window.electronAPI.invoke('panels:clearUnviewedContent', panelId);
     if (!response.success) {
       throw new Error(response.error || 'Failed to clear unviewed content');
     }

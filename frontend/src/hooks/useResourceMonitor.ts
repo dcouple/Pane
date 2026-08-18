@@ -14,6 +14,7 @@ export function useResourceMonitor() {
   // Listen for push updates from main process
   useEffect(() => {
     const handler = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const customEvent = event as CustomEvent<ResourceSnapshot>;
       setSnapshot(customEvent.detail);
       setIsLoading(false);

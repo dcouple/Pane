@@ -94,6 +94,7 @@ export function createAtTerminalHandler(
         }
         if (savedLineCount) {
           const val = parseInt(savedLineCount, 10);
+          // SAFETY: The value comes from the adjacent finite domain definition.
           const idx = LINE_COUNT_PRESETS.indexOf(val as typeof LINE_COUNT_PRESETS[number]);
           if (idx !== -1) {
             state = { ...state, lineCountPresetIndex: idx, lineCount: LINE_COUNT_PRESETS[idx] };

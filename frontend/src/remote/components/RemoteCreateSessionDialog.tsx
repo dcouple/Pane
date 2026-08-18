@@ -126,6 +126,7 @@ export function RemoteCreateSessionDialog({
   useEffect(() => {
     if (!branchOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
         setBranchOpen(false);
         setBranchSearch('');
@@ -421,7 +422,7 @@ export function RemoteCreateSessionDialog({
 
 function loadRemoteStartPinnedPreference(): boolean {
   try {
-    return typeof window !== 'undefined' && window.localStorage.getItem(REMOTE_START_PINNED_PREFERENCE_KEY) === 'true';
+    return window.localStorage.getItem(REMOTE_START_PINNED_PREFERENCE_KEY) === 'true';
   } catch {
     return false;
   }
@@ -429,9 +430,7 @@ function loadRemoteStartPinnedPreference(): boolean {
 
 function saveRemoteStartPinnedPreference(value: boolean): void {
   try {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(REMOTE_START_PINNED_PREFERENCE_KEY, value ? 'true' : 'false');
-    }
+    window.localStorage.setItem(REMOTE_START_PINNED_PREFERENCE_KEY, value ? 'true' : 'false');
   } catch {
     // Ignore storage failures so the current create flow can still use local state.
   }

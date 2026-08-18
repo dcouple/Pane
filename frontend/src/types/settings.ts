@@ -100,7 +100,7 @@ export const DEFAULT_SETTINGS_PREFERENCES: SettingsPreferenceValues = {
   atTerminalLineCount: 500,
 };
 
-export function normalizeSidebarPaneRowLayout(value: unknown): SidebarPaneRowLayout {
+export function normalizeSidebarPaneRowLayout(value: string | null | undefined): SidebarPaneRowLayout {
   return value === 'two-row' ? 'two-row' : 'single';
 }
 
@@ -120,5 +120,5 @@ export function serializeSettingPreference<K extends keyof SettingsPreferenceVal
   _key: K,
   value: SettingsPreferenceValues[K],
 ): string {
-  return typeof value === 'boolean' ? String(value) : String(value);
+  return String(value);
 }

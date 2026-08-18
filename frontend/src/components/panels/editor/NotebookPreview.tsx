@@ -1,19 +1,25 @@
 import React, { useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { MarkdownPreview } from '../../MarkdownPreview';
+import {
+  boundary,
+  decodeOptionalBoundary,
+  type BoundarySchema,
+  type JsonObject,
+} from '../../../../../shared/validation/boundaryDecoder';
 
 // --- Notebook JSON types ---
 
 interface NotebookCellOutput {
   output_type: string;
   text?: string | string[];
-  data?: Record<string, string | string[] | unknown>;
+  data?: JsonObject;
   name?: string;
   ename?: string;
   evalue?: string;
   traceback?: string[];
   execution_count?: number | null;
-  metadata?: Record<string, unknown>;
+  metadata?: JsonObject;
 }
 
 interface NotebookCell {
@@ -21,7 +27,7 @@ interface NotebookCell {
   source: string | string[];
   execution_count?: number | null;
   outputs?: NotebookCellOutput[];
-  metadata?: Record<string, unknown>;
+  metadata?: JsonObject;
 }
 
 interface NotebookData {
@@ -36,11 +42,46 @@ interface NotebookData {
       name?: string;
       version?: string;
     };
-    [key: string]: unknown;
   };
   nbformat?: number;
   nbformat_minor?: number;
 }
+
+const stringOrLinesSchema = boundary.union(boundary.string, boundary.array(boundary.string));
+const notebookOutputSchema: BoundarySchema<NotebookCellOutput> = boundary.object({
+  output_type: boundary.string,
+  text: boundary.optional(stringOrLinesSchema),
+  data: boundary.optional(boundary.jsonObject),
+  name: boundary.optional(boundary.string),
+  ename: boundary.optional(boundary.string),
+  evalue: boundary.optional(boundary.string),
+  traceback: boundary.optional(boundary.array(boundary.string)),
+  execution_count: boundary.optional(boundary.nullable(boundary.number)),
+  metadata: boundary.optional(boundary.jsonObject),
+});
+const notebookCellSchema: BoundarySchema<NotebookCell> = boundary.object({
+  cell_type: boundary.string,
+  source: stringOrLinesSchema,
+  execution_count: boundary.optional(boundary.nullable(boundary.number)),
+  outputs: boundary.optional(boundary.array(notebookOutputSchema)),
+  metadata: boundary.optional(boundary.jsonObject),
+});
+const notebookSchema: BoundarySchema<NotebookData> = boundary.object({
+  cells: boundary.array(notebookCellSchema),
+  metadata: boundary.optional(boundary.object({
+    kernelspec: boundary.optional(boundary.object({
+      display_name: boundary.optional(boundary.string),
+      language: boundary.optional(boundary.string),
+      name: boundary.optional(boundary.string),
+    })),
+    language_info: boundary.optional(boundary.object({
+      name: boundary.optional(boundary.string),
+      version: boundary.optional(boundary.string),
+    })),
+  })),
+  nbformat: boundary.optional(boundary.number),
+  nbformat_minor: boundary.optional(boundary.number),
+});
 
 // --- Helpers ---
 
@@ -59,11 +100,13 @@ function stripAnsi(str: string): string {
   return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
-function getMimeData(data: Record<string, string | string[] | unknown>, mime: string): string | undefined {
+function getMimeData(data: JsonObject, mime: string): string | undefined {
   const val = data[mime];
   if (val === undefined) return undefined;
-  if (typeof val === 'string') return val;
-  if (Array.isArray(val)) return val.map(String).join('');
+  const text = decodeOptionalBoundary(val, boundary.string);
+  if (text !== undefined) return text;
+  const lines = decodeOptionalBoundary(val, boundary.array(boundary.string));
+  if (lines) return lines.join('');
   // For non-string values (e.g. application/json stored as object), stringify
   return JSON.stringify(val, null, 2);
 }
@@ -141,11 +184,12 @@ function CellOutputRenderer({ output, index }: { output: NotebookCellOutput; ind
     const jsonVal = data['application/json'];
     if (jsonVal !== undefined) {
       let formatted: string;
-      if (typeof jsonVal === 'string') {
+      const jsonText = decodeOptionalBoundary(jsonVal, boundary.string);
+      if (jsonText !== undefined) {
         try {
-          formatted = JSON.stringify(JSON.parse(jsonVal), null, 2);
+          formatted = JSON.stringify(JSON.parse(jsonText), null, 2);
         } catch {
-          formatted = jsonVal;
+          formatted = jsonText;
         }
       } else {
         formatted = JSON.stringify(jsonVal, null, 2);
@@ -216,9 +260,7 @@ interface NotebookPreviewProps {
 export const NotebookPreview: React.FC<NotebookPreviewProps> = ({ content, className = '' }) => {
   const notebook = useMemo<NotebookData | null>(() => {
     try {
-      const parsed = JSON.parse(content) as NotebookData;
-      if (!parsed.cells || !Array.isArray(parsed.cells)) return null;
-      return parsed;
+      return decodeOptionalBoundary(JSON.parse(content), notebookSchema) ?? null;
     } catch {
       return null;
     }

@@ -50,6 +50,7 @@ export function useSettingsPersistence(isOpen: boolean) {
   const loadPreferences = useCallback(async () => {
     setPreferencesLoading(true);
     try {
+      // SAFETY: The named IPC/API channel contract establishes this response payload type.
       const response = await window.electron?.invoke('preferences:get-all') as {
         success?: boolean;
         data?: Record<string, string>;
@@ -104,6 +105,7 @@ export function useSettingsPersistence(isOpen: boolean) {
     const settingId = PREFERENCE_SETTING_ID[name];
     setSaveState(settingId, { state: 'saving' });
     try {
+      // SAFETY: The named IPC/API channel contract establishes this response payload type.
       const response = await window.electron?.invoke(
         'preferences:set',
         PREFERENCE_KEY_BY_NAME[name],

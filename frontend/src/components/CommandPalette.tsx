@@ -136,12 +136,14 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
         ) : (
           listItems.map((item) => {
             if (item.type === 'header') {
+              // SAFETY: Header categories are produced from the typed hotkey registry keys.
+              const category = item.category as HotkeyDefinition['category'];
               return (
                 <div
                   key={`header-${item.category}`}
                   className="px-4 pt-3 pb-1 text-xs font-medium text-text-tertiary uppercase tracking-wider"
                 >
-                  {CATEGORY_LABELS[item.category as HotkeyDefinition['category']] ?? item.category}
+                  {CATEGORY_LABELS[category] ?? item.category}
                 </div>
               );
             }

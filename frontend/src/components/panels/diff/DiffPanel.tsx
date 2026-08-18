@@ -76,6 +76,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
   ));
   const [hasOpenedLocal, setHasOpenedLocal] = useState(reviewMode === 'local');
   const [hasOpenedGithub, setHasOpenedGithub] = useState(reviewMode === 'github');
+  // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
   const diffState = panel.state?.customState as DiffPanelState | undefined;
   const lastRefreshRef = useRef<number>(Date.now());
   const combinedDiffRef = useRef<CombinedDiffViewHandle>(null);
@@ -128,6 +129,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
       } else if (type === 'git:operation_completed') {
         // Refresh diff when git operations complete for this session (e.g., merge to main)
         if (source?.sessionId === sessionId) {
+          // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
           const op = data?.operation as string | undefined;
           if (!op || op === 'merge_to_main' || op === 'squash_and_merge') {
             setIsStale(true);
@@ -136,9 +138,11 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
       }
     };
 
+    // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
     window.addEventListener('panel:event', handlePanelEvent as EventListener);
 
     return () => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       window.removeEventListener('panel:event', handlePanelEvent as EventListener);
     };
   }, [panel.id, sessionId]);
@@ -149,6 +153,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
     lastGitFingerprintRef.current = null;
 
     const handleGitStatusUpdated = (event: Event) => {
+      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
       const { sessionId: eventSessionId, gitStatus } = (event as CustomEvent<{ sessionId: string; gitStatus?: GitStatus }>).detail || {};
       if (eventSessionId !== sessionId) return;
 

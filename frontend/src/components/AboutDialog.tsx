@@ -131,6 +131,7 @@ export function AboutDialog({ isOpen, onClose, onUpdate }: AboutDialogProps) {
               alt="Pane"
               className="w-16 h-16 mb-4"
               onError={(e) => {
+                // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
                 (e.target as HTMLImageElement).style.display = 'none';
               }}
             />

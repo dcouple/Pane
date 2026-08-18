@@ -28,7 +28,7 @@ import { SelectionPopover } from '../terminal/SelectionPopover';
 import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
-import type { TerminalPanelState } from '../../../../shared/types/panels';
+import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
@@ -36,7 +36,7 @@ import { InterceptorDropdown } from '../terminal/InterceptorDropdown';
 import { InterceptorToast } from '../terminal/InterceptorToast';
 import { usePanelStore } from '../../stores/panelStore';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../stores/configStore';
-import type { InterceptorState, AtTerminalHandlerState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
+import type { InterceptorState, TerminalSuggestion } from '../../services/terminalInterceptor/types';
 import '@xterm/xterm/css/xterm.css';
 
 // Hold the loading overlay at least this long past ready so the terminal
@@ -98,6 +98,11 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
+const terminalPasteImageResultSchema = boundary.object({
+  filePath: boundary.string,
+  imageNumber: boundary.number,
+});
+const terminalPasteFileResultSchema = boundary.object({ filePath: boundary.string });
 
 // xterm halves the configured ratio for dim (SGR 2) cells, so 9 is what gets dim
 // CLI output (Claude Code / Codex) to 4.5:1 AA. Off-state stays a modest safety
@@ -273,7 +278,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const blurDetachTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Read CLI state from persisted panel state (handles remount case)
-  const terminalState = panel.state?.customState as TerminalPanelState | undefined;
+  const terminalState = decodeOptionalBoundary(panel.state?.customState, boundary.object({
+    isCliPanel: boundary.optional(boundary.boolean),
+    isCliReady: boundary.optional(boundary.boolean),
+  }));
   const isCliPanel = !!terminalState?.isCliPanel;
   const [isCliReady, setIsCliReady] = useState(!!terminalState?.isCliReady);
   const isRemoteMode = useConfigStore((state) => state.config?.remoteDaemon?.client.mode === 'remote');
@@ -587,8 +595,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     };
   }, [webglAllowed, panelVisible, windowFocused, isInitialized, disposeWebglRenderer, loadWebglRenderer]);
 
-  const handleClipboardError = useCallback((error: unknown) => {
-    console.error('[TerminalPanel] Failed to copy selection to clipboard:', error);
+  const handleClipboardError = useCallback(() => {
+    console.error('[TerminalPanel] Failed to copy selection to clipboard');
     setToastMessage('Failed to copy terminal text');
   }, []);
 
@@ -748,11 +756,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
       };
 
       if (state?.scrollbackBuffer) {
-        const content = typeof state.scrollbackBuffer === 'string'
-          ? state.scrollbackBuffer
-          : Array.isArray(state.scrollbackBuffer)
-            ? state.scrollbackBuffer.join('\n')
-            : '';
+        const content = Array.isArray(state.scrollbackBuffer)
+          ? state.scrollbackBuffer.join('\n')
+          : state.scrollbackBuffer;
         if (content) {
           await new Promise<void>((resolve, reject) => {
             terminal.write(content, () => {
@@ -936,7 +942,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           macOptionIsMeta: false,
           linkHandler: {
             activate: (_event, uri) => {
-              void window.electronAPI.openExternal(uri).catch((error: unknown) => {
+              void window.electronAPI.openExternal(uri).catch((error) => {
                 console.error('[TerminalPanel] Failed to open terminal link:', error);
               });
             },
@@ -952,8 +958,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
           if (isTerminalCopyShortcut(e, isMac())) {
             if (e.type === 'keydown' && terminal?.hasSelection()) {
-              void copyTerminalText(terminal.getSelection()).catch((error: unknown) => {
-                handleClipboardError(error);
+              void copyTerminalText(terminal.getSelection()).catch(() => {
+                handleClipboardError();
               });
             }
             return false;
@@ -985,7 +991,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               xtermRef.current?.clear();
               window.electronAPI
                 .invoke('terminal:clearScrollback', panel.id)
-                .catch((error: unknown) => {
+                .catch((error) => {
                   console.warn('[TerminalPanel] Failed to persist scrollback clear:', error);
                 });
             }
@@ -1330,17 +1336,18 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                   const reader = new FileReader();
                   reader.onload = async (ev) => {
                     if (disposed || !terminal) return;
+                    // SAFETY: readAsDataURL completes with a string result before onload fires.
                     const dataUrl = ev.target?.result as string;
                     if (!dataUrl) return;
 
                     try {
-                      const result = await window.electronAPI.invoke(
+                      const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                         'terminal:paste-image',
                         panel.id,
                         sessionId || panel.sessionId,
                         dataUrl,
                         file.type
-                      ) as { filePath: string; imageNumber: number } | null;
+                      ), terminalPasteImageResultSchema);
                       if (result?.filePath && !disposed && terminal) {
                         terminal.paste(`${result.filePath}\n`);
                       }
@@ -1376,10 +1383,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             (async () => {
               if (disposed || !terminal) return;
               try {
-                const result = await window.electronAPI.invoke(
+                const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                   'terminal:clipboard-paste-image',
                   sessionId || panel.sessionId
-                ) as { filePath: string; imageNumber: number } | null;
+                ), terminalPasteImageResultSchema);
                 if (result?.filePath && !disposed && terminal) {
                   terminal.paste(`${result.filePath}\n`);
                   return;
@@ -1428,7 +1435,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                 }
                 const dataUrl = await new Promise<string | null>((resolve) => {
                   const reader = new FileReader();
-                  reader.onload = (ev) => resolve(ev.target?.result as string ?? null);
+                  reader.onload = (ev) => {
+                    // SAFETY: readAsDataURL completes with a string result before onload fires.
+                    resolve(ev.target?.result as string ?? null);
+                  };
                   reader.onerror = () => resolve(null);
                   reader.readAsDataURL(file);
                 });
@@ -1438,21 +1448,21 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                   let resolvedPath: string | null = null;
 
                   if (isImage) {
-                    const result = await window.electronAPI.invoke(
+                    const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                       'terminal:paste-image',
                       panel.id,
                       sessionId || panel.sessionId,
                       dataUrl,
                       file.type
-                    ) as { filePath: string; imageNumber: number } | null;
+                    ), terminalPasteImageResultSchema);
                     resolvedPath = result?.filePath ?? null;
                   } else {
-                    const result = await window.electronAPI.invoke(
+                    const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                       'terminal:paste-file',
                       sessionId || panel.sessionId,
                       dataUrl,
                       file.name
-                    ) as { filePath: string } | null;
+                    ), terminalPasteFileResultSchema);
                     resolvedPath = result?.filePath ?? null;
                   }
 
@@ -1518,15 +1528,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           // double-delivery to xterm, this handler short-circuits once the
           // panel's `ptyId` is populated and the dedicated effect below takes
           // over as the single byte source.
-          const legacyOutputHandler = (data: unknown) => {
+          const legacyOutputHandler = (data: import('../../../../shared/types/panels').TerminalOutputEvent) => {
             if (currentPtyIdRef.current) return;
-            if (data && typeof data === 'object' && 'panelId' in data && data.panelId && 'output' in data) {
-              const typedData = data as { panelId: string; output: string };
-              if (typedData.panelId === panel.id) {
-                outputConsumerRef.current?.write(typedData.output);
-              }
+            if ('panelId' in data && data.panelId === panel.id) {
+              outputConsumerRef.current?.write(data.output);
             }
-            // Ignore session terminal output (has sessionId instead of panelId)
+            // Ignore session terminal output, which has no panelId.
           };
           const unsubscribeOutput = window.electronAPI.events.onTerminalOutput(legacyOutputHandler);
           console.log('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
@@ -1543,10 +1550,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           // Initialize TUI mode for already-running programs (e.g. vim was
           // left open and the panel remounted).
           window.electronAPI.invoke('terminal:getAltScreenState', panel.id)
-            .then((info: unknown) => {
-              if (disposed || info == null || typeof info !== 'object') return;
-              const { isAlternateScreen } = info as { isAlternateScreen: boolean };
-              tuiActiveRef.current = isAlternateScreen;
+            .then((info: { isAlternateScreen: boolean } | null) => {
+              if (disposed || !info) return;
+              tuiActiveRef.current = info.isAlternateScreen;
             })
             .catch(() => { /* terminal may not exist yet — ignore */ });
 
@@ -1557,8 +1563,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               tuiActiveRef.current = false;
               if (terminal && !disposed) {
                 // Detect crash signals: SIGABRT(6), SIGBUS(7), SIGSEGV(11)
-                const crashSignals: Record<number, string> = { 6: 'SIGABRT', 7: 'SIGBUS', 11: 'SIGSEGV' };
-                const crashSignalName = data.signal ? crashSignals[data.signal] : null;
+                const crashSignals = new Map([[6, 'SIGABRT'], [7, 'SIGBUS'], [11, 'SIGSEGV']]);
+                const crashSignalName = data.signal ? crashSignals.get(data.signal) : null;
 
                 if (crashSignalName) {
                   terminal.write(`\r\n\x1b[91m[Process crashed: ${crashSignalName}]\x1b[0m\r\n`);
@@ -1672,7 +1678,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             onForceCancel: () => interceptor.forceCancel(),
             getPreference: async (key: string) => {
               const resp = await window.electronAPI.invoke('preferences:get', key);
-              return resp?.success ? (resp.data as string | null) : null;
+              return resp?.success
+                ? decodeOptionalBoundary(resp.data, boundary.nullable(boundary.string)) ?? null
+                : null;
             },
             setPreference: (key: string, value: string) => {
               window.electronAPI.invoke('preferences:set', key, value);
@@ -2104,10 +2112,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
       {interceptorState && (
         <InterceptorDropdown
           visible={interceptorState.active}
-          terminals={(interceptorState.handlerState as AtTerminalHandlerState).terminals}
-          selectedIndex={(interceptorState.handlerState as AtTerminalHandlerState).selectedIndex}
-          lineCountPresetIndex={(interceptorState.handlerState as AtTerminalHandlerState).lineCountPresetIndex}
-          pasteMode={(interceptorState.handlerState as AtTerminalHandlerState).pasteMode}
+          terminals={interceptorState.handlerState?.terminals ?? []}
+          selectedIndex={interceptorState.handlerState?.selectedIndex ?? 0}
+          lineCountPresetIndex={interceptorState.handlerState?.lineCountPresetIndex ?? 0}
+          pasteMode={interceptorState.handlerState?.pasteMode ?? 'raw'}
           filterText={interceptorState.buffer}
           position={getDropdownPosition()}
         />

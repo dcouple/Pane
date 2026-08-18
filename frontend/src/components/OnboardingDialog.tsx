@@ -78,6 +78,7 @@ function getEnvironmentStatus(env: EnvironmentInfo | null): OnboardingEnvironmen
 
 async function getPreference(key: string): Promise<string | undefined> {
   if (!window.electron?.invoke) return undefined;
+  // SAFETY: The named IPC/API channel contract establishes this response payload type.
   const result = await window.electron.invoke('preferences:get', key) as IPCResponse<string>;
   return result.success ? result.data : undefined;
 }
@@ -197,6 +198,7 @@ export default function OnboardingDialog({ isOpen, onClose }: OnboardingDialogPr
     try {
       const result = await window.electronAPI.onboarding.detectEnvironment();
       if (result.success && result.data) {
+        // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         const nextEnv = normalizeEnvironment(result.data as Partial<EnvironmentInfo>);
         setEnv(nextEnv);
         setStep('ready');
