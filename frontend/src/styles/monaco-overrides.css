@@ -24,6 +24,30 @@
   --vscode-editorWidget-foreground: #1e2026 !important;
 }
 
+/* Folio theme overrides — ink on the sheet */
+:root.folio {
+  --vscode-editor-background: #fbf7ee !important;
+  --vscode-editor-foreground: #1f1b17 !important;
+  --vscode-editorWidget-background: #fbf7ee !important;
+  --vscode-editorWidget-foreground: #1f1b17 !important;
+}
+
+/* Newsprint theme overrides — graphite on cool stock */
+:root.newsprint {
+  --vscode-editor-background: #f8f8f6 !important;
+  --vscode-editor-foreground: #24272b !important;
+  --vscode-editorWidget-background: #f8f8f6 !important;
+  --vscode-editorWidget-foreground: #24272b !important;
+}
+
+/* Walnut theme overrides — parchment on walnut */
+:root.walnut {
+  --vscode-editor-background: #120e0b !important;
+  --vscode-editor-foreground: #ede1cd !important;
+  --vscode-editorWidget-background: #120e0b !important;
+  --vscode-editorWidget-foreground: #ede1cd !important;
+}
+
 /* Additional Monaco editor style overrides */
 .monaco-editor,
 .monaco-editor-background,

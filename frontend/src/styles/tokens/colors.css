@@ -156,6 +156,70 @@
   --terra-accent8: #d68e6e;
   --terra-accent9: #dea080;
   --terra-accent10: #e6b498;
+
+  /* Folio primitives — warm cream paper and near-black ink (print) */
+  --folio-paper: #f6f0e4;        /* page: body background */
+  --folio-sheet: #fbf7ee;        /* sheet: editor, terminal, cards — brightest surface */
+  --folio-chrome: #efe7d8;       /* margin: sidebar, tab bar */
+  --folio-hover: #e7dcc9;
+  --folio-active: #dfd3be;
+  --folio-ink: #1f1b17;
+  --folio-ink-2: #433c35;
+  --folio-ink-3: #5a524a;
+  --folio-ink-muted: #605850;    /* 6.2:1 on paper, 4.7:1 on active */
+  --folio-ink-disabled: #93897b; /* 3.0:1 on paper (AA large / disabled affordance) */
+  --folio-rule: rgba(31, 27, 23, 0.16);
+  --folio-rule-soft: rgba(31, 27, 23, 0.09);
+  --folio-rule-faint: rgba(31, 27, 23, 0.05);
+
+  /* Folio rubrication — one vermilion accent, used sparingly */
+  --folio-rubric: #b3321c;       /* 5.5:1 on paper; 6.2:1 with white text */
+  --folio-rubric-hover: #9c2a17;
+  --folio-rubric-active: #c53d24;
+  --folio-rubric-text: #a02c18;  /* links — 6.5:1 on paper */
+
+  /* Newsprint primitives — cool grey-white stock, graphite ink, halftone greys */
+  --news-paper: #f1f2f0;
+  --news-sheet: #f8f8f6;
+  --news-chrome: #e8eae7;
+  --news-hover: #dfe2de;
+  --news-active: #d8dcd7;
+  --news-ink: #24272b;
+  --news-ink-2: #43484e;
+  --news-ink-3: #575d64;
+  --news-ink-muted: #585e66;     /* 5.9:1 on paper, 4.7:1 on active */
+  --news-ink-disabled: #878d93;  /* 3.0:1 on paper */
+  --news-rule: rgba(36, 39, 43, 0.18);
+  --news-rule-soft: rgba(36, 39, 43, 0.10);
+  --news-rule-faint: rgba(36, 39, 43, 0.06);
+
+  /* Newsprint accent — a single dark ink blue */
+  --news-blue: #1f4e8c;          /* 7.4:1 with white text */
+  --news-blue-hover: #1a4277;
+  --news-blue-active: #25599e;
+  --news-blue-text: #1c4884;     /* links — 7.4:1 on paper */
+
+  /* Walnut primitives — deep warm brown-black ramp, parchment text */
+  --walnut-950: #120e0b;         /* sunken editor / terminal */
+  --walnut-900: #1a1512;         /* body, chrome */
+  --walnut-850: #221c18;
+  --walnut-800: #2b241f;
+  --walnut-700: #352d27;
+  --walnut-600: #40372f;         /* active / borders — a real step above 700 (1.16:1) */
+  --walnut-500: #4a4037;
+  --walnut-400: #6a5e51;         /* disabled */
+  --walnut-300: #8d7d6a;         /* neutral / bright-black */
+  --walnut-200: #b09f89;         /* muted — 7.0:1 on --walnut-900, 4.5:1 on --walnut-600 */
+  --parchment-300: #b4a48b;      /* tertiary */
+  --parchment-200: #d3c4ab;      /* secondary */
+  --parchment-100: #ede1cd;      /* primary */
+  --parchment-50: #f7efe2;
+
+  /* Walnut accent — brass, carries dark ink text */
+  --brass-500: #c9a24d;          /* 9.4:1 with --walnut-900 text; 7.6:1 on --walnut-900 */
+  --brass-400: #d6b262;
+  --brass-600: #bd9440;
+  --brass-text: #d4ae5c;         /* links — 8.3:1 on --walnut-900 */
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -1719,6 +1783,489 @@
   --color-terminal-bright-white: #F2E4D6;
 }
 
+/* Folio Theme — paper & ink: warm cream stock, near-black ink, vermilion rubrication */
+:root.folio {
+  /* Backgrounds — page / sheet / margin tonal steps */
+  --color-bg-primary: var(--folio-paper);
+  --color-bg-secondary: var(--folio-chrome);
+  --color-bg-tertiary: var(--folio-hover);
+  --color-bg-hover: var(--folio-hover);
+  --color-bg-active: var(--folio-active);
+  --color-bg-chrome: var(--folio-chrome);
+  --color-bg-editor: var(--folio-sheet);   /* the sheet is the brightest surface */
+
+  /* Surfaces */
+  --color-surface-primary: var(--folio-sheet);
+  --color-surface-secondary: var(--folio-paper);
+  --color-surface-tertiary: var(--folio-chrome);
+  --color-surface-hover: rgba(31, 27, 23, 0.05);
+
+  /* Text — ink */
+  --color-text-primary: var(--folio-ink);
+  --color-text-secondary: var(--folio-ink-2);
+  --color-text-tertiary: var(--folio-ink-3);
+  --color-text-muted: var(--folio-ink-muted);
+  --color-text-disabled: var(--folio-ink-disabled);
+
+  /* Borders — faint rule lines */
+  --color-border-primary: var(--folio-rule);
+  --color-border-secondary: var(--folio-rule-soft);
+  --color-border-tertiary: var(--folio-rule-faint);
+  --color-border-hover: rgba(31, 27, 23, 0.24);
+  --color-border-focus: var(--folio-rubric);
+
+  /* Interactive — single rubrication accent */
+  --color-interactive: var(--folio-rubric);
+  --color-interactive-primary: var(--folio-rubric);
+  --color-interactive-hover: var(--folio-rubric-hover);
+  --color-interactive-active: var(--folio-rubric-active);
+  --color-interactive-text: var(--folio-rubric-text);
+  --color-focus-ring: var(--folio-rubric);
+  --color-interactive-rgb: 179 50 28;
+
+  /* Interactive on dark surfaces */
+  --color-text-interactive-on-dark: var(--folio-rubric-text);
+  --color-text-interactive-on-dark-hover: var(--folio-rubric-hover);
+  --color-text-interactive-on-dark-active: var(--folio-rubric-text);
+  --color-text-interactive-on-dark-focus: var(--folio-rubric-text);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--folio-chrome);
+  --color-surface-interactive-hover: var(--folio-hover);
+  --color-interactive-surface: rgba(179, 50, 28, 0.10);
+  --color-interactive-surface-hover: rgba(179, 50, 28, 0.16);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: var(--folio-rule-soft);
+  --color-border-interactive: var(--folio-rule);
+  --color-interactive-border: var(--folio-rubric);
+  --color-interactive-border-hover: var(--folio-rubric-hover);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--folio-ink-muted);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(179, 50, 28, 0.35);
+
+  /* Status — printed, low saturation */
+  --color-status-success: #3d7a3a;        /* 4.6:1 on paper */
+  --color-status-success-hover: #326530;
+  --color-status-warning: #8a5f10;        /* 5.0:1 on paper */
+  --color-status-warning-hover: #714d0c;
+  --color-status-error: var(--folio-rubric);
+  --color-status-error-hover: var(--folio-rubric-hover);
+  --color-status-info: var(--folio-rubric-text);
+  --color-status-neutral: var(--folio-ink-muted);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--folio-ink);
+  --color-text-on-secondary: var(--folio-ink);
+  --color-text-on-tertiary: var(--folio-ink-2);
+  --color-text-on-surface: var(--folio-ink);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(255 255 255);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--folio-ink);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--folio-rubric);
+  --color-button-primary-hover: var(--folio-rubric-hover);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--folio-chrome);
+  --color-button-secondary-hover: var(--folio-hover);
+  --color-button-secondary-text: var(--folio-ink);
+  --color-button-ghost-hover: var(--folio-hover);
+  --color-button-ghost-text: var(--folio-ink-2);
+
+  /* Cards */
+  --color-card-bg: var(--folio-sheet);
+  --color-card-border: var(--folio-rule);
+  --color-card-nested-bg: var(--folio-paper);
+
+  /* Forms */
+  --color-input-bg: var(--folio-sheet);
+  --color-input-border: var(--folio-rule);
+  --color-input-focus: var(--folio-rubric);
+  --color-input-text: var(--folio-ink);
+  --color-input-placeholder: var(--folio-ink-muted);
+
+  /* Modal */
+  --color-modal-overlay: rgba(31, 27, 23, 0.45);
+  --color-modal-bg: var(--folio-sheet);
+
+  /* Navigation — the margin */
+  --color-surface-navigation: var(--folio-chrome);
+  --color-surface-navigation-hover: var(--folio-hover);
+  --color-surface-navigation-active: var(--folio-active);
+  --color-surface-navigation-selected: rgba(179, 50, 28, 0.10);
+  --color-surface-navigation-selected-hover: rgba(179, 50, 28, 0.16);
+  --color-text-navigation-primary: var(--folio-ink);
+  --color-text-navigation-secondary: var(--folio-ink-2);
+  --color-text-navigation-muted: var(--folio-ink-muted);
+  --color-text-navigation-selected: var(--folio-ink);
+  --color-text-navigation-hover: var(--folio-ink);
+  --color-text-navigation-section: var(--folio-ink-muted);
+  --color-text-navigation-brand: var(--folio-ink-3);
+  --color-border-navigation: var(--folio-rule);
+  --color-divider-navigation: var(--folio-rule-soft);
+  --color-divider-navigation-subtle: var(--folio-rule-faint);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--folio-paper);
+  --color-scrollbar-thumb: rgba(31, 27, 23, 0.18);
+  --color-scrollbar-thumb-hover: rgba(31, 27, 23, 0.32);
+
+  /* Tab indicator — a rubricated rule under the active tab */
+  --tab-indicator-color: var(--folio-rubric);
+  --tab-indicator-height: 2px;
+
+  /* Terminal — ink on the sheet; every colour ≥ 3:1, text ≥ 4.5:1 on --folio-sheet */
+  --color-terminal-bg: var(--folio-sheet);
+  --color-terminal-fg: var(--folio-ink);
+  --color-terminal-cursor: var(--folio-rubric);
+  --color-terminal-black: var(--folio-sheet);
+  --color-terminal-red: #a83324;
+  --color-terminal-green: #3f6d33;
+  --color-terminal-yellow: #805a10;
+  --color-terminal-blue: #2f5a86;
+  --color-terminal-magenta: #7a4478;
+  --color-terminal-cyan: #286864;
+  --color-terminal-white: var(--folio-ink-3);
+  --color-terminal-bright-black: var(--folio-ink-muted);
+  --color-terminal-bright-red: #8f2a1d;
+  --color-terminal-bright-green: #2f5a26;
+  --color-terminal-bright-yellow: #6b4a0a;
+  --color-terminal-bright-blue: #234870;
+  --color-terminal-bright-magenta: #623560;
+  --color-terminal-bright-cyan: #1c5350;
+  --color-terminal-bright-white: rgb(0 0 0);
+  --color-terminal-selection-bg: #b3321c33;
+}
+
+/* Newsprint Theme — cool grey-white stock, graphite ink, halftone greys, ink-blue accent */
+:root.newsprint {
+  /* Backgrounds — stock / sheet / halftone tonal steps */
+  --color-bg-primary: var(--news-paper);
+  --color-bg-secondary: var(--news-chrome);
+  --color-bg-tertiary: var(--news-hover);
+  --color-bg-hover: var(--news-hover);
+  --color-bg-active: var(--news-active);
+  --color-bg-chrome: var(--news-chrome);
+  --color-bg-editor: var(--news-sheet);
+
+  /* Surfaces */
+  --color-surface-primary: var(--news-sheet);
+  --color-surface-secondary: var(--news-paper);
+  --color-surface-tertiary: var(--news-chrome);
+  --color-surface-hover: rgba(36, 39, 43, 0.05);
+
+  /* Text — graphite */
+  --color-text-primary: var(--news-ink);
+  --color-text-secondary: var(--news-ink-2);
+  --color-text-tertiary: var(--news-ink-3);
+  --color-text-muted: var(--news-ink-muted);
+  --color-text-disabled: var(--news-ink-disabled);
+
+  /* Borders — column rules */
+  --color-border-primary: var(--news-rule);
+  --color-border-secondary: var(--news-rule-soft);
+  --color-border-tertiary: var(--news-rule-faint);
+  --color-border-hover: rgba(36, 39, 43, 0.26);
+  --color-border-focus: var(--news-blue);
+
+  /* Interactive — single ink-blue accent */
+  --color-interactive: var(--news-blue);
+  --color-interactive-primary: var(--news-blue);
+  --color-interactive-hover: var(--news-blue-hover);
+  --color-interactive-active: var(--news-blue-active);
+  --color-interactive-text: var(--news-blue-text);
+  --color-focus-ring: var(--news-blue);
+  --color-interactive-rgb: 31 78 140;
+
+  /* Interactive on dark surfaces */
+  --color-text-interactive-on-dark: var(--news-blue-text);
+  --color-text-interactive-on-dark-hover: var(--news-blue-hover);
+  --color-text-interactive-on-dark-active: var(--news-blue-text);
+  --color-text-interactive-on-dark-focus: var(--news-blue-text);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--news-chrome);
+  --color-surface-interactive-hover: var(--news-hover);
+  --color-interactive-surface: rgba(31, 78, 140, 0.10);
+  --color-interactive-surface-hover: rgba(31, 78, 140, 0.16);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: var(--news-rule-soft);
+  --color-border-interactive: var(--news-rule);
+  --color-interactive-border: var(--news-blue);
+  --color-interactive-border-hover: var(--news-blue-hover);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--news-ink-muted);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(31, 78, 140, 0.35);
+
+  /* Status — printed, low saturation */
+  --color-status-success: #2f6f3a;        /* 5.2:1 on stock */
+  --color-status-success-hover: #275c30;
+  --color-status-warning: #7d5a12;        /* 5.4:1 on stock */
+  --color-status-warning-hover: #66490e;
+  --color-status-error: #a83a3a;          /* 5.3:1 on stock */
+  --color-status-error-hover: #8c2f2f;
+  --color-status-info: var(--news-blue-text);
+  --color-status-neutral: var(--news-ink-muted);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--news-ink);
+  --color-text-on-secondary: var(--news-ink);
+  --color-text-on-tertiary: var(--news-ink-2);
+  --color-text-on-surface: var(--news-ink);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(255 255 255);
+  --color-text-on-status-warning: rgb(255 255 255);
+  --color-text-on-status-error: rgb(255 255 255);
+  --color-text-on-status-info: rgb(255 255 255);
+  --color-text-on-navigation: var(--news-ink);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--news-blue);
+  --color-button-primary-hover: var(--news-blue-hover);
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--news-chrome);
+  --color-button-secondary-hover: var(--news-hover);
+  --color-button-secondary-text: var(--news-ink);
+  --color-button-ghost-hover: var(--news-hover);
+  --color-button-ghost-text: var(--news-ink-2);
+
+  /* Cards */
+  --color-card-bg: var(--news-sheet);
+  --color-card-border: var(--news-rule);
+  --color-card-nested-bg: var(--news-paper);
+
+  /* Forms */
+  --color-input-bg: var(--news-sheet);
+  --color-input-border: var(--news-rule);
+  --color-input-focus: var(--news-blue);
+  --color-input-text: var(--news-ink);
+  --color-input-placeholder: var(--news-ink-muted);
+
+  /* Modal */
+  --color-modal-overlay: rgba(36, 39, 43, 0.45);
+  --color-modal-bg: var(--news-sheet);
+
+  /* Navigation — halftone column */
+  --color-surface-navigation: var(--news-chrome);
+  --color-surface-navigation-hover: var(--news-hover);
+  --color-surface-navigation-active: var(--news-active);
+  --color-surface-navigation-selected: rgba(31, 78, 140, 0.10);
+  --color-surface-navigation-selected-hover: rgba(31, 78, 140, 0.16);
+  --color-text-navigation-primary: var(--news-ink);
+  --color-text-navigation-secondary: var(--news-ink-2);
+  --color-text-navigation-muted: var(--news-ink-muted);
+  --color-text-navigation-selected: var(--news-ink);
+  --color-text-navigation-hover: var(--news-ink);
+  --color-text-navigation-section: var(--news-ink-muted);
+  --color-text-navigation-brand: var(--news-ink-3);
+  --color-border-navigation: var(--news-rule);
+  --color-divider-navigation: var(--news-rule-soft);
+  --color-divider-navigation-subtle: var(--news-rule-faint);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--news-paper);
+  --color-scrollbar-thumb: rgba(36, 39, 43, 0.18);
+  --color-scrollbar-thumb-hover: rgba(36, 39, 43, 0.32);
+
+  /* Tab indicator — ink-blue rule under the active tab */
+  --tab-indicator-color: var(--news-blue);
+  --tab-indicator-height: 2px;
+
+  /* Terminal — graphite on the sheet; every colour ≥ 3:1, text ≥ 4.5:1 on --news-sheet */
+  --color-terminal-bg: var(--news-sheet);
+  --color-terminal-fg: var(--news-ink);
+  --color-terminal-cursor: var(--news-blue);
+  --color-terminal-black: var(--news-sheet);
+  --color-terminal-red: #a83a3a;
+  --color-terminal-green: #3a7040;
+  --color-terminal-yellow: #7d5a12;
+  --color-terminal-blue: var(--news-blue);
+  --color-terminal-magenta: #6f4a86;
+  --color-terminal-cyan: #2a6a72;
+  --color-terminal-white: var(--news-ink-3);
+  --color-terminal-bright-black: var(--news-ink-muted);
+  --color-terminal-bright-red: #8c2f2f;
+  --color-terminal-bright-green: #2e5c33;
+  --color-terminal-bright-yellow: #66490e;
+  --color-terminal-bright-blue: #183f73;
+  --color-terminal-bright-magenta: #5a3b6d;
+  --color-terminal-bright-cyan: #20565c;
+  --color-terminal-bright-white: rgb(0 0 0);
+  --color-terminal-selection-bg: #1f4e8c33;
+}
+
+/* Walnut Theme — vellum & walnut: deep warm brown-black, parchment text, brass accent */
+:root.walnut {
+  /* Backgrounds — TWO-TONE foundation, sunken editor */
+  --color-bg-primary: var(--walnut-900);
+  --color-bg-secondary: var(--walnut-850);
+  --color-bg-tertiary: var(--walnut-700);
+  --color-bg-hover: var(--walnut-700);
+  --color-bg-active: var(--walnut-600);
+  --color-bg-chrome: var(--walnut-900);
+  --color-bg-editor: var(--walnut-950);   /* SUNKEN — darker than chrome */
+
+  /* Surfaces */
+  --color-surface-primary: var(--walnut-850);
+  --color-surface-secondary: var(--walnut-800);
+  --color-surface-tertiary: var(--walnut-700);
+  --color-surface-hover: rgba(237, 225, 205, 0.05);
+
+  /* Text — parchment */
+  --color-text-primary: var(--parchment-100);
+  --color-text-secondary: var(--parchment-200);
+  --color-text-tertiary: var(--parchment-300);
+  --color-text-muted: var(--walnut-200);   /* 7.0:1 on --walnut-900, 4.5:1 on --walnut-600 */
+  --color-text-disabled: var(--walnut-400);
+
+  /* Borders */
+  --color-border-primary: var(--walnut-600);
+  --color-border-secondary: var(--walnut-800);
+  --color-border-tertiary: var(--walnut-850);
+  --color-border-hover: var(--walnut-500);
+  --color-border-focus: var(--brass-500);
+
+  /* Interactive — single brass accent */
+  --color-interactive: var(--brass-500);
+  --color-interactive-primary: var(--brass-500);
+  --color-interactive-hover: var(--brass-400);
+  --color-interactive-active: var(--brass-600);
+  --color-interactive-text: var(--brass-text);
+  --color-focus-ring: var(--brass-500);
+  --color-interactive-rgb: 201 162 77;
+
+  /* Interactive on dark */
+  --color-text-interactive-on-dark: var(--brass-text);
+  --color-text-interactive-on-dark-hover: var(--brass-400);
+  --color-text-interactive-on-dark-active: var(--brass-text);
+  --color-text-interactive-on-dark-focus: var(--brass-text);
+
+  /* Interactive surface tokens */
+  --color-surface-interactive: var(--walnut-850);
+  --color-surface-interactive-hover: var(--walnut-700);
+  --color-interactive-surface: rgba(201, 162, 77, 0.14);
+  --color-interactive-surface-hover: rgba(201, 162, 77, 0.22);
+
+  /* Interactive border tokens */
+  --color-border-interactive-subtle: rgba(237, 225, 205, 0.06);
+  --color-border-interactive: rgba(237, 225, 205, 0.10);
+  --color-interactive-border: rgba(201, 162, 77, 0.55);
+  --color-interactive-border-hover: rgba(201, 162, 77, 0.75);
+
+  /* Interactive text tokens */
+  --color-text-interactive-muted: var(--walnut-200);
+
+  /* Focus ring */
+  --color-focus-ring-subtle: rgba(201, 162, 77, 0.4);
+
+  /* Status — muted pigments on walnut */
+  --color-status-success: #93b57a;
+  --color-status-success-hover: #a5c48d;
+  --color-status-warning: #d9b25f;
+  --color-status-warning-hover: #e3c079;
+  --color-status-error: #d8776c;
+  --color-status-error-hover: #e28c82;
+  --color-status-info: var(--brass-500);
+  --color-status-neutral: var(--walnut-300);
+
+  /* Context-Aware Text */
+  --color-text-on-primary: var(--parchment-100);
+  --color-text-on-secondary: var(--parchment-200);
+  --color-text-on-tertiary: var(--parchment-200);
+  --color-text-on-surface: var(--parchment-200);
+  --color-text-on-interactive: var(--walnut-900);   /* dark ink on brass — 9.4:1 */
+  --color-text-on-status-success: var(--walnut-900);
+  --color-text-on-status-warning: var(--walnut-900);
+  --color-text-on-status-error: var(--walnut-900);
+  --color-text-on-status-info: var(--walnut-900);
+  --color-text-on-navigation: var(--parchment-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--brass-500);
+  --color-button-primary-hover: var(--brass-400);
+  --color-button-primary-text: var(--walnut-900);
+  --color-button-secondary-bg: var(--walnut-700);
+  --color-button-secondary-hover: var(--walnut-600);
+  --color-button-secondary-text: var(--parchment-100);
+  --color-button-ghost-hover: var(--walnut-800);
+  --color-button-ghost-text: var(--parchment-300);
+
+  /* Cards */
+  --color-card-bg: var(--walnut-850);
+  --color-card-border: var(--walnut-600);
+  --color-card-nested-bg: var(--walnut-800);
+
+  /* Forms */
+  --color-input-bg: var(--walnut-950);
+  --color-input-border: var(--walnut-500);
+  --color-input-focus: var(--brass-500);
+  --color-input-text: var(--parchment-100);
+  --color-input-placeholder: var(--walnut-200);
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.6);
+  --color-modal-bg: var(--walnut-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--walnut-900);
+  --color-surface-navigation-hover: var(--walnut-850);
+  --color-surface-navigation-active: var(--walnut-700);
+  --color-surface-navigation-selected: rgba(201, 162, 77, 0.14);
+  --color-surface-navigation-selected-hover: rgba(201, 162, 77, 0.2);
+  --color-text-navigation-primary: var(--parchment-200);
+  --color-text-navigation-secondary: var(--parchment-300);
+  --color-text-navigation-muted: var(--walnut-200);
+  --color-text-navigation-selected: var(--parchment-100);
+  --color-text-navigation-hover: var(--parchment-100);
+  --color-text-navigation-section: var(--walnut-200);
+  --color-text-navigation-brand: var(--parchment-300);
+  --color-border-navigation: var(--walnut-600);
+  --color-divider-navigation: var(--walnut-800);
+  --color-divider-navigation-subtle: rgba(237, 225, 205, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--walnut-900);
+  --color-scrollbar-thumb: rgba(237, 225, 205, 0.16);
+  --color-scrollbar-thumb-hover: rgba(237, 225, 205, 0.30);
+
+  /* Tab indicator — brass rule under the active tab */
+  --tab-indicator-color: var(--brass-500);
+  --tab-indicator-height: 2px;
+
+  /* Terminal — parchment on walnut; every colour ≥ 3:1, text ≥ 4.5:1 on --walnut-950 */
+  --color-terminal-bg: var(--walnut-950);
+  --color-terminal-fg: var(--parchment-100);
+  --color-terminal-cursor: var(--brass-500);
+  --color-terminal-black: var(--walnut-950);
+  --color-terminal-red: #d8776c;
+  --color-terminal-green: #98b67e;
+  --color-terminal-yellow: #d9b25f;
+  --color-terminal-blue: #8fa6bd;
+  --color-terminal-magenta: #c395b3;
+  --color-terminal-cyan: #83b3ab;
+  --color-terminal-white: var(--parchment-200);
+  --color-terminal-bright-black: var(--walnut-300);
+  --color-terminal-bright-red: #e6948a;
+  --color-terminal-bright-green: #b0ca99;
+  --color-terminal-bright-yellow: #e6c77e;
+  --color-terminal-bright-blue: #a9bccf;
+  --color-terminal-bright-magenta: #d4adc7;
+  --color-terminal-bright-cyan: #9fc9c1;
+  --color-terminal-bright-white: var(--parchment-50);
+  --color-terminal-selection-bg: #c9a24d40;
+}
+
 /* Light Rounded — inherits light tokens, overrides shell/chrome behavior */
 :root.light-rounded {
   --color-bg-chrome: var(--gh-light-50);
@@ -1827,4 +2374,28 @@
   --color-text-interactive-muted: #b59888;
   --color-text-navigation-muted: #b59888;
   --color-text-navigation-section: #b59888;
+}
+
+/* Folio */
+:root.high-contrast.folio {
+  --color-text-muted: #4f4740;              /* 8.0:1 on --folio-paper */
+  --color-text-interactive-muted: #4f4740;
+  --color-text-navigation-muted: #4f4740;
+  --color-text-navigation-section: #4f4740;
+}
+
+/* Newsprint */
+:root.high-contrast.newsprint {
+  --color-text-muted: #4a5056;              /* 7.3:1 on --news-paper */
+  --color-text-interactive-muted: #4a5056;
+  --color-text-navigation-muted: #4a5056;
+  --color-text-navigation-section: #4a5056;
+}
+
+/* Walnut */
+:root.high-contrast.walnut {
+  --color-text-muted: #bba992;              /* 7.9:1 on --walnut-900 */
+  --color-text-interactive-muted: #bba992;
+  --color-text-navigation-muted: #bba992;
+  --color-text-navigation-section: #bba992;
 }

@@ -81,7 +81,7 @@ export interface AppConfig {
   stravuApiKey?: string;
   stravuServerUrl?: string;
   // Theme preference
-  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta';
+  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'folio' | 'newsprint' | 'walnut';
   // Opt-in high contrast mode: raises muted chrome text to AAA and the terminal's
   // minimumContrastRatio so dim CLI output stays legible
   highContrast?: boolean;
