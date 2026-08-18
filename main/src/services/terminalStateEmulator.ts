@@ -110,6 +110,34 @@ export class TerminalStateEmulator {
     return lines.join('\n');
   }
 
+  /**
+   * Return plain text for the buffer's scrollback history plus the current
+   * viewport, optionally limited to the last `maxLines` rows. This model
+   * rendered every PTY byte with cursor motions applied in place, so the text
+   * is free of the overlapping-fragment corruption that plagues an ANSI-stripped
+   * raw append log (spinners, progress bars, TUI status lines that repaint via
+   * cursor moves rather than carriage returns).
+   */
+  getScrollbackText(maxLines?: number): string {
+    if (this.disposed) return this.finalScreenText;
+
+    const buffer = this.terminal.buffer.active;
+    const total = buffer.length;
+    const start = maxLines !== undefined && maxLines >= 0 && maxLines < total
+      ? total - maxLines
+      : 0;
+    const lines: string[] = [];
+
+    for (let index = start; index < total; index += 1) {
+      lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+    }
+
+    while (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+    return lines.join('\n');
+  }
+
   /** Latest OSC window/icon title, preserved after dispose. */
   getOscTitle(): string {
     return this.currentTitle;
