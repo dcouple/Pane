@@ -233,10 +233,8 @@ export class WorktreeManager {
 
     try {
       // First check if this is a git repository
-      let isGitRepo = false;
       try {
         await commandRunner.execAsync(`git rev-parse --is-inside-work-tree`, projectPath);
-        isGitRepo = true;
       } catch {
         // Initialize git repository
         await commandRunner.execAsync(`git init`, projectPath);
@@ -281,10 +279,8 @@ export class WorktreeManager {
       }
 
       // Check if the repository has any commits
-      let hasCommits = false;
       try {
         await commandRunner.execAsync(`git rev-parse HEAD`, projectPath);
-        hasCommits = true;
       } catch {
         // Repository has no commits yet, create initial commit
         // Use cross-platform approach without shell operators
@@ -294,7 +290,6 @@ export class WorktreeManager {
           // Ignore add errors (no files to add)
         }
         await commandRunner.execAsync('git commit -m "Initial commit" --allow-empty', projectPath, { env: getGitAttributionEnv(this.configManager?.getConfig()) });
-        hasCommits = true;
       }
 
       // Check if branch already exists
@@ -840,8 +835,7 @@ export class WorktreeManager {
 
         return { hasConflicts: false, canAutoMerge: true };
 
-      } catch (error: unknown) {
-        const err = decodeBoundary(error, commandErrorSchema);
+      } catch {
         // If merge-tree is not available (older git), fall back to checking modified files
         console.log(`[WorktreeManager] merge-tree not available, using fallback conflict detection`);
 
@@ -961,11 +955,11 @@ export class WorktreeManager {
     try {
       // Check if we're in the middle of a rebase
       const statusCommand = `git status --porcelain=v1`;
-      const { stdout: statusOut } = await commandRunner.execAsync(statusCommand, worktreePath);
+      await commandRunner.execAsync(statusCommand, worktreePath);
 
       // Abort the rebase
       const command = `git rebase --abort`;
-      const { stdout, stderr } = await commandRunner.execAsync(command, worktreePath);
+      const { stderr } = await commandRunner.execAsync(command, worktreePath);
 
       if (stderr && !stderr.includes('No rebase in progress')) {
         throw new Error(`Failed to abort rebase: ${stderr}`);

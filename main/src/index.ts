@@ -60,7 +60,7 @@ if (process.platform === 'win32') {
 }
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView, type BrowserWindowConstructorOptions } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, session, WebContents, webContents, WebContentsView, type BrowserWindowConstructorOptions } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import type { SessionManager } from './services/sessionManager';
@@ -86,7 +86,6 @@ import { setupConsoleWrapper } from './utils/consoleWrapper';
 import * as fs from 'fs';
 import { terminalPanelManager } from './services/terminalPanelManager';
 import { panelManager } from './services/panelManager';
-import { TerminalPanelState } from '../../shared/types/panels';
 import { worktreePoolManager } from './services/worktreePoolManager';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { syncAutoStartOnBoot } from './utils/autoStart';

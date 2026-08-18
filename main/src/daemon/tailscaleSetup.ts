@@ -72,10 +72,6 @@ export function resolveTailscaleCommand(
   return null;
 }
 
-function ensureTailscaleInstalled(dependencies: TailscaleSetupDependencies): ResolvedCommand {
-  return resolveTailscaleCommand(dependencies) ?? installTailscaleCommandOrThrow(dependencies);
-}
-
 export function ensureTailscaleInstalledInteractive(
   dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
 ): ResolvedCommand {

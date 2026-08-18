@@ -502,7 +502,6 @@ export function formatJsonForOutputEnhanced(jsonMessage: JsonObject, gitRepoPath
 
     if (itemType === 'command_execution') {
       const command = readString(item, 'command') || '';
-      const status = readString(item, 'status') || '';
       const exitCode = readNumber(item, 'exit_code');
       const aggregatedOutput = readString(item, 'aggregated_output') || '';
 

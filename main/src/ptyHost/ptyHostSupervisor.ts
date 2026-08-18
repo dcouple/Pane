@@ -216,21 +216,6 @@ interface WindowPortPair {
   rendererPort: MessagePortMain;
 }
 
-/**
- * Supervisor events. Consumed by Chunk E (`respawnAll`) and future telemetry.
- *
- * - `restart`: emitted when the UtilityProcess exits and a restart is scheduled.
- * - `ready`: emitted on every successful `start()` (initial AND restart).
- * - `ready-after-restart`: emitted ONLY after a restart completes; callers use
- *   this to drive per-manager `respawnAll()` without firing on the initial boot.
- */
-interface PtyHostSupervisorEvents {
-  restart: () => void;
-  ready: () => void;
-  'ready-after-restart': () => void;
-  'renderer-ack': (ptyId: string, bytes: number) => void;
-}
-
 export class PtyHostSupervisor extends EventEmitter {
   private proc: UtilityProcess | null = null;
   /** Main-side end of the RPC channel to `ptyHostMain.ts`. Field, not local. */

@@ -133,8 +133,6 @@ export class RunCommandManager extends EventEmitter {
 
       this.logger?.info(`Starting ${runCommands.length} RUN commands sequentially for session ${sessionId}`);
       
-      const processes: RunProcess[] = [];
-
       // Execute commands sequentially
       for (let i = 0; i < runCommands.length; i++) {
         const command = runCommands[i];
@@ -269,8 +267,6 @@ export class RunCommandManager extends EventEmitter {
 
             // Wait for this command line to complete before starting the next one
             await new Promise<void>((resolve, reject) => {
-              let hasExited = false;
-
               // Handle output from the run command
               ptyProcess.onData((data: string) => {
                 this.emit('output', {
@@ -284,7 +280,6 @@ export class RunCommandManager extends EventEmitter {
               });
 
               ptyProcess.onExit(({ exitCode, signal }) => {
-                hasExited = true;
                 this.logger?.info(`Command line exited: ${commandLine}, exitCode: ${exitCode}, signal: ${signal}`);
                 
                 // Only emit exit event for the last line of a command
@@ -388,7 +383,7 @@ export class RunCommandManager extends EventEmitter {
 
   async stopAllRunCommands(): Promise<void> {
     const stopPromises = [];
-    for (const [sessionId, processes] of this.processes) {
+    for (const sessionId of this.processes.keys()) {
       stopPromises.push(this.stopRunCommands(sessionId));
     }
     await Promise.all(stopPromises);

@@ -52,23 +52,3 @@ Co-Authored-By: Pane <runpane@users.noreply.github.com>` : message;
   const escapedMessage = escapeShellArg(fullMessage);
   return `git commit -m ${escapedMessage}`;
 }
-
-/**
- * Escape an array of shell arguments
- * @param args The arguments to escape
- * @returns The escaped arguments joined with spaces
- */
-function escapeShellArgs(args: string[]): string {
-  return args.map(escapeShellArg).join(' ');
-}
-
-/**
- * Build a safe shell command with escaped arguments
- * @param command The base command
- * @param args The arguments to escape and append
- * @returns The safe command string
- */
-function buildSafeCommand(command: string, ...args: string[]): string {
-  if (args.length === 0) return command;
-  return `${command} ${escapeShellArgs(args)}`;
-}

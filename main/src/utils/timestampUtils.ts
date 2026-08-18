@@ -26,24 +26,6 @@ export function formatForDisplay(timestamp: string | Date): string {
 }
 
 /**
- * Formats a timestamp with full date and time for display
- * @param timestamp - The timestamp string from database or Date object
- * @returns Localized date and time string
- */
-function formatFullDateTime(timestamp: string | Date): string {
-  const date = toDate(timestamp);
-  return date.toLocaleString();
-}
-
-/**
- * Gets the current timestamp in ISO format for database storage
- * @returns ISO 8601 formatted string
- */
-function getCurrentTimestamp(): string {
-  return new Date().toISOString();
-}
-
-/**
  * Checks if a timestamp is valid
  * @param timestamp - The timestamp to validate
  * @returns boolean indicating if the timestamp is valid
@@ -52,16 +34,6 @@ export function isValidTimestamp(timestamp: string | Date | null | undefined): b
   if (!timestamp) return false;
   const date = toDate(timestamp);
   return !isNaN(date.getTime());
-}
-
-/**
- * Converts a timestamp to UTC
- * @param timestamp - The timestamp to convert
- * @returns UTC ISO string
- */
-function toUTC(timestamp: string | Date): string {
-  const date = toDate(timestamp);
-  return date.toISOString();
 }
 
 /**

@@ -77,7 +77,8 @@ export const useSessionPreferencesStore = create<SessionPreferencesStore>((set, 
   },
 
   updatePreferences: async (updates: Partial<SessionCreationPreferences>) => {
-    const { sessionCount: _ignoredSessionCount, ...allowedUpdates } = updates;
+    const allowedUpdates = { ...updates };
+    delete allowedUpdates.sessionCount;
     const currentPreferences = get().preferences;
     
     // Deep merge the updates while keeping session count at its default

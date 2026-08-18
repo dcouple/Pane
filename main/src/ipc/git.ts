@@ -111,7 +111,7 @@ export function registerGitHandlers(
   services: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
-  const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager, databaseService } = services;
+  const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager } = services;
 
   // Helper function to emit git operation events to all sessions in a project
   const emitGitOperationToProject = (sessionId: string, eventType: PanelEventType, message: string, details?: JsonObject) => {

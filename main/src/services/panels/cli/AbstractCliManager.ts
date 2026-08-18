@@ -93,24 +93,6 @@ interface CliOutputEvent {
   timestamp: Date;
 }
 
-interface CliExitEvent {
-  panelId: string;
-  sessionId: string;
-  exitCode: number | null;
-  signal: number | null;
-}
-
-interface CliErrorEvent {
-  panelId: string;
-  sessionId: string;
-  error: string;
-}
-
-interface CliSpawnedEvent {
-  panelId: string;
-  sessionId: string;
-}
-
 /**
  * Abstract base class for managing CLI tool processes in Pane
  * Provides common functionality for spawning, managing, and communicating with CLI tools
@@ -513,8 +495,6 @@ export abstract class AbstractCliManager extends EventEmitter {
   ): Promise<void> {
     try {
       const fs = await import('fs').then(m => m.promises);
-      const path = await import('path');
-      
       // Check if session directory exists
       try {
         await fs.access(sessionIdPath);

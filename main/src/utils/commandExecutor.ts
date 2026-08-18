@@ -233,6 +233,3 @@ export const commandExecutor = new CommandExecutor();
 
 // Export the execSync function as a drop-in replacement
 export const execSync = commandExecutor.execSync.bind(commandExecutor);
-
-// Export the execAsync function
-const execAsync = commandExecutor.execAsync.bind(commandExecutor);

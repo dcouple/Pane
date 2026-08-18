@@ -69,16 +69,6 @@ interface HostPty {
   resume(): void;
 }
 
-/** Port handoff message shape; the supervisor posts exactly this on init. */
-interface InitMessage {
-  type: 'init';
-}
-
-/** Raw heartbeat frame; NOT an RPC request (no `id`, no `method`). */
-interface HeartbeatPing {
-  type: 'heartbeat-ping';
-}
-
 interface SpawnFailure {
   message: string;
   code?: string;

@@ -717,7 +717,7 @@ export class TaskQueue {
   }
 
   private async ensureUniqueNames(baseSessionName: string, baseWorktreeName: string, project: Project, index?: number): Promise<{ sessionName: string; worktreeName: string }> {
-    const { sessionManager, worktreeManager } = this.options;
+    const { sessionManager } = this.options;
     const db = sessionManager.db;
     
     let candidateSessionName = baseSessionName;

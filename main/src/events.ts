@@ -235,7 +235,6 @@ export function setupEventListeners(services: AppServices): void {
     // Refresh git status after Claude exits, as it may have made commits
     // Also invalidate PR cache since Claude may have pushed/created PRs
     try {
-      const session = sessionManager.getSession(sessionId);
       const project = sessionManager.getProjectForSession(sessionId);
       if (project?.path) {
         gitStatusManager.invalidatePrCache(project.path);

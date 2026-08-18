@@ -557,42 +557,6 @@ async function detectInstallCommand(
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Lightweight lock file detection that works from any context.
- * Uses fs.existsSync for local paths. For WSL paths (which start with /
- * on a Windows host), falls back to checking common path patterns.
- *
- * This is used by terminalPanelManager to auto-detect the install command
- * when a terminal panel initializes — no CommandRunner needed.
- */
-function detectInstallCommandSync(cwd: string): string | null {
-  const lockFiles: Array<{ file: string; command: string }> = [
-    { file: 'pnpm-lock.yaml', command: 'pnpm install' },
-    { file: 'package-lock.json', command: 'npm install' },
-    { file: 'yarn.lock', command: 'yarn install' },
-    { file: 'bun.lockb', command: 'bun install' },
-  ];
-
-  for (const { file, command } of lockFiles) {
-    try {
-      // path.join works for local paths; for WSL Linux paths on Windows host,
-      // fs.existsSync will fail gracefully (returns false)
-      const lockPath = path.join(cwd, file);
-      if (fs.existsSync(lockPath)) {
-        return command;
-      }
-    } catch {
-      // Skip on any error
-    }
-  }
-
-  return null;
-}
-
 /**
  * Heavyweight entries (node_modules) can take tens of seconds to copy, so
  * they must never delay small/critical entries like .env files.

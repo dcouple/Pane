@@ -676,10 +676,6 @@ export class SessionManager extends EventEmitter {
   addSessionOutput(id: string, output: Omit<SessionOutput, 'sessionId'>): void {
     const message = parseGenericMessage(output);
     const messageContent = getMessageContent(message?.message);
-    // Check if this is the first output for this session
-    const existingOutputs = this.db.getSessionOutputs(id, 1);
-    const isFirstOutput = existingOutputs.length === 0;
-    
     // Store in database (stringify JSON objects and error objects)
     const dataToStore = (output.type === 'json' || output.type === 'error') ? JSON.stringify(output.data) : String(output.data);
     this.db.addSessionOutput(id, output.type, dataToStore);
@@ -897,11 +893,6 @@ export class SessionManager extends EventEmitter {
       return;
     }
 
-    // Check for JSON message type and store appropriately
-    const existingOutputs = this.db.getPanelOutputs(panelId, 1);
-    const isContinuing = existingOutputs.length > 0 && 
-                        existingOutputs[existingOutputs.length - 1]?.type === 'json';
-    
     const dataToStore = (output.type === 'json' || output.type === 'error') 
       ? JSON.stringify(output.data) 
       : String(output.data);
@@ -983,8 +974,6 @@ export class SessionManager extends EventEmitter {
       }
       
       if (promptText) {
-        // Get current output count to use as index for prompt markers
-        const outputs = this.db.getPanelOutputs(panelId);
         // Note: Panel-based prompt markers would need addPanelPromptMarker method
         // For now, we rely on the explicit addPanelConversationMessage calls in IPC handlers
         // this.db.addPanelPromptMarker(panelId, promptText, outputs.length - 1);

@@ -93,7 +93,6 @@ export function registerSessionHandlers(
     databaseService,
     taskQueue,
     worktreeManager,
-    cliManagerFactory,
     claudeCodeManager, // For backward compatibility
     worktreeNameGenerator,
     gitStatusManager,
@@ -101,23 +100,6 @@ export function registerSessionHandlers(
     spotlightManager,
     runCommandManager
   } = services;
-
-  // Helper function to get CLI manager for a specific tool
-  // TODO: This will be used in the future to support multiple CLI tools
-  const getCliManager = async (toolId: string = 'claude') => {
-    try {
-      return await cliManagerFactory.createManager(toolId, {
-        sessionManager,
-        additionalOptions: {}
-      });
-    } catch (error) {
-      console.warn(`Failed to get CLI manager for ${toolId}, falling back to default:`, error);
-      return claudeCodeManager; // Fallback to default for backward compatibility
-    }
-  };
-
-  // NOTE: Current IPC handlers use claudeCodeManager directly for backward compatibility
-  // Future versions will use getCliManager() to support multiple CLI tools dynamically
 
   const attachCachedGitStatus = (session: Session): Session => {
     const cached = gitStatusManager.getCachedStatus(session.id)?.status;
@@ -1685,13 +1667,11 @@ export function registerSessionHandlers(
       const executionDiffs = databaseService.getExecutionDiffs(sessionId);
       
       // Calculate file statistics
-      let totalFilesChanged = 0;
       let totalLinesAdded = 0;
       let totalLinesDeleted = 0;
       const filesModified = new Set<string>();
       
       executionDiffs.forEach(diff => {
-        totalFilesChanged += diff.stats_files_changed || 0;
         totalLinesAdded += diff.stats_additions || 0;
         totalLinesDeleted += diff.stats_deletions || 0;
         

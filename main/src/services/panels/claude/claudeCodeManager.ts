@@ -43,13 +43,6 @@ interface ClaudeSpawnOptions {
   isInteractive?: boolean;  // Interactive mode: don't add -p flag, send prompt via stdin
 }
 
-interface ClaudeCodeProcess {
-  process: import('@lydell/node-pty').IPty;
-  panelId: string;
-  sessionId: string;
-  worktreePath: string;
-}
-
 interface BaseProjectMcpServers {
   mcpServers: JsonObject;
   mcpJsonPath?: string;
@@ -348,9 +341,6 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
   protected async initializeCliEnvironment(options: ClaudeSpawnOptions): Promise<CliEnvironment> {
     const { sessionId, permissionMode } = options;
-    
-    // Get basic system environment
-    const systemEnv = await this.getSystemEnvironment();
     
     // Initialize environment with MCP-specific variables
     const env: CliEnvironment = {
@@ -967,7 +957,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
         fs.writeFileSync(tempScriptPath, scriptContent);
         fs.chmodSync(tempScriptPath, 0o755);
 
-        const stats = fs.statSync(tempScriptPath);
+        fs.statSync(tempScriptPath);
         this.logger?.verbose(`[MCP] Script extracted to: ${tempScriptPath}`);
 
         mcpBridgePath = tempScriptPath;

@@ -519,6 +519,3 @@ export const CLI_OUTPUT_FORMATS = {
   MARKDOWN: { id: 'markdown', name: 'Markdown', isStructured: false, mimeType: 'text/markdown' },
   YAML: { id: 'yaml', name: 'YAML', isStructured: true, mimeType: 'application/x-yaml' }
 } as const;
-
-// Export default instance getter for convenience
-const getCliToolRegistry = () => CliToolRegistry.getInstance();

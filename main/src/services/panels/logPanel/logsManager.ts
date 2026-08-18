@@ -545,7 +545,7 @@ class LogsManager {
    */
   async cleanup(): Promise<void> {
     // Stop all running processes
-    for (const [panelId, process] of this.activeProcesses) {
+    for (const panelId of this.activeProcesses.keys()) {
       await this.stopScript(panelId);
     }
     this.activeProcesses.clear();

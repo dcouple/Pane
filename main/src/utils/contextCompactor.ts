@@ -291,7 +291,7 @@ export class ProgrammaticCompactor {
     wasInterrupted: boolean;
     conversationMessages: ConversationMessage[];
   }): string {
-    const { session, promptAnalysis, fileModifications, todos, gitStatus, wasInterrupted } = data;
+    const { promptAnalysis, fileModifications, todos, gitStatus, wasInterrupted } = data;
     
     let summary = `<session_context>\n`;
     

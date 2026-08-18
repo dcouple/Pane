@@ -349,7 +349,7 @@ export class SpotlightManager extends EventEmitter {
 
   handleSessionDeleted(sessionId: string): void {
     // Check if this session is spotlighted
-    for (const [_projectId, state] of this.activeSpotlights.entries()) {
+    for (const state of this.activeSpotlights.values()) {
       if (state.sessionId === sessionId) {
         this.logger?.info(`[SpotlightManager] Session ${sessionId} deleted, disabling spotlight`);
         this.disable(sessionId);

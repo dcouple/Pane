@@ -285,9 +285,3 @@ export class CliManagerFactory {
     // Additional validation can be added here
   }
 }
-
-/**
- * Convenience function to get the factory instance
- */
-const getCliManagerFactory = (logger?: Logger, configManager?: ConfigManager) =>
-  CliManagerFactory.getInstance(logger, configManager);
