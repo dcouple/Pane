@@ -200,7 +200,7 @@ export class CliManagerFactory {
       additionalOptions?: JsonObject
     ) => {
       let permissionIpcPath: string | null = null;
-      if (additionalOptions?.permissionIpcPath !== undefined) {
+      if (additionalOptions?.permissionIpcPath !== undefined && additionalOptions?.permissionIpcPath !== null) {
         permissionIpcPath = decodeBoundary(additionalOptions.permissionIpcPath, boundary.string);
       }
 

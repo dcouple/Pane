@@ -31,13 +31,15 @@ export class PermissionIpcServer {
       socketDir = os.tmpdir();
     }
     
-    this.socketPath = path.join(socketDir, `pane-permissions-${process.pid}.sock`);
+    this.socketPath = process.platform === 'win32'
+      ? `\\\\.\\pipe\\pane-permissions-${process.pid}`
+      : path.join(socketDir, `pane-permissions-${process.pid}.sock`);
   }
 
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Clean up any existing socket file
-      if (fs.existsSync(this.socketPath)) {
+      // Clean up any existing socket file (skip on Windows: named pipes are not filesystem entries)
+      if (process.platform !== 'win32' && fs.existsSync(this.socketPath)) {
         fs.unlinkSync(this.socketPath);
       }
 
@@ -116,8 +118,8 @@ export class PermissionIpcServer {
 
       if (this.server) {
         this.server.close(() => {
-          // Clean up socket file
-          if (fs.existsSync(this.socketPath)) {
+          // Clean up socket file (skip on Windows: named pipes are not filesystem entries)
+          if (process.platform !== 'win32' && fs.existsSync(this.socketPath)) {
             fs.unlinkSync(this.socketPath);
           }
           resolve();
