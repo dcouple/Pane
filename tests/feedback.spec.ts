@@ -28,19 +28,27 @@ function readOpenedUrls(page: Page) {
 }
 
 /**
- * Capture a journey frame into the test's output directory. The fixed wait lets the modal
- * fade-in finish, so captures are never translucent mid-animation.
+ * Capture a journey frame into the test's output directory once every running animation
+ * has settled, so captures are never translucent mid fade-in.
  */
 async function shot(page: Page, testInfo: TestInfo, name: string) {
-  await page.waitForTimeout(600);
+  await page.waitForFunction(
+    () => document.getAnimations().every((animation) => animation.playState !== 'running'),
+    undefined,
+    { timeout: 2_000 },
+  ).catch(() => undefined);
   await page.screenshot({ path: testInfo.outputPath(`${name}.png`) });
+}
+
+async function collapseSidebar(page: Page) {
+  const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
+  if (await collapse.isVisible().catch(() => false)) await collapse.click();
 }
 
 async function openSettings(page: Page) {
   // Settings lives in the sidebar overflow menu while expanded; the compact rail exposes it
   // directly, which is how tests/settings.spec.ts reaches it as well.
-  const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
-  if (await collapse.isVisible().catch(() => false)) await collapse.click();
+  await collapseSidebar(page);
 
   const settingsButton = page.getByRole('button', { name: 'Settings' }).first();
   await expect(settingsButton).toBeVisible();
@@ -107,8 +115,7 @@ test.describe('Feedback entry points', () => {
 
   test('settings General exposes the feedback entry and opens the same dialog', async ({ page }, testInfo) => {
     await bootApp(page);
-    const collapse = page.getByRole('button', { name: 'Collapse sidebar' });
-    if (await collapse.isVisible().catch(() => false)) await collapse.click();
+    await collapseSidebar(page);
     await shot(page, testInfo, '05-compact-sidebar');
 
     await openSettings(page);

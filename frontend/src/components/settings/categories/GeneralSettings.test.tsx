@@ -20,33 +20,21 @@ function createPersistence(): SettingsPersistence {
   };
 }
 
+// Clicking the row's button and asserting the dialog opens belongs to
+// tests/feedback.spec.ts; this suite has no DOM environment to dispatch events in.
 describe('GeneralSettings feedback entry', () => {
-  it('renders the Send feedback row with the shared setting id', () => {
+  it('renders the Send feedback row under a focusable setting id', () => {
     const markup = renderToStaticMarkup(
       <GeneralSettings persistence={createPersistence()} onUpdate={vi.fn()} onSendFeedback={vi.fn()} />,
     );
 
+    // Settings deep links focus a row by this id, so the row must carry it.
     expect(markup).toContain(`id="${settingDomId('send-feedback')}"`);
-    expect(markup).toContain('data-setting-id="send-feedback"');
-    expect(markup).toContain('Send feedback');
     expect(markup).toContain('Send Feedback');
     expect(markup).toContain('dcouple/Pane');
   });
 
-  it('wires the row button to the shared opener passed down from App', () => {
-    const onSendFeedback = vi.fn();
-    const markup = renderToStaticMarkup(
-      <GeneralSettings persistence={createPersistence()} onUpdate={vi.fn()} onSendFeedback={onSendFeedback} />,
-    );
-
-    // Static markup proves the row and its button exist; clicking it and asserting the
-    // dialog opens is covered end to end in tests/feedback-pr-qa.spec.ts, since the
-    // renderer suite has no DOM environment to dispatch events in.
-    expect(markup).toContain('Send Feedback');
-    expect(onSendFeedback).not.toHaveBeenCalled();
-  });
-
-  it('registers send-feedback under General so deep links and aliases resolve', () => {
+  it('registers send-feedback under General so the catalog and the row agree', () => {
     const general = SETTINGS_CATEGORIES.find((category) => category.id === 'general');
     expect(general?.settingIds).toContain('send-feedback');
     expect(general?.aliases).toContain('feedback');

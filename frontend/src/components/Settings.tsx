@@ -177,6 +177,9 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
     const sharedDirtyProps = { onDirtyChange: setDirty };
     switch (category) {
       case 'general':
+        // onSendFeedback is passed straight through, unlike showUpdate/showKeyboardShortcuts:
+        // the feedback dialog stacks on top of Settings instead of replacing it, so there is
+        // no transition to guard and closing Settings would strand focus on an unmounted button.
         return <GeneralSettings persistence={persistence} onUpdate={showUpdate} onSendFeedback={onSendFeedback} />;
       case 'appearance':
         return <AppearanceSettings persistence={persistence} />;
