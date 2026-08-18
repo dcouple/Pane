@@ -98,7 +98,10 @@ body.light-rounded {
 :root.ember .panel-tab-bar [aria-selected="true"],
 :root.night-owl .panel-tab-bar [aria-selected="true"],
 :root.night-owl-oled .panel-tab-bar [aria-selected="true"],
-:root.terracotta .panel-tab-bar [aria-selected="true"] {
+:root.terracotta .panel-tab-bar [aria-selected="true"],
+:root.colorblind-safe .panel-tab-bar [aria-selected="true"],
+:root.low-fatigue .panel-tab-bar [aria-selected="true"],
+:root.high-legibility .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -129,6 +132,9 @@ body.light-rounded {
 :root.night-owl .pane-sidebar-shell,
 :root.night-owl-oled .pane-sidebar-shell,
 :root.terracotta .pane-sidebar-shell,
+:root.colorblind-safe .pane-sidebar-shell,
+:root.low-fatigue .pane-sidebar-shell,
+:root.high-legibility .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
   border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
@@ -143,6 +149,9 @@ body.light-rounded {
 :root.night-owl .pane-session-shell,
 :root.night-owl-oled .pane-session-shell,
 :root.terracotta .pane-session-shell,
+:root.colorblind-safe .pane-session-shell,
+:root.low-fatigue .pane-session-shell,
+:root.high-legibility .pane-session-shell,
 :root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
@@ -154,6 +163,9 @@ body.light-rounded {
 :root.night-owl .panel-tab-bar,
 :root.night-owl-oled .panel-tab-bar,
 :root.terracotta .panel-tab-bar,
+:root.colorblind-safe .panel-tab-bar,
+:root.low-fatigue .panel-tab-bar,
+:root.high-legibility .panel-tab-bar,
 :root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -168,6 +180,9 @@ body.light-rounded {
 :root.night-owl .pane-editor-stage,
 :root.night-owl-oled .pane-editor-stage,
 :root.terracotta .pane-editor-stage,
+:root.colorblind-safe .pane-editor-stage,
+:root.low-fatigue .pane-editor-stage,
+:root.high-legibility .pane-editor-stage,
 :root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -182,6 +197,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-dock,
 :root.night-owl-oled .pane-terminal-dock,
 :root.terracotta .pane-terminal-dock,
+:root.colorblind-safe .pane-terminal-dock,
+:root.low-fatigue .pane-terminal-dock,
+:root.high-legibility .pane-terminal-dock,
 :root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
@@ -197,6 +215,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail,
 :root.night-owl-oled .pane-terminal-rail,
 :root.terracotta .pane-terminal-rail,
+:root.colorblind-safe .pane-terminal-rail,
+:root.low-fatigue .pane-terminal-rail,
+:root.high-legibility .pane-terminal-rail,
 :root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
@@ -205,6 +226,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel,
 :root.night-owl-oled .pane-detail-panel,
 :root.terracotta .pane-detail-panel,
+:root.colorblind-safe .pane-detail-panel,
+:root.low-fatigue .pane-detail-panel,
+:root.high-legibility .pane-detail-panel,
 :root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
@@ -217,6 +241,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.high-legibility .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
@@ -225,6 +252,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -239,6 +269,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.high-legibility .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
@@ -247,6 +280,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
@@ -258,6 +294,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
@@ -358,6 +397,42 @@ body.light-rounded {
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
+/* Colorblind Safe — neutral 1px borders; no colored glow so hue stays semantic */
+:root.colorblind-safe .panel-tab-bar,
+:root.colorblind-safe .pane-editor-stage,
+:root.colorblind-safe .pane-terminal-dock,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--cbs-600);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+/* Low Fatigue — soft warm borders, low-contrast shadow */
+:root.low-fatigue .panel-tab-bar,
+:root.low-fatigue .pane-editor-stage,
+:root.low-fatigue .pane-terminal-dock,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.low-fatigue .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--lf-600);
+  box-shadow: 0 8px 20px rgba(20, 16, 12, 0.24);
+}
+
+/* High Legibility — solid 4.5:1 borders, flat (no shadow) so edges are unambiguous */
+:root.high-legibility .pane-sidebar-shell {
+  border-width: 1px;
+}
+:root.high-legibility .panel-tab-bar,
+:root.high-legibility .pane-editor-stage,
+:root.high-legibility .pane-terminal-dock,
+:root.high-legibility .pane-terminal-rail-shell,
+:root.high-legibility .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--hl-500);
+  box-shadow: none;
+}
+
 /* Theme-specific terminal rounding should come from shell containers first */
 :root.dusk .xterm {
   border-radius: var(--panel-shell-radius);
@@ -373,6 +448,12 @@ body.light-rounded {
 }
 
 :root.terracotta .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.colorblind-safe .xterm,
+:root.low-fatigue .xterm,
+:root.high-legibility .xterm {
   border-radius: var(--panel-shell-radius);
 }
 
@@ -790,12 +871,36 @@ body.light-rounded {
   --vscode-editorWidget-foreground: #e6d0be !important;
 }
 
+/* Colorblind Safe theme overrides — neutral sunken editor */
+:root.colorblind-safe {
+  --vscode-editor-background: #0b0e12 !important;
+  --vscode-editor-foreground: #e7ebf0 !important;
+  --vscode-editorWidget-background: #0b0e12 !important;
+  --vscode-editorWidget-foreground: #e7ebf0 !important;
+}
+
+/* Low Fatigue theme overrides — warm sepia editor */
+:root.low-fatigue {
+  --vscode-editor-background: #1f1b17 !important;
+  --vscode-editor-foreground: #e6dcc7 !important;
+  --vscode-editorWidget-background: #1f1b17 !important;
+  --vscode-editorWidget-foreground: #e6dcc7 !important;
+}
+
 /* Light theme overrides */
 :root.light {
   --vscode-editor-background: #ffffff !important;
   --vscode-editor-foreground: #1f2328 !important;
   --vscode-editorWidget-background: #ffffff !important;
   --vscode-editorWidget-foreground: #1f2328 !important;
+}
+
+/* High Legibility theme overrides — near-black on white (18.9:1) */
+:root.high-legibility {
+  --vscode-editor-background: #ffffff !important;
+  --vscode-editor-foreground: #111111 !important;
+  --vscode-editorWidget-background: #ffffff !important;
+  --vscode-editorWidget-foreground: #111111 !important;
 }
 
 /* Additional Monaco editor style overrides */
@@ -809,4 +914,83 @@ body.light-rounded {
 .monaco-editor .view-overlays,
 .monaco-editor .margin-view-overlays {
   background: transparent !important;
+}
+
+/* ==========================================================================
+   Diff view (@git-diff-view) palette overrides for the accessibility themes.
+   The library sets its colors on [data-theme] .diff-style-root; these selectors
+   are more specific so the theme wins. Add/remove tints reuse each theme's
+   success/error hue so the diff reads the same as the rest of the UI.
+   ========================================================================== */
+
+/* Colorblind Safe — Okabe-Ito bluish green (add) vs vermillion (remove) */
+:root.colorblind-safe .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #2a323b;
+  --diff-add-content--: #092220;
+  --diff-del-content--: #27190f;
+  --diff-add-lineNumber--: #08392f;
+  --diff-del-lineNumber--: #48260d;
+  --diff-add-content-highlight--: #064a3b;
+  --diff-del-content-highlight--: #60300a;
+  --diff-plain-content--: #0b0e12;
+  --diff-expand-content--: #12161b;
+  --diff-plain-lineNumber--: #12161b;
+  --diff-expand-lineNumber--: #12161b;
+  --diff-empty-content--: #12161b;
+  --diff-plain-lineNumber-color--: #a5aeb8;
+  --diff-expand-lineNumber-color--: #a5aeb8;
+  --diff-hunk-content--: #162530;
+  --diff-hunk-lineNumber--: #224052;
+  --diff-hunk-lineNumber-hover--: #56B4E9;
+  --diff-hunk-content-color--: #a5aeb8;
+  --diff-add-widget--: #0072B2;
+  --diff-add-widget-color--: #ffffff;
+}
+
+/* Low Fatigue — sage (add) vs soft brick (remove) on sepia */
+:root.low-fatigue .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #433b33;
+  --diff-add-content--: #313125;
+  --diff-del-content--: #392822;
+  --diff-add-lineNumber--: #454b35;
+  --diff-del-lineNumber--: #57382f;
+  --diff-add-content-highlight--: #545e41;
+  --diff-del-content-highlight--: #6d4338;
+  --diff-plain-content--: #1f1b17;
+  --diff-expand-content--: #27221d;
+  --diff-plain-lineNumber--: #27221d;
+  --diff-expand-lineNumber--: #27221d;
+  --diff-empty-content--: #27221d;
+  --diff-plain-lineNumber-color--: #b3a48c;
+  --diff-expand-lineNumber-color--: #b3a48c;
+  --diff-hunk-content--: #2f302e;
+  --diff-hunk-lineNumber--: #414847;
+  --diff-hunk-lineNumber-hover--: #d1a54a;
+  --diff-hunk-content-color--: #b3a48c;
+  --diff-add-widget--: #d1a54a;
+  --diff-add-widget-color--: #1f1b17;
+}
+
+/* High Legibility — stronger tints and 10:1 gutter numbers */
+:root.high-legibility .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #767676;
+  --diff-add-content--: #d3f2da;
+  --diff-del-content--: #fbdcdc;
+  --diff-add-lineNumber--: #a9e3b6;
+  --diff-del-lineNumber--: #f4b9b9;
+  --diff-add-content-highlight--: #8fd6a1;
+  --diff-del-content-highlight--: #f2a3a3;
+  --diff-plain-content--: #ffffff;
+  --diff-expand-content--: #f5f5f5;
+  --diff-plain-lineNumber--: #f5f5f5;
+  --diff-expand-lineNumber--: #f5f5f5;
+  --diff-empty-content--: #f5f5f5;
+  --diff-plain-lineNumber-color--: #3b3b3b;
+  --diff-expand-lineNumber-color--: #3b3b3b;
+  --diff-hunk-content--: #e4e8f5;
+  --diff-hunk-lineNumber--: #c8d1ee;
+  --diff-hunk-lineNumber-hover--: #1e40af;
+  --diff-hunk-content-color--: #262626;
+  --diff-add-widget--: #1e40af;
+  --diff-add-widget-color--: #ffffff;
 }

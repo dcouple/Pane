@@ -133,12 +133,12 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { description?: React.ReactNode }
+>(({ className, children, description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
+      'relative flex w-full cursor-default select-none flex-col items-start rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
       'text-text-primary',
       'hover:bg-surface-secondary hover:text-text-primary',
       'focus:bg-surface-secondary focus:text-text-primary',
@@ -154,6 +154,9 @@ const SelectItem = forwardRef<
       </SelectPrimitive.ItemIndicator>
     </span>
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    {description && (
+      <span className="mt-0.5 block max-w-[19rem] whitespace-normal text-xs leading-tight text-text-tertiary">{description}</span>
+    )}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;

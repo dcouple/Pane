@@ -314,7 +314,7 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta' }[theme]}</span>
+                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta', 'colorblind-safe': 'Colorblind Safe', 'low-fatigue': 'Low Fatigue', 'high-legibility': 'High Legibility' }[theme]}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
@@ -328,6 +328,9 @@ export function HomePage() {
                   { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
                   { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
                   { id: 'terracotta', label: 'Terracotta', onClick: () => setTheme('terracotta') },
+                  { id: 'colorblind-safe', label: 'Colorblind Safe', description: 'Dark · Okabe-Ito colors, readable with any color-vision deficiency', onClick: () => setTheme('colorblind-safe') },
+                  { id: 'low-fatigue', label: 'Low Fatigue', description: 'Warm sepia-dark · low blue, no pure white, for hours of reading', onClick: () => setTheme('low-fatigue') },
+                  { id: 'high-legibility', label: 'High Legibility', description: 'Light · 7:1+ text, crisp borders and focus, color only for state', onClick: () => setTheme('high-legibility') },
                   { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
                   { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
                   { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },

@@ -35,3 +35,21 @@ The script helps ensure Pane complies with open source license requirements by:
 - Including all third-party license texts in distributions
 - Identifying packages with missing license information
 - Supporting the license-compliance GitHub workflow
+## check-theme-contrast.mjs
+
+Contrast and colour-vision-deficiency gate for Pane themes. Parses
+`frontend/src/styles/tokens/colors.css`, composes each theme's tokens the way
+`ThemeProvider` composes classes, and measures WCAG 2.x contrast for text,
+UI (3:1) and terminal ANSI pairs. Simulates protanopia, deuteranopia and
+tritanopia (Machado 2009 matrices) for the status, diff and ANSI palettes.
+
+```bash
+pnpm theme:contrast                    # gate: colorblind-safe, low-fatigue, high-legibility
+pnpm theme:contrast -- --all --verbose # report every theme (no exit code)
+pnpm theme:contrast -- --markdown --cvd
+```
+
+Only the themes in `GATED_THEMES` fail the exit code; every other theme is
+report-only so existing debt does not block CI. Add a theme to `THEME_CLASSES`
+(and to `GATED_THEMES` when it should be enforced) when adding one to
+`ThemeProvider`.
