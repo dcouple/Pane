@@ -231,3 +231,30 @@
   --app-frame-gap: var(--space-2-5);
   --panel-shell-gap: var(--space-2-5);
 }
+
+/* Colorblind Safe — standard density with islanded shells */
+:root.colorblind-safe {
+  --panel-tab-height: 2.25rem;
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Low Fatigue — slightly relaxed density; taller tabs and more breathing room */
+:root.low-fatigue {
+  --panel-tab-height: 2.5rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-3);
+  --app-frame-gap: var(--space-3);
+  --panel-shell-gap: var(--space-3);
+}
+
+/* High Legibility — standard density; larger tab targets */
+:root.high-legibility {
+  --panel-tab-height: 2.5rem;
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}

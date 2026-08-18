@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 
-export type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory';
+export type Theme = 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory' | 'colorblind-safe' | 'low-fatigue' | 'high-legibility';
 
 /**
  * Class list stamped on <html>/<body> per theme. Every theme composes on the
@@ -33,6 +33,9 @@ export const THEME_CLASSES = {
   'haar': ['light', 'haar'],
   'abyss': ['dark', 'abyss'],
   'understory': ['dark', 'understory'],
+  'colorblind-safe': ['dark', 'colorblind-safe'],
+  'low-fatigue': ['dark', 'low-fatigue'],
+  'high-legibility': ['light', 'high-legibility'],
 } satisfies Record<Theme, string[]>;
 
 export const isLightTheme = (theme: Theme): boolean => THEME_CLASSES[theme][0] === 'light';

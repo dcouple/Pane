@@ -389,6 +389,84 @@
   --under-lichen-300: #d3dda8;
   --under-lichen-400: #bfcc8b;
   --under-lichen-500: #a6b56d;
+
+  /* Colorblind Safe primitives — neutral cool-gray ramp (no hue cast so the
+     Okabe-Ito semantic colors below carry every signal) */
+  --cbs-950: #0b0e12;
+  --cbs-900: #12161b;
+  --cbs-850: #181d23;
+  --cbs-800: #1f252c;
+  --cbs-700: #2a323b;
+  --cbs-600: #3a444f;
+  --cbs-500: #5c6977;
+  --cbs-400: #7d8996;
+  --cbs-300: #a5aeb8;
+  --cbs-200: #c9d0d8;
+  --cbs-100: #e7ebf0;
+
+  /* Okabe & Ito (2008) / Wong (2011) colorblind-safe palette — exact values.
+     Distinguishable under protanopia, deuteranopia and tritanopia. */
+  --okabe-orange: #E69F00;
+  --okabe-sky: #56B4E9;
+  --okabe-green: #009E73;
+  --okabe-yellow: #F0E442;
+  --okabe-blue: #0072B2;
+  --okabe-vermillion: #D55E00;
+  --okabe-purple: #CC79A7;
+  /* Same-hue tints used where the exact value cannot reach 4.5:1 on a dark
+     background (ANSI blue) or where a "bright" ANSI variant is needed. */
+  --okabe-green-lift: #31b588;
+  --okabe-blue-lift: #2a81c3;
+  --okabe-sky-lift: #88d5ff;
+  --okabe-orange-bright: #f2b93f;
+  --okabe-sky-bright: #b3e2fb;
+  --okabe-green-bright: #5ad4a8;
+  --okabe-yellow-bright: #f6ed7e;
+  --okabe-blue-bright: #5aa6e3;
+  --okabe-vermillion-bright: #ee7a2a;
+  --okabe-purple-bright: #de9bc2;
+
+  /* Low Fatigue primitives — warm sepia-dark ramp, mid-dark rather than
+     near-black so text/background contrast stays soft (~10:1, not 18:1) */
+  --lf-950: #1f1b17;
+  --lf-900: #27221d;
+  --lf-850: #2e2923;
+  --lf-800: #36302a;
+  --lf-700: #433b33;
+  --lf-600: #54493f;
+  --lf-500: #6f6154;
+  --lf-400: #94846f;
+  --lf-300: #b3a48c;
+  --lf-200: #cfc1a8;
+  --lf-100: #e6dcc7;
+  --lf-50: #f0e8d8;     /* brightest value in the theme — never pure white */
+
+  /* Low Fatigue accent — honey gold (low blue-light content) */
+  --lf-gold: #d1a54a;
+  --lf-gold-hover: #dbb262;
+  --lf-gold-active: #c39638;
+  --lf-gold-text: #dfb866;
+
+  /* High Legibility primitives — neutral grayscale, every step chosen for a
+     specific contrast target against white (see comments) */
+  --hl-white: #ffffff;
+  --hl-50: #f5f5f5;
+  --hl-100: #ececec;
+  --hl-200: #dcdcdc;
+  --hl-300: #c6c6c6;
+  --hl-400: #8f8f8f;    /* 3.2:1 — disabled (perceivable, still clearly dimmed) */
+  --hl-500: #767676;    /* 4.5:1 — borders, scrollbar thumb */
+  --hl-600: #4f4f4f;    /* 8.2:1 on white, 7.5:1 on --hl-50 — muted text (AAA) */
+  --hl-700: #3b3b3b;    /* 10.9:1 — tertiary text */
+  --hl-800: #262626;    /* 15.3:1 — secondary text */
+  --hl-900: #111111;    /* 18.9:1 — primary text */
+  --hl-blue: #1e40af;   /* 8.2:1 — the ONLY non-state color: links, focus, primary action */
+  --hl-blue-hover: #172f83;
+  --hl-blue-active: #2b5be0;
+  --hl-blue-tint: #e4e8f5;
+  --hl-green: #0b5d27;  /* 8.0:1 */
+  --hl-amber: #7a4b00;  /* 7.4:1 */
+  --hl-red: #a3141b;    /* 7.9:1 */
 }
 
 /* Dark Theme - Pure Black OLED */
@@ -3873,6 +3951,522 @@
 }
 
 /* ==========================================================================
+   Accessibility-first themes
+   colorblind-safe  — dark; every semantic color is Okabe-Ito
+   low-fatigue      — warm sepia-dark for hours-long sessions
+   high-legibility  — light; 7:1+ body text, color only for state
+   ========================================================================== */
+
+/* Colorblind Safe — dark theme whose semantic colors (success/warn/error/info,
+   diff add/remove, terminal ANSI) come from the Okabe-Ito palette so they stay
+   distinguishable under protanopia, deuteranopia and tritanopia. */
+:root.colorblind-safe {
+  /* Backgrounds */
+  --color-bg-primary: var(--cbs-900);
+  --color-bg-secondary: var(--cbs-850);
+  --color-bg-tertiary: var(--cbs-700);
+  --color-bg-hover: var(--cbs-700);
+  --color-bg-active: var(--cbs-600);
+  --color-bg-chrome: var(--cbs-900);
+  --color-bg-editor: var(--cbs-950);   /* sunken editor/terminal */
+
+  /* Surfaces */
+  --color-surface-primary: var(--cbs-850);
+  --color-surface-secondary: var(--cbs-800);
+  --color-surface-tertiary: var(--cbs-700);
+  --color-surface-hover: rgba(255, 255, 255, 0.05);
+
+  /* Text */
+  --color-text-primary: var(--cbs-100);
+  --color-text-secondary: var(--cbs-200);
+  --color-text-tertiary: var(--cbs-300);
+  --color-text-muted: #8c97a4;   /* 6.1:1 on --cbs-900, 5.7:1 on --cbs-850 */
+  --color-text-disabled: var(--cbs-500);
+
+  /* Borders */
+  --color-border-primary: var(--cbs-700);
+  --color-border-secondary: var(--cbs-800);
+  --color-border-hover: var(--cbs-600);
+  --color-border-focus: var(--okabe-sky);
+
+  /* Interactive — Okabe-Ito blue for filled controls, sky blue for text/rings */
+  --color-interactive-primary: var(--okabe-blue);
+  --color-interactive-hover: #005f96;
+  --color-interactive-active: #004f7d;
+  --color-interactive-text: var(--okabe-sky);
+  --color-focus-ring: var(--okabe-sky);
+  --color-interactive-rgb: 86 180 233;
+
+  --color-text-interactive-on-dark: var(--okabe-sky);
+  --color-text-interactive-on-dark-hover: var(--okabe-sky-bright);
+  --color-text-interactive-on-dark-active: var(--okabe-sky);
+  --color-text-interactive-on-dark-focus: var(--okabe-sky);
+
+  --color-surface-interactive: var(--cbs-850);
+  --color-surface-interactive-hover: var(--cbs-700);
+  --color-interactive-surface: rgba(86, 180, 233, 0.15);
+  --color-interactive-surface-hover: rgba(86, 180, 233, 0.25);
+
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-interactive: rgba(255, 255, 255, 0.14);
+  --color-interactive-border: rgba(86, 180, 233, 0.5);
+  --color-interactive-border-hover: rgba(86, 180, 233, 0.7);
+
+  --color-text-interactive-muted: #8c97a4;   /* 6.1:1 on --cbs-900 */
+  /* Painted focus ring (Select trigger, tabs, settings rows) — 0.85 alpha so it
+     clears 3:1 (WCAG 2.4.11/1.4.11) instead of the 0.4 wash other themes use */
+  --color-focus-ring-subtle: rgba(86, 180, 233, 0.85);
+
+  /* Status — Okabe-Ito, exact values. Chips use black text (white fails on
+     bluish green and vermillion). */
+  --color-status-success: var(--okabe-green);
+  --color-status-success-hover: #00875f;
+  --color-status-warning: var(--okabe-orange);
+  --color-status-warning-hover: #c98a00;
+  --color-status-error: var(--okabe-vermillion);
+  --color-status-error-hover: #b85100;
+  --color-status-info: var(--okabe-sky);
+  --color-status-neutral: #8c97a4;
+
+  /* Context-aware text */
+  --color-text-on-primary: var(--cbs-100);
+  --color-text-on-secondary: var(--cbs-200);
+  --color-text-on-tertiary: var(--cbs-200);
+  --color-text-on-surface: var(--cbs-200);
+  --color-text-on-interactive: rgb(255 255 255);
+  --color-text-on-status-success: rgb(0 0 0);
+  --color-text-on-status-warning: rgb(0 0 0);
+  --color-text-on-status-error: rgb(0 0 0);
+  --color-text-on-status-info: rgb(0 0 0);
+  --color-text-on-navigation: var(--cbs-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--okabe-blue);
+  --color-button-primary-hover: #005f96;
+  --color-button-primary-text: rgb(255 255 255);
+  --color-button-secondary-bg: var(--cbs-700);
+  --color-button-secondary-hover: var(--cbs-600);
+  --color-button-secondary-text: var(--cbs-100);
+  --color-button-ghost-hover: var(--cbs-800);
+  --color-button-ghost-text: var(--cbs-300);
+
+  /* Cards */
+  --color-card-bg: var(--cbs-850);
+  --color-card-border: var(--cbs-700);
+  --color-card-nested-bg: var(--cbs-800);
+
+  /* Forms — input border clears 3:1 (WCAG 1.4.11) so the field boundary is
+     perceivable without relying on color */
+  --color-input-bg: var(--cbs-950);
+  --color-input-border: var(--cbs-500);
+  --color-input-focus: var(--okabe-sky);
+  --color-input-text: var(--cbs-100);
+  --color-input-placeholder: #8c97a4;
+
+  /* Modal */
+  --color-modal-overlay: rgba(0, 0, 0, 0.65);
+  --color-modal-bg: var(--cbs-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--cbs-900);
+  --color-surface-navigation-hover: var(--cbs-850);
+  --color-surface-navigation-active: var(--cbs-700);
+  --color-surface-navigation-selected: rgba(86, 180, 233, 0.16);
+  --color-surface-navigation-selected-hover: rgba(86, 180, 233, 0.22);
+  --color-text-navigation-primary: var(--cbs-200);
+  --color-text-navigation-secondary: var(--cbs-300);
+  --color-text-navigation-muted: #8c97a4;
+  --color-text-navigation-selected: var(--cbs-100);
+  --color-text-navigation-hover: var(--cbs-100);
+  --color-text-navigation-section: #8c97a4;
+  --color-text-navigation-brand: var(--cbs-300);
+  --color-border-navigation: var(--cbs-700);
+  --color-divider-navigation: var(--cbs-800);
+  --color-divider-navigation-subtle: rgba(255, 255, 255, 0.04);
+
+  /* Scrollbar — thumb clears 3:1 against the track */
+  --color-scrollbar-track: var(--cbs-900);
+  --color-scrollbar-thumb: var(--cbs-500);
+  --color-scrollbar-thumb-hover: var(--cbs-400);
+
+  /* Tab indicator — underline in sky blue */
+  --tab-indicator-color: var(--okabe-sky);
+  --tab-indicator-height: 3px;
+
+  /* Diff view (git-diff-view) — bluish green (add) vs vermillion (remove) mixed
+     over the editor bg at 26% / 40% / 52%. 26% is the lowest content tint whose
+     add/remove pair keeps ΔE ≥ 15 under protanopia (see check-theme-contrast). */
+  --color-diff-add-bg: #08332b;
+  --color-diff-del-bg: #40230d;
+  --color-diff-add-gutter: #074839;
+  --color-diff-del-gutter: #5c2e0b;
+  --color-diff-add-highlight: #055944;
+  --color-diff-del-highlight: #743809;
+  --color-diff-hunk-bg: #172934;
+  --color-diff-hunk-gutter: #234357;
+
+  /* Terminal — Okabe-Ito ANSI mapping:
+     red→vermillion, green→bluish green, yellow→yellow, blue→blue (lifted),
+     magenta→reddish purple, cyan→sky blue. Cursor is Okabe yellow so it never
+     shares a hue with links or selection. */
+  --color-terminal-bg: var(--cbs-950);
+  --color-terminal-fg: var(--cbs-100);
+  --color-terminal-cursor: var(--okabe-yellow);
+  --color-terminal-black: var(--cbs-950);
+  --color-terminal-red: var(--okabe-vermillion);
+  --color-terminal-green: var(--okabe-green-lift);
+  --color-terminal-yellow: var(--okabe-yellow);
+  --color-terminal-blue: var(--okabe-blue-lift);
+  --color-terminal-magenta: var(--okabe-purple);
+  --color-terminal-cyan: var(--okabe-sky-lift);
+  --color-terminal-white: var(--cbs-200);
+  --color-terminal-bright-black: var(--cbs-400);
+  --color-terminal-bright-red: var(--okabe-vermillion-bright);
+  --color-terminal-bright-green: var(--okabe-green-bright);
+  --color-terminal-bright-yellow: var(--okabe-yellow-bright);
+  --color-terminal-bright-blue: var(--okabe-blue-bright);
+  --color-terminal-bright-magenta: var(--okabe-purple-bright);
+  --color-terminal-bright-cyan: var(--okabe-sky-bright);
+  --color-terminal-bright-white: rgb(255 255 255);
+}
+
+/* Low Fatigue — warm sepia-dark for hours of reading: mid-dark backgrounds,
+   parchment text (never pure white), a honey-gold accent and a desaturated,
+   low-blue palette. Text stays ≥ 4.5:1 but avoids the 18:1 glare of black/white. */
+:root.low-fatigue {
+  /* Backgrounds */
+  --color-bg-primary: var(--lf-900);
+  --color-bg-secondary: var(--lf-850);
+  --color-bg-tertiary: var(--lf-700);
+  --color-bg-hover: var(--lf-700);
+  --color-bg-active: var(--lf-600);
+  --color-bg-chrome: var(--lf-900);
+  --color-bg-editor: var(--lf-950);   /* sunken editor/terminal */
+
+  /* Surfaces */
+  --color-surface-primary: var(--lf-850);
+  --color-surface-secondary: var(--lf-800);
+  --color-surface-tertiary: var(--lf-700);
+  --color-surface-hover: rgba(240, 232, 216, 0.05);
+
+  /* Text — warm parchment ramp */
+  --color-text-primary: var(--lf-100);
+  --color-text-secondary: var(--lf-200);
+  --color-text-tertiary: var(--lf-300);
+  --color-text-muted: #a09079;   /* 5.1:1 on --lf-900, 4.6:1 on --lf-850 */
+  --color-text-disabled: var(--lf-500);
+
+  /* Borders */
+  --color-border-primary: var(--lf-700);
+  --color-border-secondary: var(--lf-800);
+  --color-border-hover: var(--lf-600);
+  --color-border-focus: var(--lf-gold);
+
+  /* Interactive — honey gold, dark text on filled controls (no white anywhere) */
+  --color-interactive-primary: var(--lf-gold);
+  --color-interactive-hover: var(--lf-gold-hover);
+  --color-interactive-active: var(--lf-gold-active);
+  --color-interactive-text: var(--lf-gold-text);
+  --color-focus-ring: var(--lf-gold);
+  --color-interactive-rgb: 209 165 74;
+
+  --color-text-interactive-on-dark: var(--lf-gold-text);
+  --color-text-interactive-on-dark-hover: var(--lf-gold-hover);
+  --color-text-interactive-on-dark-active: var(--lf-gold-text);
+  --color-text-interactive-on-dark-focus: var(--lf-gold-text);
+
+  --color-surface-interactive: var(--lf-850);
+  --color-surface-interactive-hover: var(--lf-700);
+  --color-interactive-surface: rgba(209, 165, 74, 0.15);
+  --color-interactive-surface-hover: rgba(209, 165, 74, 0.25);
+
+  --color-border-interactive-subtle: rgba(240, 232, 216, 0.07);
+  --color-border-interactive: rgba(240, 232, 216, 0.12);
+  --color-interactive-border: rgba(209, 165, 74, 0.5);
+  --color-interactive-border-hover: rgba(209, 165, 74, 0.7);
+
+  --color-text-interactive-muted: #a09079;   /* 5.1:1 on --lf-900 */
+  --color-focus-ring-subtle: rgba(209, 165, 74, 0.85);   /* painted focus ring ≥ 3:1 */
+
+  /* Status — desaturated warm set: sage / burnt orange / soft brick / dusty teal.
+     Chips use dark text so no pure white ever lands on a saturated fill. */
+  --color-status-success: #a8c487;
+  --color-status-success-hover: #94b272;
+  --color-status-warning: #e08b47;
+  --color-status-warning-hover: #cf7a36;
+  --color-status-error: #d4715c;
+  --color-status-error-hover: #c4634f;
+  --color-status-info: #8fb1b8;
+  --color-status-neutral: #a09079;
+
+  /* Context-aware text */
+  --color-text-on-primary: var(--lf-100);
+  --color-text-on-secondary: var(--lf-200);
+  --color-text-on-tertiary: var(--lf-200);
+  --color-text-on-surface: var(--lf-200);
+  --color-text-on-interactive: var(--lf-950);
+  --color-text-on-status-success: var(--lf-950);
+  --color-text-on-status-warning: var(--lf-950);
+  --color-text-on-status-error: var(--lf-950);
+  --color-text-on-status-info: var(--lf-950);
+  --color-text-on-navigation: var(--lf-200);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--lf-gold);
+  --color-button-primary-hover: var(--lf-gold-hover);
+  --color-button-primary-text: var(--lf-950);
+  --color-button-secondary-bg: var(--lf-700);
+  --color-button-secondary-hover: var(--lf-600);
+  --color-button-secondary-text: var(--lf-100);
+  --color-button-ghost-hover: var(--lf-800);
+  --color-button-ghost-text: var(--lf-300);
+
+  /* Cards */
+  --color-card-bg: var(--lf-850);
+  --color-card-border: var(--lf-700);
+  --color-card-nested-bg: var(--lf-800);
+
+  /* Forms */
+  --color-input-bg: var(--lf-950);
+  --color-input-border: #7a6b5c;   /* 3.3:1 on --lf-950 (WCAG 1.4.11) */
+  --color-input-focus: var(--lf-gold);
+  --color-input-text: var(--lf-100);
+  --color-input-placeholder: #a09079;
+
+  /* Modal */
+  --color-modal-overlay: rgba(20, 16, 12, 0.6);
+  --color-modal-bg: var(--lf-850);
+
+  /* Navigation */
+  --color-surface-navigation: var(--lf-900);
+  --color-surface-navigation-hover: var(--lf-850);
+  --color-surface-navigation-active: var(--lf-700);
+  --color-surface-navigation-selected: rgba(209, 165, 74, 0.16);
+  --color-surface-navigation-selected-hover: rgba(209, 165, 74, 0.22);
+  --color-text-navigation-primary: var(--lf-200);
+  --color-text-navigation-secondary: var(--lf-300);
+  --color-text-navigation-muted: #a09079;
+  --color-text-navigation-selected: var(--lf-100);
+  --color-text-navigation-hover: var(--lf-100);
+  --color-text-navigation-section: #a09079;
+  --color-text-navigation-brand: var(--lf-300);
+  --color-border-navigation: var(--lf-700);
+  --color-divider-navigation: var(--lf-800);
+  --color-divider-navigation-subtle: rgba(240, 232, 216, 0.04);
+
+  /* Scrollbar */
+  --color-scrollbar-track: var(--lf-900);
+  --color-scrollbar-thumb: #7a6b5c;   /* 3.1:1 on the track */
+  --color-scrollbar-thumb-hover: var(--lf-400);
+
+  /* Tab indicator — gold underline */
+  --tab-indicator-color: var(--lf-gold);
+  --tab-indicator-height: 3px;
+
+  /* Diff view — sage (add) vs soft brick (remove) over the editor bg */
+  --color-diff-add-bg: #3a3d2d;
+  --color-diff-del-bg: #432c25;
+  --color-diff-add-gutter: #50583f;
+  --color-diff-del-gutter: #603a30;
+  --color-diff-add-highlight: #616c4d;
+  --color-diff-del-highlight: #764438;
+  --color-diff-hunk-bg: #313331;
+  --color-diff-hunk-gutter: #434b4b;
+
+  /* Terminal — warm, muted, every color ≥ 4.5:1 on the sunken background;
+     "blue" is a desaturated steel so blue-light stays low; bright white is
+     parchment, not #fff */
+  --color-terminal-bg: var(--lf-950);
+  --color-terminal-fg: var(--lf-100);
+  --color-terminal-cursor: var(--lf-gold);
+  --color-terminal-black: var(--lf-950);
+  --color-terminal-red: #d4715c;
+  --color-terminal-green: #a8c487;
+  --color-terminal-yellow: #d1a54a;
+  --color-terminal-blue: #8fa4bd;
+  --color-terminal-magenta: #c493a8;
+  --color-terminal-cyan: #86b3ab;
+  --color-terminal-white: var(--lf-200);
+  --color-terminal-bright-black: #9c8c74;
+  --color-terminal-bright-red: #e5978a;
+  --color-terminal-bright-green: #b7cf95;
+  --color-terminal-bright-yellow: #e2be74;
+  --color-terminal-bright-blue: #a9bacf;
+  --color-terminal-bright-magenta: #d6adc0;
+  --color-terminal-bright-cyan: #a3c9c1;
+  --color-terminal-bright-white: var(--lf-50);
+}
+
+/* High Legibility — light theme built for maximal text contrast: body text
+   ≥ 7:1 (AAA), 3:1+ borders and focus rings, and no color anywhere except to
+   signal state (links/focus/selection in one blue; success/warning/error in
+   dark, AAA-clearing tones). Composes on the `light` base class. */
+:root.high-legibility {
+  /* Backgrounds */
+  --color-bg-primary: var(--hl-white);
+  --color-bg-secondary: var(--hl-50);
+  --color-bg-tertiary: var(--hl-100);
+  --color-bg-hover: var(--hl-100);
+  --color-bg-active: var(--hl-200);
+  --color-bg-chrome: var(--hl-50);
+  --color-bg-editor: var(--hl-white);
+
+  /* Surfaces */
+  --color-surface-primary: var(--hl-white);
+  --color-surface-secondary: var(--hl-50);
+  --color-surface-tertiary: var(--hl-100);
+  --color-surface-hover: var(--hl-100);
+
+  /* Text — every step ≥ 7:1 on white except disabled */
+  --color-text-primary: var(--hl-900);
+  --color-text-secondary: var(--hl-800);
+  --color-text-tertiary: var(--hl-700);
+  --color-text-muted: var(--hl-600);
+  --color-text-disabled: var(--hl-400);
+
+  /* Borders — solid grays; primary/input borders clear 3:1 (1.4.11) */
+  --color-border-primary: var(--hl-500);
+  --color-border-secondary: #a8a8a8;
+  --color-border-tertiary: var(--hl-300);
+  --color-border-hover: var(--hl-600);
+  --color-border-focus: var(--hl-blue);
+
+  /* Interactive — one blue, 8.2:1 on white */
+  --color-interactive: var(--hl-blue);
+  --color-interactive-primary: var(--hl-blue);
+  --color-interactive-hover: var(--hl-blue-hover);
+  --color-interactive-active: var(--hl-blue-active);
+  --color-interactive-text: var(--hl-blue);
+  --color-interactive-rgb: 30 64 175;
+  --color-focus-ring: var(--hl-blue);
+
+  --color-text-interactive-on-dark: var(--hl-blue);
+  --color-text-interactive-on-dark-hover: var(--hl-blue-hover);
+  --color-text-interactive-on-dark-active: var(--hl-blue);
+  --color-text-interactive-on-dark-focus: var(--hl-blue);
+
+  --color-surface-interactive: var(--hl-50);
+  --color-surface-interactive-hover: var(--hl-100);
+  --color-interactive-surface: var(--hl-blue-tint);
+  --color-interactive-surface-hover: #d0d8f0;
+  --color-border-interactive-subtle: #a8a8a8;
+  --color-border-interactive: var(--hl-500);
+  --color-interactive-border: var(--hl-blue);
+  --color-interactive-border-hover: var(--hl-blue-hover);
+  --color-text-interactive-muted: var(--hl-600);
+  --color-focus-ring-subtle: var(--hl-blue);   /* painted focus ring, opaque — 8.7:1 */
+
+  /* Status — dark tones that clear 7:1 as text on white; white text on fills */
+  --color-status-success: var(--hl-green);
+  --color-status-success-hover: #084a1f;
+  --color-status-warning: var(--hl-amber);
+  --color-status-warning-hover: #603b00;
+  --color-status-error: var(--hl-red);
+  --color-status-error-hover: #850f15;
+  --color-status-info: var(--hl-blue);
+  --color-status-neutral: var(--hl-600);
+
+  /* Context-aware text */
+  --color-text-on-primary: var(--hl-900);
+  --color-text-on-secondary: var(--hl-900);
+  --color-text-on-tertiary: var(--hl-800);
+  --color-text-on-surface: var(--hl-900);
+  --color-text-on-interactive: var(--hl-white);
+  --color-text-on-status-success: var(--hl-white);
+  --color-text-on-status-warning: var(--hl-white);
+  --color-text-on-status-error: var(--hl-white);
+  --color-text-on-status-info: var(--hl-white);
+  --color-text-on-navigation: var(--hl-900);
+
+  /* Buttons */
+  --color-button-primary-bg: var(--hl-blue);
+  --color-button-primary-hover: var(--hl-blue-hover);
+  --color-button-primary-text: var(--hl-white);
+  --color-button-secondary-bg: var(--hl-white);
+  --color-button-secondary-hover: var(--hl-100);
+  --color-button-secondary-text: var(--hl-900);
+  --color-button-ghost-hover: var(--hl-100);
+  --color-button-ghost-text: var(--hl-800);
+
+  /* Cards */
+  --color-card-bg: var(--hl-white);
+  --color-card-border: var(--hl-500);
+  --color-card-nested-bg: var(--hl-50);
+
+  /* Forms */
+  --color-input-bg: var(--hl-white);
+  --color-input-border: var(--hl-500);
+  --color-input-focus: var(--hl-blue);
+  --color-input-text: var(--hl-900);
+  --color-input-placeholder: var(--hl-600);
+
+  /* Modal */
+  --color-modal-overlay: rgba(17, 17, 17, 0.55);
+  --color-modal-bg: var(--hl-white);
+
+  /* Navigation — selection is a blue tint + black text, no other color */
+  --color-surface-navigation: var(--hl-50);
+  --color-surface-navigation-hover: var(--hl-100);
+  --color-surface-navigation-active: var(--hl-200);
+  --color-surface-navigation-selected: var(--hl-blue-tint);
+  --color-surface-navigation-selected-hover: #d0d8f0;
+  --color-text-navigation-primary: var(--hl-900);
+  --color-text-navigation-secondary: var(--hl-800);
+  --color-text-navigation-muted: var(--hl-600);
+  --color-text-navigation-selected: var(--hl-900);
+  --color-text-navigation-hover: var(--hl-900);
+  --color-text-navigation-section: var(--hl-600);
+  --color-text-navigation-brand: var(--hl-700);
+  --color-border-navigation: #a8a8a8;
+  --color-divider-navigation: #a8a8a8;
+  --color-divider-navigation-subtle: var(--hl-300);
+
+  /* Scrollbar — thumb ≥ 3:1 on track */
+  --color-scrollbar-track: var(--hl-50);
+  --color-scrollbar-thumb: var(--hl-500);
+  --color-scrollbar-thumb-hover: var(--hl-600);
+
+  /* Tab indicator — blue underline */
+  --tab-indicator-color: var(--hl-blue);
+  --tab-indicator-height: 3px;
+
+  /* Diff view — stronger tints than the light default; gutter numbers stay ≥ 7:1 */
+  --color-diff-add-bg: #d3f2da;
+  --color-diff-del-bg: #fbdcdc;
+  --color-diff-add-gutter: #a9e3b6;
+  --color-diff-del-gutter: #f4b9b9;
+  --color-diff-add-highlight: #8fd6a1;
+  --color-diff-del-highlight: #f2a3a3;
+  --color-diff-hunk-bg: #e4e8f5;
+  --color-diff-hunk-gutter: #c8d1ee;
+
+  /* Terminal — black on white; ANSI colors are the darkest value of each hue
+     that stays distinguishable from its bright sibling, all ≥ 4.5:1 on white
+     (normal set ≥ 7:1). ANSI "white" is dark gray so light-on-light output
+     stays readable, matching the existing light theme. */
+  --color-terminal-bg: var(--hl-white);
+  --color-terminal-fg: rgb(0 0 0);
+  --color-terminal-cursor: var(--hl-blue);
+  --color-terminal-selection-bg: #1e40af40;
+  --color-terminal-black: rgb(0 0 0);
+  --color-terminal-red: var(--hl-red);
+  --color-terminal-green: var(--hl-green);
+  --color-terminal-yellow: var(--hl-amber);
+  --color-terminal-blue: var(--hl-blue);
+  --color-terminal-magenta: #7a1f7d;
+  --color-terminal-cyan: #005c6b;
+  --color-terminal-white: var(--hl-700);
+  --color-terminal-bright-black: var(--hl-600);
+  --color-terminal-bright-red: #c1272d;
+  --color-terminal-bright-green: #0f7a35;
+  --color-terminal-bright-yellow: #8a5a00;
+  --color-terminal-bright-blue: var(--hl-blue-active);
+  --color-terminal-bright-magenta: #952b98;
+  --color-terminal-bright-cyan: #007486;
+  --color-terminal-bright-white: rgb(0 0 0);
+}
+
+/* ==========================================================================
    High Contrast — opt-in AAA overrides (Settings → Appearance → High contrast)
    Stamped as an additive `high-contrast` class on <html>/<body> alongside the
    theme classes. Each block raises the muted text family to ~7:1 against that
@@ -4064,4 +4658,28 @@
   --color-text-interactive-muted: #a8b59b;
   --color-text-navigation-muted: #a8b59b;   /* 8.1:1 on --under-bark-850 */
   --color-text-navigation-section: #a8b59b;
+}
+
+/* Colorblind Safe */
+:root.high-contrast.colorblind-safe {
+  --color-text-muted: #a4aeba;              /* 8.1:1 on --cbs-900 */
+  --color-text-interactive-muted: #a4aeba;
+  --color-text-navigation-muted: #a4aeba;
+  --color-text-navigation-section: #a4aeba;
+}
+
+/* Low Fatigue */
+:root.high-contrast.low-fatigue {
+  --color-text-muted: #bbab93;              /* 7.0:1 on --lf-900 */
+  --color-text-interactive-muted: #bbab93;
+  --color-text-navigation-muted: #bbab93;
+  --color-text-navigation-section: #bbab93;
+}
+
+/* High Legibility — already AAA; the toggle pushes muted text to ~10:1 */
+:root.high-contrast.high-legibility {
+  --color-text-muted: #404040;              /* 10.4:1 on white */
+  --color-text-interactive-muted: #404040;
+  --color-text-navigation-muted: #404040;
+  --color-text-navigation-section: #404040;
 }

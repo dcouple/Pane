@@ -39,6 +39,9 @@ export const THEME_OPTIONS = [
   { id: 'haar', label: 'Haar', description: 'Pre-dawn sea fog — cold blue-white surfaces, ink text', family: 'Atmosphere' },
   { id: 'abyss', label: 'Abyss', description: 'Deep ocean — near-black navy, bioluminescent teal accent', family: 'Atmosphere' },
   { id: 'understory', label: 'Understory', description: 'Forest floor — moss greens, bark-brown chrome, lichen accent', family: 'Atmosphere' },
+  { id: 'colorblind-safe', label: 'Colorblind Safe', description: 'Dark. Okabe-Ito status, diff and terminal colors, readable with any color-vision deficiency.', family: 'Accessibility' },
+  { id: 'low-fatigue', label: 'Low Fatigue', description: 'Warm sepia-dark for long sessions: low blue, no pure white, soft ≥4.5:1 text.', family: 'Accessibility' },
+  { id: 'high-legibility', label: 'High Legibility', description: 'Light. 7:1+ body text, crisp 3:1 borders and focus rings, color only for state.', family: 'Accessibility' },
 ] as const satisfies readonly ThemeOption[];
 
 type CoveredTheme = (typeof THEME_OPTIONS)[number]['id'];

@@ -11,7 +11,7 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory'];
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory', 'colorblind-safe', 'low-fatigue', 'high-legibility'];
       const themeClasses = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -37,6 +37,9 @@
         'haar': ['light', 'haar'],
         'abyss': ['dark', 'abyss'],
         'understory': ['dark', 'understory'],
+        'colorblind-safe': ['dark', 'colorblind-safe'],
+        'low-fatigue': ['dark', 'low-fatigue'],
+        'high-legibility': ['light', 'high-legibility'],
       };
       const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
       document.documentElement.classList.add(...themeClasses[theme]);
@@ -49,7 +52,7 @@
     <script>
       // Also apply to body (mirrors the head script logic)
       const t = localStorage.getItem('theme');
-      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory'];
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory', 'colorblind-safe', 'low-fatigue', 'high-legibility'];
       const tc = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -75,6 +78,9 @@
         'haar': ['light', 'haar'],
         'abyss': ['dark', 'abyss'],
         'understory': ['dark', 'understory'],
+        'colorblind-safe': ['dark', 'colorblind-safe'],
+        'low-fatigue': ['dark', 'low-fatigue'],
+        'high-legibility': ['light', 'high-legibility'],
       };
       const bt = vt.includes(t) ? t : 'light-rounded';
       document.body.classList.add(...tc[bt]);

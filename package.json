@@ -75,7 +75,7 @@
     "perf:scan": "node scripts/pane-run-script.js --react-scan",
     "a11y:scan": "playwright test tests/accessibility.spec.ts",
     "theme:contrast": "node scripts/check-theme-contrast.mjs",
-    "theme:screenshots": "PANE_THEME_SCREENSHOTS=1 playwright test tests/theme-screenshots.spec.ts",
+    "theme:screenshots": "playwright test -c playwright.themes.config.ts",
     "typecheck": "pnpm run -r typecheck",
     "postinstall": "electron-builder install-app-deps",
     "electron:rebuild": "pnpm exec electron-rebuild -f -w better-sqlite3-multiple-ciphers -m ./main",

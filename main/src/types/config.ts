@@ -67,7 +67,7 @@ export interface AppConfig {
   stravuApiKey?: string;
   stravuServerUrl?: string;
   // Theme preference
-  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory';
+  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory' | 'colorblind-safe' | 'low-fatigue' | 'high-legibility';
   // Opt-in high contrast mode: raises muted chrome text to AAA and the terminal's
   // minimumContrastRatio so dim CLI output stays legible
   highContrast?: boolean;
@@ -167,7 +167,7 @@ export interface UpdateConfigRequest {
   keepAwakeWhileSessionsActive?: boolean;
   stravuApiKey?: string;
   stravuServerUrl?: string;
-  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory';
+  theme?: 'light' | 'light-rounded' | 'dark' | 'oled' | 'dusk' | 'dusk-oled' | 'forge' | 'ember' | 'aurora' | 'night-owl' | 'night-owl-oled' | 'terracotta' | 'synthwave' | 'acid' | 'tokyo-rain' | 'folio' | 'newsprint' | 'walnut' | 'amber-crt' | 'teletype' | 'dot-matrix' | 'haar' | 'abyss' | 'understory' | 'colorblind-safe' | 'low-fatigue' | 'high-legibility';
   highContrast?: boolean;
   uiScale?: number;
   notifications?: {

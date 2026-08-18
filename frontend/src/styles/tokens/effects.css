@@ -378,3 +378,43 @@
   --panel-shell-radius: var(--radius-lg);
   --panel-shell-shadow: var(--shadow-xs);
 }
+
+/* Colorblind Safe — clean rounded shells, no button shadows */
+:root.colorblind-safe {
+  --button-radius: var(--radius-md);
+  --card-radius: var(--radius-lg);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-xs);
+  --app-shell-radius: var(--radius-xl);
+  --panel-shell-radius: var(--radius-lg);
+  --panel-shell-shadow: var(--shadow-xs);
+}
+
+/* Low Fatigue — soft radii, minimal shadows (nothing sharp for long sessions) */
+:root.low-fatigue {
+  --button-radius: var(--radius-lg);
+  --card-radius: var(--radius-xl);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-xs);
+  --app-shell-radius: var(--radius-xl);
+  --panel-shell-radius: var(--radius-lg);
+  --panel-shell-shadow: var(--shadow-xs);
+}
+
+/* High Legibility — modest radii, flat surfaces; edges come from borders, not shadows */
+:root.high-legibility {
+  --button-radius: var(--radius-md);
+  --card-radius: var(--radius-lg);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --modal-shadow: var(--shadow-lg);
+  --app-shell-radius: var(--radius-lg);
+  --panel-shell-radius: var(--radius-md);
+  --panel-shell-shadow: var(--shadow-none);
+}

@@ -156,7 +156,10 @@ body.understory {
 :root.teletype .panel-tab-bar [aria-selected="true"],
 :root.dot-matrix .panel-tab-bar [aria-selected="true"],
 :root.abyss .panel-tab-bar [aria-selected="true"],
-:root.understory .panel-tab-bar [aria-selected="true"] {
+:root.understory .panel-tab-bar [aria-selected="true"],
+:root.colorblind-safe .panel-tab-bar [aria-selected="true"],
+:root.low-fatigue .panel-tab-bar [aria-selected="true"],
+:root.high-legibility .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -199,6 +202,9 @@ body.understory {
 :root.haar .pane-sidebar-shell,
 :root.abyss .pane-sidebar-shell,
 :root.understory .pane-sidebar-shell,
+:root.colorblind-safe .pane-sidebar-shell,
+:root.low-fatigue .pane-sidebar-shell,
+:root.high-legibility .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
   border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
@@ -222,6 +228,9 @@ body.understory {
 :root.haar .pane-session-shell,
 :root.abyss .pane-session-shell,
 :root.understory .pane-session-shell,
+:root.colorblind-safe .pane-session-shell,
+:root.low-fatigue .pane-session-shell,
+:root.high-legibility .pane-session-shell,
 :root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
@@ -242,6 +251,9 @@ body.understory {
 :root.haar .panel-tab-bar,
 :root.abyss .panel-tab-bar,
 :root.understory .panel-tab-bar,
+:root.colorblind-safe .panel-tab-bar,
+:root.low-fatigue .panel-tab-bar,
+:root.high-legibility .panel-tab-bar,
 :root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -265,6 +277,9 @@ body.understory {
 :root.haar .pane-editor-stage,
 :root.abyss .pane-editor-stage,
 :root.understory .pane-editor-stage,
+:root.colorblind-safe .pane-editor-stage,
+:root.low-fatigue .pane-editor-stage,
+:root.high-legibility .pane-editor-stage,
 :root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -288,6 +303,9 @@ body.understory {
 :root.haar .pane-terminal-dock,
 :root.abyss .pane-terminal-dock,
 :root.understory .pane-terminal-dock,
+:root.colorblind-safe .pane-terminal-dock,
+:root.low-fatigue .pane-terminal-dock,
+:root.high-legibility .pane-terminal-dock,
 :root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
@@ -312,6 +330,9 @@ body.understory {
 :root.haar .pane-terminal-rail,
 :root.abyss .pane-terminal-rail,
 :root.understory .pane-terminal-rail,
+:root.colorblind-safe .pane-terminal-rail,
+:root.low-fatigue .pane-terminal-rail,
+:root.high-legibility .pane-terminal-rail,
 :root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
@@ -329,6 +350,9 @@ body.understory {
 :root.haar .pane-detail-panel,
 :root.abyss .pane-detail-panel,
 :root.understory .pane-detail-panel,
+:root.colorblind-safe .pane-detail-panel,
+:root.low-fatigue .pane-detail-panel,
+:root.high-legibility .pane-detail-panel,
 :root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
@@ -350,6 +374,9 @@ body.understory {
 :root.haar .pane-terminal-rail-shell,
 :root.abyss .pane-terminal-rail-shell,
 :root.understory .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.high-legibility .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
@@ -367,6 +394,9 @@ body.understory {
 :root.haar .pane-detail-panel-inner,
 :root.abyss .pane-detail-panel-inner,
 :root.understory .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -390,6 +420,9 @@ body.understory {
 :root.haar .pane-terminal-rail-shell,
 :root.abyss .pane-terminal-rail-shell,
 :root.understory .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.high-legibility .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
@@ -407,6 +440,9 @@ body.understory {
 :root.haar .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.abyss .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.understory .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
@@ -427,6 +463,9 @@ body.understory {
 :root.haar .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.abyss .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.understory .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.colorblind-safe .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.low-fatigue .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.high-legibility .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
@@ -629,6 +668,42 @@ body.understory {
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
 }
 
+/* Colorblind Safe — neutral 1px borders; no colored glow so hue stays semantic */
+:root.colorblind-safe .panel-tab-bar,
+:root.colorblind-safe .pane-editor-stage,
+:root.colorblind-safe .pane-terminal-dock,
+:root.colorblind-safe .pane-terminal-rail-shell,
+:root.colorblind-safe .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--cbs-600);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+}
+
+/* Low Fatigue — soft warm borders, low-contrast shadow */
+:root.low-fatigue .panel-tab-bar,
+:root.low-fatigue .pane-editor-stage,
+:root.low-fatigue .pane-terminal-dock,
+:root.low-fatigue .pane-terminal-rail-shell,
+:root.low-fatigue .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--lf-600);
+  box-shadow: 0 8px 20px rgba(20, 16, 12, 0.24);
+}
+
+/* High Legibility — solid 4.5:1 borders, flat (no shadow) so edges are unambiguous */
+:root.high-legibility .pane-sidebar-shell {
+  border-width: 1px;
+}
+:root.high-legibility .panel-tab-bar,
+:root.high-legibility .pane-editor-stage,
+:root.high-legibility .pane-terminal-dock,
+:root.high-legibility .pane-terminal-rail-shell,
+:root.high-legibility .pane-detail-panel-inner {
+  border-width: 1px;
+  border-color: var(--hl-500);
+  box-shadow: none;
+}
+
 /* Theme-specific terminal rounding should come from shell containers first */
 :root.dusk .xterm {
   border-radius: var(--panel-shell-radius);
@@ -662,6 +737,12 @@ body.understory {
 :root.haar .xterm,
 :root.abyss .xterm,
 :root.understory .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.colorblind-safe .xterm,
+:root.low-fatigue .xterm,
+:root.high-legibility .xterm {
   border-radius: var(--panel-shell-radius);
 }
 
@@ -1119,6 +1200,22 @@ body.understory {
   --vscode-editorWidget-foreground: #dcecb0 !important;
 }
 
+/* Colorblind Safe theme overrides — neutral sunken editor */
+:root.colorblind-safe {
+  --vscode-editor-background: #0b0e12 !important;
+  --vscode-editor-foreground: #e7ebf0 !important;
+  --vscode-editorWidget-background: #0b0e12 !important;
+  --vscode-editorWidget-foreground: #e7ebf0 !important;
+}
+
+/* Low Fatigue theme overrides — warm sepia editor */
+:root.low-fatigue {
+  --vscode-editor-background: #1f1b17 !important;
+  --vscode-editor-foreground: #e6dcc7 !important;
+  --vscode-editorWidget-background: #1f1b17 !important;
+  --vscode-editorWidget-foreground: #e6dcc7 !important;
+}
+
 /* Light theme overrides */
 :root.light {
   --vscode-editor-background: #ffffff !important;
@@ -1183,6 +1280,14 @@ body.understory {
   --vscode-editorWidget-foreground: #252d36 !important;
 }
 
+/* High Legibility theme overrides — near-black on white (18.9:1) */
+:root.high-legibility {
+  --vscode-editor-background: #ffffff !important;
+  --vscode-editor-foreground: #111111 !important;
+  --vscode-editorWidget-background: #ffffff !important;
+  --vscode-editorWidget-foreground: #111111 !important;
+}
+
 /* Additional Monaco editor style overrides */
 .monaco-editor,
 .monaco-editor-background,
@@ -1194,4 +1299,83 @@ body.understory {
 .monaco-editor .view-overlays,
 .monaco-editor .margin-view-overlays {
   background: transparent !important;
+}
+
+/* ==========================================================================
+   Diff view (@git-diff-view) palette overrides for the accessibility themes.
+   The library sets its colors on [data-theme] .diff-style-root; these selectors
+   are more specific so the theme wins. Add/remove tints reuse each theme's
+   success/error hue so the diff reads the same as the rest of the UI.
+   ========================================================================== */
+
+/* Colorblind Safe — Okabe-Ito bluish green (add) vs vermillion (remove) */
+:root.colorblind-safe .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #2a323b;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
+  --diff-plain-content--: #0b0e12;
+  --diff-expand-content--: #12161b;
+  --diff-plain-lineNumber--: #12161b;
+  --diff-expand-lineNumber--: #12161b;
+  --diff-empty-content--: #12161b;
+  --diff-plain-lineNumber-color--: #a5aeb8;
+  --diff-expand-lineNumber-color--: #a5aeb8;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
+  --diff-hunk-lineNumber-hover--: #56B4E9;
+  --diff-hunk-content-color--: #a5aeb8;
+  --diff-add-widget--: #0072B2;
+  --diff-add-widget-color--: #ffffff;
+}
+
+/* Low Fatigue — sage (add) vs soft brick (remove) on sepia */
+:root.low-fatigue .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #433b33;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
+  --diff-plain-content--: #1f1b17;
+  --diff-expand-content--: #27221d;
+  --diff-plain-lineNumber--: #27221d;
+  --diff-expand-lineNumber--: #27221d;
+  --diff-empty-content--: #27221d;
+  --diff-plain-lineNumber-color--: #b3a48c;
+  --diff-expand-lineNumber-color--: #b3a48c;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
+  --diff-hunk-lineNumber-hover--: #d1a54a;
+  --diff-hunk-content-color--: #b3a48c;
+  --diff-add-widget--: #d1a54a;
+  --diff-add-widget-color--: #1f1b17;
+}
+
+/* High Legibility — stronger tints and 10:1 gutter numbers */
+:root.high-legibility .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
+  --diff-border--: #767676;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
+  --diff-plain-content--: #ffffff;
+  --diff-expand-content--: #f5f5f5;
+  --diff-plain-lineNumber--: #f5f5f5;
+  --diff-expand-lineNumber--: #f5f5f5;
+  --diff-empty-content--: #f5f5f5;
+  --diff-plain-lineNumber-color--: #3b3b3b;
+  --diff-expand-lineNumber-color--: #3b3b3b;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
+  --diff-hunk-lineNumber-hover--: #1e40af;
+  --diff-hunk-content-color--: #262626;
+  --diff-add-widget--: #1e40af;
+  --diff-add-widget-color--: #ffffff;
 }
