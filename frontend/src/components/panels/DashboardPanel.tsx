@@ -1,6 +1,6 @@
 import React from 'react';
 import { ProjectDashboard } from '../ProjectDashboard';
-import { useSession } from '../../contexts/useSession';
+import { useSession } from '../../contexts/SessionContext';
 
 interface DashboardPanelProps {
   panelId: string;

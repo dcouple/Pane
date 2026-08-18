@@ -4,7 +4,7 @@ import type { DiffHighlighter } from '@git-diff-view/shiki';
 import { getDiffViewHighlighter } from '@git-diff-view/shiki';
 import { FileText, ChevronRight, ChevronDown, ExternalLink, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import type { DiffViewerProps, FileDiff } from '../../../types/diff';
-import { useTheme } from '../../../contexts/useTheme';
+import { useTheme } from '../../../contexts/ThemeContext';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
 import "@git-diff-view/react/styles/diff-view.css";
 

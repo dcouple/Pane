@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useId } from 'react';
 import { CheckCircle2, Circle, ChevronRight, GitBranch, FileCode } from 'lucide-react';
-import { useSession } from '../../contexts/useSession';
+import { useSession } from '../../contexts/SessionContext';
 import { panelApi } from '../../services/panelApi';
 import { API } from '../../utils/api';
 import type { SetupTasksPanelState } from '../../../../shared/types/panels';

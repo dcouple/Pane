@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useId, useLayoutEffect
 import { createPortal } from 'react-dom';
 import { Slot } from '@radix-ui/react-slot';
 import { cn } from '../../utils/cn';
-import { usePortalContainer } from '../../contexts/usePortalContainer';
+import { usePortalContainer } from '../../contexts/PortalContainerContext';
 
 export interface TooltipProps extends Omit<React.HTMLAttributes<HTMLElement>, 'children' | 'content'> {
   content: React.ReactNode;
