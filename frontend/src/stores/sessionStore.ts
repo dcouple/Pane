@@ -527,9 +527,8 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
 
   updateSessionGitStatus: (sessionId, gitStatus) => {
     const state = get();
-    
-    // Add to pending updates
-    state.pendingGitStatusUpdates.set(sessionId, gitStatus);
+    const pendingGitStatusUpdates = new Map(state.pendingGitStatusUpdates);
+    pendingGitStatusUpdates.set(sessionId, gitStatus);
     
     // Clear existing timer
     if (state.gitStatusBatchTimer) {
@@ -541,14 +540,13 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       get().processPendingGitStatusUpdates();
     }, 50); // 50ms batch window
     
-    set({ gitStatusBatchTimer: timer });
+    set({ pendingGitStatusUpdates, gitStatusBatchTimer: timer });
   },
   
   setGitStatusLoading: (sessionId, loading) => {
     const state = get();
-    
-    // Add to pending updates
-    state.pendingGitStatusLoading.set(sessionId, loading);
+    const pendingGitStatusLoading = new Map(state.pendingGitStatusLoading);
+    pendingGitStatusLoading.set(sessionId, loading);
     
     // Clear existing timer
     if (state.gitStatusBatchTimer) {
@@ -560,7 +558,7 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
       get().processPendingGitStatusUpdates();
     }, 50); // 50ms batch window
     
-    set({ gitStatusBatchTimer: timer });
+    set({ pendingGitStatusLoading, gitStatusBatchTimer: timer });
   },
   
   isGitStatusLoading: (sessionId) => {
@@ -655,29 +653,34 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   
   processPendingGitStatusUpdates: () => {
     const state = get();
-    
-    // Clear timer
+
     if (state.gitStatusBatchTimer) {
       clearTimeout(state.gitStatusBatchTimer);
-      set({ gitStatusBatchTimer: null });
     }
-    
-    // Process loading state updates
-    if (state.pendingGitStatusLoading.size > 0) {
-      const loadingUpdates = Array.from(state.pendingGitStatusLoading.entries()).map(
-        ([sessionId, loading]) => ({ sessionId, loading })
-      );
+
+    const loadingUpdates = Array.from(state.pendingGitStatusLoading, ([sessionId, loading]) => ({
+      sessionId,
+      loading,
+    }));
+    const statusUpdates = Array.from(state.pendingGitStatusUpdates, ([sessionId, status]) => ({
+      sessionId,
+      status,
+    }));
+
+    // Reset the queues before publishing their snapshots so every observable
+    // collection gets a new identity and subsequent updates start a fresh batch.
+    set({
+      gitStatusBatchTimer: null,
+      pendingGitStatusLoading: new Map(),
+      pendingGitStatusUpdates: new Map(),
+    });
+
+    if (loadingUpdates.length > 0) {
       get().setGitStatusLoadingBatch(loadingUpdates);
-      state.pendingGitStatusLoading.clear();
     }
-    
-    // Process status updates
-    if (state.pendingGitStatusUpdates.size > 0) {
-      const statusUpdates = Array.from(state.pendingGitStatusUpdates.entries()).map(
-        ([sessionId, status]) => ({ sessionId, status })
-      );
+
+    if (statusUpdates.length > 0) {
       get().updateSessionGitStatusBatch(statusUpdates);
-      state.pendingGitStatusUpdates.clear();
     }
   },
   

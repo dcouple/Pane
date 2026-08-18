@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import type { Session } from '../types/session';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GitStatus, Session } from '../types/session';
 import { useSessionStore } from './sessionStore';
 
 function session(overrides: Partial<Session> = {}): Session {
@@ -18,6 +18,7 @@ function session(overrides: Partial<Session> = {}): Session {
 
 describe('sessionStore', () => {
   beforeEach(() => {
+    vi.useFakeTimers();
     useSessionStore.setState({
       sessions: [],
       activeSessionId: null,
@@ -31,6 +32,12 @@ describe('sessionStore', () => {
       gitStatusBatchTimer: null,
       activeSpotlights: new Map(),
     });
+  });
+
+  afterEach(() => {
+    const timer = useSessionStore.getState().gitStatusBatchTimer;
+    if (timer) clearTimeout(timer);
+    vi.useRealTimers();
   });
 
   it('keeps the current active pane when a background-created session arrives', () => {
@@ -54,5 +61,47 @@ describe('sessionStore', () => {
     }));
 
     expect(useSessionStore.getState().activeSessionId).toBe('session-foreground');
+  });
+
+  it('queues and flushes git status updates without mutating map snapshots', () => {
+    const originalQueue = useSessionStore.getState().pendingGitStatusUpdates;
+    const gitStatus: GitStatus = { state: 'modified', filesChanged: 2 };
+    useSessionStore.setState({ sessions: [session({ id: 'session-status' })] });
+
+    useSessionStore.getState().updateSessionGitStatus('session-status', gitStatus);
+
+    const queuedState = useSessionStore.getState();
+    expect(originalQueue.size).toBe(0);
+    expect(queuedState.pendingGitStatusUpdates).not.toBe(originalQueue);
+    expect(queuedState.pendingGitStatusUpdates.get('session-status')).toBe(gitStatus);
+
+    const queuedSnapshot = queuedState.pendingGitStatusUpdates;
+    vi.advanceTimersByTime(50);
+
+    const flushedState = useSessionStore.getState();
+    expect(queuedSnapshot.get('session-status')).toBe(gitStatus);
+    expect(flushedState.pendingGitStatusUpdates).not.toBe(queuedSnapshot);
+    expect(flushedState.pendingGitStatusUpdates.size).toBe(0);
+    expect(flushedState.sessions[0].gitStatus).toEqual(gitStatus);
+  });
+
+  it('queues and flushes loading updates without mutating map snapshots', () => {
+    const originalQueue = useSessionStore.getState().pendingGitStatusLoading;
+
+    useSessionStore.getState().setGitStatusLoading('session-loading', true);
+
+    const queuedState = useSessionStore.getState();
+    expect(originalQueue.size).toBe(0);
+    expect(queuedState.pendingGitStatusLoading).not.toBe(originalQueue);
+    expect(queuedState.pendingGitStatusLoading.get('session-loading')).toBe(true);
+
+    const queuedSnapshot = queuedState.pendingGitStatusLoading;
+    vi.advanceTimersByTime(50);
+
+    const flushedState = useSessionStore.getState();
+    expect(queuedSnapshot.get('session-loading')).toBe(true);
+    expect(flushedState.pendingGitStatusLoading).not.toBe(queuedSnapshot);
+    expect(flushedState.pendingGitStatusLoading.size).toBe(0);
+    expect(flushedState.gitStatusLoading.has('session-loading')).toBe(true);
   });
 });
