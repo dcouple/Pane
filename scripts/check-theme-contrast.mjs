@@ -368,8 +368,9 @@ function printText(report, showAll) {
   console.log(`  ${results.length - failures.length}/${results.length} checks pass`);
   if (cvd) {
     console.log('  CVD simulation (Machado 2009, severity 1.0) — worst pair ΔE (CIE76), min contrast on bg:');
+    const cvdGated = Boolean(gate?.cvd);
     for (const row of cvd) {
-      const status = row.pass ? 'ok  ' : 'FAIL';
+      const status = row.pass ? 'ok  ' : cvdGated ? 'FAIL' : 'low ';
       console.log(`  ${status} ${row.set.padEnd(12)} ${row.kind.padEnd(13)} ΔE ${fmt(row.worst?.dE).padStart(6)}  (${short(row.worst?.a ?? '')} vs ${short(row.worst?.b ?? '')})  min ${fmt(row.minOnBg)}:1`);
     }
   }
