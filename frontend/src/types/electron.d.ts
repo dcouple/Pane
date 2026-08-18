@@ -103,6 +103,12 @@ interface ElectronAPI {
   // System utilities
   openExternal: (url: string) => Promise<void>;
 
+  feedback: {
+    submit: (request: import('../../../shared/types/feedback').SubmitFeedbackRequest) => Promise<IPCResponse<
+      import('../../../shared/types/feedback').SubmitFeedbackSuccess | import('../../../shared/types/feedback').SubmitFeedbackFailure
+    >>;
+  };
+
   diagnostics: {
     rendererFatal: (payload: RendererDiagnosticPayload) => Promise<IPCResponse>;
   };

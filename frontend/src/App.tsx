@@ -20,6 +20,7 @@ import OnboardingDialog, {
 } from './components/OnboardingDialog';
 import { AboutDialog } from './components/AboutDialog';
 import { DocsDialog } from './components/DocsDialog';
+import { FeedbackDialog } from './components/FeedbackDialog';
 import { UpdateDialog } from './components/UpdateDialog';
 import { MainProcessLogger } from './components/MainProcessLogger';
 import { ErrorDialog } from './components/ErrorDialog';
@@ -87,6 +88,7 @@ function App() {
   const [isAnalyticsConsentOpen, setIsAnalyticsConsentOpen] = useState(false);
   const [hasCheckedAnalyticsConsent, setHasCheckedAnalyticsConsent] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [updateVersionInfo, setUpdateVersionInfo] = useState<VersionUpdateInfo | null>(null);
   const [currentPermissionRequest, setCurrentPermissionRequest] = useState<PanePermissionRequest | null>(null);
@@ -857,6 +859,7 @@ function App() {
             onToggleCollapse={handleToggleSidebar}
             onHelpClick={() => setIsHelpOpen(true)}
             onDocsClick={() => setIsDocsOpen(true)}
+            onFeedbackClick={() => setIsFeedbackOpen(true)}
           />
         </div>
         <SessionView />
@@ -896,6 +899,7 @@ function App() {
         />
         <Welcome isOpen={isWelcomeOpen} onClose={() => setIsWelcomeOpen(false)} />
         <AboutDialog isOpen={isAboutOpen} onClose={() => setIsAboutOpen(false)} onUpdate={handleUpdateRequest} />
+        <FeedbackDialog isOpen={isFeedbackOpen} onClose={() => setIsFeedbackOpen(false)} />
         <UpdateDialog
           isOpen={isUpdateDialogOpen}
           onClose={() => setIsUpdateDialogOpen(false)}

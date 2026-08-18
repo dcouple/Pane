@@ -83,6 +83,7 @@ interface SidebarProps {
   onToggleCollapse?: () => void;
   onHelpClick: () => void;
   onDocsClick: () => void;
+  onFeedbackClick: () => void;
 }
 
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
@@ -112,7 +113,7 @@ const HelpCircleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick }: SidebarProps) {
+export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick, onFeedbackClick }: SidebarProps) {
   const paneLogo = usePaneLogo();
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
@@ -892,17 +893,26 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
 
           {/* Version display at bottom */}
           <div className="px-3 py-2 border-t border-border-primary space-y-1.5">
-            <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250} className="block">
+            <div className="flex items-center justify-center gap-2">
+              <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250}>
+                <button
+                  type="button"
+                  onClick={onRemoteSettingsClick}
+                  aria-label={remoteFooterStatus.ariaLabel}
+                  className="flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors truncate"
+                >
+                  <span className={`h-2 w-2 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
+                  <span className="font-medium">Remote</span>
+                </button>
+              </Tooltip>
               <button
                 type="button"
-                onClick={onRemoteSettingsClick}
-                aria-label={remoteFooterStatus.ariaLabel}
-                className="flex w-full items-center justify-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors truncate"
+                onClick={onFeedbackClick}
+                className="rounded-full border border-border-primary px-2 py-0.5 text-[11px] font-medium text-text-tertiary transition-colors hover:border-border-secondary hover:bg-surface-hover hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-interactive"
               >
-                <span className={`h-2 w-2 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
-                <span className="font-medium">Remote</span>
+                Feedback
               </button>
-            </Tooltip>
+            </div>
             {version && (
               <div className="flex items-center justify-center gap-1.5 text-xs text-text-tertiary truncate">
                 <button

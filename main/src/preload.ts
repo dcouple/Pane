@@ -22,6 +22,7 @@ import type { PanelAgentStatusEvent } from '../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
+import type { SubmitFeedbackRequest } from '../../shared/types/feedback';
 import type {
   PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
@@ -437,6 +438,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // System utilities
   openExternal: (url: string): Promise<IPCResponse> => invokeIpc('openExternal', url),
+
+  feedback: {
+    submit: (request: SubmitFeedbackRequest): Promise<IPCResponse> => invokeIpc('feedback:submit', request),
+  },
 
   diagnostics: {
     rendererFatal: (payload: {
