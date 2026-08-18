@@ -123,23 +123,27 @@ export class RemoteDaemonBrowserClient {
           ...request,
         });
 
-        // SAFETY: The named IPC/API channel contract establishes this response payload type.
-        const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
-        if (response.ok && payload.ok) {
+        if (!response.ok) {
+          // SAFETY: The named IPC/API channel contract establishes this error payload type.
+          const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
+          const message = payload.ok
+            ? `Remote request failed with ${response.status}`
+            : payload.error?.message ?? 'Remote request failed';
+          if (isAuthFailureResponse(response.status)) {
+            throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
+          }
+          if (!isRetryableResponse(response.status)) {
+            throw new NonRetryableRemoteError(message);
+          }
+          lastError = new Error(message);
+        } else {
+          // SAFETY: The named IPC/API channel contract establishes this success payload type.
+          const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
+          if (!payload.ok) {
+            throw new NonRetryableRemoteError(payload.error?.message ?? 'Remote request failed');
+          }
           return payload.result;
         }
-
-        const message = payload.ok
-          ? `Remote request failed with ${response.status}`
-          : payload.error?.message ?? 'Remote request failed';
-        const error = new Error(message);
-        if (isAuthFailureResponse(response.status)) {
-          throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
-        }
-        if (!isRetryableResponse(response.status)) {
-          throw new NonRetryableRemoteError(message);
-        }
-        lastError = error instanceof Error ? error : new Error('Remote request failed');
       } catch (error) {
         if (error instanceof RemoteAuthInvalidError || error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
