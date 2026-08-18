@@ -72,6 +72,10 @@ export function RemotePwaApp() {
   const sidebarOpenerRef = useRef<HTMLElement | null>(null);
   const createSessionOpenerRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(savedProfiles));
+  }, [savedProfiles]);
+
   const openSidebar = useCallback(() => {
     sidebarOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setSidebarOpen(true);
@@ -228,11 +232,7 @@ export function RemotePwaApp() {
   }, [adapter, selectSession, setProjects]);
 
   const forgetProfile = useCallback((profileId: string) => {
-    setSavedProfiles(previous => {
-      const next = previous.filter(profile => profile.id !== profileId);
-      window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
-      return next;
-    });
+    setSavedProfiles(previous => previous.filter(profile => profile.id !== profileId));
   }, []);
 
   const createTerminal = useCallback(async (options?: RemoteTerminalCreateOptions) => {
@@ -567,11 +567,9 @@ function saveProfile(
   setSavedProfiles: (updater: (profiles: RemotePaneConnectionProfile[]) => RemotePaneConnectionProfile[]) => void,
 ): void {
   setSavedProfiles(previous => {
-    const next = [profile, ...previous.filter(candidate => (
+    return [profile, ...previous.filter(candidate => (
       candidate.id !== profile.id && candidate.baseUrl !== profile.baseUrl
     ))];
-    window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
-    return next;
   });
 }
 
@@ -580,10 +578,6 @@ function forgetProfilesForBaseUrl(
   setSavedProfiles: (updater: (profiles: RemotePaneConnectionProfile[]) => RemotePaneConnectionProfile[]) => void,
 ): void {
   setSavedProfiles(previous => {
-    const next = previous.filter(profile => profile.baseUrl !== baseUrl);
-    if (next.length !== previous.length) {
-      window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(next));
-    }
-    return next;
+    return previous.filter(profile => profile.baseUrl !== baseUrl);
   });
 }

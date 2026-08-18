@@ -821,14 +821,12 @@ export function ArchivedSessions() {
   }, []);
 
   const toggleArchived = useCallback(() => {
-    setShowArchived(prev => {
-      const next = !prev;
-      if (next && !hasLoadedArchived) {
-        loadArchivedSessions();
-      }
-      return next;
-    });
-  }, [hasLoadedArchived, loadArchivedSessions]);
+    const next = !showArchived;
+    if (next && !hasLoadedArchived) {
+      void loadArchivedSessions();
+    }
+    setShowArchived(next);
+  }, [hasLoadedArchived, loadArchivedSessions, showArchived]);
 
   const toggleArchivedProject = (id: number) => {
     setExpandedArchivedProjects(prev => {

@@ -1410,12 +1410,12 @@ export const SessionView = memo(() => {
     return stored === null ? false : stored === 'true';
   });
 
+  useEffect(() => {
+    localStorage.setItem('pane-detail-collapsed', String(isDetailCollapsed));
+  }, [isDetailCollapsed]);
+
   const toggleDetailCollapse = useCallback(() => {
-    setIsDetailCollapsed(prev => {
-      const newValue = !prev;
-      localStorage.setItem('pane-detail-collapsed', String(newValue));
-      return newValue;
-    });
+    setIsDetailCollapsed(prev => !prev);
   }, []);
 
   // Layout-aware detail panel toggle that also handles immersive mode override
@@ -1436,12 +1436,12 @@ export const SessionView = memo(() => {
     return stored === null ? true : stored === 'true';
   });
 
+  useEffect(() => {
+    localStorage.setItem('pane-terminal-collapsed', String(isTerminalCollapsed));
+  }, [isTerminalCollapsed]);
+
   const toggleTerminalCollapse = useCallback(() => {
-    setIsTerminalCollapsed(prev => {
-      const newValue = !prev;
-      localStorage.setItem('pane-terminal-collapsed', String(newValue));
-      return newValue;
-    });
+    setIsTerminalCollapsed(prev => !prev);
   }, []);
 
   // Ctrl+`: toggle bottom terminal
