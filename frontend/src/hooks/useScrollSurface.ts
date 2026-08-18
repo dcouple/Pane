@@ -4,6 +4,7 @@ import {
   type FocusedScrollSurface,
   type ScrollDirection,
 } from '../services/focusedSurfaceScroll';
+import { useCommittedRef } from './useCommittedRef';
 
 interface UseScrollSurfaceOptions {
   id: string;
@@ -35,8 +36,10 @@ export function useScrollSurface<T extends HTMLElement>({
   scrollPage,
   focus,
 }: UseScrollSurfaceOptions): (element: T | null) => void {
-  const optionsRef = useRef({ ownerElement, scrollByLines, scrollPage, focus });
-  optionsRef.current = { ownerElement, scrollByLines, scrollPage, focus };
+  const ownerElementRef = useCommittedRef(ownerElement);
+  const scrollByLinesRef = useCommittedRef(scrollByLines);
+  const scrollPageRef = useCommittedRef(scrollPage);
+  const focusRef = useCommittedRef(focus);
   const unregisterRef = useRef<(() => void) | null>(null);
 
   return useCallback((element: T | null) => {
@@ -46,31 +49,31 @@ export function useScrollSurface<T extends HTMLElement>({
 
     const surface: FocusedScrollSurface = {
       id,
-      element: optionsRef.current.ownerElement?.() ?? element,
+      element: ownerElementRef.current?.() ?? element,
       sessionId,
       priority,
       scrollByLines: (lines) => {
-        if (optionsRef.current.scrollByLines) {
-          optionsRef.current.scrollByLines(lines);
+        if (scrollByLinesRef.current) {
+          scrollByLinesRef.current(lines);
         } else {
           element.scrollTop += lines * lineStep(element);
         }
       },
       scrollPage: (direction) => {
-        if (optionsRef.current.scrollPage) {
-          optionsRef.current.scrollPage(direction);
+        if (scrollPageRef.current) {
+          scrollPageRef.current(direction);
         } else {
           element.scrollTop += direction * element.clientHeight * PAGE_RATIO;
         }
       },
       focus: () => {
-        if (optionsRef.current.focus) {
-          optionsRef.current.focus();
+        if (focusRef.current) {
+          focusRef.current();
         } else {
           element.focus({ preventScroll: true });
         }
       },
     };
     unregisterRef.current = focusedSurfaceScroll.register(surface);
-  }, [enabled, id, priority, sessionId]);
+  }, [enabled, focusRef, id, ownerElementRef, priority, scrollByLinesRef, scrollPageRef, sessionId]);
 }

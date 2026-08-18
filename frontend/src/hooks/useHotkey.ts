@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useHotkeyStore, type HotkeyDefinition } from '../stores/hotkeyStore';
+import { useCommittedRef } from './useCommittedRef';
 
 /**
  * Register a global hotkey. The shortcut is active while the component is mounted.
@@ -23,15 +24,12 @@ export function useHotkey(def: HotkeyDefinition): void {
   const unregister = useHotkeyStore((s) => s.unregister);
 
   // Keep action ref stable to avoid re-registering on every render
-  const actionRef = useRef(def.action);
-  actionRef.current = def.action;
+  const actionRef = useCommittedRef(def.action);
 
   // Same for enabled
-  const enabledRef = useRef(def.enabled);
-  enabledRef.current = def.enabled;
+  const enabledRef = useCommittedRef(def.enabled);
 
-  const disabledReasonRef = useRef(def.disabledReason);
-  disabledReasonRef.current = def.disabledReason;
+  const disabledReasonRef = useCommittedRef(def.disabledReason);
 
   useEffect(() => {
     register({

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useHotkey } from './useHotkey';
+import { useCommittedRef } from './useCommittedRef';
 import { useHotkeyStore } from '../stores/hotkeyStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -67,22 +68,14 @@ export function useSessionNavigationHotkeys({
     return getPinnedSessions(sessions, projectById).map(item => item.session);
   }, [sessions, projectById]);
 
-  const allActiveSessionsRef = useRef(allActiveSessions);
-  allActiveSessionsRef.current = allActiveSessions;
-  const visibleSessionsRef = useRef(visibleSessions);
-  visibleSessionsRef.current = visibleSessions;
-  const pinnedSessionsRef = useRef(pinnedSessions);
-  pinnedSessionsRef.current = pinnedSessions;
-  const activeSessionIdRef = useRef(activeSessionId);
-  activeSessionIdRef.current = activeSessionId;
-  const sidebarNavigationScopeRef = useRef(sidebarNavigationScope);
-  sidebarNavigationScopeRef.current = sidebarNavigationScope;
-  const setActiveSessionRef = useRef(setActiveSession);
-  setActiveSessionRef.current = setActiveSession;
-  const setSidebarNavigationScopeRef = useRef(setSidebarNavigationScope);
-  setSidebarNavigationScopeRef.current = setSidebarNavigationScope;
-  const navigateToSessionsRef = useRef(navigateToSessions);
-  navigateToSessionsRef.current = navigateToSessions;
+  const allActiveSessionsRef = useCommittedRef(allActiveSessions);
+  const visibleSessionsRef = useCommittedRef(visibleSessions);
+  const pinnedSessionsRef = useCommittedRef(pinnedSessions);
+  const activeSessionIdRef = useCommittedRef(activeSessionId);
+  const sidebarNavigationScopeRef = useCommittedRef(sidebarNavigationScope);
+  const setActiveSessionRef = useCommittedRef(setActiveSession);
+  const setSidebarNavigationScopeRef = useCommittedRef(setSidebarNavigationScope);
+  const navigateToSessionsRef = useCommittedRef(navigateToSessions);
 
   const cycleSession = useCallback((direction: 'next' | 'prev') => {
     const sessions = allActiveSessionsRef.current;
@@ -95,7 +88,7 @@ export function useSessionNavigationHotkeys({
 
     setActiveSessionRef.current(sessions[nextIndex].id);
     navigateToSessionsRef.current();
-  }, []);
+  }, [activeSessionIdRef, allActiveSessionsRef, navigateToSessionsRef, setActiveSessionRef]);
 
   const cycleVisibleOrAllSessions = useCallback((direction: 'next' | 'prev') => {
     const currentId = activeSessionIdRef.current;
@@ -114,7 +107,15 @@ export function useSessionNavigationHotkeys({
 
     setActiveSessionRef.current(sessions[nextIndex].id);
     navigateToSessionsRef.current();
-  }, []);
+  }, [
+    activeSessionIdRef,
+    allActiveSessionsRef,
+    navigateToSessionsRef,
+    pinnedSessionsRef,
+    setActiveSessionRef,
+    sidebarNavigationScopeRef,
+    visibleSessionsRef,
+  ]);
 
   useHotkey({
     id: 'cycle-session-next-0',
@@ -170,8 +171,7 @@ export function useSessionNavigationHotkeys({
     action: () => cycleVisibleOrAllSessions('prev'),
   });
 
-  const projectByIdRef = useRef(projectById);
-  projectByIdRef.current = projectById;
+  const projectByIdRef = useCommittedRef(projectById);
 
   const register = useHotkeyStore(s => s.register);
   const unregister = useHotkeyStore(s => s.unregister);
@@ -211,5 +211,14 @@ export function useSessionNavigationHotkeys({
       });
     }
     return () => ids.forEach(id => unregister(id));
-  }, [register, unregister, sessionLabelKey]);
+  }, [
+    navigateToSessionsRef,
+    projectByIdRef,
+    register,
+    sessionLabelKey,
+    setActiveSessionRef,
+    setSidebarNavigationScopeRef,
+    unregister,
+    visibleSessionsRef,
+  ]);
 }
