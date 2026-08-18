@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createDefaultRemoteDaemonConfig,
   createDefaultRemoteDaemonHostRuntimeState,
@@ -29,6 +29,10 @@ interface RemoteHostSetupDraft {
   installService: boolean;
 }
 
+type RemoteActionOutcome<T> =
+  | { success: true; value: T }
+  | { success: false };
+
 const DEFAULT_HOST_SETUP_DRAFT: RemoteHostSetupDraft = {
   dataMode: 'current',
   label: '',
@@ -46,10 +50,11 @@ function formatRemoteBaseUrl(host: string, port: number): string {
 }
 
 export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => void) {
-  const [config, setConfig] = useState<RemoteDaemonConfig>(createDefaultRemoteDaemonConfig());
-  const [connectionState, setConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
-  const [hostState, setHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
-  const [hostDraft, setHostDraft] = useState<RemoteDaemonHostConfig>(createDefaultRemoteDaemonConfig().host.config);
+  const [config, setConfig] = useState<RemoteDaemonConfig>(createDefaultRemoteDaemonConfig);
+  const configRef = useRef(config);
+  const [connectionState, setConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState);
+  const [hostState, setHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState);
+  const [hostDraft, setHostDraft] = useState<RemoteDaemonHostConfig>(() => createDefaultRemoteDaemonConfig().host.config);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -89,14 +94,15 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
       API.remoteDaemon.getHostState(),
     ]);
     if (!configResponse.success || !configResponse.data) throw new Error(configResponse.error || 'Failed to load Remote Pane configuration');
-    setConfig((currentConfig) => {
-      setHostDraft((currentDraft) => (
-        JSON.stringify(currentDraft) === JSON.stringify(currentConfig.host.config)
-          ? configResponse.data!.host.config
-          : currentDraft
-      ));
-      return configResponse.data!;
-    });
+    const nextConfig = configResponse.data;
+    const previousHostConfig = configRef.current.host.config;
+    setHostDraft((currentDraft) => (
+      JSON.stringify(currentDraft) === JSON.stringify(previousHostConfig)
+        ? nextConfig.host.config
+        : currentDraft
+    ));
+    configRef.current = nextConfig;
+    setConfig(nextConfig);
     setSetupListenPort((current) => current === 42137 ? configResponse.data!.host.config.listenPort : current);
     setSetupBaseline((current) => current.listenPort === 42137
       ? { ...current, listenPort: configResponse.data!.host.config.listenPort }
@@ -133,22 +139,27 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
     };
   }, [isOpen, reload]);
 
-  const run = useCallback(async (action: () => Promise<string | void>) => {
+  const runRemoteRequest = useCallback(async <T,>(action: () => Promise<T>): Promise<RemoteActionOutcome<T>> => {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const message = await action();
+      const value = await action();
       await Promise.all([refresh(), refreshConfigStore().catch(() => undefined)]);
-      if (message) setResult(message);
-      return true;
+      return { success: true, value };
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Remote Pane action failed');
-      return false;
+      return { success: false };
     } finally {
       setBusy(false);
     }
   }, [refresh, refreshConfigStore]);
+
+  const runRemoteAction = useCallback(async (action: () => Promise<string | void>) => {
+    const outcome = await runRemoteRequest(action);
+    if (outcome.success && outcome.value) setResult(outcome.value);
+    return outcome.success;
+  }, [runRemoteRequest]);
 
   const buildSetupRequest = (): RemoteHostSetupRequest => ({
     dataDirectoryMode: setupDataMode,
@@ -170,15 +181,20 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
     installService: setupInstallService,
   });
 
-  const setupHost = () => run(async () => {
-    const response = await API.remoteDaemon.setupHost(buildSetupRequest());
-    if (!response.success || !response.data) throw new Error(response.error || 'Failed to set up this machine');
-    setSetupResult(response.data);
+  const setupHost = async () => {
+    const outcome = await runRemoteRequest(async () => {
+      const response = await API.remoteDaemon.setupHost(buildSetupRequest());
+      if (!response.success || !response.data) throw new Error(response.error || 'Failed to set up this machine');
+      return response.data;
+    });
+    if (!outcome.success) return false;
+    setSetupResult(outcome.value);
     setSetupLabel('');
-    setSetupListenPort(response.data.listenPort);
-    setSetupBaseline({ ...getSetupDraft(), label: '', listenPort: response.data.listenPort });
-    return 'Remote host configured and connection code created.';
-  });
+    setSetupListenPort(outcome.value.listenPort);
+    setSetupBaseline({ ...getSetupDraft(), label: '', listenPort: outcome.value.listenPort });
+    setResult('Remote host configured and connection code created.');
+    return true;
+  };
 
   const openSetupTerminal = async (client = false) => {
     const projectId = activeProjectId ?? activeSessionProjectId;
@@ -219,79 +235,89 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
     setResult(message);
   };
 
-  const createHostCode = () => run(async () => {
+  const createHostCode = () => runRemoteAction(async () => {
     const response = await API.remoteDaemon.createHostConnectionCode({ label: setupLabel.trim() || undefined });
     if (!response.success || !response.data) throw new Error(response.error || 'Failed to create connection code');
     await navigator.clipboard.writeText(response.data.connectionCode);
     return 'Created and copied connection code.';
   });
 
-  const stopHost = () => run(async () => {
+  const stopHost = () => runRemoteAction(async () => {
     const response = await API.remoteDaemon.updateHostConfig({ enabled: false });
     if (!response.success) throw new Error(response.error || 'Failed to stop remote host');
     return 'Remote host stopped.';
   });
 
-  const clearHostAccess = () => run(async () => {
+  const clearHostAccess = () => runRemoteAction(async () => {
     const response = await API.remoteDaemon.clearHostAccess();
     if (!response.success) throw new Error(response.error || 'Failed to forget host access');
     return 'Cached host code forgotten and existing remote clients revoked.';
   });
 
-  const disconnectClients = (clientIds?: string[]) => run(async () => {
+  const disconnectClients = (clientIds?: string[]) => runRemoteAction(async () => {
     const response = await API.remoteDaemon.disconnectHostClients(clientIds);
     if (!response.success) throw new Error(response.error || 'Failed to disconnect clients');
     return 'Remote clients disconnected.';
   });
 
-  const revokeClient = (clientId: string) => run(async () => {
+  const revokeClient = (clientId: string) => runRemoteAction(async () => {
     const response = await API.remoteDaemon.deleteClientRecord(clientId);
     if (!response.success) throw new Error(response.error || 'Failed to revoke client');
     return 'Client access revoked.';
   });
 
-  const importConnection = () => run(async () => {
-    const response = await API.remoteDaemon.importConnectionCode(connectionCode, { connect: true });
-    if (!response.success || !response.data) throw new Error(response.error || 'Failed to import connection code');
+  const importConnection = async () => {
+    const outcome = await runRemoteRequest(async () => {
+      const response = await API.remoteDaemon.importConnectionCode(connectionCode, { connect: true });
+      if (!response.success || !response.data) throw new Error(response.error || 'Failed to import connection code');
+      return response.data;
+    });
+    if (!outcome.success) return false;
     setConnectionCode('');
-    return response.data.connected
-      ? `Connected to ${response.data.profile.label}.`
-      : `Saved ${response.data.profile.label}${response.data.connectionError ? `, but connection failed: ${response.data.connectionError}` : '.'}`;
-  });
+    setResult(outcome.value.connected
+      ? `Connected to ${outcome.value.profile.label}.`
+      : `Saved ${outcome.value.profile.label}${outcome.value.connectionError ? `, but connection failed: ${outcome.value.connectionError}` : '.'}`);
+    return true;
+  };
 
-  const useProfile = (profileId: string) => run(async () => {
+  const useProfile = (profileId: string) => runRemoteAction(async () => {
     const response = await API.remoteDaemon.updateClientState({ activeProfileId: profileId, mode: 'remote' });
     if (!response.success) throw new Error(response.error || 'Failed to connect to profile');
     return 'Remote runtime connected.';
   });
 
-  const useLocal = () => run(async () => {
+  const useLocal = () => runRemoteAction(async () => {
     const response = await API.remoteDaemon.updateClientState({ activeProfileId: null, mode: 'local' });
     if (!response.success) throw new Error(response.error || 'Failed to return to local runtime');
     return 'Using local runtime.';
   });
 
-  const deleteProfile = (profileId: string) => run(async () => {
+  const deleteProfile = (profileId: string) => runRemoteAction(async () => {
     const response = await API.remoteDaemon.deleteConnectionProfile(profileId);
     if (!response.success) throw new Error(response.error || 'Failed to delete profile');
     return 'Remote profile deleted.';
   });
 
-  const saveHostConfig = () => run(async () => {
+  const saveHostConfig = () => runRemoteAction(async () => {
     const response = await API.remoteDaemon.updateHostConfig(hostDraft);
     if (!response.success) throw new Error(response.error || 'Failed to save host settings');
     return 'Host settings saved.';
   });
 
-  const createPair = () => run(async () => {
-    const response = await API.remoteDaemon.createConnectionPair({ label: pairLabel.trim(), baseUrl: pairBaseUrl.trim() });
-    if (!response.success || !response.data) throw new Error(response.error || 'Failed to create paired connection');
-    setCreatedToken(response.data.token ?? null);
+  const createPair = async () => {
+    const outcome = await runRemoteRequest(async () => {
+      const response = await API.remoteDaemon.createConnectionPair({ label: pairLabel.trim(), baseUrl: pairBaseUrl.trim() });
+      if (!response.success || !response.data) throw new Error(response.error || 'Failed to create paired connection');
+      return response.data;
+    });
+    if (!outcome.success) return false;
+    setCreatedToken(outcome.value.token ?? null);
     setPairLabel('');
-    return 'Paired profile created.';
-  });
+    setResult('Paired profile created.');
+    return true;
+  };
 
-  const saveProfile = () => run(async () => {
+  const saveProfile = async () => {
     const profile: RemotePaneConnectionProfile = {
       id: crypto.randomUUID(),
       label: profileLabel.trim(),
@@ -299,12 +325,16 @@ export function useRemoteAccessSettings(isOpen: boolean, closeSettings: () => vo
       token: profileToken.trim(),
       transport: 'http+sse',
     };
-    const response = await API.remoteDaemon.upsertConnectionProfile(profile);
-    if (!response.success) throw new Error(response.error || 'Failed to save remote profile');
+    const outcome = await runRemoteRequest(async () => {
+      const response = await API.remoteDaemon.upsertConnectionProfile(profile);
+      if (!response.success) throw new Error(response.error || 'Failed to save remote profile');
+    });
+    if (!outcome.success) return false;
     setProfileLabel('');
     setProfileToken('');
-    return 'Remote profile saved.';
-  });
+    setResult('Remote profile saved.');
+    return true;
+  };
 
   const validation = useMemo(() => ({
     setupPort: Number.isInteger(setupListenPort) && setupListenPort >= 1 && setupListenPort <= 65535,
