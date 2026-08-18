@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const oxlint = join(root, "node_modules", ".bin", process.platform === "win32" ? "oxlint.cmd" : "oxlint");
-const config = join(root, ".oxlintrc.advisory.json");
+const config = join(root, ".oxlintrc.json");
 const primitives = [
   join(root, "shared", "validation", "boundaryDecoder.ts"),
   join(root, "packages", "runpane", "src", "boundaryDecoder.ts"),

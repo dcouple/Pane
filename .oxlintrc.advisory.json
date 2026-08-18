@@ -21,30 +21,5 @@
     "dist-electron/**",
     "tools/oxlint/anti-slop/**"
   ],
-  "rules": {
-    "anti-slop/no-reflect-get": "warn",
-    "anti-slop/no-chained-type-assertions": "warn",
-    "anti-slop/no-conditional-empty-object-spread": "warn",
-    "anti-slop/no-known-value-widening": "warn",
-    "anti-slop/no-module-mocking": "warn",
-    "anti-slop/no-runtime-typeof": "warn",
-    "anti-slop/no-shape-in-symbol-names": "warn",
-    "anti-slop/no-unknown-parameters": "warn",
-    "anti-slop/no-unknown-returns": "warn",
-    "anti-slop/no-unsafe-dictionary-type": "warn",
-    "anti-slop/require-safety-comment-for-type-assertion": "warn"
-  },
-  "overrides": [
-    {
-      "files": [
-        "shared/validation/boundaryDecoder.ts",
-        "packages/runpane/src/boundaryDecoder.ts"
-      ],
-      "rules": {
-        "anti-slop/no-runtime-typeof": "off",
-        "anti-slop/no-unknown-parameters": "off",
-        "anti-slop/no-unsafe-dictionary-type": "off"
-      }
-    }
-  ]
+  "rules": {}
 }

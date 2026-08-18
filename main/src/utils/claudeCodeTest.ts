@@ -202,16 +202,17 @@ export async function testClaudeCodeInDirectory(directory: string, customClaudeP
     return { success: true, output: stdout + stderr };
   } catch (error) {
     console.error(`[ClaudeTest] Directory test failed: ${error instanceof Error ? error.message : error}`);
-    let processError: { code?: string; stdout?: string; stderr?: string } = {};
-    try {
-      processError = decodeBoundary(error, boundary.object({
-        code: boundary.optional(boundary.string),
-        stdout: boundary.optional(boundary.string),
-        stderr: boundary.optional(boundary.string),
-      }));
-    } catch {
-      processError = {};
-    }
+    const processError = (() => {
+      try {
+        return decodeBoundary(error, boundary.object({
+          code: boundary.optional(boundary.string),
+          stdout: boundary.optional(boundary.string),
+          stderr: boundary.optional(boundary.string),
+        }));
+      } catch {
+        return { code: undefined, stdout: undefined, stderr: undefined };
+      }
+    })();
     if (processError.code) {
       console.error(`[ClaudeTest] Error code: ${processError.code}`);
     }

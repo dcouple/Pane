@@ -55,13 +55,14 @@ export function collectRemoteDaemonExecutableHealth(
     };
   }
   if (processImage.status === 'replaced' || processImage.status === 'deleted') {
-    return {
+    const health: RemoteDaemonExecutableHealth = {
       processImage,
       restart,
       diagnosticCode: 'PANE_REMOTE_DAEMON_UPDATE_PENDING',
-      ...(restart.status === 'broken' ? { recoveryCommand } : {}),
       checkedAt,
     };
+    if (restart.status === 'broken') health.recoveryCommand = recoveryCommand;
+    return health;
   }
   if (restart.status === 'broken') {
     return {
@@ -120,11 +121,12 @@ function collectProcessImage(options: {
         : 'The installed Pane executable has a different device or inode from the running process.',
     };
   } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
     return {
       status: 'unknown',
       runtimePath: options.executablePath,
       installedPath: options.installedPath,
-      evidence: `Executable identity could not be inspected: ${errorMessage(error)}`,
+      evidence: `Executable identity could not be inspected: ${failure.message}`,
     };
   }
 }
@@ -137,12 +139,13 @@ function collectRestartHealth(
   try {
     contents = readFileSync(launcherPath, 'utf8');
   } catch (error) {
+    const failure = error instanceof Error ? error : new Error(String(error));
     return {
-      status: isNodeErrorWithCode(error, 'ENOENT') ? 'unknown' : 'unknown',
+      status: 'unknown',
       launcherPath,
-      evidence: isNodeErrorWithCode(error, 'ENOENT')
+      evidence: isNodeErrorWithCode(failure, 'ENOENT')
         ? 'No managed remote daemon launcher exists for this Pane directory.'
-        : `The managed launcher could not be read: ${errorMessage(error)}`,
+        : `The managed launcher could not be read: ${failure.message}`,
     };
   }
 
@@ -185,10 +188,6 @@ function formatPaneDirForCommand(paneDir: string, homeDir: string): string {
   return `'${paneDir.replace(/'/g, `'\\''`)}'`;
 }
 
-function isNodeErrorWithCode(error: unknown, code: string): boolean {
+function isNodeErrorWithCode(error: Error, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

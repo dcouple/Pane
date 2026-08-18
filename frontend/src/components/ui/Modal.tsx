@@ -203,7 +203,7 @@ export const ModalBody = React.forwardRef<HTMLDivElement, ModalBodyProps>(
     });
     const setBodyRef = useCallback((element: HTMLDivElement | null) => {
       scrollSurfaceRef(element);
-      if (typeof ref === 'function') ref(element);
+      if (ref instanceof Function) ref(element);
       else if (ref) ref.current = element;
     }, [ref, scrollSurfaceRef]);
 

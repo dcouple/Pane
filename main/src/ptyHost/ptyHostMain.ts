@@ -43,12 +43,10 @@ import { boundary, decodeBoundary, type JsonValue } from '../../../shared/valida
 const pty = require('@lydell/node-pty') as typeof import('@lydell/node-pty');
 
 // Electron exposes UtilityProcess parentPort on `process.parentPort` in this
-// runtime. Keep a fallback to `require('electron').parentPort` for forward
-// compatibility without depending on a named export that Electron's main
-// process type surface does not expose.
+// runtime. Keep the module export as a compatibility fallback.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 // SAFETY: Electron's UtilityProcess runtime exposes the documented HostPort surface.
-const electron = require('electron') as { parentPort?: HostPort };
+const electron = require('electron') as { parentPort?: typeof process.parentPort };
 
 import type {
   PtyHostRequest,
@@ -139,11 +137,7 @@ const ptyMap = new Map<string, HostPty>();
  * the attached `MessagePortMain`.
  */
 function bootstrap(): void {
-  // SAFETY: Electron UtilityProcess injects a MessagePort-compatible
-  // `process.parentPort`; the fallback exposes the same documented surface.
-  const injectedParentPort: unknown = Reflect.get(process, 'parentPort');
-  const parent = (injectedParentPort ?? electron.parentPort) as
-    (HostPort & { once: HostPort['on'] }) | undefined;
+  const parent = process.parentPort ?? electron.parentPort;
   if (!parent) {
     console.error('[ptyHost] parentPort is not available; exiting');
     process.exit(1);

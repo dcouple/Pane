@@ -324,13 +324,14 @@ export function inspectLegacyRemoteDaemonHealth(
     };
   }
   if (processImage.status === 'deleted' || processImage.status === 'replaced') {
-    return {
+    const health: RemoteDaemonExecutableHealth = {
       processImage,
       restart,
       diagnosticCode: 'PANE_REMOTE_DAEMON_UPDATE_PENDING',
-      ...(restart.status === 'broken' ? { recoveryCommand } : {}),
       checkedAt,
     };
+    if (restart.status === 'broken') health.recoveryCommand = recoveryCommand;
+    return health;
   }
   if (restart.status === 'broken') {
     return {
@@ -431,12 +432,13 @@ export function createRemoteDaemonHealthDiagnostic(
     : health.diagnosticCode === 'PANE_REMOTE_DAEMON_UPDATE_PENDING'
       ? 'The remote daemon is still running an older or deleted process image, but its launcher can resolve the installed Pane executable on restart.'
       : health.restart.evidence;
-  return {
+  const finding: RemoteSetupDiagnostic = {
     code: health.diagnosticCode,
     severity: fatal ? 'error' : 'warning',
     message,
-    ...(health.recoveryCommand ? { recoveryCommand: health.recoveryCommand } : {}),
   };
+  if (health.recoveryCommand) finding.recoveryCommand = health.recoveryCommand;
+  return finding;
 }
 
 function unknownExecutableHealth(

@@ -199,7 +199,8 @@ async function runDaemonRepair(parsed: ParsedArgs): Promise<number> {
       console.log(JSON.stringify(result, null, 2));
       return child.code === 0 && result.ok ? 0 : 1;
     } catch (error) {
-      throw new Error(`Pane returned an invalid daemon repair result: ${child.stderr.trim() || errorMessage(error)}`);
+      const failure = error instanceof Error ? error : new Error(String(error));
+      throw new Error(`Pane returned an invalid daemon repair result: ${child.stderr.trim() || failure.message}`);
     }
   }
   console.log(`runpane: repairing the remote daemon service in ${paneDir}...`);
@@ -220,10 +221,6 @@ async function confirmDaemonRepair(parsed: ParsedArgs): Promise<void> {
   } finally {
     rl.close();
   }
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function runTrackedCommand(

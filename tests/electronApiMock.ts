@@ -269,7 +269,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       new Proxy(overrides, {
         get(target, prop: string | symbol) {
           if (prop in target) {
-            return Reflect.get(target, prop);
+            return Object.getOwnPropertyDescriptor(target, prop)?.value;
           }
           return () => success();
         },

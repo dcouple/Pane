@@ -7,42 +7,39 @@ import {
 
 interface FakeElement {
   parent: FakeElement | null;
-  contains: (candidate: unknown) => boolean;
 }
 
 function element(parent: FakeElement | null = null): FakeElement {
   const value: FakeElement = {
     parent,
-    contains: (candidate) => {
-      let current = candidate as FakeElement | null;
-      while (current) {
-        if (current === value) return true;
-        current = current.parent;
-      }
-      return false;
-    },
   };
   return value;
 }
 
-function asHtmlElement(value: FakeElement): HTMLElement {
-  return value as unknown as HTMLElement;
+function contains(container: FakeElement, candidate: FakeElement): boolean {
+  let current: FakeElement | null = candidate;
+  while (current) {
+    if (current === container) return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function createHarness(reducedMotion = false) {
   let now = 0;
   let nextFrameId = 1;
-  let activeElement: Element | null = null;
-  let activeModal: Element | null = null;
+  let activeElement: FakeElement | null = null;
+  let activeModal: FakeElement | null = null;
   const frames = new Map<number, FrameRequestCallback>();
   const cancelledFrames: number[] = [];
-  const runtime: ScrollRuntime = {
+  const runtime: ScrollRuntime<FakeElement> = {
     activeElement: () => activeElement,
     activeModal: () => activeModal,
     cancelFrame: (id) => {
       cancelledFrames.push(id);
       frames.delete(id);
     },
+    contains,
     isVisible: () => true,
     isReducedMotion: () => reducedMotion,
     now: () => now,
@@ -58,15 +55,16 @@ function createHarness(reducedMotion = false) {
     frames,
     cancelledFrames,
     setActiveElement: (value: FakeElement | null) => {
-      activeElement = value as unknown as Element | null;
+      activeElement = value;
     },
     setActiveModal: (value: FakeElement | null) => {
-      activeModal = value as unknown as Element | null;
+      activeModal = value;
     },
     runFrame: (timestamp: number) => {
       now = timestamp;
-      const entry = frames.entries().next().value as [number, FrameRequestCallback] | undefined;
-      if (!entry) throw new Error('No animation frame scheduled');
+      const iterator = frames.entries().next();
+      if (iterator.done) throw new Error('No animation frame scheduled');
+      const entry = iterator.value;
       frames.delete(entry[0]);
       entry[1](timestamp);
     },
@@ -76,11 +74,11 @@ function createHarness(reducedMotion = false) {
 function surface(
   id: string,
   owner: FakeElement,
-  overrides: Partial<FocusedScrollSurface> = {},
-): FocusedScrollSurface {
+  overrides: Partial<FocusedScrollSurface<FakeElement>> = {},
+): FocusedScrollSurface<FakeElement> {
   return {
     id,
-    element: asHtmlElement(owner),
+    element: owner,
     scrollByLines: vi.fn(),
     scrollPage: vi.fn(),
     ...overrides,

@@ -105,7 +105,8 @@ async function inspectRemoteDaemonService(
   try {
     launcherContents = await fs.readFile(launcherPath, 'utf8');
   } catch (error) {
-    if (!isNodeErrorWithCode(error, 'ENOENT')) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    if (!isNodeErrorWithCode(failure, 'ENOENT')) {
       throw error;
     }
   }
@@ -118,7 +119,7 @@ async function inspectRemoteDaemonService(
   const savedExecutablePath = launcherContents ? extractLegacyRemoteDaemonExecutablePath(launcherContents) : null;
   const savedExecutableExists = savedExecutablePath ? isExecutableFile(savedExecutablePath) : null;
   const launcherCurrent = launcherContents?.includes(LAUNCHER_MARKER) === true;
-  return {
+  const inspection: RemoteDaemonServiceInspection & { launcherContents?: string } = {
     launcherPath,
     launcherExists: launcherContents !== undefined,
     launcherCurrent,
@@ -128,8 +129,9 @@ async function inspectRemoteDaemonService(
     restartStatus: launcherCurrent
       ? resolvedPath ? 'ready' : 'broken'
       : savedExecutableExists === true ? 'ready' : launcherContents ? 'broken' : 'unknown',
-    ...(launcherContents === undefined ? {} : { launcherContents }),
   };
+  if (launcherContents !== undefined) inspection.launcherContents = launcherContents;
+  return inspection;
 }
 
 export function getRemoteDaemonExecutableCandidates(
@@ -501,8 +503,11 @@ function findSourceRoot(startDir: string): string | null {
     const packagePath = path.join(current, 'package.json');
     if (existsSync(packagePath)) {
       try {
-        const parsed = decodeBoundary(JSON.parse(readFileSync(packagePath, 'utf8')), boundary.json);
-        if (isRecord(parsed) && parsed.name === 'Pane') {
+        const parsed = decodeBoundary(
+          JSON.parse(readFileSync(packagePath, 'utf8')),
+          boundary.object({ name: boundary.string }),
+        );
+        if (parsed.name === 'Pane') {
           return current;
         }
       } catch {
@@ -538,11 +543,7 @@ function firstNonEmpty(...values: string[]): string {
   return values.find((value) => value.trim().length > 0)?.trim() ?? '';
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function isNodeErrorWithCode(error: unknown, code: string): boolean {
+function isNodeErrorWithCode(error: Error, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
 }
 

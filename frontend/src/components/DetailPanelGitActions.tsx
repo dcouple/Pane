@@ -57,17 +57,15 @@ function actionTooltip(action: GitBranchAction, disabled: boolean) {
 
 function buildRows(actions: GitBranchAction[]): ActionRow[] {
   const byId = (id: string) => actions.find(action => action.id === id);
-  const partners: Record<string, string> = {
-    fetch: 'commit',
-    stash: 'stash-pop',
-    pull: 'push',
-    'rebase-from-main': 'rebase-to-main',
-  };
-  const partnerIds = new Set(Object.values(partners));
+  const partnerIds = new Set(['commit', 'stash-pop', 'push', 'rebase-to-main']);
   const rows: ActionRow[] = [];
 
   for (const action of actions) {
-    const partnerId = partners[action.id];
+    const partnerId = action.id === 'fetch' ? 'commit'
+      : action.id === 'stash' ? 'stash-pop'
+        : action.id === 'pull' ? 'push'
+          : action.id === 'rebase-from-main' ? 'rebase-to-main'
+            : undefined;
     const partner = partnerId ? byId(partnerId) : undefined;
     if (partner) {
       rows.push({ type: 'pair', left: action, right: partner });

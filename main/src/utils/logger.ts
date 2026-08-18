@@ -291,15 +291,16 @@ export class Logger {
       // Always log to console using the original console method to avoid recursion
       this.originalConsole.log(consoleMessage);
     } catch (consoleError: unknown) {
-      let decodedError: { code?: string; message?: string } = {};
-      try {
-        decodedError = decodeBoundary(consoleError, boundary.object({
-          code: boundary.optional(boundary.string),
-          message: boundary.optional(boundary.string),
-        }));
-      } catch {
-        decodedError = {};
-      }
+      const decodedError = (() => {
+        try {
+          return decodeBoundary(consoleError, boundary.object({
+            code: boundary.optional(boundary.string),
+            message: boundary.optional(boundary.string),
+          }));
+        } catch {
+          return { code: undefined, message: undefined };
+        }
+      })();
       // If console logging fails (e.g., EPIPE), just write to file
       if (decodedError.code !== 'EPIPE' && !this.isInErrorHandler) {
         // Prevent recursion by setting flag

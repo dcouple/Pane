@@ -43,7 +43,9 @@ export function useFocusedSurfaceScrolling(activeSessionId: string | null): void
   }, [activeSessionId]);
 
   useEffect(() => {
-    const noteInteraction = (event: Event) => focusedSurfaceScroll.noteInteraction(event.target);
+    const noteInteraction = (event: Event) => {
+      if (event.target instanceof Element) focusedSurfaceScroll.noteInteraction(event.target);
+    };
     const stop = () => focusedSurfaceScroll.stop();
     const handleKeyUp = (event: KeyboardEvent) => {
       if (event.key === 'Shift' || event.key === 'ArrowUp' || event.key === 'ArrowDown') stop();

@@ -1,8 +1,8 @@
 export type ScrollDirection = -1 | 1;
 
-export interface FocusedScrollSurface {
+export interface FocusedScrollSurface<ElementType = HTMLElement> {
   id: string;
-  element: HTMLElement;
+  element: ElementType;
   sessionId?: string;
   priority?: number;
   scrollByLines: (lines: number) => void;
@@ -10,11 +10,12 @@ export interface FocusedScrollSurface {
   focus?: () => void;
 }
 
-export interface ScrollRuntime {
-  activeElement: () => Element | null;
-  activeModal: () => Element | null;
+export interface ScrollRuntime<ElementType = HTMLElement, ActiveElementType = ElementType> {
+  activeElement: () => ActiveElementType | null;
+  activeModal: () => ElementType | null;
   cancelFrame: (id: number) => void;
-  isVisible: (element: HTMLElement) => boolean;
+  contains: (container: ElementType, candidate: ElementType | ActiveElementType) => boolean;
+  isVisible: (element: ElementType) => boolean;
   isReducedMotion: () => boolean;
   now: () => number;
   requestFrame: (callback: FrameRequestCallback) => number;
@@ -25,11 +26,12 @@ const RAMP_DURATION_MS = 150;
 const INITIAL_SPEED_RATIO = 0.2;
 const MAX_FRAME_SECONDS = 0.05;
 
-function defaultRuntime(): ScrollRuntime {
+function defaultRuntime(): ScrollRuntime<HTMLElement, Element> {
   return {
     activeElement: () => document.activeElement,
-    activeModal: () => document.querySelector('[aria-modal="true"]'),
+    activeModal: () => document.querySelector<HTMLElement>('[aria-modal="true"]'),
     cancelFrame: (id) => window.cancelAnimationFrame(id),
+    contains: (container, candidate) => container.contains(candidate),
     isVisible: isElementVisible,
     isReducedMotion: () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     now: () => performance.now(),
@@ -40,24 +42,25 @@ function defaultRuntime(): ScrollRuntime {
 function isElementVisible(element: HTMLElement): boolean {
   if (!element.isConnected) return false;
   if (element.closest('[inert]')) return false;
-  if (typeof element.checkVisibility === 'function') {
+  if (element.checkVisibility) {
     return element.checkVisibility({ checkOpacity: false, checkVisibilityCSS: true });
   }
   return element.getClientRects().length > 0;
 }
 
-function deepestContainingSurface(
-  surfaces: FocusedScrollSurface[],
-  target: Element,
-): FocusedScrollSurface | null {
-  const containing = surfaces.filter(surface => surface.element.contains(target));
+function deepestContainingSurface<ElementType, ActiveElementType>(
+  surfaces: FocusedScrollSurface<ElementType>[],
+  target: ElementType | ActiveElementType,
+  contains: ScrollRuntime<ElementType, ActiveElementType>['contains'],
+): FocusedScrollSurface<ElementType> | null {
+  const containing = surfaces.filter(surface => contains(surface.element, target));
   return containing.find(candidate => (
-    containing.every(other => candidate === other || !candidate.element.contains(other.element))
+    containing.every(other => candidate === other || !contains(candidate.element, other.element))
   )) ?? containing[0] ?? null;
 }
 
-export class FocusedSurfaceScrollCoordinator {
-  private readonly surfaces = new Map<string, FocusedScrollSurface>();
+export class FocusedSurfaceScrollCoordinator<ElementType = HTMLElement, ActiveElementType = ElementType> {
+  private readonly surfaces = new Map<string, FocusedScrollSurface<ElementType>>();
   private readonly lastSurfaceBySession = new Map<string, string>();
   private activeSessionId: string | null = null;
   private lastModalSurfaceId: string | null = null;
@@ -68,9 +71,9 @@ export class FocusedSurfaceScrollCoordinator {
   private rampStartedAt = 0;
   private lastFrameAt = 0;
 
-  constructor(private readonly runtime: ScrollRuntime = defaultRuntime()) {}
+  constructor(private readonly runtime: ScrollRuntime<ElementType, ActiveElementType>) {}
 
-  register(surface: FocusedScrollSurface): () => void {
+  register(surface: FocusedScrollSurface<ElementType>): () => void {
     this.surfaces.set(surface.id, surface);
     return () => {
       if (this.surfaces.get(surface.id) !== surface) return;
@@ -84,9 +87,13 @@ export class FocusedSurfaceScrollCoordinator {
     this.activeSessionId = sessionId;
   }
 
-  noteInteraction(target: EventTarget | null): void {
-    if (!(target instanceof Element)) return;
-    const surface = deepestContainingSurface(this.visibleSurfaces(), target);
+  noteInteraction(target: ActiveElementType | null): void {
+    if (!target) return;
+    const surface = deepestContainingSurface(
+      this.visibleSurfaces(),
+      target,
+      this.runtime.contains,
+    );
     if (!surface) return;
     this.remember(surface);
   }
@@ -160,25 +167,26 @@ export class FocusedSurfaceScrollCoordinator {
     this.frameId = this.runtime.requestFrame(this.tick);
   };
 
-  private remember(surface: FocusedScrollSurface): void {
+  private remember(surface: FocusedScrollSurface<ElementType>): void {
     if (surface.sessionId) this.lastSurfaceBySession.set(surface.sessionId, surface.id);
     else this.lastGlobalSurfaceId = surface.id;
-    if (this.runtime.activeModal()?.contains(surface.element)) this.lastModalSurfaceId = surface.id;
+    const modal = this.runtime.activeModal();
+    if (modal && this.runtime.contains(modal, surface.element)) this.lastModalSurfaceId = surface.id;
   }
 
-  private visibleSurfaces(): FocusedScrollSurface[] {
+  private visibleSurfaces(): FocusedScrollSurface<ElementType>[] {
     return Array.from(this.surfaces.values()).filter(surface => this.runtime.isVisible(surface.element));
   }
 
-  private resolveSurface(): FocusedScrollSurface | null {
+  private resolveSurface(): FocusedScrollSurface<ElementType> | null {
     const surfaces = this.visibleSurfaces();
     const modal = this.runtime.activeModal();
     const activeElement = this.runtime.activeElement();
 
     if (modal) {
-      const modalSurfaces = surfaces.filter(surface => modal.contains(surface.element));
-      if (activeElement && modal.contains(activeElement)) {
-        const focused = deepestContainingSurface(modalSurfaces, activeElement);
+      const modalSurfaces = surfaces.filter(surface => this.runtime.contains(modal, surface.element));
+      if (activeElement && this.runtime.contains(modal, activeElement)) {
+        const focused = deepestContainingSurface(modalSurfaces, activeElement, this.runtime.contains);
         if (focused) return focused;
       }
       if (this.lastModalSurfaceId) {
@@ -189,7 +197,7 @@ export class FocusedSurfaceScrollCoordinator {
     }
 
     if (activeElement) {
-      const focused = deepestContainingSurface(surfaces, activeElement);
+      const focused = deepestContainingSurface(surfaces, activeElement, this.runtime.contains);
       if (
         focused
         && (!focused.sessionId || !this.activeSessionId || focused.sessionId === this.activeSessionId)
@@ -207,8 +215,8 @@ export class FocusedSurfaceScrollCoordinator {
   }
 
   private resolveSessionSurface(
-    surfaces: FocusedScrollSurface[] = this.visibleSurfaces(),
-  ): FocusedScrollSurface | null {
+    surfaces: FocusedScrollSurface<ElementType>[] = this.visibleSurfaces(),
+  ): FocusedScrollSurface<ElementType> | null {
     if (!this.activeSessionId) return null;
     const sessionSurfaces = surfaces.filter(surface => surface.sessionId === this.activeSessionId);
     const rememberedId = this.lastSurfaceBySession.get(this.activeSessionId);
@@ -219,11 +227,11 @@ export class FocusedSurfaceScrollCoordinator {
     return this.highestPriority(sessionSurfaces);
   }
 
-  private highestPriority(surfaces: FocusedScrollSurface[]): FocusedScrollSurface | null {
-    return surfaces.reduce<FocusedScrollSurface | null>((best, surface) => (
+  private highestPriority(surfaces: FocusedScrollSurface<ElementType>[]): FocusedScrollSurface<ElementType> | null {
+    return surfaces.reduce<FocusedScrollSurface<ElementType> | null>((best, surface) => (
       !best || (surface.priority ?? 0) > (best.priority ?? 0) ? surface : best
     ), null);
   }
 }
 
-export const focusedSurfaceScroll = new FocusedSurfaceScrollCoordinator();
+export const focusedSurfaceScroll = new FocusedSurfaceScrollCoordinator(defaultRuntime());
