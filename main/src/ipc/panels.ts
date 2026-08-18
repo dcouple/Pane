@@ -718,13 +718,29 @@ export function registerPanelHandlers(
 
   commandRegistry.register('terminal:getScrollbackClean', async (panelId: string, lines: number) => {
     try {
-      // Try live in-memory scrollback first (active terminals)
-      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+      // Prefer the live screen emulator: its rendered buffer applies cursor
+      // motions in place, so it never produces the overlapping-fragment
+      // corruption that ANSI-stripping the raw append log does for in-place
+      // repaints (spinners, progress bars, TUI status lines).
+      const clean = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
+      if (clean !== null) {
+        const lastLines = clean.split('\n');
+        const panelTitle = panelManager.getPanel(panelId)?.title ?? panelId;
+        return { success: true, data: { content: clean, lineCount: lastLines.length, panelTitle } };
+      }
 
-      // Fall back to persisted scrollback for lazy/inactive terminals
-      if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
+      // Fall back to persisted scrollback for lazy/inactive terminals with no
+      // live emulator.
+      let rawScrollback: string | null = null;
+      const panel = panelManager.getPanel(panelId);
+      const customState = panel?.state?.customState;
+      if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
+        const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
+        if (typeof persisted === 'string') {
+          rawScrollback = persisted;
+        } else if (Array.isArray(persisted)) {
+          rawScrollback = persisted.join('\n');
+        }
       }
 
       if (rawScrollback === null || rawScrollback === '') {
@@ -735,8 +751,6 @@ export function registerPanelHandlers(
       const allLines = stripped.split('\n');
       const lastLines = allLines.slice(-lines);
       const content = lastLines.join('\n');
-
-      const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
 
       return { success: true, data: { content, lineCount: lastLines.length, panelTitle } };
@@ -820,22 +834,35 @@ export function registerPanelHandlers(
     lines: number,
   ) => {
     try {
-      // Get scrollback — try live buffer first, fall back to persisted state
-      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
+      // Prefer the live screen emulator (corruption-free rendered buffer) and
+      // fall back to persisted state for lazy/inactive terminals. The raw append
+      // log is never used directly: ANSI-stripping it mangles in-place repaints.
+      let content: string | null = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
 
-      if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
+      if (content === null) {
+        let rawScrollback: string | null = null;
+        const panelFallback = panelManager.getPanel(panelId);
+        const customState = panelFallback?.state?.customState;
+        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
+          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
+          if (typeof persisted === 'string') {
+            rawScrollback = persisted;
+          } else if (Array.isArray(persisted)) {
+            rawScrollback = persisted.join('\n');
+          }
+        }
+
+        if (rawScrollback !== null && rawScrollback !== '') {
+          const stripped = sanitizeTerminalOutput(rawScrollback);
+          content = stripped.split('\n').slice(-lines).join('\n');
+        }
       }
 
-      if (rawScrollback === null || rawScrollback === '') {
+      if (content === null || content === '') {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 
-      const stripped = sanitizeTerminalOutput(rawScrollback);
-      const allLines = stripped.split('\n');
-      const lastLines = allLines.slice(-lines);
-      const content = lastLines.join('\n');
+      const lastLines = content.split('\n');
 
       const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
