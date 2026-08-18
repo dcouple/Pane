@@ -20,8 +20,8 @@ interface GitHubReleaseAsset {
 
 export interface GitHubRelease {
   tag_name: string;
-  name: string;
-  body: string;
+  name: string | null;
+  body: string | null;
   html_url: string;
   published_at: string;
   prerelease: boolean;
@@ -53,8 +53,8 @@ export class VersionChecker {
 
       const release = decodeBoundary(await response.json(), boundary.object({
         tag_name: boundary.string,
-        name: boundary.string,
-        body: boundary.string,
+        name: boundary.nullable(boundary.string),
+        body: boundary.nullable(boundary.string),
         html_url: boundary.string,
         published_at: boundary.string,
         prerelease: boundary.boolean,
@@ -83,7 +83,7 @@ export class VersionChecker {
         hasUpdate,
         releaseUrl: release.html_url,
         downloadUrl: this.findMacDmgDownloadUrl(release),
-        releaseNotes: release.body,
+        releaseNotes: release.body ?? undefined,
         publishedAt: release.published_at
       };
     } catch (error) {

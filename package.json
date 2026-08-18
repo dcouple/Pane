@@ -111,6 +111,7 @@
     "electron": "41.10.3",
     "electron-builder": "26.7.0",
     "electron-builder-squirrel-windows": "26.7.0",
+    "esbuild": "0.25.7",
     "js-yaml": "^4.1.1",
     "knip": "6.29.0",
     "oxlint": "1.76.0",

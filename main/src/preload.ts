@@ -28,6 +28,8 @@ import type {
   PanePermissionResponse as PermissionResponse,
   PanePermissionResolvedEvent as PermissionResolvedEvent,
 } from '../../shared/types/permissions';
+// The main build bundles this runtime dependency into preload.js; the sandbox
+// verification step rejects any remaining require other than Electron itself.
 import { boundary, decodeBoundary, type JsonObject } from '../../shared/validation/boundaryDecoder';
 
 interface LogEntry {
@@ -171,8 +173,7 @@ const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
   'terminal:clipboard-paste-image',
 ]);
 
-// Sandboxed Electron preload scripts cannot reliably require local runtime
-// modules, so the daemon-owned channel classifier stays inline here.
+// Keep the security-sensitive channel classifier visible at the bridge boundary.
 function isDaemonOwnedChannel(channel: string): boolean {
   if (ELECTRON_ADAPTER_ONLY_CHANNELS.has(channel)) {
     return false;

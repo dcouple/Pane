@@ -11,6 +11,14 @@ import {
 } from './cliToolRegistry';
 import { boundary, decodeBoundary, type JsonObject } from '../../../shared/validation/boundaryDecoder';
 
+export function decodePermissionIpcPath(additionalOptions?: JsonObject): string | null {
+  const candidate = additionalOptions?.permissionIpcPath;
+  if (candidate === undefined || candidate === null) {
+    return null;
+  }
+  return decodeBoundary(candidate, boundary.string);
+}
+
 /**
  * Factory configuration for CLI manager creation
  */
@@ -199,10 +207,7 @@ export class CliManagerFactory {
       configManager?: ConfigManager,
       additionalOptions?: JsonObject
     ) => {
-      let permissionIpcPath: string | null = null;
-      if (additionalOptions?.permissionIpcPath !== undefined && additionalOptions?.permissionIpcPath !== null) {
-        permissionIpcPath = decodeBoundary(additionalOptions.permissionIpcPath, boundary.string);
-      }
+      const permissionIpcPath = decodePermissionIpcPath(additionalOptions);
 
       // SAFETY: A null manager is created only for the availability probe,
       // which calls no session-dependent operations before disposal.

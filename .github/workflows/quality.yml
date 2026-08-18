@@ -49,6 +49,16 @@ jobs:
     - name: Rebuild native modules for Electron smoke tests
       run: pnpm run electron:rebuild
 
+    - name: Configure Electron sandbox
+      run: |
+        electron_path="$(node -p "require('electron')")"
+        electron_dir="$(dirname "${electron_path}")"
+        sudo chown root "${electron_dir}/chrome-sandbox"
+        sudo chmod 4755 "${electron_dir}/chrome-sandbox"
+
+    - name: Verify sandboxed Electron preload
+      run: pnpm build:main && xvfb-run -a pnpm exec electron scripts/smoke-sandboxed-preload.cjs
+
     - name: Run maintained functional smoke tests
       run: xvfb-run -a pnpm test:ci:minimal
       env:

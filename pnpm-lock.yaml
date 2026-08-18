@@ -72,6 +72,9 @@ importers:
       electron-builder-squirrel-windows:
         specifier: 26.7.0
         version: 26.7.0(dmg-builder@26.7.0)
+      esbuild:
+        specifier: 0.25.7
+        version: 0.25.7
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
