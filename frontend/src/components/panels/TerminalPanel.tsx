@@ -692,6 +692,30 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     }
   }, [panel.id]);
 
+  // The terminal instance lives for the lifetime of a panel. Event handlers installed
+  // during initialization read changing session/config values through this ref so those
+  // changes do not tear down and recreate xterm or its PTY connection.
+  const terminalRuntimeRef = useRef({
+    handleClipboardError,
+    highContrast,
+    isRemoteMode,
+    panelSessionId: panel.sessionId,
+    resizePtyToFit,
+    sessionId,
+    workingDirectory,
+  });
+  useEffect(() => {
+    terminalRuntimeRef.current = {
+      handleClipboardError,
+      highContrast,
+      isRemoteMode,
+      panelSessionId: panel.sessionId,
+      resizePtyToFit,
+      sessionId,
+      workingDirectory,
+    };
+  }, [handleClipboardError, highContrast, isRemoteMode, panel.sessionId, resizePtyToFit, sessionId, workingDirectory]);
+
   // Full-depth refresh: normal buffers reset+replay main's rendered emulator
   // serialization at the settled width; alternate buffers preserve their live
   // model and end with a forced PTY resize so the fullscreen app redraws. The
@@ -857,6 +881,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
 
   // Initialize terminal only once when component first mounts
   // Keep it alive even when switching sessions
+  // The initializer guards every post-await state update with `disposed`; its returned
+  // resource cleanup is awaited by the synchronous effect teardown. React Doctor's
+  // nested-function scan cannot follow that deferred cleanup contract.
+  // react-doctor-disable-next-line react-doctor/effect-needs-cleanup, react-doctor/no-set-state-after-await-in-effect
   useEffect(() => {
     devLog.debug('[TerminalPanel] Initialization useEffect running, terminalRef:', terminalRef.current);
 
@@ -868,6 +896,14 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     let terminal: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
     let disposed = false;
+    let toastClearTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleToastClear = (delayMs: number) => {
+      if (toastClearTimer) clearTimeout(toastClearTimer);
+      toastClearTimer = setTimeout(() => {
+        toastClearTimer = null;
+        if (!disposed) setToastMessage(null);
+      }, delayMs);
+    };
 
     const initializeTerminal = async () => {
       try {
@@ -889,8 +925,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           const estimatedCols = containerRect ? Math.floor(containerRect.width / 8) : undefined; // rough char width estimate
           const estimatedRows = containerRect ? Math.floor(containerRect.height / 17) : undefined; // rough char height estimate
           await window.electronAPI.invoke('panels:initialize', panel.id, {
-            cwd: workingDirectory || process.cwd(),
-            sessionId: sessionId || panel.sessionId,
+            cwd: terminalRuntimeRef.current.workingDirectory || process.cwd(),
+            sessionId: terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId,
             cols: estimatedCols && estimatedCols >= 20 ? estimatedCols : undefined,
             rows: estimatedRows && estimatedRows >= 5 ? estimatedRows : undefined,
           });
@@ -943,7 +979,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           altClickMovesCursor: true,
           drawBoldTextInBrightColors: true,
           rescaleOverlappingGlyphs: true,
-          minimumContrastRatio: getMinimumContrastRatio(highContrast),
+          minimumContrastRatio: getMinimumContrastRatio(terminalRuntimeRef.current.highContrast),
           macOptionIsMeta: false,
           linkHandler: {
             activate: (_event, uri) => {
@@ -964,7 +1000,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           if (isTerminalCopyShortcut(e, isMac())) {
             if (e.type === 'keydown' && terminal?.hasSelection()) {
               void copyTerminalText(terminal.getSelection()).catch(() => {
-                handleClipboardError();
+                terminalRuntimeRef.current.handleClipboardError();
               });
             }
             return false;
@@ -1188,6 +1224,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             unicode11AddonRef.current = null;
           }
 
+          if (disposed) {
+            terminal.dispose();
+            fitAddon.dispose();
+            return;
+          }
           xtermRef.current = terminal;
           setTerminalInstance(terminal);
           fitAddonRef.current = fitAddon;
@@ -1349,7 +1390,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                       const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                         'terminal:paste-image',
                         panel.id,
-                        sessionId || panel.sessionId,
+                        terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId,
                         dataUrl,
                         file.type
                       ), terminalPasteImageResultSchema);
@@ -1375,12 +1416,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             e.stopPropagation();
             e.preventDefault();
 
-            if (isRemoteMode) {
+            if (terminalRuntimeRef.current.isRemoteMode) {
               if (text && !isClipboardImagePlaceholderText(text) && !disposed && terminal) {
                 terminal.paste(text);
               } else {
                 setToastMessage('Native image clipboard paste is unavailable in remote mode. Use drag and drop or browser image paste instead.');
-                setTimeout(() => setToastMessage(null), 2500);
+                scheduleToastClear(2500);
               }
               return;
             }
@@ -1390,7 +1431,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               try {
                 const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                   'terminal:clipboard-paste-image',
-                  sessionId || panel.sessionId
+                  terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId
                 ), terminalPasteImageResultSchema);
                 if (result?.filePath && !disposed && terminal) {
                   terminal.paste(`${result.filePath}\n`);
@@ -1456,7 +1497,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                     const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                       'terminal:paste-image',
                       panel.id,
-                      sessionId || panel.sessionId,
+                      terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId,
                       dataUrl,
                       file.type
                     ), terminalPasteImageResultSchema);
@@ -1464,7 +1505,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
                   } else {
                     const result = decodeOptionalBoundary(await window.electronAPI.invoke(
                       'terminal:paste-file',
-                      sessionId || panel.sessionId,
+                      terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId,
                       dataUrl,
                       file.name
                     ), terminalPasteFileResultSchema);
@@ -1494,7 +1535,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           // Let the WebGL renderer finish painting before removing the loader overlay.
           // Without this, the loader disappears and the user briefly sees stale/blank
           // content before the fit() render completes (visible as a stutter on macOS).
-          await new Promise(resolve => setTimeout(resolve, 30));
+          await waitForNextPaint();
           if (disposed) return;
           hotActivationEligibleRef.current = false;
           hotActivationPendingRef.current = false;
@@ -1612,7 +1653,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           interceptorRef.current = interceptor;
 
           // Register @ handler for terminal scrollback copy
-          const effectiveSessionId = sessionId || panel.sessionId;
+          const effectiveSessionId = terminalRuntimeRef.current.sessionId || terminalRuntimeRef.current.panelSessionId;
 
           const getTerminals = async (): Promise<TerminalSuggestion[]> => {
             const allPanels = usePanelStore.getState().getSessionPanels(effectiveSessionId);
@@ -1667,7 +1708,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             } catch {
               setToastMessage('Failed to paste scrollback');
             }
-            setTimeout(() => setToastMessage(null), 2000);
+            scheduleToastClear(2000);
           };
 
           interceptor.registerHandler('@', createAtTerminalHandler({
@@ -1712,7 +1753,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           const debouncedResize = () => {
             if (resizeTimer) clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-              if (!disposed) void resizePtyToFit();
+              if (!disposed) void terminalRuntimeRef.current.resizePtyToFit();
             }, 150);
           };
 
@@ -1748,7 +1789,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
         }
       } catch (error) {
         console.error('Failed to initialize terminal:', error);
-        setInitError(error instanceof Error ? error.message : 'Unknown error');
+        if (!disposed) {
+          setInitError(error instanceof Error ? error.message : 'Unknown error');
+        }
       }
     };
 
@@ -1758,6 +1801,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     // Not when just switching tabs
     return () => {
       disposed = true;
+      if (toastClearTimer) clearTimeout(toastClearTimer);
       hotActivationEligibleRef.current = false;
       hotActivationPendingRef.current = false;
 

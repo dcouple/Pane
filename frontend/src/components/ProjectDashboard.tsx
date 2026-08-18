@@ -42,6 +42,11 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const [isProgressive] = useState(true); // Use progressive loading by default
   const pendingSessionUpdatesRef = useRef<Map<string, SessionBranchInfo>>(new Map());
+  const dashboardDataRef = useRef<ProjectDashboardData | null>(null);
+
+  useEffect(() => {
+    dashboardDataRef.current = dashboardData;
+  }, [dashboardData]);
 
   // Debounced function to apply pending session updates
   const applyPendingSessionUpdates = useMemo(
@@ -85,10 +90,11 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
       }
     }
     
-    setIsLoading(!dashboardData); // Only show loading on initial load
-    setIsRefreshing(!!dashboardData); // Show refreshing if we already have data
+    const hasDashboardData = dashboardDataRef.current !== null;
+    setIsLoading(!hasDashboardData); // Only show loading on initial load
+    setIsRefreshing(hasDashboardData); // Show refreshing if we already have data
     setError(null);
-    setStatusAnnouncement(dashboardData ? 'Refreshing dashboard' : 'Loading dashboard');
+    setStatusAnnouncement(hasDashboardData ? 'Refreshing dashboard' : 'Loading dashboard');
     
     try {
       if (useProgressive && isProgressive) {
@@ -124,7 +130,7 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [projectId, dashboardData, isProgressive]);
+  }, [projectId, isProgressive]);
 
   // Debounced refresh function
   const debouncedRefresh = useMemo(
@@ -189,10 +195,11 @@ export const ProjectDashboard: React.FC<ProjectDashboardProps> = React.memo(({ p
 
   useEffect(() => {
     // Clear previous data when switching projects to show skeleton
+    dashboardDataRef.current = null;
     setDashboardData(null);
     setError(null);
     fetchDashboardData();
-  }, [projectId]); // Only refetch when projectId changes
+  }, [fetchDashboardData]);
 
   // Memoize grouped sessions by base branch (for future use)
   // const groupedSessions = useMemo(() => {

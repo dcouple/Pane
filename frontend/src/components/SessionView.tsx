@@ -1466,7 +1466,7 @@ export const SessionView = memo(() => {
   });
 
   // Create branch actions for the panel bar
-  const branchActions = useMemo(() => {
+  const branchActions = (() => {
     if (!activeSession) return [];
     const busyReason = hook.isMerging
       ? 'Git operation already in progress'
@@ -1611,7 +1611,7 @@ export const SessionView = memo(() => {
         disabledReason: busyReason ?? ((!activeSession.gitStatus?.totalCommits || activeSession.gitStatus?.totalCommits === 0 || activeSession.gitStatus?.ahead === 0) ? 'No commits to merge' : undefined),
       }
     ];
-  }, [activeSession, hook.isMerging, hook.gitCommands, hook.hasChangesToRebase, hook.hasStash, hook.handleGitPull, hook.handleGitPush, hook.handleGitSoftReset, hook.handleGitFetch, hook.handleGitStash, hook.handleGitStashPop, hook.setShowCommitMessageDialog, hook.setDialogType, hook.handleRebaseMainIntoWorktree, hook.handleSquashAndRebaseToMain, activeSession?.gitStatus]);
+  })();
   
   // Removed unused variables - now handled by panels
 

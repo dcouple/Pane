@@ -221,16 +221,12 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
             console.error('[SetupTasksPanel] Failed to commit:', gitCommitResponse.error);
             alert(`Failed to create commit: ${gitCommitResponse.error}`);
           }
-          // Still refresh the task status
-          setTimeout(() => checkAllTasks(), 100);
           return;
         }
         
         console.log('[SetupTasksPanel] Successfully created commit');
         alert('Successfully added worktree patterns to .gitignore and created a commit!');
         
-        // Refresh the task status
-        setTimeout(() => checkAllTasks(), 100);
       } else {
         console.log('[SetupTasksPanel] No update needed, patterns already exist');
         alert('Worktree patterns are already in .gitignore. No changes needed.');

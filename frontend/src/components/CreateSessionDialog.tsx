@@ -57,6 +57,7 @@ export function CreateSessionDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [branches, setBranches] = useState<BranchInfo[]>([]);
+  const [branchesProjectId, setBranchesProjectId] = useState<number | null>(null);
   const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [useWorktree, setUseWorktree] = useState(true);
   const [startPinned, setStartPinned] = useState(false);
@@ -107,59 +108,63 @@ export function CreateSessionDialog({
   }, [updatePreferences]);
 
   useEffect(() => {
-    if (isOpen) {
-      // Fetch branches if projectId is provided
-      if (projectId) {
-        setIsLoadingBranches(true);
-        // First get the project to get its path
-        API.projects.getAll().then(projectsResponse => {
-          if (!projectsResponse.success || !projectsResponse.data) {
-            throw new Error('Failed to fetch projects');
-          }
-          const project = projectsResponse.data.find((p: Project) => p.id === projectId);
-          if (!project) {
-            throw new Error('Project not found');
-          }
+    if (!isOpen || !projectId) return;
 
-          return Promise.all([
-            API.projects.listBranches(projectId.toString()),
-            // Get the main branch for this project using its path
-            API.projects.detectBranch(project.path)
-          ]);
-        }).then(([branchesResponse, mainBranchResponse]) => {
-          if (branchesResponse.success && branchesResponse.data) {
-            setBranches(branchesResponse.data);
-            // Default to remote main branch (origin/main or origin/master) for proper tracking
-            // Fall back to current local branch if no remote main found
-            if (!formData.baseBranch) {
-              const remoteMain = branchesResponse.data.find((b: BranchInfo) =>
-                b.isRemote && (b.name === 'origin/main' || b.name === 'origin/master')
-              );
-              const currentBranch = branchesResponse.data.find((b: BranchInfo) => b.isCurrent);
-              const defaultBranch = remoteMain || currentBranch;
-              if (defaultBranch) {
-                setFormData(prev => ({ ...prev, baseBranch: defaultBranch.name }));
-                // Auto-populate session name from default branch if user hasn't edited
-                if (!initialSessionName && !userEditedNameRef.current) {
-                  const existingNames = new Set(existingSessions.map(s => s.name));
-                  const autoName = generatePaneName(defaultBranch.name, existingNames, branchesResponse.data);
-                  setSessionName(autoName);
-                }
-              }
-            }
-          }
-
-          if (mainBranchResponse.success && mainBranchResponse.data) {
-            // Main branch detected but not currently used in UI
-          }
-        }).catch((err: Error) => {
-          console.error('Failed to fetch branches:', err);
-        }).finally(() => {
-          setIsLoadingBranches(false);
-        });
+    let cancelled = false;
+    setBranchesProjectId(null);
+    setIsLoadingBranches(true);
+    // First get the project to get its path
+    API.projects.getAll().then(projectsResponse => {
+      if (!projectsResponse.success || !projectsResponse.data) {
+        throw new Error('Failed to fetch projects');
       }
-    }
+      const project = projectsResponse.data.find((p: Project) => p.id === projectId);
+      if (!project) {
+        throw new Error('Project not found');
+      }
+
+      return Promise.all([
+        API.projects.listBranches(projectId.toString()),
+        // Get the main branch for this project using its path
+        API.projects.detectBranch(project.path)
+      ]);
+    }).then(([branchesResponse, mainBranchResponse]) => {
+      if (cancelled) return;
+      if (branchesResponse.success && branchesResponse.data) {
+        setBranches(branchesResponse.data);
+        setBranchesProjectId(projectId);
+      }
+
+      if (mainBranchResponse.success && mainBranchResponse.data) {
+        // Main branch detected but not currently used in UI
+      }
+    }).catch((err: Error) => {
+      if (!cancelled) console.error('Failed to fetch branches:', err);
+    }).finally(() => {
+      if (!cancelled) setIsLoadingBranches(false);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isOpen, projectId]);
+
+  useEffect(() => {
+    if (!isOpen || branchesProjectId !== projectId || formData.baseBranch || branches.length === 0) return;
+
+    // Prefer a remote main branch for tracking, then fall back to the current branch.
+    const remoteMain = branches.find((branch) =>
+      branch.isRemote && (branch.name === 'origin/main' || branch.name === 'origin/master')
+    );
+    const defaultBranch = remoteMain ?? branches.find((branch) => branch.isCurrent);
+    if (!defaultBranch) return;
+
+    setFormData((current) => ({ ...current, baseBranch: defaultBranch.name }));
+    if (!initialSessionName && !userEditedNameRef.current) {
+      const existingNames = new Set(existingSessions.map((session) => session.name));
+      setSessionName(generatePaneName(defaultBranch.name, existingNames, branches));
+    }
+  }, [branches, branchesProjectId, existingSessions, formData.baseBranch, initialSessionName, isOpen, projectId]);
 
   // Filtered branches based on search term
   const filteredBranches = useMemo(() => {
