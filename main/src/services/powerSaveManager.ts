@@ -18,6 +18,11 @@ interface PowerSaveSessionSource extends EventEmitter {
   getPowerSaveSnapshotSessions(): Session[];
 }
 
+interface PowerSaveBlocker {
+  start(type: 'prevent-app-suspension'): number;
+  stop(id: number): void;
+}
+
 export class PowerSaveManager {
   private readonly activeSessionIds = new Set<string>();
   private blockerId: number | null = null;
@@ -46,6 +51,7 @@ export class PowerSaveManager {
   constructor(
     private readonly configManager: PowerSaveConfigSource,
     private readonly sessionManager: PowerSaveSessionSource,
+    private readonly blocker: PowerSaveBlocker = powerSaveBlocker,
   ) {
     this.sessionManager.on('sessions-loaded', this.handleSessionsLoaded);
     this.sessionManager.on('session-created', this.handleSessionChanged);
@@ -64,9 +70,9 @@ export class PowerSaveManager {
     const shouldBlockSleep = enabled && hasActiveSession;
 
     if (shouldBlockSleep && this.blockerId === null) {
-      this.blockerId = powerSaveBlocker.start('prevent-app-suspension');
+      this.blockerId = this.blocker.start('prevent-app-suspension');
     } else if (!shouldBlockSleep && this.blockerId !== null) {
-      powerSaveBlocker.stop(this.blockerId);
+      this.blocker.stop(this.blockerId);
       this.blockerId = null;
     }
   }
@@ -88,7 +94,7 @@ export class PowerSaveManager {
     this.configManager.removeListener('config-updated', this.handleConfigUpdated);
 
     if (this.blockerId !== null) {
-      powerSaveBlocker.stop(this.blockerId);
+      this.blocker.stop(this.blockerId);
       this.blockerId = null;
     }
   }

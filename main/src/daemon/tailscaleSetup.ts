@@ -15,6 +15,12 @@ export interface ResolvedCommand {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface TailscaleSetupDependencies {
+  spawnSync: typeof spawnSync;
+}
+
+const defaultTailscaleSetupDependencies: TailscaleSetupDependencies = { spawnSync };
+
 interface InstallAttempt {
   attempted: boolean;
   command: string;
@@ -27,9 +33,11 @@ export function buildTailscaleServeCommand(command: ResolvedCommand | null, port
   return `${command?.displayCommand ?? 'tailscale'} serve --bg --tls-terminated-tcp=443 ${port}`;
 }
 
-export function installTailscaleCommandOrThrow(): ResolvedCommand {
-  const installAttempt = installTailscaleForPlatform();
-  const resolvedCommand = resolveTailscaleCommand();
+export function installTailscaleCommandOrThrow(
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): ResolvedCommand {
+  const installAttempt = installTailscaleForPlatform({ interactive: false }, dependencies);
+  const resolvedCommand = resolveTailscaleCommand(dependencies);
   if (resolvedCommand) {
     return resolvedCommand;
   }
@@ -37,8 +45,10 @@ export function installTailscaleCommandOrThrow(): ResolvedCommand {
   throw new Error(buildTailscaleInstallError(installAttempt));
 }
 
-export function resolveTailscaleCommand(): ResolvedCommand | null {
-  if (commandExistsWithArgs('tailscale', ['version'])) {
+export function resolveTailscaleCommand(
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): ResolvedCommand | null {
+  if (commandExistsWithArgs('tailscale', ['version'], dependencies)) {
     return {
       command: 'tailscale',
       displayCommand: 'tailscale',
@@ -46,14 +56,14 @@ export function resolveTailscaleCommand(): ResolvedCommand | null {
   }
 
   if (process.platform === 'darwin') {
-    const macAppCommand = resolveMacTailscaleAppCommand();
+    const macAppCommand = resolveMacTailscaleAppCommand(dependencies);
     if (macAppCommand) {
       return macAppCommand;
     }
   }
 
   if (process.platform === 'win32') {
-    const windowsCommand = resolveWindowsTailscaleCommand();
+    const windowsCommand = resolveWindowsTailscaleCommand(dependencies);
     if (windowsCommand) {
       return windowsCommand;
     }
@@ -62,18 +72,20 @@ export function resolveTailscaleCommand(): ResolvedCommand | null {
   return null;
 }
 
-function ensureTailscaleInstalled(): ResolvedCommand {
-  return resolveTailscaleCommand() ?? installTailscaleCommandOrThrow();
+function ensureTailscaleInstalled(dependencies: TailscaleSetupDependencies): ResolvedCommand {
+  return resolveTailscaleCommand(dependencies) ?? installTailscaleCommandOrThrow(dependencies);
 }
 
-export function ensureTailscaleInstalledInteractive(): ResolvedCommand {
-  const existingCommand = resolveTailscaleCommand();
+export function ensureTailscaleInstalledInteractive(
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): ResolvedCommand {
+  const existingCommand = resolveTailscaleCommand(dependencies);
   if (existingCommand) {
     return existingCommand;
   }
 
-  const installAttempt = installTailscaleForPlatform({ interactive: true });
-  const resolvedCommand = resolveTailscaleCommand();
+  const installAttempt = installTailscaleForPlatform({ interactive: true }, dependencies);
+  const resolvedCommand = resolveTailscaleCommand(dependencies);
   if (resolvedCommand) {
     return resolvedCommand;
   }
@@ -81,11 +93,14 @@ export function ensureTailscaleInstalledInteractive(): ResolvedCommand {
   throw new Error(buildTailscaleInstallError(installAttempt));
 }
 
-export function runTailscaleUpInteractive(command: ResolvedCommand): void {
+export function runTailscaleUpInteractive(
+  command: ResolvedCommand,
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): void {
   const isLinux = process.platform === 'linux';
   const executable = isLinux ? 'sudo' : command.command;
   const args = isLinux ? [command.command, 'up'] : ['up'];
-  const result = spawnSync(executable, args, {
+  const result = dependencies.spawnSync(executable, args, {
     stdio: 'inherit',
     env: command.env ?? process.env,
     shell: false,
@@ -104,16 +119,20 @@ export function runTailscaleUpInteractive(command: ResolvedCommand): void {
   }
 }
 
-export function runTailscaleServeInteractive(command: ResolvedCommand, port: number): CommandResult {
+export function runTailscaleServeInteractive(
+  command: ResolvedCommand,
+  port: number,
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): CommandResult {
   const args = ['serve', '--bg', '--tls-terminated-tcp=443', String(port)];
-  let serve = runCommand(command, args);
+  let serve = runCommand(command, args, {}, dependencies);
   if (serve.ok) {
     return serve;
   }
 
   let output = firstNonEmpty(serve.stderr, serve.stdout, 'unknown error');
   if (isTailscaleServeDisabled(output) && waitForTailscaleServeEnablement(output)) {
-    serve = runCommand(command, args);
+    serve = runCommand(command, args, {}, dependencies);
     if (serve.ok) {
       return serve;
     }
@@ -122,7 +141,7 @@ export function runTailscaleServeInteractive(command: ResolvedCommand, port: num
 
   if (process.platform === 'linux' && isTailscaleServePermissionDenied(output)) {
     console.log('Pane remote setup: Tailscale Serve needs elevated permission; running sudo tailscale serve...');
-    const sudoServe = runCommandInteractive('sudo', [command.command, ...args], { timeoutMs: 300000 });
+    const sudoServe = runCommandInteractive('sudo', [command.command, ...args], { timeoutMs: 300000 }, dependencies);
     if (sudoServe.ok) {
       return sudoServe;
     }
@@ -140,11 +159,12 @@ export function runCommand(
   command: string | ResolvedCommand,
   args: string[],
   options: { timeoutMs?: number } = {},
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
 ): CommandResult {
   const resolved = command instanceof Object
     ? { command: command.command, env: command.env ?? process.env }
     : { command, env: process.env };
-  const result = spawnSync(resolved.command, args, {
+  const result = dependencies.spawnSync(resolved.command, args, {
     encoding: 'utf8',
     timeout: options.timeoutMs ?? 30000,
     env: resolved.env,
@@ -161,11 +181,12 @@ function runCommandInteractive(
   command: string | ResolvedCommand,
   args: string[],
   options: { timeoutMs?: number } = {},
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
 ): CommandResult {
   const resolved = command instanceof Object
     ? { command: command.command, env: command.env ?? process.env }
     : { command, env: process.env };
-  const result = spawnSync(resolved.command, args, {
+  const result = dependencies.spawnSync(resolved.command, args, {
     stdio: 'inherit',
     timeout: options.timeoutMs ?? 30000,
     env: resolved.env,
@@ -178,8 +199,12 @@ function runCommandInteractive(
   };
 }
 
-function runShellCommand(command: string, options: { timeoutMs?: number } = {}): CommandResult {
-  const result = spawnSync(command, {
+function runShellCommand(
+  command: string,
+  options: { timeoutMs?: number } = {},
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): CommandResult {
+  const result = dependencies.spawnSync(command, {
     encoding: 'utf8',
     shell: true,
     timeout: options.timeoutMs ?? 30000,
@@ -192,8 +217,12 @@ function runShellCommand(command: string, options: { timeoutMs?: number } = {}):
   };
 }
 
-function runShellCommandInteractive(command: string, options: { timeoutMs?: number } = {}): CommandResult {
-  const result = spawnSync(command, {
+function runShellCommandInteractive(
+  command: string,
+  options: { timeoutMs?: number } = {},
+  dependencies: TailscaleSetupDependencies = defaultTailscaleSetupDependencies,
+): CommandResult {
+  const result = dependencies.spawnSync(command, {
     shell: true,
     stdio: 'inherit',
     timeout: options.timeoutMs ?? 30000,
@@ -239,7 +268,7 @@ export function getTailscaleServeSetupInstructions(port?: number): string {
   ].join(' ');
 }
 
-function resolveMacTailscaleAppCommand(): ResolvedCommand | null {
+function resolveMacTailscaleAppCommand(dependencies: TailscaleSetupDependencies): ResolvedCommand | null {
   const candidates = [
     '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
     path.join(os.homedir(), 'Applications', 'Tailscale.app', 'Contents', 'MacOS', 'Tailscale'),
@@ -258,7 +287,7 @@ function resolveMacTailscaleAppCommand(): ResolvedCommand | null {
         TAILSCALE_BE_CLI: '1',
       },
     };
-    if (commandExistsWithArgs(command, ['version'])) {
+    if (commandExistsWithArgs(command, ['version'], dependencies)) {
       return command;
     }
   }
@@ -266,7 +295,7 @@ function resolveMacTailscaleAppCommand(): ResolvedCommand | null {
   return null;
 }
 
-function resolveWindowsTailscaleCommand(): ResolvedCommand | null {
+function resolveWindowsTailscaleCommand(dependencies: TailscaleSetupDependencies): ResolvedCommand | null {
   const candidates = [
     process.env.ProgramFiles ? path.join(process.env.ProgramFiles, 'Tailscale', 'tailscale.exe') : null,
     process.env['ProgramFiles(x86)'] ? path.join(process.env['ProgramFiles(x86)'], 'Tailscale', 'tailscale.exe') : null,
@@ -282,7 +311,7 @@ function resolveWindowsTailscaleCommand(): ResolvedCommand | null {
       command: candidate,
       displayCommand: quoteForWindows(candidate),
     };
-    if (commandExistsWithArgs(command, ['version'])) {
+    if (commandExistsWithArgs(command, ['version'], dependencies)) {
       return command;
     }
   }
@@ -290,17 +319,20 @@ function resolveWindowsTailscaleCommand(): ResolvedCommand | null {
   return null;
 }
 
-function installTailscaleForPlatform(options: { interactive: boolean } = { interactive: false }): InstallAttempt {
+function installTailscaleForPlatform(
+  options: { interactive: boolean },
+  dependencies: TailscaleSetupDependencies,
+): InstallAttempt {
   if (process.platform === 'darwin') {
-    return installTailscaleWithBrew(options);
+    return installTailscaleWithBrew(options, dependencies);
   }
 
   if (process.platform === 'win32') {
-    return installTailscaleWithWinget(options);
+    return installTailscaleWithWinget(options, dependencies);
   }
 
   if (process.platform === 'linux') {
-    return installTailscaleWithOfficialScript(options);
+    return installTailscaleWithOfficialScript(options, dependencies);
   }
 
   return {
@@ -312,8 +344,11 @@ function installTailscaleForPlatform(options: { interactive: boolean } = { inter
   };
 }
 
-function installTailscaleWithBrew(options: { interactive: boolean }): InstallAttempt {
-  const brewCommand = resolveBrewCommand();
+function installTailscaleWithBrew(
+  options: { interactive: boolean },
+  dependencies: TailscaleSetupDependencies,
+): InstallAttempt {
+  const brewCommand = resolveBrewCommand(dependencies);
   const command = `${brewCommand?.displayCommand ?? 'brew'} install --cask tailscale`;
   if (!brewCommand) {
     return {
@@ -326,10 +361,10 @@ function installTailscaleWithBrew(options: { interactive: boolean }): InstallAtt
   }
 
   const install = options.interactive
-    ? runCommandInteractive(brewCommand, ['install', '--cask', 'tailscale'], { timeoutMs: 300000 })
-    : runCommand(brewCommand, ['install', '--cask', 'tailscale'], { timeoutMs: 300000 });
+    ? runCommandInteractive(brewCommand, ['install', '--cask', 'tailscale'], { timeoutMs: 300000 }, dependencies)
+    : runCommand(brewCommand, ['install', '--cask', 'tailscale'], { timeoutMs: 300000 }, dependencies);
   if (install.ok) {
-    runCommand('open', ['-a', 'Tailscale'], { timeoutMs: 30000 });
+    runCommand('open', ['-a', 'Tailscale'], { timeoutMs: 30000 }, dependencies);
   }
 
   return {
@@ -340,8 +375,8 @@ function installTailscaleWithBrew(options: { interactive: boolean }): InstallAtt
   };
 }
 
-function resolveBrewCommand(): ResolvedCommand | null {
-  if (commandExists('brew')) {
+function resolveBrewCommand(dependencies: TailscaleSetupDependencies): ResolvedCommand | null {
+  if (commandExists('brew', dependencies)) {
     return {
       command: 'brew',
       displayCommand: 'brew',
@@ -357,7 +392,7 @@ function resolveBrewCommand(): ResolvedCommand | null {
       command: candidate,
       displayCommand: quoteForPosix(candidate),
     };
-    if (commandExistsWithArgs(command, ['--version'])) {
+    if (commandExistsWithArgs(command, ['--version'], dependencies)) {
       return command;
     }
   }
@@ -365,9 +400,12 @@ function resolveBrewCommand(): ResolvedCommand | null {
   return null;
 }
 
-function installTailscaleWithWinget(options: { interactive: boolean }): InstallAttempt {
+function installTailscaleWithWinget(
+  options: { interactive: boolean },
+  dependencies: TailscaleSetupDependencies,
+): InstallAttempt {
   const command = 'winget install --id Tailscale.Tailscale --exact --accept-package-agreements --accept-source-agreements';
-  if (!commandExists('winget')) {
+  if (!commandExists('winget', dependencies)) {
     return {
       attempted: false,
       command,
@@ -386,8 +424,8 @@ function installTailscaleWithWinget(options: { interactive: boolean }): InstallA
     '--accept-source-agreements',
   ];
   const install = options.interactive
-    ? runCommandInteractive('winget', args, { timeoutMs: 300000 })
-    : runCommand('winget', args, { timeoutMs: 300000 });
+    ? runCommandInteractive('winget', args, { timeoutMs: 300000 }, dependencies)
+    : runCommand('winget', args, { timeoutMs: 300000 }, dependencies);
 
   return {
     attempted: true,
@@ -397,9 +435,12 @@ function installTailscaleWithWinget(options: { interactive: boolean }): InstallA
   };
 }
 
-function installTailscaleWithOfficialScript(options: { interactive: boolean }): InstallAttempt {
+function installTailscaleWithOfficialScript(
+  options: { interactive: boolean },
+  dependencies: TailscaleSetupDependencies,
+): InstallAttempt {
   const command = 'curl -fsSL https://tailscale.com/install.sh | sh';
-  if (!commandExists('curl')) {
+  if (!commandExists('curl', dependencies)) {
     return {
       attempted: false,
       command,
@@ -410,8 +451,8 @@ function installTailscaleWithOfficialScript(options: { interactive: boolean }): 
   }
 
   const install = options.interactive
-    ? runShellCommandInteractive(command, { timeoutMs: 300000 })
-    : runShellCommand(command, { timeoutMs: 300000 });
+    ? runShellCommandInteractive(command, { timeoutMs: 300000 }, dependencies)
+    : runShellCommand(command, { timeoutMs: 300000 }, dependencies);
   return {
     attempted: true,
     command,
@@ -473,12 +514,16 @@ function waitForTailscaleServeEnablement(output: string): boolean {
   }
 }
 
-function commandExists(command: string): boolean {
-  return commandExistsWithArgs(command, ['--version']);
+function commandExists(command: string, dependencies: TailscaleSetupDependencies): boolean {
+  return commandExistsWithArgs(command, ['--version'], dependencies);
 }
 
-function commandExistsWithArgs(command: string | ResolvedCommand, args: string[]): boolean {
-  const result = runCommand(command, args);
+function commandExistsWithArgs(
+  command: string | ResolvedCommand,
+  args: string[],
+  dependencies: TailscaleSetupDependencies,
+): boolean {
+  const result = runCommand(command, args, {}, dependencies);
   return result.ok;
 }
 

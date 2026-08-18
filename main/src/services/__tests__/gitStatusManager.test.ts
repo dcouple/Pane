@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { GitStatusManager } from '../gitStatusManager';
-import { execSync } from '../../utils/commandExecutor';
-import { fastCheckWorkingDirectory, fastGetAheadBehind, fastGetDiffStats } from '../gitPlumbingCommands';
+import type { fastCheckWorkingDirectory as fastCheckWorkingDirectoryImpl, fastGetAheadBehind as fastGetAheadBehindImpl, fastGetDiffStats as fastGetDiffStatsImpl } from '../gitPlumbingCommands';
 import type { SessionManager } from '../sessionManager';
 import type { WorktreeManager } from '../worktreeManager';
 import type { GitDiffManager } from '../gitDiffManager';
@@ -48,30 +47,9 @@ function requireValue<Value>(value: Value | null | undefined): Value {
   return value;
 }
 
-// Mock modules
-vi.mock('../../utils/commandExecutor');
-vi.mock('fs');
-vi.mock('../gitPlumbingCommands');
-vi.mock('../gitStatusLogger', () => ({
-  GitStatusLogger: vi.fn().mockImplementation(() => ({
-    logPollStart: vi.fn(),
-    logSessionFetch: vi.fn(),
-    logSessionSuccess: vi.fn(),
-    logSessionError: vi.fn(),
-    logFocusChange: vi.fn(),
-    logSummary: vi.fn(),
-    logDebounce: vi.fn(),
-    logPollComplete: vi.fn(),
-  })),
-}));
-vi.mock('../gitFileWatcher', () => ({
-  GitFileWatcher: vi.fn().mockImplementation(() => ({
-    on: vi.fn(),
-    startWatching: vi.fn(),
-    stopWatching: vi.fn(),
-    stopAll: vi.fn(),
-  })),
-}));
+const fastCheckWorkingDirectory = vi.fn<typeof fastCheckWorkingDirectoryImpl>();
+const fastGetAheadBehind = vi.fn<typeof fastGetAheadBehindImpl>();
+const fastGetDiffStats = vi.fn<typeof fastGetDiffStatsImpl>();
 
 const mockSession = {
   id: 'test-session',
@@ -154,16 +132,14 @@ describe('GitStatusManager', () => {
       mockWorktreeManager,
       mockGitDiffManager,
       mockLogger,
-      partialMock<DatabaseService>(mockDatabaseService)
+      partialMock<DatabaseService>(mockDatabaseService),
+      { fastCheckWorkingDirectory, fastGetAheadBehind, fastGetDiffStats },
     );
 
     // Default: no uncommitted changes, no ahead/behind
     vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
     vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
     vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 0, deletions: 0, filesChanged: 0 });
-
-    // Default execSync returns empty buffer
-    vi.mocked(execSync).mockReturnValue(Buffer.from(''));
 
     // Default commandRunner.exec returns empty string
     vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('');

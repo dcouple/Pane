@@ -41,6 +41,18 @@ type PrLookupResult =
 
 const PR_FIELDS = ['prNumber', 'prUrl', 'prTitle', 'prState', 'prBody'] as const;
 
+interface GitStatusManagerDependencies {
+  fastCheckWorkingDirectory: typeof fastCheckWorkingDirectory;
+  fastGetAheadBehind: typeof fastGetAheadBehind;
+  fastGetDiffStats: typeof fastGetDiffStats;
+}
+
+const defaultGitStatusManagerDependencies: GitStatusManagerDependencies = {
+  fastCheckWorkingDirectory,
+  fastGetAheadBehind,
+  fastGetDiffStats,
+};
+
 export class GitStatusManager extends EventEmitter {
   private cache: GitStatusCache = {};
   // Smart visibility-aware polling for active sessions only
@@ -87,7 +99,8 @@ export class GitStatusManager extends EventEmitter {
     private worktreeManager: WorktreeManager,
     private gitDiffManager: GitDiffManager,
     private logger?: Logger,
-    private databaseService?: DatabaseService
+    private databaseService?: DatabaseService,
+    private readonly dependencies: GitStatusManagerDependencies = defaultGitStatusManagerDependencies,
   ) {
     super();
     // Increase max listeners to prevent warnings when many components listen to git status events
@@ -325,7 +338,7 @@ export class GitStatusManager extends EventEmitter {
               const ctx = this.sessionManager.getProjectContext(session.id);
               if (ctx) {
                 const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
-                const { ahead, behind } = fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+                const { ahead, behind } = this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
                 
                 const updatedStatus = { ...cached.status };
                 updatedStatus.ahead = ahead;
@@ -388,7 +401,7 @@ export class GitStatusManager extends EventEmitter {
         // hasUncommittedChanges might be true if there were conflicts
         // We'll do a quick check for uncommitted changes
         try {
-          const quickStatus = fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
+          const quickStatus = this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
           updatedStatus.hasUncommittedChanges = quickStatus.hasModified || quickStatus.hasStaged;
           updatedStatus.hasUntrackedFiles = quickStatus.hasUntracked;
           // Update state based on conflicts
@@ -398,7 +411,7 @@ export class GitStatusManager extends EventEmitter {
 
           if (updatedStatus.hasUncommittedChanges) {
             // Get updated diff stats
-            const quickStats = fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
+            const quickStats = this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
             updatedStatus.additions = quickStats.additions;
             updatedStatus.deletions = quickStats.deletions;
             updatedStatus.filesChanged = quickStats.filesChanged;
@@ -841,7 +854,7 @@ export class GitStatusManager extends EventEmitter {
       const ctx = this.sessionManager.getProjectContext(sessionId);
 
       // Quick check using plumbing commands
-      const quickStatus = fastCheckWorkingDirectory(worktreePath, ctx?.commandRunner.wslContext);
+      const quickStatus = this.dependencies.fastCheckWorkingDirectory(worktreePath, ctx?.commandRunner.wslContext);
 
       // Compare with cached status
       const cachedHasChanges = cached.status.hasUncommittedChanges || cached.status.hasUntrackedFiles;
@@ -859,7 +872,7 @@ export class GitStatusManager extends EventEmitter {
           const comparisonBranch = session
             ? await this.worktreeManager.getSessionComparisonBranch(session, ctx)
             : await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-          const { ahead, behind } = fastGetAheadBehind(worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+          const { ahead, behind } = this.dependencies.fastGetAheadBehind(worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
 
           if ((cached.status.ahead || 0) !== ahead || (cached.status.behind || 0) !== behind) {
             return true;
@@ -903,7 +916,7 @@ export class GitStatusManager extends EventEmitter {
       }
 
       // Use fast plumbing commands for initial checks
-      const quickStatus = fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
+      const quickStatus = this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
       const hasUncommittedChanges = quickStatus.hasModified || quickStatus.hasStaged;
       const hasUntrackedFiles = quickStatus.hasUntracked;
       const hasMergeConflicts = quickStatus.hasConflicts;
@@ -912,7 +925,7 @@ export class GitStatusManager extends EventEmitter {
       let uncommittedDiff = { stats: { filesChanged: 0, additions: 0, deletions: 0 } };
       if (hasUncommittedChanges) {
         // Use fast diff stats instead of full diff capture when possible
-        const quickStats = fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
+        const quickStats = this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
         uncommittedDiff = {
           stats: {
             filesChanged: quickStats.filesChanged,
@@ -924,7 +937,7 @@ export class GitStatusManager extends EventEmitter {
 
       // Get ahead/behind status using fast plumbing command
       const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
-      const { ahead, behind } = fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+      const { ahead, behind } = this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
 
       // Get total additions/deletions for all commits in the branch (compared to comparison branch)
       let totalCommitAdditions = 0;

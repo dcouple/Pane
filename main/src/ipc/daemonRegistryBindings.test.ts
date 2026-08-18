@@ -14,30 +14,6 @@ import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
 import type { AppServices } from './types';
 
-vi.mock('../index', () => ({
-  webviewContextMap: new Map<number, { panelId: string; sessionId: string }>(),
-}));
-
-vi.mock('../services/panelManager', () => ({
-  panelManager: {},
-}));
-
-vi.mock('../services/terminalPanelManager', () => ({
-  terminalPanelManager: {},
-}));
-
-vi.mock('../services/database', () => ({
-  databaseService: {},
-}));
-
-vi.mock('../services/panels/logPanel/logsManager', () => ({
-  logsManager: {},
-}));
-
-vi.mock('../services/scriptExecutionTracker', () => ({
-  scriptExecutionTracker: {},
-}));
-
 const PROJECT_CHANNELS = [
   'projects:get-all',
   'projects:get-active',

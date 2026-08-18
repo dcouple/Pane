@@ -25,15 +25,25 @@ function runCommand(command: string, args: string[]): string | undefined {
   }
 }
 
+export interface AnalyticsIdentityDependencies {
+  runCommand(command: string, args: string[]): string | undefined;
+}
+
+const defaultAnalyticsIdentityDependencies: AnalyticsIdentityDependencies = { runCommand };
+
 function sha256(value: string): string {
   return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
 }
 
-export function resolveAnalyticsIdentity(existingDistinctId?: string, installId?: string): AnalyticsIdentity {
-  const githubUsername = runCommand('gh', ['api', 'user', '--jq', '.login']);
-  const githubEmail = runCommand('gh', ['api', 'user', '--jq', '.email // empty']);
-  const gitEmail = runCommand('git', ['config', '--global', 'user.email']);
-  const gitUserName = runCommand('git', ['config', '--global', 'user.name']);
+export function resolveAnalyticsIdentity(
+  existingDistinctId?: string,
+  installId?: string,
+  dependencies: AnalyticsIdentityDependencies = defaultAnalyticsIdentityDependencies,
+): AnalyticsIdentity {
+  const githubUsername = dependencies.runCommand('gh', ['api', 'user', '--jq', '.login']);
+  const githubEmail = dependencies.runCommand('gh', ['api', 'user', '--jq', '.email // empty']);
+  const gitEmail = dependencies.runCommand('git', ['config', '--global', 'user.email']);
+  const gitUserName = dependencies.runCommand('git', ['config', '--global', 'user.name']);
   const email = githubEmail || gitEmail;
   const gitEmailHash = email ? sha256(email) : undefined;
 

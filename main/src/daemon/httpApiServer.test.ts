@@ -5,13 +5,6 @@ import { PaneCommandRegistry } from './commandRegistry';
 import { hashRemoteDaemonToken } from './auth';
 import { boundary, decodeBoundary, type JsonValue } from '../../../shared/validation/boundaryDecoder';
 
-vi.mock('../services/terminalPanelManager', () => ({
-  terminalPanelManager: {
-    clearVisibilityViewersByPrefix: vi.fn(),
-    pruneVisibilityViewersByPrefix: vi.fn(),
-  },
-}));
-
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 
 interface ConfigManagerStub {

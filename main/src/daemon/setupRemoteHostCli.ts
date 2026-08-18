@@ -15,7 +15,26 @@ import os from 'os';
 import path from 'path';
 import { repairRemoteDaemonService } from './remoteDaemonService';
 
-export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<number> {
+export interface RemoteSetupCliDependencies {
+  ensureTailscaleInstalledInteractive: typeof ensureTailscaleInstalledInteractive;
+  formatSetupRemoteHostResult: typeof formatSetupRemoteHostResult;
+  repairRemoteDaemonService: typeof repairRemoteDaemonService;
+  runTailscaleUpInteractive: typeof runTailscaleUpInteractive;
+  setupRemoteHost: typeof setupRemoteHost;
+}
+
+const defaultRemoteSetupCliDependencies: RemoteSetupCliDependencies = {
+  ensureTailscaleInstalledInteractive,
+  formatSetupRemoteHostResult,
+  repairRemoteDaemonService,
+  runTailscaleUpInteractive,
+  setupRemoteHost,
+};
+
+export async function runRemoteSetupCli(
+  args = process.argv.slice(2),
+  dependencies: RemoteSetupCliDependencies = defaultRemoteSetupCliDependencies,
+): Promise<number> {
   try {
     if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
       console.log(getUsageText());
@@ -24,7 +43,7 @@ export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<n
 
     if (hasFlag(args, '--remote-repair-service')) {
       const paneDir = path.resolve(readArgValue(args, '--pane-dir') ?? path.join(os.homedir(), '.pane_remote'));
-      const result = await repairRemoteDaemonService(paneDir);
+      const result = await dependencies.repairRemoteDaemonService(paneDir);
       if (hasFlag(args, '--json')) {
         console.log(JSON.stringify(result));
       } else {
@@ -39,17 +58,17 @@ export async function runRemoteSetupCli(args = process.argv.slice(2)): Promise<n
 
     if (interactiveTailscaleSetup) {
       console.log('Pane remote setup: preparing Tailscale...');
-      const tailscaleCommand = ensureTailscaleInstalledInteractive();
+      const tailscaleCommand = dependencies.ensureTailscaleInstalledInteractive();
       console.log('Pane remote setup: opening Tailscale login if needed...');
-      runTailscaleUpInteractive(tailscaleCommand);
+      dependencies.runTailscaleUpInteractive(tailscaleCommand);
       console.log('Pane remote setup: configuring Pane remote daemon...');
     }
 
-    const result = await setupRemoteHost({
+    const result = await dependencies.setupRemoteHost({
       ...options,
       interactiveTailscaleSetup,
     });
-    console.log(formatSetupRemoteHostResult(result));
+    console.log(dependencies.formatSetupRemoteHostResult(result));
     return 0;
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Pane remote setup failed');

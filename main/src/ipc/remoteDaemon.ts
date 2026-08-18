@@ -63,7 +63,20 @@ interface RemoteDaemonHandlerServices {
   configManager: Pick<AppServices['configManager'], 'getConfig' | 'updateConfig'> & {
     getPreferredShell?: () => string;
   };
+  dependencies?: RemoteDaemonHandlerDependencies;
 }
+
+interface RemoteDaemonHandlerDependencies {
+  disconnectActiveRemoteHostClients: typeof disconnectActiveRemoteHostClients;
+  readConfiguredTailscaleServeAccess: typeof readConfiguredTailscaleServeAccess;
+  setupRemoteHost: typeof setupRemoteHost;
+}
+
+const defaultRemoteDaemonHandlerDependencies: RemoteDaemonHandlerDependencies = {
+  disconnectActiveRemoteHostClients,
+  readConfiguredTailscaleServeAccess,
+  setupRemoteHost,
+};
 
 let remoteHostStateForwarder:
   | ((state: RemoteDaemonHostRuntimeState) => void)
@@ -71,7 +84,13 @@ let remoteHostStateForwarder:
 
 export function registerRemoteDaemonHandlers(
   ipcMain: IpcMainHandleLike,
-  { configManager, app, getMainWindow, analyticsManager }: RemoteDaemonHandlerServices,
+  {
+    configManager,
+    app,
+    getMainWindow,
+    analyticsManager,
+    dependencies = defaultRemoteDaemonHandlerDependencies,
+  }: RemoteDaemonHandlerServices,
 ): void {
   attachRemoteHostStateForwarder(getMainWindow);
 
@@ -173,7 +192,7 @@ export function registerRemoteDaemonHandlers(
       });
       const dataDirectoryMode = request.dataDirectoryMode ?? 'current';
       const useCurrentDataDirectory = dataDirectoryMode === 'current';
-      const result = await setupRemoteHost({
+      const result = await dependencies.setupRemoteHost({
         paneDir: useCurrentDataDirectory ? getAppDirectory() : request.paneDir,
         label: request.label,
         listenPort: request.listenPort,
@@ -273,7 +292,7 @@ export function registerRemoteDaemonHandlers(
     try {
       const current = getRemoteDaemonConfig(configManager.getConfig().remoteDaemon);
       const label = readOptionalConnectionCodeLabel(input) ?? `${os.hostname()} Pane daemon`;
-      const access = resolveCurrentHostAccess(current);
+      const access = resolveCurrentHostAccess(current, dependencies.readConfiguredTailscaleServeAccess);
       const pair = createRemoteDaemonConnectionPair({
         label,
         baseUrl: access.baseUrl,
@@ -437,7 +456,7 @@ export function registerRemoteDaemonHandlers(
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
-      disconnectActiveRemoteHostClients();
+      dependencies.disconnectActiveRemoteHostClients();
       trackRemotePaneEvent(analyticsManager, 'remote_pane_host_access_cleared', {
         surface: 'desktop',
         role: 'host',
@@ -453,7 +472,7 @@ export function registerRemoteDaemonHandlers(
   ipcMain.handle('remote-daemon:disconnect-host-clients', async (_event, clientIds: PaneCommandValue) => {
     try {
       const parsedClientIds = parseOptionalClientIds(clientIds);
-      const disconnectedCount = disconnectActiveRemoteHostClients(parsedClientIds);
+      const disconnectedCount = dependencies.disconnectActiveRemoteHostClients(parsedClientIds);
       trackRemotePaneEvent(analyticsManager, 'remote_pane_host_clients_disconnected', {
         surface: 'desktop',
         role: 'host',
@@ -504,7 +523,7 @@ export function registerRemoteDaemonHandlers(
       });
 
       await configManager.updateConfig({ remoteDaemon: next });
-      disconnectActiveRemoteHostClients([decodedClientId]);
+      dependencies.disconnectActiveRemoteHostClients([decodedClientId]);
       return { success: true, data: next.host.clients };
     } catch (error) {
       return { success: false, error: getErrorMessage(error, 'Failed to delete remote daemon client record') };
@@ -649,12 +668,15 @@ function readOptionalConnectionCodeLabel(input: PaneCommandValue): string | unde
   return label.length > 0 ? label : undefined;
 }
 
-function resolveCurrentHostAccess(current: RemoteDaemonConfig): RemoteDaemonHostAccess {
+function resolveCurrentHostAccess(
+  current: RemoteDaemonConfig,
+  readTailscaleAccess: typeof readConfiguredTailscaleServeAccess,
+): RemoteDaemonHostAccess {
   if (current.host.access) {
     return current.host.access;
   }
 
-  const discoveredTailscaleAccess = readConfiguredTailscaleServeAccess(current.host.config.listenPort);
+  const discoveredTailscaleAccess = readTailscaleAccess(current.host.config.listenPort);
   if (discoveredTailscaleAccess) {
     return discoveredTailscaleAccess;
   }

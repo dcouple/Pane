@@ -3,13 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppConfig } from '../types/config';
 import type { Session } from '../types/session';
 
-const powerSaveBlocker = vi.hoisted(() => ({
+const powerSaveBlocker = {
   start: vi.fn(() => 42),
   stop: vi.fn(),
   isStarted: vi.fn(() => true),
-}));
-
-vi.mock('electron', () => ({ powerSaveBlocker }));
+};
 
 import { ConfigManager } from './configManager';
 import { PowerSaveManager } from './powerSaveManager';
@@ -66,7 +64,7 @@ describe('PowerSaveManager', () => {
     powerSaveBlocker.isStarted.mockClear();
     configManager = new ConfigManagerStub();
     sessionManager = new SessionManagerStub();
-    manager = new PowerSaveManager(configManager, sessionManager);
+    manager = new PowerSaveManager(configManager, sessionManager, powerSaveBlocker);
   });
 
   afterEach(() => {
@@ -208,7 +206,7 @@ describe('PowerSaveManager', () => {
       createSession('archived-session', 'running', { archived: true }),
       createSession('stopped-session', 'stopped'),
     ]);
-    manager = new PowerSaveManager(configManager, sessionManager);
+    manager = new PowerSaveManager(configManager, sessionManager, powerSaveBlocker);
     manager.sync();
 
     expect(powerSaveBlocker.start).toHaveBeenCalledTimes(1);

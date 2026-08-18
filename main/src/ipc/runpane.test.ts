@@ -10,34 +10,25 @@ import type { AppServices } from './types';
 import type { CreatePanelRequest, ToolPanel } from '../../../shared/types/panels';
 import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration';
 
-vi.mock('../services/panelManager', () => ({
-  panelManager: {
-    createPanel: vi.fn(),
-    getPanel: vi.fn(),
-    getPanelsForSession: vi.fn(),
-    updatePanel: vi.fn(),
-  },
-}));
-
-vi.mock('../services/terminalPanelManager', () => ({
-  terminalPanelManager: {
-    initializeTerminal: vi.fn(),
-    isTerminalInitialized: vi.fn(),
-    getTerminalSnapshot: vi.fn(),
-    waitForTerminalState: vi.fn(),
-    getTerminalScrollback: vi.fn(),
-    writeToTerminal: vi.fn(),
-    getLastOutputAt: vi.fn(),
-    getOutputGeneration: vi.fn(),
-    deliverPendingInitialInput: vi.fn(),
-  },
-}));
-
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { ArchiveProgressManager } from '../services/archiveProgressManager';
 import { registerRunpaneHandlers } from './runpane';
+
+vi.spyOn(panelManager, 'createPanel');
+vi.spyOn(panelManager, 'getPanel');
+vi.spyOn(panelManager, 'getPanelsForSession');
+vi.spyOn(panelManager, 'updatePanel');
+vi.spyOn(terminalPanelManager, 'initializeTerminal');
+vi.spyOn(terminalPanelManager, 'isTerminalInitialized');
+vi.spyOn(terminalPanelManager, 'getTerminalSnapshot');
+vi.spyOn(terminalPanelManager, 'waitForTerminalState');
+vi.spyOn(terminalPanelManager, 'getTerminalScrollback');
+vi.spyOn(terminalPanelManager, 'writeToTerminal');
+vi.spyOn(terminalPanelManager, 'getLastOutputAt');
+vi.spyOn(terminalPanelManager, 'getOutputGeneration');
+vi.spyOn(terminalPanelManager, 'deliverPendingInitialInput');
 
 const project: Project = {
   id: 1,
@@ -2205,12 +2196,12 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('routes every agent, readiness, and input-shape combination consistently', async () => {
+  it('routes every agent, readiness, and input case consistently', async () => {
     vi.useFakeTimers();
     const toolKinds = process.platform === 'win32'
       ? (['claude', 'codex', 'custom'] as const)
       : (['claude', 'codex', 'cursor', 'custom'] as const);
-    const shapes = [
+    const inputCases = [
       { name: 'slash', input: '/do TM-x' },
       { name: 'prose', input: 'Please implement this' },
       { name: 'multiline', input: 'First line\nSecond line' },
@@ -2218,7 +2209,7 @@ describe('runpane IPC handlers', () => {
 
     for (const toolKind of toolKinds) {
       for (const waitReady of [false, true]) {
-        for (const shape of shapes) {
+        for (const inputCase of inputCases) {
           vi.mocked(panelManager.createPanel).mockReset();
           vi.mocked(panelManager.getPanel).mockReset();
           vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
@@ -2258,47 +2249,47 @@ describe('runpane IPC handlers', () => {
                 currentCommand: 'echo',
               };
             }
-            if (toolKind === 'codex' && shape.name === 'slash' && snapshotCalls >= 4) {
+            if (toolKind === 'codex' && inputCase.name === 'slash' && snapshotCalls >= 4) {
               return terminalSnapshot('Working\n›', 'active');
             }
             return terminalSnapshot(
-              toolKind === 'codex' && shape.name === 'slash' ? `› ${shape.input}` : 'ready',
+              toolKind === 'codex' && inputCase.name === 'slash' ? `› ${inputCase.input}` : 'ready',
               'idle',
               toolKind,
             );
           });
           const tool: RunpaneToolSpec = toolKind === 'custom'
-            ? { command: 'echo tool', initialInput: shape.input }
-            : { agent: toolKind, initialInput: shape.input };
+            ? { command: 'echo tool', initialInput: inputCase.input }
+            : { agent: toolKind, initialInput: inputCase.input };
 
           const resultPromise = createRegistry(createServices()).invoke('runpane:panes:create', [{
             repo: { id: project.id },
             waitReady,
             readyTimeoutMs: 100,
-            panes: [{ name: `${toolKind}-${shape.name}`, tool }],
+            panes: [{ name: `${toolKind}-${inputCase.name}`, tool }],
           }]);
           await vi.runAllTimersAsync();
           const result = await resultPromise;
           const initialState = createRequest?.initialState;
           const useArgument = toolKind === 'claude'
             || toolKind === 'cursor'
-            || (toolKind === 'codex' && shape.name !== 'slash');
-          const premarkedComposer = waitReady && toolKind === 'codex' && shape.name === 'slash';
+            || (toolKind === 'codex' && inputCase.name !== 'slash');
+          const premarkedComposer = waitReady && toolKind === 'codex' && inputCase.name === 'slash';
 
-          expect(initialState?.initialInputMode, `${toolKind}/${waitReady}/${shape.name} mode`).toBe(
+          expect(initialState?.initialInputMode, `${toolKind}/${waitReady}/${inputCase.name} mode`).toBe(
             useArgument ? 'argument' : undefined,
           );
-          expect(initialState?.initialInputSubmitStrategy, `${toolKind}/${waitReady}/${shape.name} strategy`).toBe(
-            toolKind === 'codex' && shape.name === 'slash' ? 'codex-ctrl-enter' : 'enter',
+          expect(initialState?.initialInputSubmitStrategy, `${toolKind}/${waitReady}/${inputCase.name} strategy`).toBe(
+            toolKind === 'codex' && inputCase.name === 'slash' ? 'codex-ctrl-enter' : 'enter',
           );
-          expect(Boolean(initialState?.initialInputSentAt), `${toolKind}/${waitReady}/${shape.name} premark`).toBe(
+          expect(Boolean(initialState?.initialInputSentAt), `${toolKind}/${waitReady}/${inputCase.name} premark`).toBe(
             premarkedComposer,
           );
-          expect(Boolean(result.items[0]?.initialInput), `${toolKind}/${waitReady}/${shape.name} result`).toBe(
+          expect(Boolean(result.items[0]?.initialInput), `${toolKind}/${waitReady}/${inputCase.name} result`).toBe(
             waitReady && toolKind !== 'custom',
           );
-          if (waitReady && toolKind !== 'custom' && shape.name !== 'slash') {
-            expect(result.items[0], `${toolKind}/${waitReady}/${shape.name} verified result`).toMatchObject({
+          if (waitReady && toolKind !== 'custom' && inputCase.name !== 'slash') {
+            expect(result.items[0], `${toolKind}/${waitReady}/${inputCase.name} verified result`).toMatchObject({
               ok: true,
               initialInput: {
                 verifiedSubmitted: true,

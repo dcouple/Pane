@@ -6,13 +6,6 @@ import { hashRemoteDaemonToken } from './auth';
 import { PaneCommandRegistry } from './commandRegistry';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 
-vi.mock('../services/terminalPanelManager', () => ({
-  terminalPanelManager: {
-    clearVisibilityViewersByPrefix: vi.fn(),
-    pruneVisibilityViewersByPrefix: vi.fn(),
-  },
-}));
-
 import { PaneRemoteTransportController } from './remoteTransportController';
 
 interface TestEventStream {

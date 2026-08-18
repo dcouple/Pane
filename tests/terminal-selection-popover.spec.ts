@@ -1,6 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 
+declare global {
+  interface Window {
+    __terminalClipboardWrites?: string[];
+  }
+}
+
 const project = {
   id: 380,
   name: 'Terminal selection fixture',
@@ -55,15 +61,12 @@ async function installClipboardMock(page: Page): Promise<void> {
         },
       },
     });
-    Reflect.set(window, '__terminalClipboardWrites', copiedText);
+    window.__terminalClipboardWrites = copiedText;
   });
 }
 
 async function clipboardWrites(page: Page): Promise<string[]> {
-  return page.evaluate(() => (
-    // SAFETY: installClipboardMock initializes this property to a string array before navigation.
-    Reflect.get(window, '__terminalClipboardWrites') as string[] | undefined
-  ) ?? []);
+  return page.evaluate(() => window.__terminalClipboardWrites ?? []);
 }
 
 async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
@@ -89,18 +92,16 @@ async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
     while (reactElement) {
       const fiberKey = Object.keys(reactElement).find((key) => key.startsWith('__reactFiber$'));
       if (fiberKey) {
-        // SAFETY: React's private fiber key points to the linked fiber shape traversed below.
-        let fiber = Reflect.get(reactElement, fiberKey) as FiberNode | null;
+        // SAFETY: React's private fiber key points to the linked fiber contract traversed below.
+        let fiber = Object.getOwnPropertyDescriptor(reactElement, fiberKey)?.value as FiberNode | null;
         while (fiber) {
           let hook = fiber.memoizedState;
           while (hook) {
             const ref = hook.memoizedState;
-            if (ref instanceof Object) {
-              // SAFETY: React ref objects expose their current value through this property.
-              const candidate = Reflect.get(ref, 'current') as unknown;
-              if (candidate instanceof Object) {
-                // SAFETY: the xterm ref exposes its public select method on the terminal instance.
-                const select = Reflect.get(candidate, 'select') as unknown;
+            if (ref instanceof Object && 'current' in ref) {
+              const candidate = ref.current;
+              if (candidate instanceof Object && 'select' in candidate) {
+                const select = candidate.select;
                 if (select instanceof Function) {
                   select.call(candidate, 0, 0, 11);
                   return true;

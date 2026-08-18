@@ -27,6 +27,7 @@ import {
   runCommand as runTailscaleCommand,
   runTailscaleServeInteractive,
   type ResolvedCommand,
+  type TailscaleSetupDependencies,
 } from './tailscaleSetup';
 import {
   boundary,
@@ -47,6 +48,7 @@ export interface SetupRemoteHostOptions extends Omit<RemoteHostSetupRequest, 'da
   existingConfig?: object;
   writeConfig?: (config: RemoteHostConfigDocument) => Promise<void>;
   serviceDependencies?: RemoteDaemonServiceDependencies;
+  tailscaleDependencies?: TailscaleSetupDependencies;
 }
 
 interface RemoteHostConfigDocument {
@@ -86,6 +88,7 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
     printOnly: options.printOnly === true,
     interactiveTailscaleSetup: options.interactiveTailscaleSetup === true,
     manualBaseUrl: options.baseUrl,
+    tailscaleDependencies: options.tailscaleDependencies,
   });
   const pair = createRemoteDaemonConnectionPair({
     label,
@@ -297,6 +300,7 @@ function selectTunnel(options: {
   printOnly: boolean;
   interactiveTailscaleSetup: boolean;
   manualBaseUrl?: string;
+  tailscaleDependencies?: TailscaleSetupDependencies;
 }): TunnelSelection {
   const sshCommand = buildSshForwardCommand(options.listenPort);
   const fallbackCommands = [sshCommand, buildTailscaleServeCommand(null, options.listenPort)];
@@ -332,7 +336,7 @@ function selectTunnel(options: {
   }
 
   if (options.preferTunnel === 'tailscale' || options.preferTunnel === 'auto') {
-    const initialTailscaleCli = resolveTailscaleCommand();
+    const initialTailscaleCli = resolveTailscaleCommand(options.tailscaleDependencies);
     const tailscaleCommand = buildTailscaleServeCommand(initialTailscaleCli, options.listenPort);
     return selectTailscaleTunnel({
       listenPort: options.listenPort,
@@ -342,6 +346,7 @@ function selectTunnel(options: {
       tailscaleCli: initialTailscaleCli,
       tailscaleCommand,
       fallbackCommands: [sshCommand, tailscaleCommand],
+      tailscaleDependencies: options.tailscaleDependencies,
     });
   }
 
@@ -356,6 +361,7 @@ function selectTailscaleTunnel(options: {
   tailscaleCli: ResolvedCommand | null;
   tailscaleCommand: string;
   fallbackCommands: string[];
+  tailscaleDependencies?: TailscaleSetupDependencies;
 }): TunnelSelection {
   if (!options.exposeTailscale) {
     throw new Error(`Tailscale is required for cross-device remote setup. Remove --no-tailscale-serve or choose SSH Tunnel under advanced options.\n\n${getTailscaleSetupInstructions()}`);
@@ -365,12 +371,17 @@ function selectTailscaleTunnel(options: {
     throw new Error('Tailscale setup cannot run in print-only mode because Pane must configure Tailscale Serve before it can create a cross-device connection code.');
   }
 
-  const tailscaleCli = options.tailscaleCli ?? installTailscaleCommandOrThrow();
+  const tailscaleCli = options.tailscaleCli ?? installTailscaleCommandOrThrow(options.tailscaleDependencies);
   const tailscaleCommand = buildTailscaleServeCommand(tailscaleCli, options.listenPort);
 
   const tailscaleServe = options.interactiveTailscaleSetup
-    ? runTailscaleServeInteractive(tailscaleCli, options.listenPort)
-    : runTailscaleCommand(tailscaleCli, ['serve', '--bg', '--tls-terminated-tcp=443', String(options.listenPort)]);
+    ? runTailscaleServeInteractive(tailscaleCli, options.listenPort, options.tailscaleDependencies)
+    : runTailscaleCommand(
+        tailscaleCli,
+        ['serve', '--bg', '--tls-terminated-tcp=443', String(options.listenPort)],
+        {},
+        options.tailscaleDependencies,
+      );
   if (!tailscaleServe.ok) {
     const instructions = options.interactiveTailscaleSetup
       ? getTailscaleServeSetupInstructions(options.listenPort)
@@ -378,7 +389,7 @@ function selectTailscaleTunnel(options: {
     throw new Error(`Tailscale Serve setup failed: ${firstNonEmpty(tailscaleServe.stderr, tailscaleServe.stdout, 'unknown error')}\n\n${instructions}`);
   }
 
-  const serveStatus = runTailscaleCommand(tailscaleCli, ['serve', 'status']);
+  const serveStatus = runTailscaleCommand(tailscaleCli, ['serve', 'status'], {}, options.tailscaleDependencies);
   const serveUrl = extractFirstHttpsUrl([
     tailscaleServe.stdout,
     tailscaleServe.stderr,
@@ -390,7 +401,7 @@ function selectTailscaleTunnel(options: {
     throw new Error(`Tailscale Serve was configured, but Pane could not find an HTTPS Tailscale URL in the command output. Run "${tailscaleCommand}" manually and confirm Tailscale is logged in.\n\n${getTailscaleSetupInstructions()}`);
   }
 
-  const tailscaleIp = readTailscaleIpv4(tailscaleCli);
+  const tailscaleIp = readTailscaleIpv4(tailscaleCli, options.tailscaleDependencies);
 
   const tunnel: NonNullable<TunnelSelection['tunnel']> = {
     kind: 'tailscale',
@@ -509,8 +520,11 @@ function extractFirstHttpsUrl(output: string): string | null {
   return `https://${tailscaleTcpMatch[1]}`;
 }
 
-function readTailscaleIpv4(tailscaleCli: ResolvedCommand): string | null {
-  const result = runTailscaleCommand(tailscaleCli, ['ip', '-4']);
+function readTailscaleIpv4(
+  tailscaleCli: ResolvedCommand,
+  dependencies?: TailscaleSetupDependencies,
+): string | null {
+  const result = runTailscaleCommand(tailscaleCli, ['ip', '-4'], {}, dependencies);
   if (!result.ok) {
     return null;
   }

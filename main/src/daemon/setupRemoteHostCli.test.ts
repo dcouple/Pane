@@ -1,29 +1,29 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import path from 'path';
 import {
-  formatSetupRemoteHostResult,
-  setupRemoteHost,
+  formatSetupRemoteHostResult as formatSetupRemoteHostResultImpl,
+  setupRemoteHost as setupRemoteHostImpl,
 } from './setupRemoteHost';
 import {
-  ensureTailscaleInstalledInteractive,
-  runTailscaleUpInteractive,
+  ensureTailscaleInstalledInteractive as ensureTailscaleInstalledInteractiveImpl,
+  runTailscaleUpInteractive as runTailscaleUpInteractiveImpl,
 } from './tailscaleSetup';
-import { runRemoteSetupCli } from './setupRemoteHostCli';
-import { repairRemoteDaemonService } from './remoteDaemonService';
+import { runRemoteSetupCli, type RemoteSetupCliDependencies } from './setupRemoteHostCli';
+import { repairRemoteDaemonService as repairRemoteDaemonServiceImpl } from './remoteDaemonService';
 
-vi.mock('./setupRemoteHost', () => ({
-  formatSetupRemoteHostResult: vi.fn(() => 'formatted remote setup result'),
-  setupRemoteHost: vi.fn(),
-}));
-
-vi.mock('./remoteDaemonService', () => ({
-  repairRemoteDaemonService: vi.fn(),
-}));
-
-vi.mock('./tailscaleSetup', () => ({
-  ensureTailscaleInstalledInteractive: vi.fn(),
-  runTailscaleUpInteractive: vi.fn(),
-}));
+const formatSetupRemoteHostResult = vi.fn<typeof formatSetupRemoteHostResultImpl>()
+  .mockReturnValue('formatted remote setup result');
+const setupRemoteHost = vi.fn<typeof setupRemoteHostImpl>();
+const repairRemoteDaemonService = vi.fn<typeof repairRemoteDaemonServiceImpl>();
+const ensureTailscaleInstalledInteractive = vi.fn<typeof ensureTailscaleInstalledInteractiveImpl>();
+const runTailscaleUpInteractive = vi.fn<typeof runTailscaleUpInteractiveImpl>();
+const dependencies: RemoteSetupCliDependencies = {
+  ensureTailscaleInstalledInteractive,
+  formatSetupRemoteHostResult,
+  repairRemoteDaemonService,
+  runTailscaleUpInteractive,
+  setupRemoteHost,
+};
 
 describe('runRemoteSetupCli', () => {
   afterEach(() => {
@@ -75,7 +75,7 @@ describe('runRemoteSetupCli', () => {
       '--prefer-tunnel',
       'tailscale',
       '--no-install-service',
-    ]);
+    ], dependencies);
 
     expect(exitCode).toBe(0);
     expect(ensureTailscaleInstalledInteractive).toHaveBeenCalledOnce();
@@ -125,7 +125,7 @@ describe('runRemoteSetupCli', () => {
       '--pane-dir',
       '/tmp/pane-remote',
       '--json',
-    ]);
+    ], dependencies);
 
     expect(exitCode).toBe(0);
     expect(repairRemoteDaemonService).toHaveBeenCalledWith(path.resolve('/tmp/pane-remote'));

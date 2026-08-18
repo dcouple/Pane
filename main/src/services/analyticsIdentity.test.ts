@@ -1,29 +1,20 @@
-import { execFileSync } from 'child_process';
 import * as fsSync from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { readWebAttribution, resolveAnalyticsIdentity } from './analyticsIdentity';
 
-vi.mock('child_process', () => ({
-  execFileSync: vi.fn(),
-}));
-
-vi.mock('../utils/shellPath', () => ({
-  getShellPath: () => '/usr/bin',
-}));
-
-const execFileSyncMock = vi.mocked(execFileSync);
+const runCommand = vi.fn<(command: string, args: string[]) => string | undefined>();
+const dependencies = { runCommand };
 
 function mockCommandOutput(outputs: Record<string, string>): void {
-  // SAFETY: The mock implements only the string-returning execFileSync overload used by analyticsIdentity.
-  execFileSyncMock.mockImplementation(((command: string, args: string[]) => {
+  runCommand.mockImplementation((command: string, args: string[]) => {
     const key = `${command} ${args.join(' ')}`;
     if (key in outputs) {
-      return outputs[key];
+      return outputs[key].trim() || undefined;
     }
-    throw new Error(`Unexpected command: ${key}`);
-  }) as never);
+    return undefined;
+  });
 }
 
 describe('resolveAnalyticsIdentity', () => {
@@ -34,7 +25,7 @@ describe('resolveAnalyticsIdentity', () => {
   it('uses the stable install ID when no git or GitHub identity is available', () => {
     mockCommandOutput({});
 
-    expect(resolveAnalyticsIdentity(undefined, 'install_123')).toEqual({
+    expect(resolveAnalyticsIdentity(undefined, 'install_123', dependencies)).toEqual({
       distinctId: 'install:install_123',
       identitySource: 'anonymous',
       installId: 'install_123',
@@ -49,7 +40,7 @@ describe('resolveAnalyticsIdentity', () => {
   it('keeps an existing PostHog ID until a stronger identity is available', () => {
     mockCommandOutput({});
 
-    expect(resolveAnalyticsIdentity('existing_distinct', 'install_123')).toMatchObject({
+    expect(resolveAnalyticsIdentity('existing_distinct', 'install_123', dependencies)).toMatchObject({
       distinctId: 'existing_distinct',
       identitySource: 'posthog',
       installId: 'install_123',
@@ -59,7 +50,7 @@ describe('resolveAnalyticsIdentity', () => {
   it('keeps the install-ID fallback classified as anonymous on later launches', () => {
     mockCommandOutput({});
 
-    expect(resolveAnalyticsIdentity('install:install_123', 'install_123')).toMatchObject({
+    expect(resolveAnalyticsIdentity('install:install_123', 'install_123', dependencies)).toMatchObject({
       distinctId: 'install:install_123',
       identitySource: 'anonymous',
       installId: 'install_123',
@@ -73,7 +64,7 @@ describe('resolveAnalyticsIdentity', () => {
       'git config --global user.name': 'Dev User\n',
     });
 
-    const identity = resolveAnalyticsIdentity(undefined, 'install_123');
+    const identity = resolveAnalyticsIdentity(undefined, 'install_123', dependencies);
 
     expect(identity).toMatchObject({
       distinctId: 'email:dev@example.com',

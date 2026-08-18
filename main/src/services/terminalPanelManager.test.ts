@@ -5,38 +5,12 @@ import { createFlowControlRecord, disposeFlowControlRecord, type FlowControlReco
 import { TerminalStateEmulator } from './terminalStateEmulator';
 import type { TerminalPanelState } from '../../../shared/types/panels';
 
-vi.mock('@lydell/node-pty', () => ({}));
-
-vi.mock('./panelManager', () => ({
-  panelManager: {
-    emitPanelEvent: vi.fn(),
-    getPanel: vi.fn(),
-    updatePanel: vi.fn(),
-  },
-}));
-
-vi.mock('../utils/shellPath', () => ({
-  getShellPath: () => '',
-}));
-
-vi.mock('../utils/shellDetector', () => ({
-  ShellDetector: {
-    getDefaultShell: () => ({ path: '/bin/bash', name: 'bash', args: [] }),
-  },
-}));
-
-vi.mock('../utils/wslUtils', () => ({
-  getWSLShellSpawn: vi.fn(),
-  buildWSLENV: vi.fn(() => ''),
-}));
-
-vi.mock('../utils/attribution', () => ({
-  GIT_ATTRIBUTION_ENV: {},
-  getGitAttributionEnv: vi.fn(() => ({})),
-}));
-
 import { TerminalPanelManager } from './terminalPanelManager';
 import { panelManager } from './panelManager';
+
+vi.spyOn(panelManager, 'emitPanelEvent');
+vi.spyOn(panelManager, 'getPanel');
+vi.spyOn(panelManager, 'updatePanel');
 
 type TerminalUnderTest = {
   pty: {

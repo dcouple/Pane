@@ -1,11 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CloudVmManager } from '../services/cloudVmManager';
+import * as cloudVmManagerModule from '../services/cloudVmManager';
 import { registerCloudHandlers } from './cloud';
 import type { PaneCommandValue } from '../daemon/commandRegistry';
 
-vi.mock('../services/cloudVmManager', () => ({
-  CloudVmManager: vi.fn(),
-}));
+vi.spyOn(cloudVmManagerModule, 'CloudVmManager');
 
 interface TestIpcEvent { readonly sender?: { readonly id?: number } }
 interface IpcMainStub {

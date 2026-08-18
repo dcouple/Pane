@@ -5,9 +5,7 @@ import { agentUsageService } from '../services/agentUsageService';
 import { registerAgentUsageHandlers, resolveAgentUsageTargets } from './agentUsage';
 import type { AppServices } from './types';
 
-vi.mock('../services/agentUsageService', () => ({
-  agentUsageService: { getSnapshot: vi.fn() },
-}));
+vi.spyOn(agentUsageService, 'getSnapshot');
 
 describe('registerAgentUsageHandlers', () => {
   interface TestIpcEvent { readonly sender?: { readonly id?: number } }

@@ -2,19 +2,24 @@ import fs from 'fs/promises';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import childProcess from 'child_process';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { decodePaneRemoteConnection } from '../../../shared/types/remoteDaemon';
-import { setupRemoteHost } from './setupRemoteHost';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import {
+  setupRemoteHost as setupRemoteHostImpl,
+  type SetupRemoteHostOptions,
+} from './setupRemoteHost';
 
-const { spawnSyncMock } = vi.hoisted(() => ({
-  spawnSyncMock: vi.fn(),
-}));
+const spawnSyncMock = vi.fn<typeof childProcess.spawnSync>();
+
+function setupRemoteHost(options: SetupRemoteHostOptions = {}) {
+  return setupRemoteHostImpl({
+    ...options,
+    tailscaleDependencies: { spawnSync: spawnSyncMock },
+  });
+}
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
-
-vi.mock('child_process', () => ({
-  spawnSync: spawnSyncMock,
-}));
 
 function commandResult(options: {
   status: number | null;
