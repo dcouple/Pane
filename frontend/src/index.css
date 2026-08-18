@@ -115,12 +115,18 @@ body.tokyo-rain {
 :root.terracotta .panel-tab-bar [aria-selected="true"],
 :root.synthwave .panel-tab-bar [aria-selected="true"],
 :root.acid .panel-tab-bar [aria-selected="true"],
-:root.tokyo-rain .panel-tab-bar [aria-selected="true"] {
+:root.tokyo-rain .panel-tab-bar [aria-selected="true"],
+:root.folio .panel-tab-bar [aria-selected="true"],
+:root.newsprint .panel-tab-bar [aria-selected="true"],
+:root.walnut .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
 
-/* Theme-aware structural shells */
+/* Theme-aware structural shells.
+   Folio, Newsprint and Walnut are intentionally absent from the shell selector
+   lists below — the print themes use the flat base layout with rule-line
+   borders (see effects.css). */
 .pane-main-layout {
   padding: var(--app-frame-padding);
   gap: var(--app-frame-gap);
@@ -906,6 +912,30 @@ body.tokyo-rain {
   --vscode-editor-foreground: #1f2328 !important;
   --vscode-editorWidget-background: #ffffff !important;
   --vscode-editorWidget-foreground: #1f2328 !important;
+}
+
+/* Folio theme overrides — ink on the sheet */
+:root.folio {
+  --vscode-editor-background: #fbf7ee !important;
+  --vscode-editor-foreground: #1f1b17 !important;
+  --vscode-editorWidget-background: #fbf7ee !important;
+  --vscode-editorWidget-foreground: #1f1b17 !important;
+}
+
+/* Newsprint theme overrides — graphite on cool stock */
+:root.newsprint {
+  --vscode-editor-background: #f8f8f6 !important;
+  --vscode-editor-foreground: #24272b !important;
+  --vscode-editorWidget-background: #f8f8f6 !important;
+  --vscode-editorWidget-foreground: #24272b !important;
+}
+
+/* Walnut theme overrides — parchment on walnut */
+:root.walnut {
+  --vscode-editor-background: #120e0b !important;
+  --vscode-editor-foreground: #ede1cd !important;
+  --vscode-editorWidget-background: #120e0b !important;
+  --vscode-editorWidget-foreground: #ede1cd !important;
 }
 
 /* Additional Monaco editor style overrides */

@@ -11,7 +11,7 @@
     <script>
       // Apply theme class before React loads to prevent flash
       const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain'];
+      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut'];
       const themeClasses = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -28,6 +28,9 @@
         'synthwave': ['dark', 'synthwave'],
         'acid': ['dark', 'acid'],
         'tokyo-rain': ['dark', 'tokyo-rain'],
+        'folio': ['light', 'folio'],
+        'newsprint': ['light', 'newsprint'],
+        'walnut': ['dark', 'walnut'],
       };
       const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
       document.documentElement.classList.add(...themeClasses[theme]);
@@ -40,7 +43,7 @@
     <script>
       // Also apply to body (mirrors the head script logic)
       const t = localStorage.getItem('theme');
-      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain'];
+      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut'];
       const tc = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -57,6 +60,9 @@
         'synthwave': ['dark', 'synthwave'],
         'acid': ['dark', 'acid'],
         'tokyo-rain': ['dark', 'tokyo-rain'],
+        'folio': ['light', 'folio'],
+        'newsprint': ['light', 'newsprint'],
+        'walnut': ['dark', 'walnut'],
       };
       const bt = vt.includes(t) ? t : 'light-rounded';
       document.body.classList.add(...tc[bt]);

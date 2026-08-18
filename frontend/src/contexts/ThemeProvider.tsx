@@ -1,25 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
-import { ThemeContext, type Theme } from './themeContextValue';
+import { THEME_CLASSES, ThemeContext, type Theme } from './themeContextValue';
 
-const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain']);
-const THEME_CLASSES = {
-  'light': ['light'],
-  'light-rounded': ['light', 'light-rounded'],
-  'dark': ['dark'],
-  'oled': ['dark', 'oled'],
-  'dusk': ['dark', 'dusk'],
-  'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
-  'forge': ['dark', 'forge'],
-  'ember': ['dark', 'ember'],
-  'aurora': ['dark', 'aurora'],
-  'night-owl': ['dark', 'night-owl'],
-  'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
-  'terracotta': ['dark', 'terracotta'],
-  'synthwave': ['dark', 'synthwave'],
-  'acid': ['dark', 'acid'],
-  'tokyo-rain': ['dark', 'tokyo-rain'],
-} satisfies Record<Theme, string[]>;
+const VALID_THEMES = new Set<string>(Object.keys(THEME_CLASSES));
+// Every class any theme can stamp — removed wholesale before applying the next theme.
+const ALL_THEME_CLASSES = [...new Set(Object.values(THEME_CLASSES).flat())];
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -49,13 +34,17 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [config?.highContrast]);
 
-  useEffect(() => {
+  // Layout effect (not passive): descendants read the stamped classes via
+  // getComputedStyle in their own useEffects (terminal palette, log ANSI
+  // colours), and React runs child passive effects before the parent's — a
+  // passive effect here would leave them one theme behind.
+  useLayoutEffect(() => {
     const root = document.documentElement;
     const body = document.body;
 
     // Remove ALL theme classes from both root and body
-    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain');
-    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain');
+    root.classList.remove(...ALL_THEME_CLASSES);
+    body.classList.remove(...ALL_THEME_CLASSES);
 
     const themeClasses = THEME_CLASSES[theme];
     root.classList.add(...themeClasses);

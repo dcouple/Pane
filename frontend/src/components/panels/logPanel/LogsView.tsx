@@ -3,6 +3,7 @@ import { Search, X, Download, Trash2, ChevronUp, ChevronDown, Filter, Copy, Chec
 import { cn } from '../../../utils/cn';
 import AnsiToHtml from 'ansi-to-html';
 import { useTheme } from '../../../contexts/ThemeContext';
+import { getTerminalTheme } from '../../../utils/terminalTheme';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
@@ -46,34 +47,28 @@ export const LogsView: React.FC<LogsViewProps> = ({ sessionId, isVisible }) => {
   const { theme } = useTheme();
   const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
 
-  // Create ANSI to HTML converter with theme-aware colors
+  // ANSI → HTML converter using the active theme's terminal palette
+  // (--color-terminal-* tokens), so log colours match the terminal panel.
+  // Read in an effect: the theme classes are stamped on <html> by
+  // ThemeProvider's layout effect, which has run by the time this fires.
+  const [terminalPalette, setTerminalPalette] = useState(getTerminalTheme);
+  useEffect(() => {
+    setTerminalPalette(getTerminalTheme());
+  }, [theme]);
   const ansiConverter = useMemo(() => {
-    const isLight = theme === 'light' || theme === 'light-rounded';
+    const p = terminalPalette;
     return new AnsiToHtml({
-      fg: isLight ? '#1f2328' : '#e5e7eb',
-      bg: isLight ? '#ffffff' : '#0a0a0a',
+      fg: p.foreground,
+      bg: p.background,
       newline: true,
       escapeXML: true,
-      colors: {
-        0: isLight ? '#1f2328' : '#000000', // Black
-        1: isLight ? '#cf222e' : '#ef4444', // Red
-        2: isLight ? '#1a7f37' : '#10b981', // Green
-        3: isLight ? '#9a6700' : '#f59e0b', // Yellow
-        4: isLight ? '#2563eb' : '#3b82f6', // Blue
-        5: isLight ? '#8250df' : '#a855f7', // Magenta
-        6: isLight ? '#0891b2' : '#06b6d4', // Cyan
-        7: isLight ? '#6b7280' : '#e5e7eb', // White
-        8: isLight ? '#6b7280' : '#6b7280', // Bright Black (Gray)
-        9: isLight ? '#ef4444' : '#f87171', // Bright Red
-        10: isLight ? '#22c55e' : '#34d399', // Bright Green
-        11: isLight ? '#eab308' : '#fbbf24', // Bright Yellow
-        12: isLight ? '#3b82f6' : '#60a5fa', // Bright Blue
-        13: isLight ? '#a855f7' : '#c084fc', // Bright Magenta
-        14: isLight ? '#06b6d4' : '#22d3ee', // Bright Cyan
-        15: isLight ? '#1f2328' : '#ffffff', // Bright White
-      }
+      // ANSI slots 0–15; getTerminalTheme always fills these, the fallback only satisfies ITheme's optional typing.
+      colors: [
+        p.black, p.red, p.green, p.yellow, p.blue, p.magenta, p.cyan, p.white,
+        p.brightBlack, p.brightRed, p.brightGreen, p.brightYellow, p.brightBlue, p.brightMagenta, p.brightCyan, p.brightWhite,
+      ].map((color) => color ?? p.foreground ?? '#808080'),
     });
-  }, [theme]);
+  }, [terminalPalette]);
 
   // Load existing logs when component mounts or session changes
   useEffect(() => {

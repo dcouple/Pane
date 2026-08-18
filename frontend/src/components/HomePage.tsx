@@ -314,7 +314,7 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta', synthwave: 'Synthwave', acid: 'Acid Terminal', 'tokyo-rain': 'Tokyo Rain' }[theme]}</span>
+                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta', synthwave: 'Synthwave', acid: 'Acid Terminal', 'tokyo-rain': 'Tokyo Rain', folio: 'Folio', newsprint: 'Newsprint', walnut: 'Walnut' }[theme]}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
@@ -331,6 +331,9 @@ export function HomePage() {
                   { id: 'synthwave', label: 'Synthwave', description: 'Violet-black with magenta and cyan neon accents.', onClick: () => setTheme('synthwave') },
                   { id: 'acid', label: 'Acid Terminal', description: 'Charcoal-black with electric lime and amber accents.', onClick: () => setTheme('acid') },
                   { id: 'tokyo-rain', label: 'Tokyo Rain', description: 'Blue-black with pink and blue signage accents.', onClick: () => setTheme('tokyo-rain') },
+                  { id: 'folio', label: 'Folio', description: 'Paper & ink — warm cream, near-black type, one vermilion accent.', onClick: () => setTheme('folio') },
+                  { id: 'newsprint', label: 'Newsprint', description: 'Cool grey stock, graphite type, halftone surfaces, ink-blue accent.', onClick: () => setTheme('newsprint') },
+                  { id: 'walnut', label: 'Walnut', description: 'Vellum & walnut — warm brown-black, parchment type, brass accent.', onClick: () => setTheme('walnut') },
                   { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
                   { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
                   { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },

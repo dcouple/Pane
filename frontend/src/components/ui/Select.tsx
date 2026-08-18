@@ -131,15 +131,19 @@ const SelectLabel = forwardRef<
 ));
 SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
+interface SelectItemProps extends React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> {
+  /** Optional one-line hint rendered under the label inside the list (never in the trigger). */
+  description?: React.ReactNode;
+}
+
 const SelectItem = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { description?: React.ReactNode }
+  SelectItemProps
 >(({ className, children, description, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
       'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
-      description ? 'flex-col items-start' : null,
       'text-text-primary',
       'hover:bg-surface-secondary hover:text-text-primary',
       'focus:bg-surface-secondary focus:text-text-primary',
@@ -149,13 +153,19 @@ const SelectItem = forwardRef<
     )}
     {...props}
   >
-    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
+    <span className={cn('absolute right-2 flex h-3.5 w-3.5 items-center justify-center', description && 'top-2')}>
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4 text-interactive" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    {description ? <span className="text-xs text-text-tertiary">{description}</span> : null}
+    {description ? (
+      <span className="flex min-w-0 flex-col items-start">
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        <span className="mt-0.5 text-xs leading-tight text-text-tertiary">{description}</span>
+      </span>
+    ) : (
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    )}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;

@@ -16,6 +16,9 @@ import type { AppConfig } from '../../../types/config';
 const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string; description?: string }> = [
   { id: 'light-rounded', label: 'Light (rounded)' },
   { id: 'light', label: 'Light (sharp)' },
+  { id: 'folio', label: 'Folio', description: 'Paper & ink — warm cream, near-black type, one vermilion accent.' },
+  { id: 'newsprint', label: 'Newsprint', description: 'Cool grey stock, graphite type, halftone surfaces, ink-blue accent.' },
+  { id: 'walnut', label: 'Walnut', description: 'Vellum & walnut — warm brown-black, parchment type, brass accent.' },
   { id: 'forge', label: 'Forge' },
   { id: 'night-owl', label: 'Night Owl' },
   { id: 'night-owl-oled', label: 'Night Owl (OLED)' },
@@ -57,7 +60,11 @@ export function AppearanceSettings({ persistence }: { persistence: SettingsPersi
             >
               <SelectTrigger aria-label="Theme"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {THEMES.map((theme) => <SelectItem key={theme.id} value={theme.id} description={theme.description}>{theme.label}</SelectItem>)}
+                {THEMES.map((theme) => (
+                  <SelectItem key={theme.id} value={theme.id} description={theme.description}>
+                    {theme.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

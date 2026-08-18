@@ -258,3 +258,43 @@
   --panel-shell-radius: var(--radius-xl);
   --panel-shell-shadow: var(--shadow-sm);
 }
+
+/* Folio / Newsprint / Walnut deliberately keep the flat, edge-to-edge shell
+   treatment of the base light/dark themes (no --app-shell-radius /
+   --panel-shell-* islands, no index.css shell borders): a printed sheet is
+   one surface with rule lines, not a stack of cards. */
+
+/* Folio — set type: crisp corners, no drop shadows, depth from tonal steps only */
+:root.folio {
+  --button-radius: var(--radius-sm);
+  --card-radius: var(--radius-default);
+  --input-radius: var(--radius-sm);
+  --modal-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --dropdown-shadow: 0 6px 18px rgba(31, 27, 23, 0.14);
+}
+
+/* Newsprint — column rules, square-ish corners, no drop shadows */
+:root.newsprint {
+  --button-radius: var(--radius-sm);
+  --card-radius: var(--radius-default);
+  --input-radius: var(--radius-sm);
+  --modal-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --dropdown-shadow: 0 6px 18px rgba(36, 39, 43, 0.16);
+}
+
+/* Walnut — soft-bound: gentle radius, shallow shadows */
+:root.walnut {
+  --button-radius: var(--radius-md);
+  --card-radius: var(--radius-lg);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-xs);
+  --dropdown-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
