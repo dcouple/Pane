@@ -62,6 +62,20 @@ body.light-rounded {
     linear-gradient(180deg, #f7fafc 0%, #eef3f7 100%);
 }
 
+body.synthwave {
+  background:
+    radial-gradient(circle at top center, rgba(255, 95, 215, 0.10), transparent 30%),
+    radial-gradient(circle at top right, rgba(61, 227, 255, 0.07), transparent 26%),
+    linear-gradient(180deg, #120b1f 0%, #0e0819 100%);
+}
+
+body.tokyo-rain {
+  background:
+    radial-gradient(circle at top center, rgba(255, 79, 154, 0.09), transparent 28%),
+    radial-gradient(circle at top right, rgba(92, 179, 255, 0.08), transparent 26%),
+    linear-gradient(180deg, #0d1120 0%, #0a0e1b 100%);
+}
+
 /* Scrollbars stay functional but visually hidden */
 ::-webkit-scrollbar {
   width: 0;
@@ -98,7 +112,10 @@ body.light-rounded {
 :root.ember .panel-tab-bar [aria-selected="true"],
 :root.night-owl .panel-tab-bar [aria-selected="true"],
 :root.night-owl-oled .panel-tab-bar [aria-selected="true"],
-:root.terracotta .panel-tab-bar [aria-selected="true"] {
+:root.terracotta .panel-tab-bar [aria-selected="true"],
+:root.synthwave .panel-tab-bar [aria-selected="true"],
+:root.acid .panel-tab-bar [aria-selected="true"],
+:root.tokyo-rain .panel-tab-bar [aria-selected="true"] {
   background-color: transparent;
   box-shadow: inset 0 calc(-1 * var(--tab-indicator-height, 4px)) 0 0 var(--tab-indicator-color, #3574F0);
 }
@@ -129,6 +146,9 @@ body.light-rounded {
 :root.night-owl .pane-sidebar-shell,
 :root.night-owl-oled .pane-sidebar-shell,
 :root.terracotta .pane-sidebar-shell,
+:root.synthwave .pane-sidebar-shell,
+:root.acid .pane-sidebar-shell,
+:root.tokyo-rain .pane-sidebar-shell,
 :root.light-rounded .pane-sidebar-shell {
   border: 3px solid var(--color-border-primary);
   border-radius: var(--app-shell-radius);
@@ -143,6 +163,9 @@ body.light-rounded {
 :root.night-owl .pane-session-shell,
 :root.night-owl-oled .pane-session-shell,
 :root.terracotta .pane-session-shell,
+:root.synthwave .pane-session-shell,
+:root.acid .pane-session-shell,
+:root.tokyo-rain .pane-session-shell,
 :root.light-rounded .pane-session-shell {
   gap: var(--panel-shell-gap);
 }
@@ -154,6 +177,9 @@ body.light-rounded {
 :root.night-owl .panel-tab-bar,
 :root.night-owl-oled .panel-tab-bar,
 :root.terracotta .panel-tab-bar,
+:root.synthwave .panel-tab-bar,
+:root.acid .panel-tab-bar,
+:root.tokyo-rain .panel-tab-bar,
 :root.light-rounded .panel-tab-bar {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -168,6 +194,9 @@ body.light-rounded {
 :root.night-owl .pane-editor-stage,
 :root.night-owl-oled .pane-editor-stage,
 :root.terracotta .pane-editor-stage,
+:root.synthwave .pane-editor-stage,
+:root.acid .pane-editor-stage,
+:root.tokyo-rain .pane-editor-stage,
 :root.light-rounded .pane-editor-stage {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -182,6 +211,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-dock,
 :root.night-owl-oled .pane-terminal-dock,
 :root.terracotta .pane-terminal-dock,
+:root.synthwave .pane-terminal-dock,
+:root.acid .pane-terminal-dock,
+:root.tokyo-rain .pane-terminal-dock,
 :root.light-rounded .pane-terminal-dock {
   margin-top: var(--panel-shell-gap);
   border: 1px solid var(--color-border-primary);
@@ -197,6 +229,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail,
 :root.night-owl-oled .pane-terminal-rail,
 :root.terracotta .pane-terminal-rail,
+:root.synthwave .pane-terminal-rail,
+:root.acid .pane-terminal-rail,
+:root.tokyo-rain .pane-terminal-rail,
 :root.light-rounded .pane-terminal-rail,
 :root.dusk .pane-detail-panel,
 :root.forge .pane-detail-panel,
@@ -205,6 +240,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel,
 :root.night-owl-oled .pane-detail-panel,
 :root.terracotta .pane-detail-panel,
+:root.synthwave .pane-detail-panel,
+:root.acid .pane-detail-panel,
+:root.tokyo-rain .pane-detail-panel,
 :root.light-rounded .pane-detail-panel {
   border-color: transparent !important;
   background: transparent;
@@ -217,6 +255,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.synthwave .pane-terminal-rail-shell,
+:root.acid .pane-terminal-rail-shell,
+:root.tokyo-rain .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-inner,
@@ -225,6 +266,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-inner,
+:root.synthwave .pane-detail-panel-inner,
+:root.acid .pane-detail-panel-inner,
+:root.tokyo-rain .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-inner {
   border: 1px solid var(--color-border-primary);
   border-radius: var(--panel-shell-radius);
@@ -239,6 +283,9 @@ body.light-rounded {
 :root.night-owl .pane-terminal-rail-shell,
 :root.night-owl-oled .pane-terminal-rail-shell,
 :root.terracotta .pane-terminal-rail-shell,
+:root.synthwave .pane-terminal-rail-shell,
+:root.acid .pane-terminal-rail-shell,
+:root.tokyo-rain .pane-terminal-rail-shell,
 :root.light-rounded .pane-terminal-rail-shell,
 :root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
@@ -247,6 +294,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.synthwave .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.acid .pane-detail-panel-vertical .pane-detail-panel-inner,
+:root.tokyo-rain .pane-detail-panel-vertical .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
   margin-left: var(--panel-shell-gap);
 }
@@ -258,6 +308,9 @@ body.light-rounded {
 :root.night-owl .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.night-owl-oled .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.terracotta .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.synthwave .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.acid .pane-detail-panel-horizontal .pane-detail-panel-inner,
+:root.tokyo-rain .pane-detail-panel-horizontal .pane-detail-panel-inner,
 :root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
   margin-top: var(--panel-shell-gap);
 }
@@ -319,6 +372,33 @@ body.light-rounded {
     inset 0 1px 0 rgba(192, 112, 80, 0.06);
 }
 
+:root.synthwave .panel-tab-bar,
+:root.synthwave .pane-editor-stage,
+:root.synthwave .pane-terminal-dock,
+:root.synthwave .pane-terminal-rail-shell,
+:root.synthwave .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(255, 95, 215, 0.20);
+}
+
+:root.acid .panel-tab-bar,
+:root.acid .pane-editor-stage,
+:root.acid .pane-terminal-dock,
+:root.acid .pane-terminal-rail-shell,
+:root.acid .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(180, 255, 58, 0.18);
+}
+
+:root.tokyo-rain .panel-tab-bar,
+:root.tokyo-rain .pane-editor-stage,
+:root.tokyo-rain .pane-terminal-dock,
+:root.tokyo-rain .pane-terminal-rail-shell,
+:root.tokyo-rain .pane-detail-panel-inner {
+  border-width: 1.25px;
+  border-color: rgba(255, 79, 154, 0.18);
+}
+
 :root.ember .panel-tab-bar,
 :root.ember .pane-editor-stage,
 :root.ember .pane-terminal-dock,
@@ -373,6 +453,12 @@ body.light-rounded {
 }
 
 :root.terracotta .xterm {
+  border-radius: var(--panel-shell-radius);
+}
+
+:root.synthwave .xterm,
+:root.acid .xterm,
+:root.tokyo-rain .xterm {
   border-radius: var(--panel-shell-radius);
 }
 
@@ -788,6 +874,30 @@ body.light-rounded {
   --vscode-editor-foreground: #e6d0be !important;
   --vscode-editorWidget-background: #0c0806 !important;
   --vscode-editorWidget-foreground: #e6d0be !important;
+}
+
+/* Synthwave theme overrides — violet-black editor */
+:root.synthwave {
+  --vscode-editor-background: #0b0714 !important;
+  --vscode-editor-foreground: #f1eafc !important;
+  --vscode-editorWidget-background: #0b0714 !important;
+  --vscode-editorWidget-foreground: #f1eafc !important;
+}
+
+/* Acid Terminal theme overrides — charcoal-black editor */
+:root.acid {
+  --vscode-editor-background: #0a0b0a !important;
+  --vscode-editor-foreground: #eaf2ea !important;
+  --vscode-editorWidget-background: #0a0b0a !important;
+  --vscode-editorWidget-foreground: #eaf2ea !important;
+}
+
+/* Tokyo Rain theme overrides — blue-black editor */
+:root.tokyo-rain {
+  --vscode-editor-background: #080b16 !important;
+  --vscode-editor-foreground: #e6ebf4 !important;
+  --vscode-editorWidget-background: #080b16 !important;
+  --vscode-editorWidget-foreground: #e6ebf4 !important;
 }
 
 /* Light theme overrides */

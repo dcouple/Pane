@@ -121,6 +121,40 @@
   --panel-shell-gap: var(--space-3);
 }
 
+/* Synthwave Theme — medium density */
+:root.synthwave {
+  --panel-tab-height: 2rem;
+  --button-padding-x: var(--space-3-5);
+  --button-padding-y: var(--space-1-5);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-2-5);
+  --app-frame-gap: var(--space-2-5);
+  --panel-shell-gap: var(--space-2-5);
+}
+
+/* Acid Terminal Theme — compact terminal density */
+:root.acid {
+  --panel-tab-height: 1.75rem;
+  --button-padding-x: var(--space-3);
+  --button-padding-y: var(--space-1-5);
+  --card-padding: var(--space-2);
+  --card-padding-lg: var(--space-4);
+  --app-frame-padding: var(--space-2);
+  --app-frame-gap: var(--space-2);
+  --panel-shell-gap: var(--space-2);
+}
+
+/* Tokyo Rain Theme — spacious density */
+:root.tokyo-rain {
+  --panel-tab-height: 2.25rem;
+  --button-padding-x: var(--space-4);
+  --button-padding-y: var(--space-2);
+  --card-padding: var(--space-3);
+  --app-frame-padding: var(--space-3);
+  --app-frame-gap: var(--space-3);
+  --panel-shell-gap: var(--space-3);
+}
+
 /* Light Rounded — light palette with islanded shell layout */
 :root.light-rounded {
   --panel-tab-height: 2.5rem;

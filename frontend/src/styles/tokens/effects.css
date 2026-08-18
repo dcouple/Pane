@@ -195,6 +195,57 @@
   --panel-shell-shadow: var(--shadow-sm);
 }
 
+/* Synthwave Theme — soft rounded shells, magenta glow lives here only */
+:root.synthwave {
+  --button-radius: var(--radius-md);
+  --card-radius: var(--radius-lg);
+  --input-radius: var(--radius-md);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-xs);
+  --app-shell-radius: var(--radius-xl);
+  --panel-shell-radius: var(--radius-lg);
+  --panel-shell-glow: rgba(255, 95, 215, 0.10);
+  --panel-shell-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.28),
+    0 0 0 1px var(--panel-shell-glow),
+    inset 0 1px 0 rgba(255, 95, 215, 0.06);
+}
+
+/* Acid Terminal Theme — tight radii, lime hairline glow */
+:root.acid {
+  --button-radius: var(--radius-default);
+  --card-radius: var(--radius-md);
+  --input-radius: var(--radius-default);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-none);
+  --app-shell-radius: 0.625rem;
+  --panel-shell-radius: 0.5rem;
+  --panel-shell-glow: rgba(180, 255, 58, 0.08);
+  --panel-shell-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.26),
+    0 0 0 1px var(--panel-shell-glow),
+    inset 0 1px 0 rgba(180, 255, 58, 0.05);
+}
+
+/* Tokyo Rain Theme — rounded shells, cool blue rain glow */
+:root.tokyo-rain {
+  --button-radius: var(--radius-lg);
+  --card-radius: var(--radius-xl);
+  --input-radius: var(--radius-lg);
+  --button-shadow: var(--shadow-none);
+  --button-shadow-hover: var(--shadow-none);
+  --card-shadow: var(--shadow-sm);
+  --app-shell-radius: var(--radius-2xl);
+  --panel-shell-radius: var(--radius-xl);
+  --panel-shell-glow: rgba(92, 179, 255, 0.10);
+  --panel-shell-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.30),
+    0 0 0 1px var(--panel-shell-glow),
+    inset 0 1px 0 rgba(92, 179, 255, 0.06);
+}
+
 /* Light Rounded — Forge-like rounded light shells */
 :root.light-rounded {
   --button-radius: var(--radius-lg);
