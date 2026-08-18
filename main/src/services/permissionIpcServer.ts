@@ -2,7 +2,6 @@ import net from 'net';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { app } from 'electron';
 import { PermissionManager } from './permissionManager';
 import { getAppSubdirectory } from '../utils/appDirectory';
 

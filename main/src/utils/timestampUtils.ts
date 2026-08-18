@@ -36,15 +36,6 @@ function formatFullDateTime(timestamp: string | Date): string {
 }
 
 /**
- * Parses a database timestamp string to a Date object
- * @param timestamp - The timestamp string from database
- * @returns Date object
- */
-export function parseTimestamp(timestamp: string): Date {
-  return new Date(timestamp);
-}
-
-/**
  * Gets the current timestamp in ISO format for database storage
  * @returns ISO 8601 formatted string
  */

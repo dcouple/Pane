@@ -1,7 +1,5 @@
 import { PanePermissionBroker } from '../daemon/permissionBroker';
 import type {
-  PanePermissionInput as PermissionInput,
-  PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
 } from '../../../shared/types/daemon';
 

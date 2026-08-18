@@ -1,8 +1,7 @@
 import * as pty from '@lydell/node-pty';
-import { ToolPanel, TerminalPanelState, PanelEventType } from '../../../shared/types/panels';
+import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
 import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
-import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { getShellPath } from '../utils/shellPath';

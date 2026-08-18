@@ -9,7 +9,7 @@ import type { Logger } from '../../../utils/logger';
 import { getPtyHostRuntime, type PtyHandleLike } from '../../../core/runtime';
 import type { ConfigManager } from '../../configManager';
 import type { ConversationMessage } from '../../../database/models';
-import { getShellPath, findExecutableInPath } from '../../../utils/shellPath';
+import { getShellPath } from '../../../utils/shellPath';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
 import { getGitAttributionEnv } from '../../../utils/attribution';
 

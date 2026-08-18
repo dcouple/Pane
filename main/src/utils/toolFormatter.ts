@@ -21,11 +21,6 @@ interface PendingToolCall {
   timestamp: string;
 }
 
-interface TodoItem {
-  status: string;
-  content: string;
-}
-
 interface ThinkingItem {
   type: 'thinking';
   thinking?: string;

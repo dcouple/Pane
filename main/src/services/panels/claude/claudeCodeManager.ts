@@ -10,7 +10,6 @@ import type { ConversationMessage } from '../../../database/models';
 import { testClaudeCodeAvailability, testClaudeCodeInDirectory } from '../../../utils/claudeCodeTest';
 import { findExecutableInPath } from '../../../utils/shellPath';
 import { PermissionManager } from '../../permissionManager';
-import { findNodeExecutable } from '../../../utils/nodeFinder';
 import {
   AbstractCliManager,
   type CliEnvironment,

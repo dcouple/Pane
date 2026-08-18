@@ -1,4 +1,4 @@
-import { PanelEvent, PanelEventType, PanelEventSubscription } from '../../../shared/types/panels';
+import { PanelEvent } from '../../../shared/types/panels';
 import { EventEmitter } from 'events';
 
 class PanelEventBus extends EventEmitter {

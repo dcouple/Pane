@@ -1,7 +1,6 @@
 import { IpcMain } from 'electron';
 import { formatForDatabase } from '../utils/timestampUtils';
 import type { AppServices } from './types';
-import path from 'path';
 import fs from 'fs';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';

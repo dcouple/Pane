@@ -1,6 +1,5 @@
 import { EventEmitter } from 'events';
 import type { Logger } from '../utils/logger';
-import type { SessionManager } from './sessionManager';
 import { GitDiffManager, type GitDiffResult } from './gitDiffManager';
 import type { CreateExecutionDiffData, ExecutionDiff } from '../database/models';
 

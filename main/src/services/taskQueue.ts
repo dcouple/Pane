@@ -12,7 +12,6 @@ import * as os from 'os';
 import * as fs from 'fs';
 import { panelManager } from './panelManager';
 import { PathResolver } from '../utils/pathResolver';
-import type { DatabaseService } from '../database/database';
 import type { Project } from '../database/models';
 import { worktreeFileSyncService, type WorktreeFileSyncFailure } from './worktreeFileSyncService';
 import { terminalPanelManager } from './terminalPanelManager';

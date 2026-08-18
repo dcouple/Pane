@@ -1,5 +1,3 @@
-import { Logger } from './logger';
-
 // Use console logging for mutex operations since logger might not be available
 const logger = {
   debug: (msg: string) => console.log(`[Mutex] ${msg}`),

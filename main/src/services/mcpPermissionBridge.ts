@@ -10,9 +10,6 @@ import {
   ListToolsRequestSchema 
 } from '@modelcontextprotocol/sdk/types.js';
 import net from 'net';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import type { PermissionResponse } from './permissionManager';
 import type { PanePermissionInput } from '../../../shared/types/daemon';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';

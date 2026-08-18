@@ -19,7 +19,6 @@ import { terminalPanelManager } from '../services/terminalPanelManager';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import {
   validateSessionExists,
-  validatePanelSessionOwnership,
   validatePanelExists,
   validateSessionIsActive,
   logValidationFailure,

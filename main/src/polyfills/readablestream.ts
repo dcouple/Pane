@@ -15,7 +15,7 @@ if (!globalThis.ReadableStream) {
     globalThis.TransformStream = TransformStream;
     
     console.log('[Polyfill] Using Node.js built-in ReadableStream from stream/web');
-  } catch (error) {
+  } catch {
     // If stream/web is not available, use the web-streams-polyfill package
     try {
       const streams = require('web-streams-polyfill/ponyfill');

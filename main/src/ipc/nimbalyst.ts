@@ -5,7 +5,7 @@ import type { AppServices } from './types';
 
 const NIMBALYST_PATH = '/Applications/Nimbalyst.app/Contents/MacOS/Nimbalyst';
 
-export function registerNimbalystHandlers(ipcMain: IpcMain, services: AppServices): void {
+export function registerNimbalystHandlers(ipcMain: IpcMain, _services: AppServices): void {
   // Check if Nimbalyst is installed
   ipcMain.handle('nimbalyst:check-installed', () => {
     try {

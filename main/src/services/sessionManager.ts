@@ -14,7 +14,7 @@ import type { DatabaseService } from '../database/database';
 import type { Session as DbSession, CreateSessionData, UpdateSessionData, ConversationMessage, PromptMarker, ExecutionDiff, CreateExecutionDiffData, Project } from '../database/models';
 import { getShellPath } from '../utils/shellPath';
 import { TerminalSessionManager } from './terminalSessionManager';
-import type { BaseAIPanelState, ToolPanelState, ToolPanel, ResumableSession, TerminalPanelState } from '../../../shared/types/panels';
+import type { ToolPanelState, ResumableSession } from '../../../shared/types/panels';
 import { formatForDisplay } from '../utils/timestampUtils';
 import { isCliAgentType, resolveAgentTypeFromCommand } from './agents/agentIdentity';
 import { resolveResumeId } from './agents/agentResume';

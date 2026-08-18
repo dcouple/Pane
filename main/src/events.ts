@@ -1,4 +1,3 @@
-import { execSync } from './utils/commandExecutor';
 import { getPaneEventSink } from './core/runtime';
 import type { AppServices } from './ipc/types';
 import type { VersionInfo } from './services/versionChecker';
