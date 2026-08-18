@@ -12,6 +12,7 @@ import { devLog } from '../../../utils/console';
 import { MarkdownPreview } from '../../MarkdownPreview';
 import { NotebookPreview } from './NotebookPreview';
 import { useResizablePanel } from '../../../hooks/useResizablePanel';
+import { useCommittedRef } from '../../../hooks/useCommittedRef';
 import { ExplorerPanelState } from '../../../../../shared/types/panels';
 import { isMac, isWindows } from '../../../utils/platformUtils';
 import { formatKeyDisplay } from '../../../utils/hotkeyUtils';
@@ -65,12 +66,10 @@ function HeadlessFileTree({
   const filesCacheRef = useRef(new Map<string, FileItem[]>());
 
   // Refs for values used in dataLoader (avoids stale closures)
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
+  const sessionIdRef = useCommittedRef(sessionId);
 
   const [error, setError] = useState<string | null>(null);
-  const setErrorRef = useRef(setError);
-  setErrorRef.current = setError;
+  const setErrorRef = useCommittedRef(setError);
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery || '');
   const [showSearch, setShowSearch] = useState(initialShowSearch || false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -156,7 +155,7 @@ function HeadlessFileTree({
       }
       return [];
     },
-  }), []); // Empty deps — uses refs internally
+  }), [sessionIdRef, setErrorRef]);
 
   const tree = useTree<FileItem>({
     rootItemId: ROOT_ID,
@@ -553,7 +552,7 @@ function HeadlessFileTree({
       reader.onerror = () => resolve({ success: false, name: file.name, error: 'Failed to read file' });
       reader.readAsDataURL(file);
     });
-  }, []);
+  }, [sessionIdRef]);
 
   const handleMoveToDirectory = useCallback(async (files: FileItem[], targetDir: string) => {
     const movingFiles = files.filter(file => file.path !== targetDir && !targetDir.startsWith(`${file.path}/`));

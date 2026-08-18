@@ -9,6 +9,7 @@ import { RefreshCw } from 'lucide-react';
 import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { clearPendingViewCommit, takePendingViewCommit } from './pendingViewCommit';
+import { useCommittedRef } from '../../../hooks/useCommittedRef';
 
 const HISTORY_LIMIT = 50;
 
@@ -79,13 +80,10 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   const executionsRequestIdRef = useRef(0);
   const combinedDiffRequestIdRef = useRef(0);
   const commitDiffRequestIdRef = useRef(0);
-  const executionsRef = useRef(executions);
-  const selectedExecutionsRef = useRef(selectedExecutions);
-  const viewingCommitHashRef = useRef(viewingCommitHash);
+  const executionsRef = useCommittedRef(executions);
+  const selectedExecutionsRef = useCommittedRef(selectedExecutions);
+  const viewingCommitHashRef = useCommittedRef(viewingCommitHash);
   const mountedRef = useRef(true);
-  executionsRef.current = executions;
-  selectedExecutionsRef.current = selectedExecutions;
-  viewingCommitHashRef.current = viewingCommitHash;
 
   // Resizable sidebar state
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -289,7 +287,17 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         setExecutionsLoading(false);
       }
     }
-  }, [getDefaultSelection, getSelectedHashes, isVisible, processExecutions, reconcileSelection, sessionId]);
+  }, [
+    executionsRef,
+    getDefaultSelection,
+    getSelectedHashes,
+    isVisible,
+    processExecutions,
+    reconcileSelection,
+    selectedExecutionsRef,
+    sessionId,
+    viewingCommitHashRef,
+  ]);
 
   const triggerSoftRefresh = useCallback(() => {
     diffCacheRef.current.clear();
@@ -367,11 +375,10 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [executionRefreshNonce, isVisible, refreshExecutions]);
+  }, [executionRefreshNonce, isVisible, refreshExecutions, selectedExecutionsRef]);
 
   // Keep refs to avoid stale closures in event handlers
-  const executionsLengthRef = useRef(executions.length);
-  executionsLengthRef.current = executions.length;
+  const executionsLengthRef = useCommittedRef(executions.length);
 
   // Load combined diff when selection changes (with caching)
   useEffect(() => {
@@ -445,7 +452,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [selectedExecutions, sessionId, viewingCommitHash]);
+  }, [executionsLengthRef, selectedExecutions, sessionId, viewingCommitHash]);
 
   const handleSelectionChange = (newSelection: number[]) => {
     commitDiffRequestIdRef.current += 1;

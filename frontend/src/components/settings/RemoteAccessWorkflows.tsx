@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { ArrowLeft, Copy, ExternalLink, Plus, Terminal, Trash2 } from 'lucide-react';
 import { Button, IconButton } from '../ui/Button';
 import { Checkbox, Input, Textarea } from '../ui/Input';
@@ -10,6 +10,7 @@ import type { RemoteAccessSubviewId } from '../../types/settings';
 import type { RemoteAccessController } from './useRemoteAccessSettings';
 import type { RemoteSetupTunnelPreference } from '../../../../shared/types/remoteDaemon';
 import { getRemoteExecutableHealthPresentation } from '../../utils/remoteRuntimePresentation';
+import { useCommittedRef } from '../../hooks/useCommittedRef';
 
 interface RemoteAccessWorkflowsProps {
   subview: RemoteAccessSubviewId;
@@ -19,8 +20,7 @@ interface RemoteAccessWorkflowsProps {
 }
 
 export function RemoteAccessWorkflows({ subview, controller, onBack, onDirtyChange }: RemoteAccessWorkflowsProps) {
-  const resetDraftRef = useRef(controller.resetSubviewDraft);
-  resetDraftRef.current = controller.resetSubviewDraft;
+  const resetDraftRef = useCommittedRef(controller.resetSubviewDraft);
   const configuredBaseUrl = formatRemoteBaseUrl(
     controller.config.host.config.listenHost,
     controller.config.host.config.listenPort,
@@ -38,7 +38,7 @@ export function RemoteAccessWorkflows({ subview, controller, onBack, onDirtyChan
   useEffect(() => () => {
     onDirtyChange(false);
     resetDraftRef.current(subview);
-  }, [onDirtyChange, subview]);
+  }, [onDirtyChange, resetDraftRef, subview]);
 
   return (
     <div className="mx-auto w-full max-w-3xl pb-8">

@@ -17,6 +17,7 @@ export type RemoteAccessSubviewId = 'host-setup' | 'connections' | 'advanced-hos
 export type SettingsSettingId =
   | 'automatic-updates'
   | 'check-updates-now'
+  | 'send-feedback'
   | 'start-on-login'
   | 'keep-awake'
   | 'theme'

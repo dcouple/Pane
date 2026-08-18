@@ -9,6 +9,7 @@ import type {
   RemotePaneConnectionProfile,
   RemotePaneConnectionState,
 } from '../shared/types/remoteDaemon';
+import type { SubmitFeedbackRequest } from '../shared/types/feedback';
 import type { JsonObject, JsonValue } from '../shared/validation/boundaryDecoder';
 
 type MockEventValue = JsonValue | object | undefined;
@@ -51,6 +52,7 @@ type ElectronApiMockOptions = {
   mainRepoSessionErrorByProjectId?: Record<number, string>;
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
+  feedbackOutcome?: 'success' | 'failure';
 };
 
 export async function installElectronApiMock(page: Page, options: ElectronApiMockOptions = {}) {
@@ -66,6 +68,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const unsubscribe = () => undefined;
     const listeners = new Map<string, Set<MockEventCallback>>();
     const pendingPermissions: PanePermissionRequest[] = [];
+    const feedbackSubmissions: SubmitFeedbackRequest[] = [];
+    const openedExternalUrls: string[] = [];
     const clone = <T>(value: T): T => structuredClone(value);
     interface MockPreferences {
       [key: string]: string;
@@ -339,7 +343,24 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       }),
       isPackaged: () => Promise.resolve(false),
       checkForUpdates: () => success({ hasUpdate: false }),
-      openExternal: () => undefined,
+      openExternal: (url: string) => {
+        openedExternalUrls.push(url);
+        // Matches preload's Promise<IPCResponse> contract; callers await this result.
+        return success();
+      },
+      feedback: namespace({
+        submit: (request: SubmitFeedbackRequest) => {
+          feedbackSubmissions.push(clone(request));
+          if (mockOptions.feedbackOutcome === 'failure') {
+            return Promise.resolve({
+              success: false,
+              error: 'GitHub CLI is not authenticated.',
+              data: { fallbackUrl: 'https://github.com/dcouple/Pane/issues/new?title=Prefilled' },
+            });
+          }
+          return success({ issueUrl: 'https://github.com/dcouple/Pane/issues/9001' });
+        },
+      }),
       analytics: namespace({
         getIdentity: () => success(clone(mockOptions.analyticsIdentity ?? defaultAnalyticsIdentity)),
         onMainEvent: (callback: MockEventCallback) => {
@@ -794,6 +815,12 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getConfigUpdates() {
           return clone(configUpdates);
+        },
+        getFeedbackSubmissions() {
+          return clone(feedbackSubmissions);
+        },
+        getOpenedExternalUrls() {
+          return clone(openedExternalUrls);
         },
         getPreferenceWrites() {
           return clone(preferenceWrites);

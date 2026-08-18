@@ -3,6 +3,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionHistoryStore } from '../stores/sessionHistoryStore';
 import { useHotkey } from '../hooks/useHotkey';
+import { useCommittedRef } from '../hooks/useCommittedRef';
 import { useHotkeyStore } from '../stores/hotkeyStore';
 import { HomePage } from './HomePage';
 import { PaneChatView } from './PaneChatView';
@@ -1131,10 +1132,8 @@ export const SessionView = memo(() => {
     const keys = hotkeys.get(id)?.keys;
     return keys ? formatKeyDisplay(keys) : null;
   }, [hotkeys]);
-  const handlePanelCreateRef = useRef(handlePanelCreate);
-  handlePanelCreateRef.current = handlePanelCreate;
-  const isInSessionViewRef = useRef(isInSessionView);
-  isInSessionViewRef.current = isInSessionView;
+  const handlePanelCreateRef = useCommittedRef(handlePanelCreate);
+  const isInSessionViewRef = useCommittedRef(isInSessionView);
 
   useEffect(() => {
     const ids: string[] = [];
@@ -1153,7 +1152,7 @@ export const SessionView = memo(() => {
       });
     }
     return () => { ids.forEach(id => unregisterHotkey(id)); };
-  }, [agentPresets, registerHotkey, unregisterHotkey]);
+  }, [agentPresets, handlePanelCreateRef, isInSessionViewRef, registerHotkey, unregisterHotkey]);
 
   useEffect(() => {
     const CUSTOM_CMD_START = 6; // mod+alt+3-5 stay reserved for built-in agents on every platform
@@ -1178,7 +1177,7 @@ export const SessionView = memo(() => {
     }
 
     return () => { ids.forEach(id => unregisterHotkey(id)); };
-  }, [customCommands, registerHotkey, unregisterHotkey]);
+  }, [customCommands, handlePanelCreateRef, isInSessionViewRef, registerHotkey, unregisterHotkey]);
 
   // Load project data for active session
   useEffect(() => {

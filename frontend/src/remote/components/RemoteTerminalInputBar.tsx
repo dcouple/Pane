@@ -271,12 +271,11 @@ export function RemoteTerminalInputBar({
         <button
           type="button"
           onClick={() => {
-            setShowShortcuts(value => {
-              if (!value) {
-                onOpenShortcuts?.();
-              }
-              return !value;
-            });
+            const next = !showShortcuts;
+            if (next) {
+              onOpenShortcuts?.();
+            }
+            setShowShortcuts(next);
           }}
           disabled={disabled}
           className="flex h-8 shrink-0 items-center gap-1 rounded-md border border-border-secondary px-2.5 text-xs font-semibold text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"

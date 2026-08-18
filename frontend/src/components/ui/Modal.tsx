@@ -4,6 +4,7 @@ import { cn } from '../../utils/cn';
 import { X } from 'lucide-react';
 import { PortalContainerProvider } from '../../contexts/PortalContainerContext';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
+import { useCommittedRef } from '../../hooks/useCommittedRef';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -41,10 +42,8 @@ export const Modal: React.FC<ModalProps> = ({
   const contentRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   const didRestoreRef = useRef(false);
-  const restoreFocusRef = useRef(restoreFocusOnClose);
+  const restoreFocusRef = useCommittedRef(restoreFocusOnClose);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
-
-  restoreFocusRef.current = restoreFocusOnClose;
 
   const restoreOpener = () => {
     if (didRestoreRef.current || !restoreFocusRef.current) return;
