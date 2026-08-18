@@ -224,7 +224,11 @@ export function registerScriptHandlers(
   });
 
   // Allowlist of known IDE commands keyed by identifier
-  const IDE_COMMANDS: Record<string, string> = {
+  interface IdeCommandLookup {
+    [ide: string]: string;
+  }
+
+  const IDE_COMMANDS: IdeCommandLookup = {
     vscode: 'code .',
     cursor: 'cursor .',
   };

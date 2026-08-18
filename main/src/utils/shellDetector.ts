@@ -9,6 +9,11 @@ interface ShellInfo {
   args?: string[];
 }
 
+interface ShellCommand {
+  shell: string;
+  args: string[];
+}
+
 /**
  * Detects the user's default shell in a robust, cross-platform way
  */
@@ -217,7 +222,7 @@ export class ShellDetector {
    * @param command The command to execute
    * @returns Array of arguments to pass to spawn/exec
    */
-  static getShellCommandArgs(command: string, preferredShell?: string): { shell: string; args: string[] } {
+  static getShellCommandArgs(command: string, preferredShell?: string): ShellCommand {
     const shellInfo = this.getDefaultShell(preferredShell);
 
     switch (shellInfo.name) {

@@ -69,7 +69,16 @@ export interface WrapperTelemetryContext {
   exitCode?: number;
 }
 
-type WrapperTelemetryProperties = Record<string, string | number | boolean>;
+interface WrapperTelemetryProperties {
+  [key: string]: string | number | boolean;
+}
+
+interface WrapperTelemetryInput {
+  installId: string;
+  wrapperVersion: string;
+  invocation: WrapperInvocation;
+  context: WrapperTelemetryContext;
+}
 
 export function createInitialTelemetryContext(argv: string[]): WrapperTelemetryContext {
   const first = argv[0];
@@ -210,12 +219,7 @@ function detectNpmInvocation(
   return 'unknown';
 }
 
-export function buildWrapperTelemetryProperties(input: {
-  installId: string;
-  wrapperVersion: string;
-  invocation: WrapperInvocation;
-  context: WrapperTelemetryContext;
-}): WrapperTelemetryProperties {
+export function buildWrapperTelemetryProperties(input: WrapperTelemetryInput): WrapperTelemetryProperties {
   const { context } = input;
   const properties: WrapperTelemetryProperties = {
     install_id: input.installId,

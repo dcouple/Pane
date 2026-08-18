@@ -56,12 +56,13 @@ export function createPaneRemoteConnectionImportPayload(
   pair: RemoteDaemonConnectionPair,
   tunnel?: PaneRemoteConnectionImportPayload['tunnel'],
 ): PaneRemoteConnectionImportPayload {
-  return {
+  const payload: PaneRemoteConnectionImportPayload = {
     v: 1,
     label: pair.profile.label,
     baseUrl: pair.profile.baseUrl,
     token: pair.token,
     transport: pair.profile.transport,
-    ...(tunnel ? { tunnel } : {}),
   };
+  if (tunnel) payload.tunnel = tunnel;
+  return payload;
 }

@@ -155,12 +155,12 @@ export class RunCommandManager extends EventEmitter {
             // For Linux, use current PATH to avoid slow shell detection
             const isLinux = process.platform === 'linux';
             const shellPath = isLinux ? (process.env.PATH || '') : getShellPath();
-            const env: Record<string, string> = {
+            const env = {
               ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)),
               ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
               WORKTREE_PATH: worktreePath,
               PATH: shellPath
-            };
+            } satisfies Record<string, string>;
             
             // Log environment details for debugging
             if (j === 0) {

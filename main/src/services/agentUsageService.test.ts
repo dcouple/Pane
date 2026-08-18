@@ -54,7 +54,7 @@ function createFakeChild(stdin: Writable): ChildProcessWithoutNullStreams {
     exitCode: null,
     signalCode: null,
     kill: vi.fn(() => true),
-  }) as unknown as ChildProcessWithoutNullStreams;
+  }) as ChildProcessWithoutNullStreams;
 }
 
 describe('normalizeCodexUsage', () => {

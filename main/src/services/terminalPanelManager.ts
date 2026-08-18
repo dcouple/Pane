@@ -974,7 +974,7 @@ export class TerminalPanelManager {
         baseEnv[key] = value;
       }
     }
-    const spawnEnv: Record<string, string> = {
+    const spawnEnv = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: enhancedPath,
@@ -987,7 +987,7 @@ export class TerminalPanelManager {
       PANE_PORT: String(panePort),
       PANE_WORKSPACE_PATH: cwd,
       ...wslEnvVars,
-    };
+    } satisfies Record<string, string>;
 
     // Read the setting once per spawn so we don't scatter config reads.
     // `getPtyHostRuntime()` returns null when the setting is off or when
@@ -1544,8 +1544,8 @@ export class TerminalPanelManager {
       !savedIsAlternateScreen && terminal.screenEmulator
         ? this.trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
         : terminal.scrollbackBuffer;
-    state.customState = {
-      ...state.customState,
+    const customState: TerminalPanelState = {
+      ...terminalCustomState(state),
       isInitialized: true,
       cwd: cwd,
       scrollbackBuffer: savedScrollback,
@@ -1557,10 +1557,12 @@ export class TerminalPanelManager {
       serializedBuffer: terminal.screenEmulator?.isAlternateScreen
         ? terminal.screenEmulator.serializeForRestore()
         : this.serializedBuffers.get(panelId),
-      ...(terminal.capturedAgentSessionId && terminal.agentType
-        ? { agentType: terminal.agentType, agentSessionId: terminal.capturedAgentSessionId }
-        : {})
     };
+    if (terminal.capturedAgentSessionId && terminal.agentType) {
+      customState.agentType = terminal.agentType;
+      customState.agentSessionId = terminal.capturedAgentSessionId;
+    }
+    state.customState = customState;
     
     await panelManager.updatePanel(panelId, { state });
     

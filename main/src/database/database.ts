@@ -83,6 +83,65 @@ interface PanelStateLogSummary {
   readonly hasBeenViewed?: boolean;
 }
 
+interface TableStructure {
+  columns: Array<{
+    cid: number;
+    name: string;
+    type: string;
+    notnull: number;
+    dflt_value: unknown;
+    pk: number;
+  }>;
+  foreignKeys: Array<{
+    id: number;
+    seq: number;
+    table: string;
+    from: string;
+    to: string;
+    on_update: string;
+    on_delete: string;
+    match: string;
+  }>;
+  indexes: Array<{ name: string; tbl_name: string; sql: string }>;
+}
+
+interface UserPreferences {
+  [key: string]: string;
+}
+
+interface SessionTokenUsage {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreationTokens: number;
+  messageCount: number;
+}
+
+interface SessionOutputCounts {
+  json: number;
+  stdout: number;
+  stderr: number;
+}
+
+interface SessionToolUsage {
+  tools: Array<{
+    name: string;
+    count: number;
+    totalDuration: number;
+    avgDuration: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  }>;
+  totalToolCalls: number;
+}
+
+const ESTIMATED_TOOL_DURATIONS = new Map<string, number>([
+  ["Read", 150], ["Write", 200], ["Edit", 250], ["MultiEdit", 400],
+  ["Grep", 100], ["Glob", 80], ["LS", 50], ["Bash", 500],
+  ["BashOutput", 30], ["KillBash", 50], ["Task", 1000],
+  ["TodoWrite", 100], ["WebSearch", 2000], ["WebFetch", 1500],
+]);
+
 function sanitizePanelStateForLog(value: Partial<ToolPanelState>): PanelStateLogSummary {
   return {
     serializedLength: JSON.stringify(value).length,
@@ -4037,31 +4096,7 @@ export class DatabaseService {
   }
 
   // Debug method to check table structure
-  getTableStructure(tableName: "folders" | "sessions"): {
-    columns: Array<{
-      cid: number;
-      name: string;
-      type: string;
-      notnull: number;
-      dflt_value: unknown;
-      pk: number;
-    }>;
-    foreignKeys: Array<{
-      id: number;
-      seq: number;
-      table: string;
-      from: string;
-      to: string;
-      on_update: string;
-      on_delete: string;
-      match: string;
-    }>;
-    indexes: Array<{
-      name: string;
-      tbl_name: string;
-      sql: string;
-    }>;
-  } {
+  getTableStructure(tableName: "folders" | "sessions"): TableStructure {
     console.log(`[Database] Getting structure for table: ${tableName}`);
 
     // Get column information
@@ -4253,7 +4288,7 @@ export class DatabaseService {
       .run(key, value);
   }
 
-  getUserPreferences(): Record<string, string> {
+  getUserPreferences(): UserPreferences {
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const rows = this.db
       .prepare(
@@ -4263,7 +4298,7 @@ export class DatabaseService {
       )
       .all() as Array<{ key: string; value: string }>;
 
-    const preferences: Record<string, string> = {};
+    const preferences: UserPreferences = {};
     for (const row of rows) {
       preferences[row.key] = row.value;
     }
@@ -4863,13 +4898,7 @@ export class DatabaseService {
   }
 
   // Session statistics methods
-  getSessionTokenUsage(sessionId: string): {
-    totalInputTokens: number;
-    totalOutputTokens: number;
-    totalCacheReadTokens: number;
-    totalCacheCreationTokens: number;
-    messageCount: number;
-  } {
+  getSessionTokenUsage(sessionId: string): SessionTokenUsage {
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const rows = this.db
       .prepare(
@@ -4918,11 +4947,7 @@ export class DatabaseService {
     };
   }
 
-  getSessionOutputCounts(sessionId: string): {
-    json: number;
-    stdout: number;
-    stderr: number;
-  } {
+  getSessionOutputCounts(sessionId: string): SessionOutputCounts {
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const result = this.db
       .prepare(
@@ -4937,17 +4962,16 @@ export class DatabaseService {
       )
       .all(sessionId) as { type: string; count: number }[];
 
-    const counts: { json: number; stdout: number; stderr: number } = {
+    const counts: SessionOutputCounts = {
       json: 0,
       stdout: 0,
       stderr: 0,
     };
 
     result.forEach((row: { type: string; count: number }) => {
-      if (row.type in counts) {
-        // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
-        counts[row.type as keyof typeof counts] = row.count;
-      }
+      if (row.type === "json") counts.json = row.count;
+      if (row.type === "stdout") counts.stdout = row.count;
+      if (row.type === "stderr") counts.stderr = row.count;
     });
 
     return counts;
@@ -4983,17 +5007,7 @@ export class DatabaseService {
     return result?.count || 0;
   }
 
-  getSessionToolUsage(sessionId: string): {
-    tools: Array<{
-      name: string;
-      count: number;
-      totalDuration: number;
-      avgDuration: number;
-      totalInputTokens: number;
-      totalOutputTokens: number;
-    }>;
-    totalToolCalls: number;
-  } {
+  getSessionToolUsage(sessionId: string): SessionToolUsage {
     // Get all tool_use messages for this session
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const toolUseRows = this.db
@@ -5081,23 +5095,7 @@ export class DatabaseService {
                     // If duration is 0 (same second), estimate based on tool type
                     // These are typical execution times in milliseconds
                     if (duration === 0) {
-                      const estimatedDurations: Record<string, number> = {
-                        Read: 150,
-                        Write: 200,
-                        Edit: 250,
-                        MultiEdit: 400,
-                        Grep: 100,
-                        Glob: 80,
-                        LS: 50,
-                        Bash: 500,
-                        BashOutput: 30,
-                        KillBash: 50,
-                        Task: 1000,
-                        TodoWrite: 100,
-                        WebSearch: 2000,
-                        WebFetch: 1500,
-                      };
-                      duration = estimatedDurations[toolName] || 100; // Default 100ms for unknown tools
+                      duration = ESTIMATED_TOOL_DURATIONS.get(toolName) ?? 100;
                     }
 
                     if (duration >= 0 && duration < 3600000) {

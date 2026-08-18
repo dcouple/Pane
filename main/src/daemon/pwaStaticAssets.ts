@@ -13,9 +13,13 @@ interface RemotePwaAssetOptions {
   distRoot?: string;
 }
 
+interface ContentTypeByExtension {
+  [extension: string]: string;
+}
+
 const REMOTE_PWA_PREFIX = '/app';
 
-const CONTENT_TYPES: Record<string, string> = {
+const CONTENT_TYPES: ContentTypeByExtension = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.ico': 'image/x-icon',

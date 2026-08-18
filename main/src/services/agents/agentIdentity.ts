@@ -6,7 +6,11 @@ export type CliAgentType = NonNullable<TerminalPanelState['agentType']>;
 
 export const CLI_AGENT_TYPES: readonly CliAgentType[] = ['claude', 'codex', 'cursor'];
 
-const AGENT_EXECUTABLES: Readonly<Record<string, CliAgentType>> = {
+interface AgentExecutableLookup {
+  readonly [executable: string]: CliAgentType;
+}
+
+const AGENT_EXECUTABLES: AgentExecutableLookup = {
   'cursor-agent': 'cursor',
   claude: 'claude',
   codex: 'codex',

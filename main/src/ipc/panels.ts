@@ -184,7 +184,11 @@ async function saveFileForSession(
 export const sessionImageCounters = new Map<string, number>();
 
 // MIME type to file extension mapping
-const MIME_EXTENSIONS: Record<string, string> = {
+interface MimeExtensionLookup {
+  [mimeType: string]: string;
+}
+
+const MIME_EXTENSIONS: MimeExtensionLookup = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/gif': 'gif',

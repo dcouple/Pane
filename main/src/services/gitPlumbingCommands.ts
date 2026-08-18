@@ -14,6 +14,17 @@ export interface GitIndexStatus {
   hasConflicts: boolean;
 }
 
+export interface GitAheadBehind {
+  ahead: number;
+  behind: number;
+}
+
+export interface GitDiffStats {
+  additions: number;
+  deletions: number;
+  filesChanged: number;
+}
+
 /**
  * Check the directory exists before attempting git operations.
  * This prevents ENOENT errors when worktrees have been deleted (e.g., /tmp cleanup).
@@ -108,7 +119,7 @@ export function fastCheckWorkingDirectory(cwd: string, wslContext?: WSLContext |
 /**
  * Get count of commits ahead/behind using rev-list (faster than rev-parse)
  */
-export function fastGetAheadBehind(cwd: string, baseBranch: string, wslContext?: WSLContext | null): { ahead: number; behind: number } {
+export function fastGetAheadBehind(cwd: string, baseBranch: string, wslContext?: WSLContext | null): GitAheadBehind {
   if (!directoryExists(cwd, wslContext)) {
     console.warn(`[GitPlumbing] Directory does not exist: ${cwd}`);
     return { ahead: 0, behind: 0 };
@@ -131,7 +142,7 @@ export function fastGetAheadBehind(cwd: string, baseBranch: string, wslContext?:
 /**
  * Get statistics about changes (additions/deletions) efficiently
  */
-export function fastGetDiffStats(cwd: string, wslContext?: WSLContext | null): { additions: number; deletions: number; filesChanged: number } {
+export function fastGetDiffStats(cwd: string, wslContext?: WSLContext | null): GitDiffStats {
   if (!directoryExists(cwd, wslContext)) {
     console.warn(`[GitPlumbing] Directory does not exist: ${cwd}`);
     return { additions: 0, deletions: 0, filesChanged: 0 };

@@ -46,6 +46,7 @@ import {
   getRemoteSetupProperties,
   getRemoteSetupResultProperties,
   trackRemotePaneEvent,
+  type RemotePaneAnalyticsProperties,
 } from '../services/remoteAnalytics';
 
 interface IpcMainHandleLike {
@@ -368,25 +369,22 @@ export function registerRemoteDaemonHandlers(
         };
       });
 
-      trackRemotePaneEvent(analyticsManager, 'remote_pane_connection_code_imported', {
+      const importEventProperties: RemotePaneAnalyticsProperties = {
         ...getRemoteImportProperties(payload),
         result: connectionError ? 'failed' : 'succeeded',
         connected,
-        ...(connectionError
-          ? {
-              failure_stage: 'connect_imported_profile',
-              failure_category: getRemoteFailureCategory(connectionError),
-            }
-          : {}),
-      });
+      };
+      if (connectionError) {
+        importEventProperties.failure_stage = 'connect_imported_profile';
+        importEventProperties.failure_category = getRemoteFailureCategory(connectionError);
+      }
+      trackRemotePaneEvent(analyticsManager, 'remote_pane_connection_code_imported', importEventProperties);
 
+      const importResult: RemoteDaemonImportResult = { profile, connected };
+      if (connectionError) importResult.connectionError = connectionError;
       return {
         success: true,
-        data: {
-          profile,
-          connected,
-          ...(connectionError ? { connectionError } : {}),
-        } satisfies RemoteDaemonImportResult,
+        data: importResult,
       };
     } catch (error) {
       trackRemotePaneEvent(analyticsManager, 'remote_pane_connection_code_import_failed', {

@@ -100,6 +100,10 @@ function decodeFrame<Value>(frame: JsonValue, schema: BoundarySchema<Value>): Va
 type DataListener = (data: string) => void;
 type ExitListener = (exitCode: number | null, signal: number | null) => void;
 
+interface DisposableListener {
+  dispose(): void;
+}
+
 /**
  * Thin `IPty`-compatible shim.
  *
@@ -131,7 +135,7 @@ export class PtyHandle {
    * Subscribe to PTY byte output. Returns an `IDisposable`-shaped object so
    * callers that previously used `pty.onData(...).dispose()` keep working.
    */
-  onData(listener: DataListener): { dispose(): void } {
+  onData(listener: DataListener): DisposableListener {
     this.dataListeners.add(listener);
     return {
       dispose: () => {
@@ -145,7 +149,7 @@ export class PtyHandle {
    * from the host; `signal` is the raw number so SIGSEGV/SIGABRT/SIGBUS
    * detection at `AbstractCliManager.ts:781-795` keeps working.
    */
-  onExit(listener: ExitListener): { dispose(): void } {
+  onExit(listener: ExitListener): DisposableListener {
     this.exitListeners.add(listener);
     return {
       dispose: () => {

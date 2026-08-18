@@ -221,7 +221,12 @@ export function logValidationFailure(context: string, validation: ValidationResu
 /**
  * Helper to create a standardized validation error response
  */
-export function createValidationError(validation: ValidationResult): { success: false; error: string } {
+interface ValidationErrorResponse {
+  success: false;
+  error: string;
+}
+
+export function createValidationError(validation: ValidationResult): ValidationErrorResponse {
   return {
     success: false,
     error: validation.error || 'Validation failed'

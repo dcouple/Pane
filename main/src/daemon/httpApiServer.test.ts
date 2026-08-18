@@ -23,6 +23,10 @@ interface TestEventStream {
   nextEvent(timeoutMs?: number): Promise<{ event: string | null; data: string[] }>;
 }
 
+interface RequestHeaders {
+  [name: string]: string;
+}
+
 const activeServers: PaneRemoteHttpApiServer[] = [];
 const activeRequests = new Set<http.ClientRequest>();
 
@@ -79,16 +83,19 @@ async function requestJson(
   }
 
   return new Promise((resolve, reject) => {
+    const requestHeaders: RequestHeaders = { ...extraHeaders };
+    if (token) {
+      requestHeaders.Authorization = `Bearer ${token}`;
+    }
+    if (body !== undefined) {
+      requestHeaders['Content-Type'] = 'application/json';
+    }
     const request = http.request({
       host: address.host,
       port: address.port,
       path,
       method,
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...extraHeaders,
-      },
+      headers: requestHeaders,
     }, (response) => {
       const chunks: Buffer[] = [];
       response.on('data', (chunk) => {
@@ -162,15 +169,16 @@ async function openEventStream(
   }
 
   return new Promise((resolve, reject) => {
+    const requestHeaders: RequestHeaders = { ...headers };
+    if (token) {
+      requestHeaders.Authorization = `Bearer ${token}`;
+    }
     const request = http.request({
       host: address.host,
       port: address.port,
       path,
       method: 'GET',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...headers,
-      },
+      headers: requestHeaders,
     });
 
     activeRequests.add(request);

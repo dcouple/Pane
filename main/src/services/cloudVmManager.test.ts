@@ -22,6 +22,11 @@ interface CloudVmManagerTestAccess {
   waitForStatus(config: CloudVmConfig, targetStatus: VmStatus, timeoutMs: number): Promise<CloudVmState>;
 }
 
+interface CloudConfigSnapshot {
+  cloud?: CloudVmConfig;
+  remoteDaemon?: RemoteDaemonConfig;
+}
+
 function createManager(configManager: ConfigManagerStub): CloudVmManager {
   // SAFETY: The stub implements the EventEmitter and configuration methods
   // CloudVmManager reaches in these isolated lifecycle tests.
@@ -42,13 +47,13 @@ class ConfigManagerStub extends EventEmitter {
     super();
   }
 
-  getConfig(): { cloud?: CloudVmConfig; remoteDaemon?: RemoteDaemonConfig } {
+  getConfig(): CloudConfigSnapshot {
     return { cloud: this.cloud, remoteDaemon: this.remoteDaemon };
   }
 
   async updateConfig(
     updates: { cloud?: CloudVmConfig; remoteDaemon?: RemoteDaemonConfig },
-  ): Promise<{ cloud?: CloudVmConfig; remoteDaemon?: RemoteDaemonConfig }> {
+  ): Promise<CloudConfigSnapshot> {
     if ('cloud' in updates) {
       this.cloud = updates.cloud;
     }

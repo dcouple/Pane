@@ -64,6 +64,11 @@ interface WatchedSession {
   pendingRefresh: boolean;
 }
 
+interface GitFileWatcherStats {
+  totalWatched: number;
+  sessionsNeedingRefresh: number;
+}
+
 /**
  * Smart file watcher that detects when git status actually needs refreshing
  *
@@ -772,7 +777,7 @@ export class GitFileWatcher extends EventEmitter {
   /**
    * Get statistics about watched sessions
    */
-  getStats(): { totalWatched: number; sessionsNeedingRefresh: number } {
+  getStats(): GitFileWatcherStats {
     let sessionsNeedingRefresh = 0;
     for (const session of this.watchedSessions.values()) {
       if (session.pendingRefresh) {

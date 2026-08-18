@@ -337,7 +337,11 @@ export const CURSOR_MANIFEST: AgentManifest = {
   ],
 };
 
-const MANIFESTS_BY_AGENT: Record<string, AgentManifest> = {
+interface AgentManifestLookup {
+  [agent: string]: AgentManifest;
+}
+
+const MANIFESTS_BY_AGENT: AgentManifestLookup = {
   claude: CLAUDE_MANIFEST,
   codex: CODEX_MANIFEST,
   cursor: CURSOR_MANIFEST,

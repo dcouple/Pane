@@ -26,6 +26,18 @@ interface CreateSessionOptions {
   hidden?: boolean;
 }
 
+interface ProjectContext {
+  project: Project;
+  pathResolver: PathResolver;
+  commandRunner: CommandRunner;
+}
+
+interface CommandExecutionError {
+  stderr?: string;
+  stdout?: string;
+  message?: string;
+}
+
 // Interface for generic JSON message data that can contain various properties
 interface MessageTextBlock { type: string; text?: string }
 interface GenericMessageData {
@@ -248,7 +260,7 @@ export class SessionManager extends EventEmitter {
     this.projectContextCache.delete(projectId);
   }
 
-  private getOrCreateContext(project: Project): { project: Project; pathResolver: PathResolver; commandRunner: CommandRunner } {
+  private getOrCreateContext(project: Project): ProjectContext {
     if (!this.projectContextCache.has(project.id)) {
       this.projectContextCache.set(project.id, {
         pathResolver: new PathResolver(project),
@@ -1355,7 +1367,7 @@ export class SessionManager extends EventEmitter {
           }
         } catch (cmdError) {
           console.error(`[SessionManager] Archive command failed: ${command}`, cmdError);
-          let error: { stderr?: string; stdout?: string; message?: string } = {};
+          let error: CommandExecutionError = {};
           try {
             error = decodeBoundary(cmdError, boundary.object({
               stderr: boundary.optional(boundary.string),
@@ -1437,7 +1449,7 @@ export class SessionManager extends EventEmitter {
           }
         } catch (cmdError) {
           console.error(`[SessionManager] Build command failed: ${command}`, cmdError);
-          let error: { stderr?: string; stdout?: string; message?: string } = {};
+          let error: CommandExecutionError = {};
           try {
             error = decodeBoundary(cmdError, boundary.object({
               stderr: boundary.optional(boundary.string),

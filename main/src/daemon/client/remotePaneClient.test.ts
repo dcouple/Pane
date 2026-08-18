@@ -23,8 +23,12 @@ interface TestRemoteServer {
   setEventsReady(ready: boolean): void;
 }
 
+interface RemoteConfigSnapshot {
+  remoteDaemon: RemoteDaemonConfig;
+}
+
 interface ConfigManagerStub extends EventEmitter {
-  getConfig(): { remoteDaemon: RemoteDaemonConfig };
+  getConfig(): RemoteConfigSnapshot;
   setRemoteConfig(remoteDaemon: RemoteDaemonConfig): void;
 }
 
@@ -605,7 +609,7 @@ function createConfigManagerStub(initialConfig: RemoteDaemonConfig): ConfigManag
   class Stub extends EventEmitter implements ConfigManagerStub {
     private remoteDaemon = initialConfig;
 
-    getConfig(): { remoteDaemon: RemoteDaemonConfig } {
+    getConfig(): RemoteConfigSnapshot {
       return { remoteDaemon: this.remoteDaemon };
     }
 

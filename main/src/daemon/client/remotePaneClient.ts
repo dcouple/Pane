@@ -388,11 +388,14 @@ export class RemotePaneClient {
 
   private buildRequestOptions(endpoint: URL, options: RequestOptions): RemoteRequestOptions {
     const lookup = createTailscaleFallbackLookup(this.profile, endpoint);
-    return {
-      ...options,
-      ...(lookup ? { lookup } : {}),
-      ...(endpoint.protocol === 'https:' ? { servername: endpoint.hostname } : {}),
-    };
+    const requestOptions: RemoteRequestOptions = { ...options };
+    if (lookup) {
+      requestOptions.lookup = lookup;
+    }
+    if (endpoint.protocol === 'https:') {
+      requestOptions.servername = endpoint.hostname;
+    }
+    return requestOptions;
   }
 
   private handleInitialConnectionFailure(): void {

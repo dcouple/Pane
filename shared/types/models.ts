@@ -14,7 +14,7 @@ export interface CodexModelConfig {
   description: string;
 }
 
-export const CODEX_MODELS: Record<OpenAICodexModel, CodexModelConfig> = {
+export const CODEX_MODELS = {
   'auto': {
     id: 'auto',
     label: 'Auto',
@@ -30,7 +30,7 @@ export const CODEX_MODELS: Record<OpenAICodexModel, CodexModelConfig> = {
     label: 'GPT-5 Codex',
     description: 'GPT-5 optimized for coding tasks'
   }
-};
+} satisfies Record<OpenAICodexModel, CodexModelConfig>;
 
 // Helper function to get model configuration
 export function getCodexModelConfig(model: string): CodexModelConfig | undefined {

@@ -141,9 +141,9 @@ const ptyMap = new Map<string, HostPty>();
 function bootstrap(): void {
   // SAFETY: Electron UtilityProcess injects a MessagePort-compatible
   // `process.parentPort`; the fallback exposes the same documented surface.
-  const parent = (
-    (process as unknown as { parentPort?: unknown }).parentPort ?? electron.parentPort
-  ) as (HostPort & { once: HostPort['on'] }) | undefined;
+  const injectedParentPort: unknown = Reflect.get(process, 'parentPort');
+  const parent = (injectedParentPort ?? electron.parentPort) as
+    (HostPort & { once: HostPort['on'] }) | undefined;
   if (!parent) {
     console.error('[ptyHost] parentPort is not available; exiting');
     process.exit(1);

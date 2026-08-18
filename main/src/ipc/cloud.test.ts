@@ -59,7 +59,7 @@ describe('cloud IPC', () => {
       connectWorkspace,
       disconnectWorkspace,
       on: vi.fn(),
-    }) as unknown as CloudVmManager);
+    }) as CloudVmManager);
   });
 
   it('requests renderer state resync after hosted workspace mode changes', async () => {

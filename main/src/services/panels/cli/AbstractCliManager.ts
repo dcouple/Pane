@@ -69,6 +69,16 @@ export interface CliSpawnOptions {
   [key: string]: JsonValue | undefined; // Allow CLI-specific serializable options
 }
 
+export interface CliEnvironment {
+  [key: string]: string;
+}
+
+export interface CliSpawnTuple {
+  cmd: string;
+  args: string[];
+  env: CliEnvironment;
+}
+
 const nodeFallbackTools = new Set<string>();
 
 class PtyHostUnavailableError extends Error {
@@ -147,8 +157,8 @@ export abstract class AbstractCliManager extends EventEmitter {
   protected wrapSpawnArgs(
     cmd: string,
     args: string[],
-    env: { [key: string]: string }
-  ): { cmd: string; args: string[]; env: { [key: string]: string } } {
+    env: CliEnvironment
+  ): CliSpawnTuple {
     return { cmd, args, env };
   }
 
@@ -169,7 +179,7 @@ export abstract class AbstractCliManager extends EventEmitter {
   /**
    * Handle CLI-specific initialization (e.g., setup config files, environment)
    */
-  protected abstract initializeCliEnvironment(options: CliSpawnOptions): Promise<{ [key: string]: string }>;
+  protected abstract initializeCliEnvironment(options: CliSpawnOptions): Promise<CliEnvironment>;
 
   /**
    * Clean up CLI-specific resources (e.g., config files, temporary files)
@@ -179,7 +189,7 @@ export abstract class AbstractCliManager extends EventEmitter {
   /**
    * Get CLI-specific environment variables
    */
-  protected abstract getCliEnvironment(options: CliSpawnOptions): Promise<{ [key: string]: string }>;
+  protected abstract getCliEnvironment(options: CliSpawnOptions): Promise<CliEnvironment>;
 
   /**
    * Hook called when a CLI process exits. Override in subclasses to clean up process-specific state.
@@ -1063,8 +1073,7 @@ export abstract class AbstractCliManager extends EventEmitter {
 
       // Detect crash signals (SIGSEGV=11, SIGABRT=6, SIGBUS=7)
       if (signal && [6, 7, 11].includes(signal)) {
-        const signalNames: Record<number, string> = { 6: 'SIGABRT', 7: 'SIGBUS', 11: 'SIGSEGV' };
-        const signalName = signalNames[signal] || `signal ${signal}`;
+        const signalName = signal === 6 ? 'SIGABRT' : signal === 7 ? 'SIGBUS' : 'SIGSEGV';
         this.logger?.error(`${this.getCliToolName()} process crashed with ${signalName} for session ${sessionId} (panel ${panelId})`);
 
         const crashMessage = `\n[Process Crash] ${this.getCliToolName()} was terminated by ${signalName}. Your system may be under memory pressure — check RAM usage.\n`;

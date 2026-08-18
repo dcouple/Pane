@@ -6,7 +6,12 @@ import { DatabaseService } from './database';
 
 const tempDirs: string[] = [];
 
-function createTestDatabase(): { db: DatabaseService; tempDir: string } {
+interface TestDatabase {
+  db: DatabaseService;
+  tempDir: string;
+}
+
+function createTestDatabase(): TestDatabase {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-hidden-sessions-'));
   tempDirs.push(tempDir);
   const db = new DatabaseService(path.join(tempDir, 'sessions.db'));

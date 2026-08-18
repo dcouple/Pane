@@ -26,7 +26,7 @@ describe('registerAgentUsageHandlers', () => {
   // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
   const services = {
     databaseService: { getAllProjects: vi.fn(() => projects) },
-  } as unknown as AppServices;
+  } as AppServices;
   const unavailable = {
     providers: [{ id: 'codex', name: 'Codex', status: 'unavailable', plan: null, limits: [], fetchedAt: '2026-08-14T12:00:00.000Z', error: 'codex not found' }],
     fetchedAt: '2026-08-14T12:00:00.000Z',

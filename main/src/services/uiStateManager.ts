@@ -3,10 +3,18 @@ import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDec
 
 type SidebarSection = 'pinned' | 'repositories';
 
-const SIDEBAR_SECTION_KEYS: Record<SidebarSection, string> = {
+const SIDEBAR_SECTION_KEYS = {
   pinned: 'treeView.pinnedSectionExpanded',
   repositories: 'treeView.repositoriesSectionExpanded'
-};
+} satisfies Record<SidebarSection, string>;
+
+interface ExpandedUiState {
+  expandedProjects: number[];
+  expandedFolders: string[];
+  sessionSortAscending: boolean;
+  pinnedSectionExpanded: boolean;
+  repositoriesSectionExpanded: boolean;
+}
 
 class UIStateManager {
   private db: DatabaseService;
@@ -76,13 +84,7 @@ class UIStateManager {
     this.saveExpandedFolders(folderIds);
   }
 
-  getExpandedState(): {
-    expandedProjects: number[];
-    expandedFolders: string[];
-    sessionSortAscending: boolean;
-    pinnedSectionExpanded: boolean;
-    repositoriesSectionExpanded: boolean;
-  } {
+  getExpandedState(): ExpandedUiState {
     return {
       expandedProjects: this.getExpandedProjects(),
       expandedFolders: this.getExpandedFolders(),

@@ -6,6 +6,17 @@ const execFileAsync = promisify(execFile);
 // Cache WSL user's $HOME per distro (one-time detection per distro).
 const wslHomeCache = new Map<string, string>();
 
+interface WSLCommand {
+  file: string;
+  args: string[];
+}
+
+interface WSLShellSpawn {
+  path: string;
+  name: string;
+  args: string[];
+}
+
 /**
  * Get the WSL user's $HOME directory for a given distro, cached after first call.
  * Used to save files to the WSL-native filesystem (e.g. pasted images) so that
@@ -115,7 +126,7 @@ export function escapeForBashDoubleQuote(str: string): string {
  * Bypasses cmd.exe entirely, avoiding all cmd.exe escaping issues (%, ^, &, etc.).
  * If cwd provided, cd to it first inside the bash -c command.
  */
-export function getWSLExecArgs(command: string, distro: string, cwd?: string, extraEnv?: Record<string, string>): { file: string; args: string[] } {
+export function getWSLExecArgs(command: string, distro: string, cwd?: string, extraEnv?: Record<string, string>): WSLCommand {
   let bashCommand = command;
   if (cwd) {
     bashCommand = `cd ${escapeForBash(cwd)} && ${command}`;
@@ -156,11 +167,7 @@ export function buildWSLENV(varNames: readonly string[]): string {
  * Get shell spawn info for opening an interactive WSL terminal.
  * Returns shape compatible with ShellDetector's ShellInfo.
  */
-export function getWSLShellSpawn(distro: string, cwd?: string): {
-  path: string;
-  name: string;
-  args: string[];
-} {
+export function getWSLShellSpawn(distro: string, cwd?: string): WSLShellSpawn {
   // Use bash -c "cd ... && exec bash" instead of --cd flag.
   // The --cd flag is broken on many WSL versions (e.g., 2.5.9.0) for Linux paths.
   const args = ['-d', distro, '--'];

@@ -225,7 +225,16 @@ function buildWindowsInteractiveCommand(command: string): string {
   return `${command} & echo. & echo GitHub setup finished. You can return to Pane. & pause`;
 }
 
-function normalizeTerminalDimensions(cols: PaneCommandValue, rows: PaneCommandValue): { cols: number; rows: number } {
+interface TerminalDimensions {
+  cols: number;
+  rows: number;
+}
+
+interface PtyEnvironment {
+  [name: string]: string;
+}
+
+function normalizeTerminalDimensions(cols: PaneCommandValue, rows: PaneCommandValue): TerminalDimensions {
   const parseDimension = (value: PaneCommandValue, fallback: number): number => {
     try {
       const decoded = decodeBoundary(value, boundary.number);
@@ -243,8 +252,8 @@ function normalizeTerminalDimensions(cols: PaneCommandValue, rows: PaneCommandVa
   };
 }
 
-function buildGitHubAuthPtyEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
+function buildGitHubAuthPtyEnv(): PtyEnvironment {
+  const env: PtyEnvironment = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined) {
       env[key] = value;

@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { ResourceMonitorService, parseWslEnvironScan } from './resourceMonitorService';
 
+interface ResourceMonitorTestAccess {
+  getElectronMetrics(): unknown[];
+}
+
 describe('ResourceMonitorService', () => {
   it('returns no Electron metrics when initialized without an app', () => {
     const service = new ResourceMonitorService();
     service.initialize();
 
     // SAFETY: The assertion exposes one private pure query solely to verify the no-app initialization path.
-    expect((service as { getElectronMetrics(): unknown[] }).getElectronMetrics()).toEqual([]);
+    expect((service as ResourceMonitorTestAccess).getElectronMetrics()).toEqual([]);
   });
 });
 

@@ -125,7 +125,7 @@ export class TerminalSessionManager extends EventEmitter {
     console.log(`Using shell: ${shellInfo.path} (${shellInfo.name})`);
     
     // Build spawn env once so both paths see identical values.
-    const rawEnv: Record<string, string | undefined> = {
+    const rawEnv = {
       ...process.env,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: shellPath,
@@ -133,7 +133,7 @@ export class TerminalSessionManager extends EventEmitter {
       TERM: 'xterm-256color',      // Ensure TERM is set for color support
       COLORTERM: 'truecolor',      // Enable 24-bit color
       LANG: process.env.LANG || 'en_US.UTF-8',  // Set locale for proper character handling
-    };
+    } satisfies NodeJS.ProcessEnv;
 
     const spawnCols = 80;
     const spawnRows = 24;

@@ -1215,7 +1215,11 @@ async function checkPaneRenameParity() {
 
   daemonClient.invokeDaemon = async (channel, args) => {
     calls.push({ channel, request: args[0] });
-    return { ok: true, ...(args[0].dryRun ? { dryRun: true } : {}), pane: { paneId: args[0].paneId, name: args[0].name } };
+    return {
+      ok: true,
+      dryRun: args[0].dryRun ? true : undefined,
+      pane: { paneId: args[0].paneId, name: args[0].name },
+    };
   };
   console.log = (line) => stdout.push(String(line));
 

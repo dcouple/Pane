@@ -86,7 +86,7 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
         console.log('[Version Debug] Worktree name:', worktreeName);
       }
 
-      const responseData: {
+      interface VersionResponseData {
         current: string;
         name: string;
         workingDirectory: string;
@@ -95,7 +95,9 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
         gitCommit?: string;
         buildTimestamp?: number;
         worktreeName?: string;
-      } = {
+      }
+
+      const responseData: VersionResponseData = {
         current: app.getVersion(),
         name: app.getName(),
         workingDirectory: process.cwd(),

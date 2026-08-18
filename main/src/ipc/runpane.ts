@@ -725,16 +725,18 @@ async function createTerminalPanelForSession(
   const initialState: TerminalPanelState = {
     initialCommand: tool.command,
     initialInput: tool.initialInput,
-    ...(useArgumentDelivery ? { initialInputMode: 'argument' as const } : {}),
     initialInputSubmitStrategy: tool.agent === 'codex' && !useArgumentDelivery
       ? 'codex-ctrl-enter'
       : 'enter',
-    ...(shouldCreateSubmitInitialInput ? {
-      initialInputSentAt: new Date().toISOString(),
-    } : {}),
     agentType: tool.agent,
     isCliPanel: Boolean(tool.agent),
   };
+  if (useArgumentDelivery) {
+    initialState.initialInputMode = 'argument';
+  }
+  if (shouldCreateSubmitInitialInput) {
+    initialState.initialInputSentAt = new Date().toISOString();
+  }
 
   const createRequest: CreatePanelRequest = {
     sessionId: session.id,
@@ -785,7 +787,7 @@ async function submitCreateInitialInput(
     const sentAt = optionalString(customState.initialInputSentAt);
     const deliveryError = optionalString(customState.initialInputError);
     const delivered = Boolean(sentAt) && !deliveryError;
-    return {
+    const result: RunpaneInitialInputDeliveryResult = {
       delivered,
       submitted: delivered,
       inputBytes: Buffer.byteLength(tool.initialInput, 'utf8'),
@@ -793,13 +795,14 @@ async function submitCreateInitialInput(
       sequenceName: 'argument',
       verifiedSubmitted: delivered,
       sentAt,
-      ...(delivered ? {} : {
-        error: {
-          message: deliveryError ?? 'Initial input was not attached to the agent launch command.',
-        },
-      }),
       nextCommand: readiness?.nextCommand ?? panelWaitCommand(panel.id),
     };
+    if (!delivered) {
+      result.error = {
+        message: deliveryError ?? 'Initial input was not attached to the agent launch command.',
+      };
+    }
+    return result;
   }
 
   if (!tool.agent || !readiness) {
@@ -1093,10 +1096,15 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   };
 }
 
+interface PanelScreenText {
+  source: RunpanePanelScreenSource;
+  rawText: string;
+}
+
 function selectPanelScreenText(
   snapshot: TerminalPanelSnapshot | null,
   customState: TerminalPanelState,
-): { source: RunpanePanelScreenSource; rawText: string } {
+): PanelScreenText {
   if (snapshot) {
     if (snapshot.screenText !== undefined) {
       return {
@@ -1170,7 +1178,13 @@ function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']
   return '';
 }
 
-function boundSanitizedLines(rawText: string, limit: number): { text: string; hasMore: boolean; returnedLineCount: number } {
+interface BoundedSanitizedLines {
+  text: string;
+  hasMore: boolean;
+  returnedLineCount: number;
+}
+
+function boundSanitizedLines(rawText: string, limit: number): BoundedSanitizedLines {
   const stripped = sanitizeTerminalOutput(rawText);
   if (!stripped) {
     return { text: '', hasMore: false, returnedLineCount: 0 };
@@ -1306,14 +1320,16 @@ function ensureSubmitEnter(input: string): string {
   return `${input}\r`;
 }
 
-function resolveComposerSubmit(
-  strategy: RunpanePanelSubmitComposerStrategy | undefined,
-  agentType: RunpaneAgentId | undefined,
-): {
+interface ComposerSubmit {
   strategy: 'codex-ctrl-enter' | 'enter';
   sequenceName: RunpanePanelSubmitComposerResult['sequenceName'];
   input: string;
-} {
+}
+
+function resolveComposerSubmit(
+  strategy: RunpanePanelSubmitComposerStrategy | undefined,
+  agentType: RunpaneAgentId | undefined,
+): ComposerSubmit {
   if (strategy === 'codex-ctrl-enter' || ((!strategy || strategy === 'auto') && agentType === 'codex')) {
     return {
       strategy: 'codex-ctrl-enter',
@@ -1403,9 +1419,9 @@ function looksLikePendingComposer(text: string): boolean {
 }
 
 // GUI-launched Electron PATHs typically miss ~/.local/bin, cursor-agent's install target.
-const AGENT_FALLBACK_BIN_PATHS: Partial<Record<RunpaneAgentId, readonly string[]>> = {
+const AGENT_FALLBACK_BIN_PATHS = {
   cursor: ['$HOME/.local/bin/cursor-agent'],
-};
+} satisfies Partial<Record<RunpaneAgentId, readonly string[]>>;
 
 async function runAgentDoctor(
   services: AppServices,
@@ -1481,7 +1497,8 @@ async function runAgentDoctor(
   }
 
   if (!executablePath && environment !== 'windows') {
-    for (const fallback of AGENT_FALLBACK_BIN_PATHS[agent] ?? []) {
+    const fallbackPaths = agent === 'cursor' ? AGENT_FALLBACK_BIN_PATHS.cursor : [];
+    for (const fallback of fallbackPaths) {
       try {
         const result = await context.commandRunner.execAsync(`command -v "${fallback}"`, repo.path, {
           timeout: 5_000,
@@ -2269,7 +2286,9 @@ function resolveToolSpec(tool: RunpaneToolSpec, environment?: ProjectEnvironment
   };
 }
 
-function describeTool(tool: RunpaneResolvedTool): { title: string; command: string; agent?: RunpaneAgentId } {
+type DescribedTool = Pick<RunpaneResolvedTool, 'title' | 'command' | 'agent'>;
+
+function describeTool(tool: RunpaneResolvedTool): DescribedTool {
   return {
     title: tool.title,
     command: tool.command,
@@ -2348,11 +2367,14 @@ async function withRunpaneAction<T extends { ok: boolean }>(
   try {
     const result = await handler();
     const commandOk = result.ok;
-    trackRunpaneAction(services, action, 'success', Date.now() - startedAt, {
+    const actionMetadata: RunpaneActionMetadata = {
       ...metadata,
       ok: commandOk,
-      ...(resultMetadata ? resultMetadata(result) : {}),
-    });
+    };
+    if (resultMetadata) {
+      Object.assign(actionMetadata, resultMetadata(result));
+    }
+    trackRunpaneAction(services, action, 'success', Date.now() - startedAt, actionMetadata);
     return result;
   } catch (error) {
     trackRunpaneAction(services, action, 'failure', Date.now() - startedAt, {

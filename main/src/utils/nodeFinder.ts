@@ -234,7 +234,11 @@ export function findCliNodeScript(cliExecutablePath: string): string | null {
       console.log(`[NodeFinder] Detected pnpm structure, searching for ${commandName} in ${pnpmDir}`);
 
       // Define known package mappings (command name -> package patterns)
-      const packageMappings: Record<string, { patterns: string[]; entryFiles: string[] }> = {
+      interface PackageMappingLookup {
+        [command: string]: { patterns: string[]; entryFiles: string[] };
+      }
+
+      const packageMappings: PackageMappingLookup = {
         'claude': {
           patterns: ['@anthropic-ai+claude-code@'],
           entryFiles: ['cli.js', 'dist/index.js', 'index.js']

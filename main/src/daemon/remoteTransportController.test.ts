@@ -20,6 +20,10 @@ interface TestEventStream {
   nextEvent(timeoutMs?: number): Promise<{ event: string | null; data: string[] }>;
 }
 
+interface RemoteConfigSnapshot {
+  remoteDaemon: RemoteDaemonConfig;
+}
+
 class ConfigManagerStub extends EventEmitter {
   private remoteDaemon: RemoteDaemonConfig;
 
@@ -28,7 +32,7 @@ class ConfigManagerStub extends EventEmitter {
     this.remoteDaemon = initialConfig;
   }
 
-  getConfig(): { remoteDaemon: RemoteDaemonConfig } {
+  getConfig(): RemoteConfigSnapshot {
     return { remoteDaemon: this.remoteDaemon };
   }
 

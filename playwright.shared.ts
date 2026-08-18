@@ -1,5 +1,9 @@
 const DEFAULT_PLAYWRIGHT_PORT = 4521;
 
+interface PlaywrightServerEnvironment {
+  [name: string]: string;
+}
+
 export function getPlaywrightPort(): number {
   const rawPort = process.env.PLAYWRIGHT_PORT || process.env.VITE_PORT || process.env.PORT;
   if (!rawPort) {
@@ -20,8 +24,8 @@ export function getPlaywrightBaseURL(port = getPlaywrightPort()): string {
 
 export function getPlaywrightServerEnv(
   port = getPlaywrightPort(),
-  extraEnv: Record<string, string> = {},
-): Record<string, string> {
+  extraEnv: PlaywrightServerEnvironment = {},
+): PlaywrightServerEnvironment {
   return {
     ...extraEnv,
     PORT: String(port),

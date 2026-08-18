@@ -60,7 +60,7 @@ if (process.platform === 'win32') {
 }
 
 // Now import the rest of electron
-import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView } from 'electron';
+import { BrowserWindow, Menu, ipcMain, shell, dialog, IpcMainInvokeEvent, session, WebContents, webContents, WebContentsView, type BrowserWindowConstructorOptions } from 'electron';
 import * as path from 'path';
 import * as os from 'os';
 import type { SessionManager } from './services/sessionManager';
@@ -112,11 +112,13 @@ const registeredPartitions = new Set<string>();
 
 // Module-level shutdown guard to prevent multiple shutdown attempts
 let shutdownInProgress = false;
-let analyticsLaunchContext: {
+interface AnalyticsLaunchContext {
   appVersion?: string;
   previousVersion?: string | null;
   isFirstLaunch?: boolean;
-} = {};
+}
+
+let analyticsLaunchContext: AnalyticsLaunchContext = {};
 
 type RendererDiagnosticPayload = {
   kind?: string;
@@ -300,7 +302,7 @@ async function createWindow() {
     Menu.setApplicationMenu(null);
   }
 
-  mainWindow = new BrowserWindow({
+  const mainWindowOptions: BrowserWindowConstructorOptions = {
     width: 1400,
     height: 900,
     icon: path.join(__dirname, '../assets/icon.png'),
@@ -310,11 +312,12 @@ async function createWindow() {
       nodeIntegration: false,
       webviewTag: true
     },
-    ...(process.platform === 'darwin' ? {
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 10, y: 10 }
-    } : {})
-  });
+  };
+  if (process.platform === 'darwin') {
+    mainWindowOptions.titleBarStyle = 'hiddenInset';
+    mainWindowOptions.trafficLightPosition = { x: 10, y: 10 };
+  }
+  mainWindow = new BrowserWindow(mainWindowOptions);
 
   // Set main window on analytics manager for IPC forwarding
   if (analyticsManager) {

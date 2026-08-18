@@ -114,7 +114,7 @@ describe('config IPC handlers', () => {
     const ipcMain = createIpcMainStub();
     registerConfigHandlers(
       // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
-      ipcMain as unknown as IpcMain,
+      ipcMain as IpcMain,
       createServicesStub([activeProject, inactiveProject]),
     );
 

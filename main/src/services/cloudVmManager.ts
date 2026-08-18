@@ -7,7 +7,6 @@ import type { Logger } from '../utils/logger';
 import {
   type CloudRemoteConnectionStatus,
   createDefaultCloudVmState,
-  type CloudProvider,
   type CloudDaemonStatus,
   type CloudVmConfig,
   type CloudVmState,
@@ -22,7 +21,19 @@ import {
 } from '../../../shared/types/remoteDaemon';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 
-export type { CloudProvider, VmStatus, TunnelStatus, CloudVmConfig, CloudVmState };
+export type { VmStatus, TunnelStatus, CloudVmConfig, CloudVmState };
+
+interface HostedWorkspaceState {
+  provider: CloudVmState['provider'];
+  serverId: string | null;
+  daemonStatus: CloudDaemonStatus;
+  daemonBaseUrl: string | null;
+  linkedRemoteProfileId: string | null;
+  linkedRemoteProfileLabel: string | null;
+  remoteConnectionStatus: CloudRemoteConnectionStatus;
+  preferredAccess: CloudVmState['preferredAccess'];
+  allowNoVncFallback: boolean;
+}
 
 /**
  * Manages cloud VM lifecycle (start/stop/status) for Pane Cloud.
@@ -725,17 +736,7 @@ export class CloudVmManager extends EventEmitter {
     );
   }
 
-  private getHostedWorkspaceStateFromConfig(config: CloudVmConfig): {
-    provider: CloudProvider;
-    serverId: string | null;
-    daemonStatus: CloudDaemonStatus;
-    daemonBaseUrl: string | null;
-    linkedRemoteProfileId: string | null;
-    linkedRemoteProfileLabel: string | null;
-    remoteConnectionStatus: CloudRemoteConnectionStatus;
-    preferredAccess: CloudVmState['preferredAccess'];
-    allowNoVncFallback: boolean;
-  } {
+  private getHostedWorkspaceStateFromConfig(config: CloudVmConfig): HostedWorkspaceState {
     const remoteConfig = this.getRemoteDaemonConfig();
     const linkedProfile = this.getLinkedRemoteProfile(config, remoteConfig);
 

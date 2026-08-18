@@ -10,11 +10,11 @@ export const PANE_CHAT_PANEL_ID = '__pane_chat_terminal__';
 export const PANE_CHAT_CODEX_PANEL_ID = '__pane_chat_terminal_codex__';
 export const PANE_CHAT_CURSOR_PANEL_ID = '__pane_chat_terminal_cursor__';
 
-const PANE_CHAT_PANEL_IDS: Record<PaneChatAgent, string> = {
+const PANE_CHAT_PANEL_IDS = {
   claude: PANE_CHAT_PANEL_ID,
   codex: PANE_CHAT_CODEX_PANEL_ID,
   cursor: PANE_CHAT_CURSOR_PANEL_ID,
-};
+} satisfies Record<PaneChatAgent, string>;
 
 export interface PaneChatState<TSession = unknown> {
   session: TSession;

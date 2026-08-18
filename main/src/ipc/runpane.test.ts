@@ -177,7 +177,7 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
       })),
     },
     ...overrides,
-  } as unknown as AppServices;
+  } as AppServices;
 }
 
 const tempDirs: string[] = [];
@@ -2228,6 +2228,10 @@ describe('runpane IPC handlers', () => {
           vi.mocked(panelManager.createPanel).mockImplementation(async (request) => {
             createRequest = request;
             const initialState = request.initialState ?? {};
+            const customState: TerminalPanelState = { ...initialState };
+            if (initialState.initialInputMode === 'argument') {
+              customState.initialInputSentAt = '2026-01-01T00:02:00.000Z';
+            }
             createdPanel = {
               id: 'panel-1',
               sessionId: session.id,
@@ -2235,12 +2239,7 @@ describe('runpane IPC handlers', () => {
               title: request.title,
               state: {
                 isActive: false,
-                customState: {
-                  ...initialState,
-                  ...(initialState.initialInputMode === 'argument'
-                    ? { initialInputSentAt: '2026-01-01T00:02:00.000Z' }
-                    : {}),
-                },
+                customState,
               },
               metadata: {},
             };

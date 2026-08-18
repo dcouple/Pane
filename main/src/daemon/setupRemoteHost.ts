@@ -128,13 +128,12 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
       } satisfies RemoteHostSetupServiceResult
     : await installRemoteDaemonService(paneDir, options.serviceDependencies);
 
-  return {
+  const result: SetupRemoteHostResult = {
     paneDir,
     configPath,
     label,
     listenPort,
     channel,
-    ...(options.repoRef ? { repoRef: options.repoRef } : {}),
     connectionCode,
     tunnel: tunnelSelection.tunnel,
     fallbackTunnelCommands: tunnelSelection.fallbackCommands,
@@ -142,6 +141,10 @@ export async function setupRemoteHost(options: SetupRemoteHostOptions = {}): Pro
     manualDaemonCommand,
     wroteConfig,
   };
+  if (options.repoRef) {
+    result.repoRef = options.repoRef;
+  }
+  return result;
 }
 
 export function formatSetupRemoteHostResult(result: SetupRemoteHostResult): string {
@@ -192,11 +195,14 @@ function createRemoteHostAccess(
   baseUrl: string,
   tunnel?: PaneRemoteConnectionImportPayload['tunnel'],
 ): RemoteDaemonHostAccess {
-  return {
+  const access: RemoteDaemonHostAccess = {
     baseUrl,
-    ...(tunnel ? { tunnel } : {}),
     updatedAt: new Date().toISOString(),
   };
+  if (tunnel) {
+    access.tunnel = tunnel;
+  }
+  return access;
 }
 
 export function readConfiguredTailscaleServeAccess(listenPort: number): RemoteDaemonHostAccess | null {
@@ -218,13 +224,16 @@ export function readConfiguredTailscaleServeAccess(listenPort: number): RemoteDa
   const tailscaleCommand = buildTailscaleServeCommand(tailscaleCli, listenPort);
   const tailscaleIp = readTailscaleIpv4(tailscaleCli);
 
-  return createRemoteHostAccess(serveUrl, {
+  const tunnel: NonNullable<PaneRemoteConnectionImportPayload['tunnel']> = {
     kind: 'tailscale',
     selected: true,
     command: tailscaleCommand,
     note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode. If another device cannot connect immediately, wait a few minutes for Tailscale Serve to finish provisioning, then retry.',
-    ...(tailscaleIp ? { tailscaleIp } : {}),
-  });
+  };
+  if (tailscaleIp) {
+    tunnel.tailscaleIp = tailscaleIp;
+  }
+  return createRemoteHostAccess(serveUrl, tunnel);
 }
 
 function buildNextRemoteDaemonConfig<Value>(
@@ -383,18 +392,22 @@ function selectTailscaleTunnel(options: {
 
   const tailscaleIp = readTailscaleIpv4(tailscaleCli);
 
+  const tunnel: NonNullable<TunnelSelection['tunnel']> = {
+    kind: 'tailscale',
+    selected: true,
+    command: tailscaleCommand,
+    note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode. If another device cannot connect immediately, wait a few minutes for Tailscale Serve to finish provisioning, then retry.',
+  };
+  if (tailscaleIp) {
+    tunnel.tailscaleIp = tailscaleIp;
+  }
+
   return {
     baseUrl: serveUrl,
     fallbackCommands: options.fallbackCommands.includes(tailscaleCommand)
       ? options.fallbackCommands
       : [options.fallbackCommands[0], tailscaleCommand],
-    tunnel: {
-      kind: 'tailscale',
-      selected: true,
-      command: tailscaleCommand,
-      note: 'Tailscale Serve is configured for this tailnet. Keep Pane running on this host when using current data mode. If another device cannot connect immediately, wait a few minutes for Tailscale Serve to finish provisioning, then retry.',
-      ...(tailscaleIp ? { tailscaleIp } : {}),
-    },
+    tunnel,
   };
 }
 

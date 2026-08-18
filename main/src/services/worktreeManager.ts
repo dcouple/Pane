@@ -11,6 +11,11 @@ import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDec
 
 type WorktreeAuditSource = 'session-delete' | 'project-delete' | 'create-cleanup';
 
+interface WorktreeEntry {
+  path: string;
+  branch: string;
+}
+
 export interface WorktreeAuditContext {
   source: WorktreeAuditSource;
   sessionId?: string;
@@ -466,14 +471,14 @@ export class WorktreeManager {
     });
   }
 
-  async listWorktrees(projectPath: string, commandRunner: CommandRunner): Promise<Array<{ path: string; branch: string }>> {
+  async listWorktrees(projectPath: string, commandRunner: CommandRunner): Promise<WorktreeEntry[]> {
     try {
       const { stdout } = await commandRunner.execAsync(`git worktree list --porcelain`, projectPath);
       
-      const worktrees: Array<{ path: string; branch: string }> = [];
+      const worktrees: WorktreeEntry[] = [];
       const lines = stdout.split('\n');
       
-      let currentWorktree: { path?: string; branch?: string } = {};
+      let currentWorktree: Partial<WorktreeEntry> = {};
       
       for (const line of lines) {
         if (line.startsWith('worktree ')) {

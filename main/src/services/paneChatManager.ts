@@ -183,17 +183,18 @@ export class PaneChatManager {
   ): TerminalPanelState {
     const agentSessionId = this.resolveAgentSessionId(agent, previousState, forceNewAgentSession);
 
-    return {
+    const panelState: TerminalPanelState = {
       initialCommand: RUNPANE_CONTRACT.agentTemplates[agent].command,
       initialInput: this.buildInitialInput(agent, guidePath),
       initialInputMode: 'argument',
       initialInputSubmitStrategy: 'enter',
       initialInputDeliveryVersion: PANE_CHAT_BOOTSTRAP_VERSION,
       agentType: agent,
-      ...(agentSessionId ? { agentSessionId } : {}),
       isCliPanel: true,
       isCliReady: false,
     };
+    if (agentSessionId) panelState.agentSessionId = agentSessionId;
+    return panelState;
   }
 
   private buildInitialInput(agent: PaneChatAgent, guidePath: string): string {

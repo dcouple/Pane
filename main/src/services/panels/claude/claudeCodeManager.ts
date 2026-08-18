@@ -11,7 +11,11 @@ import { testClaudeCodeAvailability, testClaudeCodeInDirectory } from '../../../
 import { findExecutableInPath } from '../../../utils/shellPath';
 import { PermissionManager } from '../../permissionManager';
 import { findNodeExecutable } from '../../../utils/nodeFinder';
-import { AbstractCliManager } from '../cli/AbstractCliManager';
+import {
+  AbstractCliManager,
+  type CliEnvironment,
+  type CliSpawnTuple,
+} from '../cli/AbstractCliManager';
 import { withLock } from '../../../utils/mutex';
 import { getAppDirectory } from '../../../utils/appDirectory';
 import { escapeForBash } from '../../../utils/wslUtils';
@@ -45,6 +49,11 @@ interface ClaudeCodeProcess {
   panelId: string;
   sessionId: string;
   worktreePath: string;
+}
+
+interface BaseProjectMcpServers {
+  mcpServers: JsonObject;
+  mcpJsonPath?: string;
 }
 
 /**
@@ -338,19 +347,20 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return events;
   }
 
-  protected async initializeCliEnvironment(options: ClaudeSpawnOptions): Promise<{ [key: string]: string }> {
+  protected async initializeCliEnvironment(options: ClaudeSpawnOptions): Promise<CliEnvironment> {
     const { sessionId, permissionMode } = options;
     
     // Get basic system environment
     const systemEnv = await this.getSystemEnvironment();
     
     // Initialize environment with MCP-specific variables
-    const env: { [key: string]: string } = {
+    const env: CliEnvironment = {
       // Ensure MCP-related environment variables are preserved
       MCP_SOCKET_PATH: this.permissionIpcPath || '',
-      // Add debug mode for MCP if verbose logging is enabled
-      ...(this.configManager?.getConfig()?.verbose ? { MCP_DEBUG: '1' } : {})
     };
+    if (this.configManager?.getConfig()?.verbose) {
+      env.MCP_DEBUG = '1';
+    }
 
     // Set up MCP configuration if permission approval is requested
     const defaultMode = this.configManager?.getConfig()?.defaultPermissionMode || 'ignore';
@@ -551,8 +561,8 @@ export class ClaudeCodeManager extends AbstractCliManager {
   protected wrapSpawnArgs(
     cmd: string,
     args: string[],
-    env: { [key: string]: string }
-  ): { cmd: string; args: string[]; env: { [key: string]: string } } {
+    env: CliEnvironment
+  ): CliSpawnTuple {
     if (process.platform === 'win32') return { cmd, args, env };
     const line = [cmd, ...args].map(escapeForBash).join(' ');
     return { cmd: '/bin/sh', args: ['-c', `exec ${line}`], env };
@@ -806,8 +816,8 @@ export class ClaudeCodeManager extends AbstractCliManager {
    * When running in a worktree, Claude doesn't see MCP servers from the base project
    * because it uses the worktree path as the project key.
    */
-  private getBaseProjectMcpServers(sessionId: string): { mcpServers: JsonObject; mcpJsonPath?: string } {
-    const result: { mcpServers: JsonObject; mcpJsonPath?: string } = { mcpServers: {} };
+  private getBaseProjectMcpServers(sessionId: string): BaseProjectMcpServers {
+    const result: BaseProjectMcpServers = { mcpServers: {} };
 
     try {
       // Get the session to find the project
@@ -1044,7 +1054,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
 
     // Start with base project MCP servers
     const baseProjectMcp = this.getBaseProjectMcpServers(sessionId);
-    const mcpConfig: { mcpServers: JsonObject } = {
+    const mcpConfig = {
       "mcpServers": {
         // Include base project MCP servers first
         ...baseProjectMcp.mcpServers,
@@ -1054,7 +1064,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
           "args": mcpArgs
         }
       }
-    };
+    } satisfies { mcpServers: JsonObject };
 
     if (Object.keys(baseProjectMcp.mcpServers).length > 0) {
       this.logger?.info(`[MCP] Merged ${Object.keys(baseProjectMcp.mcpServers).length} base project MCP servers into config`);
@@ -1104,7 +1114,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
     return mcpConfigPath;
   }
 
-  private async setupMcpConfiguration(sessionId: string, env: { [key: string]: string }): Promise<void> {
+  private async setupMcpConfiguration(sessionId: string, env: CliEnvironment): Promise<void> {
     // This method is called from initializeCliEnvironment but for Claude we handle MCP in spawnCliProcess
     // Just set up the basic environment variables here
     return;

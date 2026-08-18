@@ -814,8 +814,8 @@ export async function runPanesPin(parsed: ParsedArgs, pinned: boolean): Promise<
   const request: PanePinRequest = {
     paneId: parsed.paneId,
     pinned,
-    ...(parsed.dryRun ? { dryRun: true } : {}),
   };
+  if (parsed.dryRun) request.dryRun = true;
   await confirmPanePin(parsed, request);
 
   const result = await invokeDaemon('runpane:panes:pin', [request], panePinResultSchema, {
@@ -843,8 +843,8 @@ export async function runPanesRename(parsed: ParsedArgs): Promise<number> {
   const request: PaneRenameRequest = {
     paneId: parsed.paneId,
     name,
-    ...(parsed.dryRun ? { dryRun: true } : {}),
   };
+  if (parsed.dryRun) request.dryRun = true;
   await confirmPaneRename(parsed, request);
 
   const result = await invokeDaemon('runpane:panes:rename', [request], paneRenameResultSchema, {

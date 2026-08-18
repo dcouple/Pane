@@ -258,8 +258,18 @@ export interface PanelCapabilities {
   canAppearInWorktrees?: boolean; // Whether panel can appear in worktree sessions
 }
 
+interface PanelCapabilityRegistry {
+  terminal: PanelCapabilities;
+  diff: PanelCapabilities;
+  explorer: PanelCapabilities;
+  logs: PanelCapabilities;
+  dashboard: PanelCapabilities;
+  'setup-tasks': PanelCapabilities;
+  browser: PanelCapabilities;
+}
+
 // Panel Registry - Currently only terminal is implemented
-export const PANEL_CAPABILITIES: Record<ToolPanelType, PanelCapabilities> = {
+export const PANEL_CAPABILITIES: PanelCapabilityRegistry = {
   terminal: {
     canEmit: ['terminal:command_executed', 'terminal:exit', 'files:changed'],
     canConsume: [], // Terminal doesn't consume events in Phase 1-2

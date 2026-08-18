@@ -444,14 +444,17 @@ export function remoteImportPayloadToProfile(
   profileId = createRemoteProfileId(),
 ): RemotePaneConnectionProfile {
   const normalizedPayload = normalizePaneRemoteConnectionImportPayload(payload);
-  return {
+  const profile: RemotePaneConnectionProfile = {
     id: profileId,
     label: normalizedPayload.label,
     baseUrl: normalizedPayload.baseUrl,
     token: normalizedPayload.token,
     transport: normalizedPayload.transport,
-    ...(normalizedPayload.tunnel ? { tunnel: normalizedPayload.tunnel } : {}),
   };
+  if (normalizedPayload.tunnel) {
+    profile.tunnel = normalizedPayload.tunnel;
+  }
+  return profile;
 }
 
 export function normalizePaneRemoteConnectionImportPayload<Value>(
@@ -461,14 +464,17 @@ export function normalizePaneRemoteConnectionImportPayload<Value>(
   const baseUrl = normalizeRemoteImportBaseUrl(decoded.baseUrl.trim());
   const tunnel = decoded.tunnel === undefined ? undefined : normalizeRemoteImportTunnel(decoded.tunnel);
 
-  return {
+  const payload: PaneRemoteConnectionImportPayload = {
     v: 1,
     label: decoded.label.trim(),
     baseUrl,
     token: decoded.token.trim(),
     transport: decoded.transport,
-    ...(tunnel ? { tunnel } : {}),
   };
+  if (tunnel) {
+    payload.tunnel = tunnel;
+  }
+  return payload;
 }
 
 export function normalizeRemoteDaemonConfig<Value>(value: Value): RemoteDaemonConfig {
@@ -503,21 +509,25 @@ export function normalizeRemoteDaemonConfig<Value>(value: Value): RemoteDaemonCo
     activeProfileId = null;
   }
 
-  return {
-    host: {
-      config: {
-        enabled: readBoolean(hostConfig.enabled, defaults.host.config.enabled),
-        listenHost: readString(hostConfig.listenHost, defaults.host.config.listenHost),
-        listenPort: readPort(hostConfig.listenPort, defaults.host.config.listenPort),
-        pairingRequired: readBoolean(hostConfig.pairingRequired, defaults.host.config.pairingRequired),
-        allowInsecureHttpOnLoopback: readBoolean(
-          hostConfig.allowInsecureHttpOnLoopback,
-          defaults.host.config.allowInsecureHttpOnLoopback,
-        ),
-      },
-      clients: [...clients],
-      ...(access ? { access } : {}),
+  const hostSettings: RemoteDaemonHostSettings = {
+    config: {
+      enabled: readBoolean(hostConfig.enabled, defaults.host.config.enabled),
+      listenHost: readString(hostConfig.listenHost, defaults.host.config.listenHost),
+      listenPort: readPort(hostConfig.listenPort, defaults.host.config.listenPort),
+      pairingRequired: readBoolean(hostConfig.pairingRequired, defaults.host.config.pairingRequired),
+      allowInsecureHttpOnLoopback: readBoolean(
+        hostConfig.allowInsecureHttpOnLoopback,
+        defaults.host.config.allowInsecureHttpOnLoopback,
+      ),
     },
+    clients: [...clients],
+  };
+  if (access) {
+    hostSettings.access = access;
+  }
+
+  return {
+    host: hostSettings,
     client: {
       profiles: [...profiles],
       activeProfileId,
@@ -539,11 +549,14 @@ function normalizeRemoteDaemonHostAccess(value: JsonValue | undefined): RemoteDa
       : normalizeRemoteImportTunnel(access.tunnel);
     const updatedAt = readRequiredString(access.updatedAt, 'Remote host access timestamp');
 
-    return {
+    const normalizedAccess: RemoteDaemonHostAccess = {
       baseUrl,
-      ...(tunnel ? { tunnel } : {}),
       updatedAt,
     };
+    if (tunnel) {
+      normalizedAccess.tunnel = tunnel;
+    }
+    return normalizedAccess;
   } catch {
     return undefined;
   }
@@ -557,13 +570,14 @@ function normalizeRemoteImportTunnel(
     ? undefined
     : readRemoteTunnelIp(decoded.tailscaleIp);
 
-  return {
+  const tunnel: NonNullable<PaneRemoteConnectionImportPayload['tunnel']> = {
     kind: decoded.kind,
     selected: decoded.selected,
-    ...(decoded.command ? { command: decoded.command.trim() } : {}),
-    ...(decoded.note ? { note: decoded.note.trim() } : {}),
-    ...(tailscaleIp ? { tailscaleIp } : {}),
   };
+  if (decoded.command) tunnel.command = decoded.command.trim();
+  if (decoded.note) tunnel.note = decoded.note.trim();
+  if (tailscaleIp) tunnel.tailscaleIp = tailscaleIp;
+  return tunnel;
 }
 
 function readRemoteTunnelIp(value: JsonValue): string {
