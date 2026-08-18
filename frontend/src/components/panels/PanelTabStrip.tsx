@@ -14,7 +14,7 @@ import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
 import { usePanelStore } from '../../stores/panelStore';
-import { getCliBrandIcon } from '../ui/BrandIcons';
+import { getCliBrandIcon } from '../ui/brandIconRegistry';
 import { PanelTabStatusDot } from './PanelTabStatusDot';
 import type { PanelTabPresentationResolver } from '../../types/panelComponents';
 

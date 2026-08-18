@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import type { RemotePwaCustomCommand } from '../../../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../../../shared/types/panels';
 import { AGENT_LAUNCH_PRESETS } from '../../../../shared/constants/agentLaunchPresets';
-import { getCliBrandIcon } from '../../components/ui/BrandIcons';
+import { getCliBrandIcon } from '../../components/ui/brandIconRegistry';
 
 // The remote host executes these commands. Until its platform capabilities are
 // exposed here, the viewer's browser platform must not hide valid host tools.

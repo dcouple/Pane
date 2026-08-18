@@ -47,7 +47,7 @@ import {
   type DropZone,
 } from '../utils/panelLayout';
 import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
-import { getCliBrandIcon } from './ui/BrandIcons';
+import { getCliBrandIcon } from './ui/brandIconRegistry';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';

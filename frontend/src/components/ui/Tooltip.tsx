@@ -17,6 +17,18 @@ export interface TooltipProps extends Omit<React.HTMLAttributes<HTMLElement>, 'c
 
 const GAP = 6;
 type TooltipSide = NonNullable<TooltipProps['side']>;
+const ARROW_BORDER = {
+  top: 'border-l-transparent border-r-transparent border-b-transparent border-t-bg-tertiary',
+  bottom: 'border-l-transparent border-r-transparent border-t-transparent border-b-bg-tertiary',
+  left: 'border-t-transparent border-b-transparent border-r-transparent border-l-bg-tertiary',
+  right: 'border-t-transparent border-b-transparent border-l-transparent border-r-bg-tertiary',
+} satisfies Record<TooltipSide, string>;
+const ARROW_STYLE = {
+  top: { bottom: -8, left: '50%', transform: 'translateX(-50%)' },
+  bottom: { top: -8, left: '50%', transform: 'translateX(-50%)' },
+  left: { right: -8, top: '50%', transform: 'translateY(-50%)' },
+  right: { left: -8, top: '50%', transform: 'translateY(-50%)' },
+} satisfies Record<TooltipSide, React.CSSProperties>;
 
 export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(({
   content,
@@ -133,20 +145,6 @@ export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(({
     .filter(Boolean)
     .join(' ') || undefined;
 
-  const arrowBorder = {
-    top: 'border-l-transparent border-r-transparent border-b-transparent border-t-bg-tertiary',
-    bottom: 'border-l-transparent border-r-transparent border-t-transparent border-b-bg-tertiary',
-    left: 'border-t-transparent border-b-transparent border-r-transparent border-l-bg-tertiary',
-    right: 'border-t-transparent border-b-transparent border-l-transparent border-r-bg-tertiary',
-  } satisfies Record<TooltipSide, string>;
-
-  const arrowStyle = {
-    top: { bottom: -8, left: '50%', transform: 'translateX(-50%)' },
-    bottom: { top: -8, left: '50%', transform: 'translateX(-50%)' },
-    left: { right: -8, top: '50%', transform: 'translateY(-50%)' },
-    right: { left: -8, top: '50%', transform: 'translateY(-50%)' },
-  } satisfies Record<TooltipSide, React.CSSProperties>;
-
   const setTriggerRef = useCallback((node: HTMLElement | null) => {
     triggerRef.current = node;
     if (forwardedRef instanceof Function) forwardedRef(node);
@@ -204,8 +202,8 @@ export const Tooltip = React.forwardRef<HTMLElement, TooltipProps>(({
         >
           {content}
           <div
-            className={cn('absolute w-0 h-0 border-4', arrowBorder[side])}
-            style={arrowStyle[side]}
+            className={cn('absolute w-0 h-0 border-4', ARROW_BORDER[side])}
+            style={ARROW_STYLE[side]}
           />
         </div>,
         portalContainer ?? document.body

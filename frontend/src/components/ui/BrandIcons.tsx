@@ -34,7 +34,7 @@ export const CursorIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) 
 /**
  * Google Gemini brand icon from simple-icons
  */
-const GeminiIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
+export const GeminiIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
     <path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" />
   </svg>
@@ -43,34 +43,8 @@ const GeminiIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
 /**
  * Aider brand icon — stylized "A" mark (no official simple-icons entry)
  */
-const AiderIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
+export const AiderIcon: React.FC<BrandIconProps> = ({ className = 'w-4 h-4' }) => (
   <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
     <path d="M12 2L3 20h3.5l1.8-4h7.4l1.8 4H21L12 2zm0 6.5L14.9 14H9.1L12 8.5z" />
   </svg>
 );
-
-/**
- * Lookup map: CLI command keyword -> brand icon component.
- * Used to dynamically show the right icon for any terminal panel.
- */
-export const CLI_BRAND_ICONS = {
-  claude: ClaudeIcon,
-  codex: OpenAIIcon,
-  cursor: CursorIcon,
-  gemini: GeminiIcon,
-  aider: AiderIcon,
-};
-
-/**
- * Returns the matching brand icon element for a given command/title string,
- * or null if no brand matches. Checks both the name and command against all keywords.
- */
-export function getCliBrandIcon(nameOrCommand: string, className = 'w-4 h-4'): React.ReactElement | null {
-  const lower = nameOrCommand.toLowerCase();
-  for (const [keyword, IconComponent] of Object.entries(CLI_BRAND_ICONS)) {
-    if (lower.includes(keyword)) {
-      return <IconComponent className={className} />;
-    }
-  }
-  return null;
-}

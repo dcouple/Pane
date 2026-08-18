@@ -17,6 +17,26 @@ interface PermissionDialogProps {
   session?: { name: string };
 }
 
+const TOOL_DESCRIPTIONS = {
+  Bash: 'Execute shell commands',
+  Write: 'Write files to disk',
+  Edit: 'Modify existing files',
+  MultiEdit: 'Make multiple edits to a file',
+  Delete: 'Delete files or directories',
+  Move: 'Move or rename files',
+  Read: 'Read file contents',
+  Grep: 'Search file contents',
+  WebFetch: 'Fetch content from the web',
+  WebSearch: 'Search the web',
+};
+
+function getToolDescription(toolName: string): string {
+  for (const [key, description] of Object.entries(TOOL_DESCRIPTIONS)) {
+    if (toolName.includes(key)) return description;
+  }
+  return 'Perform an action';
+}
+
 export const PermissionDialog: React.FC<PermissionDialogProps> = ({ request, onRespond, session }) => {
   const [editMode, setEditMode] = useState(false);
   const [editedInput, setEditedInput] = useState('');
@@ -53,28 +73,6 @@ export const PermissionDialog: React.FC<PermissionDialogProps> = ({ request, onR
       return toolName.substring(5).replace(/__/g, ' → ');
     }
     return toolName;
-  };
-
-  const getToolDescription = (toolName: string) => {
-    const descriptions = {
-      'Bash': 'Execute shell commands',
-      'Write': 'Write files to disk',
-      'Edit': 'Modify existing files',
-      'MultiEdit': 'Make multiple edits to a file',
-      'Delete': 'Delete files or directories',
-      'Move': 'Move or rename files',
-      'Read': 'Read file contents',
-      'Grep': 'Search file contents',
-      'WebFetch': 'Fetch content from the web',
-      'WebSearch': 'Search the web',
-    };
-    
-    for (const [key, desc] of Object.entries(descriptions)) {
-      if (toolName.includes(key)) {
-        return desc;
-      }
-    }
-    return 'Perform an action';
   };
 
   const isHighRisk = (toolName: string) => {

@@ -11,7 +11,7 @@ import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
 import { Kbd } from '../ui/Kbd';
-import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/BrandIcons';
+import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/brandIconRegistry';
 import { visibleAgentPresets } from '../../utils/agentPresets';
 import { PanelTabStrip } from './PanelTabStrip';
 import type { WorktreeFileSyncEntry } from '../../../../shared/types/worktreeFileSync';
