@@ -1201,6 +1201,17 @@ export function FileEditor({
   });
   
   const [selectedFile, setSelectedFile] = useState<FileItem | null>(null);
+  const selectedFilePathRef = useRef<string | null>(null);
+  useEffect(() => {
+    selectedFilePathRef.current = selectedFile?.path ?? null;
+  }, [selectedFile?.path]);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const [fileContent, setFileContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -1475,68 +1486,68 @@ export function FileEditor({
     }
   };
 
-  const handleEditorChange = (value: string | undefined) => {
-    setFileContent(value || '');
-    
-    // Notify parent about dirty state
-    if (onFileChange && selectedFile) {
-      const isDirty = (value || '') !== originalContent;
-      onFileChange(selectedFile.path, isDirty);
-    }
-  };
-
   // Auto-save functionality
+  const pendingAutoSaveFilePathRef = useRef<string | null>(null);
   const autoSave = useMemo(
-    () => debounce(async () => {
-      if (!selectedFile || selectedFile.isDirectory || fileContent === originalContent) return;
-      
+    () => debounce(async (file: FileItem, content: string) => {
+      pendingAutoSaveFilePathRef.current = null;
       try {
         const result = await window.electronAPI.invoke('file:write', {
           sessionId,
-          filePath: selectedFile.path,
-          content: fileContent
+          filePath: file.path,
+          content,
         });
         
         if (result.success) {
-          setOriginalContent(fileContent);
-
-          // Notify parent that file is saved
-          if (onFileChange && selectedFile) {
-            onFileChange(selectedFile.path, false);
-          }
-
-          // Emit file saved event
-          if (onStateChange) {
-            onStateChange({
-              filePath: selectedFile.path,
-              isDirty: false
+          const isActiveFile = mountedRef.current && selectedFilePathRef.current === file.path;
+          if (isActiveFile) {
+            setOriginalContent(content);
+            onFileChange?.(file.path, false);
+            onStateChange?.({
+              filePath: file.path,
+              isDirty: false,
             });
           }
 
           // Re-check git status after save
-          window.electronAPI.invoke('git:file-status', sessionId, selectedFile.path).then((statusResult: { success: boolean; data?: { status: 'clean' | 'modified' | 'untracked' } }) => {
-            if (statusResult.success && statusResult.data) {
+          window.electronAPI.invoke('git:file-status', sessionId, file.path).then((statusResult: { success: boolean; data?: { status: 'clean' | 'modified' | 'untracked' } }) => {
+            if (mountedRef.current && selectedFilePathRef.current === file.path && statusResult.success && statusResult.data) {
               setGitStatus(statusResult.data.status);
             }
           });
-        } else {
+        } else if (mountedRef.current) {
           setError(result.error);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to auto-save file');
+        if (mountedRef.current) {
+          setError(err instanceof Error ? err.message : 'Failed to auto-save file');
+        }
       }
     }, 1000), // Auto-save after 1 second of inactivity
-    [sessionId, selectedFile, fileContent, originalContent, onFileChange, onStateChange]
+    [sessionId, onFileChange, onStateChange]
   );
 
-  useEffect(() => () => autoSave.cancel(), [autoSave]);
+  useEffect(() => () => autoSave.flush(), [autoSave]);
 
-  // Trigger auto-save when content changes
-  useEffect(() => {
-    if (fileContent !== originalContent && selectedFile && !selectedFile.isDirectory) {
-      autoSave();
+  const handleEditorChange = (value: string | undefined) => {
+    const content = value || '';
+    setFileContent(content);
+
+    if (selectedFile && !selectedFile.isDirectory) {
+      const isDirty = content !== originalContent;
+      onFileChange?.(selectedFile.path, isDirty);
+      if (isDirty) {
+        if (pendingAutoSaveFilePathRef.current && pendingAutoSaveFilePathRef.current !== selectedFile.path) {
+          autoSave.flush();
+        }
+        pendingAutoSaveFilePathRef.current = selectedFile.path;
+        autoSave(selectedFile, content);
+      } else if (pendingAutoSaveFilePathRef.current === selectedFile.path) {
+        autoSave.cancel();
+        pendingAutoSaveFilePathRef.current = null;
+      }
     }
-  }, [fileContent, originalContent, selectedFile, autoSave]);
+  };
 
   // Re-check git status when git operations complete (e.g. commit from diff panel or terminal)
   useEffect(() => {
