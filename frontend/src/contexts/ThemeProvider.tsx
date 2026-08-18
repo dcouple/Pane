@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
 import { ThemeContext, type Theme } from './themeContextValue';
 
-const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta']);
+const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain']);
 const THEME_CLASSES = {
   'light': ['light'],
   'light-rounded': ['light', 'light-rounded'],
@@ -16,6 +16,9 @@ const THEME_CLASSES = {
   'night-owl': ['dark', 'night-owl'],
   'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
   'terracotta': ['dark', 'terracotta'],
+  'synthwave': ['dark', 'synthwave'],
+  'acid': ['dark', 'acid'],
+  'tokyo-rain': ['dark', 'tokyo-rain'],
 } satisfies Record<Theme, string[]>;
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
 
@@ -51,8 +54,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const body = document.body;
 
     // Remove ALL theme classes from both root and body
-    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
-    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
+    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain');
+    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain');
 
     const themeClasses = THEME_CLASSES[theme];
     root.classList.add(...themeClasses);

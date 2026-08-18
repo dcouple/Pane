@@ -16,6 +16,30 @@
   --vscode-editorWidget-foreground: #DFE1E5 !important;
 }
 
+/* Synthwave theme overrides — violet-black editor */
+:root.synthwave {
+  --vscode-editor-background: #0b0714 !important;
+  --vscode-editor-foreground: #f1eafc !important;
+  --vscode-editorWidget-background: #0b0714 !important;
+  --vscode-editorWidget-foreground: #f1eafc !important;
+}
+
+/* Acid Terminal theme overrides — charcoal-black editor */
+:root.acid {
+  --vscode-editor-background: #0a0b0a !important;
+  --vscode-editor-foreground: #eaf2ea !important;
+  --vscode-editorWidget-background: #0a0b0a !important;
+  --vscode-editorWidget-foreground: #eaf2ea !important;
+}
+
+/* Tokyo Rain theme overrides — blue-black editor */
+:root.tokyo-rain {
+  --vscode-editor-background: #080b16 !important;
+  --vscode-editor-foreground: #e6ebf4 !important;
+  --vscode-editorWidget-background: #080b16 !important;
+  --vscode-editorWidget-foreground: #e6ebf4 !important;
+}
+
 /* Light theme overrides */
 :root.light {
   --vscode-editor-background: #ffffff !important; /* white */
