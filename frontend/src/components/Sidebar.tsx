@@ -138,27 +138,22 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const hydrateExpandedProjects = useNavigationStore(s => s.hydrateExpandedProjects);
 
   useEffect(() => {
+    let cancelled = false;
+
     // Fetch version info and UI state on component mount
     const fetchVersion = async () => {
       try {
-        console.log('[Sidebar Debug] Fetching version info...');
         const result = await window.electronAPI.getVersionInfo();
-        console.log('[Sidebar Debug] Version info result:', result);
+        if (cancelled) return;
         if (result.success && result.data) {
-          console.log('[Sidebar Debug] Version data:', result.data);
           if (result.data.current) {
             setVersion(result.data.current);
-            console.log('[Sidebar Debug] Set version:', result.data.current);
           }
           if (result.data.gitCommit) {
             setGitCommit(result.data.gitCommit);
-            console.log('[Sidebar Debug] Set gitCommit:', result.data.gitCommit);
           }
           if (result.data.worktreeName) {
             setWorktreeName(result.data.worktreeName);
-            console.log('[Sidebar Debug] Set worktreeName:', result.data.worktreeName);
-          } else {
-            console.log('[Sidebar Debug] No worktreeName in response');
           }
         }
       } catch (error) {
@@ -169,6 +164,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     const loadUIState = async () => {
       try {
         const result = await window.electronAPI.uiState.getExpanded();
+        if (cancelled) return;
         if (result.success && result.data) {
           setSessionSortAscending(result.data.sessionSortAscending ?? true);
           hydrateExpandedProjects(result.data.expandedProjects ?? []);
@@ -182,8 +178,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
       }
     };
 
-    fetchVersion();
-    loadUIState();
+    void fetchVersion();
+    void loadUIState();
+
+    return () => {
+      cancelled = true;
+    };
   }, [hydrateExpandedProjects]);
 
   useEffect(() => {

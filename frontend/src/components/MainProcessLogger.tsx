@@ -13,9 +13,11 @@ export function MainProcessLogger() {
           console.warn(prefix, message);
           break;
         case 'info':
+          // eslint-disable-next-line no-console -- this component intentionally mirrors main-process logs.
           console.info(prefix, message);
           break;
         default:
+          // eslint-disable-next-line no-console -- this component intentionally mirrors main-process logs.
           console.log(prefix, message);
       }
     });

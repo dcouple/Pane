@@ -17,6 +17,7 @@ const isVerboseEnabled = () => {
 export const devLog = {
   log: (...args: unknown[]) => {
     if (isDevelopment || isVerboseEnabled()) {
+      // eslint-disable-next-line no-console -- this module is the centralized console adapter.
       console.log(...args);
     }
   },
@@ -34,12 +35,14 @@ export const devLog = {
   
   debug: (...args: unknown[]) => {
     if (isDevelopment && isVerboseEnabled()) {
+      // eslint-disable-next-line no-console -- this module is the centralized console adapter.
       console.debug(...args);
     }
   },
   
   info: (...args: unknown[]) => {
     if (isDevelopment || isVerboseEnabled()) {
+      // eslint-disable-next-line no-console -- this module is the centralized console adapter.
       console.info(...args);
     }
   }
@@ -51,6 +54,7 @@ export const devLog = {
  */
 export const renderLog = (...args: unknown[]) => {
   if (isDevelopment && isVerboseEnabled()) {
+    // eslint-disable-next-line no-console -- this module is the centralized console adapter.
     console.log(...args);
   }
 };

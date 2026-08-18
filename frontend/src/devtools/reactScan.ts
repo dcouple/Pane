@@ -22,6 +22,7 @@ function flushRenderEvidence(): void {
       }));
 
     summaries.clear();
+    // eslint-disable-next-line no-console -- perf:scan consumes this structured console evidence.
     console.info(`[render-evidence] ${JSON.stringify({
       surface: window.location.pathname.endsWith('remote.html') ? 'remote-pwa' : 'desktop',
       intervalMs: 1000,

@@ -81,10 +81,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   // Load panels when main repo session changes (no auto-creation, matches worktree session behavior)
   useEffect(() => {
     if (mainRepoSessionId) {
-      console.log('[ProjectView] Loading panels for project session:', mainRepoSessionId);
       panelApi.loadPanelsForSession(mainRepoSessionId).then(async (loadedPanels) => {
-        console.log('[ProjectView] Loaded panels:', loadedPanels);
-
         setPanels(mainRepoSessionId, loadedPanels);
 
         // Pick default active: prefer diff, then explorer, then first panel
@@ -208,16 +205,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     [mainRepoSessionId, addPanel, setActivePanelInStore]
   );
   
-  // Debug logging
-  useEffect(() => {
-    console.log('[ProjectView] Session state:', { 
-      mainRepoSessionId, 
-      mainRepoSession: mainRepoSession?.id,
-      activePanelType: currentActivePanel?.type,
-      activeSessionInStore: useSessionStore.getState().activeSessionId
-    });
-  }, [mainRepoSessionId, mainRepoSession, currentActivePanel]);
-
   // Get or create main repo session when panels are needed
   useEffect(() => {
     const requestGeneration = ++sessionRequestGeneration.current;
@@ -288,8 +275,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
     // Handle panel creation events (for auto-created panels like logs)
     const handlePanelCreated = (panel: ToolPanel) => {
-      console.log('[ProjectView] Received panel:created event:', panel);
-
       // Only add if it's for the current session
       if (panel.sessionId === mainRepoSessionId) {
         // The store's addPanel now checks for duplicates, so we can safely call it

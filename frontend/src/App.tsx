@@ -780,7 +780,6 @@ function App() {
     if (!window.electronAPI?.events) return;
 
     const handleVersionUpdate = (versionInfo: VersionUpdateInfo) => {
-      console.log('[App] Version update available:', versionInfo);
       setUpdateVersionInfo(versionInfo);
       setIsUpdateDialogOpen(true);
       showNotification(

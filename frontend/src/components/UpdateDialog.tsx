@@ -68,7 +68,6 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     // Check if app is packaged (auto-update only works in packaged apps)
     if (window.electronAPI?.isPackaged) {
       window.electronAPI.isPackaged().then((packaged) => {
-        console.log('[UpdateDialog] App packaged state:', packaged);
         setIsPackaged(packaged);
       });
     }
@@ -144,8 +143,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     );
 
     cleanupFns.push(
-      window.electronAPI.events.onUpdaterUpdateAvailable((info) => {
-        console.log('Update available:', info);
+      window.electronAPI.events.onUpdaterUpdateAvailable(() => {
         setUpdateState('available');
         if (userStartedUpdateRef.current && !isMac()) {
           void startDownloadUpdate();
@@ -154,8 +152,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     );
 
     cleanupFns.push(
-      window.electronAPI.events.onUpdaterUpdateNotAvailable((info) => {
-        console.log('No update available:', info);
+      window.electronAPI.events.onUpdaterUpdateNotAvailable(() => {
         userStartedUpdateRef.current = false;
         setUpdateState('idle');
       })
@@ -169,8 +166,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     );
 
     cleanupFns.push(
-      window.electronAPI.events.onUpdaterUpdateDownloaded((info) => {
-        console.log('Update downloaded:', info);
+      window.electronAPI.events.onUpdaterUpdateDownloaded(() => {
         setUpdateState('downloaded');
         setDownloadProgress(null);
         if (userStartedUpdateRef.current && !isMac()) {

@@ -1530,8 +1530,6 @@ export const useSessionView = (
     if (!activeSession) return;
     
     try {
-      console.log('[Context Compaction] Starting compaction for session:', activeSession.id);
-      
       // Generate the compacted context
       const response = await API.sessions.generateCompactedContext(activeSession.id);
       
@@ -1539,7 +1537,6 @@ export const useSessionView = (
         const summary = response.data.summary;
         setCompactedContext(summary);
         setContextCompacted(true);
-        console.log('[Context Compaction] Context successfully compacted');
       } else {
         console.error('[Context Compaction] Failed to compact context:', response.error);
       }

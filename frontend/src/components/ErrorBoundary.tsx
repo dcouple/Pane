@@ -35,14 +35,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       url: window.location.href,
     }).catch(() => {});
 
-    // Log to file in development mode for debugging
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[ErrorBoundary] Full error details:', {
-        message: error.message,
-        stack: error.stack,
-        componentStack: errorInfo.componentStack
-      });
-    }
   }
 
   render() {

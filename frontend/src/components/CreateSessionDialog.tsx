@@ -344,21 +344,12 @@ export function CreateSessionDialog({
           const folderResponse = await API.folders.create(cleanedName, projectId);
           if (folderResponse.success && folderResponse.data) {
             folderId = folderResponse.data.id;
-            console.log(`[CreateSessionDialog] Created folder: ${cleanedName} (${folderId})`);
           }
         } catch (error) {
           console.error('[CreateSessionDialog] Failed to create folder:', error);
           // Continue without folder - sessions will be created at project level
         }
       }
-
-      console.log('[CreateSessionDialog] Creating session with:', {
-        sessionName: cleanedName,
-        count: sessionCount,
-        toolType: 'none',
-        folderId,
-        startPinned
-      });
 
       const response = await API.sessions.create({
         prompt: '',

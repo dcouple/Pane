@@ -1362,7 +1362,6 @@ export const SessionView = memo(() => {
     // Check if user has previously closed terminal panel for this session
     window.electronAPI?.invoke('panels:shouldAutoCreate', activeSession.id, 'terminal').then(shouldCreate => {
       if (!shouldCreate) {
-        console.log('[SessionView] Skipping terminal auto-create - user previously closed it');
         return;
       }
       panelApi.createPanel({

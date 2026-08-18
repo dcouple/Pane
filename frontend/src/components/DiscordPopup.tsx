@@ -21,16 +21,13 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
     const loadPreference = async () => {
       if (window.electron?.invoke) {
         try {
-          console.log('[Discord] Loading hide_discord preference...');
           // SAFETY: The named IPC/API channel contract establishes this response payload type.
           const result = await window.electron.invoke('preferences:get', 'hide_discord') as IPCResponse<string>;
-          console.log('[Discord] Preference result:', result);
           
           if (result?.success) {
             // Handle null (preference doesn't exist) as false
             const shouldHide = result.data === 'true';
             setDontShowAgain(shouldHide);
-            console.log('[Discord] Set dontShowAgain to:', shouldHide);
           } else {
             console.error('[Discord] Failed to load preference:', result?.error);
           }
@@ -158,9 +155,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
                   try {
                     // SAFETY: The named IPC/API channel contract establishes this response payload type.
                     const result = await window.electron.invoke('preferences:set', 'hide_discord', newValue ? 'true' : 'false') as IPCResponse;
-                    if (result?.success) {
-                      console.log('[Discord] Successfully set hide_discord preference to', newValue);
-                    } else {
+                    if (!result?.success) {
                       console.error('[Discord] Failed to set preference:', result?.error);
                     }
                   } catch (error) {
