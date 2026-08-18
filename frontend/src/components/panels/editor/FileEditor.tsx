@@ -8,6 +8,7 @@ import type { ItemInstance } from '@headless-tree/core';
 import { MonacoErrorBoundary } from '../../MonacoErrorBoundary';
 import { useTheme } from '../../../contexts/ThemeContext';
 import { debounce } from '../../../utils/debounce';
+import { devLog } from '../../../utils/console';
 import { MarkdownPreview } from '../../MarkdownPreview';
 import { NotebookPreview } from './NotebookPreview';
 import { useResizablePanel } from '../../../hooks/useResizablePanel';
@@ -18,7 +19,6 @@ import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { boundary, decodeBoundary } from '../../../../../shared/validation/boundaryDecoder';
-
 interface LanguageByExtension {
   [extension: string]: string;
 }
@@ -1193,7 +1193,7 @@ export function FileEditor({
   onFileChange,
   onStateChange 
 }: FileEditorProps) {
-  console.log('[FileEditor] Mounting with:', {
+  devLog.debug('[FileEditor] Mounting with:', {
     sessionId,
     initialFilePath,
     initialState,
@@ -1238,7 +1238,7 @@ export function FileEditor({
   
   // Wrap onResize callback to avoid recreating
   const handleTreeResize = useCallback((width: number) => {
-    console.log('[FileEditor] Tree resized to:', width);
+    devLog.debug('[FileEditor] Tree resized to:', width);
     if (onStateChange) {
       onStateChange({ fileTreeWidth: width });
     }
@@ -1581,16 +1581,16 @@ export function FileEditor({
 
   // Memoize the tree state change handler to prevent infinite loops
   const handleTreeStateChange = useCallback((treeState: { expandedDirs: string[]; searchQuery: string; showSearch: boolean }) => {
-    console.log('[FileEditor] handleTreeStateChange called with:', treeState);
+    devLog.debug('[FileEditor] handleTreeStateChange called with:', treeState);
     if (onStateChange) {
-      console.log('[FileEditor] Calling onStateChange');
+      devLog.debug('[FileEditor] Calling onStateChange');
       onStateChange({
         expandedDirs: treeState.expandedDirs,
         searchQuery: treeState.searchQuery,
         showSearch: treeState.showSearch
       });
     } else {
-      console.log('[FileEditor] No onStateChange callback');
+      devLog.debug('[FileEditor] No onStateChange callback');
     }
   }, [onStateChange]);
   
@@ -1601,7 +1601,7 @@ export function FileEditor({
       try {
         const model = editorRef.current?.getModel();
         if (model) {
-          console.log('[FileEditor] Disposing Monaco model');
+          devLog.debug('[FileEditor] Disposing Monaco model');
           model.dispose();
         }
       } catch (error) {

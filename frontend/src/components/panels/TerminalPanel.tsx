@@ -483,7 +483,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
         if (webglAddonRef.current !== addon) return;
         if (terminal.rows > 0) terminal.refresh(0, terminal.rows - 1);
       }));
-      console.log('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
+      devLog.debug('[TerminalPanel] WebGL renderer loaded for panel', panel.id);
       forwardToMainLog('info', `[TerminalPanel] WebGL renderer loaded for panel ${panel.id} reason=${reason}`);
     } catch (e) {
       console.warn('[TerminalPanel] WebGL renderer failed for panel', panel.id, ', using DOM renderer:', e);
@@ -911,14 +911,14 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
 
         // Check if already initialized on backend
         const initialized = await window.electronAPI.invoke('panels:checkInitialized', panel.id);
-        console.log('[TerminalPanel] Panel already initialized?', initialized);
+        devLog.debug('[TerminalPanel] Panel already initialized?', initialized);
 
         // Store terminal state for THIS panel only (not in global variable)
         let terminalStateForThisPanel: TerminalRestoreState | null = null;
 
         if (!initialized) {
           // Initialize backend PTY process
-          console.log('[TerminalPanel] Initializing backend PTY process...');
+          devLog.debug('[TerminalPanel] Initializing backend PTY process...');
           // Use workingDirectory and sessionId if available, but don't require them
           // Use actual container dimensions for PTY spawn (falls back to 80x30 on backend)
           const containerRect = terminalRef.current?.getBoundingClientRect();
@@ -930,14 +930,14 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             cols: estimatedCols && estimatedCols >= 20 ? estimatedCols : undefined,
             rows: estimatedRows && estimatedRows >= 5 ? estimatedRows : undefined,
           });
-          console.log('[TerminalPanel] Backend PTY process initialized');
+          devLog.debug('[TerminalPanel] Backend PTY process initialized');
         } else {
           // Terminal is already initialized, get its state to restore scrollback
-          console.log('[TerminalPanel] Restoring terminal state from backend...');
+          devLog.debug('[TerminalPanel] Restoring terminal state from backend...');
           const terminalState = await window.electronAPI.invoke('terminal:getState', panel.id);
           if (terminalState && selectTerminalRestoreContent(terminalState)) {
             // We'll restore this to the terminal after it's created
-            console.log('[TerminalPanel] Found terminal restore state');
+            devLog.debug('[TerminalPanel] Found terminal restore state');
             // Store for restoration after terminal is created - LOCAL to this initialization
             terminalStateForThisPanel = terminalState;
           }
@@ -963,7 +963,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
         if (disposed) return;
 
         // Create XTerm instance
-        console.log('[TerminalPanel] Creating XTerm instance...');
+        devLog.debug('[TerminalPanel] Creating XTerm instance...');
         terminal = new Terminal({
           fontSize: terminalFontSize,
           fontFamily: buildTerminalFontFamily(terminalFontFamily),
@@ -989,11 +989,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             },
           },
         });
-        console.log('[TerminalPanel] XTerm instance created:', !!terminal);
+        devLog.debug('[TerminalPanel] XTerm instance created:', !!terminal);
 
         fitAddon = new FitAddon();
         terminal.loadAddon(fitAddon);
-        console.log('[TerminalPanel] FitAddon loaded');
+        devLog.debug('[TerminalPanel] FitAddon loaded');
 
         // Intercept app-level shortcuts before xterm consumes them
         terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -1152,9 +1152,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
 
         // FIX: Additional check before DOM manipulation
         if (terminalRef.current && !disposed) {
-          console.log('[TerminalPanel] Opening terminal in DOM element:', terminalRef.current);
+          devLog.debug('[TerminalPanel] Opening terminal in DOM element:', terminalRef.current);
           terminal.open(terminalRef.current);
-          console.log('[TerminalPanel] Terminal opened in DOM');
+          devLog.debug('[TerminalPanel] Terminal opened in DOM');
 
           // Wait for fonts to load before fitting so xterm measures correct cell dimensions
           await Promise.all([
@@ -1168,10 +1168,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           // full activation refresh rebuilds anything that still parsed mismatched.
           if ((terminalRef.current?.getBoundingClientRect().width ?? 0) >= MIN_VIABLE_RECT_PX) {
             fitAddon.fit();
-            console.log('[TerminalPanel] FitAddon fitted');
+            devLog.debug('[TerminalPanel] FitAddon fitted');
           } else {
             needsFullActivationRefreshRef.current = true;
-            console.log('[TerminalPanel] Skipped mount fit (hidden container); armed full activation refresh');
+            devLog.debug('[TerminalPanel] Skipped mount fit (hidden container); armed full activation refresh');
           }
           terminal.options.theme = getTerminalTheme();
 
@@ -1188,7 +1188,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               });
               terminal.loadAddon(webLinksAddon);
               webLinksAddonRef.current = webLinksAddon;
-              console.log('[TerminalPanel] WebLinksAddon loaded for panel', panel.id);
+              devLog.debug('[TerminalPanel] WebLinksAddon loaded for panel', panel.id);
             }
           } catch (e) {
             console.warn('[TerminalPanel] WebLinksAddon failed to load for panel', panel.id, ':', e);
@@ -1202,7 +1202,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               const serializeAddon = new SerializeAddonImpl();
               terminal.loadAddon(serializeAddon);
               serializeAddonRef.current = serializeAddon;
-              console.log('[TerminalPanel] SerializeAddon loaded for panel', panel.id);
+              devLog.debug('[TerminalPanel] SerializeAddon loaded for panel', panel.id);
             }
           } catch (e) {
             console.warn('[TerminalPanel] SerializeAddon failed to load for panel', panel.id, ':', e);
@@ -1217,7 +1217,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               terminal.loadAddon(unicode11Addon);
               terminal.unicode.activeVersion = '11';
               unicode11AddonRef.current = unicode11Addon;
-              console.log('[TerminalPanel] Unicode11Addon loaded for panel', panel.id);
+              devLog.debug('[TerminalPanel] Unicode11Addon loaded for panel', panel.id);
             }
           } catch (e) {
             console.warn('[TerminalPanel] Unicode11Addon failed to load for panel', panel.id, ':', e);
@@ -1307,7 +1307,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           if (terminalStateForThisPanel) {
             const restore = selectTerminalRestoreContent(terminalStateForThisPanel);
             if (restore) {
-              console.log('[TerminalPanel] Restoring', restore.content.length, 'chars from', restore.source);
+              devLog.debug('[TerminalPanel] Restoring', restore.content.length, 'chars from', restore.source);
               terminal.write(restore.content);
             }
             // Force WebGL renderer to redraw after buffer content changes.
@@ -1540,7 +1540,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           hotActivationEligibleRef.current = false;
           hotActivationPendingRef.current = false;
           setIsInitialized(true);
-          console.log('[TerminalPanel] Terminal initialization complete, isInitialized set to true');
+          devLog.debug('[TerminalPanel] Terminal initialization complete, isInitialized set to true');
 
           // Core write-and-ack: consume a raw output chunk (already filtered by
           // source/panelId on the dispatcher side). Installed into a ref so the
@@ -1582,7 +1582,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             // Ignore session terminal output, which has no panelId.
           };
           const unsubscribeOutput = window.electronAPI.events.onTerminalOutput(legacyOutputHandler);
-          console.log('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
+          devLog.debug('[TerminalPanel] Subscribed to terminal output events for panel:', panel.id);
 
           // Detect full-screen TUI apps (vim, htop, etc.) via alternate screen buffer.
           // This is universal — all well-behaved TUI apps enter alternate screen via
@@ -1852,7 +1852,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
       if (xtermRef.current) {
         const terminalToDispose = xtermRef.current;
         try {
-          console.log('[TerminalPanel] Disposing terminal for panel:', panel.id);
+          devLog.debug('[TerminalPanel] Disposing terminal for panel:', panel.id);
           terminalToDispose.dispose();
         } catch (e) {
           console.warn('Error disposing terminal:', e);

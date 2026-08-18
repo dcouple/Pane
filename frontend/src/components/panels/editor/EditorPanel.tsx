@@ -3,6 +3,7 @@ import { FileEditor } from './FileEditor';
 import { ExplorerPanelState, ToolPanel } from '../../../../../shared/types/panels';
 import { panelApi } from '../../../services/panelApi';
 import { debounce, type DebouncedFunction } from '../../../utils/debounce';
+import { devLog } from '../../../utils/console';
 import { usePanelStore } from '../../../stores/panelStore';
 
 interface ExplorerPanelProps {
@@ -23,7 +24,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     [panel.state?.customState]
   );
   
-  console.log('[ExplorerPanel] Rendering with state:', {
+  devLog.debug('[ExplorerPanel] Rendering with state:', {
     panelId: panel.id,
     isActive,
     explorerState,
@@ -56,7 +57,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   // Initialize debounced function immediately to prevent warning
   if (!debouncedUpdateRef.current) {
     debouncedUpdateRef.current = debounce((panelId: string, sessionId: string, newState: Partial<ExplorerPanelState>) => {
-      console.log('[ExplorerPanel] Saving state to database:', {
+      devLog.debug('[ExplorerPanel] Saving state to database:', {
         panelId,
         newState
       });
@@ -83,12 +84,12 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
         }
       };
 
-      console.log('[ExplorerPanel] Full state being saved:', stateToSave);
+      devLog.debug('[ExplorerPanel] Full state being saved:', stateToSave);
 
       panelApi.updatePanel(panelId, {
         state: stateToSave
       }).then(() => {
-        console.log('[ExplorerPanel] State saved successfully');
+        devLog.debug('[ExplorerPanel] State saved successfully');
       }).catch(err => {
         console.error('[ExplorerPanel] Failed to update explorer panel state:', err);
       });
@@ -99,7 +100,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   useEffect(() => {
     return () => {
       if (debouncedUpdateRef.current?.flush) {
-        console.log('[ExplorerPanel] Flushing pending saves on unmount');
+        devLog.debug('[ExplorerPanel] Flushing pending saves on unmount');
         debouncedUpdateRef.current.flush(); // Save any pending changes before unmount
       }
     };
@@ -109,7 +110,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   useEffect(() => {
     const handleSessionSwitch = () => {
       if (debouncedUpdateRef.current?.flush) {
-        console.log('[ExplorerPanel] Flushing pending saves on session switch');
+        devLog.debug('[ExplorerPanel] Flushing pending saves on session switch');
         debouncedUpdateRef.current.flush(); // Save before switching sessions
       }
     };
@@ -123,18 +124,18 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   // Flush pending saves when panel becomes inactive
   useEffect(() => {
     if (!isActive && debouncedUpdateRef.current?.flush) {
-      console.log('[ExplorerPanel] Panel became inactive, flushing pending saves');
+      devLog.debug('[ExplorerPanel] Panel became inactive, flushing pending saves');
       debouncedUpdateRef.current.flush(); // Save immediately when switching away
     }
   }, [isActive]);
 
   // Save state changes to the panel
   const handleStateChange = useCallback((newState: Partial<ExplorerPanelState>) => {
-    console.log('[ExplorerPanel] handleStateChange called with:', newState);
+    devLog.debug('[ExplorerPanel] handleStateChange called with:', newState);
 
     // Call debounced update - it will fetch fresh state from the store
     if (debouncedUpdateRef.current) {
-      console.log('[ExplorerPanel] Calling debounced update');
+      devLog.debug('[ExplorerPanel] Calling debounced update');
       debouncedUpdateRef.current(panel.id, panel.sessionId, newState);
     } else {
       console.error('[ExplorerPanel] No debounced update function!');
