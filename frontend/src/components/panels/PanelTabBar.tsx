@@ -102,7 +102,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCommand, setCustomCommand] = useState('');
   const customInputRef = useRef<HTMLInputElement>(null);
-  const [, setFocusedDropdownIndex] = useState(-1);
+  const [focusedDropdownIndex, setFocusedDropdownIndex] = useState(-1);
   const dropdownItemsRef = useRef<(HTMLButtonElement | HTMLInputElement | null)[]>([]);
 
   // Activity status moved to PanelTabStrip
@@ -249,15 +249,17 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   useEffect(() => {
     if (showDropdown) {
       setFocusedDropdownIndex(0);
-      // Focus first item after render
-      requestAnimationFrame(() => {
-        dropdownItemsRef.current[0]?.focus();
-      });
     } else {
       setFocusedDropdownIndex(-1);
       dropdownItemsRef.current = [];
     }
   }, [showDropdown]);
+
+  useEffect(() => {
+    if (showDropdown && focusedDropdownIndex >= 0) {
+      dropdownItemsRef.current[focusedDropdownIndex]?.focus();
+    }
+  }, [focusedDropdownIndex, showDropdown]);
 
   // Handle keyboard navigation in dropdown
   const handleDropdownKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -270,17 +272,13 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       case 'ArrowDown':
         e.preventDefault();
         setFocusedDropdownIndex(prev => {
-          const next = prev < itemCount - 1 ? prev + 1 : 0;
-          items[next]?.focus();
-          return next;
+          return prev < itemCount - 1 ? prev + 1 : 0;
         });
         break;
       case 'ArrowUp':
         e.preventDefault();
         setFocusedDropdownIndex(prev => {
-          const next = prev > 0 ? prev - 1 : itemCount - 1;
-          items[next]?.focus();
-          return next;
+          return prev > 0 ? prev - 1 : itemCount - 1;
         });
         break;
       case 'Escape':
