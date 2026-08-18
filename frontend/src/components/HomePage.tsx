@@ -314,7 +314,7 @@ export function HomePage() {
                     type="button"
                     className="flex cursor-pointer items-center gap-2 rounded-md border border-border-secondary bg-surface-tertiary px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
                   >
-                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta' }[theme]}</span>
+                    <span>{{ light: 'Light (sharp)', 'light-rounded': 'Light (rounded)', dark: 'Dark (sharp)', oled: 'OLED Black (sharp)', dusk: 'Dusk', 'dusk-oled': 'Dusk (OLED)', forge: 'Forge', ember: 'Ember', aurora: 'Aurora', 'night-owl': 'Night Owl', 'night-owl-oled': 'Night Owl (OLED)', terracotta: 'Terracotta', 'amber-crt': 'Amber CRT', teletype: 'Teletype', 'dot-matrix': 'Dot Matrix' }[theme]}</span>
                     <ChevronDown className="w-3 h-3 text-text-tertiary" />
                   </button>
                 }
@@ -328,6 +328,9 @@ export function HomePage() {
                   { id: 'ember', label: 'Ember', onClick: () => setTheme('ember') },
                   { id: 'aurora', label: 'Aurora', onClick: () => setTheme('aurora') },
                   { id: 'terracotta', label: 'Terracotta', onClick: () => setTheme('terracotta') },
+                  { id: 'amber-crt', label: 'Amber CRT', description: 'Amber phosphor on black-brown glass', onClick: () => setTheme('amber-crt') },
+                  { id: 'teletype', label: 'Teletype', description: 'Brown ink on warm paper, burnt-orange accents', onClick: () => setTheme('teletype') },
+                  { id: 'dot-matrix', label: 'Dot Matrix', description: 'Monochrome LCD green on olive-black', onClick: () => setTheme('dot-matrix') },
                   { id: 'light', label: 'Light (sharp)', onClick: () => setTheme('light') },
                   { id: 'dark', label: 'Dark (sharp)', onClick: () => setTheme('dark') },
                   { id: 'oled', label: 'OLED Black (sharp)', onClick: () => setTheme('oled') },

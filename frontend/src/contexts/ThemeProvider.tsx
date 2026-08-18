@@ -1,22 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
-import { ThemeContext, type Theme } from './themeContextValue';
+import { THEME_CLASSES, ThemeContext, type Theme } from './themeContextValue';
 
-const VALID_THEMES = new Set<string>(['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta']);
-const THEME_CLASSES = {
-  'light': ['light'],
-  'light-rounded': ['light', 'light-rounded'],
-  'dark': ['dark'],
-  'oled': ['dark', 'oled'],
-  'dusk': ['dark', 'dusk'],
-  'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
-  'forge': ['dark', 'forge'],
-  'ember': ['dark', 'ember'],
-  'aurora': ['dark', 'aurora'],
-  'night-owl': ['dark', 'night-owl'],
-  'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
-  'terracotta': ['dark', 'terracotta'],
-} satisfies Record<Theme, string[]>;
+const VALID_THEMES = new Set<string>(Object.keys(THEME_CLASSES));
+const ALL_THEME_CLASSES = [...new Set(Object.values(THEME_CLASSES).flat())];
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -51,8 +38,8 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const body = document.body;
 
     // Remove ALL theme classes from both root and body
-    root.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
-    body.classList.remove('light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta');
+    root.classList.remove(...ALL_THEME_CLASSES);
+    body.classList.remove(...ALL_THEME_CLASSES);
 
     const themeClasses = THEME_CLASSES[theme];
     root.classList.add(...themeClasses);

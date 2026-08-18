@@ -4,7 +4,7 @@ import type { DiffHighlighter } from '@git-diff-view/shiki';
 import { getDiffViewHighlighter } from '@git-diff-view/shiki';
 import { FileText, ChevronRight, ChevronDown, ExternalLink, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import type { DiffViewerProps, FileDiff } from '../../../types/diff';
-import { useTheme } from '../../../contexts/ThemeContext';
+import { isLightTheme, useTheme } from '../../../contexts/ThemeContext';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
 import "@git-diff-view/react/styles/diff-view.css";
 
@@ -141,7 +141,7 @@ export interface DiffViewerHandle {
 
 const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, className = '', sessionId, onOpenInEditor }, ref) => {
   const { theme } = useTheme();
-  const isDarkMode = theme !== 'light' && theme !== 'light-rounded';
+  const isDarkMode = !isLightTheme(theme);
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set());
   const [highlighter, setHighlighter] = useState<DiffHighlighter | null>(null);
   const viewerRef = useRef<HTMLDivElement>(null);

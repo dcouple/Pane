@@ -13,7 +13,7 @@ import { ImmediateToggle, SegmentedControl } from '../SettingsControls';
 import type { SettingsPersistence } from '../useSettingsPersistence';
 import type { AppConfig } from '../../../types/config';
 
-const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string }> = [
+const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string; description?: string }> = [
   { id: 'light-rounded', label: 'Light (rounded)' },
   { id: 'light', label: 'Light (sharp)' },
   { id: 'forge', label: 'Forge' },
@@ -24,6 +24,9 @@ const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string }> = [
   { id: 'ember', label: 'Ember' },
   { id: 'aurora', label: 'Aurora' },
   { id: 'terracotta', label: 'Terracotta' },
+  { id: 'amber-crt', label: 'Amber CRT', description: 'Amber phosphor on black-brown glass' },
+  { id: 'teletype', label: 'Teletype', description: 'Brown ink on warm paper, burnt-orange accents' },
+  { id: 'dot-matrix', label: 'Dot Matrix', description: 'Monochrome LCD green on olive-black' },
   { id: 'dark', label: 'Dark (sharp)' },
   { id: 'oled', label: 'OLED Black (sharp)' },
 ];
@@ -54,7 +57,7 @@ export function AppearanceSettings({ persistence }: { persistence: SettingsPersi
             >
               <SelectTrigger aria-label="Theme"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {THEMES.map((theme) => <SelectItem key={theme.id} value={theme.id}>{theme.label}</SelectItem>)}
+                {THEMES.map((theme) => <SelectItem key={theme.id} value={theme.id} description={theme.description}>{theme.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>

@@ -16,12 +16,36 @@
   --vscode-editorWidget-foreground: #DFE1E5 !important;
 }
 
+/* Amber CRT theme overrides */
+:root.amber-crt {
+  --vscode-editor-background: #0c0905 !important;
+  --vscode-editor-foreground: #f0d9a8 !important;
+  --vscode-editorWidget-background: #0c0905 !important;
+  --vscode-editorWidget-foreground: #f0d9a8 !important;
+}
+
+/* Dot Matrix theme overrides */
+:root.dot-matrix {
+  --vscode-editor-background: #0a0d08 !important;
+  --vscode-editor-foreground: #dcecb0 !important;
+  --vscode-editorWidget-background: #0a0d08 !important;
+  --vscode-editorWidget-foreground: #dcecb0 !important;
+}
+
 /* Light theme overrides */
 :root.light {
   --vscode-editor-background: #ffffff !important; /* white */
   --vscode-editor-foreground: #1e2026 !important; /* gray-900 */
   --vscode-editorWidget-background: #ffffff !important;
   --vscode-editorWidget-foreground: #1e2026 !important;
+}
+
+/* Teletype theme overrides — ink on paper */
+:root.teletype {
+  --vscode-editor-background: #fbf8f1 !important;
+  --vscode-editor-foreground: #2b2116 !important;
+  --vscode-editorWidget-background: #fbf8f1 !important;
+  --vscode-editorWidget-foreground: #2b2116 !important;
 }
 
 /* Additional Monaco editor style overrides */
