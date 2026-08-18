@@ -1458,12 +1458,6 @@ export class DatabaseService {
         .run();
       console.log("[Database] Added tool_type column to sessions table");
 
-      // Best effort: mark known Codex sessions (removed model-based detection)
-      try {
-        // No longer detecting based on model since it's panel-level now
-      } catch (error) {
-        // Migration error handling removed - empty try/catch serves no purpose
-      }
     }
 
     // Add user_preferences table to store all user preferences
@@ -4933,7 +4927,7 @@ export class DatabaseService {
         if (data.cache_creation_input_tokens) {
           totalCacheCreationTokens += data.cache_creation_input_tokens;
         }
-      } catch (e) {
+      } catch {
         // Ignore parse errors
       }
     });
@@ -5108,7 +5102,7 @@ export class DatabaseService {
               }
             });
           }
-        } catch (e) {
+        } catch {
           // Ignore parse errors
         }
       },

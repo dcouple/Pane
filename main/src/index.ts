@@ -732,7 +732,7 @@ async function createWindow() {
           originalError('[Main] Failed to send error to renderer:', e);
         }
       }
-    } catch (e) {
+    } catch {
       // If anything fails in the error handler, fall back to original
       originalError.apply(console, args);
     } finally {

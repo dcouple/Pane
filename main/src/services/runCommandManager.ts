@@ -369,7 +369,7 @@ export class RunCommandManager extends EventEmitter {
         // Also try to kill via pty interface as fallback
         try {
           runProcess.process.kill();
-        } catch (error) {
+        } catch {
           // Process might already be dead
         }
       } catch (error) {
@@ -493,7 +493,7 @@ export class RunCommandManager extends EventEmitter {
           for (const childPid of descendantPids) {
             try {
               await execAsync(`taskkill /F /PID ${childPid}`);
-            } catch (e) {
+            } catch {
               // Process might already be dead
             }
           }
@@ -524,7 +524,7 @@ export class RunCommandManager extends EventEmitter {
         // Now forcefully kill the main process
         try {
           process.kill(pid, 'SIGKILL');
-        } catch (error) {
+        } catch {
           // Process might already be dead
         }
         
@@ -541,7 +541,7 @@ export class RunCommandManager extends EventEmitter {
           try {
             await execAsync(`kill -9 ${childPid}`);
             this.logger?.verbose(`Killed descendant process ${childPid}`);
-          } catch (error) {
+          } catch {
             this.logger?.verbose(`Process ${childPid} already terminated`);
           }
         }
@@ -549,7 +549,7 @@ export class RunCommandManager extends EventEmitter {
         // Final cleanup attempt using pkill
         try {
           await execAsync(`pkill -9 -P ${pid}`);
-        } catch (error) {
+        } catch {
           // Ignore errors - processes might already be dead
         }
       }
@@ -612,7 +612,7 @@ export class RunCommandManager extends EventEmitter {
               allDescendants.push(...pgPids);
             }
           }
-        } catch (error) {
+        } catch {
           // Process might be gone already
         }
       }
@@ -626,7 +626,7 @@ export class RunCommandManager extends EventEmitter {
           try {
             await execAsync(`kill -9 ${pid}`);
             this.logger?.info(`Killed escaped process ${pid}`);
-          } catch (error) {
+          } catch {
             // Process might already be dead
           }
         }

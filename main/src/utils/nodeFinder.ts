@@ -81,7 +81,7 @@ export async function findNodeExecutable(): Promise<string> {
               return fullPath;
             }
           }
-        } catch (e) {
+        } catch {
           // Ignore errors reading directories
         }
       }

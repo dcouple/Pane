@@ -264,7 +264,7 @@ export class TerminalSessionManager extends EventEmitter {
         // Also try to kill via pty interface as fallback
         try {
           session.pty.kill();
-        } catch (error) {
+        } catch {
           // PTY might already be dead
         }
       } catch (error) {
@@ -361,7 +361,7 @@ export class TerminalSessionManager extends EventEmitter {
           for (const childPid of descendantPids) {
             try {
               await execAsync(`taskkill /F /PID ${childPid}`);
-            } catch (e) {
+            } catch {
               // Process might already be dead
             }
           }
@@ -384,7 +384,7 @@ export class TerminalSessionManager extends EventEmitter {
           if (!isNaN(foundPgid)) {
             pgid = foundPgid;
           }
-        } catch (error) {
+        } catch {
           // Use original PID as fallback
         }
         
@@ -400,7 +400,7 @@ export class TerminalSessionManager extends EventEmitter {
         // Now forcefully kill the main process
         try {
           process.kill(pid, 'SIGKILL');
-        } catch (error) {
+        } catch {
           // Process might already be dead
         }
         
@@ -415,7 +415,7 @@ export class TerminalSessionManager extends EventEmitter {
         for (const childPid of descendantPids) {
           try {
             await execAsync(`kill -9 ${childPid}`);
-          } catch (error) {
+          } catch {
             // Process already terminated
           }
         }
@@ -423,7 +423,7 @@ export class TerminalSessionManager extends EventEmitter {
         // Final cleanup attempt using pkill
         try {
           await execAsync(`pkill -9 -P ${pid}`);
-        } catch (error) {
+        } catch {
           // Ignore errors - processes might already be dead
         }
       }

@@ -49,7 +49,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
              content.includes('/worktree-*/') ||
              content.includes('worktrees/') ||
              content.includes('worktree-*/');
-    } catch (error) {
+    } catch {
       // If .gitignore doesn't exist, that's ok - it's not found
       return false;
     }

@@ -751,7 +751,7 @@ export class TaskQueue {
           const worktreePath = resolver.join(project.path, worktreeFolder, uniqueWorktreeName);
           worktreePathExists = fs.existsSync(resolver.toFileSystem(worktreePath));
         }
-      } catch (e) {
+      } catch {
         // Ignore filesystem check errors
       }
       

@@ -265,7 +265,7 @@ class LogsManager {
             // Recursively get children of this process
             descendants.push(...this.getAllDescendantPids(pid));
           }
-        } catch (e) {
+        } catch {
           // If that fails, try macOS/BSD style
           try {
             // Get all processes with their parent PIDs, then filter
@@ -279,12 +279,12 @@ class LogsManager {
               // Recursively get children of this process
               descendants.push(...this.getAllDescendantPids(pid));
             }
-          } catch (e2) {
+          } catch {
             // Could not find children
           }
         }
       }
-    } catch (error) {
+    } catch {
       // Command might fail if no children exist, which is fine
     }
     
@@ -366,7 +366,7 @@ class LogsManager {
         for (const targetPid of allPids) {
           try {
             process.kill(targetPid, 'SIGKILL');
-          } catch (error: unknown) {
+          } catch {
             // Process might already be dead or inaccessible
           }
         }

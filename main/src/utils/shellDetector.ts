@@ -134,7 +134,7 @@ export class ShellDetector {
             return { path: shellPath, name, args: this.getShellArgs(name) };
           }
         }
-      } catch (error) {
+      } catch {
         // Ignore errors and continue with fallback detection
       }
     }
@@ -152,7 +152,7 @@ export class ShellDetector {
           return { path: shellPath, name, args: this.getShellArgs(name) };
         }
       }
-    } catch (error) {
+    } catch {
       // Ignore errors and continue with fallback detection
     }
 

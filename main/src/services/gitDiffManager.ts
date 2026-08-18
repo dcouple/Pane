@@ -379,7 +379,7 @@ export class GitDiffManager {
   getCurrentCommitHash(worktreePath: string, commandRunner: CommandRunner): string {
     try {
       return commandRunner.exec('git rev-parse HEAD', worktreePath).trim();
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get current commit hash in ${worktreePath}`);
       return '';
     }
@@ -442,7 +442,7 @@ export class GitDiffManager {
   private getGitCommitDiff(worktreePath: string, fromCommit: string, toCommit: string, commandRunner: CommandRunner): string {
     try {
       return commandRunner.exec(`git diff ${fromCommit}..${toCommit}`, worktreePath);
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get git commit diff in ${worktreePath}`);
       return '';
     }
@@ -459,7 +459,7 @@ export class GitDiffManager {
       
       // Combine both lists
       return [...trackedFiles, ...untrackedFiles];
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get changed files in ${worktreePath}`);
       return [];
     }
@@ -469,7 +469,7 @@ export class GitDiffManager {
     try {
       const output = commandRunner.exec(`git diff --name-only ${fromCommit}..${toCommit}`, worktreePath);
       return output.trim().split('\n').filter((f: string) => f.length > 0);
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get changed files between commits in ${worktreePath}`);
       return [];
     }
@@ -509,7 +509,7 @@ export class GitDiffManager {
       }
       
       return trackedStats;
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get diff stats in ${worktreePath}`);
       return { additions: 0, deletions: 0, filesChanged: 0 };
     }
@@ -520,7 +520,7 @@ export class GitDiffManager {
       const output = commandRunner.exec(`git diff --stat ${fromCommit}..${toCommit}`, worktreePath);
       
       return this.parseDiffStats(output);
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get commit diff stats in ${worktreePath}`);
       return { additions: 0, deletions: 0, filesChanged: 0 };
     }
@@ -549,7 +549,7 @@ export class GitDiffManager {
     try {
       const output = commandRunner.exec('git status --porcelain', worktreePath);
       return output.trim().length > 0;
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not check git status in ${worktreePath}`);
       return false;
     }
@@ -568,7 +568,7 @@ export class GitDiffManager {
       }
       
       return output.trim().split('\n').filter((f: string) => f && f.trim().length > 0);
-    } catch (error) {
+    } catch {
       this.logger?.warn(`Could not get untracked files in ${worktreePath}`);
       return [];
     }

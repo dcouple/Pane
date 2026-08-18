@@ -70,7 +70,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = ({ chart, id }) =
             // @ts-expect-error - Mermaid API types don't include reset method
             window.mermaid.mermaidAPI.reset();
           }
-        } catch (e) {
+        } catch {
           // Ignore reset errors
         }
       }

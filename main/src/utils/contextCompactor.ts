@@ -168,7 +168,7 @@ export class ProgrammaticCompactor {
               }
             });
           }
-        } catch (e) {
+        } catch {
           // Skip invalid JSON
         }
       }
@@ -194,7 +194,7 @@ export class ProgrammaticCompactor {
               }
             });
           }
-        } catch (e) {
+        } catch {
           // Skip invalid JSON
         }
       }
@@ -220,7 +220,7 @@ export class ProgrammaticCompactor {
               }
             });
           }
-        } catch (e) {
+        } catch {
           // Skip invalid JSON
         }
       }
@@ -274,7 +274,7 @@ export class ProgrammaticCompactor {
               }
             }
           }
-        } catch (e) {
+        } catch {
           // Skip invalid JSON
         }
       }

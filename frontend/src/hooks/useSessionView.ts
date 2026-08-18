@@ -1425,7 +1425,7 @@ export const useSessionView = (
     try {
       await API.sessions.rename(activeSession.id, editName.trim());
       setIsEditingName(false);
-    } catch (error) {
+    } catch {
       alert('Failed to rename pane');
       setEditName(activeSession.name);
       setIsEditingName(false);

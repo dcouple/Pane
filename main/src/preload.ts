@@ -350,7 +350,7 @@ try {
       console.error('Failed to dispatch browser-panel:popup-requested to window:', e);
     }
   });
-} catch (e) {
+} catch {
   // Ignore if IPC is not available for some reason
 }
 

@@ -1702,7 +1702,7 @@ export function registerSessionHandlers(
               ? diff.files_changed 
               : JSON.parse(diff.files_changed);
             files.forEach((file: string) => filesModified.add(file));
-          } catch (e) {
+          } catch {
             // Ignore parse errors
           }
         }

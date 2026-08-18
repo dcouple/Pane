@@ -237,7 +237,7 @@ export class WorktreeManager {
       try {
         await commandRunner.execAsync(`git rev-parse --is-inside-work-tree`, projectPath);
         isGitRepo = true;
-      } catch (error) {
+      } catch {
         // Initialize git repository
         await commandRunner.execAsync(`git init`, projectPath);
       }
@@ -285,7 +285,7 @@ export class WorktreeManager {
       try {
         await commandRunner.execAsync(`git rev-parse HEAD`, projectPath);
         hasCommits = true;
-      } catch (error) {
+      } catch {
         // Repository has no commits yet, create initial commit
         // Use cross-platform approach without shell operators
         try {

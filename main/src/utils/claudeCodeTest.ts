@@ -72,7 +72,7 @@ function getAugmentedPath(): string {
               paths.push(fullPath);
             }
           }
-        } catch (e) {
+        } catch {
           // Ignore errors reading directories
         }
       }
@@ -124,7 +124,7 @@ export async function testClaudeCodeAvailability(customClaudePath?: string): Pro
       try {
         await fs.promises.access(customClaudePath, fs.constants.X_OK);
         claudePath = customClaudePath;
-      } catch (error) {
+      } catch {
         console.error(`[ClaudeTest] Custom Claude path is not accessible or not executable: ${customClaudePath}`);
         return { 
           available: false, 

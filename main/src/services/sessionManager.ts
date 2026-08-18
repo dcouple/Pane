@@ -227,7 +227,7 @@ export class SessionManager extends EventEmitter {
       const panel = this.db.getPanel(panelId);
       const customState = parseTerminalResumeState(panel?.state?.customState);
       return customState?.agentSessionId;
-    } catch (e) {
+    } catch {
       return undefined;
     }
   }
@@ -1542,7 +1542,7 @@ export class SessionManager extends EventEmitter {
           descendants.push(...this.getAllDescendantPids(pid));
         }
       }
-    } catch (error) {
+    } catch {
       // Command might fail if no children exist, which is fine
     }
     
@@ -1662,7 +1662,7 @@ export class SessionManager extends EventEmitter {
               try {
                 process.kill('SIGKILL');
                 addSessionLog(sessionId, 'info', `[Sent SIGKILL to process ${process.pid}]`, 'System');
-              } catch (error) {
+              } catch {
                 // Process might already be dead
                 addSessionLog(sessionId, 'info', `[Process ${process.pid} already terminated]`, 'System');
               }

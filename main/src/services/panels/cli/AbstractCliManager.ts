@@ -755,7 +755,7 @@ export abstract class AbstractCliManager extends EventEmitter {
               scriptPath = foundScript;
               this.logger?.verbose(`[${this.getCliToolName()}] Found script at: ${scriptPath}`);
             }
-          } catch (e) {
+          } catch {
             // If we can't find the script helper, just use the command as-is
             this.logger?.verbose(`[${this.getCliToolName()}] Using command directly for Node.js invocation`);
           }
@@ -1248,7 +1248,7 @@ export abstract class AbstractCliManager extends EventEmitter {
         }
 
         processInfo.push({ pid, name: name || 'unknown' });
-      } catch (error) {
+      } catch {
         processInfo.push({ pid, name: 'unknown' });
       }
     }
@@ -1277,7 +1277,7 @@ export abstract class AbstractCliManager extends EventEmitter {
           for (const childPid of descendantPids) {
             try {
               await this.execAsync(`taskkill /F /PID ${childPid}`);
-            } catch (e) {
+            } catch {
               // Process might already be dead
             }
           }
@@ -1303,7 +1303,7 @@ export abstract class AbstractCliManager extends EventEmitter {
         // Force kill
         try {
           process.kill(pid, 'SIGKILL');
-        } catch (error) {
+        } catch {
           // Process might already be dead
         }
 
@@ -1318,7 +1318,7 @@ export abstract class AbstractCliManager extends EventEmitter {
           try {
             await this.execAsync(`kill -9 ${childPid}`);
             this.logger?.verbose(`[${this.getCliToolName()}] Killed descendant process ${childPid}`);
-          } catch (error) {
+          } catch {
             this.logger?.verbose(`[${this.getCliToolName()}] Process ${childPid} already terminated`);
           }
         }
@@ -1326,7 +1326,7 @@ export abstract class AbstractCliManager extends EventEmitter {
         // Final cleanup attempt
         try {
           await this.execAsync(`pkill -9 -P ${pid}`);
-        } catch (error) {
+        } catch {
           // Ignore errors - processes might already be dead
         }
       }
@@ -1361,7 +1361,7 @@ export abstract class AbstractCliManager extends EventEmitter {
       if (cliProcess) {
         cliProcess.process.kill();
       }
-    } catch (error) {
+    } catch {
       // Process might already be dead
     }
 

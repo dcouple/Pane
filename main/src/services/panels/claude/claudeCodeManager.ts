@@ -322,7 +322,7 @@ export class ClaudeCodeManager extends AbstractCliManager {
         data: jsonMessage,
         timestamp: new Date()
       });
-    } catch (error) {
+    } catch {
       // If not valid JSON, treat as regular output
       this.logger?.verbose(`Raw output from panel ${panelId} (session ${sessionId}): ${data.substring(0, 200)}`);
 

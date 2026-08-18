@@ -71,7 +71,7 @@ export const useSessionPreferencesStore = create<SessionPreferencesStore>((set, 
       } else {
         set({ error: response.error || 'Failed to load session preferences', isLoading: false });
       }
-    } catch (error) {
+    } catch {
       set({ error: 'Failed to load session preferences', isLoading: false });
     }
   },
@@ -105,7 +105,7 @@ export const useSessionPreferencesStore = create<SessionPreferencesStore>((set, 
         // Revert on failure
         set({ preferences: currentPreferences, error: response.error || 'Failed to save preferences' });
       }
-    } catch (error) {
+    } catch {
       // Revert on failure
       set({ preferences: currentPreferences, error: 'Failed to save preferences' });
     }
