@@ -720,12 +720,12 @@ export function registerRunpaneHandlers(
     }));
   });
 
-  commandRegistry.register('runpane:panels:output', async (request: PaneCommandValue): Promise<RunpanePanelOutputResult> => {
-    return withRunpaneAction(services, 'panels:output', {}, () => {
+  commandRegistry.register('runpane:panels:output', async (request: unknown): Promise<RunpanePanelOutputResult> => {
+    return withRunpaneAction(services, 'panels:output', {}, async () => {
       const normalized = parsePanelOutputRequest(request);
       const panel = resolvePanel(normalized.panelId);
       const limit = normalized.limit ?? DEFAULT_PANEL_OUTPUT_LIMIT;
-      const scrollbackResult = panel.type === 'terminal' ? panelScrollbackOutput(panel, limit) : null;
+      const scrollbackResult = panel.type === 'terminal' ? await panelScrollbackOutput(panel, limit) : null;
 
       if (scrollbackResult) {
         return {
@@ -2092,7 +2092,21 @@ function outputToText(output: SessionOutput): string {
   }
 }
 
-function panelScrollbackOutput(panel: ToolPanel, limit: number): { text: string; hasMore: boolean; timestamp: string } | null {
+async function panelScrollbackOutput(panel: ToolPanel, limit: number): Promise<{ text: string; hasMore: boolean; timestamp: string } | null> {
+  const timestamp = toIsoString(panel.metadata.lastActiveAt) ?? new Date().toISOString();
+
+  // Prefer the live screen emulator. Its rendered buffer applies cursor motions
+  // in place, so callers building agent context never receive the overlapping
+  // fragment corruption (e.g. "Workingorking•rking") that ANSI-stripping the raw
+  // append log produces for in-place repaints (spinners, progress bars, TUIs).
+  // Request one extra line so hasMore reflects truncation.
+  const clean = await terminalPanelManager.getCleanTerminalScrollback(panel.id, limit + 1);
+  if (clean !== null) {
+    const cleanLines = clean.split('\n');
+    const hasMore = cleanLines.length > limit;
+    return { text: cleanLines.slice(-limit).join('\n'), hasMore, timestamp };
+  }
+
   const rawScrollback = getPanelScrollback(panel);
   if (!rawScrollback) {
     return null;
@@ -2106,7 +2120,6 @@ function panelScrollbackOutput(panel: ToolPanel, limit: number): { text: string;
   const allLines = stripped.split('\n');
   const hasMore = allLines.length > limit;
   const text = allLines.slice(-limit).join('\n');
-  const timestamp = toIsoString(panel.metadata.lastActiveAt) ?? new Date().toISOString();
 
   return { text, hasMore, timestamp };
 }
