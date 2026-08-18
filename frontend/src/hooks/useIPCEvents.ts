@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useSessionStore } from '../stores/sessionStore';
 import { useErrorStore } from '../stores/errorStore';
 import { usePanelStore } from '../stores/panelStore';
 import { useConfigStore } from '../stores/configStore';
 import { panelApi } from '../services/panelApi';
 import { API } from '../utils/api';
+import { devLog } from '../utils/console';
 import type { Session, SessionOutput, GitStatus } from '../types/session';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 
@@ -108,7 +109,7 @@ export function useIPCEvents() {
   const { showError } = useErrorStore();
   
   // Create throttled handlers for git status events (with drain support)
-  const gitStatusLoadingRef = useRef(
+  const [gitStatusLoading] = useState(() =>
     createThrottledWithDrain(
       (data: { sessionId: string }) => {
         // Validate event has required session context
@@ -125,9 +126,9 @@ export function useIPCEvents() {
       100,
       (data) => data.sessionId,
     )
-  ).current;
+  );
 
-  const gitStatusUpdatedRef = useRef(
+  const [gitStatusUpdated] = useState(() =>
     createThrottledWithDrain(
       (data: { sessionId: string; gitStatus: GitStatus }) => {
         // Validate event has required session context
@@ -137,7 +138,7 @@ export function useIPCEvents() {
 
         // Only log significant status changes in production
         if (data.gitStatus.state !== 'clean' || process.env.NODE_ENV === 'development') {
-          console.log(`[useIPCEvents] Git status: ${data.sessionId.substring(0, 8)} → ${data.gitStatus.state}`);
+          devLog.debug(`[useIPCEvents] Git status: ${data.sessionId.substring(0, 8)} → ${data.gitStatus.state}`);
         }
 
         // Update the store and clear loading state
@@ -152,7 +153,7 @@ export function useIPCEvents() {
       100,
       (data) => data.sessionId,
     )
-  ).current;
+  );
   
   useEffect(() => {
     // Check if we're in Electron environment
@@ -166,7 +167,7 @@ export function useIPCEvents() {
 
     // Listen for session events
     const unsubscribeSessionCreated = window.electronAPI.events.onSessionCreated((session: Session) => {
-      console.log('[useIPCEvents] Session created:', session.id);
+      devLog.debug('[useIPCEvents] Session created:', session.id);
       addSession({...session, output: session.output || [], jsonMessages: session.jsonMessages || []});
       // Set git status as loading for new sessions
       useSessionStore.getState().setGitStatusLoading(session.id, true);
@@ -174,7 +175,7 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeSessionCreated);
 
     const unsubscribeSessionUpdated = window.electronAPI.events.onSessionUpdated((session: Session) => {
-      console.log('[useIPCEvents] Session updated event received:', {
+      devLog.debug('[useIPCEvents] Session updated event received:', {
         id: session.id,
         status: session.status
       });
@@ -207,13 +208,13 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeSessionUpdated);
 
     const unsubscribeSessionDeleted = window.electronAPI.events.onSessionDeleted((sessionData) => {
-      console.log('[useIPCEvents] Session deleted:', sessionData);
+      devLog.debug('[useIPCEvents] Session deleted:', sessionData);
       const sessionId = sessionData.id;
 
       // Drain any pending throttled git status calls for this session
       if (sessionId) {
-        gitStatusLoadingRef.drain(sessionId);
-        gitStatusUpdatedRef.drain(sessionId);
+        gitStatusLoading.drain(sessionId);
+        gitStatusUpdated.drain(sessionId);
       }
 
       // Dispatch a custom event for other components to listen to
@@ -231,9 +232,9 @@ export function useIPCEvents() {
       const withStatus = sessions.filter(s => s.gitStatus).length;
       const withoutStatus = sessions.filter(s => !s.gitStatus).length;
       if (withoutStatus > 0) {
-        console.log(`[useIPCEvents] Sessions: ${sessions.length} total (${withStatus} with status, ${withoutStatus} pending)`);
+        devLog.debug(`[useIPCEvents] Sessions: ${sessions.length} total (${withStatus} with status, ${withoutStatus} pending)`);
       } else {
-        console.log(`[useIPCEvents] Sessions: ${sessions.length} loaded`);
+        devLog.debug(`[useIPCEvents] Sessions: ${sessions.length} loaded`);
       }
       
       const sessionsWithJsonMessages = sessions.map(session => ({
@@ -256,7 +257,7 @@ export function useIPCEvents() {
         return; // Ignore invalid events
       }
 
-      console.log(`[useIPCEvents] Received session output for ${output.sessionId}, type: ${output.type}`);
+      devLog.debug(`[useIPCEvents] Received session output for ${output.sessionId}, type: ${output.type}`);
 
       // Just emit custom event to notify that new output is available
       // Include panelId (if present) so panel-based views can react precisely
@@ -271,7 +272,7 @@ export function useIPCEvents() {
         return;
       }
 
-      console.log(`[useIPCEvents] Received terminal output for ${output.sessionId}`);
+      devLog.debug(`[useIPCEvents] Received terminal output for ${output.sessionId}`);
       const terminalOutput = 'output' in output
         ? { sessionId: output.sessionId, type: 'stdout' as const, data: output.output }
         : output;
@@ -285,7 +286,7 @@ export function useIPCEvents() {
         return; // Ignore invalid events
       }
 
-      console.log(`[useIPCEvents] Output available notification for session ${info.sessionId}`);
+      devLog.debug(`[useIPCEvents] Output available notification for session ${info.sessionId}`);
       
       // Emit custom event to notify that output is available
       window.dispatchEvent(new CustomEvent('session-output-available', {
@@ -318,11 +319,11 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeZombieProcesses);
 
     // Listen for git status updates (throttled)
-    const unsubscribeGitStatusUpdated = window.electronAPI.events.onGitStatusUpdated(gitStatusUpdatedRef.throttled);
+    const unsubscribeGitStatusUpdated = window.electronAPI.events.onGitStatusUpdated(gitStatusUpdated.throttled);
     unsubscribeFunctions.push(unsubscribeGitStatusUpdated);
 
     // Listen for git status loading events (throttled)
-    const unsubscribeGitStatusLoading = window.electronAPI.events.onGitStatusLoading?.(gitStatusLoadingRef.throttled);
+    const unsubscribeGitStatusLoading = window.electronAPI.events.onGitStatusLoading?.(gitStatusLoading.throttled);
     if (unsubscribeGitStatusLoading) {
       unsubscribeFunctions.push(unsubscribeGitStatusLoading);
     }
@@ -349,7 +350,7 @@ export function useIPCEvents() {
     }
 
     const unsubscribeGitStatusUpdatedBatch = window.electronAPI.events.onGitStatusUpdatedBatch?.((updates: Array<{ sessionId: string; status: GitStatus }>) => {
-      console.log(`[useIPCEvents] Git status batch update: ${updates.length} sessions`);
+      devLog.debug(`[useIPCEvents] Git status batch update: ${updates.length} sessions`);
       const state = useSessionStore.getState();
       const knownIds = new Set(state.sessions.map((s) => s.id));
       const filtered = updates.filter((entry) => knownIds.has(entry.sessionId));
@@ -370,7 +371,7 @@ export function useIPCEvents() {
 
     // Listen for spotlight events
     const unsubscribeSpotlightStatus = window.electronAPI.events.onSpotlightStatusChanged?.((data: { sessionId: string; projectId: number; active: boolean }) => {
-      console.log(`[useIPCEvents] Spotlight status changed: session=${data.sessionId}, project=${data.projectId}, active=${data.active}`);
+      devLog.debug(`[useIPCEvents] Spotlight status changed: session=${data.sessionId}, project=${data.projectId}, active=${data.active}`);
       useSessionStore.getState().setSpotlightActive(data.sessionId, data.projectId, data.active);
     });
     if (unsubscribeSpotlightStatus) {
@@ -434,7 +435,7 @@ export function useIPCEvents() {
       // Clean up all event listeners
       unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
     };
-  }, [setSessions, loadSessions, addSession, updateSession, deleteSession, showError, gitStatusLoadingRef, gitStatusUpdatedRef]);
+  }, [setSessions, loadSessions, addSession, updateSession, deleteSession, showError, gitStatusLoading, gitStatusUpdated]);
   
   // Return a mock socket object for compatibility
   return {

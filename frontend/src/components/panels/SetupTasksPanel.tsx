@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, ChevronRight, GitBranch, FileCode } from 'lucide-
 import { useSession } from '../../contexts/SessionContext';
 import { panelApi } from '../../services/panelApi';
 import { API } from '../../utils/api';
+import { devLog } from '../../utils/console';
 import type { SetupTasksPanelState } from '../../../../shared/types/panels';
 import { CreateSessionDialog } from '../CreateSessionDialog';
 
@@ -90,7 +91,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
         return;
       }
       
-      console.log('[SetupTasksPanel] Successfully set run script to ./pane-run.sh');
+      devLog.debug('[SetupTasksPanel] Successfully set run script to ./pane-run.sh');
       
       // Now open the session dialog with the specific prompt
       setShowSessionDialog(true);
@@ -104,7 +105,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
   const addToGitignore = useCallback(async () => {
     if (!projectId) return;
     
-    console.log('[SetupTasksPanel] Starting addToGitignore for project:', projectId);
+    devLog.debug('[SetupTasksPanel] Starting addToGitignore for project:', projectId);
     
     // Show confirmation dialog
     const confirmed = window.confirm(
@@ -117,24 +118,24 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
     );
     
     if (!confirmed) {
-      console.log('[SetupTasksPanel] User cancelled .gitignore update');
+      devLog.debug('[SetupTasksPanel] User cancelled .gitignore update');
       return;
     }
     
     try {
       // Read current .gitignore or create empty if doesn't exist
-      console.log('[SetupTasksPanel] Reading .gitignore...');
+      devLog.debug('[SetupTasksPanel] Reading .gitignore...');
       const readResponse = await window.electronAPI.file.readProject(parseInt(projectId), '.gitignore');
-      console.log('[SetupTasksPanel] Read response:', readResponse);
+      devLog.debug('[SetupTasksPanel] Read response:', readResponse);
       
       let content = '';
       
       if (readResponse.success && readResponse.data) {
         // SAFETY: The named IPC/API channel contract establishes this response payload type.
         content = readResponse.data as string;
-        console.log('[SetupTasksPanel] Current .gitignore length:', content.length);
+        devLog.debug('[SetupTasksPanel] Current .gitignore length:', content.length);
       } else if (readResponse.success && readResponse.data === null) {
-        console.log('[SetupTasksPanel] .gitignore does not exist, will create it');
+        devLog.debug('[SetupTasksPanel] .gitignore does not exist, will create it');
       } else {
         console.error('[SetupTasksPanel] Failed to read .gitignore:', readResponse.error);
         alert(`Failed to read .gitignore: ${readResponse.error}`);
@@ -155,12 +156,12 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
         if (!content.includes(pattern.replace('\n# ', '')) && !content.includes(pattern)) {
           linesToAdd.push(pattern);
           needsUpdate = true;
-          console.log('[SetupTasksPanel] Will add pattern:', pattern);
+          devLog.debug('[SetupTasksPanel] Will add pattern:', pattern);
         }
       }
       
       if (needsUpdate) {
-        console.log('[SetupTasksPanel] Updating .gitignore with patterns:', linesToAdd);
+        devLog.debug('[SetupTasksPanel] Updating .gitignore with patterns:', linesToAdd);
         
         // Ensure file ends with newline
         if (content && !content.endsWith('\n')) {
@@ -170,10 +171,10 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
         // Add the patterns
         content += linesToAdd.join('\n') + '\n';
         
-        console.log('[SetupTasksPanel] Writing updated content to .gitignore...');
+        devLog.debug('[SetupTasksPanel] Writing updated content to .gitignore...');
         // Write back to file
         const writeResponse = await window.electronAPI.file.writeProject(parseInt(projectId), '.gitignore', content);
-        console.log('[SetupTasksPanel] Write response:', writeResponse);
+        devLog.debug('[SetupTasksPanel] Write response:', writeResponse);
         
         if (!writeResponse.success) {
           console.error('[SetupTasksPanel] Failed to write .gitignore:', writeResponse.error);
@@ -181,10 +182,10 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
           return;
         }
         
-        console.log('[SetupTasksPanel] Successfully updated .gitignore');
+        devLog.debug('[SetupTasksPanel] Successfully updated .gitignore');
         
         // Now create a git commit with just the .gitignore file
-        console.log('[SetupTasksPanel] Creating git commit...');
+        devLog.debug('[SetupTasksPanel] Creating git commit...');
         
         // Stage the .gitignore file
         const gitAddResponse = await window.electronAPI.git.executeProject(
@@ -198,7 +199,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
           return;
         }
         
-        console.log('[SetupTasksPanel] Staged .gitignore file');
+        devLog.debug('[SetupTasksPanel] Staged .gitignore file');
         
         // Create the commit
         const commitMessage = 'Add Pane worktree patterns to .gitignore\n\n' +
@@ -215,7 +216,7 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
         if (!gitCommitResponse.success) {
           // Check if it's because there's nothing to commit (file unchanged)
           if (gitCommitResponse.error?.includes('nothing to commit') || gitCommitResponse.error?.includes('no changes added')) {
-            console.log('[SetupTasksPanel] No changes to commit (file was already up to date)');
+            devLog.debug('[SetupTasksPanel] No changes to commit (file was already up to date)');
             alert('The .gitignore file was already up to date. No commit needed.');
           } else {
             console.error('[SetupTasksPanel] Failed to commit:', gitCommitResponse.error);
@@ -224,11 +225,11 @@ const SetupTasksPanel: React.FC<SetupTasksPanelProps> = ({ panelId, isActive }) 
           return;
         }
         
-        console.log('[SetupTasksPanel] Successfully created commit');
+        devLog.debug('[SetupTasksPanel] Successfully created commit');
         alert('Successfully added worktree patterns to .gitignore and created a commit!');
         
       } else {
-        console.log('[SetupTasksPanel] No update needed, patterns already exist');
+        devLog.debug('[SetupTasksPanel] No update needed, patterns already exist');
         alert('Worktree patterns are already in .gitignore. No changes needed.');
       }
     } catch (error) {
