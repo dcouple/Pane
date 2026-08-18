@@ -5,6 +5,7 @@ import {
   createInitialFeedbackDialogState,
   executeFeedbackSubmission,
   feedbackDialogReducer,
+  openFeedbackUrl,
 } from './feedbackDialogState';
 
 const request: SubmitFeedbackRequest = {
@@ -52,11 +53,40 @@ describe('FeedbackDialog state', () => {
       title: request.title,
       body: request.body,
     };
+    expect(action).toBeDefined();
+    if (!action) return;
     const failed = feedbackDialogReducer(filled, action);
 
     expect(failed.title).toBe(request.title);
     expect(failed.body).toBe(request.body);
     expect(failed.status).toBe('error');
     expect(failed.fallbackUrl).toBe(fallbackUrl);
+  });
+
+  it('ignores a submission response after the dialog closes', async () => {
+    const abortController = new AbortController();
+    let resolveSubmission: ((value: {
+      success: true;
+      data: { issueUrl: string };
+    }) => void) | undefined;
+    const submit = vi.fn().mockReturnValue(new Promise(resolve => {
+      resolveSubmission = resolve;
+    }));
+    const actionPromise = executeFeedbackSubmission(request, submit, abortController.signal);
+
+    abortController.abort();
+    resolveSubmission?.({
+      success: true,
+      data: { issueUrl: 'https://github.com/dcouple/Pane/issues/999' },
+    });
+
+    await expect(actionPromise).resolves.toBeUndefined();
+  });
+
+  it('surfaces resolved failures from the system browser IPC', async () => {
+    await expect(openFeedbackUrl(
+      'https://github.com/dcouple/Pane/issues/new',
+      vi.fn().mockResolvedValue({ success: false, error: 'Browser launch failed' }),
+    )).resolves.toBe('Browser launch failed');
   });
 });

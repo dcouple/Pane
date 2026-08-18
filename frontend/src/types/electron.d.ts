@@ -101,7 +101,7 @@ interface ElectronAPI {
   };
 
   // System utilities
-  openExternal: (url: string) => Promise<void>;
+  openExternal: (url: string) => Promise<IPCResponse>;
 
   feedback: {
     submit: (request: import('../../../shared/types/feedback').SubmitFeedbackRequest) => Promise<IPCResponse<
@@ -564,7 +564,7 @@ interface ElectronAPI {
 
 // Additional electron interface for IPC event listeners
 interface ElectronInterface {
-  openExternal: (url: string) => Promise<void>;
+  openExternal: (url: string) => Promise<IPCResponse>;
   // Generic invoke method. Daemon-owned channels route through the main-process
   // daemon bridge while adapter-only channels stay on direct Electron IPC.
   // oxlint-disable-next-line typescript/no-explicit-any -- Generic IPC bridge that returns different types based on channel

@@ -1,7 +1,7 @@
 import { execFile } from 'child_process';
 import type { IpcMain } from 'electron';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
-import { tmpdir } from 'os';
+import { release, tmpdir } from 'os';
 import { join } from 'path';
 import type {
   FeedbackType,
@@ -51,6 +51,10 @@ export interface FeedbackRuntime {
   platform: NodeJS.Platform;
   arch: string;
   electronVersion: string;
+  chromiumVersion: string;
+  nodeVersion: string;
+  osVersion: string;
+  isPackaged: boolean;
 }
 
 function runCommand(
@@ -107,8 +111,12 @@ function buildFeedbackBody(
     `- Version: ${version}`,
     `- Commit: ${commit}`,
     `- Platform: ${runtime.platform}`,
+    `- OS version: ${runtime.osVersion}`,
     `- Architecture: ${runtime.arch}`,
     `- Electron: ${runtime.electronVersion}`,
+    `- Chromium: ${runtime.chromiumVersion}`,
+    `- Node.js: ${runtime.nodeVersion}`,
+    `- App mode: ${runtime.isPackaged ? 'packaged' : 'development'}`,
     '',
     'Filed from Pane in-app feedback',
   ].join('\n');
@@ -238,12 +246,16 @@ export async function submitFeedbackIssue(
 
 export function registerFeedbackHandlers(
   ipcMain: IpcMain,
-  runtime: { app: { getVersion(): string } },
+  runtime: { app: { getVersion(): string; isPackaged: boolean } },
 ): void {
   ipcMain.handle('feedback:submit', (_event, request: PaneCommandValue) => submitFeedbackIssue(request, {
     appVersion: runtime.app.getVersion(),
     platform: process.platform,
     arch: process.arch,
     electronVersion: process.versions.electron || 'unknown',
+    chromiumVersion: process.versions.chrome || 'unknown',
+    nodeVersion: process.versions.node,
+    osVersion: release(),
+    isPackaged: runtime.app.isPackaged,
   }));
 }

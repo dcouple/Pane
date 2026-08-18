@@ -11,6 +11,7 @@ import {
   createInitialFeedbackDialogState,
   executeFeedbackSubmission,
   feedbackDialogReducer,
+  openFeedbackUrl,
 } from './feedbackDialogState';
 
 interface FeedbackDialogProps {
@@ -20,15 +21,18 @@ interface FeedbackDialogProps {
 
 export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
   const [state, dispatch] = useReducer(feedbackDialogReducer, undefined, createInitialFeedbackDialogState);
-  const [appDetails, setAppDetails] = useState<FeedbackAppDetails>();
+  const appDetailsRef = useRef<FeedbackAppDetails | undefined>(undefined);
+  const submissionAbortRef = useRef<AbortController | undefined>(undefined);
   const [isLoadingAppDetails, setIsLoadingAppDetails] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
+    const submissionAbort = new AbortController();
+    submissionAbortRef.current = submissionAbort;
     dispatch({ type: 'reset' });
-    setAppDetails(undefined);
+    appDetailsRef.current = undefined;
     setIsLoadingAppDetails(true);
     void window.electronAPI.getVersionInfo().then(response => {
       if (cancelled || !response.success || !response.data) return;
@@ -37,17 +41,19 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
         gitCommit: boundary.optional(boundary.string),
       }));
       if (!data) return;
-      setAppDetails({
+      appDetailsRef.current = {
         version: data.current ?? '',
         gitCommit: data.gitCommit ?? '',
-      });
+      };
     }).catch(() => {
-      if (!cancelled) setAppDetails(undefined);
+      if (!cancelled) appDetailsRef.current = undefined;
     }).finally(() => {
       if (!cancelled) setIsLoadingAppDetails(false);
     });
     return () => {
       cancelled = true;
+      submissionAbort.abort();
+      if (submissionAbortRef.current === submissionAbort) submissionAbortRef.current = undefined;
     };
   }, [isOpen]);
 
@@ -60,16 +66,17 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
       title: state.title,
       body: state.body,
       includeAppDetails: state.includeAppDetails,
-      appDetails,
-    }, window.electronAPI.feedback.submit);
-    dispatch(action);
+      appDetails: appDetailsRef.current,
+    }, window.electronAPI.feedback.submit, submissionAbortRef.current?.signal);
+    if (action) dispatch(action);
   };
 
   const openExternal = (url: string) => {
-    void window.electronAPI.openExternal(url).catch(error => {
+    void openFeedbackUrl(url, window.electronAPI.openExternal).then(error => {
+      if (!error) return;
       dispatch({
         type: 'submit-error',
-        error: error instanceof Error ? error.message : 'Could not open the browser.',
+        error,
         fallbackUrl: state.fallbackUrl,
       });
     });
@@ -172,7 +179,7 @@ export function FeedbackDialog({ isOpen, onClose }: FeedbackDialogProps) {
                 onChange={event => dispatch({ type: 'set-include-details', value: event.target.checked })}
                 className="mt-0.5 h-4 w-4 rounded border-border-primary accent-interactive"
               />
-              <span>Include app details <span>(version, commit, platform, architecture, and Electron version)</span></span>
+              <span>Include app details <span>(version, commit, OS, architecture, and runtime versions)</span></span>
             </label>
 
             {state.status === 'error' && (

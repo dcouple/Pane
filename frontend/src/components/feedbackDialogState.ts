@@ -73,9 +73,11 @@ interface FeedbackResponse {
 export async function executeFeedbackSubmission(
   request: SubmitFeedbackRequest,
   submit: (request: SubmitFeedbackRequest) => Promise<FeedbackResponse>,
-): Promise<FeedbackDialogAction> {
+  signal?: AbortSignal,
+): Promise<FeedbackDialogAction | undefined> {
   try {
     const response = await submit(request);
+    if (signal?.aborted) return undefined;
     if (response.success && response.data && 'issueUrl' in response.data) {
       return { type: 'submit-success', issueUrl: response.data.issueUrl };
     }
@@ -88,9 +90,27 @@ export async function executeFeedbackSubmission(
       fallbackUrl,
     };
   } catch (error) {
+    if (signal?.aborted) return undefined;
     return {
       type: 'submit-error',
       error: error instanceof Error ? error.message : 'Pane could not create the GitHub issue.',
     };
+  }
+}
+
+interface OpenExternalResponse {
+  success: boolean;
+  error?: string;
+}
+
+export async function openFeedbackUrl(
+  url: string,
+  openExternal: (url: string) => Promise<OpenExternalResponse>,
+): Promise<string | undefined> {
+  try {
+    const response = await openExternal(url);
+    return response.success ? undefined : response.error || 'Could not open the browser.';
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Could not open the browser.';
   }
 }

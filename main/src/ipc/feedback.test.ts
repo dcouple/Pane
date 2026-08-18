@@ -12,6 +12,10 @@ const runtime = {
   platform: 'darwin' as const,
   arch: 'arm64',
   electronVersion: '41.0.0',
+  chromiumVersion: '142.0.0.0',
+  nodeVersion: '24.0.0',
+  osVersion: '25.6.0',
+  isPackaged: true,
 };
 
 const request: SubmitFeedbackRequest = {
@@ -50,6 +54,10 @@ describe('feedback IPC', () => {
     expect(bodyFromFile).toContain(request.body);
     expect(bodyFromFile).toContain('## App details');
     expect(bodyFromFile).toContain('- Commit: e3c4fa7 (modified)');
+    expect(bodyFromFile).toContain('- OS version: 25.6.0');
+    expect(bodyFromFile).toContain('- Chromium: 142.0.0.0');
+    expect(bodyFromFile).toContain('- Node.js: 24.0.0');
+    expect(bodyFromFile).toContain('- App mode: packaged');
     expect(bodyFromFile).toContain('Filed from Pane in-app feedback');
     const allArgs = runner.mock.calls.flatMap(call => call[1]);
     expect(allArgs).not.toContain(request.body);
