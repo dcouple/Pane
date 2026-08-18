@@ -95,6 +95,41 @@ describe('TerminalStateEmulator', () => {
     expect(emulator.getOscTitle()).toBe('✳ Ready');
   });
 
+  it('renders in-place cursor-motion repaints as clean scrollback text', async () => {
+    const emulator = new TerminalStateEmulator(20, 5);
+
+    // A spinner that repaints its status line in place via cursor-column moves
+    // (not carriage returns). The raw append log of these bytes, once ANSI is
+    // stripped, collapses into overlapping garbage ("Workingorking•rking...").
+    // The emulator applies the motions in place, so the rendered line is clean.
+    emulator.write('Working');
+    emulator.write('\x1b[7D\x1b[KWorking.');
+    emulator.write('\x1b[8D\x1b[KWorking..');
+    emulator.write('\x1b[9D\x1b[KWorking...');
+    await emulator.waitForIdle();
+
+    const text = emulator.getScrollbackText();
+    expect(text).toBe('Working...');
+    expect(text).not.toContain('orking•');
+    emulator.dispose();
+  });
+
+  it('limits scrollback text to the last N rendered lines', async () => {
+    const emulator = new TerminalStateEmulator(40, 3);
+    for (let i = 1; i <= 10; i++) {
+      emulator.write(`line-${String(i).padStart(2, '0')}\r\n`);
+    }
+    await emulator.waitForIdle();
+
+    const lastThree = emulator.getScrollbackText(3);
+    expect(lastThree).toBe('line-08\nline-09\nline-10');
+
+    const all = emulator.getScrollbackText();
+    expect(all).toContain('line-01');
+    expect(all).toContain('line-10');
+    emulator.dispose();
+  });
+
   it('captures OSC title set via the OSC 0 form', async () => {
     const emulator = new TerminalStateEmulator(20, 5);
     emulator.write('\x1b]0;Action Required · Codex\x07');

@@ -123,19 +123,22 @@ export class TerminalStateEmulator {
 
     const buffer = this.terminal.buffer.active;
     const total = buffer.length;
-    const start = maxLines !== undefined && maxLines >= 0 && maxLines < total
-      ? total - maxLines
-      : 0;
     const lines: string[] = [];
 
-    for (let index = start; index < total; index += 1) {
+    for (let index = 0; index < total; index += 1) {
       lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
     }
 
+    // Trim trailing blank rows first so `maxLines` counts real content, not the
+    // empty rows below the cursor.
     while (lines.length > 0 && lines[lines.length - 1] === '') {
       lines.pop();
     }
-    return lines.join('\n');
+
+    const limited = maxLines !== undefined && maxLines >= 0 && maxLines < lines.length
+      ? lines.slice(lines.length - maxLines)
+      : lines;
+    return limited.join('\n');
   }
 
   /** Latest OSC window/icon title, preserved after dispose. */
