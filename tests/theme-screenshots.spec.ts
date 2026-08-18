@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { installElectronApiMock } from './electronApiMock';
@@ -11,10 +11,16 @@ import { installElectronApiMock } from './electronApiMock';
  * simulations for the colorblind-safe theme, and the Appearance picker
  * showing the three themes.
  *
- * Run: `PLAYWRIGHT_PORT=4523 pnpm test -- tests/theme-screenshots.spec.ts`
- * (a Vite dev server on that port is enough — the electron API is mocked).
+ * Run: `pnpm theme:screenshots` (uses playwright.themes.config.ts, which sets
+ * PANE_THEME_SCREENSHOTS=1 so the files land in screenshots/themes/). Under a
+ * plain `pnpm test` the same assertions run but screenshots go to the Playwright
+ * output directory. A Vite dev server is enough — the electron API is mocked.
  */
 
+// Committed evidence lives in screenshots/themes/. Only the dedicated
+// `pnpm theme:screenshots` config (playwright.themes.config.ts) sets
+// PANE_THEME_SCREENSHOTS, so a plain `pnpm test` never rewrites tracked PNGs.
+const WRITE_TO_REPO = process.env.PANE_THEME_SCREENSHOTS === '1';
 const OUTPUT_DIR = path.resolve(__dirname, '..', 'screenshots', 'themes');
 const A11Y_THEMES = ['colorblind-safe', 'low-fatigue', 'high-legibility'] as const;
 const PICKER_LABELS = ['Colorblind Safe', 'Low Fatigue', 'High Legibility'];
@@ -173,7 +179,7 @@ const combinedDiff = {
 
 // A realistic slice of terminal output: prompt, git status, a test summary and
 // a full 16-colour ANSI swatch so every terminal token is visible in the shot.
-const ESC = '[';
+const ESC = '\u001b[';
 const ansi = (code: string, text: string) => `${ESC}${code}m${text}${ESC}0m`;
 const swatchRow = (label: string, base: number) => {
   const names = ['blk', 'red', 'grn', 'ylw', 'blu', 'mag', 'cyn', 'wht'];
@@ -192,11 +198,11 @@ const terminalScrollback = [
   `  ${ansi('32', 'ok')}   ansi         tritanopia    ΔE  18.05  min 4.95:1`,
   `  ${ansi('2', '141/141 checks pass')}`,
   '',
-  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} pnpm test -- tests/theme-screenshots.spec.ts`,
-  `  ${ansi('32', '✓')} colorblind-safe  ${ansi('2', '(2.1s)')}`,
-  `  ${ansi('32', '✓')} low-fatigue      ${ansi('2', '(1.9s)')}`,
-  `  ${ansi('31', '✗')} high-legibility  ${ansi('2', '(0.4s)')}  ${ansi('33', 'warning:')} 1 flaky retry`,
-  `  ${ansi('1;32', '3 passed')} ${ansi('2', '·')} ${ansi('1;33', '1 warning')} ${ansi('2', '·')} ${ansi('1;31', '0 failed')}`,
+  `${ansi('1;32', '➜')} ${ansi('1;36', 'pane')} ${ansi('2', '# sample status lines (theme swatch, not a real run)')}`,
+  `  ${ansi('32', 'ok  ')} success   ${ansi('2', 'sample line in the success colour')}`,
+  `  ${ansi('33', 'warn')} warning   ${ansi('2', 'sample line in the warning colour')}`,
+  `  ${ansi('31', 'FAIL')} error     ${ansi('2', 'sample line in the error colour')}`,
+  `  ${ansi('1;32', 'bold green')} ${ansi('2', '·')} ${ansi('1;33', 'bold yellow')} ${ansi('2', '·')} ${ansi('1;31', 'bold red')} ${ansi('2', '·')} ${ansi('1;34', 'bold blue')}`,
   '',
   swatchRow('normal', 30),
   swatchRow('bright', 90),
@@ -267,20 +273,24 @@ async function applyCvdFilter(page: Page, kind: CvdKind | null): Promise<void> {
 
 test.use({ viewport: { width: 1440, height: 900 } });
 test.beforeAll(() => {
-  mkdirSync(OUTPUT_DIR, { recursive: true });
+  if (WRITE_TO_REPO) mkdirSync(OUTPUT_DIR, { recursive: true });
 });
+
+const outputFile = (testInfo: TestInfo, name: string): string => (
+  WRITE_TO_REPO ? path.join(OUTPUT_DIR, name) : testInfo.outputPath(name)
+);
 
 for (const theme of A11Y_THEMES) {
   test(`${theme}: main view screenshot`, async ({ page }, testInfo) => {
     await openSession(page, theme);
-    const file = path.join(OUTPUT_DIR, `${theme}.png`);
+    const file = outputFile(testInfo, `${theme}.png`);
     await page.screenshot({ path: file });
     await testInfo.attach(`${theme}.png`, { path: file, contentType: 'image/png' });
 
     if (theme === 'colorblind-safe') {
       for (const kind of CVD_KINDS) {
         await applyCvdFilter(page, kind);
-        const simFile = path.join(OUTPUT_DIR, `${theme}-${kind}.png`);
+        const simFile = outputFile(testInfo, `${theme}-${kind}.png`);
         await page.screenshot({ path: simFile });
         await testInfo.attach(`${theme}-${kind}.png`, { path: simFile, contentType: 'image/png' });
       }
@@ -301,10 +311,19 @@ for (const theme of A11Y_THEMES) {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${theme}\\b`));
     await expect(page.locator('html')).toHaveClass(/\bhigh-contrast\b/);
-    // The high-contrast block must actually change the muted token for this theme.
-    const muted = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--color-text-muted').trim());
-    expect(muted).not.toBe('');
-    testInfo.annotations.push({ type: 'muted-token', description: `${theme}+high-contrast → ${muted}` });
+    // The high-contrast block must actually change the muted token for this theme:
+    // read it with the class on, then with the class removed, and require a difference.
+    const [withHc, withoutHc] = await page.evaluate(() => {
+      const read = () => getComputedStyle(document.documentElement).getPropertyValue('--color-text-muted').trim();
+      const on = read();
+      document.documentElement.classList.remove('high-contrast');
+      const off = read();
+      document.documentElement.classList.add('high-contrast');
+      return [on, off];
+    });
+    expect(withHc).not.toBe('');
+    expect(withHc).not.toBe(withoutHc);
+    testInfo.annotations.push({ type: 'muted-token', description: `${theme}: ${withoutHc} → ${withHc} with high-contrast` });
   });
 }
 
@@ -335,7 +354,7 @@ test('appearance picker shows the three themes with descriptions', async ({ page
   }
   await page.getByRole('option', { name: /^High Legibility/ }).hover();
   await page.waitForTimeout(200);
-  const file = path.join(OUTPUT_DIR, 'appearance-picker.png');
+  const file = outputFile(testInfo, 'appearance-picker.png');
   await page.screenshot({ path: file });
   await testInfo.attach('appearance-picker.png', { path: file, contentType: 'image/png' });
 

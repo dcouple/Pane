@@ -24,7 +24,7 @@ const THEMES: Array<{ id: NonNullable<AppConfig['theme']>; label: string; descri
   { id: 'ember', label: 'Ember' },
   { id: 'aurora', label: 'Aurora' },
   { id: 'terracotta', label: 'Terracotta' },
-  { id: 'colorblind-safe', label: 'Colorblind Safe', description: 'Dark. Okabe-Ito status, diff and terminal colors — readable with deuteranopia, protanopia and tritanopia.' },
+  { id: 'colorblind-safe', label: 'Colorblind Safe', description: 'Dark. Okabe-Ito status, diff and terminal colors, readable with any color-vision deficiency.' },
   { id: 'low-fatigue', label: 'Low Fatigue', description: 'Warm sepia-dark for long sessions: low blue, no pure white, soft ≥4.5:1 text.' },
   { id: 'high-legibility', label: 'High Legibility', description: 'Light. 7:1+ body text, crisp 3:1 borders and focus rings, color only for state.' },
   { id: 'dark', label: 'Dark (sharp)' },

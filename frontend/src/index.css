@@ -926,12 +926,12 @@ body.light-rounded {
 /* Colorblind Safe — Okabe-Ito bluish green (add) vs vermillion (remove) */
 :root.colorblind-safe .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
   --diff-border--: #2a323b;
-  --diff-add-content--: #092220;
-  --diff-del-content--: #27190f;
-  --diff-add-lineNumber--: #08392f;
-  --diff-del-lineNumber--: #48260d;
-  --diff-add-content-highlight--: #064a3b;
-  --diff-del-content-highlight--: #60300a;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
   --diff-plain-content--: #0b0e12;
   --diff-expand-content--: #12161b;
   --diff-plain-lineNumber--: #12161b;
@@ -939,8 +939,8 @@ body.light-rounded {
   --diff-empty-content--: #12161b;
   --diff-plain-lineNumber-color--: #a5aeb8;
   --diff-expand-lineNumber-color--: #a5aeb8;
-  --diff-hunk-content--: #162530;
-  --diff-hunk-lineNumber--: #224052;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
   --diff-hunk-lineNumber-hover--: #56B4E9;
   --diff-hunk-content-color--: #a5aeb8;
   --diff-add-widget--: #0072B2;
@@ -950,12 +950,12 @@ body.light-rounded {
 /* Low Fatigue — sage (add) vs soft brick (remove) on sepia */
 :root.low-fatigue .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
   --diff-border--: #433b33;
-  --diff-add-content--: #313125;
-  --diff-del-content--: #392822;
-  --diff-add-lineNumber--: #454b35;
-  --diff-del-lineNumber--: #57382f;
-  --diff-add-content-highlight--: #545e41;
-  --diff-del-content-highlight--: #6d4338;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
   --diff-plain-content--: #1f1b17;
   --diff-expand-content--: #27221d;
   --diff-plain-lineNumber--: #27221d;
@@ -963,8 +963,8 @@ body.light-rounded {
   --diff-empty-content--: #27221d;
   --diff-plain-lineNumber-color--: #b3a48c;
   --diff-expand-lineNumber-color--: #b3a48c;
-  --diff-hunk-content--: #2f302e;
-  --diff-hunk-lineNumber--: #414847;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
   --diff-hunk-lineNumber-hover--: #d1a54a;
   --diff-hunk-content-color--: #b3a48c;
   --diff-add-widget--: #d1a54a;
@@ -974,12 +974,12 @@ body.light-rounded {
 /* High Legibility — stronger tints and 10:1 gutter numbers */
 :root.high-legibility .diff-tailwindcss-wrapper[data-theme] .diff-style-root {
   --diff-border--: #767676;
-  --diff-add-content--: #d3f2da;
-  --diff-del-content--: #fbdcdc;
-  --diff-add-lineNumber--: #a9e3b6;
-  --diff-del-lineNumber--: #f4b9b9;
-  --diff-add-content-highlight--: #8fd6a1;
-  --diff-del-content-highlight--: #f2a3a3;
+  --diff-add-content--: var(--color-diff-add-bg);
+  --diff-del-content--: var(--color-diff-del-bg);
+  --diff-add-lineNumber--: var(--color-diff-add-gutter);
+  --diff-del-lineNumber--: var(--color-diff-del-gutter);
+  --diff-add-content-highlight--: var(--color-diff-add-highlight);
+  --diff-del-content-highlight--: var(--color-diff-del-highlight);
   --diff-plain-content--: #ffffff;
   --diff-expand-content--: #f5f5f5;
   --diff-plain-lineNumber--: #f5f5f5;
@@ -987,8 +987,8 @@ body.light-rounded {
   --diff-empty-content--: #f5f5f5;
   --diff-plain-lineNumber-color--: #3b3b3b;
   --diff-expand-lineNumber-color--: #3b3b3b;
-  --diff-hunk-content--: #e4e8f5;
-  --diff-hunk-lineNumber--: #c8d1ee;
+  --diff-hunk-content--: var(--color-diff-hunk-bg);
+  --diff-hunk-lineNumber--: var(--color-diff-hunk-gutter);
   --diff-hunk-lineNumber-hover--: #1e40af;
   --diff-hunk-content-color--: #262626;
   --diff-add-widget--: #1e40af;

@@ -1839,7 +1839,7 @@
   --color-text-primary: var(--cbs-100);
   --color-text-secondary: var(--cbs-200);
   --color-text-tertiary: var(--cbs-300);
-  --color-text-muted: #8c97a4;   /* 5.4:1 on --cbs-900, 4.9:1 on --cbs-850 */
+  --color-text-muted: #8c97a4;   /* 6.1:1 on --cbs-900, 5.7:1 on --cbs-850 */
   --color-text-disabled: var(--cbs-500);
 
   /* Borders */
@@ -1871,8 +1871,10 @@
   --color-interactive-border: rgba(86, 180, 233, 0.5);
   --color-interactive-border-hover: rgba(86, 180, 233, 0.7);
 
-  --color-text-interactive-muted: #8c97a4;   /* 5.4:1 on --cbs-900 */
-  --color-focus-ring-subtle: rgba(86, 180, 233, 0.4);
+  --color-text-interactive-muted: #8c97a4;   /* 6.1:1 on --cbs-900 */
+  /* Painted focus ring (Select trigger, tabs, settings rows) — 0.85 alpha so it
+     clears 3:1 (WCAG 2.4.11/1.4.11) instead of the 0.4 wash other themes use */
+  --color-focus-ring-subtle: rgba(86, 180, 233, 0.85);
 
   /* Status — Okabe-Ito, exact values. Chips use black text (white fails on
      bluish green and vermillion). */
@@ -1949,6 +1951,18 @@
   /* Tab indicator — underline in sky blue */
   --tab-indicator-color: var(--okabe-sky);
   --tab-indicator-height: 3px;
+
+  /* Diff view (git-diff-view) — bluish green (add) vs vermillion (remove) mixed
+     over the editor bg at 26% / 40% / 52%. 26% is the lowest content tint whose
+     add/remove pair keeps ΔE ≥ 15 under protanopia (see check-theme-contrast). */
+  --color-diff-add-bg: #08332b;
+  --color-diff-del-bg: #40230d;
+  --color-diff-add-gutter: #074839;
+  --color-diff-del-gutter: #5c2e0b;
+  --color-diff-add-highlight: #055944;
+  --color-diff-del-highlight: #743809;
+  --color-diff-hunk-bg: #172934;
+  --color-diff-hunk-gutter: #234357;
 
   /* Terminal — Okabe-Ito ANSI mapping:
      red→vermillion, green→bluish green, yellow→yellow, blue→blue (lifted),
@@ -2031,7 +2045,7 @@
   --color-interactive-border-hover: rgba(209, 165, 74, 0.7);
 
   --color-text-interactive-muted: #a09079;   /* 5.1:1 on --lf-900 */
-  --color-focus-ring-subtle: rgba(209, 165, 74, 0.4);
+  --color-focus-ring-subtle: rgba(209, 165, 74, 0.85);   /* painted focus ring ≥ 3:1 */
 
   /* Status — desaturated warm set: sage / burnt orange / soft brick / dusty teal.
      Chips use dark text so no pure white ever lands on a saturated fill. */
@@ -2107,6 +2121,16 @@
   /* Tab indicator — gold underline */
   --tab-indicator-color: var(--lf-gold);
   --tab-indicator-height: 3px;
+
+  /* Diff view — sage (add) vs soft brick (remove) over the editor bg */
+  --color-diff-add-bg: #3a3d2d;
+  --color-diff-del-bg: #432c25;
+  --color-diff-add-gutter: #50583f;
+  --color-diff-del-gutter: #603a30;
+  --color-diff-add-highlight: #616c4d;
+  --color-diff-del-highlight: #764438;
+  --color-diff-hunk-bg: #313331;
+  --color-diff-hunk-gutter: #434b4b;
 
   /* Terminal — warm, muted, every color ≥ 4.5:1 on the sunken background;
      "blue" is a desaturated steel so blue-light stays low; bright white is
@@ -2189,7 +2213,7 @@
   --color-interactive-border: var(--hl-blue);
   --color-interactive-border-hover: var(--hl-blue-hover);
   --color-text-interactive-muted: var(--hl-600);
-  --color-focus-ring-subtle: rgba(30, 64, 175, 0.4);
+  --color-focus-ring-subtle: var(--hl-blue);   /* painted focus ring, opaque — 8.7:1 */
 
   /* Status — dark tones that clear 7:1 as text on white; white text on fills */
   --color-status-success: var(--hl-green);
@@ -2264,6 +2288,16 @@
   /* Tab indicator — blue underline */
   --tab-indicator-color: var(--hl-blue);
   --tab-indicator-height: 3px;
+
+  /* Diff view — stronger tints than the light default; gutter numbers stay ≥ 7:1 */
+  --color-diff-add-bg: #d3f2da;
+  --color-diff-del-bg: #fbdcdc;
+  --color-diff-add-gutter: #a9e3b6;
+  --color-diff-del-gutter: #f4b9b9;
+  --color-diff-add-highlight: #8fd6a1;
+  --color-diff-del-highlight: #f2a3a3;
+  --color-diff-hunk-bg: #e4e8f5;
+  --color-diff-hunk-gutter: #c8d1ee;
 
   /* Terminal — black on white; ANSI colors are the darkest value of each hue
      that stays distinguishable from its bright sibling, all ≥ 4.5:1 on white
@@ -2391,7 +2425,7 @@
 
 /* Colorblind Safe */
 :root.high-contrast.colorblind-safe {
-  --color-text-muted: #a4aeba;              /* 7.3:1 on --cbs-900 */
+  --color-text-muted: #a4aeba;              /* 8.1:1 on --cbs-900 */
   --color-text-interactive-muted: #a4aeba;
   --color-text-navigation-muted: #a4aeba;
   --color-text-navigation-section: #a4aeba;
@@ -2399,10 +2433,10 @@
 
 /* Low Fatigue */
 :root.high-contrast.low-fatigue {
-  --color-text-muted: #b6a68f;              /* 7.0:1 on --lf-900 */
-  --color-text-interactive-muted: #b6a68f;
-  --color-text-navigation-muted: #b6a68f;
-  --color-text-navigation-section: #b6a68f;
+  --color-text-muted: #bbab93;              /* 7.0:1 on --lf-900 */
+  --color-text-interactive-muted: #bbab93;
+  --color-text-navigation-muted: #bbab93;
+  --color-text-navigation-section: #bbab93;
 }
 
 /* High Legibility — already AAA; the toggle pushes muted text to ~10:1 */

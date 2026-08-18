@@ -8,7 +8,7 @@
  *
  *   node scripts/check-theme-contrast.mjs                 # gate the a11y themes
  *   node scripts/check-theme-contrast.mjs --themes dusk    # report any theme(s)
- *   node scripts/check-theme-contrast.mjs --all            # report every theme (no exit code)
+ *   node scripts/check-theme-contrast.mjs --all            # report every theme (report only, exit 0)
  *   node scripts/check-theme-contrast.mjs --markdown       # PR-ready tables
  *   node scripts/check-theme-contrast.mjs --cvd            # add CVD simulation tables
  *
@@ -266,6 +266,10 @@ const TEXT_ON_SURFACES = [
 const UI_ON_SURFACES = [
   ['--color-focus-ring', '--color-bg-primary'],
   ['--color-focus-ring', '--color-surface-primary'],
+  // The ring components actually paint (Select trigger, tabs, settings rows) — alpha
+  // composited over the surface it sits on.
+  ['--color-focus-ring-subtle', '--color-bg-primary'],
+  ['--color-focus-ring-subtle', '--color-surface-primary'],
   ['--color-input-focus', '--color-input-bg'],
   ['--color-input-border', '--color-input-bg'],
   ['--color-border-focus', '--color-bg-primary'],
@@ -306,11 +310,17 @@ function runTheme(theme, blocks, opts) {
     };
     for (const [fg, bg] of TEXT_ON_SURFACES) push('text', fg, bg, bodyMin);
     for (const [fg, bg] of UI_ON_SURFACES) push('ui', fg, bg, uiMin);
+    if (hc) {
+      // The High contrast toggle promises AAA (7:1) for the muted family (PR #362).
+      for (const fg of ['--color-text-muted', '--color-text-interactive-muted', '--color-text-navigation-muted', '--color-text-navigation-section']) {
+        push('text-aaa', fg, '--color-bg-primary', Math.max(7, bodyMin));
+      }
+    }
     for (const fg of TERMINAL_FG) push('terminal', fg, '--color-terminal-bg', terminalMin);
     if (!hc) {
       // Disabled text is exempt from 1.4.3 but must still be perceivable: report only.
       const m = measure(tokens, '--color-text-disabled', '--color-bg-primary');
-      if (m) results.push({ variant: suffix, kind: 'info', fg: '--color-text-disabled', bg: '--color-bg-primary', ratio: m.ratio, min: 0, pass: true, fgHex: hex(m.fg), bgHex: hex(m.bg) });
+      if (m) results.push({ variant: suffix, kind: 'info', fg: '--color-text-disabled', bg: '--color-bg-primary', ratio: m.ratio, min: 0, pass: true, info: true, fgHex: hex(m.fg), bgHex: hex(m.bg) });
     }
   }
 
@@ -322,7 +332,10 @@ function runTheme(theme, blocks, opts) {
 // Semantic pairs that must stay distinguishable for every CVD type.
 const CVD_SETS = [
   { name: 'status', bg: '--color-bg-primary', tokens: ['--color-status-success', '--color-status-warning', '--color-status-error', '--color-status-info'] },
-  { name: 'diff', bg: '--color-bg-editor', tokens: ['--color-status-success', '--color-status-error'] },
+  { name: 'diff-text', bg: '--color-bg-editor', tokens: ['--color-status-success', '--color-status-error'] },
+  // The actual diff line backgrounds (git-diff-view tints), where defined by the theme.
+  { name: 'diff-bg', bg: '--color-bg-editor', tokens: ['--color-diff-add-bg', '--color-diff-del-bg'], optional: true },
+  { name: 'diff-gutter', bg: '--color-bg-editor', tokens: ['--color-diff-add-gutter', '--color-diff-del-gutter'], optional: true },
   { name: 'ansi', bg: '--color-terminal-bg', tokens: ['--color-terminal-red', '--color-terminal-green', '--color-terminal-yellow', '--color-terminal-blue', '--color-terminal-magenta', '--color-terminal-cyan'] },
   { name: 'ansi-bright', bg: '--color-terminal-bg', tokens: ['--color-terminal-bright-red', '--color-terminal-bright-green', '--color-terminal-bright-yellow', '--color-terminal-bright-blue', '--color-terminal-bright-magenta', '--color-terminal-bright-cyan'] },
 ];
@@ -333,6 +346,7 @@ function runCvd(tokens) {
   for (const set of CVD_SETS) {
     const bg = composite(color(tokens, set.bg), composite(color(tokens, '--color-bg-primary'), null));
     const colors = set.tokens.map((t) => [t, composite(color(tokens, t), bg)]).filter(([, c]) => c);
+    if (set.optional && colors.length < set.tokens.length) continue; // theme does not define these tokens
     for (const kind of ['normal', ...Object.keys(CVD_MATRICES)]) {
       const sim = colors.map(([t, c]) => [t, kind === 'normal' ? c : simulate(c, kind)]);
       let worst = null;
@@ -365,7 +379,8 @@ function printText(report, showAll) {
     const status = r.missing ? 'MISSING' : r.pass ? 'ok  ' : 'FAIL';
     console.log(`  ${status} ${r.kind.padEnd(8)} ${short(r.fg).padEnd(34)} on ${short(r.bg).padEnd(30)} ${fmt(r.ratio).padStart(6)}:1  (min ${r.min})${r.variant}`);
   }
-  console.log(`  ${results.length - failures.length}/${results.length} checks pass`);
+  const gated = results.filter((r) => !r.info);
+  console.log(`  ${gated.length - failures.length}/${gated.length} checks pass`);
   if (cvd) {
     console.log('  CVD simulation (Machado 2009, severity 1.0) — worst pair ΔE (CIE76), min contrast on bg:');
     const cvdGated = Boolean(gate?.cvd);
@@ -414,8 +429,9 @@ function printMarkdown(report) {
   const term = base.filter((r) => r.kind === 'terminal' && r.fg !== '--color-terminal-fg');
   const worstTerm = term.reduce((acc, r) => (acc === null || r.ratio < acc.ratio ? r : acc), null);
   if (worstTerm) console.log(`| Terminal ANSI (worst of 15) | \`${worstTerm.fgHex}\` (${short(worstTerm.fg)}) on \`${worstTerm.bgHex}\` | ${fmt(worstTerm.ratio)}:1 | ${worstTerm.pass ? '✅' : '❌'} |`);
-  const total = base.length;
-  const passing = base.filter((r) => r.pass).length;
+  const gatedBase = base.filter((r) => !r.info);
+  const total = gatedBase.length;
+  const passing = gatedBase.filter((r) => r.pass).length;
   const hc = results.filter((r) => r.variant !== '');
   const hcPassing = hc.filter((r) => r.pass).length;
   console.log(`\n${passing}/${total} token pairs pass at this theme's thresholds; ${hcPassing}/${hc.length} with High contrast on.`);
@@ -423,12 +439,12 @@ function printMarkdown(report) {
     console.log(`\n#### ${theme} — CVD simulation (Machado 2009, severity 1.0; worst pairwise ΔE, CIE76)\n`);
     console.log('| Set | Normal | Protanopia | Deuteranopia | Tritanopia |');
     console.log('|---|---|---|---|---|');
-    for (const set of CVD_SETS) {
+    for (const setName of [...new Set(cvd.map((c) => c.set))]) {
       const cells = ['normal', 'protanopia', 'deuteranopia', 'tritanopia'].map((k) => {
-        const r = cvd.find((c) => c.set === set.name && c.kind === k);
+        const r = cvd.find((c) => c.set === setName && c.kind === k);
         return r ? `${fmt(r.worst?.dE)} ${r.pass ? '✅' : '❌'}` : '—';
       });
-      console.log(`| ${set.name} | ${cells.join(' | ')} |`);
+      console.log(`| ${setName} | ${cells.join(' | ')} |`);
     }
     console.log(`\nΔE ≥ ${CVD_MIN_DELTA_E} between every pair in a set is the pass bar (below that two swatches read as the same color at a glance).`);
   }
@@ -451,13 +467,19 @@ const themes = flag('--all')
   : themesArg
     ? themesArg.split(',').map((t) => t.trim()).filter(Boolean)
     : Object.keys(GATED_THEMES);
+const unknown = themes.filter((t) => !THEME_CLASSES[t]);
+if (unknown.length) {
+  console.error(`Unknown theme(s): ${unknown.join(', ')}. Known: ${Object.keys(THEME_CLASSES).join(', ')}`);
+  process.exit(2);
+}
 
 let failed = false;
+const reportOnly = flag('--all');
 for (const theme of themes) {
   const report = runTheme(theme, blocks, { cvd });
   if (markdown) printMarkdown(report);
   else printText(report, showAll);
-  if (report.gate) {
+  if (report.gate && !reportOnly) {
     if (report.results.some((r) => !r.pass)) failed = true;
     if (report.gate.cvd && report.cvd?.some((r) => !r.pass)) failed = true;
   }

@@ -1,26 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
-import { ThemeContext, type Theme } from './themeContextValue';
+import { THEME_CLASSES, ThemeContext, type Theme } from './themeContextValue';
 
-// Keep in sync with the pre-React bootstrap in frontend/index.html and
-// THEME_CLASSES in scripts/check-theme-contrast.mjs.
-const THEME_CLASSES = {
-  'light': ['light'],
-  'light-rounded': ['light', 'light-rounded'],
-  'dark': ['dark'],
-  'oled': ['dark', 'oled'],
-  'dusk': ['dark', 'dusk'],
-  'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
-  'forge': ['dark', 'forge'],
-  'ember': ['dark', 'ember'],
-  'aurora': ['dark', 'aurora'],
-  'night-owl': ['dark', 'night-owl'],
-  'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
-  'terracotta': ['dark', 'terracotta'],
-  'colorblind-safe': ['dark', 'colorblind-safe'],
-  'low-fatigue': ['dark', 'low-fatigue'],
-  'high-legibility': ['light', 'high-legibility'],
-} satisfies Record<Theme, string[]>;
 const VALID_THEMES = new Set<string>(Object.keys(THEME_CLASSES));
 const ALL_THEME_CLASSES = Array.from(new Set(Object.values(THEME_CLASSES).flat()));
 const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);

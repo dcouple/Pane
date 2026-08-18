@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useId } from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
 import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../utils/cn';
@@ -134,11 +134,14 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 const SelectItem = forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { description?: React.ReactNode }
->(({ className, children, description, ...props }, ref) => (
+>(({ className, children, description, ...props }, ref) => {
+  const descriptionId = useId();
+  return (
   <SelectPrimitive.Item
     ref={ref}
+    aria-describedby={description ? descriptionId : undefined}
     className={cn(
-      'relative flex w-full cursor-default select-none flex-col items-start rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
+      'relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none',
       'text-text-primary',
       'hover:bg-surface-secondary hover:text-text-primary',
       'focus:bg-surface-secondary focus:text-text-primary',
@@ -153,12 +156,15 @@ const SelectItem = forwardRef<
         <Check className="h-4 w-4 text-interactive" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    {description && (
-      <span className="mt-0.5 block max-w-[19rem] whitespace-normal text-xs leading-tight text-text-tertiary">{description}</span>
-    )}
+    <span className="flex min-w-0 flex-col">
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      {description && (
+        <span id={descriptionId} className="mt-0.5 block max-w-[16rem] whitespace-normal text-xs leading-tight text-text-tertiary">{description}</span>
+      )}
+    </span>
   </SelectPrimitive.Item>
-));
+  );
+});
 SelectItem.displayName = SelectPrimitive.Item.displayName;
 
 const SelectSeparator = forwardRef<

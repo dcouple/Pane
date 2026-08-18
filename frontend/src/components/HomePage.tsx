@@ -337,7 +337,7 @@ export function HomePage() {
                 ]}
                 selectedId={theme}
                 position="bottom-right"
-                width="sm"
+                width="md"
               />
             </div>
 
