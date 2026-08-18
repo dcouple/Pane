@@ -896,6 +896,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     let terminal: Terminal | null = null;
     let fitAddon: FitAddon | null = null;
     let disposed = false;
+    let resizeObserver: ResizeObserver | null = null;
     let toastClearTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleToastClear = (delayMs: number) => {
       if (toastClearTimer) clearTimeout(toastClearTimer);
@@ -1757,7 +1758,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             }, 150);
           };
 
-          const resizeObserver = new ResizeObserver(() => {
+          resizeObserver = new ResizeObserver(() => {
             if (isActiveRef.current) {  // Only resize when panel is active
               debouncedResize();
             }
@@ -1774,7 +1775,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             outputConsumerRef.current = null;
             flushAck();
             if (ackFlushTimer) clearTimeout(ackFlushTimer);
-            resizeObserver.disconnect();
+            resizeObserver?.disconnect();
+            resizeObserver = null;
             if (resizeTimer) clearTimeout(resizeTimer);
             unsubscribeOutput();
             unsubscribeAltScreen();
@@ -1802,6 +1804,8 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
     return () => {
       disposed = true;
       if (toastClearTimer) clearTimeout(toastClearTimer);
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       hotActivationEligibleRef.current = false;
       hotActivationPendingRef.current = false;
 

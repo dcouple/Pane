@@ -32,12 +32,14 @@ export const CommitDialog: React.FC<CommitDialogProps> = ({
       setCommitMessage(defaultMessage);
       setError(null);
       // Focus and select all text after a short delay
-      setTimeout(() => {
+      const focusTimer = window.setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.focus();
           textareaRef.current.select();
         }
       }, 100);
+
+      return () => window.clearTimeout(focusTimer);
     }
   }, [isOpen, fileCount]);
 
