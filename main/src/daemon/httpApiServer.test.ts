@@ -83,13 +83,14 @@ async function requestJson(
   }
 
   return new Promise((resolve, reject) => {
-    const requestHeaders: RequestHeaders = { ...extraHeaders };
+    const requestHeaders: RequestHeaders = {};
     if (token) {
       requestHeaders.Authorization = `Bearer ${token}`;
     }
     if (body !== undefined) {
       requestHeaders['Content-Type'] = 'application/json';
     }
+    Object.assign(requestHeaders, extraHeaders);
     const request = http.request({
       host: address.host,
       port: address.port,
