@@ -722,7 +722,7 @@ export function registerRunpaneHandlers(
 
   commandRegistry.register('runpane:panels:output', async (request: unknown): Promise<RunpanePanelOutputResult> => {
     return withRunpaneAction(services, 'panels:output', {}, async () => {
-      const normalized = parsePanelOutputRequest(request);
+      const normalized = parsePanelOutputRequest(request as PaneCommandValue);
       const panel = resolvePanel(normalized.panelId);
       const limit = normalized.limit ?? DEFAULT_PANEL_OUTPUT_LIMIT;
       const scrollbackResult = panel.type === 'terminal' ? await panelScrollbackOutput(panel, limit) : null;
