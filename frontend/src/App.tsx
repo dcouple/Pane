@@ -42,6 +42,7 @@ import { CloudWidget } from './components/CloudWidget';
 import { Settings } from './components/Settings';
 import { CreateSessionDialog } from './components/CreateSessionDialog';
 import { AddProjectDialog } from './components/AddProjectDialog';
+import { WindowTitleBar } from './components/WindowTitleBar';
 import { useNavigationStore } from './stores/navigationStore';
 import {
   aliasInstallIdentity,
@@ -64,13 +65,10 @@ import type {
   PanePermissionResolvedEvent,
   PanePermissionInput,
 } from '../../shared/types/daemon';
-import { isMac } from './utils/platformUtils';
 import { boundary, decodeOptionalBoundary } from '../../shared/validation/boundaryDecoder';
 
 // Stable empty array to avoid creating new references in render
 const EMPTY_TERMINAL_SHORTCUTS: TerminalShortcut[] = [];
-// SAFETY: Electron supports WebkitAppRegion although React's CSS type omits it.
-const MAC_TITLE_BAR_STYLE = { height: 38, WebkitAppRegion: 'drag' } as React.CSSProperties;
 
 const preferenceResponseSchema = boundary.object({
   success: boundary.boolean,
@@ -836,12 +834,7 @@ function App() {
   return (
     <ContextMenuProvider>
       <div className="pane-app-shell h-screen flex flex-col overflow-hidden bg-bg-primary">
-        {isMac() && (
-          <div
-            className="flex-shrink-0 bg-bg-primary"
-            style={MAC_TITLE_BAR_STYLE}
-          />
-        )}
+        <WindowTitleBar projects={projects} />
         <div className="pane-main-layout flex flex-1 min-h-0">
         <MainProcessLogger />
         <div

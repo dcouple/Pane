@@ -293,6 +293,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onGitStatusUpdated') {
           return (callback: MockEventCallback) => subscribe('git-status-updated', callback);
         }
+        if (prop === 'onSessionUpdated') {
+          return (callback: MockEventCallback) => subscribe('session:updated', callback);
+        }
         return () => unsubscribe;
       },
     });
@@ -863,6 +866,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         emitGitStatusUpdated(sessionId: string, gitStatus: JsonObject) {
           emit('git-status-updated', { sessionId, gitStatus: clone(gitStatus) });
+        },
+        emitSessionUpdated(session: JsonObject) {
+          emit('session:updated', clone(session));
         },
         getSessionsReadCount() {
           return sessionsGetCount;
