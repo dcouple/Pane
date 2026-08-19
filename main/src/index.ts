@@ -67,6 +67,14 @@ import type { SessionManager } from './services/sessionManager';
 import { isCliAgentType, resolveAgentTypeFromCommand } from './services/agents/agentIdentity';
 import type { ConfigManager } from './services/configManager';
 import { areKeyboardShortcutsEnabled, shouldForwardCommandPaletteShortcut } from './utils/keyboardShortcuts';
+import {
+  parseStoredOverlayColors,
+  shouldEnableWindowControlsOverlay,
+  WINDOW_CONTROLS_OVERLAY_ARG,
+  WINDOW_CONTROLS_OVERLAY_COLORS_KEY,
+  WINDOW_CONTROLS_OVERLAY_HEIGHT,
+  type WindowControlsOverlayColors,
+} from './utils/windowControlsOverlay';
 import type { WorktreeManager } from './services/worktreeManager';
 import type { GitStatusManager } from './services/gitStatusManager';
 import type { DatabaseService } from './database/database';
@@ -269,6 +277,22 @@ if (isDevelopment) {
   // Devtron can be installed manually in DevTools console with: require('devtron').install()
 }
 
+/**
+ * Last overlay colours the renderer derived from the active theme. Read at
+ * window creation, which happens before any renderer code runs, so a returning
+ * user never sees the system-default plate flash before their theme applies.
+ */
+function readStoredOverlayColors(): WindowControlsOverlayColors | null {
+  try {
+    return parseStoredOverlayColors(
+      databaseService?.getUserPreference(WINDOW_CONTROLS_OVERLAY_COLORS_KEY) ?? null
+    );
+  } catch (error) {
+    console.error('Failed to read stored window controls overlay colors:', error);
+    return null;
+  }
+}
+
 async function createWindow() {
   // Strip iframe-blocking headers for localhost URLs (enables embedded browser panel)
   session.defaultSession.webRequest.onHeadersReceived(
@@ -301,6 +325,8 @@ async function createWindow() {
     Menu.setApplicationMenu(null);
   }
 
+  const windowControlsOverlay = shouldEnableWindowControlsOverlay(process.platform, process.env);
+
   const mainWindowOptions: BrowserWindowConstructorOptions = {
     width: 1400,
     height: 900,
@@ -309,12 +335,25 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true
+      webviewTag: true,
+      // The renderer has to know whether it owns the title bar before its first
+      // paint, so this travels in argv rather than over async IPC.
+      additionalArguments: windowControlsOverlay ? [WINDOW_CONTROLS_OVERLAY_ARG] : [],
     },
   };
   if (process.platform === 'darwin') {
     mainWindowOptions.titleBarStyle = 'hiddenInset';
     mainWindowOptions.trafficLightPosition = { x: 10, y: 10 };
+  } else if (windowControlsOverlay) {
+    // The OS keeps the buttons (and Windows keeps Snap Layouts with them); the
+    // rest of the strip becomes WindowTitleBar. Colours are seeded from the last
+    // theme the renderer reported so the plate is not a grey block until the
+    // first paint lands — see the theme bridge in ThemeProvider.
+    const storedColors = readStoredOverlayColors();
+    mainWindowOptions.titleBarStyle = 'hidden';
+    mainWindowOptions.titleBarOverlay = storedColors
+      ? { ...storedColors, height: WINDOW_CONTROLS_OVERLAY_HEIGHT }
+      : { height: WINDOW_CONTROLS_OVERLAY_HEIGHT };
   }
   mainWindow = new BrowserWindow(mainWindowOptions);
 

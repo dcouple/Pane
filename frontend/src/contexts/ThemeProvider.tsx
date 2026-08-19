@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { useConfigStore } from '../stores/configStore';
+import { isWindowControlsOverlayEnabled, readTitleBarOverlayColors } from '../utils/titleBarOverlay';
 import { THEME_CLASSES, ThemeContext, type Theme } from './themeContextValue';
 
 const VALID_THEMES = new Set<string>(Object.keys(THEME_CLASSES));
@@ -60,6 +61,25 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     localStorage.setItem('theme', theme);
 
+  }, [theme, highContrast]);
+
+  // Window Controls Overlay: the OS draws the caption buttons, so they only
+  // follow the theme if we tell them to. This is the single choke point every
+  // theme and high-contrast change passes through, which is why the bridge lives
+  // here rather than in the title bar — the strip may be absent (Pane Chat, the
+  // Linux native-frame fallback) while the buttons are still on screen.
+  //
+  // Passive, and declared after the layout effect above, so the classes are
+  // already stamped when the tokens are read.
+  useEffect(() => {
+    if (!isWindowControlsOverlayEnabled()) return;
+
+    const colors = readTitleBarOverlayColors();
+    if (!colors) return;
+
+    void window.electronAPI?.setTitleBarOverlay(colors).catch((error) => {
+      console.error('Failed to apply title bar overlay colors:', error);
+    });
   }, [theme, highContrast]);
 
   const updateTheme = (nextTheme: Theme) => {

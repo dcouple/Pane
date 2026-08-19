@@ -26,6 +26,8 @@ type ElectronApiMockOptions = {
   initialConfig?: JsonObject;
   initialPreferences?: Record<string, string>;
   platform?: 'darwin' | 'linux' | 'win32';
+  /** Whether main handed the title bar to the page (Window Controls Overlay). */
+  windowControlsOverlayEnabled?: boolean;
   availableShells?: Array<Record<string, string>>;
   configReadDelayMs?: number;
   configGetFailures?: number;
@@ -338,6 +340,8 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         isFocused: () => Promise.resolve(true),
       },
       getPlatform: () => Promise.resolve(mockOptions.platform ?? 'linux'),
+      windowControlsOverlayEnabled: mockOptions.windowControlsOverlayEnabled === true,
+      setTitleBarOverlay: () => success(),
       getVersionInfo: () => success({
         version: 'test',
         current: 'test',

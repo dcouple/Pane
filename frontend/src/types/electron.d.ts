@@ -87,6 +87,12 @@ interface ElectronAPI {
   getPlatform: () => Promise<string>;
   isPackaged: () => Promise<boolean>;
 
+  // Window Controls Overlay (Windows/Linux). `windowControlsOverlayEnabled` is a
+  // plain boolean, not a promise: it is resolved in the preload from argv so the
+  // first render already knows whether the page owns the title bar.
+  windowControlsOverlayEnabled: boolean;
+  setTitleBarOverlay: (colors: { color: string; symbolColor: string }) => Promise<IPCResponse>;
+
   // Version checking
   checkForUpdates: () => Promise<IPCResponse<VersionInfo>>;
   getVersionInfo: () => Promise<IPCResponse>;

@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
@@ -7,7 +6,6 @@ import { ArchiveProgress } from './ArchiveProgress';
 import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
-import { isMac } from '../utils/platformUtils';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { Kbd } from './ui/Kbd';
@@ -21,9 +19,6 @@ import { SessionStatusBadge } from './SessionStatusBadge';
 import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
 import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
-
-// SAFETY: Electron supports WebkitAppRegion although React's CSSProperties omits the vendor property.
-const dragRegionStyle = { WebkitAppRegion: 'drag' } as CSSProperties;
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
@@ -491,10 +486,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0"
           style={{ width: '48px' }}
         >
-          {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
-          {!isMac() && (
-            <div className="h-3 flex-shrink-0" style={dragRegionStyle} />
-          )}
           {/* Logo */}
           <div className="flex shrink-0 items-center justify-center border-b border-border-primary px-1 py-2">
             <img src={paneLogo} alt="Pane" className="h-6 w-6" />
@@ -783,10 +774,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         className="pane-sidebar-shell bg-surface-primary text-text-primary h-full flex flex-col relative flex-shrink-0"
         style={{ width: `${width}px` }}
       >
-        {/* Drag handle for window (not needed on macOS — handled by App-level spacer) */}
-        {!isMac() && (
-          <div className="h-3 flex-shrink-0" style={dragRegionStyle} />
-        )}
         {/* Resize handle */}
         <div
           className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"

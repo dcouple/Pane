@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import {
+  WINDOW_CONTROLS_OVERLAY_ARG,
+  type WindowControlsOverlayColors,
+} from './utils/windowControlsOverlay';
 import type { CreateSessionRequest, Session } from './types/session';
 import type { AppConfig, UpdateConfigRequest } from './types/config';
 import type { CreateProjectRequest, UpdateProjectRequest, Project } from '../../frontend/src/types/project';
@@ -423,6 +427,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => invokeIpc('get-app-version'),
   getPlatform: () => invokeIpc('get-platform'),
   isPackaged: () => invokeIpc('is-packaged'),
+
+  // Window Controls Overlay: whether this window handed its title bar to the
+  // page. Main decides (see shouldEnableWindowControlsOverlay) and passes the
+  // answer through additionalArguments, so the renderer can branch on it during
+  // its first render instead of awaiting IPC and flashing the wrong layout.
+  windowControlsOverlayEnabled: process.argv.includes(WINDOW_CONTROLS_OVERLAY_ARG),
+  setTitleBarOverlay: (colors: WindowControlsOverlayColors): Promise<IPCResponse> =>
+    invokeIpc('window:set-title-bar-overlay', colors),
 
   // Version checking
   checkForUpdates: (): Promise<IPCResponse> => invokeIpc('version:check-for-updates'),

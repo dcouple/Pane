@@ -47,14 +47,17 @@ const titleBarLabel = (page: Page) => page.getByTestId('window-title-bar-label')
 async function openDesktop(
   page: Page,
   platform: 'darwin' | 'win32' = 'darwin',
+  windowControlsOverlay = false,
 ): Promise<void> {
-  // The strip only exists on macOS (isMac reads navigator.platform), so pin the
-  // platform here instead of skipping the test everywhere else.
+  // macOS is detected from navigator.platform (isMac), so pin it here instead of
+  // skipping the test everywhere else. Windows and Linux instead ask the preload
+  // whether main gave the page the title bar, which is the flag below.
   await page.addInitScript((navigatorPlatform) => {
     Object.defineProperty(window.navigator, 'platform', { get: () => navigatorPlatform });
   }, platform === 'darwin' ? 'MacIntel' : 'Win32');
   await installElectronApiMock(page, {
     platform,
+    windowControlsOverlayEnabled: windowControlsOverlay,
     initialProjects: [project],
     initialSessions: [worktreeSession, mainRepoSession],
     initialUiState: { expandedProjects: [project.id] },
@@ -142,9 +145,9 @@ test.describe('window title bar', () => {
   });
 
   test('names the window itself, on platforms with no strip too', async ({ page }) => {
-    // Windows and Linux keep their native title bar, so document.title is the
-    // only place the pane name can reach them — plus every platform's taskbar
-    // and task switcher.
+    // A Linux desktop that fails the Window Controls Overlay gate keeps its
+    // native title bar, so document.title is the only place the pane name can
+    // reach it — plus every platform's taskbar and task switcher.
     await openDesktop(page, 'win32');
 
     await expect(page.getByTestId('window-title-bar')).toHaveCount(0);
@@ -160,6 +163,45 @@ test.describe('window title bar', () => {
     // Leaving the pane for Pane Chat releases the name again.
     await page.getByRole('button', { name: 'Pane Chat' }).first().click();
     await expect.poll(() => page.title()).toBe('Pane');
+  });
+
+  test('takes over the strip when the window controls overlay is on', async ({ page }) => {
+    await openDesktop(page, 'win32', true);
+
+    await expect(page.getByTestId('window-title-bar')).toBeVisible();
+    await page.getByRole('button', { name: worktreeSession.name, exact: true }).click();
+    await expect(titleBarLabel(page)).toHaveText(
+      `${project.name}·${worktreeSession.name}`,
+    );
+
+    const insets = await titleBarLabel(page).evaluate((label) => {
+      const bar = label.closest('[data-testid="window-title-bar"]');
+      if (!(bar instanceof HTMLElement)) return null;
+      const computed = getComputedStyle(bar);
+      return {
+        specifiedLeft: bar.style.paddingLeft,
+        specifiedRight: bar.style.paddingRight,
+        computedLeft: computed.paddingLeft,
+        computedRight: computed.paddingRight,
+        region: computed.getPropertyValue('-webkit-app-region'),
+      };
+    });
+
+    // The insets are driven by the overlay's own geometry, so the controls are
+    // cleared wherever the OS puts them — on the right, or on the left under an
+    // RTL system layout — at whatever width the current DPI makes them.
+    expect(insets?.specifiedLeft).toContain('titlebar-area-x');
+    expect(insets?.specifiedRight).toContain('titlebar-area-width');
+    // Never the macOS traffic-light inset, which is the wrong side here.
+    expect(insets?.computedLeft).not.toBe('88px');
+    expect(insets?.computedRight).not.toBe('88px');
+    // A browser reports no titlebar-area, which is the shape a window that lost
+    // the overlay would compute: the fallbacks have to leave a usable symmetric
+    // strip rather than collapse it.
+    expect(insets?.computedLeft).toBe('8px');
+    expect(insets?.computedRight).toBe('8px');
+    // With the sidebar's drag strips retired, this is the only drag surface left.
+    expect(insets?.region).toBe('drag');
   });
 
   test('keeps the whole strip draggable', async ({ page }) => {
