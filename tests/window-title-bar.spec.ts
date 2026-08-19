@@ -44,14 +44,17 @@ const mainRepoSession = {
 
 const titleBarLabel = (page: Page) => page.getByTestId('window-title-bar-label');
 
-async function openDesktop(page: Page): Promise<void> {
+async function openDesktop(
+  page: Page,
+  platform: 'darwin' | 'win32' = 'darwin',
+): Promise<void> {
   // The strip only exists on macOS (isMac reads navigator.platform), so pin the
   // platform here instead of skipping the test everywhere else.
-  await page.addInitScript(() => {
-    Object.defineProperty(window.navigator, 'platform', { get: () => 'MacIntel' });
-  });
+  await page.addInitScript((navigatorPlatform) => {
+    Object.defineProperty(window.navigator, 'platform', { get: () => navigatorPlatform });
+  }, platform === 'darwin' ? 'MacIntel' : 'Win32');
   await installElectronApiMock(page, {
-    platform: 'darwin',
+    platform,
     initialProjects: [project],
     initialSessions: [worktreeSession, mainRepoSession],
     initialUiState: { expandedProjects: [project.id] },
@@ -136,6 +139,27 @@ test.describe('window title bar', () => {
       return Math.round(box.left + box.width / 2);
     });
     expect(centeredAfter).toBe(centeredBefore);
+  });
+
+  test('names the window itself, on platforms with no strip too', async ({ page }) => {
+    // Windows and Linux keep their native title bar, so document.title is the
+    // only place the pane name can reach them — plus every platform's taskbar
+    // and task switcher.
+    await openDesktop(page, 'win32');
+
+    await expect(page.getByTestId('window-title-bar')).toHaveCount(0);
+    await expect.poll(() => page.title()).toBe('Pane');
+
+    await page.getByRole('button', { name: worktreeSession.name, exact: true }).click();
+    await expect.poll(() => page.title())
+      .toBe(`${project.name} · ${worktreeSession.name}`);
+
+    await page.getByRole('button', { name: mainRepoSession.name, exact: true }).click();
+    await expect.poll(() => page.title()).toBe(project.name);
+
+    // Leaving the pane for Pane Chat releases the name again.
+    await page.getByRole('button', { name: 'Pane Chat' }).first().click();
+    await expect.poll(() => page.title()).toBe('Pane');
   });
 
   test('keeps the whole strip draggable', async ({ page }) => {

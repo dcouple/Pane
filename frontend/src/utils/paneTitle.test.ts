@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolvePaneStatusPills, resolvePaneTitle } from './paneTitle';
+import { formatPaneTitle, resolvePaneStatusPills, resolvePaneTitle } from './paneTitle';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 
@@ -119,5 +119,21 @@ describe('resolvePaneStatusPills', () => {
   it('stays quiet for ordinary working states', () => {
     expect(resolvePaneStatusPills(withGitStatus({ state: 'modified', hasUncommittedChanges: true }))).toEqual([]);
     expect(resolvePaneStatusPills(withGitStatus({ state: 'clean' }))).toEqual([]);
+  });
+});
+
+describe('formatPaneTitle', () => {
+  it('joins the project and pane name', () => {
+    expect(formatPaneTitle(resolvePaneTitle(session, [project])))
+      .toBe('bloomapi/bloom-mono · scrub Sentry request bodies (TM-622)');
+  });
+
+  it('uses the project alone for the main-repo pane', () => {
+    const mainRepo = { ...session, isMainRepo: true };
+    expect(formatPaneTitle(resolvePaneTitle(mainRepo, [project]))).toBe('bloomapi/bloom-mono');
+  });
+
+  it('falls back to the app name when no pane is open', () => {
+    expect(formatPaneTitle(null)).toBe('Pane');
   });
 });

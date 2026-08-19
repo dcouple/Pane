@@ -1,9 +1,9 @@
-import type { CSSProperties } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { Project } from '../types/project';
-import { resolvePaneStatusPills, resolvePaneTitle } from '../utils/paneTitle';
+import { APP_WINDOW_TITLE, formatPaneTitle, resolvePaneStatusPills, resolvePaneTitle } from '../utils/paneTitle';
 import { isMac } from '../utils/platformUtils';
 import { Badge } from './ui/Badge';
 
@@ -25,7 +25,10 @@ interface WindowTitleBarProps {
  * names the pane you are looking at. Passive text only — no pointer handlers, so
  * the whole strip keeps dragging and double-click-to-zoom.
  *
- * Windows and Linux keep their native frame, so there is no strip to fill there.
+ * Windows and Linux keep their native frame, so there is no strip to fill there —
+ * but they still get the name, because this also owns `document.title`. That is
+ * what their native title bar reads, and what every platform's task switcher and
+ * taskbar show, so the window is identifiable off-screen as well as on it.
  */
 export function WindowTitleBar({ projects }: WindowTitleBarProps) {
   const activeView = useNavigationStore(state => state.activeView);
@@ -37,10 +40,21 @@ export function WindowTitleBar({ projects }: WindowTitleBarProps) {
     return state.sessions.find(session => session.id === state.activeSessionId);
   });
 
-  if (!isMac()) return null;
-
   // Project dashboard and Pane Chat are not panes; leave the bar empty there.
   const title = activeView === 'sessions' ? resolvePaneTitle(activeSession, projects) : null;
+  const windowTitle = formatPaneTitle(title);
+
+  // Runs before the platform gate below: naming the window is the part of this
+  // that Windows and Linux can use.
+  useEffect(() => {
+    document.title = windowTitle;
+    return () => {
+      document.title = APP_WINDOW_TITLE;
+    };
+  }, [windowTitle]);
+
+  if (!isMac()) return null;
+
   const pills = title ? resolvePaneStatusPills(activeSession) : [];
 
   return (
@@ -57,7 +71,7 @@ export function WindowTitleBar({ projects }: WindowTitleBarProps) {
           <div
             className="flex min-w-0 items-center gap-1.5 text-xs"
             data-testid="window-title-bar-label"
-            title={title.pane ? `${title.project} · ${title.pane}` : title.project}
+            title={windowTitle}
           >
             <span className="truncate text-text-tertiary">{title.project}</span>
             {title.pane && (

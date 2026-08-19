@@ -30,6 +30,19 @@ export function resolvePaneTitle(
   return { project: project.name, pane };
 }
 
+/** Window title when no pane is open — matches the <title> in index.html. */
+export const APP_WINDOW_TITLE = 'Pane';
+
+/**
+ * Joins a resolved title into the one-line form used by the title bar strip, its
+ * hover text, and `document.title` — which is what names the window in the
+ * Windows/Linux native title bar and in every platform's task switcher.
+ */
+export function formatPaneTitle(title: PaneTitle | null): string {
+  if (!title) return APP_WINDOW_TITLE;
+  return title.pane ? `${title.project} · ${title.pane}` : title.project;
+}
+
 export interface PaneStatusPill {
   key: 'pr' | 'branch';
   label: string;
