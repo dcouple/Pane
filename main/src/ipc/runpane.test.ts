@@ -10,30 +10,6 @@ import type { AppServices } from './types';
 import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../../shared/types/panels';
 import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration';
 
-vi.mock('../services/panelManager', () => ({
-  panelManager: {
-    createPanel: vi.fn(),
-    getPanel: vi.fn(),
-    getPanelsForSession: vi.fn(),
-    updatePanel: vi.fn(),
-  },
-}));
-
-vi.mock('../services/terminalPanelManager', () => ({
-  terminalPanelManager: {
-    initializeTerminal: vi.fn(),
-    isTerminalInitialized: vi.fn(),
-    getTerminalSnapshot: vi.fn(),
-    waitForTerminalState: vi.fn(),
-    getTerminalScrollback: vi.fn(),
-    getCleanTerminalScrollback: vi.fn(),
-    writeToTerminal: vi.fn(),
-    getLastOutputAt: vi.fn(),
-    getOutputGeneration: vi.fn(),
-    deliverPendingInitialInput: vi.fn(),
-  },
-}));
-
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
@@ -56,6 +32,7 @@ vi.spyOn(terminalPanelManager, 'isTerminalInitialized');
 vi.spyOn(terminalPanelManager, 'getTerminalSnapshot');
 vi.spyOn(terminalPanelManager, 'waitForTerminalState');
 vi.spyOn(terminalPanelManager, 'getTerminalScrollback');
+vi.spyOn(terminalPanelManager, 'getCleanTerminalScrollback');
 vi.spyOn(terminalPanelManager, 'writeToTerminal');
 vi.spyOn(terminalPanelManager, 'getLastOutputAt');
 vi.spyOn(terminalPanelManager, 'getOutputGeneration');
@@ -183,7 +160,7 @@ function createServices(overrides: Partial<AppServices> = {}): AppServices {
     app: {
       getVersion: vi.fn(() => '2.3.8'),
       isPackaged: false,
-    } as unknown as AppServices['app'],
+    } as AppServices['app'],
     getMainWindow: () => null,
     databaseService: {
       getAllProjects: vi.fn(() => [project]),
@@ -1838,6 +1815,7 @@ describe('runpane IPC handlers', () => {
         text: 'persisted ready\n',
       },
     });
+    // SAFETY: The wait handler resolves to a result object whose `state` mirrors the panel snapshot exercised here.
     expect((ready as { state: { isCliReady?: unknown } }).state.isCliReady).toBeUndefined();
     expect(initialized).toMatchObject({
       ok: false,
@@ -2538,6 +2516,7 @@ describe('runpane IPC handlers', () => {
       }],
     }]);
 
+    // SAFETY: The panes:create handler always resolves to a result object carrying an `ok` flag.
     expect((result as { ok: boolean }).ok).toBe(true);
     expect(createSessionAndWait).toHaveBeenCalledTimes(2);
     expect(maxActiveCreates).toBe(1);
@@ -3039,6 +3018,7 @@ describe('runpane IPC handlers', () => {
           let createdPanel: ToolPanel | undefined;
           vi.mocked(panelManager.createPanel).mockImplementation(async (request) => {
             createRequest = request;
+            // SAFETY: This mock stands in for a terminal panel, so initialState carries the terminal customState shape.
             const initialState = (request.initialState ?? {}) as TerminalPanelState;
             const customState: TerminalPanelState = { ...initialState };
             if (initialState.initialInputMode === 'argument') {
@@ -3077,6 +3057,7 @@ describe('runpane IPC handlers', () => {
             if (toolKind === 'codex' && inputCase.name === 'slash' && snapshotCalls >= 4) {
               return terminalSnapshot('Working\n›', 'active');
             }
+            // SAFETY: The `custom` kind is handled above, leaving only agent kinds the snapshot frames as claude/codex.
             return terminalSnapshot(
               toolKind === 'codex' && inputCase.name === 'slash' ? `› ${inputCase.input}` : 'ready',
               'idle',
@@ -3094,7 +3075,9 @@ describe('runpane IPC handlers', () => {
             panes: [{ name: `${toolKind}-${inputCase.name}`, tool }],
           }]);
           await vi.runAllTimersAsync();
+          // SAFETY: The panes:create handler resolves to a result object exposing the per-pane `items` array read below.
           const result = await resultPromise as { items: Array<{ ok?: boolean; initialInput?: unknown }> };
+          // SAFETY: createPanel was invoked for a terminal panel, so the captured initialState is the terminal customState.
           const initialState = createRequest?.initialState as TerminalPanelState | undefined;
           const useArgument = toolKind === 'claude'
             || toolKind === 'cursor'

@@ -731,17 +731,8 @@ export function registerPanelHandlers(
 
       // Fall back to persisted scrollback for lazy/inactive terminals with no
       // live emulator.
-      let rawScrollback: string | null = null;
       const panel = panelManager.getPanel(panelId);
-      const customState = panel?.state?.customState;
-      if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
-        const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
-        if (typeof persisted === 'string') {
-          rawScrollback = persisted;
-        } else if (Array.isArray(persisted)) {
-          rawScrollback = persisted.join('\n');
-        }
-      }
+      const rawScrollback = readPersistedScrollback(panel?.state?.customState);
 
       if (rawScrollback === null || rawScrollback === '') {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
@@ -840,17 +831,8 @@ export function registerPanelHandlers(
       let content: string | null = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
 
       if (content === null) {
-        let rawScrollback: string | null = null;
         const panelFallback = panelManager.getPanel(panelId);
-        const customState = panelFallback?.state?.customState;
-        if (customState && typeof customState === 'object' && 'scrollbackBuffer' in customState) {
-          const persisted = (customState as { scrollbackBuffer?: string | string[] }).scrollbackBuffer;
-          if (typeof persisted === 'string') {
-            rawScrollback = persisted;
-          } else if (Array.isArray(persisted)) {
-            rawScrollback = persisted.join('\n');
-          }
-        }
+        const rawScrollback = readPersistedScrollback(panelFallback?.state?.customState);
 
         if (rawScrollback !== null && rawScrollback !== '') {
           const stripped = sanitizeTerminalOutput(rawScrollback);
