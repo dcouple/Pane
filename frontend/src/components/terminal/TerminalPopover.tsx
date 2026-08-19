@@ -125,7 +125,11 @@ export const PopoverButton: React.FC<PopoverButtonProps> = ({
   const variants = {
     default: 'text-text-primary hover:bg-bg-hover',
     primary: 'text-interactive hover:bg-surface-interactive-hover',
-    danger: 'text-status-error hover:bg-status-error hover:bg-opacity-10',
+    // Red text on the same neutral hover plate the other items use. A red
+    // background token here has no alpha channel (Tailwind emits the bare
+    // `var(--color-status-error)`), so tinting it silently paints a solid red
+    // block over the red label — the menu item then reads as an unlabeled slab.
+    danger: 'text-status-error hover:bg-bg-hover',
   };
 
   return (

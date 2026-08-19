@@ -578,6 +578,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                     key={`compact-pinned-${session.id}`}
                     content={<CompactSessionTooltip session={session} label={label} />}
                     side="right"
+                    interactive
                   >
                     <button
                       type="button"
@@ -656,6 +657,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                         key={session.id}
                         content={<CompactSessionTooltip session={session} label={session.name || 'Untitled'} />}
                         side="right"
+                        interactive
                       >
                         <button
                           type="button"
@@ -753,17 +755,19 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           onClose={() => setCompactSessionMenu(null)}
         >
           <div role="menu" aria-label={`Pane actions for ${compactSessionMenu?.session.name || 'Untitled'}`}>
-            <PopoverButton role="menuitem" variant="danger" onClick={() => void archiveCompactSession()}>
-              <span className="flex items-center gap-2">
-                <Archive className="h-4 w-4" />
-                Archive
-              </span>
-            </PopoverButton>
-            <div className="my-1 border-t border-border-primary" />
             <PopoverButton role="menuitem" onClick={() => void toggleCompactSessionPinned()}>
               <span className="flex items-center gap-2">
                 <Pin className="h-4 w-4 rotate-45" />
                 {compactSessionMenu?.session.isFavorite ? 'Unpin' : 'Pin'}
+              </span>
+            </PopoverButton>
+            {/* Archive sits last, past the divider: the menu opens under the cursor,
+                so the top slot is the one clicked by reflex. */}
+            <div className="my-1 border-t border-border-primary" />
+            <PopoverButton role="menuitem" variant="danger" onClick={() => void archiveCompactSession()}>
+              <span className="flex items-center gap-2">
+                <Archive className="h-4 w-4" />
+                Archive
               </span>
             </PopoverButton>
           </div>
