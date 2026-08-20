@@ -28,7 +28,7 @@ const TAIL_S = {
   // Remote PWA moments (playwright.anim.remote.config.ts). Several of these are
   // deliberately round trips — press and release, open and dismiss, drop and
   // recover — so they run longer than a one-way entrance.
-  'pwa-key-press': 5.4, 'pwa-nav-drawer': 6.0, 'pwa-reconnect': 6.5,
+  'pwa-key-press': 5.4, 'pwa-nav-drawer': 6.0, 'pwa-reconnect': 7.5,
   'pwa-joystick-release': 5.0, 'pwa-panel-tab': 4.6,
 };
 const DEFAULT_TAIL_S = 3.2;
