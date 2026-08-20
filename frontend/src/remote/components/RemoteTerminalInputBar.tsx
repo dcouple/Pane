@@ -133,7 +133,7 @@ export function RemoteTerminalInputBar({
   return (
     <div className="relative shrink-0 border-t border-border-primary bg-surface-primary p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden">
       {showShortcuts && (
-        <div className="absolute bottom-full left-2 right-2 mb-2 max-h-64 overflow-y-auto rounded-lg border border-border-primary bg-surface-primary shadow-dropdown">
+        <div className="animate-dropdown-enter-up absolute bottom-full left-2 right-2 mb-2 max-h-64 origin-bottom overflow-y-auto rounded-lg border border-border-primary bg-surface-primary shadow-dropdown">
           <div className="flex items-center justify-between border-b border-border-primary px-3 py-2">
             <span className="text-sm font-semibold text-text-primary">Terminal Shortcuts</span>
             <button
