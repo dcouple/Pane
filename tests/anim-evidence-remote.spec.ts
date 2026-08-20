@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { openConnectedRemotePwa } from './remotePwaMock';
+import { dropRemoteConnection, openConnectedRemotePwa } from './remotePwaMock';
 
 // Before/after evidence capture for the Remote Pane PWA animation pass. Same rig
 // as `tests/anim-evidence.spec.ts`, pointed at `/remote.html` on a phone-sized
@@ -198,10 +198,7 @@ test.describe('remote pwa animation evidence', () => {
       'Losing the host and finding it again',
       async () => {},
       async (page) => {
-        await page.evaluate(() => {
-          // SAFETY: installed by the PWA mock harness for exactly this purpose.
-          (window as unknown as { __paneRemoteDropConnection: () => void }).__paneRemoteDropConnection();
-        });
+        await dropRemoteConnection(page);
         // The client backs off 1s before retrying; at 0.2x that is most of the clip.
         await page.waitForTimeout(3000);
       },

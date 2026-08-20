@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import type { JsonValue } from '../shared/validation/boundaryDecoder';
 
 // Test harness for the Remote Pane PWA — the browser-served surface at
 // `/remote.html`, which talks to a remote Pane daemon over HTTP+SSE rather than
@@ -141,19 +142,22 @@ export async function openConnectedRemotePwa(
     // server-sent traffic, so it only has to connect and stay quiet — but it does
     // have to be able to *drop*, because losing the host is the defining event of
     // using Pane from a phone and the status bar's motion is about saying so.
-    let live: MockEventSource | null = null;
-
     class MockEventSource {
       onopen: ((event: Event) => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
       constructor(readonly url: string) {
-        live = this;
+        // Handed to the registrar rather than aliased into a local, so the
+        // newest stream is reachable without keeping a `self` around.
+        register(this);
         window.setTimeout(() => this.onopen?.(new Event('open')), 0);
       }
       addEventListener(): void {}
       removeEventListener(): void {}
       close(): void {}
     }
+
+    let live: MockEventSource | undefined;
+    const register = (source: MockEventSource) => { live = source; };
 
     Object.defineProperty(window, 'EventSource', { configurable: true, value: MockEventSource });
 
@@ -171,6 +175,25 @@ export async function openConnectedRemotePwa(
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
 }
 
+/**
+ * Drops the host's event stream, the way a phone leaving wifi does. The client's
+ * own backoff then walks the status from `reconnecting` back to `connected`.
+ */
+export async function dropRemoteConnection(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const drop: (() => void) | undefined = window.__paneRemoteDropConnection;
+    if (!drop) throw new Error('Remote PWA mock is not installed on this page.');
+    drop();
+  });
+}
+
+declare global {
+  interface Window {
+    /** Installed by `openConnectedRemotePwa`; see `dropRemoteConnection`. */
+    __paneRemoteDropConnection?: () => void;
+  }
+}
+
 /** Serves the daemon's invoke endpoint for the channels the PWA calls. */
 async function installRemoteHostRoute(
   page: Page,
@@ -185,7 +208,7 @@ async function installRemoteHostRoute(
 
     // SAFETY: the test route receives the remote invoke envelope emitted by this fixture.
     const body = JSON.parse(request.postData() ?? '{}') as { channel?: string };
-    let result: unknown = null;
+    let result: JsonValue = null;
 
     switch (body.channel) {
       case 'sessions:get-all-with-projects':
