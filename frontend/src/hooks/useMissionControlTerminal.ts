@@ -4,7 +4,7 @@ import { getTerminalTheme } from '../utils/terminalTheme';
 import type { TerminalPanelState } from '../../../shared/types/panels';
 
 /**
- * Read-only xterm for a fleet tile.
+ * Read-only xterm for a missionControl tile.
  *
  * A tile is roughly a fifth of the width the real terminal panel gets, so the
  * whole job is fitting a wide PTY into a small box without lying about it.
@@ -34,7 +34,7 @@ import type { TerminalPanelState } from '../../../shared/types/panels';
  *
  * Also unlike `TerminalPanel`: no `WebglAddon` (instances sharing a font+theme
  * share a texture atlas, and Chromium caps live GL contexts at ~16), no
- * `FitAddon`, `disableStdin`, and a `fleet:`-prefixed viewer id so the
+ * `FitAddon`, `disableStdin`, and a `missionControl:`-prefixed viewer id so the
  * visibility refcount in `terminalPanelManager` stays correct.
  */
 
@@ -61,19 +61,19 @@ const MIN_VIEWER_ROWS = 4;
 const COLUMN_CHANGE_THRESHOLD = 2;
 const RESIZE_DEBOUNCE_MS = 200;
 
-const VIEWER_ID = getFleetViewerId();
+const VIEWER_ID = getMissionControlViewerId();
 
 interface TerminalOutputPayload {
   panelId?: string;
   output?: string;
 }
 
-function getFleetViewerId(): string {
-  const storageKey = 'pane.fleet.terminalViewerId';
+function getMissionControlViewerId(): string {
+  const storageKey = 'pane.missionControl.terminalViewerId';
   const existing = window.sessionStorage.getItem(storageKey);
   if (existing) return existing;
 
-  const id = `fleet:${window.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+  const id = `missionControl:${window.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   window.sessionStorage.setItem(storageKey, id);
   return id;
 }
@@ -127,7 +127,7 @@ const FOCUS_REPORTING_MODE = 1004;
  * the cursor-position report: a second, differently-positioned answer moves its
  * idea of where the screen starts, and every redraw after that — including the
  * highlighted row of an approval prompt — lands on the wrong lines. That is why
- * a Codex pane looked frozen in the fleet while a Claude pane, which asks
+ * a Codex pane looked frozen in Mission Control while a Claude pane, which asks
  * nothing, took input fine.
  *
  * Swallowing the queries (returning `true` marks them handled, so xterm's
@@ -220,7 +220,7 @@ function measuredRowHeight(container: HTMLElement, terminal: Terminal): number {
   return terminal.options.fontSize ? terminal.options.fontSize * LINE_HEIGHT : 0;
 }
 
-export interface UseFleetTerminalOptions {
+export interface UseMissionControlTerminalOptions {
   panelId: string | null;
   /** Live PTY dimensions — the reference the agent's output was drawn for. */
   cols: number | null;
@@ -253,7 +253,7 @@ export interface UseFleetTerminalOptions {
   onEscapeExit?: () => void;
 }
 
-export function useFleetTerminal({
+export function useMissionControlTerminal({
   panelId,
   cols,
   rows,
@@ -262,7 +262,7 @@ export function useFleetTerminal({
   matchPtyExactly = false,
   sendEscape = false,
   onEscapeExit,
-}: UseFleetTerminalOptions) {
+}: UseMissionControlTerminalOptions) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);

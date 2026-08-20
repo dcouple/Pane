@@ -1,11 +1,11 @@
 import { memo } from 'react';
 import { GitBranch, Keyboard, Minimize2, Radio, TerminalSquare, Trash2, X } from 'lucide-react';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
-import { useFleetTerminal } from '../../hooks/useFleetTerminal';
+import { useMissionControlTerminal } from '../../hooks/useMissionControlTerminal';
 import { toAgentDisplayStatus } from '../../utils/agentStatus';
-import { describeFleetTile } from '../../utils/fleetGrouping';
+import { describeMissionControlTile } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
-import type { FleetTileModel } from '../../../../shared/types/fleet';
+import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
 
 /** Rendered row height of the live terminal: 12px font at 1.15 line height. */
 const ROW_PX = 14;
@@ -65,7 +65,7 @@ function LiveTerminalSurface({
   sendEscape: boolean;
   onEscapeExit: () => void;
 }) {
-  const { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight } = useFleetTerminal({
+  const { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight } = useMissionControlTerminal({
     panelId,
     cols,
     rows,
@@ -84,7 +84,7 @@ function LiveTerminalSurface({
       // otherwise leave the keyboard wherever it was, and typing would be lost.
       onPointerDown={interactive ? focusTerminal : undefined}
       className={`relative w-full overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] ${
-        interactive ? '' : 'pane-fleet-surface'
+        interactive ? '' : 'pane-mission-control-surface'
       } ${fitWholeGrid ? 'p-1' : ''}`}
       style={{ height }}
     >
@@ -117,13 +117,13 @@ function LiveTerminalSurface({
   );
 }
 
-export interface FleetTileProps {
-  tile: FleetTileModel;
+export interface MissionControlTileProps {
+  tile: MissionControlTileModel;
   /** True when this tile is rendered as a live terminal rather than a snapshot. */
   isLiveView: boolean;
   onHoverStart: (panelId: string) => void;
   onHoverEnd: (panelId: string) => void;
-  onOpen: (tile: FleetTileModel) => void;
+  onOpen: (tile: MissionControlTileModel) => void;
   /** Trailing lines shown in snapshot mode; scales with grid density. */
   snapshotLines: number;
   /** True while this tile's agent is open in the focus view. */
@@ -136,11 +136,11 @@ export interface FleetTileProps {
   /** Forward Escape to the agent instead of using it to leave typing mode. */
   sendEscape: boolean;
   /** Hand this tile the keyboard. */
-  onFocusAgent: (tile: FleetTileModel) => void;
+  onFocusAgent: (tile: MissionControlTileModel) => void;
   /** Return the tile to preview size. */
   onCollapse: () => void;
   /** Ask to close this pane for good — the view confirms before acting. */
-  onClose: (tile: FleetTileModel) => void;
+  onClose: (tile: MissionControlTileModel) => void;
   /** True while the grid's roving keyboard cursor is on this tile. */
   isSelected: boolean;
   /** Report this tile's element so the grid can scroll it into view. */
@@ -154,7 +154,7 @@ export interface FleetTileProps {
  * terminal when promoted, so a large grid costs one xterm instance rather than
  * one per agent.
  */
-export const FleetTile = memo(function FleetTile({
+export const MissionControlTile = memo(function MissionControlTile({
   tile,
   isLiveView,
   onHoverStart,
@@ -169,7 +169,7 @@ export const FleetTile = memo(function FleetTile({
   onClose,
   isSelected,
   registerElement,
-}: FleetTileProps) {
+}: MissionControlTileProps) {
   const status = toAgentDisplayStatus(tile.agentState, false);
   const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
   const snapshotText = tile.snapshot?.text ?? '';
@@ -225,7 +225,7 @@ export const FleetTile = memo(function FleetTile({
           onFocus={() => onHoverStart(tile.panelId)}
           onBlur={() => onHoverEnd(tile.panelId)}
           aria-label={`Open ${tile.sessionName} — ${agentLabel} — ${STATUS_TEXT[status]}`}
-          title={describeFleetTile(tile)}
+          title={describeMissionControlTile(tile)}
           className="min-w-0 flex-1 truncate rounded text-left text-[11px] font-medium leading-tight text-text-primary transition-colors hover:text-interactive focus:outline-none focus:ring-1 focus:ring-interactive"
         >
           {tile.sessionName}
@@ -357,4 +357,4 @@ export const FleetTile = memo(function FleetTile({
   );
 });
 
-export default FleetTile;
+export default MissionControlTile;

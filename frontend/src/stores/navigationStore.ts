@@ -15,7 +15,7 @@ const toProjectIdArray = (projectIds: Set<number>): number[] =>
  * here also requires a branch in `SessionView` and an entry in *both* sidebar
  * components (`Sidebar` compact rail and `ProjectSessionList` expanded tree).
  */
-export type ActiveView = 'sessions' | 'project' | 'pane-chat' | 'fleet';
+export type ActiveView = 'sessions' | 'project' | 'pane-chat' | 'mission-control';
 
 interface NavigationState {
   activeView: ActiveView;
@@ -49,7 +49,7 @@ interface NavigationState {
   navigateToProject: (projectId: number) => void;
   navigateToSessions: () => void;
   navigateToPaneChat: () => void;
-  navigateToFleet: () => void;
+  navigateToMissionControl: () => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
@@ -127,9 +127,9 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     activeProjectId: null
   }),
 
-  // The fleet grid spans every project, so it clears the project scope.
-  navigateToFleet: () => set({
-    activeView: 'fleet',
+  // Mission Control spans every project, so it clears the project scope.
+  navigateToMissionControl: () => set({
+    activeView: 'mission-control',
     activeProjectId: null
   }),
 }));

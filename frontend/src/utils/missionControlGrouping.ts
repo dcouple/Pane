@@ -1,5 +1,5 @@
 import type { AgentState } from '../../../shared/types/agentStatus';
-import type { FleetGroup, FleetGrouping, FleetTileModel } from '../../../shared/types/fleet';
+import type { MissionControlGroup, MissionControlGrouping, MissionControlTileModel } from '../../../shared/types/missionControl';
 
 /**
  * Sort weight for agent states — the panes that need a human come first, so
@@ -19,7 +19,7 @@ const STATE_LABEL: Record<AgentState, string> = {
   unknown: 'Not running',
 };
 
-export function compareFleetTiles(a: FleetTileModel, b: FleetTileModel): number {
+export function compareMissionControlTiles(a: MissionControlTileModel, b: MissionControlTileModel): number {
   const byState = STATE_ORDER[a.agentState] - STATE_ORDER[b.agentState];
   if (byState !== 0) return byState;
 
@@ -36,14 +36,14 @@ export function compareFleetTiles(a: FleetTileModel, b: FleetTileModel): number 
  * Bucket tiles for display. Groups are ordered by their most urgent member so
  * a project with a blocked agent floats above one that is merely idle.
  */
-export function groupFleetTiles(tiles: FleetTileModel[], grouping: FleetGrouping): FleetGroup[] {
-  const sorted = [...tiles].sort(compareFleetTiles);
+export function groupMissionControlTiles(tiles: MissionControlTileModel[], grouping: MissionControlGrouping): MissionControlGroup[] {
+  const sorted = [...tiles].sort(compareMissionControlTiles);
 
   if (grouping === 'none') {
     return sorted.length > 0 ? [{ key: 'all', label: 'All agents', tiles: sorted }] : [];
   }
 
-  const buckets = new Map<string, FleetGroup>();
+  const buckets = new Map<string, MissionControlGroup>();
 
   for (const tile of sorted) {
     let key: string;
@@ -85,7 +85,7 @@ export function groupFleetTiles(tiles: FleetTileModel[], grouping: FleetGrouping
  * gave "Pane Chat / Pane Chat — Pane Chat". Repeating a name adds nothing, so
  * each distinct one appears once.
  */
-export function describeFleetTile(tile: Pick<FleetTileModel, 'projectName' | 'sessionName' | 'panelTitle'>): string {
+export function describeMissionControlTile(tile: Pick<MissionControlTileModel, 'projectName' | 'sessionName' | 'panelTitle'>): string {
   const parts = [tile.projectName, tile.sessionName, tile.panelTitle]
     .map(part => part?.trim())
     .filter((part): part is string => Boolean(part));
@@ -101,4 +101,4 @@ export function describeFleetTile(tile: Pick<FleetTileModel, 'projectName' | 'se
     .join(' / ');
 }
 
-export { STATE_LABEL as FLEET_STATE_LABEL };
+export { STATE_LABEL as MISSION_CONTROL_STATE_LABEL };

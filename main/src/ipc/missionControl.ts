@@ -8,31 +8,31 @@ import {
   selectPanelScreenText,
 } from '../services/panels/terminalScreenText';
 import {
-  DEFAULT_FLEET_SNAPSHOT_LINES,
-  MAX_FLEET_SNAPSHOT_LINES,
-  MAX_FLEET_SNAPSHOT_PANELS,
-  type FleetAgentPanel,
-  type FleetAgentType,
-  type FleetSnapshot,
-  type FleetSnapshotRequest,
-  type FleetSnapshotResult,
-} from '../../../shared/types/fleet';
+  DEFAULT_MISSION_CONTROL_SNAPSHOT_LINES,
+  MAX_MISSION_CONTROL_SNAPSHOT_LINES,
+  MAX_MISSION_CONTROL_SNAPSHOT_PANELS,
+  type MissionControlAgentPanel,
+  type MissionControlAgentType,
+  type MissionControlSnapshot,
+  type MissionControlSnapshotRequest,
+  type MissionControlSnapshotResult,
+} from '../../../shared/types/missionControl';
 import type { TerminalPanelState } from '../../../shared/types/panels';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 
-export const DAEMON_FLEET_CHANNELS = [
-  'fleet:list-agents',
-  'fleet:snapshots',
+export const DAEMON_MISSION_CONTROL_CHANNELS = [
+  'mission-control:list-agents',
+  'mission-control:snapshots',
 ] as const;
 
 /**
- * Stale fleet viewers are swept on this cadence. Without it, a hard renderer
+ * Stale missionControl viewers are swept on this cadence. Without it, a hard renderer
  * kill would leave every hovered panel pinned "visible" forever, defeating the
  * background output throttling in `terminalPanelManager`.
  */
 const VIEWER_PRUNE_INTERVAL_MS = 60_000;
 const VIEWER_STALE_AFTER_MS = 180_000;
-const FLEET_VIEWER_PREFIX = 'fleet:';
+const MISSION_CONTROL_VIEWER_PREFIX = 'mission-control:';
 
 interface AgentPanelRow {
   id: string;
@@ -51,23 +51,23 @@ interface AgentPanelRow {
 /**
  * Pane Chat keeps one panel per agent — switching from Claude to Codex leaves
  * the previous one in place — but only ever shows the active one. Listing both
- * in the fleet showed two chats where the user has one.
+ * in Mission Control showed two chats where the user has one.
  */
 function isRedundantPaneChatPanel(row: AgentPanelRow): boolean {
   return row.session_id === PANE_CHAT_SESSION_ID && row.id !== row.active_panel_id;
 }
 
-function toAgentType(value: string | null): FleetAgentType | null {
+function toAgentType(value: string | null): MissionControlAgentType | null {
   return value === 'claude' || value === 'codex' ? value : null;
 }
 
-export function registerFleetHandlers(
+export function registerMissionControlHandlers(
   ipcMain: IpcMain,
   { databaseService }: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
   const pruneTimer = setInterval(() => {
-    terminalPanelManager.pruneVisibilityViewersByPrefix(FLEET_VIEWER_PREFIX, VIEWER_STALE_AFTER_MS);
+    terminalPanelManager.pruneVisibilityViewersByPrefix(MISSION_CONTROL_VIEWER_PREFIX, VIEWER_STALE_AFTER_MS);
   }, VIEWER_PRUNE_INTERVAL_MS);
   // Never hold the process open just to sweep viewers.
   pruneTimer.unref?.();
@@ -79,7 +79,7 @@ export function registerFleetHandlers(
    * deserialises each panel's `state` JSON, which carries the full scrollback
    * buffer and can be tens of megabytes on a large install.
    */
-  commandRegistry.register('fleet:list-agents', async (options?: { includeArchived?: boolean }) => {
+  commandRegistry.register('mission-control:list-agents', async (options?: { includeArchived?: boolean }) => {
     try {
       const rows = databaseService.getDb().prepare(`
         SELECT
@@ -104,7 +104,7 @@ export function registerFleetHandlers(
 
       const includeArchived = options?.includeArchived === true;
 
-      const agents: FleetAgentPanel[] = rows
+      const agents: MissionControlAgentPanel[] = rows
         .filter(row => (includeArchived || !row.archived) && !isRedundantPaneChatPanel(row))
         .map(row => ({
           panelId: row.id,
@@ -125,7 +125,7 @@ export function registerFleetHandlers(
 
       return { success: true, data: agents };
     } catch (error) {
-      console.error('[Fleet] Failed to list agent panels:', error);
+      console.error('[MissionControl] Failed to list agent panels:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to list agent panels',
@@ -139,16 +139,16 @@ export function registerFleetHandlers(
    * Snapshots are taken sequentially: each one awaits emulator idle, and doing
    * 30+ of those in parallel spikes the main process.
    */
-  commandRegistry.register('fleet:snapshots', async (request: FleetSnapshotRequest) => {
+  commandRegistry.register('mission-control:snapshots', async (request: MissionControlSnapshotRequest) => {
     try {
       const requestedIds = Array.isArray(request?.panelIds) ? request.panelIds : [];
-      const panelIds = requestedIds.slice(0, MAX_FLEET_SNAPSHOT_PANELS);
+      const panelIds = requestedIds.slice(0, MAX_MISSION_CONTROL_SNAPSHOT_PANELS);
       const maxLines = Math.min(
-        Math.max(Number(request?.maxLines) || DEFAULT_FLEET_SNAPSHOT_LINES, 1),
-        MAX_FLEET_SNAPSHOT_LINES
+        Math.max(Number(request?.maxLines) || DEFAULT_MISSION_CONTROL_SNAPSHOT_LINES, 1),
+        MAX_MISSION_CONTROL_SNAPSHOT_LINES
       );
 
-      const snapshots: FleetSnapshot[] = [];
+      const snapshots: MissionControlSnapshot[] = [];
       const missing: string[] = [];
 
       for (const panelId of panelIds) {
@@ -176,14 +176,14 @@ export function registerFleetHandlers(
         });
       }
 
-      const result: FleetSnapshotResult = {
+      const result: MissionControlSnapshotResult = {
         snapshots,
         missing,
         capturedAt: new Date().toISOString(),
       };
       return { success: true, data: result };
     } catch (error) {
-      console.error('[Fleet] Failed to capture snapshots:', error);
+      console.error('[MissionControl] Failed to capture snapshots:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to capture snapshots',
@@ -191,5 +191,5 @@ export function registerFleetHandlers(
     }
   });
 
-  commandRegistry.bindChannels(ipcMain, DAEMON_FLEET_CHANNELS);
+  commandRegistry.bindChannels(ipcMain, DAEMON_MISSION_CONTROL_CHANNELS);
 }

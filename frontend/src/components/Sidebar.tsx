@@ -390,12 +390,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
   const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
-  const navigateToFleet = useNavigationStore((state) => state.navigateToFleet);
+  const navigateToMissionControl = useNavigationStore((state) => state.navigateToMissionControl);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const setSidebarNavigationScope = useNavigationStore((state) => state.setSidebarNavigationScope);
   const agentStatusByPanel = usePanelStore((state) => state.agentStatus);
   const agentPanelSessions = usePanelStore((state) => state.agentStatusSession);
-  /** Agents waiting on the user, anywhere — surfaced on the fleet rail button. */
+  /** Agents waiting on the user, anywhere — surfaced on the Mission Control rail button. */
   const blockedAgentCount = useMemo(
     () => Object.values(agentStatusByPanel).filter((state) => state === 'blocked').length,
     [agentStatusByPanel]
@@ -534,19 +534,19 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
               </button>
             </Tooltip>
 
-            <Tooltip content="Agent Fleet" side="right">
+            <Tooltip content="Mission Control" side="right">
               <button
                 type="button"
-                data-testid="compact-fleet"
+                data-testid="compact-mission-control"
                 data-compact-rail-item
                 onClick={() => {
                   setSidebarNavigationScope('repositories');
-                  navigateToFleet();
+                  navigateToMissionControl();
                 }}
                 aria-label={blockedAgentCount > 0
-                  ? `Agent Fleet — ${blockedAgentCount} waiting for input`
-                  : 'Agent Fleet'}
-                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'fleet' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+                  ? `Mission Control — ${blockedAgentCount} waiting for input`
+                  : 'Mission Control'}
+                className={`${COMPACT_RAIL_BUTTON} ${activeView === 'mission-control' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
               >
                 <LayoutGrid className="h-4 w-4" />
                 {/* Same affordance as Pane Chat above: an agent is waiting. */}

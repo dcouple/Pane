@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { groupFleetTiles, compareFleetTiles, describeFleetTile } from './fleetGrouping';
-import type { FleetTileModel } from '../../../shared/types/fleet';
+import { groupMissionControlTiles, compareMissionControlTiles, describeMissionControlTile } from './missionControlGrouping';
+import type { MissionControlTileModel } from '../../../shared/types/missionControl';
 import type { AgentState } from '../../../shared/types/agentStatus';
 
-function tile(overrides: Partial<FleetTileModel> & { panelId: string }): FleetTileModel {
+function tile(overrides: Partial<MissionControlTileModel> & { panelId: string }): MissionControlTileModel {
   return {
     sessionId: `session-${overrides.panelId}`,
     sessionName: 'Session',
@@ -21,9 +21,9 @@ function tile(overrides: Partial<FleetTileModel> & { panelId: string }): FleetTi
   };
 }
 
-describe('describeFleetTile', () => {
+describe('describeMissionControlTile', () => {
   it('names each level when they differ', () => {
-    expect(describeFleetTile({
+    expect(describeMissionControlTile({
       projectName: 'Super Forum',
       sessionName: 'security',
       panelTitle: 'Terminal',
@@ -31,7 +31,7 @@ describe('describeFleetTile', () => {
   });
 
   it('says a repeated name once — Pane Chat is project, session and panel', () => {
-    expect(describeFleetTile({
+    expect(describeMissionControlTile({
       projectName: 'Pane Chat',
       sessionName: 'Pane Chat',
       panelTitle: 'Pane Chat',
@@ -39,7 +39,7 @@ describe('describeFleetTile', () => {
   });
 
   it('treats a difference in case as a repeat', () => {
-    expect(describeFleetTile({
+    expect(describeMissionControlTile({
       projectName: 'Pane',
       sessionName: 'pane',
       panelTitle: 'Terminal',
@@ -47,7 +47,7 @@ describe('describeFleetTile', () => {
   });
 
   it('skips empty parts rather than leaving stray separators', () => {
-    expect(describeFleetTile({
+    expect(describeMissionControlTile({
       projectName: '',
       sessionName: 'security',
       panelTitle: '  ',
@@ -55,14 +55,14 @@ describe('describeFleetTile', () => {
   });
 });
 
-describe('compareFleetTiles', () => {
+describe('compareMissionControlTiles', () => {
   it('puts blocked agents before working, and working before idle', () => {
     const sorted = [
       tile({ panelId: 'c', agentState: 'idle' }),
       tile({ panelId: 'a', agentState: 'blocked' }),
       tile({ panelId: 'd', agentState: 'unknown' }),
       tile({ panelId: 'b', agentState: 'working' }),
-    ].sort(compareFleetTiles);
+    ].sort(compareMissionControlTiles);
 
     expect(sorted.map(t => t.panelId)).toEqual(['a', 'b', 'c', 'd']);
   });
@@ -72,26 +72,26 @@ describe('compareFleetTiles', () => {
       tile({ panelId: '2', projectName: 'Beta', sessionName: 'x' }),
       tile({ panelId: '1', projectName: 'Alpha', sessionName: 'z' }),
       tile({ panelId: '3', projectName: 'Alpha', sessionName: 'a' }),
-    ].sort(compareFleetTiles);
+    ].sort(compareMissionControlTiles);
 
     expect(sorted.map(t => t.panelId)).toEqual(['3', '1', '2']);
   });
 });
 
-describe('groupFleetTiles', () => {
+describe('groupMissionControlTiles', () => {
   it('returns no groups for no tiles', () => {
-    expect(groupFleetTiles([], 'project')).toEqual([]);
-    expect(groupFleetTiles([], 'none')).toEqual([]);
+    expect(groupMissionControlTiles([], 'project')).toEqual([]);
+    expect(groupMissionControlTiles([], 'none')).toEqual([]);
   });
 
   it('puts everything in one bucket when grouping is disabled', () => {
-    const groups = groupFleetTiles([tile({ panelId: 'a' }), tile({ panelId: 'b' })], 'none');
+    const groups = groupMissionControlTiles([tile({ panelId: 'a' }), tile({ panelId: 'b' })], 'none');
     expect(groups).toHaveLength(1);
     expect(groups[0].tiles).toHaveLength(2);
   });
 
   it('groups by project and labels buckets with the project name', () => {
-    const groups = groupFleetTiles([
+    const groups = groupMissionControlTiles([
       tile({ panelId: 'a', projectId: 1, projectName: 'Alpha' }),
       tile({ panelId: 'b', projectId: 2, projectName: 'Beta' }),
       tile({ panelId: 'c', projectId: 1, projectName: 'Alpha' }),
@@ -103,7 +103,7 @@ describe('groupFleetTiles', () => {
   });
 
   it('keeps sessions without a project in their own bucket', () => {
-    const groups = groupFleetTiles([
+    const groups = groupMissionControlTiles([
       tile({ panelId: 'a', projectId: null, projectName: 'Unknown project' }),
     ], 'project');
 
@@ -112,7 +112,7 @@ describe('groupFleetTiles', () => {
   });
 
   it('orders groups by their most urgent member', () => {
-    const groups = groupFleetTiles([
+    const groups = groupMissionControlTiles([
       tile({ panelId: 'a', projectId: 1, projectName: 'Alpha', agentState: 'idle' }),
       tile({ panelId: 'b', projectId: 2, projectName: 'Beta', agentState: 'blocked' }),
     ], 'project');
@@ -121,7 +121,7 @@ describe('groupFleetTiles', () => {
   });
 
   it('groups by status with human-readable labels', () => {
-    const groups = groupFleetTiles([
+    const groups = groupMissionControlTiles([
       tile({ panelId: 'a', agentState: 'blocked' }),
       tile({ panelId: 'b', agentState: 'working' }),
     ], 'status');
@@ -130,7 +130,7 @@ describe('groupFleetTiles', () => {
   });
 
   it('groups by agent type and buckets unknown agents together', () => {
-    const groups = groupFleetTiles([
+    const groups = groupMissionControlTiles([
       tile({ panelId: 'a', agentType: 'claude' }),
       tile({ panelId: 'b', agentType: 'codex' }),
       tile({ panelId: 'c', agentType: null }),
@@ -142,7 +142,7 @@ describe('groupFleetTiles', () => {
   it('does not mutate the input array', () => {
     const tiles = [tile({ panelId: 'b', agentState: 'idle' }), tile({ panelId: 'a', agentState: 'blocked' })];
     const before = tiles.map(t => t.panelId);
-    groupFleetTiles(tiles, 'project');
+    groupMissionControlTiles(tiles, 'project');
     expect(tiles.map(t => t.panelId)).toEqual(before);
   });
 });

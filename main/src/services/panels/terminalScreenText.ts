@@ -9,7 +9,7 @@ import type { RunpanePanelScreenSource } from '../../../../shared/types/runpaneO
  *
  * Two very different consumers need the same answer to "what does this
  * terminal currently show as text?": the RunPane CLI (`panels screen`) and the
- * fleet grid's snapshot tiles. Keeping one implementation means a fix to the
+ * Mission Control's snapshot tiles. Keeping one implementation means a fix to the
  * alternate-screen / persisted-buffer precedence benefits both.
  */
 

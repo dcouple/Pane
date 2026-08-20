@@ -1,16 +1,16 @@
 import type { AgentState } from './agentStatus';
 
 /**
- * Types for the fleet grid — a live overview of every agent pane across all
+ * Types for Mission Control — a live overview of every agent pane across all
  * sessions and projects at once.
  *
  * An "agent" here is a terminal panel with `customState.isCliPanel === true`;
  * Pane has no dedicated agent panel type.
  */
 
-export type FleetAgentType = 'claude' | 'codex';
+export type MissionControlAgentType = 'claude' | 'codex';
 
-export interface FleetAgentPanel {
+export interface MissionControlAgentPanel {
   panelId: string;
   sessionId: string;
   sessionName: string;
@@ -22,12 +22,12 @@ export interface FleetAgentPanel {
   /** Worktree/branch name — often the session's real identity in a project. */
   worktreeName: string | null;
   panelTitle: string;
-  agentType: FleetAgentType | null;
+  agentType: MissionControlAgentType | null;
   /** True when a PTY for this panel is alive in the main process right now. */
   isLive: boolean;
 }
 
-export interface FleetSnapshot {
+export interface MissionControlSnapshot {
   panelId: string;
   /** ANSI-stripped text, at most `maxLines` trailing lines. */
   text: string;
@@ -45,14 +45,14 @@ export interface FleetSnapshot {
   rows: number | null;
 }
 
-export interface FleetSnapshotRequest {
+export interface MissionControlSnapshotRequest {
   panelIds: string[];
   /** Trailing lines per tile. Defaults to 16. */
   maxLines?: number;
 }
 
-export interface FleetSnapshotResult {
-  snapshots: FleetSnapshot[];
+export interface MissionControlSnapshotResult {
+  snapshots: MissionControlSnapshot[];
   /** Requested ids that no longer exist — the client should drop these tiles. */
   missing: string[];
   capturedAt: string;
@@ -62,23 +62,23 @@ export interface FleetSnapshotResult {
  * Snapshotting N emulators is sequential and each one awaits emulator idle, so
  * the batch is capped to keep a single poll well under the refresh interval.
  */
-export const MAX_FLEET_SNAPSHOT_PANELS = 64;
-export const MAX_FLEET_SNAPSHOT_LINES = 120;
-export const DEFAULT_FLEET_SNAPSHOT_LINES = 16;
+export const MAX_MISSION_CONTROL_SNAPSHOT_PANELS = 64;
+export const MAX_MISSION_CONTROL_SNAPSHOT_LINES = 120;
+export const DEFAULT_MISSION_CONTROL_SNAPSHOT_LINES = 16;
 
 // --- Client-side view options ---
 
-export type FleetGrouping = 'project' | 'status' | 'agent' | 'none';
+export type MissionControlGrouping = 'project' | 'status' | 'agent' | 'none';
 /** Tiles per row. Lower density = larger tiles with more visible lines. */
-export type FleetDensity = 1 | 2 | 3 | 4;
+export type MissionControlDensity = 1 | 2 | 3 | 4;
 
-export interface FleetTileModel extends FleetAgentPanel {
+export interface MissionControlTileModel extends MissionControlAgentPanel {
   agentState: AgentState;
-  snapshot: FleetSnapshot | null;
+  snapshot: MissionControlSnapshot | null;
 }
 
-export interface FleetGroup {
+export interface MissionControlGroup {
   key: string;
   label: string;
-  tiles: FleetTileModel[];
+  tiles: MissionControlTileModel[];
 }

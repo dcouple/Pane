@@ -35,7 +35,7 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
-import type { FleetAgentPanel, FleetSnapshotRequest, FleetSnapshotResult } from '../../../shared/types/fleet';
+import type { MissionControlAgentPanel, MissionControlSnapshotRequest, MissionControlSnapshotResult } from '../../../shared/types/missionControl';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -125,10 +125,10 @@ interface ElectronAPI {
     setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
   };
 
-  // Fleet grid — every agent pane across all sessions
-  fleet: {
-    listAgents: (options?: { includeArchived?: boolean }) => Promise<IPCResponse<FleetAgentPanel[]>>;
-    snapshots: (request: FleetSnapshotRequest) => Promise<IPCResponse<FleetSnapshotResult>>;
+  // Mission Control — every agent pane across all sessions
+  missionControl: {
+    listAgents: (options?: { includeArchived?: boolean }) => Promise<IPCResponse<MissionControlAgentPanel[]>>;
+    snapshots: (request: MissionControlSnapshotRequest) => Promise<IPCResponse<MissionControlSnapshotResult>>;
   };
 
   // Session management

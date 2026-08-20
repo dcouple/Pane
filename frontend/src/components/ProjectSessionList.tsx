@@ -81,7 +81,7 @@ export function ProjectSessionList({
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
-  const navigateToFleet = useNavigationStore(s => s.navigateToFleet);
+  const navigateToMissionControl = useNavigationStore(s => s.navigateToMissionControl);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
   // Expansion state lives in the navigation store so the always-mounted
   // session hotkeys (useSessionNavigationHotkeys) see the same visible ordering
@@ -133,7 +133,7 @@ export function ProjectSessionList({
 
   const projectById = useMemo(() => createProjectById(projects), [projects]);
 
-  /** Agents across every session that are waiting on the user — the fleet's badge. */
+  /** Agents across every session that are waiting on the user — the Mission Control badge. */
   const blockedAgentCount = useMemo(
     () => Object.values(agentStatusByPanel).filter(state => state === 'blocked').length,
     [agentStatusByPanel]
@@ -325,23 +325,23 @@ export function ProjectSessionList({
 
         <button
           type="button"
-          data-testid="fleet-nav"
+          data-testid="mission-control-nav"
           onClick={() => {
             setSidebarNavigationScope('repositories');
-            navigateToFleet();
+            navigateToMissionControl();
           }}
           className={cn(
             SIDEBAR_ROW_BASE,
             SIDEBAR_ROW_GAP,
             SIDEBAR_ROW_PADDING,
             'py-2 text-sm hover:bg-surface-hover hover:text-text-primary',
-            activeView === 'fleet'
+            activeView === 'mission-control'
               ? 'bg-surface-hover text-text-primary'
               : 'text-text-secondary',
           )}
         >
           <LayoutGrid className="w-4 h-4" />
-          <span>Agent Fleet</span>
+          <span>Mission Control</span>
           {/* Agents waiting on an answer are worth seeing without opening the grid. */}
           {blockedAgentCount > 0 && (
             <span

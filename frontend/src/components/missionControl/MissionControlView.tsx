@@ -8,34 +8,34 @@ import { panelApi } from '../../services/panelApi';
 import { usePanelStore } from '../../stores/panelStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useNavigationStore } from '../../stores/navigationStore';
-import { describeFleetTile, groupFleetTiles } from '../../utils/fleetGrouping';
+import { describeMissionControlTile, groupMissionControlTiles } from '../../utils/missionControlGrouping';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown';
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '../ui/Modal';
-import { FleetTile } from './FleetTile';
+import { MissionControlTile } from './MissionControlTile';
 import type {
-  FleetAgentPanel,
-  FleetDensity,
-  FleetGrouping,
-  FleetSnapshot,
-  FleetTileModel,
-} from '../../../../shared/types/fleet';
-import { MAX_FLEET_SNAPSHOT_PANELS } from '../../../../shared/types/fleet';
+  MissionControlAgentPanel,
+  MissionControlDensity,
+  MissionControlGrouping,
+  MissionControlSnapshot,
+  MissionControlTileModel,
+} from '../../../../shared/types/missionControl';
+import { MAX_MISSION_CONTROL_SNAPSHOT_PANELS } from '../../../../shared/types/missionControl';
 
 /** Snapshot cadence. Fast enough to feel live, slow enough to stay cheap. */
 const POLL_INTERVAL_MS = 1500;
 /** Debounce before a hovered tile is promoted to a real terminal. */
 const PROMOTE_DELAY_MS = 250;
 
-const GROUPING_OPTIONS: Array<{ value: FleetGrouping; label: string }> = [
+const GROUPING_OPTIONS: Array<{ value: MissionControlGrouping; label: string }> = [
   { value: 'project', label: 'Project' },
   { value: 'status', label: 'Status' },
   { value: 'agent', label: 'Agent' },
   { value: 'none', label: 'None' },
 ];
 
-const DENSITY_OPTIONS: FleetDensity[] = [1, 2, 3, 4];
+const DENSITY_OPTIONS: MissionControlDensity[] = [1, 2, 3, 4];
 
 /**
  * Above this many tiles, "all live" is refused: each live tile is a real xterm
@@ -45,19 +45,19 @@ const DENSITY_OPTIONS: FleetDensity[] = [1, 2, 3, 4];
 const MAX_LIVE_ALL_TILES = 12;
 
 /** Lower density = larger tiles, so more of each terminal is worth fetching. */
-const LINES_BY_DENSITY: Record<FleetDensity, number> = { 1: 32, 2: 24, 3: 16, 4: 10 };
+const LINES_BY_DENSITY: Record<MissionControlDensity, number> = { 1: 32, 2: 24, 3: 16, 4: 10 };
 
 /**
- * View options that outlive a visit. Both answer "what does my fleet look
+ * View options that outlive a visit. Both answer "what does my missionControl look
  * like", which is a property of the user's workflow rather than of this
  * session: whether answering an agent should enlarge its tile, and which
  * project groups are folded away because nothing there needs attention today.
  */
-const EXPAND_ON_FOCUS_KEY = 'pane.fleet.expandOnFocus';
-const COLLAPSED_GROUPS_KEY = 'pane.fleet.collapsedGroups';
-const SEND_ESCAPE_KEY = 'pane.fleet.sendEscape';
-const GROUPING_KEY = 'pane.fleet.grouping';
-const DENSITY_KEY = 'pane.fleet.density';
+const EXPAND_ON_FOCUS_KEY = 'pane.missionControl.expandOnFocus';
+const COLLAPSED_GROUPS_KEY = 'pane.missionControl.collapsedGroups';
+const SEND_ESCAPE_KEY = 'pane.missionControl.sendEscape';
+const GROUPING_KEY = 'pane.missionControl.grouping';
+const DENSITY_KEY = 'pane.missionControl.density';
 
 function readStoredOption<T>(key: string, fallback: T): T {
   try {
@@ -86,16 +86,16 @@ function writeStoredOption(key: string, value: unknown): void {
  * share a WebGL texture atlas, and a grid of live terminals would exhaust
  * Chromium's GL contexts (see `TerminalPanel`'s header comment).
  */
-export function FleetView() {
-  const [agents, setAgents] = useState<FleetAgentPanel[]>([]);
-  const [snapshots, setSnapshots] = useState<Record<string, FleetSnapshot>>({});
+export function MissionControlView() {
+  const [agents, setAgents] = useState<MissionControlAgentPanel[]>([]);
+  const [snapshots, setSnapshots] = useState<Record<string, MissionControlSnapshot>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [grouping, setGrouping] = useState<FleetGrouping>(
-    () => readStoredOption<FleetGrouping>(GROUPING_KEY, 'project')
+  const [grouping, setGrouping] = useState<MissionControlGrouping>(
+    () => readStoredOption<MissionControlGrouping>(GROUPING_KEY, 'project')
   );
-  const [density, setDensity] = useState<FleetDensity>(
-    () => readStoredOption<FleetDensity>(DENSITY_KEY, 3)
+  const [density, setDensity] = useState<MissionControlDensity>(
+    () => readStoredOption<MissionControlDensity>(DENSITY_KEY, 3)
   );
   const [liveTileId, setLiveTileId] = useState<string | null>(null);
   const [liveAll, setLiveAll] = useState(false);
@@ -104,7 +104,7 @@ export function FleetView() {
   /** The grid's roving keyboard cursor — selection, not focus. */
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   /** Tile awaiting a close confirmation. */
-  const [pendingClose, setPendingClose] = useState<FleetTileModel | null>(null);
+  const [pendingClose, setPendingClose] = useState<MissionControlTileModel | null>(null);
   const [closing, setClosing] = useState(false);
   /**
    * Whether answering an agent enlarges its tile. Off, the tile keeps its size
@@ -143,7 +143,7 @@ export function FleetView() {
 
   const loadAgents = useCallback(async () => {
     try {
-      const response = await API.fleet.listAgents();
+      const response = await API.missionControl.listAgents();
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to list agents');
       }
@@ -170,7 +170,7 @@ export function FleetView() {
   const canLiveAll = agents.length <= MAX_LIVE_ALL_TILES;
   const liveAllActive = liveAll && canLiveAll;
 
-  const tiles: FleetTileModel[] = useMemo(
+  const tiles: MissionControlTileModel[] = useMemo(
     () => agents.map(agent => ({
       ...agent,
       agentState: agentStatus[agent.panelId] ?? 'unknown',
@@ -179,7 +179,7 @@ export function FleetView() {
     [agents, agentStatus, snapshots]
   );
 
-  const groups = useMemo(() => groupFleetTiles(tiles, grouping), [tiles, grouping]);
+  const groups = useMemo(() => groupMissionControlTiles(tiles, grouping), [tiles, grouping]);
 
   const collapsedGroups = useMemo(() => new Set(collapsedGroupKeys), [collapsedGroupKeys]);
 
@@ -220,7 +220,7 @@ export function FleetView() {
     () => groups
       .filter(group => !collapsedGroups.has(group.key))
       .flatMap(group => group.tiles.map(tile => tile.panelId))
-      .slice(0, MAX_FLEET_SNAPSHOT_PANELS),
+      .slice(0, MAX_MISSION_CONTROL_SNAPSHOT_PANELS),
     [groups, collapsedGroups]
   );
   const panelIdsKey = panelIds.join(',');
@@ -228,7 +228,7 @@ export function FleetView() {
   // Poll snapshots only while this view is actually on screen. A background
   // poll would keep every agent's emulator warm for nothing.
   useEffect(() => {
-    if (activeView !== 'fleet' || panelIds.length === 0) return;
+    if (activeView !== 'mission-control' || panelIds.length === 0) return;
 
     let cancelled = false;
 
@@ -237,9 +237,9 @@ export function FleetView() {
       if (document.visibilityState !== 'visible') return;
       inFlightRef.current = true;
       try {
-        const response = await API.fleet.snapshots({ panelIds, maxLines: snapshotLines });
+        const response = await API.missionControl.snapshots({ panelIds, maxLines: snapshotLines });
         if (cancelled || !response.success || !response.data) return;
-        const next: Record<string, FleetSnapshot> = {};
+        const next: Record<string, MissionControlSnapshot> = {};
         for (const snapshot of response.data.snapshots) next[snapshot.panelId] = snapshot;
         setSnapshots(next);
       } catch {
@@ -286,7 +286,7 @@ export function FleetView() {
 
   useEffect(() => () => window.clearTimeout(promoteTimerRef.current), []);
 
-  const handleFocusAgent = useCallback((tile: FleetTileModel) => {
+  const handleFocusAgent = useCallback((tile: MissionControlTileModel) => {
     window.clearTimeout(promoteTimerRef.current);
     // Tiles are ordered by urgency, so answering an agent changes its state and
     // re-sorts the grid underneath the pointer — the tile the user is typing
@@ -356,7 +356,7 @@ export function FleetView() {
    * backend, which would otherwise immediately overwrite a client-only
    * selection and land the user on whatever panel was last open.
    */
-  const handleOpen = useCallback(async (tile: FleetTileModel) => {
+  const handleOpen = useCallback(async (tile: MissionControlTileModel) => {
     setLiveTileId(null);
     try {
       await panelApi.setActivePanel(tile.sessionId, tile.panelId);
@@ -395,7 +395,7 @@ export function FleetView() {
   /**
    * Take the user to the next agent that is waiting on them.
    *
-   * The whole point of the fleet is answering agents; without this, finding the
+   * The whole point of Mission Control is answering agents; without this, finding the
    * one that is blocked means scanning a wall of tiles for a red dot.
    */
   const jumpToNextBlocked = useCallback(() => {
@@ -418,7 +418,7 @@ export function FleetView() {
    * agent then, and Escape is already spoken for.
    */
   useEffect(() => {
-    if (activeView !== 'fleet') return;
+    if (activeView !== 'mission-control') return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (focusedPanelId || pendingClose) return;
@@ -531,7 +531,7 @@ export function FleetView() {
       <header className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-border-primary bg-surface-secondary px-4 py-2">
         <div className="flex items-center gap-2">
           <LayoutGrid className="h-4 w-4 text-text-tertiary" aria-hidden="true" />
-          <h1 className="text-sm font-medium text-text-primary">Agent fleet</h1>
+          <h1 className="text-sm font-medium text-text-primary">Mission Control</h1>
           <span className="text-[11px] text-text-tertiary">
             {tiles.length} {tiles.length === 1 ? 'agent' : 'agents'}
           </span>
@@ -701,7 +701,7 @@ export function FleetView() {
                     style={{ gridTemplateColumns: `repeat(${density}, minmax(0, 1fr))` }}
                   >
                     {group.tiles.map(tile => (
-                      <FleetTile
+                      <MissionControlTile
                         key={tile.panelId}
                         tile={tile}
                         // The focused tile stays live no matter where the pointer
@@ -729,9 +729,9 @@ export function FleetView() {
           })
         )}
 
-        {agents.length > MAX_FLEET_SNAPSHOT_PANELS && (
+        {agents.length > MAX_MISSION_CONTROL_SNAPSHOT_PANELS && (
           <p className="pt-2 text-[11px] text-text-muted">
-            Live previews are limited to the first {MAX_FLEET_SNAPSHOT_PANELS} agents.
+            Live previews are limited to the first {MAX_MISSION_CONTROL_SNAPSHOT_PANELS} agents.
           </p>
         )}
       </div>
@@ -749,7 +749,7 @@ export function FleetView() {
       >
         <ModalHeader
           title="Close this pane?"
-          description={pendingClose ? describeFleetTile(pendingClose) : undefined}
+          description={pendingClose ? describeMissionControlTile(pendingClose) : undefined}
         />
         <ModalBody>
           <p className="text-sm text-text-secondary">
@@ -775,4 +775,4 @@ export function FleetView() {
   );
 }
 
-export default FleetView;
+export default MissionControlView;
