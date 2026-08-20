@@ -383,7 +383,7 @@ export function RemotePwaApp() {
     <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-bg-primary text-text-primary">
       <Dialog.Root open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 md:hidden" />
+          <Dialog.Overlay className="pane-scrim fixed inset-0 z-50 bg-black/60 md:hidden" />
           <Dialog.Content
             aria-describedby={undefined}
             onCloseAutoFocus={(event) => {
@@ -393,7 +393,7 @@ export function RemotePwaApp() {
                 if (sidebarOpenerRef.current?.isConnected) sidebarOpenerRef.current.focus();
               });
             }}
-            className="fixed inset-y-0 left-0 z-50 w-[min(22rem,calc(100vw-2rem))] max-w-full shadow-2xl outline-none md:hidden"
+            className="pane-drawer fixed inset-y-0 left-0 z-50 w-[min(22rem,calc(100vw-2rem))] max-w-full shadow-2xl outline-none md:hidden"
           >
             <Dialog.Title className="sr-only">Remote panes</Dialog.Title>
             <RemoteSidebar
