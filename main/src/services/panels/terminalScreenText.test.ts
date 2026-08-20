@@ -56,6 +56,19 @@ describe('selectPanelScreenText', () => {
     expect(result).toEqual({ source: 'scrollback', rawText: 'raw' });
   });
 
+  it('prefers the persisted screen text over the raw alternate-screen log', () => {
+    const customState: TerminalPanelState = {
+      isAlternateScreen: true,
+      screenText: 'Name        Qty\nSprocket    5',
+      alternateScreenBuffer: '\u001b[2J\u001b[HName\u001b[12GQty',
+    };
+
+    expect(selectPanelScreenText(null, customState)).toEqual({
+      source: 'persistedOutput',
+      rawText: 'Name        Qty\nSprocket    5',
+    });
+  });
+
   it('reads persisted state when the panel has no live terminal', () => {
     const customState: TerminalPanelState = {
       isAlternateScreen: true,

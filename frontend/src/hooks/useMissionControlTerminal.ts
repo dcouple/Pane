@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCommittedRef } from './useCommittedRef';
 import { Terminal, type IDisposable } from '@xterm/xterm';
-import { getTerminalTheme } from '../utils/terminalTheme';
+import {
+  getTerminalTheme,
+  buildTerminalFontFamily,
+  getMinimumContrastRatio,
+  DEFAULT_TERMINAL_FONT_FAMILY,
+} from '../utils/terminalTheme';
+import { useConfigStore } from '../stores/configStore';
+import { useTheme } from '../contexts/ThemeContext';
 import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { TerminalOutputEvent } from '../../../shared/types/panels';
@@ -45,11 +53,6 @@ const VISIBILITY_REFRESH_MS = 60_000;
 /** Tiles show recent context only; a deep buffer would cost memory per tile. */
 const TILE_SCROLLBACK = 600;
 const LINE_HEIGHT = 1.2;
-/**
- * Nerd Font last, as in the real panel: agent TUIs draw their frames and icons
- * from that range, and without it those cells render as replacement boxes.
- */
-const FONT_FAMILY = 'Menlo, Monaco, Consolas, "Liberation Mono", "Symbols Nerd Font Mono", monospace';
 /** Legibility floor and a ceiling that keeps tiles from looking oversized. */
 const MIN_FONT_SIZE = 9;
 const MAX_FONT_SIZE = 13;
@@ -59,7 +62,6 @@ const MAX_FOCUS_FONT_SIZE = 16;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const MAX_VIEWER_COLS = 400;
-const MIN_VIEWER_ROWS = 4;
 /** Ignore sub-column jitter so a resize doesn't rebuild the terminal. */
 const COLUMN_CHANGE_THRESHOLD = 2;
 const RESIZE_DEBOUNCE_MS = 200;
@@ -98,21 +100,25 @@ function getMissionControlViewerId(): string {
  * alternate-screen buffer, which is where full-screen agent TUIs live — the
  * tile then renders blank.
  */
-let cachedCharRatio: number | null = null;
+const cachedCharRatios = new Map<string, number>();
 
-function charWidthRatio(): number {
-  if (cachedCharRatio !== null) return cachedCharRatio;
+function charWidthRatio(fontFamily: string): number {
+  const cached = cachedCharRatios.get(fontFamily);
+  if (cached !== undefined) return cached;
 
   const reference = 20;
   const probe = document.createElement('span');
-  probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${FONT_FAMILY};font-size:${reference}px;`;
+  probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${fontFamily};font-size:${reference}px;`;
   probe.textContent = 'M'.repeat(100);
   document.body.appendChild(probe);
   const width = probe.getBoundingClientRect().width / 100;
   probe.remove();
 
-  cachedCharRatio = width > 0 ? width / reference : 0.6;
-  return cachedCharRatio;
+  const ratio = width > 0 ? width / reference : 0.6;
+  // Keyed by family: the column-fit maths is only correct when the font it
+  // measured is the font the terminal renders in.
+  cachedCharRatios.set(fontFamily, ratio);
+  return ratio;
 }
 
 interface ViewerGeometry {
@@ -245,7 +251,6 @@ export interface UseMissionControlTerminalOptions {
   cols: number | null;
   rows: number | null;
   /** True when the agent is painting a full-screen TUI. */
-  isAlternateScreen: boolean;
   /**
    * Accept keystrokes and forward them to the real PTY. Enabled only for the
    * tile the user has explicitly focused — typing into the wrong agent is not
@@ -276,7 +281,6 @@ export function useMissionControlTerminal({
   panelId,
   cols,
   rows,
-  isAlternateScreen,
   interactive = false,
   matchPtyExactly = false,
   sendEscape = false,
@@ -286,14 +290,21 @@ export function useMissionControlTerminal({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A tile mirrors a real panel, so it renders in the typeface that panel does.
+  const userFont = useConfigStore(state => state.config?.terminalFontFamily) || DEFAULT_TERMINAL_FONT_FAMILY;
+  const fontFamily = buildTerminalFontFamily(userFont);
+  const { highContrast } = useTheme();
   // Read inside the persistent onData handler so toggling interactivity does
-  // not tear the terminal down.
-  const interactiveRef = useRef(interactive);
-  interactiveRef.current = interactive;
-  const sendEscapeRef = useRef(sendEscape);
-  sendEscapeRef.current = sendEscape;
-  const escapeExitRef = useRef(onEscapeExit);
-  escapeExitRef.current = onEscapeExit;
+  // not tear the terminal down. Committed refs rather than writes during
+  // render: render has to stay pure, and the layout effect behind them still
+  // lands before the browser can deliver the next keystroke.
+  const interactiveRef = useCommittedRef(interactive);
+  const sendEscapeRef = useCommittedRef(sendEscape);
+  const escapeExitRef = useCommittedRef(onEscapeExit);
+  // Read once when the terminal is constructed; changes are applied live below
+  // rather than by rebuilding a tile mid-stream.
+  const fontFamilyRef = useCommittedRef(fontFamily);
+  const highContrastRef = useCommittedRef(highContrast);
 
   /**
    * Pixels the terminal is pushed below the tile so its content ends where the
@@ -305,12 +316,14 @@ export function useMissionControlTerminal({
 
   // Dimensions are sticky: a poll that momentarily reports null (panel between
   // states) must not tear the terminal down and rebuild it at a default size.
+  // Reading the ref during render is fine; the write belongs in an effect.
   const lastDimsRef = useRef({ cols: DEFAULT_COLS, rows: DEFAULT_ROWS });
-  if (cols && cols > 0 && rows && rows > 0) {
-    lastDimsRef.current = { cols, rows };
-  }
-  const ptyCols = lastDimsRef.current.cols;
-  const ptyRows = lastDimsRef.current.rows;
+  const hasReportedDims = Boolean(cols && cols > 0 && rows && rows > 0);
+  const ptyCols = hasReportedDims ? cols! : lastDimsRef.current.cols;
+  const ptyRows = hasReportedDims ? rows! : lastDimsRef.current.rows;
+  useLayoutEffect(() => {
+    if (hasReportedDims) lastDimsRef.current = { cols: cols!, rows: rows! };
+  }, [hasReportedDims, cols, rows]);
 
   const [geometry, setGeometry] = useState<ViewerGeometry>({
     fontSize: MAX_FONT_SIZE,
@@ -319,7 +332,7 @@ export function useMissionControlTerminal({
   });
 
   const measure = useCallback((width: number, height: number): ViewerGeometry => {
-    const ratio = charWidthRatio();
+    const ratio = charWidthRatio(fontFamily);
 
     if (matchPtyExactly) {
       // Fit the whole grid — both axes — and let the font shrink to suit.
@@ -337,22 +350,20 @@ export function useMissionControlTerminal({
     const ideal = width / Math.max(ptyCols, 1) / ratio;
     const fontSize = Math.round(Math.min(Math.max(ideal, MIN_FONT_SIZE), MAX_FONT_SIZE));
 
-    const rowHeight = fontSize * LINE_HEIGHT;
-    const fittingRows = Math.max(Math.floor(height / rowHeight), MIN_VIEWER_ROWS);
-
     return {
       fontSize,
       // The PTY's width, exactly — see rule 1.
       cols: Math.min(ptyCols, MAX_VIEWER_COLS),
-      // Full-screen frames need the PTY's height, and so does anything the user
-      // can type into: a TUI redrawing its selection list against more rows
-      // than the viewer has scatters those redraws. Only a scrolling agent
-      // nobody is typing to can settle for the rows the tile shows — and since
-      // the terminal is bottom-anchored, a taller grid still displays the same
-      // trailing lines.
-      rows: isAlternateScreen || interactive ? ptyRows : fittingRows,
+      // The PTY's height, always. A TUI redrawing its selection list against
+      // more rows than the viewer has scatters those redraws, and the terminal
+      // is bottom-anchored, so a taller grid still shows the same trailing
+      // lines. Deriving rows from the tile instead would make `rows` change the
+      // moment a tile takes the keyboard, and `rows` is what the terminal
+      // effect rebuilds on: focusing would cost a teardown and a re-hydrate at
+      // exactly the moment the user starts typing.
+      rows: ptyRows,
     };
-  }, [ptyCols, ptyRows, isAlternateScreen, interactive, matchPtyExactly]);
+  }, [ptyCols, ptyRows, matchPtyExactly, fontFamily]);
 
   useEffect(() => {
     const wrapper = wrapperRef.current;
@@ -407,11 +418,11 @@ export function useMissionControlTerminal({
       rows: geometry.rows,
       fontSize: geometry.fontSize,
       lineHeight: LINE_HEIGHT,
-      fontFamily: FONT_FAMILY,
+      fontFamily: fontFamilyRef.current,
       scrollback: TILE_SCROLLBACK,
       // Agent TUIs paint their own backgrounds assuming a dark terminal. In a
       // light theme that lands as dark-on-dark; this floor keeps it legible.
-      minimumContrastRatio: 4.5,
+      minimumContrastRatio: getMinimumContrastRatio(highContrastRef.current),
       // The app's real terminal palette. A transparent background leaves cells
       // the TUI never paints showing the tile's surface colour instead of the
       // terminal's, which reads as a broken, patchy background.
@@ -532,7 +543,16 @@ export function useMissionControlTerminal({
     };
     // Geometry changes rebuild and re-hydrate rather than resizing a live
     // terminal — see the note on charWidthRatio.
-  }, [panelId, geometry]);
+  }, [panelId, geometry, interactiveRef, sendEscapeRef, escapeExitRef, fontFamilyRef, highContrastRef]);
+
+  // A font or theme change is an option flip too: rebuilding every live tile
+  // for a settings change would re-hydrate each one for nothing.
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.options.fontFamily = fontFamily;
+    terminal.options.minimumContrastRatio = getMinimumContrastRatio(highContrast);
+  }, [fontFamily, highContrast]);
 
   // Toggling interactivity flips an option rather than rebuilding, so focusing
   // a tile never costs a re-hydrate.
@@ -555,7 +575,7 @@ export function useMissionControlTerminal({
   const focusTerminal = useCallback(() => {
     if (!interactiveRef.current) return;
     terminalRef.current?.focus();
-  }, []);
+  }, [interactiveRef]);
 
   return { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight };
 }

@@ -10,6 +10,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useNavigationStore } from '../../stores/navigationStore';
 import { describeMissionControlTile, groupMissionControlTiles } from '../../utils/missionControlGrouping';
 import { cycleIndex } from '../../utils/arrayUtils';
+import { useWindowActive } from '../../hooks/useWindowActive';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown';
@@ -29,6 +30,14 @@ import { boundary, decodeBoundary, type BoundarySchema } from '../../../../share
 const POLL_INTERVAL_MS = 1500;
 /** Debounce before a hovered tile is promoted to a real terminal. */
 const PROMOTE_DELAY_MS = 250;
+
+/**
+ * Narrowest tile that still shows an agent rather than just its chrome. The
+ * column count is capped by what the grid can carry at this width, so a narrow
+ * window (or an expanded sidebar) reduces columns instead of shrinking tiles
+ * until their headers clip.
+ */
+const MIN_TILE_WIDTH_PX = 220;
 
 const GROUPING_LABELS = {
   project: 'Project',
@@ -103,6 +112,22 @@ function usePersistedOption<T>(
   return [value, set];
 }
 
+/**
+ * The requested column count, reduced to what this width can carry.
+ *
+ * Walking the option list keeps the result inside the density union without an
+ * assertion, and the options are ordered, so the last one that fits wins.
+ */
+function fitColumns(density: MissionControlDensity, width: number): MissionControlDensity {
+  if (width <= 0) return density;
+  const capacity = Math.max(1, Math.floor(width / MIN_TILE_WIDTH_PX));
+  let fitted: MissionControlDensity = 1;
+  for (const option of DENSITY_OPTIONS) {
+    if (option <= density && option <= capacity) fitted = option;
+  }
+  return fitted;
+}
+
 /** Grid movement for the arrow keys; a row is one density's worth of tiles. */
 function arrowStep(key: string, density: MissionControlDensity): number | undefined {
   switch (key) {
@@ -164,9 +189,11 @@ function SegmentedControl<T extends string | number>({ legend, label, options, v
   render: (option: T) => string;
   optionLabel?: (option: T) => string;
 }) {
+  // A `fieldset` keeps a `min-inline-size: min-content` floor, so at a narrow
+  // window it refuses to shrink and its buttons paint past the edge. A group
+  // role carries the same grouping semantics without the layout floor.
   return (
-    <fieldset className="flex items-center gap-1">
-      <legend className="sr-only">{legend}</legend>
+    <div role="group" aria-label={legend} className="flex min-w-0 flex-wrap items-center gap-1">
       <span className="text-[10px] uppercase tracking-wider text-text-muted">{label}</span>
       {options.map(option => (
         <button
@@ -184,7 +211,7 @@ function SegmentedControl<T extends string | number>({ legend, label, options, v
           {render(option)}
         </button>
       ))}
-    </fieldset>
+    </div>
   );
 }
 
@@ -235,14 +262,32 @@ export function MissionControlView() {
   const frozenOrderRef = useRef<{ groups: string[]; tiles: string[] } | null>(null);
   /** Tile elements, so keyboard navigation can scroll a selection into view. */
   const tileElementsRef = useRef(new Map<string, HTMLElement>());
+  const gridScrollerRef = useRef<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
 
   const agentStatus = usePanelStore(state => state.agentStatus);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const setActivePanelInStore = usePanelStore(state => state.setActivePanel);
   const activeView = useNavigationStore(state => state.activeView);
+  // Nothing here should cost anything while the user is looking at another
+  // window: the poll stops and hover promotions are dropped, so no tile keeps
+  // an xterm streaming PTY output at a screen nobody is watching.
+  const windowActive = useWindowActive();
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
 
-  const snapshotLines = LINES_BY_DENSITY[density];
+  // The stored density is what the user asked for; this is what fits.
+  const columns = fitColumns(density, gridWidth);
+  const snapshotLines = LINES_BY_DENSITY[columns];
+
+  useEffect(() => {
+    const scroller = gridScrollerRef.current;
+    if (!scroller) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setGridWidth(entry.contentRect.width);
+    });
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
 
   const loadAgents = useCallback(async () => {
     try {
@@ -321,13 +366,12 @@ export function MissionControlView() {
   // Poll snapshots only while this view is actually on screen. A background
   // poll would keep every agent's emulator warm for nothing.
   useEffect(() => {
-    if (activeView !== 'mission-control' || panelIds.length === 0) return;
+    if (activeView !== 'mission-control' || panelIds.length === 0 || !windowActive) return;
 
     let cancelled = false;
 
     const tick = async () => {
       if (cancelled || inFlightRef.current) return;
-      if (document.visibilityState !== 'visible') return;
       inFlightRef.current = true;
       try {
         const response = await API.missionControl.snapshots({ panelIds, maxLines: snapshotLines });
@@ -353,7 +397,13 @@ export function MissionControlView() {
     // panelIdsKey stands in for panelIds so a re-render with the same ids does
     // not restart the interval.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, panelIdsKey, snapshotLines, liveAllActive]);
+  }, [activeView, panelIdsKey, snapshotLines, liveAllActive, windowActive]);
+
+  // Coming back to the window re-ticks immediately (above), so the only tiles
+  // that stay promoted across a blur are the one being typed into.
+  useEffect(() => {
+    if (!windowActive) setLiveTileId(null);
+  }, [windowActive]);
 
   const statusSummary = useMemo(() => ({
     blocked: tiles.filter(tile => tile.agentState === 'blocked').length,
@@ -522,7 +572,7 @@ export function MissionControlView() {
       }
 
       const index = visibleTiles.findIndex(tile => tile.panelId === selectedPanelId);
-      const step = arrowStep(event.key, density);
+      const step = arrowStep(event.key, columns);
 
       if (step !== undefined) {
         event.preventDefault();
@@ -552,7 +602,7 @@ export function MissionControlView() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [
     activeView, focusedPanelId, pendingClose, visibleTiles, selectedPanelId,
-    density, selectTile, handleFocusAgent, jumpToNextBlocked,
+    columns, selectTile, handleFocusAgent, jumpToNextBlocked,
   ]);
 
   const viewOptionItems: DropdownItem[] = useMemo(() => [
@@ -611,9 +661,9 @@ export function MissionControlView() {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-primary">
       <header className="flex flex-shrink-0 flex-wrap items-center gap-3 border-b border-border-primary bg-surface-secondary px-4 py-2">
-        <div className="flex items-center gap-2">
-          <LayoutGrid className="h-4 w-4 text-text-tertiary" aria-hidden="true" />
-          <h1 className="text-sm font-medium text-text-primary">Mission Control</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <LayoutGrid className="h-4 w-4 flex-shrink-0 text-text-tertiary" aria-hidden="true" />
+          <h1 className="truncate text-sm font-medium text-text-primary">Mission Control</h1>
           <span className="text-[11px] text-text-tertiary">
             {tiles.length} {tiles.length === 1 ? 'agent' : 'agents'}
           </span>
@@ -632,7 +682,7 @@ export function MissionControlView() {
           <StatusCountPill status="working" count={statusSummary.working} label="working" />
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-4">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
           <SegmentedControl
             legend="Group agents by"
             label="Group"
@@ -684,7 +734,7 @@ export function MissionControlView() {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-auto p-3">
+      <div ref={gridScrollerRef} className="min-h-0 flex-1 overflow-auto p-3">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-text-tertiary">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -738,7 +788,7 @@ export function MissionControlView() {
                 {!isCollapsed && (
                   <div
                     className="grid items-start gap-2.5"
-                    style={{ gridTemplateColumns: `repeat(${density}, minmax(0, 1fr))` }}
+                    style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
                   >
                     {group.tiles.map(tile => (
                       <MissionControlTile

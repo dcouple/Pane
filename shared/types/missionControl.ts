@@ -30,7 +30,6 @@ export interface MissionControlSnapshot {
   panelId: string;
   /** ANSI-stripped text, at most `maxLines` trailing lines. */
   text: string;
-  isAlternateScreen: boolean;
   lastActivityAt: string | null;
   /**
    * Live PTY dimensions, when the terminal is running. A live tile must size

@@ -36,7 +36,6 @@ function LiveTerminalSurface({
   panelId,
   cols,
   rows,
-  isAlternateScreen,
   height,
   interactive,
   fitWholeGrid,
@@ -46,7 +45,6 @@ function LiveTerminalSurface({
   panelId: string;
   cols: number | null;
   rows: number | null;
-  isAlternateScreen: boolean;
   height: number;
   interactive: boolean;
   /** Shrink the font until the agent's entire screen fits — expanded view. */
@@ -58,8 +56,7 @@ function LiveTerminalSurface({
     panelId,
     cols,
     rows,
-    isAlternateScreen,
-    interactive,
+      interactive,
     matchPtyExactly: fitWholeGrid,
     sendEscape,
     onEscapeExit,
@@ -211,7 +208,12 @@ export const MissionControlTile = memo(function MissionControlTile({
       {/* Status accent */}
       <span className={`absolute inset-y-0 left-0 w-0.5 ${ACCENT[status]}`} aria-hidden="true" />
 
-      <header className="flex flex-shrink-0 items-center gap-1.5 border-b border-border-primary py-1 pl-2.5 pr-2">
+      {/*
+        `overflow-hidden` because the chrome on the right is deliberately
+        unshrinkable: at a narrow tile the agent badge and the focus controls
+        would otherwise paint outside the tile and past the window edge.
+      */}
+      <header className="flex min-w-0 flex-shrink-0 items-center gap-1.5 overflow-hidden border-b border-border-primary py-1 pl-2.5 pr-2">
         <AgentStatusDot status={status} size="sm" className="flex-shrink-0" />
         <button
           type="button"
@@ -279,7 +281,6 @@ export const MissionControlTile = memo(function MissionControlTile({
           panelId={tile.panelId}
           cols={tile.snapshot?.cols ?? null}
           rows={tile.snapshot?.rows ?? null}
-          isAlternateScreen={tile.snapshot?.isAlternateScreen ?? false}
           height={bodyHeight}
           interactive={isFocused}
           fitWholeGrid={isExpanded}

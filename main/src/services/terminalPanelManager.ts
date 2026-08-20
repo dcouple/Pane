@@ -1376,6 +1376,11 @@ export class TerminalPanelManager {
         }
       );
 
+      // Persist before teardown: an agent that finishes on its own never went
+      // through destroyTerminal, so without this its last screen is lost and
+      // every reader falls back to the raw alternate-screen byte log.
+      void this.saveTerminalState(terminal.panelId);
+
       // Clean up
       terminal.screenEmulator?.dispose();
       this.terminals.delete(terminal.panelId);
@@ -1558,6 +1563,9 @@ export class TerminalPanelManager {
       cwd: cwd,
       scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
+      // Survives dispose: the emulator keeps its last screen text, so a panel
+      // saved on exit still knows what the agent finished on.
+      screenText: terminal.screenEmulator?.getScreenText(),
       isAlternateScreen: savedIsAlternateScreen,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),

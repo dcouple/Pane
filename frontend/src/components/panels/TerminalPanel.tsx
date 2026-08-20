@@ -10,7 +10,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
 import { isHotkeyEnabledForEvent, useHotkeyStore } from '../../stores/hotkeyStore';
 import { renderLog, devLog } from '../../utils/console';
-import { getTerminalTheme } from '../../utils/terminalTheme';
+import { getTerminalTheme, buildTerminalFontFamily, getMinimumContrastRatio, DEFAULT_TERMINAL_FONT_FAMILY } from '../../utils/terminalTheme';
 import {
   isFineSurfaceScrollKey,
   isPageSurfaceScrollKey,
@@ -91,7 +91,6 @@ interface TerminalRestoreState {
   cursorY?: number;
 }
 
-const DEFAULT_TERMINAL_FONT_FAMILY = 'Geist Mono';
 const DEFAULT_TERMINAL_FONT_SIZE = 14;
 const WEBGL_APP_BLUR_DETACH_DELAY_MS = 10_000;
 const REFOCUS_DELAYED_REFRESH_MS = 300;
@@ -109,21 +108,6 @@ const terminalPasteImageResultSchema = boundary.object({
 });
 const terminalPasteFileResultSchema = boundary.object({ filePath: boundary.string });
 
-// xterm halves the configured ratio for dim (SGR 2) cells, so 9 is what gets dim
-// CLI output (Claude Code / Codex) to 4.5:1 AA. Off-state stays a modest safety
-// floor so the deliberate muted grays in the dark themes survive.
-const HIGH_CONTRAST_MIN_RATIO = 9;   // dim cells get ratio/2 = 4.5 (AA)
-const LIGHT_MIN_RATIO = 4.5;
-const DARK_MIN_RATIO = 3;
-
-// Takes highContrast as an argument rather than reading the `high-contrast`
-// class: that class is stamped by ThemeProvider's effect, and React flushes
-// passive effects child-first, so this component's effect would observe the
-// previous value and leave the terminal one toggle behind.
-const getMinimumContrastRatio = (highContrast: boolean): number => {
-  if (highContrast) return HIGH_CONTRAST_MIN_RATIO;
-  return document.documentElement.classList.contains('light') ? LIGHT_MIN_RATIO : DARK_MIN_RATIO;
-};
 const TERMINAL_VISIBILITY_VIEWER_ID = getTerminalVisibilityViewerId();
 
 function getTerminalVisibilityViewerId(): string {
@@ -139,10 +123,6 @@ function getTerminalVisibilityViewerId(): string {
   } catch {
     return `viewer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   }
-}
-
-function buildTerminalFontFamily(userFont: string): string {
-  return `"${userFont}", "Symbols Nerd Font Mono", monospace`;
 }
 
 function isClipboardImagePlaceholderText(text: string): boolean {

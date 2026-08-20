@@ -171,7 +171,6 @@ export function registerMissionControlHandlers(
         snapshots.push({
           panelId,
           text: bounded.text,
-          isAlternateScreen: liveSnapshot?.isAlternateScreen ?? Boolean(customState.isAlternateScreen),
           lastActivityAt: liveSnapshot?.lastActivityTime ?? customState.lastActivityTime ?? null,
           cols: liveSnapshot?.cols ?? customState.dimensions?.cols ?? null,
           rows: liveSnapshot?.rows ?? customState.dimensions?.rows ?? null,

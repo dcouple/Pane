@@ -1124,6 +1124,10 @@ function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
     return decodeBoundary(panel.state.customState, boundary.object({
       alternateScreenBuffer: boundary.optional(boundary.string),
       isAlternateScreen: boundary.optional(boundary.boolean),
+      // The emulator's laid-out text, preferred by selectPanelScreenText over
+      // the raw buffers. Leaving it out of this schema silently drops it and
+      // sends every stopped panel back to the ANSI-stripped byte log.
+      screenText: boundary.optional(boundary.string),
       scrollbackBuffer: boundary.optional(boundary.union(boundary.string, boundary.array(boundary.string))),
       agentType: boundary.optional(boundary.enumeration(...RUNPANE_CONTRACT.enums.agents)),
       isCliReady: boundary.optional(boundary.boolean),

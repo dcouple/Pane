@@ -47,6 +47,14 @@ export function selectPanelScreenText(
     return { source: 'empty', rawText: '' };
   }
 
+  // The emulator's own text first: it is already laid out. The raw buffers below
+  // are a byte log, and a full-screen TUI paints those with absolute cursor
+  // positioning, so stripping their escapes runs every word together.
+  const persistedScreenText = customState.screenText;
+  if (persistedScreenText) {
+    return { source: 'persistedOutput', rawText: persistedScreenText };
+  }
+
   const persistedAlternate = customState.alternateScreenBuffer;
   if (customState.isAlternateScreen && persistedAlternate) {
     return { source: 'persistedOutput', rawText: persistedAlternate };
