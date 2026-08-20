@@ -349,6 +349,12 @@ export function Dropdown({
           )}
           style={{
             ...fixedStyle,
+            // Grow out of the trigger rather than out of thin air. The menu is
+            // anchored by whichever pair of edges `computePosition` pinned it
+            // with, so those edges are exactly where the trigger is — scaling
+            // from that corner is what makes the menu look like it came from the
+            // button you pressed instead of appearing over it.
+            transformOrigin: `${fixedStyle.bottom !== undefined ? 'bottom' : 'top'} ${fixedStyle.right !== undefined ? 'right' : 'left'}`,
             boxShadow: 'var(--shadow-dropdown-elevated), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
           }}
         >

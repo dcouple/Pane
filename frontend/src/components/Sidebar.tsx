@@ -294,6 +294,8 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         top: rect.bottom + 8,
         left: Math.min(left, maxLeft),
         zIndex: 10000,
+        // Hangs below the trigger; grow out of that corner.
+        transformOrigin: 'top left',
       });
     };
 

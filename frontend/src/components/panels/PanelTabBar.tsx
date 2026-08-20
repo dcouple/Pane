@@ -184,6 +184,9 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         zIndex: 10000,
         width,
         maxWidth: `calc(100vw - ${ADD_TOOL_MENU_VIEWPORT_MARGIN * 2}px)`,
+        // Pinned under the button's left edge, so that corner is where the menu
+        // should look like it grew from.
+        transformOrigin: 'top left',
       });
     };
 

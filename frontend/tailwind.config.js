@@ -252,8 +252,8 @@ export default {
         'in': 'in 0.2s ease-out',
         'fade-in': 'fade-in 0.2s ease-out',
         'zoom-in-95': 'zoom-in-95 0.2s ease-out',
-        'dropdown-enter': 'dropdown-enter 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
-        'dropdown-enter-up': 'dropdown-enter-up 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+        'dropdown-enter': 'dropdown-enter var(--duration-enter) var(--ease-out-strong)',
+        'dropdown-enter-up': 'dropdown-enter-up var(--duration-enter) var(--ease-out-strong)',
         'modal-enter': 'modal-enter var(--duration-modal) var(--ease-out-strong)',
         'modal-overlay-enter': 'fade-in var(--duration-modal) var(--ease-out-strong)',
       },
@@ -283,25 +283,16 @@ export default {
           '0%': { opacity: 0, transform: 'scale(0.97)' },
           '100%': { opacity: 1, transform: 'scale(1)' },
         },
+        // Paired with `transform-origin` at the trigger (see Dropdown.tsx), so
+        // the scale does most of the spatial work and the translate is only the
+        // small nudge that gives the entrance a direction.
         'dropdown-enter': {
-          '0%': { 
-            opacity: 0, 
-            transform: 'translateY(-8px) scale(0.96)' 
-          },
-          '100%': { 
-            opacity: 1, 
-            transform: 'translateY(0) scale(1)' 
-          },
+          '0%': { opacity: 0, transform: 'translateY(-4px) scale(0.96)' },
+          '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
         },
         'dropdown-enter-up': {
-          '0%': { 
-            opacity: 0, 
-            transform: 'translateY(8px) scale(0.96)' 
-          },
-          '100%': { 
-            opacity: 1, 
-            transform: 'translateY(0) scale(1)' 
-          },
+          '0%': { opacity: 0, transform: 'translateY(4px) scale(0.96)' },
+          '100%': { opacity: 1, transform: 'translateY(0) scale(1)' },
         },
       },
       ringColor: {
