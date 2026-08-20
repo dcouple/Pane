@@ -18,6 +18,14 @@ export interface ModalProps {
   ariaLabel?: string;
   initialFocusRef?: React.RefObject<HTMLElement | null>;
   restoreFocusOnClose?: boolean;
+  /**
+   * Opens with no entrance animation at all. Set it on a surface reached by
+   * keyboard dozens or hundreds of times a day — the command palette — where an
+   * entrance is not polish, it is the gap between pressing the shortcut and
+   * being able to type. Raycast's palette has no open animation for exactly
+   * this reason.
+   */
+  instant?: boolean;
 }
 
 function canReceiveFocus(element: HTMLElement | null): element is HTMLElement {
@@ -38,6 +46,7 @@ export const Modal: React.FC<ModalProps> = ({
   ariaLabel,
   initialFocusRef,
   restoreFocusOnClose = true,
+  instant = false,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -78,7 +87,12 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-modal-backdrop bg-modal-overlay backdrop-blur-sm animate-modal-overlay-enter" />
+        <Dialog.Overlay
+          className={cn(
+            'fixed inset-0 z-modal-backdrop bg-modal-overlay backdrop-blur-sm',
+            !instant && 'animate-modal-overlay-enter',
+          )}
+        />
         <Dialog.Content
           ref={contentRef}
           aria-modal="true"
@@ -110,7 +124,7 @@ export const Modal: React.FC<ModalProps> = ({
             <div
               className={cn(
                 'relative bg-bg-primary rounded-modal shadow-modal w-full max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col',
-                'animate-modal-enter',
+                !instant && 'animate-modal-enter',
                 className,
               )}
             >

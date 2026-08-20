@@ -93,6 +93,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
       onClose={onClose}
       initialFocusRef={inputRef}
       size="md"
+      // Cmd+Shift+P is a hundred-times-a-day reflex. Anything between the
+      // keystroke and a focused input reads as the app being slow, not as
+      // polish, so the palette does not animate in.
+      instant
       showCloseButton={false}
       className="!max-h-[min(500px,80vh)]"
     >
@@ -159,7 +163,10 @@ export function CommandPalette({ isOpen, onClose }: CommandPaletteProps) {
                 aria-disabled={item.disabled}
                 tabIndex={-1}
                 className={cn(
-                  'w-full flex items-center justify-between px-4 py-2 text-sm transition-colors',
+                  // No transition on the row highlight either: it moves on every
+                  // arrow key, and a 150ms cross-fade means the selection is
+                  // always trailing the key you already pressed.
+                  'w-full flex items-center justify-between px-4 py-2 text-sm',
                   item.disabled
                     ? 'text-text-tertiary opacity-60 cursor-not-allowed'
                     : 'cursor-pointer',
