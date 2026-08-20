@@ -4,6 +4,7 @@ import { getTerminalTheme } from '../utils/terminalTheme';
 import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { TerminalOutputEvent } from '../../../shared/types/panels';
+import { terminalOutputByteLength } from '../utils/terminalRestore';
 
 /**
  * Read-only xterm for a Mission Control tile.
@@ -77,16 +78,16 @@ const terminalStateSchema = boundary.object({
 
 function getMissionControlViewerId(): string {
   const storageKey = 'pane.missionControl.terminalViewerId';
-  const existing = window.sessionStorage.getItem(storageKey);
-  if (existing) return existing;
-
   const id = `${MISSION_CONTROL_VIEWER_PREFIX}:${window.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
-  window.sessionStorage.setItem(storageKey, id);
+  try {
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    window.sessionStorage.setItem(storageKey, id);
+  } catch {
+    // A locked-down storage profile costs viewer-id stability across reloads,
+    // not the view: the stale-viewer sweep clears the orphan.
+  }
   return id;
-}
-
-function byteLength(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
 }
 
 /**
@@ -465,8 +466,11 @@ export function useMissionControlTerminal({
     });
 
     const unsubscribe = window.electronAPI.events.onTerminalOutput((payload: TerminalOutputEvent) => {
+      // The output event is broadcast for every panel; reject the ones that are
+      // not ours before paying for a decode.
+      if (!('panelId' in payload) || payload.panelId !== panelId) return;
       const data = decodeOptionalBoundary(payload, terminalOutputPayloadSchema);
-      if (!data || data.panelId !== panelId) return;
+      if (!data) return;
       terminal.write(data.output, () => {
         if (disposed) return;
         // Follow new output, but never yank the view away from someone who
@@ -475,7 +479,7 @@ export function useMissionControlTerminal({
         syncOverflow();
       });
       // Flow control is byte-counted per panel; a viewer that writes must ack.
-      void window.electronAPI.invoke('terminal:ack', panelId, byteLength(data.output)).catch(() => {});
+      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output)).catch(() => {});
     });
 
     // Main only treats a panel as visible while a viewer says so, and viewer

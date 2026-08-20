@@ -111,7 +111,6 @@ export function registerMissionControlHandlers(
           panelId: row.id,
           sessionId: row.session_id,
           sessionName: row.session_name ?? 'Untitled session',
-          sessionArchived: Boolean(row.archived),
           projectId: row.project_id,
           // Pane Chat has no project; naming its group after itself beats
           // filing it under "Unknown project".
@@ -150,16 +149,19 @@ export function registerMissionControlHandlers(
       );
 
       const snapshots: MissionControlSnapshot[] = [];
-      const missing: string[] = [];
+
+      // Waiting for emulator idle is a wait, not work, so every panel waits at
+      // once: one busy agent would otherwise delay every later tile in the batch
+      // and push the whole poll past its interval. The extraction below stays
+      // sequential, because that part is CPU.
+      await Promise.all(panelIds.map(panelId => terminalPanelManager.waitForTerminalState(panelId)));
 
       for (const panelId of panelIds) {
         const panel = panelManager.getPanel(panelId);
-        if (!panel) {
-          missing.push(panelId);
-          continue;
-        }
+        // A panel that no longer exists simply has no tile: the client replaces
+        // its whole snapshot map each poll, so a dropped id drops itself.
+        if (!panel) continue;
 
-        await terminalPanelManager.waitForTerminalState(panelId);
         const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panelId);
         // SAFETY: Panel state is written by terminalPanelManager for terminal panels; an absent value falls back to {}.
         const customState = (panel.state.customState ?? {}) as TerminalPanelState;
@@ -169,9 +171,7 @@ export function registerMissionControlHandlers(
         snapshots.push({
           panelId,
           text: bounded.text,
-          lineCount: bounded.returnedLineCount,
           isAlternateScreen: liveSnapshot?.isAlternateScreen ?? Boolean(customState.isAlternateScreen),
-          isLive: Boolean(liveSnapshot),
           lastActivityAt: liveSnapshot?.lastActivityTime ?? customState.lastActivityTime ?? null,
           cols: liveSnapshot?.cols ?? customState.dimensions?.cols ?? null,
           rows: liveSnapshot?.rows ?? customState.dimensions?.rows ?? null,
@@ -180,7 +180,6 @@ export function registerMissionControlHandlers(
 
       const result: MissionControlSnapshotResult = {
         snapshots,
-        missing,
         capturedAt: new Date().toISOString(),
       };
       return { success: true, data: result };

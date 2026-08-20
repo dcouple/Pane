@@ -17,7 +17,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { SessionStatusBadge } from './SessionStatusBadge';
 import { AgentActivityDot, AgentStatusDot } from './ui/AgentStatusDot';
-import { useSessionAgentDisplayStatus } from '../hooks/useAgentStatus';
+import { useSessionAgentDisplayStatus, useBlockedAgentCount } from '../hooks/useAgentStatus';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 import { API } from '../utils/api';
 import type { Project } from '../types/project';
@@ -396,10 +396,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const agentStatusByPanel = usePanelStore((state) => state.agentStatus);
   const agentPanelSessions = usePanelStore((state) => state.agentStatusSession);
   /** Agents waiting on the user, anywhere — surfaced on the Mission Control rail button. */
-  const blockedAgentCount = useMemo(
-    () => Object.values(agentStatusByPanel).filter((state) => state === 'blocked').length,
-    [agentStatusByPanel]
-  );
+  const blockedAgentCount = useBlockedAgentCount();
   const unviewedBySession = usePanelStore((state) => state.unviewedCompletedActivity);
   useSessionNavigationHotkeys({ projects, sessionSortAscending });
 

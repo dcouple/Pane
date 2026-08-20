@@ -14,7 +14,6 @@ export interface MissionControlAgentPanel {
   panelId: string;
   sessionId: string;
   sessionName: string;
-  sessionArchived: boolean;
   projectId: number | null;
   projectName: string;
   /** Absolute worktree path, used for the "by worktree" grouping. */
@@ -31,10 +30,7 @@ export interface MissionControlSnapshot {
   panelId: string;
   /** ANSI-stripped text, at most `maxLines` trailing lines. */
   text: string;
-  lineCount: number;
   isAlternateScreen: boolean;
-  /** false when the panel has no live PTY and the text came from storage. */
-  isLive: boolean;
   lastActivityAt: string | null;
   /**
    * Live PTY dimensions, when the terminal is running. A live tile must size
@@ -53,8 +49,6 @@ export interface MissionControlSnapshotRequest {
 
 export interface MissionControlSnapshotResult {
   snapshots: MissionControlSnapshot[];
-  /** Requested ids that no longer exist — the client should drop these tiles. */
-  missing: string[];
   capturedAt: string;
 }
 

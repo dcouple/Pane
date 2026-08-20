@@ -6,7 +6,6 @@ function tile(overrides: Partial<MissionControlTileModel> & { panelId: string })
   return {
     sessionId: `session-${overrides.panelId}`,
     sessionName: 'Session',
-    sessionArchived: false,
     projectId: 1,
     projectName: 'Alpha',
     worktreePath: '/repo/alpha',

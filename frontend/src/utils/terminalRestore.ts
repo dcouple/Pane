@@ -32,3 +32,13 @@ export function selectTerminalRestoreContent(state: TerminalPanelState): Termina
   }
   return null;
 }
+
+/**
+ * Byte count of a terminal chunk, as the flow-control ack contract measures it.
+ * Shared by every viewer that writes to a PTY and must ack what it wrote.
+ */
+const OUTPUT_ENCODER = new TextEncoder();
+
+export function terminalOutputByteLength(value: string): number {
+  return OUTPUT_ENCODER.encode(value).byteLength;
+}

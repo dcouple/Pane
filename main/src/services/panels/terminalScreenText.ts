@@ -1,5 +1,5 @@
 import { sanitizeTerminalOutput } from '../../utils/terminalOutputSanitizer';
-import { boundary, decodeBoundary } from '../../../../shared/validation/boundaryDecoder';
+import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 import type { TerminalPanelState } from '../../../../shared/types/panels';
 import type { TerminalPanelSnapshot } from '../terminalPanelManager';
 import type { RunpanePanelScreenSource } from '../../../../shared/types/runpaneOrchestration';
@@ -14,11 +14,8 @@ import type { RunpanePanelScreenSource } from '../../../../shared/types/runpaneO
  */
 
 export function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
-  try {
-    return decodeBoundary(value, boundary.string);
-  } catch {
-    return Array.isArray(value) ? value.join('\n') : '';
-  }
+  if (Array.isArray(value)) return value.join('\n');
+  return decodeOptionalBoundary(value, boundary.string) ?? '';
 }
 
 export interface PanelScreenText {

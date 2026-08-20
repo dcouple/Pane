@@ -19,17 +19,20 @@ const STATE_LABEL = {
   unknown: 'Not running',
 } satisfies Record<AgentState, string>;
 
+/** One collator for every comparison; `localeCompare` builds a fresh one per call. */
+const COLLATOR = new Intl.Collator();
+
 export function compareMissionControlTiles(a: MissionControlTileModel, b: MissionControlTileModel): number {
   const byState = STATE_ORDER[a.agentState] - STATE_ORDER[b.agentState];
   if (byState !== 0) return byState;
 
-  const byProject = a.projectName.localeCompare(b.projectName);
+  const byProject = COLLATOR.compare(a.projectName, b.projectName);
   if (byProject !== 0) return byProject;
 
-  const bySession = a.sessionName.localeCompare(b.sessionName);
+  const bySession = COLLATOR.compare(a.sessionName, b.sessionName);
   if (bySession !== 0) return bySession;
 
-  return a.panelTitle.localeCompare(b.panelTitle);
+  return COLLATOR.compare(a.panelTitle, b.panelTitle);
 }
 
 /**
@@ -72,7 +75,7 @@ export function groupMissionControlTiles(tiles: MissionControlTileModel[], group
   return [...buckets.values()].sort((a, b) => {
     const urgency = STATE_ORDER[a.tiles[0].agentState] - STATE_ORDER[b.tiles[0].agentState];
     if (urgency !== 0) return urgency;
-    return a.label.localeCompare(b.label);
+    return COLLATOR.compare(a.label, b.label);
   });
 }
 

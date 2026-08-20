@@ -82,8 +82,10 @@ Agent TUIs paint with absolute cursor positioning sized to the real PTY.
 Replaying that byte stream into a terminal of a different width wraps every
 line and each repaint pushes the viewport down — the console appears to scroll
 without end. A read-only viewer must create its xterm at the PTY's exact
-`cols`/`rows` (exposed on `TerminalPanelSnapshot`) and scale to fit with a CSS
-transform. Never use `FitAddon` for a secondary view.
+`cols`/`rows` (exposed on `TerminalPanelSnapshot`) and fit by choosing a font
+size that makes those columns fit the available width. Scaling with a CSS
+transform is the wrong lever: a 120-column terminal in a 400px tile lands at a
+~4px glyph. Never use `FitAddon` for a secondary view.
 
 ### Every git/shell read goes through `CommandRunner`
 `CommandRunner` transparently wraps commands for WSL and remote hosts. Never

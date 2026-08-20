@@ -9,6 +9,7 @@ import { usePanelStore } from '../../stores/panelStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useNavigationStore } from '../../stores/navigationStore';
 import { describeMissionControlTile, groupMissionControlTiles } from '../../utils/missionControlGrouping';
+import { cycleIndex } from '../../utils/arrayUtils';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown';
@@ -29,14 +30,15 @@ const POLL_INTERVAL_MS = 1500;
 /** Debounce before a hovered tile is promoted to a real terminal. */
 const PROMOTE_DELAY_MS = 250;
 
-const GROUPING_OPTIONS: Array<{ value: MissionControlGrouping; label: string }> = [
-  { value: 'project', label: 'Project' },
-  { value: 'status', label: 'Status' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'none', label: 'None' },
-];
+const GROUPING_LABELS = {
+  project: 'Project',
+  status: 'Status',
+  agent: 'Agent',
+  none: 'None',
+} satisfies Record<MissionControlGrouping, string>;
 
-const DENSITY_OPTIONS: MissionControlDensity[] = [1, 2, 3, 4];
+const GROUPING_VALUES: readonly MissionControlGrouping[] = ['project', 'status', 'agent', 'none'];
+const DENSITY_OPTIONS: readonly MissionControlDensity[] = [1, 2, 3, 4];
 
 /**
  * Above this many tiles, "all live" is refused: each live tile is a real xterm
@@ -79,7 +81,27 @@ function readStoredOption<T>(key: string, fallback: T, schema: BoundarySchema<T>
   }
 }
 
-type StoredOption = MissionControlGrouping | MissionControlDensity | boolean | string[];
+/** A `useState` whose value survives the visit, written on set rather than by effect. */
+function usePersistedOption<T>(
+  key: string,
+  fallback: T,
+  schema: BoundarySchema<T>,
+): [T, (value: T | ((current: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => readStoredOption(key, fallback, schema));
+  // The setter is the only writer, so this stays level with `value` without
+  // being touched during render, and it keeps the storage write out of the
+  // state updater, which has to stay pure.
+  const latest = useRef(value);
+
+  const set = useCallback((next: T | ((current: T) => T)) => {
+    const resolved = next instanceof Function ? next(latest.current) : next;
+    latest.current = resolved;
+    writeStoredOption(key, resolved);
+    setValue(resolved);
+  }, [key]);
+
+  return [value, set];
+}
 
 /** Grid movement for the arrow keys; a row is one density's worth of tiles. */
 function arrowStep(key: string, density: MissionControlDensity): number | undefined {
@@ -92,12 +114,78 @@ function arrowStep(key: string, density: MissionControlDensity): number | undefi
   }
 }
 
-function writeStoredOption(key: string, value: StoredOption): void {
+function writeStoredOption<T>(key: string, value: T): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Quota or a locked-down profile — the option just stays session-only.
   }
+}
+
+/** One count pill: the blocked variant becomes a button when it can act. */
+function StatusCountPill({ status, count, label, compact, onClick, title }: {
+  status: 'blocked' | 'working';
+  count: number;
+  label: string;
+  compact?: boolean;
+  onClick?: () => void;
+  title?: string;
+}) {
+  if (count === 0) return null;
+
+  const tone = status === 'blocked'
+    ? 'bg-status-error/15 text-status-error'
+    : 'bg-interactive/15 text-interactive';
+  const className = `flex items-center gap-1 rounded-full px-2 py-px text-[10px] font-medium ${tone}${
+    compact ? ' normal-case tracking-normal' : ''
+  }${onClick ? ' transition-colors hover:bg-status-error/25 focus:outline-none focus-visible:ring-1 focus-visible:ring-status-error' : ''}`;
+
+  const body = (
+    <>
+      <AgentStatusDot status={status} size="sm" />
+      {count} {label}
+      {onClick && <ArrowRight className="h-2.5 w-2.5" aria-hidden="true" />}
+    </>
+  );
+
+  if (onClick) {
+    return <button type="button" onClick={onClick} title={title} className={className}>{body}</button>;
+  }
+  return <span className={className}>{body}</span>;
+}
+
+/** The Group and Columns pickers: same markup, different option lists. */
+function SegmentedControl<T extends string | number>({ legend, label, options, value, onChange, render, optionLabel }: {
+  legend: string;
+  label: string;
+  options: readonly T[];
+  value: T;
+  onChange: (value: T) => void;
+  render: (option: T) => string;
+  optionLabel?: (option: T) => string;
+}) {
+  return (
+    <fieldset className="flex items-center gap-1">
+      <legend className="sr-only">{legend}</legend>
+      <span className="text-[10px] uppercase tracking-wider text-text-muted">{label}</span>
+      {options.map(option => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={value === option}
+          aria-label={optionLabel?.(option)}
+          onClick={() => onChange(option)}
+          className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+            value === option
+              ? 'bg-interactive text-text-on-interactive'
+              : 'text-text-secondary hover:bg-surface-hover'
+          }`}
+        >
+          {render(option)}
+        </button>
+      ))}
+    </fieldset>
+  );
 }
 
 /**
@@ -114,12 +202,8 @@ export function MissionControlView() {
   const [snapshots, setSnapshots] = useState<Record<string, MissionControlSnapshot>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [grouping, setGrouping] = useState<MissionControlGrouping>(
-    () => readStoredOption(GROUPING_KEY, 'project', groupingSchema)
-  );
-  const [density, setDensity] = useState<MissionControlDensity>(
-    () => readStoredOption(DENSITY_KEY, 3, densitySchema)
-  );
+  const [grouping, setGrouping] = usePersistedOption(GROUPING_KEY, 'project', groupingSchema);
+  const [density, setDensity] = usePersistedOption(DENSITY_KEY, 3, densitySchema);
   const [liveTileId, setLiveTileId] = useState<string | null>(null);
   const [liveAll, setLiveAll] = useState(false);
   /** Panel currently open in the full-size interactive view, if any. */
@@ -134,20 +218,16 @@ export function MissionControlView() {
    * and simply takes the keyboard — better when the grid layout itself is the
    * thing being watched.
    */
-  const [expandOnFocus, setExpandOnFocus] = useState<boolean>(
-    () => readStoredOption(EXPAND_ON_FOCUS_KEY, true, boundary.boolean)
-  );
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<string[]>(
-    () => readStoredOption<string[]>(COLLAPSED_GROUPS_KEY, [], collapsedGroupsSchema)
+  const [expandOnFocus, setExpandOnFocus] = usePersistedOption(EXPAND_ON_FOCUS_KEY, true, boundary.boolean);
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = usePersistedOption<string[]>(
+    COLLAPSED_GROUPS_KEY, [], collapsedGroupsSchema
   );
   /**
    * Whether Escape reaches the agent. Off, it leaves typing mode instead —
    * the usual intent in a grid, and unlike an interrupt it can be undone by
    * clicking the tile again.
    */
-  const [sendEscape, setSendEscape] = useState<boolean>(
-    () => readStoredOption(SEND_ESCAPE_KEY, false, boundary.boolean)
-  );
+  const [sendEscape, setSendEscape] = usePersistedOption(SEND_ESCAPE_KEY, false, boundary.boolean);
 
   const promoteTimerRef = useRef<number | undefined>(undefined);
   const inFlightRef = useRef(false);
@@ -179,13 +259,10 @@ export function MissionControlView() {
     }
   }, []);
 
-  useEffect(() => {
-    void loadAgents();
-  }, [loadAgents]);
-
   // Agents appearing or disappearing shows up as agent-status churn; refresh
-  // the roster on it rather than polling the (heavier) list endpoint.
-  const agentStatusKeys = Object.keys(agentStatus).sort().join(',');
+  // the roster on it rather than polling the (heavier) list endpoint. This also
+  // covers the initial load, since the effect runs on mount.
+  const agentStatusKeys = useMemo(() => Object.keys(agentStatus).sort().join(','), [agentStatus]);
   useEffect(() => {
     void loadAgents();
   }, [agentStatusKeys, loadAgents]);
@@ -216,26 +293,19 @@ export function MissionControlView() {
     const frozen = focusedPanelId ? frozenOrderRef.current : null;
     if (!frozen) return groups;
 
-    const rankOf = (order: string[], key: string) => {
-      const index = order.indexOf(key);
-      return index === -1 ? Number.MAX_SAFE_INTEGER : index;
-    };
+    const groupRank = new Map(frozen.groups.map((key, index) => [key, index]));
+    const tileRank = new Map(frozen.tiles.map((key, index) => [key, index]));
+    const rankOf = (order: Map<string, number>, key: string) => order.get(key) ?? Number.MAX_SAFE_INTEGER;
 
     return [...groups]
-      .sort((a, b) => rankOf(frozen.groups, a.key) - rankOf(frozen.groups, b.key))
+      .sort((a, b) => rankOf(groupRank, a.key) - rankOf(groupRank, b.key))
       .map(group => ({
         ...group,
         tiles: [...group.tiles].sort(
-          (a, b) => rankOf(frozen.tiles, a.panelId) - rankOf(frozen.tiles, b.panelId)
+          (a, b) => rankOf(tileRank, a.panelId) - rankOf(tileRank, b.panelId)
         ),
       }));
   }, [groups, focusedPanelId]);
-
-  useEffect(() => writeStoredOption(EXPAND_ON_FOCUS_KEY, expandOnFocus), [expandOnFocus]);
-  useEffect(() => writeStoredOption(COLLAPSED_GROUPS_KEY, collapsedGroupKeys), [collapsedGroupKeys]);
-  useEffect(() => writeStoredOption(SEND_ESCAPE_KEY, sendEscape), [sendEscape]);
-  useEffect(() => writeStoredOption(GROUPING_KEY, grouping), [grouping]);
-  useEffect(() => writeStoredOption(DENSITY_KEY, density), [density]);
 
   // A folded-away group costs nothing: its panels leave the snapshot batch, so
   // the emulators behind them are never woken for a tile nobody can see.
@@ -350,20 +420,13 @@ export function MissionControlView() {
         ? current.filter(key => key !== groupKey)
         : [...current, groupKey]
     ));
-  }, [groups, collapsedGroups, focusedPanelId]);
-
-  // Track the live tile model so the focus view keeps seeing fresh snapshots
-  // (dimensions, status) as polls arrive.
-  const focusedTile = useMemo(
-    () => tiles.find(tile => tile.panelId === focusedPanelId) ?? null,
-    [tiles, focusedPanelId]
-  );
+  }, [groups, collapsedGroups, focusedPanelId, setCollapsedGroupKeys]);
 
   // A panel that disappears (session archived, agent stopped) must not leave a
   // dialog attached to nothing.
   useEffect(() => {
-    if (focusedPanelId && !focusedTile) setFocusedPanelId(null);
-  }, [focusedPanelId, focusedTile]);
+    if (focusedPanelId && !tiles.some(tile => tile.panelId === focusedPanelId)) setFocusedPanelId(null);
+  }, [focusedPanelId, tiles]);
 
   // Drop the hover promotion when switching into all-live so the two modes
   // never both own a terminal for the same panel.
@@ -396,9 +459,9 @@ export function MissionControlView() {
   /** Every tile on screen, in reading order, ignoring folded groups. */
   const visibleTiles = useMemo(
     () => displayedGroups
-      .filter(group => grouping === 'none' || !collapsedGroups.has(group.key))
+      .filter(group => !collapsedGroups.has(group.key))
       .flatMap(group => group.tiles),
-    [displayedGroups, grouping, collapsedGroups]
+    [displayedGroups, collapsedGroups]
   );
 
   const registerTileElement = useCallback((panelId: string, element: HTMLElement | null) => {
@@ -427,7 +490,7 @@ export function MissionControlView() {
 
     const anchor = focusedPanelId ?? selectedPanelId;
     const currentIndex = blocked.findIndex(tile => tile.panelId === anchor);
-    const next = blocked[(currentIndex + 1) % blocked.length];
+    const next = blocked[cycleIndex(currentIndex, blocked.length, 'next')];
 
     selectTile(next.panelId);
     if (next.isLive) handleFocusAgent(next);
@@ -521,7 +584,7 @@ export function MissionControlView() {
       disabled: !canLiveAll,
       onClick: () => setLiveAll(current => !current),
     },
-  ], [expandOnFocus, sendEscape, liveAllActive, canLiveAll]);
+  ], [expandOnFocus, sendEscape, liveAllActive, canLiveAll, setExpandOnFocus, setSendEscape]);
 
   // --- Closing a pane ---
 
@@ -559,67 +622,35 @@ export function MissionControlView() {
             At-a-glance roll-up, and the fastest way to act on it: the blocked
             count is the button that takes you to the next waiting agent.
           */}
-          {statusSummary.blocked > 0 && (
-            <button
-              type="button"
-              onClick={jumpToNextBlocked}
-              title="Go to the next agent waiting for you (N)"
-              className="flex items-center gap-1 rounded-full bg-status-error/15 px-2 py-px text-[10px] font-medium text-status-error transition-colors hover:bg-status-error/25 focus:outline-none focus-visible:ring-1 focus-visible:ring-status-error"
-            >
-              <AgentStatusDot status="blocked" size="sm" />
-              {statusSummary.blocked} need input
-              <ArrowRight className="h-2.5 w-2.5" aria-hidden="true" />
-            </button>
-          )}
-          {statusSummary.working > 0 && (
-            <span className="flex items-center gap-1 rounded-full bg-interactive/15 px-2 py-px text-[10px] font-medium text-interactive">
-              <AgentStatusDot status="working" size="sm" />
-              {statusSummary.working} working
-            </span>
-          )}
+          <StatusCountPill
+            status="blocked"
+            count={statusSummary.blocked}
+            label="need input"
+            onClick={jumpToNextBlocked}
+            title="Go to the next agent waiting for you (N)"
+          />
+          <StatusCountPill status="working" count={statusSummary.working} label="working" />
         </div>
 
         <div className="ml-auto flex flex-wrap items-center gap-4">
-          <fieldset className="flex items-center gap-1">
-            <legend className="sr-only">Group agents by</legend>
-            <span className="text-[10px] uppercase tracking-wider text-text-muted">Group</span>
-            {GROUPING_OPTIONS.map(option => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={grouping === option.value}
-                onClick={() => setGrouping(option.value)}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  grouping === option.value
-                    ? 'bg-interactive text-text-on-interactive'
-                    : 'text-text-secondary hover:bg-surface-hover'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </fieldset>
+          <SegmentedControl
+            legend="Group agents by"
+            label="Group"
+            options={GROUPING_VALUES}
+            value={grouping}
+            onChange={setGrouping}
+            render={value => GROUPING_LABELS[value]}
+          />
 
-          <fieldset className="flex items-center gap-1">
-            <legend className="sr-only">Tiles per row</legend>
-            <span className="text-[10px] uppercase tracking-wider text-text-muted">Columns</span>
-            {DENSITY_OPTIONS.map(option => (
-              <button
-                key={option}
-                type="button"
-                aria-pressed={density === option}
-                aria-label={`${option} tiles per row`}
-                onClick={() => setDensity(option)}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  density === option
-                    ? 'bg-interactive text-text-on-interactive'
-                    : 'text-text-secondary hover:bg-surface-hover'
-                }`}
-              >
-                {option}×
-              </button>
-            ))}
-          </fieldset>
+          <SegmentedControl
+            legend="Tiles per row"
+            label="Columns"
+            options={DENSITY_OPTIONS}
+            value={density}
+            onChange={setDensity}
+            render={option => `${option}×`}
+            optionLabel={option => `${option} tiles per row`}
+          />
 
           {/*
             Group and Columns are changed constantly and stay on the bar; these
@@ -699,18 +730,8 @@ export function MissionControlView() {
                       Counts rather than a bare total, so a folded group says
                       exactly as much as an open one.
                     */}
-                    {blockedInGroup > 0 && (
-                      <span className="flex items-center gap-1 rounded-full bg-status-error/15 px-2 py-px text-[10px] normal-case tracking-normal text-status-error">
-                        <AgentStatusDot status="blocked" size="sm" />
-                        {blockedInGroup} waiting
-                      </span>
-                    )}
-                    {workingInGroup > 0 && (
-                      <span className="flex items-center gap-1 rounded-full bg-interactive/15 px-2 py-px text-[10px] normal-case tracking-normal text-interactive">
-                        <AgentStatusDot status="working" size="sm" />
-                        {workingInGroup} working
-                      </span>
-                    )}
+                    <StatusCountPill status="blocked" count={blockedInGroup} label="waiting" compact />
+                    <StatusCountPill status="working" count={workingInGroup} label="working" compact />
                     <span className="h-px flex-1 bg-border-primary" aria-hidden="true" />
                   </h2>
                 )}

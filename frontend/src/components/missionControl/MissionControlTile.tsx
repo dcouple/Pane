@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { GitBranch, Keyboard, Minimize2, Radio, TerminalSquare, Trash2, X } from 'lucide-react';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { useMissionControlTerminal } from '../../hooks/useMissionControlTerminal';
@@ -6,6 +6,7 @@ import { toAgentDisplayStatus } from '../../utils/agentStatus';
 import { describeMissionControlTile } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
+import { formatTimeAgo } from '../../utils/timestampUtils';
 
 /** Rendered row height of the live terminal: 12px font at 1.15 line height. */
 const ROW_PX = 14;
@@ -30,18 +31,6 @@ const STATUS_TEXT = {
   idle: 'Idle',
   unknown: 'Not running',
 } satisfies Record<AgentDisplayStatus, string>;
-
-function relativeTime(iso: string | null): string {
-  if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return '';
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 function LiveTerminalSurface({
   panelId,
@@ -170,6 +159,11 @@ export const MissionControlTile = memo(function MissionControlTile({
   isSelected,
   registerElement,
 }: MissionControlTileProps) {
+  const registerTileElement = useCallback(
+    (element: HTMLElement | null) => registerElement(tile.panelId, element),
+    [registerElement, tile.panelId],
+  );
+
   const status = toAgentDisplayStatus(tile.agentState, false);
   const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
   const snapshotText = tile.snapshot?.text ?? '';
@@ -177,7 +171,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   // Both bodies are laid out on the same row grid as the live terminal
   // (12px font x 1.15 line height), so a tile shows whole lines rather than
   // clipping one in half, and hovering never makes the grid jump.
-  const budgetRows = Math.max(snapshotLines, 6);
+  const budgetRows = snapshotLines;
   // A terminal shorter than the budget gets only the height it needs, instead
   // of reserving blank space below it.
   const ptyRows = tile.snapshot?.rows ?? 0;
@@ -190,7 +184,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   const bodyHeight = isExpanded
     ? Math.min(Math.max(ptyRows, budgetRows) * FOCUS_ROW_PX, MAX_FOCUS_BODY_PX)
     : visibleRows * ROW_PX;
-  const lastActivity = relativeTime(tile.snapshot?.lastActivityAt ?? null);
+  const lastActivity = formatTimeAgo(tile.snapshot?.lastActivityAt ?? null);
   // Only worth showing when it says something the session name does not.
   const branchLabel = tile.worktreeName && tile.worktreeName !== tile.sessionName
     ? tile.worktreeName
@@ -198,7 +192,7 @@ export const MissionControlTile = memo(function MissionControlTile({
 
   return (
     <article
-      ref={element => registerElement(tile.panelId, element)}
+      ref={registerTileElement}
       className={`group relative flex min-w-0 flex-col overflow-hidden rounded-md border bg-surface-secondary transition-colors ${
         isFocused
           ? 'border-interactive ring-1 ring-interactive/40'
