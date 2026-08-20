@@ -386,7 +386,13 @@ export function Dropdown({
                       disabled={item.disabled}
                       className={cn(
                         'w-full text-left px-3 py-2.5 rounded-sm',
-                        'transition-all duration-200 ease-out flex items-center gap-3',
+                        // Colours only, and fast. A menu row is highlighted by
+                        // running the pointer down the list, so anything slower
+                        // than about 100ms leaves the highlight visibly trailing
+                        // the cursor. `transition-all` also animated layout and
+                        // shadow properties off the compositor on every row the
+                        // pointer crossed.
+                        'transition-[color,background-color,border-color,box-shadow] duration-100 ease-out flex items-center gap-3',
                         'focus:outline-none focus:ring-2 focus:ring-focus-ring-subtle',
                         'min-h-[2.5rem] group relative',
                         item.disabled && 'opacity-50 cursor-not-allowed',
@@ -398,7 +404,7 @@ export function Dropdown({
                       {Icon && (
                         <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
                           <Icon className={cn(
-                            'w-4 h-4 transition-colors duration-200 ease-out',
+                            'w-4 h-4 transition-colors duration-100 ease-out',
                             'stroke-[1.5]',
                             item.iconColor || 'text-current'
                           )} />
@@ -408,13 +414,13 @@ export function Dropdown({
                       <div className="flex-1 min-w-0 py-0.5">
                         <div className={cn(
                           'text-sm font-medium leading-tight',
-                          'transition-colors duration-200 ease-out',
+                          'transition-colors duration-100 ease-out',
                           'group-hover:text-inherit'
                         )}>
                           {item.label}
                         </div>
                         {item.description && (
-                          <div className="text-xs text-text-tertiary mt-1 leading-tight transition-colors duration-200 ease-out">
+                          <div className="text-xs text-text-tertiary mt-1 leading-tight transition-colors duration-100 ease-out">
                             {item.description}
                           </div>
                         )}
@@ -475,7 +481,7 @@ export function DropdownMenuItem({
       className={cn(
         'w-full text-left px-3 py-2.5 rounded-sm',
         'text-text-secondary hover:bg-interactive/10 hover:text-text-primary hover:shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]',
-        'transition-all duration-200 ease-out flex items-center gap-3',
+        'transition-[color,background-color,box-shadow] duration-100 ease-out flex items-center gap-3',
         'focus:outline-none focus:ring-2 focus:ring-focus-ring-subtle',
         'min-h-[2.5rem] group', // Better touch target and consistent height
         className
@@ -484,10 +490,10 @@ export function DropdownMenuItem({
     >
       {Icon && (
         <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
-          <Icon className="w-4 h-4 text-text-tertiary group-hover:text-current stroke-[1.5] transition-colors duration-200 ease-out" />
+          <Icon className="w-4 h-4 text-text-tertiary group-hover:text-current stroke-[1.5] transition-colors duration-100 ease-out" />
         </div>
       )}
-      <span className="text-sm font-medium group-hover:text-inherit transition-colors duration-200 ease-out">{label}</span>
+      <span className="text-sm font-medium group-hover:text-inherit transition-colors duration-100 ease-out">{label}</span>
     </button>
   );
 }
