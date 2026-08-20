@@ -20,6 +20,12 @@ export function RemoteStatusBar({
   onOpenSidebar,
 }: RemoteStatusBarProps) {
   const connected = status === 'connected';
+  // `error` is a settled state and stays still; only the two states where the
+  // app is actively trying to reach the host get the ring.
+  const reaching = status === 'connecting' || status === 'reconnecting';
+  const dotColor = connected
+    ? 'bg-status-success'
+    : status === 'error' ? 'bg-status-error' : 'bg-status-warning';
   const statusLabel = getStatusLabel(status);
   const title = connected ? profile.label : `${statusLabel} ${profile.label}`;
   const [announcement, setAnnouncement] = useState('');
@@ -57,7 +63,10 @@ export function RemoteStatusBar({
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
-        <span aria-hidden="true" className={`flex h-2.5 w-2.5 shrink-0 rounded-full ${connected ? 'bg-status-success' : status === 'error' ? 'bg-status-error' : 'bg-status-warning'}`} />
+        <span aria-hidden="true" className="relative flex h-2.5 w-2.5 shrink-0 items-center justify-center">
+          {reaching && <span className={`pane-status-reaching absolute inset-0 rounded-full ${dotColor}`} />}
+          <span className={`relative h-2.5 w-2.5 rounded-full transition-colors duration-normal ease-out-strong ${dotColor}`} />
+        </span>
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-text-primary">{title}</p>
           <p className="truncate text-xs text-text-tertiary">
