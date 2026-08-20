@@ -1,0 +1,96 @@
+{
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "marks": [
+    {
+      "slug": "command-palette-open",
+      "markMs": 3355,
+      "note": "Cmd+Shift+P opens the command palette",
+      "region": {
+        "x": 336,
+        "y": 110,
+        "width": 608,
+        "height": 578
+      }
+    },
+    {
+      "slug": "command-palette-arrow",
+      "markMs": 1427,
+      "note": "Arrow keys move the selection through the command list",
+      "region": {
+        "x": 372,
+        "y": 212,
+        "width": 536,
+        "height": 404
+      }
+    },
+    {
+      "slug": "sidebar-collapse",
+      "markMs": 1324,
+      "note": "Collapsing and re-expanding the sidebar",
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 760,
+        "height": 800
+      }
+    },
+    {
+      "slug": "sidebar-menu-open",
+      "markMs": 1335,
+      "note": "The sidebar overflow menu opening from its trigger",
+      "region": {
+        "x": 102,
+        "y": 44,
+        "width": 296,
+        "height": 344
+      }
+    },
+    {
+      "slug": "menu-row-highlight",
+      "markMs": 1375,
+      "note": "Running the pointer down the menu rows",
+      "region": {
+        "x": 142,
+        "y": 84,
+        "width": 216,
+        "height": 264
+      }
+    },
+    {
+      "slug": "new-pane-dialog",
+      "markMs": 1317,
+      "note": "Opening the New Pane dialog",
+      "region": {
+        "x": 256,
+        "y": 118,
+        "width": 768,
+        "height": 562
+      }
+    },
+    {
+      "slug": "dialog-button-press",
+      "markMs": 1429,
+      "note": "Pressing and releasing the dialog’s primary button",
+      "region": {
+        "x": 720,
+        "y": 536,
+        "width": 390,
+        "height": 124
+      }
+    },
+    {
+      "slug": "title-bar-pill",
+      "markMs": 1430,
+      "note": "A pull-request pill arriving in the title bar",
+      "region": {
+        "x": 462,
+        "y": 0,
+        "width": 566,
+        "height": 50
+      }
+    }
+  ]
+}
