@@ -1,0 +1,96 @@
+{
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "marks": [
+    {
+      "slug": "pwa-key-press",
+      "markMs": 2413,
+      "note": "Tapping the terminal control keys on a phone",
+      "region": {
+        "x": 2,
+        "y": 752,
+        "width": 386,
+        "height": 90
+      }
+    },
+    {
+      "slug": "pwa-create-sheet",
+      "markMs": 1291,
+      "note": "The create-pane sheet arriving on a phone",
+      "region": {
+        "x": 0,
+        "y": 300,
+        "width": 390,
+        "height": 544
+      }
+    },
+    {
+      "slug": "pwa-nav-drawer",
+      "markMs": 1201,
+      "note": "Opening and dismissing the pane drawer",
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 844
+      }
+    },
+    {
+      "slug": "pwa-add-tool-menu",
+      "markMs": 1274,
+      "note": "The Add Tool menu opening from its trigger",
+      "region": {
+        "x": 76,
+        "y": 120,
+        "width": 314,
+        "height": 480
+      }
+    },
+    {
+      "slug": "pwa-shortcuts-sheet",
+      "markMs": 1209,
+      "note": "The terminal shortcuts sheet opening above the input bar",
+      "region": {
+        "x": 0,
+        "y": 380,
+        "width": 390,
+        "height": 400
+      }
+    },
+    {
+      "slug": "pwa-reconnect",
+      "markMs": 1251,
+      "note": "Losing the host and finding it again",
+      "region": {
+        "x": 0,
+        "y": 0,
+        "width": 390,
+        "height": 112
+      }
+    },
+    {
+      "slug": "pwa-joystick-release",
+      "markMs": 1229,
+      "note": "Dragging the scroll joystick and letting go",
+      "region": {
+        "x": 320,
+        "y": 258,
+        "width": 68,
+        "height": 194
+      }
+    },
+    {
+      "slug": "pwa-panel-tab",
+      "markMs": 1220,
+      "note": "Tapping the other terminal tab",
+      "region": {
+        "x": 0,
+        "y": 108,
+        "width": 390,
+        "height": 100
+      }
+    }
+  ]
+}
