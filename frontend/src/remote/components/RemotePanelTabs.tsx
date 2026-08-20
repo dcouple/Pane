@@ -158,7 +158,7 @@ export function RemotePanelTabs({
         {showAddMenu && (
           <div
             id={addMenuId}
-            className="animate-dropdown-enter absolute right-0 top-full z-30 mt-2 w-[min(20rem,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-lg border border-border-primary bg-surface-primary shadow-dropdown"
+            className="animate-dropdown-enter absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-lg border border-border-primary bg-surface-primary shadow-dropdown"
             role="menu"
             aria-label="Add tool"
             onKeyDown={handleMenuKeyDown}

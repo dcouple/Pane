@@ -34,7 +34,7 @@ export function RemoteSessionList({
           <button
             type="button"
             onClick={onCreateTerminal}
-            className="mt-4 rounded-md bg-interactive px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            className="pane-press pane-press-touch mt-4 rounded-md bg-interactive px-4 py-2 text-sm font-semibold text-text-on-interactive hover:bg-interactive-hover"
           >
             New Terminal
           </button>
