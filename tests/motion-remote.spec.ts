@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { dropRemoteConnection, openConnectedRemotePwa } from './remotePwaMock';
+import { dropRemoteConnection, openConnectedRemotePwa, restoreRemoteConnection } from './remotePwaMock';
 
 // Guards the decisions in the Remote Pane PWA's animation pass. The clips in the
 // PR show what the motion looks like; they cannot stop it being undone. These
@@ -204,7 +204,7 @@ test.describe('remote pwa motion', () => {
     expect(motion.iterations).toBe('infinite');
 
     // And it stops once the host is found again, rather than becoming ambient.
-    await expect(page.getByText('MacBook Pro', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await restoreRemoteConnection(page);
     await expect(ring).toHaveCount(0);
   });
 

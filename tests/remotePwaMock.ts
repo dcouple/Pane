@@ -149,7 +149,12 @@ export async function openConnectedRemotePwa(
         // Handed to the registrar rather than aliased into a local, so the
         // newest stream is reachable without keeping a `self` around.
         register(this);
-        window.setTimeout(() => this.onopen?.(new Event('open')), 0);
+        // While the host is held down, the client's retries connect to nothing —
+        // which is what keeps `reconnecting` on screen for as long as a caller
+        // needs rather than for one backoff interval.
+        if (!held) {
+          window.setTimeout(() => this.onopen?.(new Event('open')), 0);
+        }
       }
       addEventListener(): void {}
       removeEventListener(): void {}
@@ -157,15 +162,30 @@ export async function openConnectedRemotePwa(
     }
 
     let live: MockEventSource | undefined;
+    let held = false;
     const register = (source: MockEventSource) => { live = source; };
 
     Object.defineProperty(window, 'EventSource', { configurable: true, value: MockEventSource });
 
-    // Drops the stream the way a phone leaving wifi does. The client's own
-    // backoff then walks it through `reconnecting` and back to `connected`.
+    // Drops the stream the way a phone leaving wifi does, and keeps it down. The
+    // client's own backoff walks the status to `reconnecting` and keeps retrying
+    // into the void until the host is brought back.
     Object.defineProperty(window, '__paneRemoteDropConnection', {
       configurable: true,
-      value: () => live?.onerror?.(new Event('error')),
+      value: () => {
+        held = true;
+        live?.onerror?.(new Event('error'));
+      },
+    });
+
+    // Lets the next retry through, and opens the one already waiting so the
+    // recovery does not have to sit out another backoff interval.
+    Object.defineProperty(window, '__paneRemoteRestoreConnection', {
+      configurable: true,
+      value: () => {
+        held = false;
+        live?.onopen?.(new Event('open'));
+      },
     });
   }, PROFILE);
 
@@ -176,14 +196,28 @@ export async function openConnectedRemotePwa(
 }
 
 /**
- * Drops the host's event stream, the way a phone leaving wifi does. The client's
- * own backoff then walks the status from `reconnecting` back to `connected`.
+ * Drops the host's event stream, the way a phone leaving wifi does, and holds it
+ * down. The client's own backoff walks the status to `reconnecting` and stays
+ * there — deliberately, because a host that came straight back would leave the
+ * reconnecting state on screen for a single backoff interval, which is not long
+ * enough to assert against or to record.
+ *
+ * Pair with `restoreRemoteConnection` to complete the round trip.
  */
 export async function dropRemoteConnection(page: Page): Promise<void> {
   await page.evaluate(() => {
-    const drop: (() => void) | undefined = window.__paneRemoteDropConnection;
+    const drop = window.__paneRemoteDropConnection;
     if (!drop) throw new Error('Remote PWA mock is not installed on this page.');
     drop();
+  });
+}
+
+/** Brings the held host back, settling the status to `connected`. */
+export async function restoreRemoteConnection(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const restore = window.__paneRemoteRestoreConnection;
+    if (!restore) throw new Error('Remote PWA mock is not installed on this page.');
+    restore();
   });
 }
 
@@ -191,6 +225,8 @@ declare global {
   interface Window {
     /** Installed by `openConnectedRemotePwa`; see `dropRemoteConnection`. */
     __paneRemoteDropConnection?: () => void;
+    /** Installed by `openConnectedRemotePwa`; see `restoreRemoteConnection`. */
+    __paneRemoteRestoreConnection?: () => void;
   }
 }
 

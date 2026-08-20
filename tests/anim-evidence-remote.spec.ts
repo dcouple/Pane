@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { dropRemoteConnection, openConnectedRemotePwa } from './remotePwaMock';
+import { dropRemoteConnection, openConnectedRemotePwa, restoreRemoteConnection } from './remotePwaMock';
 
 // Before/after evidence capture for the Remote Pane PWA animation pass. Same rig
 // as `tests/anim-evidence.spec.ts`, pointed at `/remote.html` on a phone-sized
@@ -199,8 +199,12 @@ test.describe('remote pwa animation evidence', () => {
       async () => {},
       async (page) => {
         await dropRemoteConnection(page);
-        // The client backs off 1s before retrying; at 0.2x that is most of the clip.
-        await page.waitForTimeout(3000);
+        // Held down long enough for the reaching ring to read, then brought back,
+        // so the clip shows the whole arc rather than whatever happened to fall
+        // inside one backoff interval.
+        await page.waitForTimeout(4200);
+        await restoreRemoteConnection(page);
+        await page.waitForTimeout(800);
       },
       async () => ({ x: 0, y: 0, width: 390, height: 112 }),
     );
