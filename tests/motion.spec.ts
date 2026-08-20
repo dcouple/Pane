@@ -97,11 +97,19 @@ test.describe('motion', () => {
 
     // `position="bottom-right"`: the menu hangs below the trigger with its right
     // edge aligned to it, so it has to scale out of its own top-right corner.
-    const origin = await menu.evaluate((element) => getComputedStyle(element).transformOrigin);
-    const box = await menu.boundingBox();
+    //
+    // Both numbers are read inside the page, and the width comes from
+    // `offsetWidth` rather than `boundingBox()`. The entrance is still scaling
+    // the element at this point, and a bounding box is the *transformed* box —
+    // measuring it mid-animation reports ~96% of the real width, which is what
+    // `transform-origin` will never equal.
+    const { origin, width } = await menu.evaluate((element: HTMLElement) => ({
+      origin: getComputedStyle(element).transformOrigin,
+      width: element.offsetWidth,
+    }));
     const [originX, originY] = origin.split(' ').map(Number.parseFloat);
     expect(originY).toBe(0);
-    expect(originX).toBeCloseTo(box?.width ?? -1, 0);
+    expect(originX).toBeCloseTo(width, 0);
   });
 
   test('buttons scale under the pointer, faster down than up', async ({ page }) => {
@@ -123,13 +131,17 @@ test.describe('motion', () => {
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.down();
     try {
-      const pressed = await cancel.evaluate((element) => ({
-        transform: getComputedStyle(element).transform,
-        duration: getComputedStyle(element).transitionDuration,
-      }));
+      // The press rule takes hold immediately — this is the 90ms press duration
+      // replacing the 160ms release one — but the scale is a *transition*, so at
+      // pointer-down `transform` is still the value it is easing away from.
+      // Asserting it here passes only when the read happens to land late enough.
+      expect(await cancel.evaluate((element) => getComputedStyle(element).transitionDuration))
+        .toContain('0.09s');
+
+      await page.waitForTimeout(150);
       // matrix(0.97, 0, 0, 0.97, 0, 0)
-      expect(pressed.transform).toContain('0.97');
-      expect(pressed.duration).toContain('0.09s');
+      expect(await cancel.evaluate((element) => getComputedStyle(element).transform))
+        .toContain('0.97');
     } finally {
       await page.mouse.up();
     }
