@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -42,6 +42,38 @@ const OVERLAY_INSET_STYLE: CSSProperties = {
 const HEAD_ELLIPSIS_STYLE: CSSProperties = { direction: 'rtl' };
 const LTR_RUN_STYLE: CSSProperties = { direction: 'ltr', unicodeBidi: 'embed' };
 
+/**
+ * Which of `keys` appeared just now, as opposed to being here all along.
+ *
+ * The distinction is the whole point of animating these at all. A pill that
+ * arrives while you are watching the pane — the PR opened, the branch became
+ * mergeable — is a state change, and motion is how a state change stops being a
+ * thing you have to notice. A pill that is simply present because you switched
+ * to a pane that already had one is not news, and animating it would put motion
+ * on pane switching, which is the one thing this must not do.
+ *
+ * Keyed by `scope` (the pane): when that changes, everything counts as
+ * pre-existing.
+ */
+function useArrivedKeys(scope: string | null, keys: string[]): Set<string> {
+  const signature = keys.join('\u0000');
+  const [seen, setSeen] = useState({ scope, signature, arrived: new Set<string>() });
+
+  if (seen.scope !== scope || seen.signature !== signature) {
+    // Render-phase update: React re-renders immediately with the value below,
+    // so the commit that first paints a new pill already carries its class.
+    setSeen({
+      scope,
+      signature,
+      arrived: seen.scope === scope
+        ? new Set(keys.filter(key => !seen.signature.split('\u0000').includes(key)))
+        : new Set(),
+    });
+  }
+
+  return seen.scope === scope && seen.signature === signature ? seen.arrived : new Set();
+}
+
 interface WindowTitleBarProps {
   projects: Project[];
 }
@@ -80,6 +112,9 @@ export function WindowTitleBar({ projects }: WindowTitleBarProps) {
     };
   }, [windowTitle]);
 
+  const pills = title ? resolvePaneStatusPills(activeSession) : [];
+  const arrived = useArrivedKeys(activeSession?.id ?? null, pills.map(pill => pill.key));
+
   // macOS owns the strip through `hiddenInset`; Windows and Linux own it when
   // main enabled the overlay. Deliberately not gated on
   // `navigator.windowControlsOverlay.visible`: that reads false in plenty of
@@ -87,8 +122,6 @@ export function WindowTitleBar({ projects }: WindowTitleBarProps) {
   // only drag region once the native title bar is gone. It stays put in
   // fullscreen for the same reason the macOS strip always has.
   if (!isMac() && !isWindowControlsOverlayEnabled()) return null;
-
-  const pills = title ? resolvePaneStatusPills(activeSession) : [];
 
   return (
     <div
@@ -128,7 +161,9 @@ export function WindowTitleBar({ projects }: WindowTitleBarProps) {
                   key={pill.key}
                   variant={pill.variant}
                   size="sm"
-                  className="whitespace-nowrap px-1.5 py-0 text-[10px] leading-4"
+                  className={`whitespace-nowrap px-1.5 py-0 text-[10px] leading-4${
+                    arrived.has(pill.key) ? ' origin-left animate-title-pill-enter' : ''
+                  }`}
                   title={pill.tooltip}
                 >
                   {pill.label}

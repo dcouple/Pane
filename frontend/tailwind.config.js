@@ -255,6 +255,7 @@ export default {
         'dropdown-enter': 'dropdown-enter var(--duration-enter) var(--ease-out-strong)',
         'dropdown-enter-up': 'dropdown-enter-up var(--duration-enter) var(--ease-out-strong)',
         'modal-enter': 'modal-enter var(--duration-modal) var(--ease-out-strong)',
+        'title-pill-enter': 'title-pill-enter var(--duration-150) var(--ease-out-strong)',
         'modal-overlay-enter': 'fade-in var(--duration-modal) var(--ease-out-strong)',
       },
       keyframes: {
@@ -282,6 +283,13 @@ export default {
         'modal-enter': {
           '0%': { opacity: 0, transform: 'scale(0.97)' },
           '100%': { opacity: 1, transform: 'scale(1)' },
+        },
+        // Grows out of the end of the pane name it hangs off (the element sets
+        // `transform-origin: left center`), so the pill reads as something the
+        // title gained rather than something dropped next to it.
+        'title-pill-enter': {
+          '0%': { opacity: 0, transform: 'translateX(-4px) scale(0.9)' },
+          '100%': { opacity: 1, transform: 'translateX(0) scale(1)' },
         },
         // Paired with `transform-origin` at the trigger (see Dropdown.tsx), so
         // the scale does most of the spatial work and the translate is only the
