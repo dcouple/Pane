@@ -124,7 +124,9 @@ export function RemotePanelTabs({
             tabIndex={selectedPanelId === panel.id || (!selectedPanelId && index === 0) ? 0 : -1}
             onClick={() => onSelectPanel(panel.id)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
-            className={`relative flex h-10 max-w-[min(12rem,55vw)] shrink-0 items-center gap-2 rounded-t-lg border px-3 text-sm font-medium shadow-sm transition-colors ${
+            // No transition: the selected tab is how you confirm the switch
+            // landed, so it has to be right on the frame you tapped it.
+            className={`relative flex h-10 max-w-[min(12rem,55vw)] shrink-0 items-center gap-2 rounded-t-lg border px-3 text-sm font-medium shadow-sm ${
               selectedPanelId === panel.id
                 ? 'border-border-primary border-b-bg-primary bg-bg-primary text-text-primary shadow-[0_-1px_0_rgba(255,255,255,0.04)_inset]'
                 : 'border-border-secondary bg-surface-primary text-text-secondary hover:border-border-primary hover:bg-surface-hover hover:text-text-primary'
