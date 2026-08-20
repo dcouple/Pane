@@ -25,7 +25,10 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     children,
     ...props 
   }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium transition-all duration-normal focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50';
+    // `pane-press` carries the transition and the :active scale — see index.css.
+    // It also replaces the `transition-all` that used to live here, which
+    // animated layout properties off the compositor on every colour change.
+    const baseStyles = 'pane-press inline-flex items-center justify-center font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50';
     
     const variants = {
       primary: 'bg-interactive text-text-on-interactive hover:bg-interactive-hover focus:ring-interactive shadow-button hover:shadow-button-hover',
@@ -104,7 +107,7 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
     icon,
     ...props 
   }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center transition-all duration-normal focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50';
+    const baseStyles = 'pane-press inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bg-primary disabled:cursor-not-allowed disabled:opacity-50';
     
     const variants = {
       primary: 'bg-interactive text-text-on-interactive hover:bg-interactive-hover focus:ring-interactive',
