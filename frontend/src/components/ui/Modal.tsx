@@ -78,7 +78,7 @@ export const Modal: React.FC<ModalProps> = ({
   return (
     <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-modal-backdrop bg-modal-overlay backdrop-blur-sm" />
+        <Dialog.Overlay className="fixed inset-0 z-modal-backdrop bg-modal-overlay backdrop-blur-sm animate-modal-overlay-enter" />
         <Dialog.Content
           ref={contentRef}
           aria-modal="true"
@@ -109,7 +109,8 @@ export const Modal: React.FC<ModalProps> = ({
           <PortalContainerProvider value={portalContainer}>
             <div
               className={cn(
-                'relative bg-bg-primary rounded-modal shadow-modal w-full max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col animate-fadeIn',
+                'relative bg-bg-primary rounded-modal shadow-modal w-full max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col',
+                'animate-modal-enter',
                 className,
               )}
             >

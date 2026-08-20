@@ -254,6 +254,8 @@ export default {
         'zoom-in-95': 'zoom-in-95 0.2s ease-out',
         'dropdown-enter': 'dropdown-enter 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
         'dropdown-enter-up': 'dropdown-enter-up 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+        'modal-enter': 'modal-enter var(--duration-modal) var(--ease-out-strong)',
+        'modal-overlay-enter': 'fade-in var(--duration-modal) var(--ease-out-strong)',
       },
       keyframes: {
         shimmer: {
@@ -276,6 +278,10 @@ export default {
         'zoom-in-95': {
           '0%': { transform: 'scale(0.95)' },
           '100%': { transform: 'scale(1)' },
+        },
+        'modal-enter': {
+          '0%': { opacity: 0, transform: 'scale(0.97)' },
+          '100%': { opacity: 1, transform: 'scale(1)' },
         },
         'dropdown-enter': {
           '0%': { 
