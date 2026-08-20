@@ -19,6 +19,11 @@ export function RemoteTerminalScrollJoystick({
   onScrollToBottom,
 }: RemoteTerminalScrollJoystickProps) {
   const [offset, setOffset] = useState(0);
+  // True only between letting go and arriving back at centre. While a finger is
+  // down this must stay false: a transition on the thumb during a drag would put
+  // it behind the finger, which is the one thing a direct-manipulation control
+  // is not allowed to do.
+  const [returning, setReturning] = useState(false);
   const trackRef = useRef<HTMLInputElement | null>(null);
   const offsetRef = useRef(0);
   const activeRef = useRef(false);
@@ -33,6 +38,13 @@ export function RemoteTerminalScrollJoystick({
 
   const stopScrolling = useCallback(() => {
     activeRef.current = false;
+    // Only ever raises the flag, never lowers it: releasing a pointer capture
+    // fires `lostpointercapture`, so this runs a second time with the offset
+    // already zeroed, and a plain assignment there would cancel the return
+    // before it had a frame to start in. Movement is what lowers it again.
+    if (offsetRef.current !== 0) {
+      setReturning(true);
+    }
     offsetRef.current = 0;
     lineRemainderRef.current = 0;
     lastFrameTimeRef.current = null;
@@ -82,6 +94,7 @@ export function RemoteTerminalScrollJoystick({
     }
 
     offsetRef.current = clampedOffset;
+    setReturning(false);
     setOffset(clampedOffset);
     activeRef.current = true;
     lineRemainderRef.current = 0;
@@ -100,6 +113,7 @@ export function RemoteTerminalScrollJoystick({
     const rect = track.getBoundingClientRect();
     const nextOffset = clamp(clientY - (rect.top + rect.height / 2), -MAX_OFFSET, MAX_OFFSET);
     offsetRef.current = nextOffset;
+    setReturning(false);
     setOffset(nextOffset);
   }, []);
 
@@ -205,8 +219,13 @@ export function RemoteTerminalScrollJoystick({
         <div className="absolute bottom-4 left-1/2 top-4 w-px -translate-x-1/2 bg-white/15" />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-surface-secondary/95 text-text-secondary shadow-md transition-colors"
-          style={{ transform: `translate(-50%, calc(-50% + ${offset}px))` }}
+          className="pane-joystick-return pointer-events-none absolute left-1/2 top-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-surface-secondary/95 text-text-secondary shadow-md transition-colors"
+          style={{
+            transform: `translate(-50%, calc(-50% + ${offset}px))`,
+            transition: returning
+              ? 'transform var(--duration-press-release) var(--ease-out-strong)'
+              : undefined,
+          }}
         >
           <ChevronsUpDown className="h-5 w-5" />
         </div>
