@@ -8,7 +8,10 @@
     <link rel="manifest" href="./remote-manifest.webmanifest" />
     <title>Remote Pane</title>
   </head>
-  <body class="light-rounded">
+  <!-- Both classes, and in this order: themes in this repo are a base plus a
+       delta (see THEME_CLASSES in src/contexts/themeContextValue.ts). Set here
+       as well as in bootstrap.tsx so the first paint is not the dark default. -->
+  <body class="light light-rounded">
     <div id="root"></div>
     <script type="module" src="/src/remote/main.tsx"></script>
   </body>

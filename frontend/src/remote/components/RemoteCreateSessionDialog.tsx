@@ -359,7 +359,7 @@ export function RemoteCreateSessionDialog({
                   className="peer sr-only"
                   aria-label="Start pinned"
                 />
-                <span className={`absolute top-1 h-5 w-5 rounded-full bg-text-primary transition-transform ${startPinned ? 'translate-x-6' : 'translate-x-1'}`} />
+                <span className={`absolute top-1 h-5 w-5 rounded-full bg-text-on-interactive shadow-sm ring-1 ring-border-primary transition-transform ${startPinned ? 'translate-x-6' : 'translate-x-1'}`} />
               </span>
             </label>
           </section>
@@ -381,7 +381,7 @@ export function RemoteCreateSessionDialog({
                   className="peer sr-only"
                   aria-label="Use worktree"
                 />
-                <span className={`absolute top-1 h-5 w-5 rounded-full bg-text-primary transition-transform ${useWorktree ? 'translate-x-6' : 'translate-x-1'}`} />
+                <span className={`absolute top-1 h-5 w-5 rounded-full bg-text-on-interactive shadow-sm ring-1 ring-border-primary transition-transform ${useWorktree ? 'translate-x-6' : 'translate-x-1'}`} />
               </span>
             </label>
           </section>
