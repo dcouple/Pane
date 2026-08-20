@@ -4,6 +4,7 @@ import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import { createFlowControlRecord, disposeFlowControlRecord, type FlowControlRecord } from '../ptyHost/flowControl';
 import { TerminalStateEmulator } from './terminalStateEmulator';
 import type { TerminalPanelState } from '../../../shared/types/panels';
+import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 
 import { TerminalPanelManager } from './terminalPanelManager';
 import { panelManager } from '../test/setup';
@@ -425,6 +426,30 @@ describe('TerminalPanelManager hidden output delivery', () => {
 
     manager.setVisibility(terminal.panelId, false, 'local:host');
 
+    expect(terminal.isVisible).toBe(false);
+    disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  it('prunes stale Mission Control viewers registered under the shared prefix', () => {
+    const manager = testAccess<VisibilityAccess>(new TerminalPanelManager());
+    const terminal = createTerminal({
+      isVisible: false,
+      outputBuffer: '',
+    });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    // The id a Mission Control tile actually registers, built from the same
+    // constant the main-process sweep passes to the matcher.
+    manager.setVisibility(terminal.panelId, true, `${MISSION_CONTROL_VIEWER_PREFIX}:8f1c`);
+    expect(terminal.isVisible).toBe(true);
+
+    // A sweep with no elapsed staleness leaves a fresh viewer alone.
+    manager.pruneVisibilityViewersByPrefix(MISSION_CONTROL_VIEWER_PREFIX, 60_000);
+    expect(terminal.isVisible).toBe(true);
+
+    // Once the viewer is older than the window, the sweep clears it. This is the
+    // assertion that fails if the prefix and the minted id ever diverge again.
+    manager.pruneVisibilityViewersByPrefix(MISSION_CONTROL_VIEWER_PREFIX, -1);
     expect(terminal.isVisible).toBe(false);
     disposeFlowControlRecord(terminal.flowControl);
   });

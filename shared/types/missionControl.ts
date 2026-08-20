@@ -66,6 +66,15 @@ export const MAX_MISSION_CONTROL_SNAPSHOT_PANELS = 64;
 export const MAX_MISSION_CONTROL_SNAPSHOT_LINES = 120;
 export const DEFAULT_MISSION_CONTROL_SNAPSHOT_LINES = 16;
 
+/**
+ * Scope for the viewer ids Mission Control registers with
+ * `terminalPanelManager.setVisibility`. Both processes read it from here: the
+ * renderer mints `<prefix>:<uuid>` and the main process sweeps stale viewers by
+ * the same prefix. `visibilityViewerMatchesPrefix` appends its own separator, so
+ * this value carries no trailing colon.
+ */
+export const MISSION_CONTROL_VIEWER_PREFIX = 'missionControl';
+
 // --- Client-side view options ---
 
 export type MissionControlGrouping = 'project' | 'status' | 'agent' | 'none';

@@ -15,21 +15,21 @@ const FOCUS_ROW_PX = 17;
 const MAX_FOCUS_BODY_PX = 620;
 
 /** Left accent per state, so a wall of tiles is scannable at a glance. */
-const ACCENT: Record<AgentDisplayStatus, string> = {
+const ACCENT = {
   blocked: 'bg-status-error',
   working: 'bg-interactive',
   done: 'bg-status-success',
   idle: 'bg-border-secondary',
   unknown: 'bg-border-secondary',
-};
+} satisfies Record<AgentDisplayStatus, string>;
 
-const STATUS_TEXT: Record<AgentDisplayStatus, string> = {
+const STATUS_TEXT = {
   blocked: 'Needs input',
   working: 'Working',
   done: 'Done',
   idle: 'Idle',
   unknown: 'Not running',
-};
+} satisfies Record<AgentDisplayStatus, string>;
 
 function relativeTime(iso: string | null): string {
   if (!iso) return '';
@@ -356,5 +356,3 @@ export const MissionControlTile = memo(function MissionControlTile({
     </article>
   );
 });
-
-export default MissionControlTile;

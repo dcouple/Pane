@@ -22,6 +22,7 @@ import type {
   MissionControlTileModel,
 } from '../../../../shared/types/missionControl';
 import { MAX_MISSION_CONTROL_SNAPSHOT_PANELS } from '../../../../shared/types/missionControl';
+import { boundary, decodeBoundary, type BoundarySchema } from '../../../../shared/validation/boundaryDecoder';
 
 /** Snapshot cadence. Fast enough to feel live, slow enough to stay cheap. */
 const POLL_INTERVAL_MS = 1500;
@@ -45,11 +46,11 @@ const DENSITY_OPTIONS: MissionControlDensity[] = [1, 2, 3, 4];
 const MAX_LIVE_ALL_TILES = 12;
 
 /** Lower density = larger tiles, so more of each terminal is worth fetching. */
-const LINES_BY_DENSITY: Record<MissionControlDensity, number> = { 1: 32, 2: 24, 3: 16, 4: 10 };
+const LINES_BY_DENSITY = { 1: 32, 2: 24, 3: 16, 4: 10 } satisfies Record<MissionControlDensity, number>;
 
 /**
- * View options that outlive a visit. Both answer "what does my missionControl look
- * like", which is a property of the user's workflow rather than of this
+ * View options that outlive a visit. Both answer "what does my Mission Control
+ * look like", which is a property of the user's workflow rather than of this
  * session: whether answering an agent should enlarge its tile, and which
  * project groups are folded away because nothing there needs attention today.
  */
@@ -59,17 +60,39 @@ const SEND_ESCAPE_KEY = 'pane.missionControl.sendEscape';
 const GROUPING_KEY = 'pane.missionControl.grouping';
 const DENSITY_KEY = 'pane.missionControl.density';
 
-function readStoredOption<T>(key: string, fallback: T): T {
+const groupingSchema = boundary.enumeration('project', 'status', 'agent', 'none');
+const densitySchema = boundary.enumeration(1, 2, 3, 4);
+const collapsedGroupsSchema = boundary.array(boundary.string);
+
+/**
+ * Stored options are decoded, not cast: a value written by an older build, or
+ * edited by hand, otherwise reaches layout maths as `NaN` tile heights or a
+ * non-iterable group set that throws during render.
+ */
+function readStoredOption<T>(key: string, fallback: T, schema: BoundarySchema<T>): T {
   try {
     const raw = window.localStorage.getItem(key);
-    return raw === null ? fallback : (JSON.parse(raw) as T);
+    return raw === null ? fallback : decodeBoundary(JSON.parse(raw), schema);
   } catch {
     // Corrupt or unavailable storage must never keep the view from rendering.
     return fallback;
   }
 }
 
-function writeStoredOption(key: string, value: unknown): void {
+type StoredOption = MissionControlGrouping | MissionControlDensity | boolean | string[];
+
+/** Grid movement for the arrow keys; a row is one density's worth of tiles. */
+function arrowStep(key: string, density: MissionControlDensity): number | undefined {
+  switch (key) {
+    case 'ArrowRight': return 1;
+    case 'ArrowLeft': return -1;
+    case 'ArrowDown': return density;
+    case 'ArrowUp': return -density;
+    default: return undefined;
+  }
+}
+
+function writeStoredOption(key: string, value: StoredOption): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
@@ -92,10 +115,10 @@ export function MissionControlView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [grouping, setGrouping] = useState<MissionControlGrouping>(
-    () => readStoredOption<MissionControlGrouping>(GROUPING_KEY, 'project')
+    () => readStoredOption(GROUPING_KEY, 'project', groupingSchema)
   );
   const [density, setDensity] = useState<MissionControlDensity>(
-    () => readStoredOption<MissionControlDensity>(DENSITY_KEY, 3)
+    () => readStoredOption(DENSITY_KEY, 3, densitySchema)
   );
   const [liveTileId, setLiveTileId] = useState<string | null>(null);
   const [liveAll, setLiveAll] = useState(false);
@@ -112,10 +135,10 @@ export function MissionControlView() {
    * thing being watched.
    */
   const [expandOnFocus, setExpandOnFocus] = useState<boolean>(
-    () => readStoredOption(EXPAND_ON_FOCUS_KEY, true)
+    () => readStoredOption(EXPAND_ON_FOCUS_KEY, true, boundary.boolean)
   );
   const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<string[]>(
-    () => readStoredOption<string[]>(COLLAPSED_GROUPS_KEY, [])
+    () => readStoredOption<string[]>(COLLAPSED_GROUPS_KEY, [], collapsedGroupsSchema)
   );
   /**
    * Whether Escape reaches the agent. Off, it leaves typing mode instead —
@@ -123,7 +146,7 @@ export function MissionControlView() {
    * clicking the tile again.
    */
   const [sendEscape, setSendEscape] = useState<boolean>(
-    () => readStoredOption(SEND_ESCAPE_KEY, false)
+    () => readStoredOption(SEND_ESCAPE_KEY, false, boundary.boolean)
   );
 
   const promoteTimerRef = useRef<number | undefined>(undefined);
@@ -424,6 +447,7 @@ export function MissionControlView() {
       if (focusedPanelId || pendingClose) return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
 
+      // SAFETY: The registered DOM-event source establishes this target shape.
       const target = event.target as HTMLElement | null;
       if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return;
       if (visibleTiles.length === 0) return;
@@ -435,12 +459,7 @@ export function MissionControlView() {
       }
 
       const index = visibleTiles.findIndex(tile => tile.panelId === selectedPanelId);
-      const step = ({
-        ArrowRight: 1,
-        ArrowLeft: -1,
-        ArrowDown: density,
-        ArrowUp: -density,
-      } as Record<string, number | undefined>)[event.key];
+      const step = arrowStep(event.key, density);
 
       if (step !== undefined) {
         event.preventDefault();
@@ -774,5 +793,3 @@ export function MissionControlView() {
     </div>
   );
 }
-
-export default MissionControlView;

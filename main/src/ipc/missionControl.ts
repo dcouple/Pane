@@ -11,6 +11,7 @@ import {
   DEFAULT_MISSION_CONTROL_SNAPSHOT_LINES,
   MAX_MISSION_CONTROL_SNAPSHOT_LINES,
   MAX_MISSION_CONTROL_SNAPSHOT_PANELS,
+  MISSION_CONTROL_VIEWER_PREFIX,
   type MissionControlAgentPanel,
   type MissionControlAgentType,
   type MissionControlSnapshot,
@@ -20,19 +21,18 @@ import {
 import type { TerminalPanelState } from '../../../shared/types/panels';
 import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 
-export const DAEMON_MISSION_CONTROL_CHANNELS = [
+const DAEMON_MISSION_CONTROL_CHANNELS = [
   'mission-control:list-agents',
   'mission-control:snapshots',
 ] as const;
 
 /**
- * Stale missionControl viewers are swept on this cadence. Without it, a hard renderer
+ * Stale Mission Control viewers are swept on this cadence. Without it, a hard renderer
  * kill would leave every hovered panel pinned "visible" forever, defeating the
  * background output throttling in `terminalPanelManager`.
  */
 const VIEWER_PRUNE_INTERVAL_MS = 60_000;
 const VIEWER_STALE_AFTER_MS = 180_000;
-const MISSION_CONTROL_VIEWER_PREFIX = 'mission-control:';
 
 interface AgentPanelRow {
   id: string;
@@ -81,6 +81,7 @@ export function registerMissionControlHandlers(
    */
   commandRegistry.register('mission-control:list-agents', async (options?: { includeArchived?: boolean }) => {
     try {
+      // SAFETY: The SELECT list below names exactly the columns AgentPanelRow declares.
       const rows = databaseService.getDb().prepare(`
         SELECT
           tp.id,
@@ -160,6 +161,7 @@ export function registerMissionControlHandlers(
 
         await terminalPanelManager.waitForTerminalState(panelId);
         const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panelId);
+        // SAFETY: Panel state is written by terminalPanelManager for terminal panels; an absent value falls back to {}.
         const customState = (panel.state.customState ?? {}) as TerminalPanelState;
         const { rawText } = selectPanelScreenText(liveSnapshot, customState);
         const bounded = boundSanitizedLines(rawText, maxLines);

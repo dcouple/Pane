@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Terminal, type IDisposable } from '@xterm/xterm';
 import { getTerminalTheme } from '../utils/terminalTheme';
-import type { TerminalPanelState } from '../../../shared/types/panels';
+import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
+import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
+import type { TerminalOutputEvent } from '../../../shared/types/panels';
 
 /**
- * Read-only xterm for a missionControl tile.
+ * Read-only xterm for a Mission Control tile.
  *
  * A tile is roughly a fifth of the width the real terminal panel gets, so the
  * whole job is fitting a wide PTY into a small box without lying about it.
- * Three rules, each learned the hard way:
+ * Four rules, each learned the hard way:
  *
  * 1. **Render exactly the PTY's columns — never fewer, never more.** Agent TUIs
  *    paint with absolute cursor positioning sized to the real PTY. A narrower
@@ -34,7 +36,7 @@ import type { TerminalPanelState } from '../../../shared/types/panels';
  *
  * Also unlike `TerminalPanel`: no `WebglAddon` (instances sharing a font+theme
  * share a texture atlas, and Chromium caps live GL contexts at ~16), no
- * `FitAddon`, `disableStdin`, and a `missionControl:`-prefixed viewer id so the
+ * `FitAddon`, `disableStdin`, and a `MISSION_CONTROL_VIEWER_PREFIX`-scoped viewer id so the
  * visibility refcount in `terminalPanelManager` stays correct.
  */
 
@@ -63,17 +65,22 @@ const RESIZE_DEBOUNCE_MS = 200;
 
 const VIEWER_ID = getMissionControlViewerId();
 
-interface TerminalOutputPayload {
-  panelId?: string;
-  output?: string;
-}
+const terminalOutputPayloadSchema = boundary.object({
+  panelId: boundary.string,
+  output: boundary.string,
+});
+
+const terminalStateSchema = boundary.object({
+  serializedBuffer: boundary.optional(boundary.string),
+  scrollbackBuffer: boundary.optional(boundary.union(boundary.string, boundary.array(boundary.string))),
+});
 
 function getMissionControlViewerId(): string {
   const storageKey = 'pane.missionControl.terminalViewerId';
   const existing = window.sessionStorage.getItem(storageKey);
   if (existing) return existing;
 
-  const id = `missionControl:${window.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+  const id = `${MISSION_CONTROL_VIEWER_PREFIX}:${window.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   window.sessionStorage.setItem(storageKey, id);
   return id;
 }
@@ -211,8 +218,19 @@ function trailingBlankRows(terminal: Terminal): number {
   return 0;
 }
 
+/**
+ * xterm's helper textarea is focusable, and a non-interactive tile hides its
+ * whole surface from the accessibility tree. Match the two so a screen reader's
+ * focus can never land inside an `aria-hidden` subtree.
+ */
+function syncHelperTextareaFocusability(container: HTMLElement | null, interactive: boolean): void {
+  const helper = container?.querySelector('textarea.xterm-helper-textarea');
+  if (helper instanceof HTMLTextAreaElement) helper.tabIndex = interactive ? 0 : -1;
+}
+
 /** Rendered height of one row, measured rather than recomputed from the font. */
 function measuredRowHeight(container: HTMLElement, terminal: Terminal): number {
+  // SAFETY: `.xterm-screen` is an element xterm renders into this container, so the match is an HTMLElement.
   const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
   if (screen && terminal.rows > 0 && screen.clientHeight > 0) {
     return screen.clientHeight / terminal.rows;
@@ -401,6 +419,10 @@ export function useMissionControlTerminal({
 
     terminal.open(container);
     terminalRef.current = terminal;
+    // A non-interactive tile marks its surface `aria-hidden`, and xterm mounts a
+    // focusable helper textarea inside it. Taking that textarea out of the tab
+    // order keeps focus from landing inside a hidden subtree.
+    syncHelperTextareaFocusability(container, startsInteractive);
     const replySuppressors = suppressTerminalReplies(terminal);
     if (startsInteractive) terminal.focus();
 
@@ -423,6 +445,7 @@ export function useMissionControlTerminal({
       const overflow = Math.round(trailingBlankRows(terminal) * rowHeight);
       setBottomOverflow(current => (current === overflow ? current : overflow));
 
+      // SAFETY: `.xterm-screen` is an element xterm renders into this container, so the match is an HTMLElement.
       const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
       const available = wrapperRef.current?.clientWidth ?? 0;
       const clipped = Boolean(screen && available > 0 && screen.clientWidth > available + 1);
@@ -441,9 +464,9 @@ export function useMissionControlTerminal({
       void window.electronAPI.invoke('terminal:input', panelId, data).catch(() => {});
     });
 
-    const unsubscribe = window.electronAPI.events.onTerminalOutput((payload: unknown) => {
-      const data = payload as TerminalOutputPayload | undefined;
-      if (!data || data.panelId !== panelId || typeof data.output !== 'string') return;
+    const unsubscribe = window.electronAPI.events.onTerminalOutput((payload: TerminalOutputEvent) => {
+      const data = decodeOptionalBoundary(payload, terminalOutputPayloadSchema);
+      if (!data || data.panelId !== panelId) return;
       terminal.write(data.output, () => {
         if (disposed) return;
         // Follow new output, but never yank the view away from someone who
@@ -463,10 +486,14 @@ export function useMissionControlTerminal({
 
     const hydrate = async () => {
       try {
-        const state = await window.electronAPI.invoke('terminal:getState', panelId) as TerminalPanelState | null;
+        const state = decodeOptionalBoundary(
+          await window.electronAPI.invoke('terminal:getState', panelId),
+          terminalStateSchema,
+        );
         if (disposed) return;
+        const scrollback = state?.scrollbackBuffer;
         const restore = state?.serializedBuffer
-          ?? (typeof state?.scrollbackBuffer === 'string' ? state.scrollbackBuffer : '');
+          ?? (Array.isArray(scrollback) ? scrollback.join('\n') : scrollback ?? '');
         if (restore) {
           terminal.write(restore, () => {
             if (disposed) return;
@@ -510,6 +537,7 @@ export function useMissionControlTerminal({
     if (!terminal) return;
     terminal.options.disableStdin = !interactive;
     terminal.options.cursorBlink = interactive;
+    syncHelperTextareaFocusability(containerRef.current, interactive);
     if (interactive) terminal.focus();
   }, [interactive]);
 

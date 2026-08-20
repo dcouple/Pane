@@ -111,8 +111,7 @@ rather than growing the ~5,000-line `database.ts` facade.
 ### Navigation has no router
 `frontend/src/stores/navigationStore.ts` holds a single `activeView` enum. A
 new full-page view means touching four places:
-1. the `activeView` union — declared **twice** in that file (state interface and
-   `setActiveView` signature) — plus a `navigateToX()` action,
+1. the exported `ActiveView` union in that file, plus a `navigateToX()` action,
 2. the render switch in `frontend/src/components/SessionView.tsx`, near the
    `pane-chat` branch,
 3. `frontend/src/components/Sidebar.tsx` — the **compact rail**,

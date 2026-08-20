@@ -5,19 +5,19 @@ import type { MissionControlGroup, MissionControlGrouping, MissionControlTileMod
  * Sort weight for agent states — the panes that need a human come first, so
  * the top-left of the grid is always the most urgent thing.
  */
-const STATE_ORDER: Record<AgentState, number> = {
+const STATE_ORDER = {
   blocked: 0,
   working: 1,
   idle: 2,
   unknown: 3,
-};
+} satisfies Record<AgentState, number>;
 
-const STATE_LABEL: Record<AgentState, string> = {
+const STATE_LABEL = {
   blocked: 'Needs input',
   working: 'Working',
   idle: 'Idle',
   unknown: 'Not running',
-};
+} satisfies Record<AgentState, string>;
 
 export function compareMissionControlTiles(a: MissionControlTileModel, b: MissionControlTileModel): number {
   const byState = STATE_ORDER[a.agentState] - STATE_ORDER[b.agentState];
@@ -100,5 +100,3 @@ export function describeMissionControlTile(tile: Pick<MissionControlTileModel, '
     })
     .join(' / ');
 }
-
-export { STATE_LABEL as MISSION_CONTROL_STATE_LABEL };

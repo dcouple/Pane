@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { groupMissionControlTiles, compareMissionControlTiles, describeMissionControlTile } from './missionControlGrouping';
 import type { MissionControlTileModel } from '../../../shared/types/missionControl';
-import type { AgentState } from '../../../shared/types/agentStatus';
 
 function tile(overrides: Partial<MissionControlTileModel> & { panelId: string }): MissionControlTileModel {
   return {
@@ -15,7 +14,7 @@ function tile(overrides: Partial<MissionControlTileModel> & { panelId: string })
     panelTitle: 'Terminal',
     agentType: 'claude',
     isLive: true,
-    agentState: 'idle' as AgentState,
+    agentState: 'idle',
     snapshot: null,
     ...overrides,
   };
