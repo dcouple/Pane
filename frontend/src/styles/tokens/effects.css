@@ -97,6 +97,25 @@
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-back-out: cubic-bezier(0.175, 0.885, 0.32, 1.275);
   --ease-dropdown: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+
+  /* Interface motion curves. The built-in easings above are too weak to read as
+     deliberate at the durations Pane can afford, so anything that enters, leaves
+     or reveals uses these: they dump most of their distance in the first third,
+     which is what makes a short animation feel like a fast response rather than
+     a slow one. Ease-in is deliberately absent from this set — it delays the
+     frames the user is watching. */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+
+  /* Motion durations. Pane sits on the critical path of someone's flow, so each
+     of these is a ceiling rather than a target and the shorter option wins every
+     tie. Surfaces reached by keyboard hundreds of times a day get none of them:
+     they do not animate at all. */
+  --duration-press: 90ms;           /* pointer down — has to feel instant */
+  --duration-press-release: 160ms;  /* and settle back on release */
+  --duration-enter: 160ms;          /* menus, popovers, small overlays */
+  --duration-reveal: 180ms;         /* sidebar and terminal rail width changes */
+  --duration-modal: 200ms;          /* dialogs */
   
   /* Z-Index Scale */
   --z-0: 0;

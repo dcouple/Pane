@@ -219,6 +219,15 @@ export default {
         'fast': 'var(--duration-75)',
         'normal': 'var(--duration-150)',
         'slow': 'var(--duration-300)',
+        'press': 'var(--duration-press)',
+        'press-release': 'var(--duration-press-release)',
+        'enter': 'var(--duration-enter)',
+        'reveal': 'var(--duration-reveal)',
+        'modal': 'var(--duration-modal)',
+      },
+      transitionTimingFunction: {
+        'out-strong': 'var(--ease-out-strong)',
+        'in-out-strong': 'var(--ease-in-out-strong)',
       },
       zIndex: {
         'dropdown-backdrop': 'var(--z-dropdown-backdrop)',
