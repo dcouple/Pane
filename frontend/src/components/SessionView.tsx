@@ -1772,7 +1772,7 @@ export const SessionView = memo(() => {
 
               {/* Right column: terminal at full height — outer wrapper clips, inner stays fixed width so xterm doesn't reflow */}
               <div
-                className={`pane-terminal-rail flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] ${immersiveMode ? '' : 'border-l border-border-primary'}`}
+                className={`pane-terminal-rail pane-reveal flex-shrink-0 overflow-hidden transition-[width] duration-reveal ease-out-strong ${immersiveMode ? '' : 'border-l border-border-primary'}`}
                 style={{ width: immersiveMode ? '0px' : `${rightTerminalWidth}px` }}
               >
                 <div
@@ -1826,7 +1826,7 @@ export const SessionView = memo(() => {
                 {/* Bottom: persistent terminal (collapsible) */}
                 {defaultTerminalPanel && (
                   <div
-                    className="pane-terminal-dock flex-shrink-0 border-t border-border-primary transition-[height] duration-200"
+                    className="pane-terminal-dock pane-reveal flex-shrink-0 border-t border-border-primary transition-[height] duration-reveal ease-out-strong"
                     style={{ height: isTerminalCollapsed ? '32px' : `${terminalHeight}px` }}
                   >
                     {/* Terminal tab header with collapse toggle and pill shortcuts */}

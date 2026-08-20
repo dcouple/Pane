@@ -819,11 +819,11 @@ body.understory {
   transition-duration: var(--duration-press);
 }
 
-/* Marks a width/height reveal — the sidebar, the terminal rail — so reduced
-   motion can collapse it to its end state without hunting for the utilities. */
-.pane-reveal {
-  will-change: width, height;
-}
+/* `.pane-reveal` marks a width/height reveal — the sidebar slot, the terminal
+   rail, the terminal dock. It carries no styles of its own: the transition lives
+   on the element as Tailwind utilities, and this is the handle reduced motion
+   uses to collapse all three at once. Deliberately not `will-change`, which
+   cannot promote a layout property and would only cost. */
 
 /* ---------------------------------------------------------------------------
    Reduced motion

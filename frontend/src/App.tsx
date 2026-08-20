@@ -838,7 +838,7 @@ function App() {
         <div className="pane-main-layout flex flex-1 min-h-0">
         <MainProcessLogger />
         <div
-          className="pane-sidebar-slot flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]"
+          className="pane-sidebar-slot pane-reveal flex-shrink-0 overflow-hidden transition-[width] duration-reveal ease-out-strong"
           style={{ width: sidebarCollapsed ? '48px' : `${sidebarWidth}px` }}
         >
           <Sidebar
