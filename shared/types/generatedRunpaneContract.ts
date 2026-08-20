@@ -577,7 +577,11 @@ export const RUNPANE_CONTRACT = {
       },
       {
         "name": "--pinned",
-        "description": "Create the pane already pinned (the UI's favorite/pin star)."
+        "description": "Accepted for backward compatibility; `panes create` already pins by default."
+      },
+      {
+        "name": "--no-pinned",
+        "description": "Create the pane unpinned instead of the default pinned (the UI's favorite/pin star)."
       },
       {
         "name": "--force",
@@ -803,7 +807,8 @@ export const RUNPANE_CONTRACT = {
         "  --source <user|agent>          Mark mutation source; agent implies background creation",
         "  --no-focus                     Create in the background without stealing focus",
         "  --focus                        Explicitly focus the created pane",
-        "  --pinned                       Create already pinned (the UI's favorite/pin star)",
+        "  --pinned                       Accepted for compatibility; creation already pins by default",
+        "  --no-pinned                    Create unpinned instead of the default pinned (the UI's favorite/pin star)",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -1229,7 +1234,8 @@ export const RUNPANE_CONTRACT = {
         "  --source <user|agent>          Mark mutation source; agent implies background creation",
         "  --no-focus                     Create in the background without stealing focus",
         "  --focus                        Explicitly focus the created pane",
-        "  --pinned                       Create already pinned (the UI's favorite/pin star)",
+        "  --pinned                       Accepted for compatibility; creation already pins by default",
+        "  --no-pinned                    Create unpinned instead of the default pinned (the UI's favorite/pin star)",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
         "  --dry-run                      Validate and preview without creating panes",
@@ -1544,7 +1550,7 @@ export const RUNPANE_CONTRACT = {
       "`runpane repos list` connects to the running local Pane daemon and prints saved repository records.",
       "`runpane repos add` registers an existing git repository with the running local Pane daemon. It does not create directories or initialize git repositories by default.",
       "`runpane panes list` lists Pane sessions, optionally scoped to one saved repository.",
-      "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed.",
+      "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed. New Panes are pinned into the UI's favorite/pin set by default; pass `--no-pinned` to opt out. Panes created interactively in the Pane UI are unaffected.",
       "For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.",
       "`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.",
       "`runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.",
@@ -1699,6 +1705,24 @@ export const RUNPANE_CONTRACT = {
         "--source",
         "agent",
         "--pinned",
+        "--dry-run",
+        "--yes",
+        "--json"
+      ],
+      [
+        "panes",
+        "create",
+        "--repo",
+        "active",
+        "--name",
+        "issue-252",
+        "--agent",
+        "codex",
+        "--prompt",
+        "Kick off discussion",
+        "--source",
+        "agent",
+        "--no-pinned",
         "--dry-run",
         "--yes",
         "--json"
@@ -4150,14 +4174,14 @@ export const RUNPANE_CONTRACT = {
       "rules": [
         "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
         "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
-        "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --pinned --no-focus --wait-ready --yes --json` when it should stay visible (or omit `--pinned`, or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
+        "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json` (the new Pane is pinned by default; add `--no-pinned` for a throwaway Pane, or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
         "Treat Pane as the user's visible cockpit for watching/co-driving work. Do not create Panes or panels for private delegation unless the user asked for visible Pane orchestration or the result should appear in the Pane app.",
         "Register the saved base repository once with `repos add`; do not register a pre-created worktree as a separate repo unless the user explicitly asks.",
         "Use `panes create` for separate visible Panes (Pane sessions) for feature/PR work. Pane creates and owns the worktree/branch for each new Pane.",
         "Use `panels create` for reviewer/helper/clean-context tabs that should stay inside an existing Pane and share that Pane's worktree.",
         "For private background decomposition, use your normal subagent/worktree mechanism instead of Pane.",
         "Skill routing: when the user says `discussion`, `plan`, `simple-plan`, `create-plan`, or `implement`, or asks for those behaviors, treat three references as peer context: Pane's local skill cache under `<PANE_DIR>/skills/`, the Pane Chat orchestrator handoff at `<PANE_DIR>/skills/pane-chat/runpane-orchestrator.md` when present, and the workflow map at https://github.com/dcouple/skills/raw/main/docs/readme-workflow-map.png. For where the local cache and Pane Chat bootstrap live in Pane, reference https://github.com/dcouple/Pane/pull/291. Use GitHub reads against https://github.com/dcouple/skills/tree/main/parsa only to inspect or refresh referenced skill files; do not clone or install it unless the user asks.",
-        "When an agent creates Panes or panels, pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; add `--pinned` when declaring a Pane that should remain in the UI's favorite/pin set.",
+        "When an agent creates Panes or panels, pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; `panes create` pins the new Pane into the UI's favorite/pin set by default, so no follow-up `panes pin` call is needed and `--no-pinned` is the opt-out for throwaway Panes.",
         "Use `runpane agent-context --json` for the full agent-facing CLI context, or `runpane agent-context --command <command> --json` for one detailed command definition.",
         "For `agent-context --command`, use canonical spaced names like `panes create`; copied forms like `panes.create` or `runpane panes create` are accepted too.",
         "Use `runpane repos list --json` to find the saved repository when unsure after doctor shows the daemon is reachable.",
@@ -4239,6 +4263,7 @@ export const RUNPANE_CONTRACT = {
             "--from-json <path|->",
             "--source <user|agent>",
             "--pinned",
+            "--no-pinned",
             "--no-focus",
             "--focus",
             "--wait-ready",
@@ -4820,7 +4845,12 @@ export const RUNPANE_CONTRACT = {
           {
             "name": "--pinned",
             "required": false,
-            "description": "Create the pane already pinned (the Pane UI's favorite/pin star); does not imply focus."
+            "description": "Accepted for backward compatibility and now a no-op; `panes create` already pins by default."
+          },
+          {
+            "name": "--no-pinned",
+            "required": false,
+            "description": "Create the pane unpinned instead of the default pinned (the Pane UI's favorite/pin star). Pinning never implies focus."
           },
           {
             "name": "--yes",
@@ -4869,7 +4899,7 @@ export const RUNPANE_CONTRACT = {
           "`panes create` is for user-visible Pane orchestration, not the agent's default private delegation mechanism.",
           "Register the saved base repository once. Pane creates and owns the worktree/branch for each new Pane.",
           "Use `panels create` instead when a reviewer/helper should share an existing Pane's worktree.",
-          "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved; add `--pinned` when the Pane should remain in the UI's favorite/pin set.",
+          "Agent-created Panes should pass `--source agent --no-focus --wait-ready --yes --json` unless the user explicitly wants focus moved. `panes create` pins the new Pane by default, so a follow-up `panes pin` call is unnecessary; pass `--no-pinned` for throwaway shells or bulk imports. `--pinned` is still accepted and is now a no-op.",
           "The built-in agent templates come from the runpane contract; custom terminal commands can pass agent-specific flags when requested by the user.",
           "Use --initial-input-file for multi-line prompts or shell-sensitive initial input.",
           "With --wait-ready, verifiedSubmitted is earned from delivery evidence; routing initial input alone does not imply verified submission.",

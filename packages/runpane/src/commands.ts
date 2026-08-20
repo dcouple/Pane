@@ -52,6 +52,7 @@ export interface ParsedArgs {
   noFocus?: boolean;
   focus?: boolean;
   pinned?: boolean;
+  noPinned?: boolean;
   composerStrategy?: string;
   force?: boolean;
   remoteSetupArgs: string[];
@@ -271,6 +272,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
   }
   if (flag === '--pinned') {
     parsed.pinned = true;
+    return;
+  }
+  if (flag === '--no-pinned') {
+    parsed.noPinned = true;
     return;
   }
   if (flag === '--force') {

@@ -359,6 +359,14 @@ def build_panel_create_request(parsed: Any) -> Dict[str, Any]:
     }
 
 
+def resolve_pinned_override(parsed: Any) -> Optional[bool]:
+    if parsed.pinned and parsed.no_pinned:
+        raise ValueError("Use either --pinned or --no-pinned, not both.")
+    if parsed.no_pinned:
+        return False
+    return True if parsed.pinned else None
+
+
 def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
     if parsed.from_json:
         payload = json.loads(strip_utf8_bom(read_input_source(parsed.from_json)))
@@ -374,9 +382,10 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
             payload["readyTimeoutMs"] = parsed.ready_timeout_ms
         if parsed.concurrency is not None:
             payload["concurrency"] = parsed.concurrency
-        if parsed.pinned:
+        pinned_override = resolve_pinned_override(parsed)
+        if pinned_override is not None:
             payload["panes"] = [
-                {**item, "pinned": True} if isinstance(item, dict) else item
+                {**item, "pinned": pinned_override} if isinstance(item, dict) else item
                 for item in payload.get("panes", [])
             ]
         apply_pane_focus_options(parsed, payload)
@@ -389,13 +398,16 @@ def build_pane_create_request(parsed: Any) -> Dict[str, Any]:
     if parsed.no_focus and parsed.focus:
         raise ValueError("Use either --focus or --no-focus, not both.")
 
+    pinned_override = resolve_pinned_override(parsed)
+    pinned = True if pinned_override is None else pinned_override
+
     return {
         "repo": parsed.repo,
         "panes": [{
             "name": parsed.name,
             **optional_value("worktreeName", parsed.worktree_name),
             **optional_value("baseBranch", parsed.base_branch),
-            **optional_value("pinned", True if parsed.pinned else None),
+            "pinned": pinned,
             "tool": build_tool_spec(parsed),
         }],
         **optional_value("dryRun", True if parsed.dry_run else None),

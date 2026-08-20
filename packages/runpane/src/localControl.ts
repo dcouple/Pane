@@ -1108,6 +1108,16 @@ async function buildPanelCreateRequest(parsed: ParsedArgs): Promise<PanelCreateR
   };
 }
 
+function resolvePinnedOverride(parsed: ParsedArgs): boolean | undefined {
+  if (parsed.pinned && parsed.noPinned) {
+    throw new Error('Use either --pinned or --no-pinned, not both.');
+  }
+  if (parsed.noPinned) {
+    return false;
+  }
+  return parsed.pinned ? true : undefined;
+}
+
 async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateRequest> {
   if (parsed.fromJson) {
     const payload = JSON.parse(stripUtf8Bom(readInputSource(parsed.fromJson)));
@@ -1127,8 +1137,9 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
     if (parsed.concurrency !== undefined) {
       request.concurrency = parsed.concurrency;
     }
-    if (parsed.pinned) {
-      request.panes = request.panes.map(item => ({ ...item, pinned: true }));
+    const pinnedOverride = resolvePinnedOverride(parsed);
+    if (pinnedOverride !== undefined) {
+      request.panes = request.panes.map(item => ({ ...item, pinned: pinnedOverride }));
     }
     applyPaneFocusOptions(parsed, request);
     return request;
@@ -1152,7 +1163,7 @@ async function buildPaneCreateRequest(parsed: ParsedArgs): Promise<PaneCreateReq
       name: parsed.name,
       worktreeName: parsed.worktreeName,
       baseBranch: parsed.baseBranch,
-      pinned: parsed.pinned || undefined,
+      pinned: resolvePinnedOverride(parsed) ?? true,
       tool,
     }],
     dryRun: parsed.dryRun || undefined,

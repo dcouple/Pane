@@ -168,6 +168,8 @@ function compareParserParity() {
       source: parsed.source ?? null,
       noFocus: parsed.noFocus ?? false,
       focus: parsed.focus ?? false,
+      pinned: parsed.pinned ?? false,
+      noPinned: parsed.noPinned ?? false,
       composerStrategy: parsed.composerStrategy ?? null,
       remoteSetupArgs: parsed.remoteSetupArgs
     };
@@ -223,6 +225,8 @@ for args in samples:
         "source": parsed.source,
         "noFocus": parsed.no_focus,
         "focus": parsed.focus,
+        "pinned": parsed.pinned,
+        "noPinned": parsed.no_pinned,
         "composerStrategy": parsed.composer_strategy,
         "remoteSetupArgs": parsed.remote_setup_args,
     })
@@ -1121,6 +1125,21 @@ async function checkPanePinParity() {
       'panes', 'create', '--repo', 'active', '--name', 'pinned-pane', '--agent', 'codex',
       '--pinned', '--dry-run', '--yes', '--json'
     ]));
+    await runPanesCreate(parseRunpaneArgs([
+      'panes', 'create', '--repo', 'active', '--name', 'default-pane', '--agent', 'codex',
+      '--dry-run', '--yes', '--json'
+    ]));
+    await runPanesCreate(parseRunpaneArgs([
+      'panes', 'create', '--repo', 'active', '--name', 'unpinned-pane', '--agent', 'codex',
+      '--no-pinned', '--dry-run', '--yes', '--json'
+    ]));
+    await assert.rejects(
+      runPanesCreate(parseRunpaneArgs([
+        'panes', 'create', '--repo', 'active', '--name', 'conflicted-pane', '--agent', 'codex',
+        '--pinned', '--no-pinned', '--dry-run', '--yes', '--json'
+      ])),
+      /Use either --pinned or --no-pinned, not both/,
+    );
   } finally {
     daemonClient.invokeDaemon = originalInvokeDaemon;
     console.log = originalConsoleLog;
@@ -1142,6 +1161,8 @@ async function checkPanePinParity() {
   }]);
   assert.strictEqual(calls[4].channel, 'runpane:panes:create');
   assert.strictEqual(calls[4].request.panes[0].pinned, true);
+  assert.strictEqual(calls[5].request.panes[0].pinned, true);
+  assert.strictEqual(calls[6].request.panes[0].pinned, false);
   assert.deepStrictEqual(stdout.slice(0, 4).map(line => JSON.parse(line)), [{
     ok: true,
     paneId: 'session-1',
@@ -1185,6 +1206,23 @@ with contextlib.redirect_stdout(stdout):
         "panes", "create", "--repo", "active", "--name", "pinned-pane", "--agent", "codex",
         "--pinned", "--dry-run", "--yes", "--json"
     ]))
+    local_control.run_panes_create(parse_args([
+        "panes", "create", "--repo", "active", "--name", "default-pane", "--agent", "codex",
+        "--dry-run", "--yes", "--json"
+    ]))
+    local_control.run_panes_create(parse_args([
+        "panes", "create", "--repo", "active", "--name", "unpinned-pane", "--agent", "codex",
+        "--no-pinned", "--dry-run", "--yes", "--json"
+    ]))
+
+pin_conflict_refused = False
+try:
+    local_control.run_panes_create(parse_args([
+        "panes", "create", "--repo", "active", "--name", "conflicted-pane", "--agent", "codex",
+        "--pinned", "--no-pinned", "--dry-run", "--yes", "--json"
+    ]))
+except ValueError as error:
+    pin_conflict_refused = "Use either --pinned or --no-pinned, not both." in str(error)
 
 refused = False
 try:
@@ -1192,7 +1230,7 @@ try:
 except ValueError as error:
     refused = "Rerun with --yes in non-interactive shells" in str(error)
 
-print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "refused": refused}))
+print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "refused": refused, "pinConflictRefused": pin_conflict_refused}))
 `);
   const python = JSON.parse(pythonOutput);
   assert.deepStrictEqual(python.calls, JSON.parse(JSON.stringify(calls)));
@@ -1202,6 +1240,7 @@ print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "ref
     stdout.slice(0, 4).map(line => JSON.parse(line)),
   );
   assert.strictEqual(python.refused, true);
+  assert.strictEqual(python.pinConflictRefused, true);
 }
 
 async function checkPaneRenameParity() {
@@ -1393,7 +1432,9 @@ function compareAgentContextParity() {
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes pin'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes unpin'));
   assert.ok(nodeBrief.tools.some((tool) => tool.name === 'panes rename'));
-  assert.ok(nodeBrief.rules.some((rule) => rule.includes('`--pinned`')));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes("pins the new Pane into the UI's favorite/pin set by default")));
+  assert.ok(nodeBrief.rules.some((rule) => rule.includes('`--no-pinned`')));
+  assert.ok(!nodeBrief.rules.some((rule) => rule.includes('add `--pinned` when')));
 
   const nodeDetail = JSON.parse(runNode(['agent-context', '--command', 'panes create', '--json']));
   const pyDetail = JSON.parse(runPython(['agent-context', '--command', 'panes create', '--json']));
@@ -1405,6 +1446,8 @@ function compareAgentContextParity() {
   assert.ok(nodeDetail.command.notes.some((note) => note.includes("not the agent's default private delegation mechanism")));
   assert.ok(nodeDetail.command.notes.some((note) => note.includes('panels create')));
   assert.ok(nodeDetail.command.arguments.some((argument) => argument.name === '--pinned'));
+  assert.ok(nodeDetail.command.arguments.some((argument) => argument.name === '--no-pinned'));
+  assert.ok(nodeDetail.command.notes.some((note) => note.includes('pins the new Pane by default')));
 
   const nodePinDetail = JSON.parse(runNode(['agent-context', '--command', 'panes pin', '--json']));
   const pyPinDetail = JSON.parse(runPython(['agent-context', '--command', 'panes pin', '--json']));

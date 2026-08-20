@@ -1365,7 +1365,7 @@ describe('runpane IPC handlers', () => {
       projectId: project.id,
       baseBranch: 'main',
       toolType: 'none',
-      startPinned: undefined,
+      startPinned: true,
       activateOnCreate: false,
     }, { timeoutMs: 1234 });
     expect(panelManager.createPanel).toHaveBeenCalledWith({
@@ -1451,6 +1451,49 @@ describe('runpane IPC handlers', () => {
     });
     expect(databaseRow.is_favorite).toBe(1);
     expect(databaseRow.favorite_pinned_at).not.toBeNull();
+  });
+
+  it('pins created panes by default and honours an explicit pinned false', async () => {
+    const startPinnedCalls: (boolean | undefined)[] = [];
+    const services = createServices({
+      // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
+      taskQueue: {
+        createSessionAndWait: vi.fn(async (request: { startPinned?: boolean }) => {
+          startPinnedCalls.push(request.startPinned);
+          return { sessionId: session.id };
+        }),
+      } as never,
+    });
+    const registry = createRegistry(services);
+
+    await registry.invoke('runpane:panes:create', [{
+      repo: 'active',
+      panes: [{ name: 'default-pinned-pane', tool: { agent: 'codex' } }],
+    }]);
+    await registry.invoke('runpane:panes:create', [{
+      repo: 'active',
+      panes: [{ name: 'opted-out-pane', pinned: false, tool: { agent: 'codex' } }],
+    }]);
+
+    expect(startPinnedCalls).toEqual([true, false]);
+  });
+
+  it('previews the default pinned state in a dry run', async () => {
+    const registry = createRegistry(createServices());
+
+    const result = await registry.invoke('runpane:panes:create', [{
+      repo: 'active',
+      dryRun: true,
+      panes: [
+        { name: 'default-pinned-pane', tool: { agent: 'codex' } },
+        { name: 'opted-out-pane', pinned: false, tool: { agent: 'codex' } },
+      ],
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      items: [{ pinned: true }, { pinned: false }],
+    });
   });
 
   it('sets pinned state declaratively and idempotently', async () => {

@@ -2112,7 +2112,9 @@ function parsePaneCreateItem(value: PaneCommandValue, index: number): RunpanePan
     worktreeName: optionalString(value.worktreeName),
     baseBranch: optionalString(value.baseBranch),
     sessionPrompt: optionalString(value.sessionPrompt),
-    pinned: optionalBoolean(value.pinned),
+    // CLI/daemon-created Panes pin by default so orchestrated work stays visible
+    // in the sidebar; the Pane UI create dialog has its own startPinned preference.
+    pinned: optionalBoolean(value.pinned) ?? true,
     tool: parseRunpaneToolSpec(value.tool, `Pane create item ${index}`),
   };
 }
