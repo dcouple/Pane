@@ -224,10 +224,13 @@ export default {
         'enter': 'var(--duration-enter)',
         'reveal': 'var(--duration-reveal)',
         'modal': 'var(--duration-modal)',
+        'sheet': 'var(--duration-sheet)',
+        'sheet-exit': 'var(--duration-sheet-exit)',
       },
       transitionTimingFunction: {
         'out-strong': 'var(--ease-out-strong)',
         'in-out-strong': 'var(--ease-in-out-strong)',
+        'drawer': 'var(--ease-drawer)',
       },
       zIndex: {
         'dropdown-backdrop': 'var(--z-dropdown-backdrop)',

@@ -825,6 +825,114 @@ body.understory {
    uses to collapse all three at once. Deliberately not `will-change`, which
    cannot promote a layout property and would only cost. */
 
+/* Press feedback for touch. `.pane-press` assumes a pointer that can hover, so
+   its colour half does the confirming and the scale is a bonus. A finger has no
+   hover state at all: the scale is the entire acknowledgement, and it competes
+   with the grey rectangle mobile browsers flash over a tapped control by
+   default — which is the wrong shape on a rounded button and arrives on the
+   browser's schedule, not the app's. So this suppresses that and takes the job
+   over. Same curve and durations as `.pane-press`; reduced motion is handled
+   there, since this composes with it rather than replacing it. */
+.pane-press-touch {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* `.pane-joystick-return` marks the scroll joystick's thumb. The transition is
+   applied inline and only on release — never while a finger is down, where any
+   easing would put the thumb behind the finger — so this class exists purely as
+   the handle reduced motion switches off. */
+
+/* ---------------------------------------------------------------------------
+   Edge-anchored surfaces (Remote Pane PWA)
+
+   The drawer and the create-pane sheet are pinned to a screen edge, and the
+   whole of their entrance is the claim that they came from it. Offsets are
+   percentages rather than pixels so a surface starts exactly off its own edge
+   on any handset.
+
+   These are plain classes rather than Tailwind utilities because the create
+   sheet changes what it *is* at the `sm` breakpoint — a sheet rising off the
+   bottom of a phone, a centred dialog in a browser window — and that is a
+   different animation, not a different value. A responsive utility can swap a
+   duration; it cannot swap the keyframes.
+   --------------------------------------------------------------------------- */
+
+@keyframes pane-sheet-enter {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes pane-sheet-exit {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+@keyframes pane-drawer-enter {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes pane-drawer-exit {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@keyframes pane-scrim-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pane-scrim-exit {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* The status dot while the PWA is trying to find its host again. A ring expands
+   out of the dot and fades, which reads as reaching rather than as an error —
+   the dot itself never moves or dims, so the state stays legible at a glance
+   and the motion is pure addition. Slow on purpose: this is ambient, not an
+   interaction, and the one thing it must not do is look urgent. */
+@keyframes pane-status-reaching {
+  0% { opacity: 0.55; transform: scale(1); }
+  70% { opacity: 0; transform: scale(2.6); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+
+/* Keyed off Radix's own `data-state` rather than a class the component has to
+   toggle: Radix holds the node mounted while a CSS animation on it is still
+   running, so the exit is the one animation React does not have to be told
+   about. */
+.pane-sheet[data-state='open'] { animation: pane-sheet-enter var(--duration-sheet) var(--ease-drawer); }
+.pane-sheet[data-state='closed'] { animation: pane-sheet-exit var(--duration-sheet-exit) var(--ease-drawer); }
+.pane-drawer[data-state='open'] { animation: pane-drawer-enter var(--duration-sheet) var(--ease-drawer); }
+.pane-drawer[data-state='closed'] { animation: pane-drawer-exit var(--duration-sheet-exit) var(--ease-drawer); }
+.pane-scrim[data-state='open'] { animation: pane-scrim-enter var(--duration-sheet) var(--ease-drawer); }
+.pane-scrim[data-state='closed'] { animation: pane-scrim-exit var(--duration-sheet-exit) var(--ease-drawer); }
+
+.pane-status-reaching { animation: pane-status-reaching 1.8s var(--ease-out-strong) infinite; }
+
+/* Above the `sm` breakpoint (640px — Tailwind's default, which is where the
+   create sheet's own `sm:` classes re-centre it) the sheet stops being a sheet.
+   It is a dialog in a browser window, so it gets exactly the entrance #480 gave
+   the desktop app's dialogs, and the centring translate has to be carried
+   through every keyframe or the animation would drop the surface into the
+   corner for its duration. */
+@media (min-width: 640px) {
+  @keyframes pane-sheet-enter-centered {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.97); }
+    to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  }
+
+  @keyframes pane-sheet-exit-centered {
+    from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    to { opacity: 0; transform: translate(-50%, -50%) scale(0.97); }
+  }
+
+  .pane-sheet[data-state='open'] { animation: pane-sheet-enter-centered var(--duration-modal) var(--ease-out-strong); }
+  .pane-sheet[data-state='closed'] { animation: pane-sheet-exit-centered var(--duration-sheet-exit) var(--ease-out-strong); }
+}
+
 /* ---------------------------------------------------------------------------
    Reduced motion
 
@@ -854,8 +962,33 @@ body.understory {
   .animate-dropdown-enter,
   .animate-dropdown-enter-up,
   .animate-modal-enter,
-  .animate-title-pill-enter {
+  .animate-title-pill-enter,
+  .pane-sheet[data-state='open'],
+  .pane-drawer[data-state='open'] {
     animation: pane-reduced-fade var(--duration-100) linear;
+  }
+
+  /* Exits are the same bargain read backwards: the surface still leaves, it just
+     fades out where it stands instead of sliding off an edge. They keep their own
+     duration because something else — a focus restore, a re-render — is waiting
+     on the animation to end. */
+  .pane-sheet[data-state='closed'],
+  .pane-drawer[data-state='closed'] {
+    animation: pane-reduced-fade var(--duration-sheet-exit) linear reverse;
+  }
+
+  /* The joystick returns to centre without the travel. Snapping is what it did
+     before this pass; under reduced motion that is the correct behaviour, not a
+     regression. */
+  .pane-joystick-return {
+    transition-duration: 1ms !important;
+  }
+
+  /* "Still looking for the host" is information, so the reaching ring keeps
+     running — it just breathes in place instead of expanding. Same rule that
+     keeps the spinners and the typing dots. */
+  .pane-status-reaching {
+    animation: pane-status-breathe 1.8s ease-in-out infinite;
   }
 
   /* Decorative loops that translate. The bar and the accent stay visible; only
@@ -869,6 +1002,11 @@ body.understory {
   .animate-typing-dot {
     animation: typing-dots-color 1.5s ease-in-out infinite;
   }
+}
+
+@keyframes pane-status-breathe {
+  0%, 100% { opacity: 0.45; transform: scale(1); }
+  50% { opacity: 0.1; transform: scale(1); }
 }
 
 @keyframes typing-dots-color {

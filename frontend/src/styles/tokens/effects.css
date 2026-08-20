@@ -106,6 +106,12 @@
      frames the user is watching. */
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  /* Edge-anchored surfaces — the PWA's nav drawer and create-pane sheet — travel
+     a whole screen edge rather than a few pixels, and `--ease-out-strong` spends
+     that distance so fast it reads as a snap. This curve holds a little more of
+     the travel in the tail, which is what makes a large surface feel like it was
+     pulled into place instead of thrown. Only for things crossing a full edge. */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 
   /* Motion durations. Pane sits on the critical path of someone's flow, so each
      of these is a ceiling rather than a target and the shorter option wins every
@@ -116,6 +122,11 @@
   --duration-enter: 160ms;          /* menus, popovers, small overlays */
   --duration-reveal: 180ms;         /* sidebar and terminal rail width changes */
   --duration-modal: 200ms;          /* dialogs */
+  --duration-sheet: 240ms;          /* drawers and sheets crossing a screen edge */
+  /* Sheets and drawers leave faster than they arrive. The entrance is worth its
+     240ms because it tells you where the surface came from; on the way out you
+     have already decided and the only job left is to get out of the way. */
+  --duration-sheet-exit: 160ms;
   
   /* Z-Index Scale */
   --z-0: 0;
