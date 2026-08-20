@@ -23,7 +23,14 @@ const outDir = path.join(root, 'clips');
 // capture runs Chromium's animation clock at 0.2x, so these are already in
 // slow-motion seconds.
 const LEAD_S = 0.7;
-const TAIL_S = { 'sidebar-collapse': 5.4, 'command-palette-arrow': 4.5, 'menu-row-highlight': 4.5, 'dialog-button-press': 3.8 };
+const TAIL_S = {
+  'sidebar-collapse': 5.4, 'command-palette-arrow': 4.5, 'menu-row-highlight': 4.5, 'dialog-button-press': 3.8,
+  // Remote PWA moments (playwright.anim.remote.config.ts). Several of these are
+  // deliberately round trips — press and release, open and dismiss, drop and
+  // recover — so they run longer than a one-way entrance.
+  'pwa-key-press': 5.4, 'pwa-nav-drawer': 6.0, 'pwa-reconnect': 6.5,
+  'pwa-joystick-release': 5.0, 'pwa-panel-tab': 4.6,
+};
 const DEFAULT_TAIL_S = 3.2;
 // The GIF is what a reviewer actually sees inline in the PR table, so it is
 // tuned for a page that loads: capped resolution, 14fps, and a small palette.
