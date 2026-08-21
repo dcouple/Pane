@@ -1,8 +1,12 @@
 # Mission Control evidence — mission-control
 
-A capture of Mission Control with four Claude Code agents running at once, plus
-the Pane Chat agent, in a scratch repository (`mc-demo`) on an isolated
-`PANE_DIR`.
+A capture of Mission Control with several Claude Code agents running at once in
+a scratch repository (`mc-demo`) on an isolated `PANE_DIR`.
+
+Re-captured from the branch tip after the fitting work: tile content is now
+scaled to fit the tile rather than clipped, and the column count is capped by
+what the window can carry, so a 1440-wide window lays out two wide columns for a
+3x request rather than three narrow ones.
 
 The clip runs a scripted tour of the view: the grid settling with live tiles,
 regrouping by status and back to project, one tile promoted to a live terminal
