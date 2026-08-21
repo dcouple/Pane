@@ -26,8 +26,10 @@ function createLinuxCompatibilityAlias(appOutDir) {
 async function afterPack(context) {
   // Runs for every platform and target, so a build that drops either the bundle
   // icon or the runtime window icon fails here instead of shipping (issue: the
-  // v2.4.69 Windows taskbar icon).
-  verifyPackedApp(context.appOutDir, context.electronPlatformName);
+  // v2.4.69 Windows taskbar icon). The Windows launcher's own icon is not
+  // checked here — rcedit writes it after this hook — scripts/build-win.js
+  // checks it once electron-builder has finished.
+  verifyPackedApp(context.appOutDir, context.electronPlatformName, { checkExecutable: false });
 
   if (context.electronPlatformName !== 'linux') return;
   createLinuxCompatibilityAlias(context.appOutDir);

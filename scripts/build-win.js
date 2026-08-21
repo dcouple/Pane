@@ -31,6 +31,8 @@ const path = require('path');
 
 const os = require('os');
 
+const { verifyPackedApp } = require('./verify-packaged-icon');
+
 const ROOT_DIR = path.resolve(__dirname, '..');
 const NODE_MODULES = path.join(ROOT_DIR, 'node_modules');
 const HOST_ARCH = os.arch(); // 'x64' or 'arm64'
@@ -358,6 +360,13 @@ async function build() {
 
   const publishFlag = shouldPublish ? '--publish always' : '--publish never';
   run(`pnpm exec electron-builder --win --${arch} ${publishFlag} --config.npmRebuild=false`);
+
+  // The launcher's icon is written by rcedit during the electron-builder run, so
+  // this is the first point it can be checked. afterPack already covered the
+  // runtime window icon.
+  console.log('\n🔧 Step 7: Verifying packaged icons...\n');
+  const unpackedDir = path.join(ROOT_DIR, 'dist-electron', 'win-unpacked');
+  verifyPackedApp(unpackedDir, 'win32');
 
   console.log('\n✅ Build complete!\n');
   console.log('Output files are in: dist-electron/');

@@ -236,8 +236,15 @@ function checkWindowsExe(exePath, failures) {
 
 // --- entry points -----------------------------------------------------------
 
-/** Verify one packaged output directory. Called from the afterPack hook. */
-function verifyPackedApp(appOutDir, platform) {
+/**
+ * Verify one packaged output directory.
+ *
+ * `checkExecutable` is off for the afterPack hook: on Windows, electron-builder
+ * writes the icon into the launcher with rcedit after the hook has run, so the
+ * exe still carries Electron's icon at that point. The Windows entry point
+ * checks it once electron-builder has finished.
+ */
+function verifyPackedApp(appOutDir, platform, { checkExecutable = true } = {}) {
   const failures = [];
 
   if (platform === 'darwin' || platform === 'mas') {
@@ -253,7 +260,7 @@ function verifyPackedApp(appOutDir, platform) {
     }
   } else {
     checkRuntimeIcon(path.join(appOutDir, 'resources', 'app.asar'), failures);
-    if (platform === 'win32') {
+    if (platform === 'win32' && checkExecutable) {
       // The launcher is named after productName; anything else at this level is
       // a helper whose icon nobody sees.
       const exes = fs.readdirSync(appOutDir).filter((entry) => entry.toLowerCase().endsWith('.exe'));
