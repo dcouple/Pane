@@ -5,6 +5,7 @@ import type { WebglAddon } from '@xterm/addon-webgl';
 import type { WebLinksAddon } from '@xterm/addon-web-links';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { Unicode11Addon } from '@xterm/addon-unicode11';
+import type { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
@@ -29,6 +30,7 @@ import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
+import { TERMINAL_IMAGE_LIMITS } from '../../../../shared/constants/terminalGraphics';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
@@ -103,6 +105,15 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
+
+// Inline terminal images (sixel, iTerm2 IIP, kitty graphics). Limits come from the
+// shared constant so runpane doctor reports the same numbers the addon runs with.
+// Sequence-size limits stay at the addon defaults (32 MB), which a 4K kitty frame
+// fits inside once zlib-compressed and base64-encoded.
+const TERMINAL_IMAGE_OPTIONS: IImageAddonOptions = {
+  storageLimit: TERMINAL_IMAGE_LIMITS.storageLimitMb,
+  pixelLimit: TERMINAL_IMAGE_LIMITS.pixelLimit,
+};
 const terminalPasteImageResultSchema = boundary.object({
   filePath: boundary.string,
   imageNumber: boundary.number,
@@ -240,6 +251,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
   const serializeAddonRef = useRef<SerializeAddon | null>(null);
   const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
+  const imageAddonRef = useRef<ImageAddon | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
@@ -1225,6 +1237,24 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             unicode11AddonRef.current = null;
           }
 
+          // Load ImageAddon so image-emitting tools render inline instead of
+          // printing nothing. Covers sixel, iTerm2 inline images, and the kitty
+          // graphics protocol, which is what terminal-browser and terminal-doom
+          // speak. The addon turns on the CSI 14/16/18 t size reports those tools
+          // query to size their output to the pane.
+          try {
+            const { ImageAddon: ImageAddonImpl } = await import('@xterm/addon-image');
+            if (!disposed) {
+              const imageAddon = new ImageAddonImpl(TERMINAL_IMAGE_OPTIONS);
+              terminal.loadAddon(imageAddon);
+              imageAddonRef.current = imageAddon;
+              devLog.debug('[TerminalPanel] ImageAddon loaded for panel', panel.id);
+            }
+          } catch (e) {
+            console.warn('[TerminalPanel] ImageAddon failed to load for panel', panel.id, ':', e);
+            imageAddonRef.current = null;
+          }
+
           if (disposed) {
             terminal.dispose();
             fitAddon.dispose();
@@ -1844,6 +1874,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
       if (serializeAddonRef.current) {
         try { serializeAddonRef.current.dispose(); } catch { /* ignore */ }
         serializeAddonRef.current = null;
+      }
+
+      // Dispose ImageAddon
+      if (imageAddonRef.current) {
+        try { imageAddonRef.current.dispose(); } catch { /* ignore */ }
+        imageAddonRef.current = null;
       }
 
       // Dispose Unicode11Addon
