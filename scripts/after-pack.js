@@ -1,7 +1,14 @@
 const fs = require('fs');
 const path = require('path');
 
+const { verifyPackedApp } = require('./verify-packaged-icon');
+
 async function afterPack(context) {
+  // Runs for every platform and target, so a build that drops either the bundle
+  // icon or the runtime window icon fails here instead of shipping (issue: the
+  // v2.4.69 Windows taskbar icon).
+  verifyPackedApp(context.appOutDir, context.electronPlatformName);
+
   if (context.electronPlatformName !== 'linux') return;
   const canonicalPath = path.join(context.appOutDir, 'pane');
   const aliasPath = path.join(context.appOutDir, 'Pane');

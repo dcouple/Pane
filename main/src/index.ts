@@ -327,10 +327,16 @@ async function createWindow() {
 
   const windowControlsOverlay = shouldEnableWindowControlsOverlay(process.platform, process.env);
 
+  // An icon path Electron cannot load is worse than none: on Windows it sets an
+  // empty HICON, which clears the icon the window would otherwise inherit from
+  // Pane.exe and leaves the taskbar showing the default. main's copy:assets puts
+  // the file here and scripts/verify-packaged-icon.js fails the build if it is
+  // ever missing again, so this only guards a broken tree.
+  const windowIconPath = path.join(__dirname, '../assets/icon.png');
+
   const mainWindowOptions: BrowserWindowConstructorOptions = {
     width: 1400,
     height: 900,
-    icon: path.join(__dirname, '../assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -341,6 +347,9 @@ async function createWindow() {
       additionalArguments: windowControlsOverlay ? [WINDOW_CONTROLS_OVERLAY_ARG] : [],
     },
   };
+  if (fs.existsSync(windowIconPath)) {
+    mainWindowOptions.icon = windowIconPath;
+  }
   if (process.platform === 'darwin') {
     mainWindowOptions.titleBarStyle = 'hiddenInset';
     mainWindowOptions.trafficLightPosition = { x: 10, y: 10 };
