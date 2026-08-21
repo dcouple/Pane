@@ -3,7 +3,7 @@ import { GitBranch, Keyboard, Minimize2, Radio, TerminalSquare, Trash2, X } from
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { useMissionControlTerminal } from '../../hooks/useMissionControlTerminal';
 import { toAgentDisplayStatus } from '../../utils/agentStatus';
-import { describeMissionControlTile } from '../../utils/missionControlGrouping';
+import { canTakeKeyboard, describeMissionControlTile } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
 import { formatTimeAgo } from '../../utils/timestampUtils';
@@ -173,7 +173,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   // snapshot, so promoting would replay the stream into a guessed 80x24 grid
   // and wrap every line. Those tiles stay previews, which is what the footer
   // note already promises.
-  const showLive = isLiveView && tile.isLive && ptyDims !== null;
+  const showLive = isLiveView && canTakeKeyboard(tile) && ptyDims !== null;
   // Both bodies are laid out on the same row grid as the live terminal
   // (12px font x 1.15 line height), so a tile shows whole lines rather than
   // clipping one in half, and hovering never makes the grid jump.
@@ -327,7 +327,7 @@ export const MissionControlTile = memo(function MissionControlTile({
         needs to be hovered into life first. Removed once focused, leaving the
         terminal itself to receive every click and keystroke.
       */}
-      {tile.isLive && !isFocused && (
+      {canTakeKeyboard(tile) && !isFocused && (
         <button
           type="button"
           onClick={() => onFocusAgent(tile)}

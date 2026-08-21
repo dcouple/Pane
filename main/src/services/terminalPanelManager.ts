@@ -877,9 +877,18 @@ export class TerminalPanelManager {
     }
   }
 
+  /**
+   * One spelling for a viewer id, whichever entry point it arrives through.
+   *
+   * Registration and acknowledgement have to agree exactly, because the ack
+   * path compares against the registered id. Scoping in only one of them meant
+   * a panel registered as `local:<uuid>` and acked as `<uuid>`, so every ack
+   * was dropped and the PTY jammed at the high watermark.
+   */
   private normalizeVisibilityViewerId(viewerId: string): string {
     const trimmed = viewerId.trim();
-    return trimmed.length > 0 ? trimmed : 'local:legacy';
+    if (trimmed.length === 0) return 'local:legacy';
+    return trimmed.includes(':') ? trimmed : `local:${trimmed}`;
   }
 
   private visibilityViewerMatchesPrefix(viewerId: string, prefix: string): boolean {

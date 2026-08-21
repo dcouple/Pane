@@ -476,12 +476,28 @@ export function useMissionControlTerminal({
       void window.electronAPI.invoke('terminal:input', panelId, data).catch(() => {});
     });
 
+    // Output that arrives before the restore lands is held, not written: the
+    // hydrate below replays the whole buffer, so anything written first would be
+    // clobbered by an older screen and the tile would show stale or duplicated
+    // content for a working agent. `TerminalPanel` restores before it
+    // subscribes; a tile cannot, because the subscription is what proves the
+    // panel is still producing, so it queues instead.
+    let hydrated = false;
+    const pendingOutput: string[] = [];
+
     const unsubscribe = window.electronAPI.events.onTerminalOutput((payload: TerminalOutputEvent) => {
       // The output event is broadcast for every panel; reject the ones that are
       // not ours before paying for a decode.
       if (!('panelId' in payload) || payload.panelId !== panelId) return;
       const data = decodeOptionalBoundary(payload, terminalOutputPayloadSchema);
       if (!data) return;
+      if (!hydrated) {
+        pendingOutput.push(data.output);
+        // Still ack: the bytes left the PTY's budget whether or not they are on
+        // screen yet, and withholding the ack would pause a busy agent.
+        void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output), VIEWER_ID).catch(() => {});
+        return;
+      }
       terminal.write(data.output, () => {
         if (disposed) return;
         // Follow new output, but never yank the view away from someone who
@@ -509,13 +525,17 @@ export function useMissionControlTerminal({
         const scrollback = state?.scrollbackBuffer;
         const restore = state?.serializedBuffer
           ?? (Array.isArray(scrollback) ? scrollback.join('\n') : scrollback ?? '');
-        if (restore) {
-          terminal.write(restore, () => {
-            if (disposed) return;
-            scrollToLastContent(terminal);
-            syncOverflow();
-          });
-        }
+        if (restore) terminal.write(restore);
+        // Flush in arrival order, after the restore, so live output lands on
+        // top of the buffer it belongs after rather than under it.
+        hydrated = true;
+        const queued = pendingOutput.splice(0, pendingOutput.length);
+        for (const chunk of queued) terminal.write(chunk);
+        terminal.write('', () => {
+          if (disposed) return;
+          scrollToLastContent(terminal);
+          syncOverflow();
+        });
         await window.electronAPI.invoke('terminal:setVisibility', panelId, true, VIEWER_ID);
         if (disposed) return;
         setError(null);
@@ -523,6 +543,10 @@ export function useMissionControlTerminal({
         // keyboard back afterwards so the first keystroke lands on the agent.
         if (interactiveRef.current) terminal.focus();
       } catch (err: unknown) {
+        // Open the gate even on failure: holding output back forever would
+        // leave a permanently blank tile for an agent that is still running.
+        hydrated = true;
+        for (const chunk of pendingOutput.splice(0, pendingOutput.length)) terminal.write(chunk);
         if (!disposed) setError(err instanceof Error ? err.message : 'Could not attach to terminal');
       }
     };

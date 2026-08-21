@@ -31,6 +31,9 @@ const DAEMON_MISSION_CONTROL_CHANNELS = [
  * kill would leave every hovered panel pinned "visible" forever, defeating the
  * background output throttling in `terminalPanelManager`.
  */
+/** Ceiling on how long one panel's emulator may hold up a snapshot batch. */
+const SNAPSHOT_IDLE_WAIT_TIMEOUT_MS = 1_000;
+
 const VIEWER_PRUNE_INTERVAL_MS = 60_000;
 const VIEWER_STALE_AFTER_MS = 180_000;
 
@@ -159,7 +162,16 @@ export function registerMissionControlHandlers(
       // once: one busy agent would otherwise delay every later tile in the batch
       // and push the whole poll past its interval. The extraction below stays
       // sequential, because that part is CPU.
-      await Promise.all(panelIds.map(panelId => terminalPanelManager.waitForTerminalState(panelId)));
+      //
+      // Bounded, because `waitForIdle` resolves only when the emulator drains
+      // or is disposed: a panel that never settles would leave this request
+      // pending forever, and the client's in-flight guard would then skip every
+      // later tick, freezing the whole grid with nothing on screen to say so.
+      // A snapshot taken mid-write is worth more than no snapshots at all.
+      await Promise.all(panelIds.map(panelId => Promise.race([
+        terminalPanelManager.waitForTerminalState(panelId),
+        new Promise<void>(resolve => setTimeout(resolve, SNAPSHOT_IDLE_WAIT_TIMEOUT_MS)),
+      ])));
 
       for (const panelId of panelIds) {
         const panel = panelManager.getPanel(panelId);

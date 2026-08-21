@@ -701,12 +701,9 @@ export function registerPanelHandlers(
   // output cadence can drop to OUTPUT_BATCH_INTERVAL_HIDDEN while hidden.
   // No-op when the panel's PTY isn't in the map (pre-init / post-destroy).
   commandRegistry.register('terminal:setVisibility', async (panelId: string, isVisible: boolean, viewerId?: string) => {
-    const scopedViewerId = viewerId?.includes(':')
-      ? viewerId
-      : viewerId
-        ? `local:${viewerId}`
-        : undefined;
-    terminalPanelManager.setVisibility(panelId, !!isVisible, scopedViewerId);
+    // Scoping lives in terminalPanelManager, so registration and ack cannot
+    // disagree about how a bare id is spelled.
+    terminalPanelManager.setVisibility(panelId, !!isVisible, viewerId);
   });
 
   commandRegistry.register('terminal:ack', async (panelId: string, bytesConsumed: number, viewerId?: string) => {

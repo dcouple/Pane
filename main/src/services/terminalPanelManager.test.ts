@@ -493,6 +493,20 @@ describe('TerminalPanelManager hidden output delivery', () => {
       disposeFlowControlRecord(terminal.flowControl);
     });
 
+    it('resolves a bare ack id to the scoped id it registered under', () => {
+      const { manager, terminal } = armed();
+      // TerminalPanel mints a bare uuid. Registration used to be scoped by the
+      // IPC layer while the ack was passed through raw, so the panel registered
+      // as `local:<uuid>`, acked as `<uuid>`, and every ack was dropped: the
+      // PTY jammed at the high watermark on the default (non-ptyHost) path.
+      manager.setVisibility(terminal.panelId, true, 'local:8f1c');
+
+      manager.acknowledgeBytes(terminal.panelId, 100, '8f1c');
+      expect(terminal.flowControl.pendingBytes).toBe(900);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
     it('credits callers that send no viewer id, since every ack path predates them', () => {
       const { manager, terminal } = armed();
       manager.setVisibility(terminal.panelId, true, panelViewer);

@@ -103,3 +103,15 @@ export function describeMissionControlTile(tile: Pick<MissionControlTileModel, '
     })
     .join(' / ');
 }
+
+/**
+ * Whether a tile can be handed the keyboard.
+ *
+ * A live terminal has to render at the PTY's exact size, and those dimensions
+ * ride along with the snapshot, so a running agent whose snapshot has not
+ * arrived yet (or that sits past the snapshot cap) cannot take input: focusing
+ * it would remove the click affordance and swallow every keystroke.
+ */
+export function canTakeKeyboard(tile: MissionControlTileModel): boolean {
+  return tile.isLive && tile.snapshot?.cols != null && tile.snapshot?.rows != null;
+}

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight, CheckSquare, ChevronDown, ChevronRight, LayoutGrid, Loader2,
-  RefreshCw, Settings2, Square,
+  RefreshCw, Settings2, Square, X,
 } from 'lucide-react';
 import { API } from '../../utils/api';
 import { panelApi } from '../../services/panelApi';
 import { usePanelStore } from '../../stores/panelStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useNavigationStore } from '../../stores/navigationStore';
-import { describeMissionControlTile, groupMissionControlTiles } from '../../utils/missionControlGrouping';
+import { canTakeKeyboard, describeMissionControlTile, groupMissionControlTiles } from '../../utils/missionControlGrouping';
 import { cycleIndex } from '../../utils/arrayUtils';
+import { PANE_CHAT_SESSION_ID } from '../../../../shared/types/paneChat';
 import { useWindowActive } from '../../hooks/useWindowActive';
+import { useConfigStore } from '../../stores/configStore';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
 import { Dropdown, type DropdownItem } from '../ui/Dropdown';
@@ -240,6 +242,8 @@ export function MissionControlView() {
   /** Tile awaiting a close confirmation. */
   const [pendingClose, setPendingClose] = useState<MissionControlTileModel | null>(null);
   const [closing, setClosing] = useState(false);
+  /** A failed action, shown beside the grid rather than in place of it. */
+  const [actionError, setActionError] = useState<string | null>(null);
   /**
    * Whether answering an agent enlarges its tile. Off, the tile keeps its size
    * and simply takes the keyboard — better when the grid layout itself is the
@@ -271,14 +275,20 @@ export function MissionControlView() {
   const clearAgentStatus = usePanelStore(state => state.clearAgentStatus);
   const activeView = useNavigationStore(state => state.activeView);
   /**
-   * A window nobody is looking at should cost close to nothing, and a hidden
-   * one should cost nothing at all. Losing focus drops the live tiles, which
-   * are the expensive part (an xterm per tile, streaming PTY output), and backs
-   * the snapshot poll off rather than stopping it, so a grid left open on a
-   * second monitor still reads as current. Hiding the window stops everything.
+   * Idle cost follows the terminal power mode, the same setting `TerminalPanel`
+   * reads, rather than a policy of this view's own.
+   *
+   * Performance keeps mounted terminals live, so the grid keeps polling and
+   * keeps its hovered tile while the window sits behind something else. Battery
+   * Saver suspends inactive rendering, so losing focus drops the live tile
+   * (an xterm streaming PTY output is the expensive part) and stops the poll.
    */
   const { visible: windowVisible, focused: windowFocused } = useWindowActive();
+  const terminalPowerMode = useConfigStore(state => state.config?.terminalPowerMode ?? 'performance');
+  const batterySaver = terminalPowerMode === 'batterySaver';
+  const attentive = windowVisible && (windowFocused || !batterySaver);
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
+  const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
 
   // The stored density is what the user asked for; this is what fits.
   const columns = fitColumns(density, gridWidth);
@@ -368,21 +378,25 @@ export function MissionControlView() {
   // the emulators behind them are never woken for a tile nobody can see.
   const panelIds = useMemo(() => {
     const ids: string[] = [];
+    // The tile being typed into always makes the batch: it needs the PTY
+    // dimensions that ride with a snapshot, and losing them would unmount its
+    // terminal mid-keystroke once the grid grows past the cap.
+    if (focusedPanelId) ids.push(focusedPanelId);
     for (const group of groups) {
       if (collapsedGroups.has(group.key)) continue;
       for (const tile of group.tiles) {
         if (ids.length >= MAX_MISSION_CONTROL_SNAPSHOT_PANELS) return ids;
-        ids.push(tile.panelId);
+        if (tile.panelId !== focusedPanelId) ids.push(tile.panelId);
       }
     }
     return ids;
-  }, [groups, collapsedGroups]);
+  }, [groups, collapsedGroups, focusedPanelId]);
   const panelIdsKey = panelIds.join(',');
 
   // Poll snapshots only while this view is actually on screen. A background
   // poll would keep every agent's emulator warm for nothing.
   useEffect(() => {
-    if (activeView !== 'mission-control' || panelIds.length === 0 || !windowVisible) return;
+    if (activeView !== 'mission-control' || panelIds.length === 0 || !attentive) return;
 
     let cancelled = false;
 
@@ -405,22 +419,27 @@ export function MissionControlView() {
     void tick();
     // With every tile live, snapshots only still matter for stopped panels and
     // for PTY dimension changes, so the poll can back right off.
-    const backedOff = liveAllActive || !windowFocused;
-    const timer = window.setInterval(() => { void tick(); }, backedOff ? POLL_INTERVAL_MS * 6 : POLL_INTERVAL_MS);
+    // Battery Saver has already stopped the poll by the time focus is gone, and
+    // Performance is meant to keep going, so blur does not change the cadence.
+    const timer = window.setInterval(() => { void tick(); }, liveAllActive ? POLL_INTERVAL_MS * 6 : POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      // Release the in-flight guard with the effect: a request that never
+      // settles would otherwise leave it set and make every later tick a no-op.
+      inFlightRef.current = false;
       window.clearInterval(timer);
     };
     // panelIdsKey stands in for panelIds so a re-render with the same ids does
     // not restart the interval.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, panelIdsKey, snapshotLines, liveAllActive, windowVisible, windowFocused]);
+  }, [activeView, panelIdsKey, snapshotLines, liveAllActive, attentive]);
 
-  // Losing focus drops the hover promotion; the focused tile keeps its terminal
-  // so alt-tabbing mid-answer does not throw the keyboard away.
+  // Battery Saver drops the hover promotion on blur; the focused tile keeps its
+  // terminal either way, so alt-tabbing mid-answer never throws the keyboard
+  // away. Performance leaves live tiles alone, as it does for panels.
   useEffect(() => {
-    if (!windowFocused) setLiveTileId(null);
-  }, [windowFocused]);
+    if (batterySaver && !windowFocused) setLiveTileId(null);
+  }, [batterySaver, windowFocused]);
 
   const statusSummary = useMemo(() => ({
     blocked: tiles.filter(tile => tile.agentState === 'blocked').length,
@@ -511,6 +530,12 @@ export function MissionControlView() {
    */
   const handleOpen = useCallback(async (tile: MissionControlTileModel) => {
     setLiveTileId(null);
+    // Pane Chat is listed here but is not a session in the sidebar, so the
+    // sessions view would land on something the user cannot see.
+    if (tile.sessionId === PANE_CHAT_SESSION_ID) {
+      navigateToPaneChat();
+      return;
+    }
     try {
       await panelApi.setActivePanel(tile.sessionId, tile.panelId);
     } catch {
@@ -519,7 +544,7 @@ export function MissionControlView() {
     setActivePanelInStore(tile.sessionId, tile.panelId);
     await setActiveSession(tile.sessionId);
     navigateToSessions();
-  }, [setActiveSession, setActivePanelInStore, navigateToSessions]);
+  }, [setActiveSession, setActivePanelInStore, navigateToSessions, navigateToPaneChat]);
 
   // --- Keyboard navigation ---
 
@@ -562,7 +587,7 @@ export function MissionControlView() {
     const next = blocked[cycleIndex(currentIndex, blocked.length, 'next')];
 
     selectTile(next.panelId);
-    if (next.isLive) handleFocusAgent(next);
+    if (canTakeKeyboard(next)) handleFocusAgent(next);
   }, [visibleTiles, focusedPanelId, selectedPanelId, selectTile, handleFocusAgent]);
 
   /**
@@ -605,7 +630,7 @@ export function MissionControlView() {
 
       if (event.key === 'Enter' && index !== -1) {
         const tile = visibleTiles[index];
-        if (!tile.isLive) return;
+        if (!canTakeKeyboard(tile)) return;
         event.preventDefault();
         handleFocusAgent(tile);
         return;
@@ -664,6 +689,7 @@ export function MissionControlView() {
     setClosing(true);
     try {
       await panelApi.deletePanel(tile.panelId);
+      setActionError(null);
       // The deleted panel's agent status outlives it otherwise: SessionView
       // only clears status for its own active session, so closing an agent in
       // a background session left a blocked entry behind and wedged the
@@ -675,7 +701,9 @@ export function MissionControlView() {
       setPendingClose(null);
       await loadAgents();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to close the pane');
+      // Not `setError`: that swaps the entire grid for an error panel, so one
+      // failed close would take every tile off screen.
+      setActionError(err instanceof Error ? err.message : 'Failed to close the pane');
       setPendingClose(null);
     } finally {
       setClosing(false);
@@ -704,6 +732,19 @@ export function MissionControlView() {
             title="Go to the next agent waiting for you (N)"
           />
           <StatusCountPill status="working" count={statusSummary.working} label="working" />
+
+          {/* A failed action reports beside the grid, never in place of it. */}
+          {actionError && (
+            <button
+              type="button"
+              onClick={() => setActionError(null)}
+              title="Dismiss"
+              className="flex items-center gap-1 rounded-full bg-status-error/15 px-2 py-px text-[10px] font-medium text-status-error transition-colors hover:bg-status-error/25"
+            >
+              {actionError}
+              <X className="h-2.5 w-2.5" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <div className="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
