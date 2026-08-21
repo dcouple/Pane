@@ -200,21 +200,16 @@ function collectPackagesFromPnpm(pnpmPath, licenses, processedPaths) {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     
-    // pnpm stores packages as package@version format
-    // Handle scoped packages like @org+package@version
-    const scopedMatch = entry.name.match(/^(.+)\+(.+)@(.+)$/);
-    const regularMatch = entry.name.match(/^([^@]+)@(.+)$/);
-    
-    let packageName;
-    if (scopedMatch) {
-      // Scoped package: convert @org+package to @org/package
-      packageName = `${scopedMatch[1]}/${scopedMatch[2]}`;
-    } else if (regularMatch) {
-      // Regular package
-      packageName = regularMatch[1];
-    } else {
-      continue;
-    }
+    // pnpm names each directory `<name>@<version>`, with `/` written as `+` in
+    // scoped names, plus an optional `_<peers>` suffix when the package was
+    // resolved against peer dependencies. That suffix carries its own `@` and
+    // `+`, so the name ends at the first `@` past position 0. Matching from the
+    // right instead drops every peer-resolved package, and splitting on `_`
+    // would break names like `string_decoder`.
+    const separator = entry.name.indexOf('@', 1);
+    if (separator <= 0) continue;
+    const rawName = entry.name.slice(0, separator);
+    const packageName = rawName.startsWith('@') ? rawName.replace('+', '/') : rawName;
     
     const fullPath = path.join(pnpmPath, entry.name, 'node_modules', packageName);
     
