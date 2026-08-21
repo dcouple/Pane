@@ -10,6 +10,7 @@ import {
 import { useConfigStore } from '../stores/configStore';
 import { useTheme } from '../contexts/ThemeContext';
 import {
+  charHeightRatio,
   charWidthRatio,
   MAX_FOCUS_FONT_SIZE,
   MAX_TILE_FONT_SIZE,
@@ -323,6 +324,7 @@ export function useMissionControlTerminal({
 
   const measure = useCallback((width: number, height: number): ViewerGeometry => {
     const ratio = charWidthRatio(fontFamily);
+    const heightRatio = charHeightRatio(fontFamily);
     // The box handed in is the wrapper, but the glyphs only get what is left of
     // it once the terminal's own padding — and, expanded, the container's inset
     // — is taken out. Fitting against the whole wrapper puts the trailing
@@ -333,8 +335,12 @@ export function useMissionControlTerminal({
 
     if (matchPtyExactly) {
       // Fit the whole grid — both axes — and let the font shrink to suit.
+      // The height divisor is the measured cell, not `fontSize * lineHeight`:
+      // xterm multiplies the font's natural line box, which is taller than the
+      // font size, so the naive estimate produced a grid a quarter taller than
+      // the box it was fitted to and quietly pushed the oldest rows out.
       const byWidth = glyphWidth / Math.max(ptyCols, 1) / ratio;
-      const byHeight = glyphHeight / Math.max(ptyRows, 1) / LINE_HEIGHT;
+      const byHeight = glyphHeight / Math.max(ptyRows, 1) / (heightRatio * LINE_HEIGHT);
       const fontSize = Math.max(
         Math.min(Math.floor(Math.min(byWidth, byHeight)), MAX_FOCUS_FONT_SIZE),
         MIN_TILE_FONT_SIZE

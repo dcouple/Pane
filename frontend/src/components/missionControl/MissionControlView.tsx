@@ -12,6 +12,8 @@ import { canTakeKeyboard, describeMissionControlTile, groupMissionControlTiles }
 import { cycleIndex } from '../../utils/arrayUtils';
 import { PANE_CHAT_SESSION_ID } from '../../../../shared/types/paneChat';
 import { useWindowActive } from '../../hooks/useWindowActive';
+import { buildTerminalFontFamily, DEFAULT_TERMINAL_FONT_FAMILY } from '../../utils/terminalTheme';
+import { charWidthRatio, fittedWidth, MIN_TILE_FONT_SIZE } from '../../utils/terminalFit';
 import { useConfigStore } from '../../stores/configStore';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
@@ -34,12 +36,22 @@ const POLL_INTERVAL_MS = 1500;
 const PROMOTE_DELAY_MS = 250;
 
 /**
- * Narrowest tile that still shows an agent rather than just its chrome. The
- * column count is capped by what the grid can carry at this width, so a narrow
- * window (or an expanded sidebar) reduces columns instead of shrinking tiles
- * until their headers clip.
+ * The width a tile needs before it is worth calling a view of a terminal.
+ *
+ * Derived rather than picked: a conventional 80-column screen at the legibility
+ * floor is the narrowest thing that still reads as a terminal, and the cell
+ * width depends on the font the user configured. An arbitrary constant here
+ * would either starve tiles on a laptop or waste a 4K display.
  */
-const MIN_TILE_WIDTH_PX = 220;
+const NOMINAL_TILE_COLUMNS = 80;
+/** Matches the grid's `gap-2.5`. */
+const GRID_GAP_PX = 10;
+/** Tile header, footer and the group heading above an expanded tile. */
+const EXPANDED_CHROME_PX = 96;
+
+function minTileWidth(fontFamily: string): number {
+  return fittedWidth(MIN_TILE_FONT_SIZE, NOMINAL_TILE_COLUMNS, charWidthRatio(fontFamily));
+}
 
 const GROUPING_LABELS = {
   project: 'Project',
@@ -117,12 +129,20 @@ function usePersistedOption<T>(
 /**
  * The requested column count, reduced to what this width can carry.
  *
+ * The cap is a function of the space available, so the same setting means more
+ * columns on a large display and fewer on a laptop: a 4K screen honours 4x,
+ * and a narrow window steps down rather than shrinking tiles past the point
+ * where their content is readable.
+ *
  * Walking the option list keeps the result inside the density union without an
  * assertion, and the options are ordered, so the last one that fits wins.
  */
-function fitColumns(density: MissionControlDensity, width: number): MissionControlDensity {
+function fitColumns(density: MissionControlDensity, width: number, fontFamily: string): MissionControlDensity {
   if (width <= 0) return density;
-  const capacity = Math.max(1, Math.floor(width / MIN_TILE_WIDTH_PX));
+  // n tiles carry n-1 gaps between them, so counting on width alone overshoots
+  // and leaves the last column a few characters short of nominal.
+  const tile = minTileWidth(fontFamily);
+  const capacity = Math.max(1, Math.floor((width + GRID_GAP_PX) / (tile + GRID_GAP_PX)));
   let fitted: MissionControlDensity = 1;
   for (const option of DENSITY_OPTIONS) {
     if (option <= density && option <= capacity) fitted = option;
@@ -268,6 +288,7 @@ export function MissionControlView() {
   const tileElementsRef = useRef(new Map<string, HTMLElement>());
   const gridScrollerRef = useRef<HTMLDivElement | null>(null);
   const [gridWidth, setGridWidth] = useState(0);
+  const [gridHeight, setGridHeight] = useState(0);
 
   const agentStatus = usePanelStore(state => state.agentStatus);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
@@ -285,20 +306,26 @@ export function MissionControlView() {
    */
   const { visible: windowVisible, focused: windowFocused } = useWindowActive();
   const terminalPowerMode = useConfigStore(state => state.config?.terminalPowerMode ?? 'performance');
+  const userTerminalFont = useConfigStore(state => state.config?.terminalFontFamily) || DEFAULT_TERMINAL_FONT_FAMILY;
+  const terminalFontFamily = buildTerminalFontFamily(userTerminalFont);
   const batterySaver = terminalPowerMode === 'batterySaver';
   const attentive = windowVisible && (windowFocused || !batterySaver);
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
 
   // The stored density is what the user asked for; this is what fits.
-  const columns = fitColumns(density, gridWidth);
+  const columns = fitColumns(density, gridWidth, terminalFontFamily);
   const snapshotLines = LINES_BY_DENSITY[columns];
+  // What is left for an expanded tile's terminal once its own chrome and the
+  // group header above it are out of the way.
+  const maxExpandedBodyPx = Math.max(gridHeight - EXPANDED_CHROME_PX, 0);
 
   useEffect(() => {
     const scroller = gridScrollerRef.current;
     if (!scroller) return;
     const observer = new ResizeObserver(([entry]) => {
       setGridWidth(entry.contentRect.width);
+      setGridHeight(entry.contentRect.height);
     });
     observer.observe(scroller);
     return () => observer.disconnect();
@@ -867,6 +894,7 @@ export function MissionControlView() {
                         onHoverEnd={handleHoverEnd}
                         onOpen={(target) => { void handleOpen(target); }}
                         snapshotLines={snapshotLines}
+                        maxExpandedBodyPx={maxExpandedBodyPx}
                         isFocused={focusedPanelId === tile.panelId}
                         expandWhenFocused={expandOnFocus}
                         sendEscape={sendEscape}

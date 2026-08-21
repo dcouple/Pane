@@ -37,9 +37,15 @@ export const TERMINAL_CHROME_Y = 15;
  * alternate-screen buffer, which is where full-screen agent TUIs live — the
  * tile then renders blank.
  */
-const cachedCharRatios = new Map<string, number>();
+/** A character cell's size relative to the font size it was measured at. */
+interface CellRatios {
+  width: number;
+  height: number;
+}
 
-export function charWidthRatio(fontFamily: string): number {
+const cachedCharRatios = new Map<string, CellRatios>();
+
+function measureCell(fontFamily: string): CellRatios {
   const cached = cachedCharRatios.get(fontFamily);
   if (cached !== undefined) return cached;
 
@@ -48,15 +54,38 @@ export function charWidthRatio(fontFamily: string): number {
   probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${fontFamily};font-size:${reference}px;`;
   probe.textContent = 'M'.repeat(100);
   document.body.appendChild(probe);
-  const width = probe.getBoundingClientRect().width / 100;
+  const box = probe.getBoundingClientRect();
+  const width = box.width / 100;
+  const height = box.height;
   probe.remove();
 
-  const ratio = width > 0 ? width / reference : 0.6;
-  // Keyed by family: the column-fit maths is only correct when the font it
-  // measured is the font the text renders in.
-  cachedCharRatios.set(fontFamily, ratio);
-  return ratio;
+  // Keyed by family: the fit maths is only correct when the font it measured is
+  // the font the text renders in.
+  const ratios = {
+    width: width > 0 ? width / reference : 0.6,
+    height: height > 0 ? height / reference : 1.3,
+  };
+  cachedCharRatios.set(fontFamily, ratios);
+  return ratios;
 }
+
+export function charWidthRatio(fontFamily: string): number {
+  return measureCell(fontFamily).width;
+}
+
+/**
+ * Height of a character cell relative to the font size.
+ *
+ * Not 1: a font's natural line box is taller than its size, and xterm's
+ * `lineHeight` option multiplies that box rather than the size. Assuming a row
+ * is `fontSize * lineHeight` therefore under-counts every row — for the default
+ * terminal font by about a quarter — and a grid fitted with that estimate comes
+ * out taller than the box it was fitted to.
+ */
+export function charHeightRatio(fontFamily: string): number {
+  return measureCell(fontFamily).height;
+}
+
 
 /**
  * Largest font at which `columns` cells still fit `width`, held between the

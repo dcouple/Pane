@@ -13,11 +13,21 @@ import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
 import { formatTimeAgo } from '../../utils/timestampUtils';
 
-/** Rendered row height of the live terminal: 12px font at 1.15 line height. */
+/**
+ * Row heights the tile budgets its body against.
+ *
+ * A row is the font's natural line box times xterm's line height, not the font
+ * size times line height, so it runs about 1.5x the font rather than 1.2x.
+ * These were calibrated against the smaller estimate, which is why an expanded
+ * tile reserved less height than its own grid needed and the terminal had to
+ * shrink to fit. Sized from the floor font and a readable focus font instead.
+ */
 const ROW_PX = 14;
-/** Row height to aim for once focused, where legibility matters most. */
-const FOCUS_ROW_PX = 17;
-/** Ceiling so one very tall PTY can't push the rest of the grid off-screen. */
+const FOCUS_ROW_PX = 22;
+/**
+ * Ceiling so one very tall PTY cannot push the rest of the grid off-screen,
+ * used only until the grid reports the height it actually has.
+ */
 const MAX_FOCUS_BODY_PX = 620;
 
 /** Left accent per state, so a wall of tiles is scannable at a glance. */
@@ -170,7 +180,9 @@ function LiveTerminalSurface({
       */}
       <div
         ref={containerRef}
-        className={fitWholeGrid ? 'absolute inset-x-1' : 'absolute inset-x-0'}
+        className={fitWholeGrid
+          ? 'absolute left-1/2 -translate-x-1/2'
+          : 'absolute inset-x-0'}
         style={{ bottom: (fitWholeGrid ? 4 : 0) - bottomOverflow }}
       />
       {/*
@@ -194,6 +206,11 @@ export interface MissionControlTileProps {
   onOpen: (tile: MissionControlTileModel) => void;
   /** Trailing lines shown in snapshot mode; scales with grid density. */
   snapshotLines: number;
+  /**
+   * Ceiling on the expanded body, measured from the space the grid actually
+   * has. A constant would waste a tall display and overflow a short one.
+   */
+  maxExpandedBodyPx: number;
   /** True while this tile's agent is open in the focus view. */
   isFocused: boolean;
   /**
@@ -229,6 +246,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   onHoverEnd,
   onOpen,
   snapshotLines,
+  maxExpandedBodyPx,
   isFocused,
   expandWhenFocused,
   sendEscape,
@@ -277,7 +295,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   // instead, and the bottom rows carrying the prompt stay visible.
   const isExpanded = isFocused && expandWhenFocused;
   const bodyHeight = isExpanded
-    ? Math.min(Math.max(ptyRows, budgetRows) * FOCUS_ROW_PX, MAX_FOCUS_BODY_PX)
+    ? Math.min(Math.max(ptyRows, budgetRows) * FOCUS_ROW_PX, maxExpandedBodyPx || MAX_FOCUS_BODY_PX)
     : visibleRows * ROW_PX;
   const lastActivity = formatTimeAgo(tile.snapshot?.lastActivityAt ?? null);
   // Only worth showing when it says something the session name does not.
