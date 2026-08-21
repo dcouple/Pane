@@ -248,6 +248,46 @@ function createConfigManagerStub(): ConfigManager {
   });
 }
 
+type TerminalOutputEvent = { sessionId: string; panelId: string; output: string };
+
+type DataDrivenPty = TerminalUnderTest['pty'] & {
+  onData(listener: (data: string) => void): { dispose(): void };
+  onExit(listener: (exit: { exitCode: number; signal?: number }) => void): { dispose(): void };
+};
+
+type DataDrivenTerminal = TerminalUnderTest & { pty: DataDrivenPty };
+
+type TerminalDataHandlerAccess = {
+  setupTerminalHandlers(terminal: DataDrivenTerminal): void;
+};
+
+/**
+ * Wires a terminal through the real `setupTerminalHandlers` and hands back the
+ * `emit` seam, so tests can drive the production `pty.onData` listener directly
+ * instead of reimplementing its accounting.
+ */
+function createDataDrivenTerminal(overrides: Partial<TerminalUnderTest> = {}) {
+  const base = createTerminal({ outputBuffer: '', ...overrides });
+  let listener: ((data: string) => void) | undefined;
+  const terminal: DataDrivenTerminal = {
+    ...base,
+    pty: {
+      ...base.pty,
+      onData: vi.fn((next: (data: string) => void) => {
+        listener = next;
+        return { dispose: vi.fn() };
+      }),
+      onExit: vi.fn(() => ({ dispose: vi.fn() })),
+    },
+  };
+  return {
+    terminal,
+    emit(data: string) {
+      listener?.(data);
+    },
+  };
+}
+
 async function flushPromises(): Promise<void> {
   await Promise.resolve();
   await Promise.resolve();
@@ -1003,5 +1043,130 @@ describe('TerminalPanelManager agent session capture', () => {
       }),
     });
     disposeFlowControlRecord(terminal.flowControl);
+  });
+});
+
+describe('TerminalPanelManager command scrape bounds', () => {
+  // `currentCommand` reconstructs the typed command line by scraping echoed PTY
+  // output, so it sees every byte a program prints. Kitty graphics frames are
+  // base64 (an alphabet with no CR or LF) inside APC sequences, and a full-screen
+  // TUI positions its cursor with CSI rather than newlines — so a game streamed
+  // through terminal-browser never reaches the reset branch. Uncapped, the
+  // accumulator grew past V8's max string length and `+=` threw
+  // `RangeError: Invalid string length`, taking down the main process.
+  const KITTY_FRAME = `\x1b_Gf=100,a=T,m=0;${'QUJD'.repeat(16_384)}\x1b\\`;
+
+  function useStubRuntime() {
+    const combinedSink = { send: vi.fn() };
+    setPaneRuntime({
+      eventSink: combinedSink,
+      daemonEventSink: { send: vi.fn() },
+      getConfigManager: () => createConfigManagerStub(),
+      getPtyHostRuntime: () => null,
+      getWebviewContextMap: () => new Map(),
+    });
+    return combinedSink;
+  }
+
+  function cleanup(terminal: DataDrivenTerminal) {
+    if (terminal.idleTimer) clearTimeout(terminal.idleTimer);
+    if (terminal.outputFlushTimer) clearTimeout(terminal.outputFlushTimer);
+    disposeFlowControlRecord(terminal.flowControl);
+  }
+
+  afterEach(() => {
+    resetPaneRuntimeForTests();
+    vi.mocked(panelManager.emitPanelEvent).mockReset();
+    vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+    vi.useRealTimers();
+  });
+
+  it('holds the command scrape at its cap no matter how much newline-free output streams', () => {
+    vi.useFakeTimers();
+    useStubRuntime();
+    const manager = testAccess<TerminalDataHandlerAccess>(new TerminalPanelManager());
+    const { terminal, emit } = createDataDrivenTerminal();
+    manager.setupTerminalHandlers(terminal);
+
+    // The premise of the crash: a graphics frame carries no CR/LF at all.
+    expect(KITTY_FRAME).not.toMatch(/[\r\n]/);
+
+    for (let i = 0; i < 100; i += 1) emit(KITTY_FRAME);
+    const afterFirstBurst = terminal.currentCommand.length;
+
+    for (let i = 0; i < 100; i += 1) emit(KITTY_FRAME);
+    const afterSecondBurst = terminal.currentCommand.length;
+
+    // ~13MB streamed. Before the cap this grew 1:1 with the stream; the bound has
+    // to be independent of volume, which is what stops it reaching 512M chars.
+    expect(afterFirstBurst).toBeLessThanOrEqual(8192);
+    expect(afterSecondBurst).toBe(afterFirstBurst);
+
+    cleanup(terminal);
+  });
+
+  it('still streams every graphics frame to the renderer while the scrape is capped', () => {
+    vi.useFakeTimers();
+    const combinedSink = useStubRuntime();
+    const manager = testAccess<TerminalDataHandlerAccess>(new TerminalPanelManager());
+    const { terminal, emit } = createDataDrivenTerminal();
+    manager.setupTerminalHandlers(terminal);
+
+    for (let i = 0; i < 20; i += 1) emit(KITTY_FRAME);
+    vi.runOnlyPendingTimers();
+
+    // The cap lives on the scrape heuristic, not the render path: the frames a
+    // game emits must still reach xterm byte for byte.
+    // SAFETY: `terminal:output` is emitted from exactly one call site
+    // (`flushOutputBuffer`), which always sends `{ sessionId, panelId, output }`.
+    const streamed = combinedSink.send.mock.calls
+      .filter(([channel]) => channel === 'terminal:output')
+      .map(([, payload]) => (payload as TerminalOutputEvent).output)
+      .join('');
+    expect(streamed).toBe(KITTY_FRAME.repeat(20));
+
+    cleanup(terminal);
+  });
+
+  it('keeps the most recently typed bytes when it trims the scrape', () => {
+    vi.useFakeTimers();
+    useStubRuntime();
+    const manager = testAccess<TerminalDataHandlerAccess>(new TerminalPanelManager());
+    const { terminal, emit } = createDataDrivenTerminal();
+    manager.setupTerminalHandlers(terminal);
+
+    for (let i = 0; i < 10; i += 1) emit(KITTY_FRAME);
+    emit('whoami');
+
+    // Trimming from the front is what preserves the command: what the user typed
+    // is always the newest bytes before Enter.
+    expect(terminal.currentCommand.endsWith('whoami')).toBe(true);
+
+    cleanup(terminal);
+  });
+
+  it('records typed commands and stops history growing without bound', () => {
+    vi.useFakeTimers();
+    useStubRuntime();
+    const manager = testAccess<TerminalDataHandlerAccess>(new TerminalPanelManager());
+    const { terminal, emit } = createDataDrivenTerminal();
+    manager.setupTerminalHandlers(terminal);
+
+    emit('ls -la');
+    emit('\r\n');
+    expect(terminal.commandHistory).toEqual(['ls -la']);
+
+    for (let i = 0; i < 150; i += 1) {
+      emit(`echo ${i}`);
+      emit('\r\n');
+    }
+
+    // A long-lived panel keeps a bounded window, not every command it ever ran.
+    expect(terminal.commandHistory).toHaveLength(100);
+    expect(terminal.commandHistory.at(-1)).toBe('echo 149');
+    expect(terminal.commandHistory.at(0)).toBe('echo 50');
+
+    cleanup(terminal);
   });
 });
