@@ -88,6 +88,16 @@ export function charHeightRatio(fontFamily: string): number {
 
 
 /**
+ * Rendered height of one row at this font, as xterm lays it out.
+ *
+ * The single answer to a question three places used to guess at with
+ * `fontSize * lineHeight`, which under-counts every row by about a quarter.
+ */
+export function rowHeight(fontSize: number, fontFamily: string): number {
+  return fontSize * charHeightRatio(fontFamily) * TILE_LINE_HEIGHT;
+}
+
+/**
  * Largest font at which `columns` cells still fit `width`, held between the
  * legibility floor and the caller's ceiling.
  *

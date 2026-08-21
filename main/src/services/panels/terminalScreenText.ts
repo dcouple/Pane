@@ -76,14 +76,21 @@ export interface BoundedSanitizedLines {
 
 /** Strip ANSI and keep at most the last `limit` lines. */
 export function boundSanitizedLines(rawText: string, limit: number): BoundedSanitizedLines {
-  const stripped = sanitizeTerminalOutput(rawText);
+  // Trim to the tail before stripping. Sanitizing is nine full-string passes,
+  // and a caller asking for the last 16 lines of a 500KB scrollback would
+  // otherwise pay for all of it. Escape sequences never span a newline, so
+  // cutting on line boundaries cannot split one. The extra headroom keeps
+  // lines that sanitize away from eating into the limit.
+  const rawLines = rawText.split('\n');
+  const tail = rawLines.length > limit * 4 ? rawLines.slice(-limit * 4).join('\n') : rawText;
+  const stripped = sanitizeTerminalOutput(tail);
   if (!stripped) {
     return { text: '', hasMore: false, returnedLineCount: 0 };
   }
 
   const allLines = stripped.split('\n');
-  const hasMore = allLines.length > limit;
-  const lines = hasMore ? allLines.slice(-limit) : allLines;
+  const hasMore = allLines.length > limit || rawLines.length > allLines.length;
+  const lines = allLines.length > limit ? allLines.slice(-limit) : allLines;
   return {
     text: lines.join('\n'),
     hasMore,

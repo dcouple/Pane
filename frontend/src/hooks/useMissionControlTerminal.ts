@@ -12,6 +12,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import {
   charHeightRatio,
   charWidthRatio,
+  fitFontSize,
+  rowHeight,
   MAX_FOCUS_FONT_SIZE,
   MAX_TILE_FONT_SIZE,
   MIN_TILE_FONT_SIZE,
@@ -62,7 +64,6 @@ import { terminalOutputByteLength } from '../utils/terminalRestore';
 const VISIBILITY_REFRESH_MS = 60_000;
 /** Tiles show recent context only; a deep buffer would cost memory per tile. */
 const TILE_SCROLLBACK = 600;
-const LINE_HEIGHT = TILE_LINE_HEIGHT;
 /**
  * Inset between the wrapper and the terminal in the expanded view, mirroring
  * the container's `inset-x-1` and its 4px bottom offset. It is inside the box
@@ -73,8 +74,6 @@ const EXPANDED_INSET_PX = 4;
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 const MAX_VIEWER_COLS = 400;
-/** Ignore sub-column jitter so a resize doesn't rebuild the terminal. */
-const COLUMN_CHANGE_THRESHOLD = 2;
 const RESIZE_DEBOUNCE_MS = 200;
 
 const VIEWER_ID = getMissionControlViewerId();
@@ -224,7 +223,8 @@ function measuredRowHeight(container: HTMLElement, terminal: Terminal): number {
   if (screen && terminal.rows > 0 && screen.clientHeight > 0) {
     return screen.clientHeight / terminal.rows;
   }
-  return terminal.options.fontSize ? terminal.options.fontSize * LINE_HEIGHT : 0;
+  const fontSize = terminal.options.fontSize;
+  return fontSize ? rowHeight(fontSize, terminal.options.fontFamily ?? '') : 0;
 }
 
 export interface UseMissionControlTerminalOptions {
@@ -316,6 +316,8 @@ export function useMissionControlTerminal({
     if (hasReportedDims) lastDimsRef.current = { cols: cols!, rows: rows! };
   }, [hasReportedDims, cols, rows]);
 
+  /** Until the wrapper has been measured, any geometry is a guess. */
+  const [measured, setMeasured] = useState(false);
   const [geometry, setGeometry] = useState<ViewerGeometry>({
     fontSize: MAX_TILE_FONT_SIZE,
     cols: ptyCols,
@@ -340,7 +342,7 @@ export function useMissionControlTerminal({
       // font size, so the naive estimate produced a grid a quarter taller than
       // the box it was fitted to and quietly pushed the oldest rows out.
       const byWidth = glyphWidth / Math.max(ptyCols, 1) / ratio;
-      const byHeight = glyphHeight / Math.max(ptyRows, 1) / (heightRatio * LINE_HEIGHT);
+      const byHeight = glyphHeight / Math.max(ptyRows, 1) / (heightRatio * TILE_LINE_HEIGHT);
       const fontSize = Math.max(
         Math.min(Math.floor(Math.min(byWidth, byHeight)), MAX_FOCUS_FONT_SIZE),
         MIN_TILE_FONT_SIZE
@@ -348,10 +350,9 @@ export function useMissionControlTerminal({
       return { fontSize, cols: ptyCols, rows: ptyRows };
     }
 
-    // Largest font at which the PTY's full width still fits the tile, held
-    // between a legible floor and a sane ceiling.
-    const ideal = glyphWidth / Math.max(ptyCols, 1) / ratio;
-    const fontSize = Math.round(Math.min(Math.max(ideal, MIN_TILE_FONT_SIZE), MAX_TILE_FONT_SIZE));
+    // The same helper the snapshot body fits with: a tile that scaled one way
+    // as a preview and another once live would jump under the pointer.
+    const fontSize = fitFontSize(glyphWidth, ptyCols, ratio);
 
     return {
       fontSize,
@@ -374,10 +375,9 @@ export function useMissionControlTerminal({
 
     const sync = () => {
       const next = measure(wrapper.clientWidth, wrapper.clientHeight);
+      setMeasured(true);
       setGeometry(current => (
-        next.fontSize !== current.fontSize
-        || Math.abs(next.cols - current.cols) >= COLUMN_CHANGE_THRESHOLD
-        || Math.abs(next.rows - current.rows) >= 1
+        next.fontSize !== current.fontSize || next.cols !== current.cols || next.rows !== current.rows
           ? next
           : current
       ));
@@ -400,7 +400,10 @@ export function useMissionControlTerminal({
 
   useEffect(() => {
     const container = containerRef.current;
-    if (!panelId || !container) return;
+    // Wait for the measurement. The seed geometry is a guess and never the
+    // answer, so building against it costs an xterm, a `terminal:getState`
+    // round trip and a full-buffer replay that the next tick throws away.
+    if (!panelId || !container || !measured) return;
 
     // Geometry changes rebuild the terminal, and a rebuild that ignored the
     // current interactivity would hand the user a fresh, mute terminal: the
@@ -421,7 +424,7 @@ export function useMissionControlTerminal({
       cols: geometry.cols,
       rows: geometry.rows,
       fontSize: geometry.fontSize,
-      lineHeight: LINE_HEIGHT,
+      lineHeight: TILE_LINE_HEIGHT,
       fontFamily: fontFamilyRef.current,
       scrollback: TILE_SCROLLBACK,
       // Agent TUIs paint their own backgrounds assuming a dark terminal. In a
@@ -457,8 +460,8 @@ export function useMissionControlTerminal({
 
     const syncOverflow = () => {
       if (disposed) return;
-      const rowHeight = measuredRowHeight(container, terminal);
-      const overflow = Math.round(trailingBlankRows(terminal) * rowHeight);
+      const measuredRow = measuredRowHeight(container, terminal);
+      const overflow = Math.round(trailingBlankRows(terminal) * measuredRow);
       setBottomOverflow(current => (current === overflow ? current : overflow));
 
       // SAFETY: `.xterm-screen` is an element xterm renders into this container, so the match is an HTMLElement.
@@ -579,7 +582,7 @@ export function useMissionControlTerminal({
     };
     // Geometry changes rebuild and re-hydrate rather than resizing a live
     // terminal — see the note on charWidthRatio.
-  }, [panelId, geometry, interactiveRef, sendEscapeRef, escapeExitRef, fontFamilyRef, highContrastRef]);
+  }, [panelId, geometry, measured, interactiveRef, sendEscapeRef, escapeExitRef, fontFamilyRef, highContrastRef]);
 
   // A font or theme change is an option flip too: rebuilding every live tile
   // for a settings change would re-hydrate each one for nothing.

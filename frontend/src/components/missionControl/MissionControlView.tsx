@@ -48,6 +48,8 @@ const NOMINAL_TILE_COLUMNS = 80;
 const GRID_GAP_PX = 10;
 /** Tile header, footer and the group heading above an expanded tile. */
 const EXPANDED_CHROME_PX = 96;
+/** Enough to be worth expanding into before the grid has been measured. */
+const MIN_EXPANDED_BODY_PX = 320;
 
 function minTileWidth(fontFamily: string): number {
   return fittedWidth(MIN_TILE_FONT_SIZE, NOMINAL_TILE_COLUMNS, charWidthRatio(fontFamily));
@@ -293,7 +295,7 @@ export function MissionControlView() {
   const agentStatus = usePanelStore(state => state.agentStatus);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const setActivePanelInStore = usePanelStore(state => state.setActivePanel);
-  const clearAgentStatus = usePanelStore(state => state.clearAgentStatus);
+  const removePanel = usePanelStore(state => state.removePanel);
   const activeView = useNavigationStore(state => state.activeView);
   /**
    * Idle cost follows the terminal power mode, the same setting `TerminalPanel`
@@ -317,8 +319,10 @@ export function MissionControlView() {
   const columns = fitColumns(density, gridWidth, terminalFontFamily);
   const snapshotLines = LINES_BY_DENSITY[columns];
   // What is left for an expanded tile's terminal once its own chrome and the
-  // group header above it are out of the way.
-  const maxExpandedBodyPx = Math.max(gridHeight - EXPANDED_CHROME_PX, 0);
+  // group header above it are out of the way. Floored rather than allowed to
+  // reach zero: on the frame before the grid reports its size there is no
+  // measurement yet, and a zero ceiling would collapse the body.
+  const maxExpandedBodyPx = Math.max(gridHeight - EXPANDED_CHROME_PX, MIN_EXPANDED_BODY_PX);
 
   useEffect(() => {
     const scroller = gridScrollerRef.current;
@@ -403,22 +407,32 @@ export function MissionControlView() {
 
   // A folded-away group costs nothing: its panels leave the snapshot batch, so
   // the emulators behind them are never woken for a tile nobody can see.
+  /** Every tile on screen, in reading order, ignoring folded groups. */
+  const visibleTiles = useMemo(() => {
+    const tilesInOrder: MissionControlTileModel[] = [];
+    for (const group of displayedGroups) {
+      if (collapsedGroups.has(group.key)) continue;
+      tilesInOrder.push(...group.tiles);
+    }
+    return tilesInOrder;
+  }, [displayedGroups, collapsedGroups]);
+
   const panelIds = useMemo(() => {
     const ids: string[] = [];
     // The tile being typed into always makes the batch: it needs the PTY
     // dimensions that ride with a snapshot, and losing them would unmount its
     // terminal mid-keystroke once the grid grows past the cap.
     if (focusedPanelId) ids.push(focusedPanelId);
-    for (const group of groups) {
-      if (collapsedGroups.has(group.key)) continue;
-      for (const tile of group.tiles) {
-        if (ids.length >= MAX_MISSION_CONTROL_SNAPSHOT_PANELS) return ids;
-        if (tile.panelId !== focusedPanelId) ids.push(tile.panelId);
-      }
+    for (const tile of visibleTiles) {
+      if (ids.length >= MAX_MISSION_CONTROL_SNAPSHOT_PANELS) break;
+      if (tile.panelId !== focusedPanelId) ids.push(tile.panelId);
     }
     return ids;
-  }, [groups, collapsedGroups, focusedPanelId]);
-  const panelIdsKey = panelIds.join(',');
+  }, [visibleTiles, focusedPanelId]);
+  // Sorted: the set is what the poll depends on, but `groups` reorders on any
+  // status change, and an order-sensitive key restarted the interval on
+  // ordinary churn.
+  const panelIdsKey = [...panelIds].sort().join(',');
 
   // Poll snapshots only while this view is actually on screen. A background
   // poll would keep every agent's emulator warm for nothing.
@@ -433,9 +447,24 @@ export function MissionControlView() {
       try {
         const response = await API.missionControl.snapshots({ panelIds, maxLines: snapshotLines });
         if (cancelled || !response.success || !response.data) return;
-        const next: Record<string, MissionControlSnapshot> = {};
-        for (const snapshot of response.data.snapshots) next[snapshot.panelId] = snapshot;
-        setSnapshots(next);
+        const incoming = response.data.snapshots;
+        setSnapshots(current => {
+          const next: Record<string, MissionControlSnapshot> = {};
+          let changed = incoming.length !== Object.keys(current).length;
+          for (const snapshot of incoming) {
+            const previous = current[snapshot.panelId];
+            // Keep the previous object when nothing a tile renders has moved:
+            // a fresh object every tick re-renders every tile for nothing.
+            const same = previous
+              && previous.text === snapshot.text
+              && previous.cols === snapshot.cols
+              && previous.rows === snapshot.rows
+              && previous.lastActivityAt === snapshot.lastActivityAt;
+            next[snapshot.panelId] = same ? previous : snapshot;
+            if (!same) changed = true;
+          }
+          return changed ? next : current;
+        });
       } catch {
         // A dropped poll is not worth surfacing; the next tick retries.
       } finally {
@@ -475,20 +504,20 @@ export function MissionControlView() {
 
   // In "all live" mode hover is irrelevant — every tile is already live.
   const handleHoverStart = useCallback((panelId: string) => {
-    if (liveAll) return;
+    if (liveAllActive) return;
     // The focused tile is already live and owns the keyboard.
     if (focusedPanelId === panelId) return;
     window.clearTimeout(promoteTimerRef.current);
     promoteTimerRef.current = window.setTimeout(() => setLiveTileId(panelId), PROMOTE_DELAY_MS);
-  }, [liveAll, focusedPanelId]);
+  }, [liveAllActive, focusedPanelId]);
 
   const handleHoverEnd = useCallback((panelId: string) => {
-    if (liveAll) return;
+    if (liveAllActive) return;
     // The focused tile keeps the keyboard even when the pointer leaves it.
     if (focusedPanelId === panelId) return;
     window.clearTimeout(promoteTimerRef.current);
     setLiveTileId(current => (current === panelId ? null : current));
-  }, [liveAll, focusedPanelId]);
+  }, [liveAllActive, focusedPanelId]);
 
   useEffect(() => () => window.clearTimeout(promoteTimerRef.current), []);
 
@@ -508,10 +537,9 @@ export function MissionControlView() {
     setLiveTileId(tile.panelId);
   }, [groups]);
 
-  const handleCloseFocus = useCallback(() => {
-    frozenOrderRef.current = null;
-    setFocusedPanelId(null);
-  }, []);
+  // The frozen order is only ever read while a tile is focused, so releasing
+  // focus is the whole of what this needs to do.
+  const handleCloseFocus = useCallback(() => setFocusedPanelId(null), []);
 
   /**
    * Fold a group away, or bring it back.
@@ -573,17 +601,11 @@ export function MissionControlView() {
     navigateToSessions();
   }, [setActiveSession, setActivePanelInStore, navigateToSessions, navigateToPaneChat]);
 
-  // --- Keyboard navigation ---
+  const handleOpenTile = useCallback((tile: MissionControlTileModel) => {
+    void handleOpen(tile);
+  }, [handleOpen]);
 
-  /** Every tile on screen, in reading order, ignoring folded groups. */
-  const visibleTiles = useMemo(() => {
-    const tilesInOrder: MissionControlTileModel[] = [];
-    for (const group of displayedGroups) {
-      if (collapsedGroups.has(group.key)) continue;
-      tilesInOrder.push(...group.tiles);
-    }
-    return tilesInOrder;
-  }, [displayedGroups, collapsedGroups]);
+  // --- Keyboard navigation ---
 
   const registerTileElement = useCallback((panelId: string, element: HTMLElement | null) => {
     if (element) tileElementsRef.current.set(panelId, element);
@@ -717,11 +739,11 @@ export function MissionControlView() {
     try {
       await panelApi.deletePanel(tile.panelId);
       setActionError(null);
-      // The deleted panel's agent status outlives it otherwise: SessionView
-      // only clears status for its own active session, so closing an agent in
-      // a background session left a blocked entry behind and wedged the
-      // sidebar's "needs input" badge.
-      clearAgentStatus(tile.panelId);
+      // `removePanel` is what the other delete sites call: it forgets the
+      // panel's agent status, activity and list entry together. Clearing only
+      // the status here left the rest behind, and a stale blocked entry wedged
+      // the sidebar's "needs input" badge.
+      removePanel(tile.sessionId, tile.panelId);
       if (focusedPanelId === tile.panelId) handleCloseFocus();
       setLiveTileId(current => (current === tile.panelId ? null : current));
       setSelectedPanelId(current => (current === tile.panelId ? null : current));
@@ -735,7 +757,7 @@ export function MissionControlView() {
     } finally {
       setClosing(false);
     }
-  }, [pendingClose, focusedPanelId, handleCloseFocus, loadAgents, clearAgentStatus]);
+  }, [pendingClose, focusedPanelId, handleCloseFocus, loadAgents, removePanel]);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-primary">
@@ -892,7 +914,7 @@ export function MissionControlView() {
                         isLiveView={liveAllActive || liveTileId === tile.panelId || focusedPanelId === tile.panelId}
                         onHoverStart={handleHoverStart}
                         onHoverEnd={handleHoverEnd}
-                        onOpen={(target) => { void handleOpen(target); }}
+                        onOpen={handleOpenTile}
                         snapshotLines={snapshotLines}
                         maxExpandedBodyPx={maxExpandedBodyPx}
                         isFocused={focusedPanelId === tile.panelId}

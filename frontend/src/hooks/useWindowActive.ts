@@ -23,33 +23,25 @@ export function useWindowActive(): WindowActivity {
   }));
 
   useEffect(() => {
-    let focused = true;
-    let visible = document.visibilityState === 'visible';
-    const publish = () => setActivity(current => (
-      current.visible === visible && current.focused === focused
+    const update = (change: Partial<WindowActivity>) => setActivity(current => (
+      (change.visible ?? current.visible) === current.visible
+      && (change.focused ?? current.focused) === current.focused
         ? current
-        : { visible, focused }
+        : { ...current, ...change }
     ));
 
-    const handleVisibility = () => {
-      visible = document.visibilityState === 'visible';
-      publish();
-    };
+    const handleVisibility = () => update({ visible: document.visibilityState === 'visible' });
     document.addEventListener('visibilitychange', handleVisibility);
 
+    // Pulled rather than awaited on an event: the first focus change may be a
+    // long way off, and until then the initial answer is all there is.
     void window.electronAPI.window?.isFocused?.()
-      .then((isFocused) => {
-        focused = isFocused;
-        publish();
-      })
+      .then(focused => update({ focused }))
       .catch(() => {
         // Default to focused when the query is unavailable.
       });
 
-    const unsubscribe = window.electronAPI.events.onWindowFocusChanged((isFocused) => {
-      focused = isFocused;
-      publish();
-    });
+    const unsubscribe = window.electronAPI.events.onWindowFocusChanged(focused => update({ focused }));
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);

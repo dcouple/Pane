@@ -54,8 +54,8 @@ export interface MissionControlSnapshotResult {
 }
 
 /**
- * Snapshotting N emulators is sequential and each one awaits emulator idle, so
- * the batch is capped to keep a single poll well under the refresh interval.
+ * Reading N emulators costs CPU per panel, so the batch is capped to keep a
+ * single poll well under the refresh interval.
  */
 export const MAX_MISSION_CONTROL_SNAPSHOT_PANELS = 64;
 export const MAX_MISSION_CONTROL_SNAPSHOT_LINES = 120;

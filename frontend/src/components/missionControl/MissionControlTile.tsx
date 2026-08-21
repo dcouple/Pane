@@ -6,9 +6,9 @@ import { useConfigStore } from '../../stores/configStore';
 import { toAgentDisplayStatus } from '../../utils/agentStatus';
 import { buildTerminalFontFamily, DEFAULT_TERMINAL_FONT_FAMILY } from '../../utils/terminalTheme';
 import {
-  charWidthRatio, fittedWidth, fitFontSize, TILE_LINE_HEIGHT, widestLine,
+  charWidthRatio, fittedWidth, fitFontSize, MIN_TILE_FONT_SIZE, rowHeight, widestLine,
 } from '../../utils/terminalFit';
-import { canTakeKeyboard, describeMissionControlTile } from '../../utils/missionControlGrouping';
+import { agentTypeLabel, canTakeKeyboard, describeMissionControlTile, STATE_LABEL } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
 import { formatTimeAgo } from '../../utils/timestampUtils';
@@ -22,13 +22,8 @@ import { formatTimeAgo } from '../../utils/timestampUtils';
  * tile reserved less height than its own grid needed and the terminal had to
  * shrink to fit. Sized from the floor font and a readable focus font instead.
  */
-const ROW_PX = 14;
-const FOCUS_ROW_PX = 22;
-/**
- * Ceiling so one very tall PTY cannot push the rest of the grid off-screen,
- * used only until the grid reports the height it actually has.
- */
-const MAX_FOCUS_BODY_PX = 620;
+const SNAPSHOT_FONT_SIZE_HINT = MIN_TILE_FONT_SIZE;
+const FOCUS_FONT_SIZE_HINT = 14;
 
 /** Left accent per state, so a wall of tiles is scannable at a glance. */
 const ACCENT = {
@@ -39,13 +34,10 @@ const ACCENT = {
   unknown: 'bg-border-secondary',
 } satisfies Record<AgentDisplayStatus, string>;
 
-const STATUS_TEXT = {
-  blocked: 'Needs input',
-  working: 'Working',
-  done: 'Done',
-  idle: 'Idle',
-  unknown: 'Not running',
-} satisfies Record<AgentDisplayStatus, string>;
+// The group headings' labels, plus the one state only a tile can be in. Two
+// maps would let a heading and the tile beneath it name the same state
+// differently.
+const STATUS_TEXT = { ...STATE_LABEL, done: 'Done' } satisfies Record<AgentDisplayStatus, string>;
 
 /**
  * The screen is wider than the tile and the rest is cut off.
@@ -116,7 +108,7 @@ function SnapshotSurface({ text, height, fontFamily, ptyCols, isLive }: {
           // Bottom-anchored like the live terminal: the newest rows, and the
           // prompt waiting for an answer, are what a tile is for, so anything
           // that does not fit is lost off the top.
-          style={{ fontFamily, fontSize, lineHeight: `${Math.round(fontSize * TILE_LINE_HEIGHT)}px` }}
+          style={{ fontFamily, fontSize, lineHeight: `${Math.round(rowHeight(fontSize, fontFamily))}px` }}
         >
           {text}
         </pre>
@@ -268,7 +260,7 @@ export const MissionControlTile = memo(function MissionControlTile({
   const fontFamily = buildTerminalFontFamily(userFont);
 
   const status = toAgentDisplayStatus(tile.agentState, false);
-  const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
+  const agentLabel = agentTypeLabel(tile.agentType);
   const snapshotText = tile.snapshot?.text ?? '';
   const ptyCols = tile.snapshot?.cols ?? null;
   const ptyDims = ptyCols !== null && tile.snapshot?.rows != null
@@ -284,19 +276,18 @@ export const MissionControlTile = memo(function MissionControlTile({
   // font either body ended up fitting to, so hovering a tile never makes the
   // grid jump. Both bodies are bottom-anchored inside it, so the trailing rows
   // stay put whichever one is on screen.
-  const budgetRows = snapshotLines;
   // A terminal shorter than the budget gets only the height it needs, instead
   // of reserving blank space below it.
   const ptyRows = ptyDims?.rows ?? 0;
-  const visibleRows = showLive && ptyRows > 0 ? Math.min(ptyRows, budgetRows) : budgetRows;
+  const visibleRows = showLive && ptyRows > 0 ? Math.min(ptyRows, snapshotLines) : snapshotLines;
   // Expanding is opt-in. On, the tile grows in place to show the agent's whole
   // grid at a readable size; off, it is typed into exactly where it sits and
   // the grid around it never reflows — the terminal fits itself to the tile
   // instead, and the bottom rows carrying the prompt stay visible.
   const isExpanded = isFocused && expandWhenFocused;
   const bodyHeight = isExpanded
-    ? Math.min(Math.max(ptyRows, budgetRows) * FOCUS_ROW_PX, maxExpandedBodyPx || MAX_FOCUS_BODY_PX)
-    : visibleRows * ROW_PX;
+    ? Math.min(Math.max(ptyRows, snapshotLines) * rowHeight(FOCUS_FONT_SIZE_HINT, fontFamily), maxExpandedBodyPx)
+    : visibleRows * rowHeight(SNAPSHOT_FONT_SIZE_HINT, fontFamily);
   const lastActivity = formatTimeAgo(tile.snapshot?.lastActivityAt ?? null);
   // Only worth showing when it says something the session name does not.
   const branchLabel = tile.worktreeName && tile.worktreeName !== tile.sessionName

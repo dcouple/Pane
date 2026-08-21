@@ -1,5 +1,10 @@
 import type { AgentState } from '../../../shared/types/agentStatus';
-import type { MissionControlGroup, MissionControlGrouping, MissionControlTileModel } from '../../../shared/types/missionControl';
+import type {
+  MissionControlAgentType,
+  MissionControlGroup,
+  MissionControlGrouping,
+  MissionControlTileModel,
+} from '../../../shared/types/missionControl';
 
 /**
  * Sort weight for agent states — the panes that need a human come first, so
@@ -12,7 +17,7 @@ const STATE_ORDER = {
   unknown: 3,
 } satisfies Record<AgentState, number>;
 
-const STATE_LABEL = {
+export const STATE_LABEL = {
   blocked: 'Needs input',
   working: 'Working',
   idle: 'Idle',
@@ -21,6 +26,13 @@ const STATE_LABEL = {
 
 /** One collator for every comparison; `localeCompare` builds a fresh one per call. */
 const COLLATOR = new Intl.Collator();
+
+/** How an agent is named in the interface. */
+export function agentTypeLabel(agentType: MissionControlAgentType | null, fallback = 'Agent'): string {
+  if (agentType === 'claude') return 'Claude';
+  if (agentType === 'codex') return 'Codex';
+  return fallback;
+}
 
 export function compareMissionControlTiles(a: MissionControlTileModel, b: MissionControlTileModel): number {
   const byState = STATE_ORDER[a.agentState] - STATE_ORDER[b.agentState];
@@ -60,11 +72,7 @@ export function groupMissionControlTiles(tiles: MissionControlTileModel[], group
       label = STATE_LABEL[tile.agentState];
     } else {
       key = `agent-${tile.agentType ?? 'other'}`;
-      label = tile.agentType === 'claude'
-        ? 'Claude'
-        : tile.agentType === 'codex'
-          ? 'Codex'
-          : 'Other agents';
+      label = agentTypeLabel(tile.agentType, 'Other agents');
     }
 
     const bucket = buckets.get(key);

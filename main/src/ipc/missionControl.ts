@@ -26,14 +26,14 @@ const DAEMON_MISSION_CONTROL_CHANNELS = [
   'mission-control:snapshots',
 ] as const;
 
-/**
- * Stale Mission Control viewers are swept on this cadence. Without it, a hard renderer
- * kill would leave every hovered panel pinned "visible" forever, defeating the
- * background output throttling in `terminalPanelManager`.
- */
 /** Ceiling on how long one panel's emulator may hold up a snapshot batch. */
 const SNAPSHOT_IDLE_WAIT_TIMEOUT_MS = 1_000;
 
+/**
+ * Stale Mission Control viewers are swept on this cadence. Without it, a hard
+ * renderer kill would leave every hovered panel pinned "visible" forever,
+ * defeating the background output throttling in `terminalPanelManager`.
+ */
 const VIEWER_PRUNE_INTERVAL_MS = 60_000;
 const VIEWER_STALE_AFTER_MS = 180_000;
 
@@ -144,8 +144,10 @@ export function registerMissionControlHandlers(
   /**
    * Plain-text screen snapshots for a batch of panels.
    *
-   * Snapshots are taken sequentially: each one awaits emulator idle, and doing
-   * 30+ of those in parallel spikes the main process.
+   * Every panel's emulator is waited on at once, under a timeout, because that
+   * part is a wait rather than work. The extraction that follows stays
+   * sequential: that part is CPU, and running it in parallel spikes the main
+   * process.
    */
   commandRegistry.register('mission-control:snapshots', async (request: MissionControlSnapshotRequest) => {
     try {
@@ -168,10 +170,19 @@ export function registerMissionControlHandlers(
       // pending forever, and the client's in-flight guard would then skip every
       // later tick, freezing the whole grid with nothing on screen to say so.
       // A snapshot taken mid-write is worth more than no snapshots at all.
-      await Promise.all(panelIds.map(panelId => Promise.race([
-        terminalPanelManager.waitForTerminalState(panelId),
-        new Promise<void>(resolve => setTimeout(resolve, SNAPSHOT_IDLE_WAIT_TIMEOUT_MS)),
-      ])));
+      await Promise.all(panelIds.map(async panelId => {
+        let timer: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([
+            terminalPanelManager.waitForTerminalState(panelId),
+            new Promise<void>(resolve => { timer = setTimeout(resolve, SNAPSHOT_IDLE_WAIT_TIMEOUT_MS); }),
+          ]);
+        } finally {
+          // The losing side of a race is never settled, so without this every
+          // panel leaves a live timer behind on every tick.
+          if (timer) clearTimeout(timer);
+        }
+      }));
 
       for (const panelId of panelIds) {
         const panel = panelManager.getPanel(panelId);
