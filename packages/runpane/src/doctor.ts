@@ -88,6 +88,15 @@ interface DaemonDoctorResult {
       sessionCount: number;
     };
   };
+  terminal?: {
+    graphicsProtocols: string[];
+    sizeReports: boolean;
+    imageLimits: {
+      storageLimitMb: number;
+      pixelLimit: number;
+    };
+    summary: string;
+  };
   agentContext: {
     recommendedFirstCommands: string[];
   };
@@ -117,6 +126,16 @@ const daemonDoctorResultSchema: BoundarySchema<DaemonDoctorResult> = boundary.ob
       sessionCount: boundary.number,
     })),
   }),
+  // Optional: a newer wrapper still has to read an older Pane's doctor reply.
+  terminal: boundary.optional(boundary.object({
+    graphicsProtocols: boundary.array(boundary.string),
+    sizeReports: boundary.boolean,
+    imageLimits: boundary.object({
+      storageLimitMb: boundary.number,
+      pixelLimit: boundary.number,
+    }),
+    summary: boundary.string,
+  })),
   agentContext: boundary.object({
     recommendedFirstCommands: boundary.array(boundary.string),
   }),
@@ -713,6 +732,10 @@ function renderDoctorText(report: DoctorReport): void {
   console.log(`Daemon endpoint: ${report.daemon.endpoint.transport} ${report.daemon.endpoint.path}`);
   if (report.daemon.reachable) {
     console.log(`Pane daemon: reachable (${report.daemon.result?.repos.count ?? 0} repos)`);
+    const terminal = report.daemon.result?.terminal;
+    if (terminal) {
+      console.log(`Terminal images: ${terminal.graphicsProtocols.join(', ')}`);
+    }
   } else {
     console.log(`Pane daemon: unreachable - ${report.daemon.error ?? 'unknown error'}`);
   }

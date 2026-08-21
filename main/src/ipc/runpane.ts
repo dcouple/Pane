@@ -17,6 +17,12 @@ import type { Session, SessionOutput } from '../types/session';
 import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../../shared/types/panels';
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { isAgentSupportedOnPlatform } from '../../../shared/constants/agentLaunchPresets';
+import {
+  TERMINAL_GRAPHICS_PROTOCOLS,
+  TERMINAL_GRAPHICS_SIZE_REPORTS,
+  TERMINAL_GRAPHICS_SUMMARY,
+  TERMINAL_IMAGE_LIMITS,
+} from '../../../shared/constants/terminalGraphics';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type {
   RunpaneAgentId,
@@ -137,6 +143,15 @@ export function registerRunpaneHandlers(
         repos: {
           count: repos.length,
           active: repos.find(repo => repo.active),
+        },
+        terminal: {
+          graphicsProtocols: TERMINAL_GRAPHICS_PROTOCOLS,
+          sizeReports: TERMINAL_GRAPHICS_SIZE_REPORTS,
+          imageLimits: {
+            storageLimitMb: TERMINAL_IMAGE_LIMITS.storageLimitMb,
+            pixelLimit: TERMINAL_IMAGE_LIMITS.pixelLimit,
+          },
+          summary: TERMINAL_GRAPHICS_SUMMARY,
         },
         agentContext: {
           recommendedFirstCommands: [
