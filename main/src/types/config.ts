@@ -135,6 +135,8 @@ export interface AppConfig {
   keyboardShortcutsEnabled?: boolean;
   // Whether the Command Palette shortcut remains active when other shortcuts are disabled
   commandPaletteShortcutEnabled?: boolean;
+  // Whether the terminal answers kitty keyboard protocol requests (CSI = | ? | > | < u)
+  kittyKeyboardEnabled?: boolean;
   // Worktree file sync — files/dirs to copy from main repo into new worktrees
   worktreeFileSync?: WorktreeFileSyncEntry[];
   // Preferred shell for Windows terminals
@@ -209,6 +211,8 @@ export interface UpdateConfigRequest {
   keyboardShortcutsEnabled?: boolean;
   // Whether the Command Palette shortcut remains active when other shortcuts are disabled
   commandPaletteShortcutEnabled?: boolean;
+  // Whether the terminal answers kitty keyboard protocol requests (CSI = | ? | > | < u)
+  kittyKeyboardEnabled?: boolean;
   // Worktree file sync — files/dirs to copy from main repo into new worktrees
   worktreeFileSync?: WorktreeFileSyncEntry[];
   // Preferred shell for Windows terminals

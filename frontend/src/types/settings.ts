@@ -52,6 +52,7 @@ export type SettingsSettingId =
   | 'voice-transcription'
   | 'keyboard-shortcuts'
   | 'command-palette-shortcut'
+  | 'kitty-keyboard'
   | 'terminal-shortcuts'
   | 'analytics'
   | 'verbose-logging'

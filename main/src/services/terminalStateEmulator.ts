@@ -1,4 +1,5 @@
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { Terminal } from '@xterm/headless';
 
 const HEADLESS_SCROLLBACK_LINES = 2500;
@@ -28,6 +29,12 @@ export class TerminalStateEmulator {
       allowProposedApi: true,
     });
     this.terminal.loadAddon(this.serializeAddon);
+    // Match the renderer's cell widths. This model backs terminal restore,
+    // runpane's screen reads, and agent status detection, so if it measures a
+    // wide emoji as one cell while the renderer measures two, every one of
+    // those drifts from what the user is actually looking at.
+    this.terminal.loadAddon(new Unicode11Addon());
+    this.terminal.unicode.activeVersion = '11';
     // Capture OSC window/icon title (OSC 0 / OSC 2) — agents encode live status
     // (spinner, "Action Required") into it, which the status detector reads.
     this.terminal.onTitleChange((title) => {

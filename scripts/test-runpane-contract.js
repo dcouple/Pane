@@ -369,9 +369,11 @@ async function checkLinuxPackageCompatibilityAlias() {
   fs.mkdirSync(appDirectory, { recursive: true });
   fs.writeFileSync(path.join(appDirectory, 'pane'), 'binary', { mode: 0o755 });
   try {
-    const afterPack = require(path.join(rootDir, 'scripts', 'after-pack.js'));
-    await afterPack({ electronPlatformName: 'linux', appOutDir: appDirectory });
-    await afterPack({ electronPlatformName: 'linux', appOutDir: appDirectory });
+    // The alias step, not the whole afterPack hook: the hook also verifies the
+    // packaged icons, which this fixture deliberately does not have.
+    const { createLinuxCompatibilityAlias } = require(path.join(rootDir, 'scripts', 'after-pack.js'));
+    createLinuxCompatibilityAlias(appDirectory);
+    createLinuxCompatibilityAlias(appDirectory);
     childProcess.execFileSync(process.execPath, [
       path.join(rootDir, 'scripts', 'verify-linux-package-executables.js'),
       temporaryDirectory

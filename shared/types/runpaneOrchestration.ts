@@ -1,6 +1,7 @@
 import type { ProjectEnvironment, ToolPanelType } from './panels';
 import type { RunpaneAgent } from './generatedRunpaneContract';
 import type { RemoteDaemonExecutableHealth } from './remoteDaemon';
+import type { TerminalGraphicsProtocol } from '../constants/terminalGraphics';
 
 export type RunpaneAgentId = RunpaneAgent;
 
@@ -41,6 +42,16 @@ export interface RunpaneDoctorResult {
   repos: {
     count: number;
     active?: RunpaneRepoSummary;
+  };
+  terminal: {
+    /** Inline image protocols a Pane terminal decodes and draws. */
+    graphicsProtocols: readonly TerminalGraphicsProtocol[];
+    /** Whether the terminal answers CSI 14 t / 16 t / 18 t size queries. */
+    sizeReports: boolean;
+    imageLimits: {
+      storageLimitMb: number;
+      pixelLimit: number;
+    };
   };
   agentContext: {
     recommendedFirstCommands: string[];

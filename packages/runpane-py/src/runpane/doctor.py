@@ -495,6 +495,11 @@ def render_doctor_text(report: Dict[str, Any]) -> None:
     if daemon["reachable"]:
         repo_count = ((daemon.get("result") or {}).get("repos") or {}).get("count", 0)
         print(f"Pane daemon: reachable ({repo_count} repos)")
+        # Absent when talking to a Pane older than inline image support.
+        terminal = (daemon.get("result") or {}).get("terminal") or {}
+        protocols = terminal.get("graphicsProtocols") or []
+        if protocols:
+            print(f"Terminal images: {', '.join(protocols)}")
     else:
         print(f"Pane daemon: unreachable - {daemon.get('error') or 'unknown error'}")
 

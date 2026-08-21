@@ -5,6 +5,7 @@ import type { WebglAddon } from '@xterm/addon-webgl';
 import type { WebLinksAddon } from '@xterm/addon-web-links';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { Unicode11Addon } from '@xterm/addon-unicode11';
+import type { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
@@ -29,6 +30,7 @@ import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
+import { TERMINAL_IMAGE_OPTIONS } from '../../../../shared/constants/terminalGraphics';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
@@ -102,6 +104,10 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
+
+// Sequence-size limits stay at the addon defaults (32 MB), which a 4K kitty frame
+// fits inside once zlib-compressed and base64-encoded.
+const TERMINAL_IMAGE_ADDON_OPTIONS: IImageAddonOptions = TERMINAL_IMAGE_OPTIONS;
 const terminalPasteImageResultSchema = boundary.object({
   filePath: boundary.string,
   imageNumber: boundary.number,
@@ -220,6 +226,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
   const serializeAddonRef = useRef<SerializeAddon | null>(null);
   const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
+  const imageAddonRef = useRef<ImageAddon | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
@@ -236,6 +243,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const terminalPowerMode = useConfigStore((state) => state.config?.terminalPowerMode ?? 'performance');
   const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   const keyboardShortcutsEnabledRef = useRef(keyboardShortcutsEnabled);
+  // Opt-in per application: a program has to ask for it with CSI > flags u, so
+  // this only changes what reaches programs that requested enhanced reporting.
+  const kittyKeyboardEnabled = useConfigStore((state) => state.config?.kittyKeyboardEnabled !== false);
+  const kittyKeyboardEnabledRef = useRef(kittyKeyboardEnabled);
   const useBatterySaverTerminalVisibility = terminalPowerMode === 'batterySaver';
   const panelVisible = isActive;
   const effectiveVisible = useBatterySaverTerminalVisibility ? panelVisible && windowFocused : true;
@@ -304,6 +315,15 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   useEffect(() => {
     keyboardShortcutsEnabledRef.current = keyboardShortcutsEnabled;
   }, [keyboardShortcutsEnabled]);
+
+  // vtExtensions is not a constructor-only option and useKitty reads it per key
+  // event, so the toggle takes effect on the live terminal with no restart.
+  useEffect(() => {
+    kittyKeyboardEnabledRef.current = kittyKeyboardEnabled;
+    const terminal = xtermRef.current;
+    if (!terminal) return;
+    terminal.options.vtExtensions = { ...terminal.options.vtExtensions, kittyKeyboard: kittyKeyboardEnabled };
+  }, [kittyKeyboardEnabled]);
 
   const terminalScrollSurfaceRef = useScrollSurface<HTMLDivElement>({
     id: `terminal:${panel.id}`,
@@ -955,6 +975,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           cursorWidth: 1,
           cursorInactiveStyle: 'outline',
           allowTransparency: false,
+          // Unlocks terminal.unicode, which the Unicode11Addon below needs.
+          // Without it that addon throws on load and the terminal silently
+          // falls back to Unicode 6 cell widths.
+          allowProposedApi: true,
+          vtExtensions: { kittyKeyboard: kittyKeyboardEnabledRef.current },
           scrollOnUserInput: true,
           scrollSensitivity: 1,
           altClickMovesCursor: true,
@@ -1203,6 +1228,21 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           } catch (e) {
             console.warn('[TerminalPanel] Unicode11Addon failed to load for panel', panel.id, ':', e);
             unicode11AddonRef.current = null;
+          }
+
+          // Load ImageAddon so image-emitting tools render inline instead of
+          // printing nothing. Protocols and limits live in TERMINAL_IMAGE_OPTIONS.
+          try {
+            const { ImageAddon: ImageAddonImpl } = await import('@xterm/addon-image');
+            if (!disposed) {
+              const imageAddon = new ImageAddonImpl(TERMINAL_IMAGE_ADDON_OPTIONS);
+              terminal.loadAddon(imageAddon);
+              imageAddonRef.current = imageAddon;
+              devLog.debug('[TerminalPanel] ImageAddon loaded for panel', panel.id);
+            }
+          } catch (e) {
+            console.warn('[TerminalPanel] ImageAddon failed to load for panel', panel.id, ':', e);
+            imageAddonRef.current = null;
           }
 
           if (disposed) {
@@ -1824,6 +1864,12 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
       if (serializeAddonRef.current) {
         try { serializeAddonRef.current.dispose(); } catch { /* ignore */ }
         serializeAddonRef.current = null;
+      }
+
+      // Dispose ImageAddon
+      if (imageAddonRef.current) {
+        try { imageAddonRef.current.dispose(); } catch { /* ignore */ }
+        imageAddonRef.current = null;
       }
 
       // Dispose Unicode11Addon
