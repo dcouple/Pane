@@ -12,6 +12,7 @@ function tile(overrides: Partial<MissionControlTileModel> & { panelId: string })
     worktreeName: 'alpha',
     panelTitle: 'Terminal',
     agentType: 'claude',
+    isPermanent: false,
     isLive: true,
     agentState: 'idle',
     snapshot: null,

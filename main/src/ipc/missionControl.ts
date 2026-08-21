@@ -39,6 +39,7 @@ interface AgentPanelRow {
   session_id: string;
   title: string | null;
   agent_type: string | null;
+  permanent: number | null;
   session_name: string | null;
   archived: number | null;
   worktree_path: string | null;
@@ -88,6 +89,7 @@ export function registerMissionControlHandlers(
           tp.session_id,
           tp.title,
           json_extract(tp.state, '$.customState.agentType') AS agent_type,
+          json_extract(tp.metadata, '$.permanent') AS permanent,
           s.name    AS session_name,
           s.archived,
           s.worktree_path,
@@ -116,6 +118,9 @@ export function registerMissionControlHandlers(
           // filing it under "Unknown project".
           projectName: row.project_name
             ?? (row.session_id === PANE_CHAT_SESSION_ID ? 'Pane Chat' : 'Unknown project'),
+          // Pane Chat's panel is permanent; offering to close it would kill the
+          // agent and leave the tile behind.
+          isPermanent: Boolean(row.permanent),
           worktreePath: row.worktree_path,
           worktreeName: row.worktree_name,
           panelTitle: row.title ?? 'Terminal',

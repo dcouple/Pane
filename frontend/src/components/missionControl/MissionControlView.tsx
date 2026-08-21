@@ -268,11 +268,16 @@ export function MissionControlView() {
   const agentStatus = usePanelStore(state => state.agentStatus);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const setActivePanelInStore = usePanelStore(state => state.setActivePanel);
+  const clearAgentStatus = usePanelStore(state => state.clearAgentStatus);
   const activeView = useNavigationStore(state => state.activeView);
-  // Nothing here should cost anything while the user is looking at another
-  // window: the poll stops and hover promotions are dropped, so no tile keeps
-  // an xterm streaming PTY output at a screen nobody is watching.
-  const windowActive = useWindowActive();
+  /**
+   * A window nobody is looking at should cost close to nothing, and a hidden
+   * one should cost nothing at all. Losing focus drops the live tiles, which
+   * are the expensive part (an xterm per tile, streaming PTY output), and backs
+   * the snapshot poll off rather than stopping it, so a grid left open on a
+   * second monitor still reads as current. Hiding the window stops everything.
+   */
+  const { visible: windowVisible, focused: windowFocused } = useWindowActive();
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
 
   // The stored density is what the user asked for; this is what fits.
@@ -307,10 +312,17 @@ export function MissionControlView() {
   // Agents appearing or disappearing shows up as agent-status churn; refresh
   // the roster on it rather than polling the (heavier) list endpoint. This also
   // covers the initial load, since the effect runs on mount.
-  const agentStatusKeys = useMemo(() => Object.keys(agentStatus).sort().join(','), [agentStatus]);
+  // Values, not just keys: an agent that exits keeps its panel id and only
+  // changes state, and the roster is where `isLive` comes from. Watching the
+  // key set alone left a finished agent's tile live and interactive until
+  // something else forced a reload.
+  const agentStatusSignature = useMemo(
+    () => Object.entries(agentStatus).sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, state]) => `${id}:${state}`).join(','),
+    [agentStatus]
+  );
   useEffect(() => {
     void loadAgents();
-  }, [agentStatusKeys, loadAgents]);
+  }, [agentStatusSignature, loadAgents]);
 
   const canLiveAll = agents.length <= MAX_LIVE_ALL_TILES;
   const liveAllActive = liveAll && canLiveAll;
@@ -354,19 +366,23 @@ export function MissionControlView() {
 
   // A folded-away group costs nothing: its panels leave the snapshot batch, so
   // the emulators behind them are never woken for a tile nobody can see.
-  const panelIds = useMemo(
-    () => groups
-      .filter(group => !collapsedGroups.has(group.key))
-      .flatMap(group => group.tiles.map(tile => tile.panelId))
-      .slice(0, MAX_MISSION_CONTROL_SNAPSHOT_PANELS),
-    [groups, collapsedGroups]
-  );
+  const panelIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const group of groups) {
+      if (collapsedGroups.has(group.key)) continue;
+      for (const tile of group.tiles) {
+        if (ids.length >= MAX_MISSION_CONTROL_SNAPSHOT_PANELS) return ids;
+        ids.push(tile.panelId);
+      }
+    }
+    return ids;
+  }, [groups, collapsedGroups]);
   const panelIdsKey = panelIds.join(',');
 
   // Poll snapshots only while this view is actually on screen. A background
   // poll would keep every agent's emulator warm for nothing.
   useEffect(() => {
-    if (activeView !== 'mission-control' || panelIds.length === 0 || !windowActive) return;
+    if (activeView !== 'mission-control' || panelIds.length === 0 || !windowVisible) return;
 
     let cancelled = false;
 
@@ -389,7 +405,8 @@ export function MissionControlView() {
     void tick();
     // With every tile live, snapshots only still matter for stopped panels and
     // for PTY dimension changes, so the poll can back right off.
-    const timer = window.setInterval(() => { void tick(); }, liveAllActive ? POLL_INTERVAL_MS * 6 : POLL_INTERVAL_MS);
+    const backedOff = liveAllActive || !windowFocused;
+    const timer = window.setInterval(() => { void tick(); }, backedOff ? POLL_INTERVAL_MS * 6 : POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -397,13 +414,13 @@ export function MissionControlView() {
     // panelIdsKey stands in for panelIds so a re-render with the same ids does
     // not restart the interval.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, panelIdsKey, snapshotLines, liveAllActive, windowActive]);
+  }, [activeView, panelIdsKey, snapshotLines, liveAllActive, windowVisible, windowFocused]);
 
-  // Coming back to the window re-ticks immediately (above), so the only tiles
-  // that stay promoted across a blur are the one being typed into.
+  // Losing focus drops the hover promotion; the focused tile keeps its terminal
+  // so alt-tabbing mid-answer does not throw the keyboard away.
   useEffect(() => {
-    if (!windowActive) setLiveTileId(null);
-  }, [windowActive]);
+    if (!windowFocused) setLiveTileId(null);
+  }, [windowFocused]);
 
   const statusSummary = useMemo(() => ({
     blocked: tiles.filter(tile => tile.agentState === 'blocked').length,
@@ -507,12 +524,14 @@ export function MissionControlView() {
   // --- Keyboard navigation ---
 
   /** Every tile on screen, in reading order, ignoring folded groups. */
-  const visibleTiles = useMemo(
-    () => displayedGroups
-      .filter(group => !collapsedGroups.has(group.key))
-      .flatMap(group => group.tiles),
-    [displayedGroups, collapsedGroups]
-  );
+  const visibleTiles = useMemo(() => {
+    const tilesInOrder: MissionControlTileModel[] = [];
+    for (const group of displayedGroups) {
+      if (collapsedGroups.has(group.key)) continue;
+      tilesInOrder.push(...group.tiles);
+    }
+    return tilesInOrder;
+  }, [displayedGroups, collapsedGroups]);
 
   const registerTileElement = useCallback((panelId: string, element: HTMLElement | null) => {
     if (element) tileElementsRef.current.set(panelId, element);
@@ -645,6 +664,11 @@ export function MissionControlView() {
     setClosing(true);
     try {
       await panelApi.deletePanel(tile.panelId);
+      // The deleted panel's agent status outlives it otherwise: SessionView
+      // only clears status for its own active session, so closing an agent in
+      // a background session left a blocked entry behind and wedged the
+      // sidebar's "needs input" badge.
+      clearAgentStatus(tile.panelId);
       if (focusedPanelId === tile.panelId) handleCloseFocus();
       setLiveTileId(current => (current === tile.panelId ? null : current));
       setSelectedPanelId(current => (current === tile.panelId ? null : current));
@@ -656,7 +680,7 @@ export function MissionControlView() {
     } finally {
       setClosing(false);
     }
-  }, [pendingClose, focusedPanelId, handleCloseFocus, loadAgents]);
+  }, [pendingClose, focusedPanelId, handleCloseFocus, loadAgents, clearAgentStatus]);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-primary">

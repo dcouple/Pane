@@ -22,6 +22,8 @@ export interface MissionControlAgentPanel {
   worktreeName: string | null;
   panelTitle: string;
   agentType: MissionControlAgentType | null;
+  /** True when the panel refuses deletion, as Pane Chat's does. */
+  isPermanent: boolean;
   /** True when a PTY for this panel is alive in the main process right now. */
   isLive: boolean;
 }

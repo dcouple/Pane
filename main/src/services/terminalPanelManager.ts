@@ -1,5 +1,6 @@
 import * as pty from '@lydell/node-pty';
 import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
+import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
 import * as path from 'path';
@@ -764,9 +765,39 @@ export class TerminalPanelManager {
     terminal.pty.resume();
   }
 
-  acknowledgeBytes(panelId: string, bytesConsumed: number): void {
+  /**
+   * The one viewer whose acks count for this panel.
+   *
+   * `pendingBytes` is a single counter per PTY, so every viewer that writes the
+   * same broadcast chunk and acks it credits the counter again: two viewers
+   * drain it at twice the rate it was debited, the high watermark is never
+   * reached, and the PTY is never paused. Flow control only works with a single
+   * designated consumer.
+   *
+   * A primary viewer (a real terminal panel, a remote runtime) is preferred
+   * because it is the one that must keep up. A preview viewer is designated
+   * only when it is the only viewer there is, because otherwise nobody would
+   * ack and the PTY would stay paused forever.
+   */
+  private designatedAckViewer(panelId: string): string | undefined {
+    const viewers = this.visibleViewersByPanel.get(panelId);
+    if (!viewers || viewers.size === 0) return undefined;
+
+    const ids = [...viewers.keys()].sort();
+    const primary = ids.find((id) => !this.visibilityViewerMatchesPrefix(id, MISSION_CONTROL_VIEWER_PREFIX));
+    return primary ?? ids[0];
+  }
+
+  acknowledgeBytes(panelId: string, bytesConsumed: number, viewerId?: string): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return;
+
+    // An unidentified caller is treated as the consumer: every ack path
+    // predates viewer ids, and refusing them would stall the PTY.
+    if (viewerId) {
+      const designated = this.designatedAckViewer(panelId);
+      if (designated && this.normalizeVisibilityViewerId(viewerId) !== designated) return;
+    }
 
     // Delegate to the shared flow-control helper. It decrements `pendingBytes`,
     // clears the safety timer, and invokes the resume callback only when the

@@ -1272,7 +1272,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
               if (activePtyId) {
                 window.electronAPI.ptyHost.ack(activePtyId, bytes);
               } else {
-                window.electronAPI.invoke('terminal:ack', panel.id, bytes);
+                window.electronAPI.invoke('terminal:ack', panel.id, bytes, TERMINAL_VISIBILITY_VIEWER_ID);
               }
             }
           };

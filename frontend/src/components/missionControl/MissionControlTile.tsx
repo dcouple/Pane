@@ -164,14 +164,23 @@ export const MissionControlTile = memo(function MissionControlTile({
   const status = toAgentDisplayStatus(tile.agentState, false);
   const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
   const snapshotText = tile.snapshot?.text ?? '';
-  const showLive = isLiveView && tile.isLive;
+  const ptyCols = tile.snapshot?.cols ?? null;
+  const ptyDims = ptyCols !== null && tile.snapshot?.rows != null
+    ? { cols: ptyCols, rows: tile.snapshot.rows }
+    : null;
+  // A live terminal has to render at the PTY's exact size (rule 1), and the
+  // dimensions ride along with the snapshot. Past the snapshot cap there is no
+  // snapshot, so promoting would replay the stream into a guessed 80x24 grid
+  // and wrap every line. Those tiles stay previews, which is what the footer
+  // note already promises.
+  const showLive = isLiveView && tile.isLive && ptyDims !== null;
   // Both bodies are laid out on the same row grid as the live terminal
   // (12px font x 1.15 line height), so a tile shows whole lines rather than
   // clipping one in half, and hovering never makes the grid jump.
   const budgetRows = snapshotLines;
   // A terminal shorter than the budget gets only the height it needs, instead
   // of reserving blank space below it.
-  const ptyRows = tile.snapshot?.rows ?? 0;
+  const ptyRows = ptyDims?.rows ?? 0;
   const visibleRows = showLive && ptyRows > 0 ? Math.min(ptyRows, budgetRows) : budgetRows;
   // Expanding is opt-in. On, the tile grows in place to show the agent's whole
   // grid at a readable size; off, it is typed into exactly where it sits and
@@ -263,24 +272,28 @@ export const MissionControlTile = memo(function MissionControlTile({
           : <TerminalSquare className="h-2.5 w-2.5 flex-shrink-0 text-text-muted" aria-hidden="true" />}
         {/*
           Closing a pane ends a process and drops its scrollback, so it stays
-          out of the way until the tile is hovered — and asks first.
+          out of the way until the tile is hovered — and asks first. A permanent
+          panel (Pane Chat) has no close action at all: the delete would be
+          refused, and offering it invites killing the agent for nothing.
         */}
-        <button
-          type="button"
-          onClick={() => onClose(tile)}
-          aria-label={`Close ${tile.sessionName}`}
-          title="Close this pane"
-          className="flex-shrink-0 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:bg-status-error/15 hover:text-status-error focus-visible:opacity-100 group-hover:opacity-100"
-        >
-          <Trash2 className="h-2.5 w-2.5" aria-hidden="true" />
-        </button>
+        {!tile.isPermanent && (
+          <button
+            type="button"
+            onClick={() => onClose(tile)}
+            aria-label={`Close ${tile.sessionName}`}
+            title="Close this pane"
+            className="flex-shrink-0 rounded p-0.5 text-text-muted opacity-0 transition-opacity hover:bg-status-error/15 hover:text-status-error focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Trash2 className="h-2.5 w-2.5" aria-hidden="true" />
+          </button>
+        )}
       </header>
 
       {showLive ? (
         <LiveTerminalSurface
           panelId={tile.panelId}
-          cols={tile.snapshot?.cols ?? null}
-          rows={tile.snapshot?.rows ?? null}
+          cols={ptyDims.cols}
+          rows={ptyDims.rows}
           height={bodyHeight}
           interactive={isFocused}
           fitWholeGrid={isExpanded}

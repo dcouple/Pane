@@ -490,7 +490,7 @@ export function useMissionControlTerminal({
         syncOverflow();
       });
       // Flow control is byte-counted per panel; a viewer that writes must ack.
-      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output)).catch(() => {});
+      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output), VIEWER_ID).catch(() => {});
     });
 
     // Main only treats a panel as visible while a viewer says so, and viewer
@@ -554,8 +554,10 @@ export function useMissionControlTerminal({
     terminal.options.minimumContrastRatio = getMinimumContrastRatio(highContrast);
   }, [fontFamily, highContrast]);
 
-  // Toggling interactivity flips an option rather than rebuilding, so focusing
-  // a tile never costs a re-hydrate.
+  // Toggling interactivity flips an option rather than rebuilding, so taking the
+  // keyboard costs no re-hydrate. Expanding on focus is a different matter: the
+  // tile really does change size, so geometry changes and the terminal is
+  // rebuilt at the new one.
   useEffect(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;

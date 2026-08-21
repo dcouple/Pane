@@ -56,6 +56,7 @@ type VisibilityAccess = {
   setVisibility(panelId: string, isVisible: boolean, viewerId?: string): void;
   clearVisibilityViewersByPrefix(prefix: string): void;
   pruneVisibilityViewersByPrefix(prefix: string, staleAfterMs: number): void;
+  acknowledgeBytes(panelId: string, bytesConsumed: number, viewerId?: string): void;
 };
 
 type SnapshotAccess = {
@@ -452,6 +453,55 @@ describe('TerminalPanelManager hidden output delivery', () => {
     manager.pruneVisibilityViewersByPrefix(MISSION_CONTROL_VIEWER_PREFIX, -1);
     expect(terminal.isVisible).toBe(false);
     disposeFlowControlRecord(terminal.flowControl);
+  });
+
+  describe('flow-control acknowledgement', () => {
+    const panelViewer = 'local:panel-viewer';
+    const tileViewer = `${MISSION_CONTROL_VIEWER_PREFIX}:tile-1`;
+
+    function armed() {
+      const manager = testAccess<VisibilityAccess>(new TerminalPanelManager());
+      const terminal = createTerminal({ isVisible: false, outputBuffer: '' });
+      manager.terminals.set(terminal.panelId, terminal);
+      terminal.flowControl.pendingBytes = 1000;
+      return { manager, terminal };
+    }
+
+    it('credits the panel viewer and ignores a tile watching the same panel', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, panelViewer);
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+
+      manager.acknowledgeBytes(terminal.panelId, 100, panelViewer);
+      expect(terminal.flowControl.pendingBytes).toBe(900);
+
+      // The same chunk, acked again by the preview. Crediting it would drain
+      // the counter at twice the rate the PTY debited it.
+      manager.acknowledgeBytes(terminal.panelId, 100, tileViewer);
+      expect(terminal.flowControl.pendingBytes).toBe(900);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('credits a tile when it is the only viewer, so the PTY still resumes', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+
+      manager.acknowledgeBytes(terminal.panelId, 100, tileViewer);
+      expect(terminal.flowControl.pendingBytes).toBe(900);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('credits callers that send no viewer id, since every ack path predates them', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, panelViewer);
+
+      manager.acknowledgeBytes(terminal.panelId, 100);
+      expect(terminal.flowControl.pendingBytes).toBe(900);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
   });
 
   it('returns emulated live screen and restore state for daemon and renderer reads', async () => {

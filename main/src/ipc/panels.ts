@@ -427,8 +427,15 @@ export function registerPanelHandlers(
   
   commandRegistry.register('panels:delete', async (panelId: string) => {
     try {
-      // Clean up terminal process if it's a terminal panel
       const panel = panelManager.getPanel(panelId);
+      // Refuse before teardown. `deletePanel` declines permanent panels but
+      // returns quietly, so destroying the terminal first would kill the
+      // process, leave the panel in place, and still report success.
+      if (panel?.metadata.permanent) {
+        return { success: false, error: 'This panel cannot be closed.' };
+      }
+
+      // Clean up terminal process if it's a terminal panel
       if (panel?.type === 'terminal') {
         terminalPanelManager.destroyTerminal(panelId);
       }
@@ -702,8 +709,8 @@ export function registerPanelHandlers(
     terminalPanelManager.setVisibility(panelId, !!isVisible, scopedViewerId);
   });
 
-  commandRegistry.register('terminal:ack', async (panelId: string, bytesConsumed: number) => {
-    terminalPanelManager.acknowledgeBytes(panelId, bytesConsumed);
+  commandRegistry.register('terminal:ack', async (panelId: string, bytesConsumed: number, viewerId?: string) => {
+    terminalPanelManager.acknowledgeBytes(panelId, bytesConsumed, viewerId);
   });
 
   // Reset flow control state (for recovering from stuck terminals)
