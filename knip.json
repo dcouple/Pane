@@ -35,6 +35,7 @@
         "@lydell/node-pty",
         "@modelcontextprotocol/sdk",
         "@xterm/addon-serialize",
+        "@xterm/addon-unicode11",
         "@xterm/headless",
         "better-sqlite3-multiple-ciphers",
         "bull",
