@@ -18,10 +18,8 @@ import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../..
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { isAgentSupportedOnPlatform } from '../../../shared/constants/agentLaunchPresets';
 import {
-  TERMINAL_GRAPHICS_PROTOCOLS,
-  TERMINAL_GRAPHICS_SIZE_REPORTS,
-  TERMINAL_GRAPHICS_SUMMARY,
-  TERMINAL_IMAGE_LIMITS,
+  TERMINAL_IMAGE_OPTIONS,
+  terminalGraphicsProtocols,
 } from '../../../shared/constants/terminalGraphics';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type {
@@ -145,13 +143,12 @@ export function registerRunpaneHandlers(
           active: repos.find(repo => repo.active),
         },
         terminal: {
-          graphicsProtocols: TERMINAL_GRAPHICS_PROTOCOLS,
-          sizeReports: TERMINAL_GRAPHICS_SIZE_REPORTS,
+          graphicsProtocols: terminalGraphicsProtocols(),
+          sizeReports: TERMINAL_IMAGE_OPTIONS.enableSizeReports,
           imageLimits: {
-            storageLimitMb: TERMINAL_IMAGE_LIMITS.storageLimitMb,
-            pixelLimit: TERMINAL_IMAGE_LIMITS.pixelLimit,
+            storageLimitMb: TERMINAL_IMAGE_OPTIONS.storageLimit,
+            pixelLimit: TERMINAL_IMAGE_OPTIONS.pixelLimit,
           },
-          summary: TERMINAL_GRAPHICS_SUMMARY,
         },
         agentContext: {
           recommendedFirstCommands: [

@@ -95,7 +95,6 @@ interface DaemonDoctorResult {
       storageLimitMb: number;
       pixelLimit: number;
     };
-    summary: string;
   };
   agentContext: {
     recommendedFirstCommands: string[];
@@ -134,7 +133,6 @@ const daemonDoctorResultSchema: BoundarySchema<DaemonDoctorResult> = boundary.ob
       storageLimitMb: boundary.number,
       pixelLimit: boundary.number,
     }),
-    summary: boundary.string,
   })),
   agentContext: boundary.object({
     recommendedFirstCommands: boundary.array(boundary.string),

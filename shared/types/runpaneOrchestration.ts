@@ -52,8 +52,6 @@ export interface RunpaneDoctorResult {
       storageLimitMb: number;
       pixelLimit: number;
     };
-    /** One line an agent can act on without decoding the fields above. */
-    summary: string;
   };
   agentContext: {
     recommendedFirstCommands: string[];

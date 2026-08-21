@@ -2329,15 +2329,9 @@
         "message"
       ],
       "properties": {
-        "ok": {
-          "type": "boolean"
-        },
-        "changed": {
-          "type": "boolean"
-        },
-        "paneDir": {
-          "type": "string"
-        },
+        "ok": { "type": "boolean" },
+        "changed": { "type": "boolean" },
+        "paneDir": { "type": "string" },
         "strategy": {
           "enum": [
             "systemd-user",
@@ -2347,20 +2341,10 @@
             "skipped"
           ]
         },
-        "launcherPath": {
-          "type": "string"
-        },
-        "before": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "after": {
-          "type": "object",
-          "additionalProperties": true
-        },
-        "message": {
-          "type": "string"
-        }
+        "launcherPath": { "type": "string" },
+        "before": { "type": "object", "additionalProperties": true },
+        "after": { "type": "object", "additionalProperties": true },
+        "message": { "type": "string" }
       },
       "additionalProperties": false
     },

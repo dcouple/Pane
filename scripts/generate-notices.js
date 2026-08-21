@@ -20,6 +20,9 @@ This file includes only packages with licenses that require attribution. Public 
 // Dev-only packages that aren't distributed with the built app
 const DEV_ONLY_PACKAGES = [
   '@eslint/',
+  '@eslint-community/',
+  '@oxc-parser/',
+  '@oxc-project/',
   '@oxlint/',
   '@playwright/',
   '@types/',
@@ -33,6 +36,7 @@ const DEV_ONLY_PACKAGES = [
   'globals',
   'knip',
   'mkdirp',
+  'oxc-parser',
   'oxlint',
   'playwright',
   'postcss',
@@ -41,7 +45,10 @@ const DEV_ONLY_PACKAGES = [
   'tailwindcss',
   'typescript',
   'typescript-eslint',
+  'unplugin',
   'vite',
+  'vitest',
+  '@vitest/',
   'wait-on'
 ];
 
@@ -203,11 +210,9 @@ function collectPackagesFromPnpm(pnpmPath, licenses, processedPaths) {
     // pnpm names each directory `<name>@<version>`, with `/` written as `+` in
     // scoped names, plus an optional `_<peers>` suffix when the package was
     // resolved against peer dependencies. That suffix carries its own `@` and
-    // `+`, so the name ends at the first `@` past position 0. Matching from the
-    // right instead drops every peer-resolved package, and splitting on `_`
-    // would break names like `string_decoder`.
+    // `+`, so the name ends at the first `@` past position 0.
     const separator = entry.name.indexOf('@', 1);
-    if (separator <= 0) continue;
+    if (separator < 0) continue;
     const rawName = entry.name.slice(0, separator);
     const packageName = rawName.startsWith('@') ? rawName.replace('+', '/') : rawName;
     
