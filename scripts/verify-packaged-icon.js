@@ -18,9 +18,11 @@
  *      Pane icon and not Electron's default.
  *
  * Runs from electron-builder's afterPack hook for every platform and target, so
- * a build that loses either icon fails before it can be published. Also runnable
- * standalone against an output directory, which is how a published release gets
- * checked:
+ * a build that loses an icon fails before it can be published. The Windows
+ * launcher is the one exception: rcedit writes its icon after that hook, so
+ * scripts/build-win.js checks it once electron-builder has finished. Also
+ * runnable standalone against an output directory, which is how a published
+ * release gets checked:
  *
  *   node scripts/verify-packaged-icon.js [dist-electron-dir]
  */
