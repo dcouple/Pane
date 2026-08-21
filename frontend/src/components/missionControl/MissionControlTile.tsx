@@ -1,8 +1,13 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { GitBranch, Keyboard, Minimize2, Radio, TerminalSquare, Trash2, X } from 'lucide-react';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { useMissionControlTerminal } from '../../hooks/useMissionControlTerminal';
+import { useConfigStore } from '../../stores/configStore';
 import { toAgentDisplayStatus } from '../../utils/agentStatus';
+import { buildTerminalFontFamily, DEFAULT_TERMINAL_FONT_FAMILY } from '../../utils/terminalTheme';
+import {
+  charWidthRatio, fittedWidth, fitFontSize, TILE_LINE_HEIGHT, widestLine,
+} from '../../utils/terminalFit';
 import { canTakeKeyboard, describeMissionControlTile } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
@@ -31,6 +36,89 @@ const STATUS_TEXT = {
   idle: 'Idle',
   unknown: 'Not running',
 } satisfies Record<AgentDisplayStatus, string>;
+
+/**
+ * The screen is wider than the tile and the rest is cut off.
+ *
+ * A hard edge mid-word reads as a rendering fault, so say it with a fade: text
+ * running into it is text there is more of.
+ */
+function ClippedRightFade() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[color:var(--color-terminal-bg,#0b0b10)] to-transparent"
+    />
+  );
+}
+
+/**
+ * The cheap body a tile wears until it is promoted.
+ *
+ * It fits the way the live terminal does — by choosing a font size against the
+ * screen's own width, held to the same legibility floor — rather than by
+ * rendering at a fixed size and letting the tile cut whatever misses. Sharing
+ * the maths is what keeps a tile from changing scale under the pointer the
+ * moment it goes live.
+ */
+function SnapshotSurface({ text, height, fontFamily, ptyCols, isLive }: {
+  text: string;
+  height: number;
+  fontFamily: string;
+  /** The PTY's width, when the snapshot still carried it. */
+  ptyCols: number | null;
+  isLive: boolean;
+}) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+
+  // A stopped pane reports no dimensions, so the text is the only record of the
+  // screen it was painted on. It cannot reflow either way — the snapshot is a
+  // picture of a screen that no longer exists — so scaling it is the whole of
+  // what a tile can do about width.
+  const columns = ptyCols ?? widestLine(text);
+  const ratio = charWidthRatio(fontFamily);
+  const fontSize = fitFontSize(width, columns, ratio);
+  // Below the legibility floor the surplus columns are clipped rather than
+  // shrunk away, exactly as the live terminal clips them.
+  const clipped = width > 0 && columns > 0 && fittedWidth(fontSize, columns, ratio) > width + 1;
+
+  return (
+    <div
+      ref={boxRef}
+      // Padding matched to the live terminal's own (see index.css), so text
+      // lands on the same left edge before and after promotion.
+      className="relative flex flex-col justify-end overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] pb-1.5 pl-3 pr-1.5 pt-1.5"
+      style={{ height }}
+    >
+      {text ? (
+        <pre
+          aria-hidden="true"
+          className="overflow-hidden whitespace-pre text-text-secondary"
+          // Bottom-anchored like the live terminal: the newest rows, and the
+          // prompt waiting for an answer, are what a tile is for, so anything
+          // that does not fit is lost off the top.
+          style={{ fontFamily, fontSize, lineHeight: `${Math.round(fontSize * TILE_LINE_HEIGHT)}px` }}
+        >
+          {text}
+        </pre>
+      ) : (
+        <p className="mb-auto pt-3 text-center text-[10px] text-text-muted">
+          {isLive ? 'Waiting for output…' : 'Not running'}
+        </p>
+      )}
+      {clipped && <ClippedRightFade />}
+    </div>
+  );
+}
 
 function LiveTerminalSurface({
   panelId,
@@ -87,15 +175,9 @@ function LiveTerminalSurface({
       />
       {/*
         The terminal is exactly as wide as the agent's PTY — anything wider than
-        the tile is cut off. A hard edge mid-word reads as a rendering fault, so
-        say it with a fade: text running into it is text there is more of.
+        the tile is cut off.
       */}
-      {clippedRight && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-[color:var(--color-terminal-bg,#0b0b10)] to-transparent"
-        />
-      )}
+      {clippedRight && <ClippedRightFade />}
       {error && (
         <p className="absolute inset-x-1 bottom-1 truncate text-[9px] text-status-error">{error}</p>
       )}
@@ -161,6 +243,12 @@ export const MissionControlTile = memo(function MissionControlTile({
     [registerElement, tile.panelId],
   );
 
+  // A tile mirrors a real panel, so both of its bodies render in the typeface
+  // that panel does — a preview that changed typeface on promotion would read
+  // as the tile reloading rather than as the same agent.
+  const userFont = useConfigStore(state => state.config?.terminalFontFamily) || DEFAULT_TERMINAL_FONT_FAMILY;
+  const fontFamily = buildTerminalFontFamily(userFont);
+
   const status = toAgentDisplayStatus(tile.agentState, false);
   const agentLabel = tile.agentType === 'claude' ? 'Claude' : tile.agentType === 'codex' ? 'Codex' : 'Agent';
   const snapshotText = tile.snapshot?.text ?? '';
@@ -174,9 +262,10 @@ export const MissionControlTile = memo(function MissionControlTile({
   // and wrap every line. Those tiles stay previews, which is what the footer
   // note already promises.
   const showLive = isLiveView && canTakeKeyboard(tile) && ptyDims !== null;
-  // Both bodies are laid out on the same row grid as the live terminal
-  // (12px font x 1.15 line height), so a tile shows whole lines rather than
-  // clipping one in half, and hovering never makes the grid jump.
+  // The body's footprint is fixed by the density budget rather than by whatever
+  // font either body ended up fitting to, so hovering a tile never makes the
+  // grid jump. Both bodies are bottom-anchored inside it, so the trailing rows
+  // stay put whichever one is on screen.
   const budgetRows = snapshotLines;
   // A terminal shorter than the budget gets only the height it needs, instead
   // of reserving blank space below it.
@@ -301,24 +390,13 @@ export const MissionControlTile = memo(function MissionControlTile({
           onEscapeExit={onCollapse}
         />
       ) : (
-        <div
-          className="overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] px-1.5 py-1"
-          style={{ height: bodyHeight }}
-        >
-          {snapshotText ? (
-            <pre
-              aria-hidden="true"
-              className="h-full overflow-hidden whitespace-pre font-mono text-[11px] text-text-secondary"
-              style={{ lineHeight: `${ROW_PX}px` }}
-            >
-              {snapshotText}
-            </pre>
-          ) : (
-            <p className="pt-3 text-center text-[10px] text-text-muted">
-              {tile.isLive ? 'Waiting for output…' : 'Not running'}
-            </p>
-          )}
-        </div>
+        <SnapshotSurface
+          text={snapshotText}
+          height={bodyHeight}
+          fontFamily={fontFamily}
+          ptyCols={ptyCols}
+          isLive={tile.isLive}
+        />
       )}
 
       {/*

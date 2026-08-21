@@ -9,6 +9,15 @@ import {
 } from '../utils/terminalTheme';
 import { useConfigStore } from '../stores/configStore';
 import { useTheme } from '../contexts/ThemeContext';
+import {
+  charWidthRatio,
+  MAX_FOCUS_FONT_SIZE,
+  MAX_TILE_FONT_SIZE,
+  MIN_TILE_FONT_SIZE,
+  TERMINAL_CHROME_X,
+  TERMINAL_CHROME_Y,
+  TILE_LINE_HEIGHT,
+} from '../utils/terminalFit';
 import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { TerminalOutputEvent } from '../../../shared/types/panels';
@@ -52,12 +61,13 @@ import { terminalOutputByteLength } from '../utils/terminalRestore';
 const VISIBILITY_REFRESH_MS = 60_000;
 /** Tiles show recent context only; a deep buffer would cost memory per tile. */
 const TILE_SCROLLBACK = 600;
-const LINE_HEIGHT = 1.2;
-/** Legibility floor and a ceiling that keeps tiles from looking oversized. */
-const MIN_FONT_SIZE = 9;
-const MAX_FONT_SIZE = 13;
-/** The focus view has room to breathe, so it may go a little larger. */
-const MAX_FOCUS_FONT_SIZE = 16;
+const LINE_HEIGHT = TILE_LINE_HEIGHT;
+/**
+ * Inset between the wrapper and the terminal in the expanded view, mirroring
+ * the container's `inset-x-1` and its 4px bottom offset. It is inside the box
+ * `measure` is handed, so the font has to be chosen against what is left.
+ */
+const EXPANDED_INSET_PX = 4;
 /** Fallbacks when a panel has no live PTY to report dimensions. */
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
@@ -90,35 +100,6 @@ function getMissionControlViewerId(): string {
     // not the view: the stale-viewer sweep clears the orphan.
   }
   return id;
-}
-
-/**
- * Width of a character cell relative to the font size, measured once offscreen.
- *
- * Geometry has to be known *before* the terminal is constructed: calling
- * `terminal.resize()` after content has been written discards the
- * alternate-screen buffer, which is where full-screen agent TUIs live — the
- * tile then renders blank.
- */
-const cachedCharRatios = new Map<string, number>();
-
-function charWidthRatio(fontFamily: string): number {
-  const cached = cachedCharRatios.get(fontFamily);
-  if (cached !== undefined) return cached;
-
-  const reference = 20;
-  const probe = document.createElement('span');
-  probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;font-family:${fontFamily};font-size:${reference}px;`;
-  probe.textContent = 'M'.repeat(100);
-  document.body.appendChild(probe);
-  const width = probe.getBoundingClientRect().width / 100;
-  probe.remove();
-
-  const ratio = width > 0 ? width / reference : 0.6;
-  // Keyed by family: the column-fit maths is only correct when the font it
-  // measured is the font the terminal renders in.
-  cachedCharRatios.set(fontFamily, ratio);
-  return ratio;
 }
 
 interface ViewerGeometry {
@@ -313,6 +294,15 @@ export function useMissionControlTerminal({
   const [bottomOverflow, setBottomOverflow] = useState(0);
   /** True when the PTY is wider than the tile, so text is cut off on the right. */
   const [clippedRight, setClippedRight] = useState(false);
+  /**
+   * The live terminal's overflow check, so a resize can re-run it.
+   *
+   * It normally rides along with output, but once the font has hit its floor a
+   * narrowing tile clips further without any geometry change to rebuild on —
+   * and an idle agent sends nothing to trigger it. The fade would then stay
+   * behind the truth exactly when it is needed most.
+   */
+  const syncOverflowRef = useRef<() => void>(() => {});
 
   // Dimensions are sticky: a poll that momentarily reports null (panel between
   // states) must not tear the terminal down and rebuild it at a default size.
@@ -326,29 +316,36 @@ export function useMissionControlTerminal({
   }, [hasReportedDims, cols, rows]);
 
   const [geometry, setGeometry] = useState<ViewerGeometry>({
-    fontSize: MAX_FONT_SIZE,
+    fontSize: MAX_TILE_FONT_SIZE,
     cols: ptyCols,
     rows: ptyRows,
   });
 
   const measure = useCallback((width: number, height: number): ViewerGeometry => {
     const ratio = charWidthRatio(fontFamily);
+    // The box handed in is the wrapper, but the glyphs only get what is left of
+    // it once the terminal's own padding — and, expanded, the container's inset
+    // — is taken out. Fitting against the whole wrapper puts the trailing
+    // column past the tile's clipped edge, which is the hard cut mid-word.
+    const inset = matchPtyExactly ? EXPANDED_INSET_PX * 2 : 0;
+    const glyphWidth = Math.max(width - inset - TERMINAL_CHROME_X, 1);
+    const glyphHeight = Math.max(height - inset - TERMINAL_CHROME_Y, 1);
 
     if (matchPtyExactly) {
       // Fit the whole grid — both axes — and let the font shrink to suit.
-      const byWidth = width / Math.max(ptyCols, 1) / ratio;
-      const byHeight = height / Math.max(ptyRows, 1) / LINE_HEIGHT;
+      const byWidth = glyphWidth / Math.max(ptyCols, 1) / ratio;
+      const byHeight = glyphHeight / Math.max(ptyRows, 1) / LINE_HEIGHT;
       const fontSize = Math.max(
         Math.min(Math.floor(Math.min(byWidth, byHeight)), MAX_FOCUS_FONT_SIZE),
-        MIN_FONT_SIZE
+        MIN_TILE_FONT_SIZE
       );
       return { fontSize, cols: ptyCols, rows: ptyRows };
     }
 
     // Largest font at which the PTY's full width still fits the tile, held
     // between a legible floor and a sane ceiling.
-    const ideal = width / Math.max(ptyCols, 1) / ratio;
-    const fontSize = Math.round(Math.min(Math.max(ideal, MIN_FONT_SIZE), MAX_FONT_SIZE));
+    const ideal = glyphWidth / Math.max(ptyCols, 1) / ratio;
+    const fontSize = Math.round(Math.min(Math.max(ideal, MIN_TILE_FONT_SIZE), MAX_TILE_FONT_SIZE));
 
     return {
       fontSize,
@@ -378,6 +375,7 @@ export function useMissionControlTerminal({
           ? next
           : current
       ));
+      syncOverflowRef.current();
     };
     sync();
 
@@ -459,10 +457,17 @@ export function useMissionControlTerminal({
 
       // SAFETY: `.xterm-screen` is an element xterm renders into this container, so the match is an HTMLElement.
       const screen = container.querySelector('.xterm-screen') as HTMLElement | null;
-      const available = wrapperRef.current?.clientWidth ?? 0;
-      const clipped = Boolean(screen && available > 0 && screen.clientWidth > available + 1);
+      const wrapper = wrapperRef.current;
+      // Edge against edge rather than width against width: the screen starts
+      // inside the terminal's padding, so comparing widths alone misses the
+      // last column or two — the ones actually being cut.
+      const clipped = Boolean(
+        screen && wrapper
+        && screen.getBoundingClientRect().right > wrapper.getBoundingClientRect().right + 1
+      );
       setClippedRight(current => (current === clipped ? current : clipped));
     };
+    syncOverflowRef.current = syncOverflow;
 
     const scrollDisposable = terminal.onScroll(() => {
       const buffer = terminal.buffer.active;
@@ -555,6 +560,7 @@ export function useMissionControlTerminal({
 
     return () => {
       disposed = true;
+      syncOverflowRef.current = () => {};
       window.clearInterval(visibilityTimer);
       unsubscribe();
       inputDisposable.dispose();
