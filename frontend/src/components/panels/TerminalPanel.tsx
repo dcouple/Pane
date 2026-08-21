@@ -30,7 +30,7 @@ import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
-import { TERMINAL_IMAGE_LIMITS } from '../../../../shared/constants/terminalGraphics';
+import { TERMINAL_IMAGE_OPTIONS } from '../../../../shared/constants/terminalGraphics';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
@@ -106,14 +106,9 @@ const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
 
-// Inline terminal images (sixel, iTerm2 IIP, kitty graphics). Limits come from the
-// shared constant so runpane doctor reports the same numbers the addon runs with.
 // Sequence-size limits stay at the addon defaults (32 MB), which a 4K kitty frame
 // fits inside once zlib-compressed and base64-encoded.
-const TERMINAL_IMAGE_OPTIONS: IImageAddonOptions = {
-  storageLimit: TERMINAL_IMAGE_LIMITS.storageLimitMb,
-  pixelLimit: TERMINAL_IMAGE_LIMITS.pixelLimit,
-};
+const TERMINAL_IMAGE_ADDON_OPTIONS: IImageAddonOptions = TERMINAL_IMAGE_OPTIONS;
 const terminalPasteImageResultSchema = boundary.object({
   filePath: boundary.string,
   imageNumber: boundary.number,
@@ -268,6 +263,10 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const terminalPowerMode = useConfigStore((state) => state.config?.terminalPowerMode ?? 'performance');
   const keyboardShortcutsEnabled = useConfigStore((state) => areKeyboardShortcutsEnabled(state.config));
   const keyboardShortcutsEnabledRef = useRef(keyboardShortcutsEnabled);
+  // Opt-in per application: a program has to ask for it with CSI > flags u, so
+  // this only changes what reaches programs that requested enhanced reporting.
+  const kittyKeyboardEnabled = useConfigStore((state) => state.config?.kittyKeyboardEnabled !== false);
+  const kittyKeyboardEnabledRef = useRef(kittyKeyboardEnabled);
   const useBatterySaverTerminalVisibility = terminalPowerMode === 'batterySaver';
   const panelVisible = isActive;
   const effectiveVisible = useBatterySaverTerminalVisibility ? panelVisible && windowFocused : true;
@@ -336,6 +335,15 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   useEffect(() => {
     keyboardShortcutsEnabledRef.current = keyboardShortcutsEnabled;
   }, [keyboardShortcutsEnabled]);
+
+  // vtExtensions is not a constructor-only option and useKitty reads it per key
+  // event, so the toggle takes effect on the live terminal with no restart.
+  useEffect(() => {
+    kittyKeyboardEnabledRef.current = kittyKeyboardEnabled;
+    const terminal = xtermRef.current;
+    if (!terminal) return;
+    terminal.options.vtExtensions = { ...terminal.options.vtExtensions, kittyKeyboard: kittyKeyboardEnabled };
+  }, [kittyKeyboardEnabled]);
 
   const terminalScrollSurfaceRef = useScrollSurface<HTMLDivElement>({
     id: `terminal:${panel.id}`,
@@ -987,6 +995,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           cursorWidth: 1,
           cursorInactiveStyle: 'outline',
           allowTransparency: false,
+          // Unlocks terminal.unicode, which the Unicode11Addon below needs.
+          // Without it that addon throws on load and the terminal silently
+          // falls back to Unicode 6 cell widths.
+          allowProposedApi: true,
+          vtExtensions: { kittyKeyboard: kittyKeyboardEnabledRef.current },
           scrollOnUserInput: true,
           scrollSensitivity: 1,
           altClickMovesCursor: true,
@@ -1238,14 +1251,11 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           }
 
           // Load ImageAddon so image-emitting tools render inline instead of
-          // printing nothing. Covers sixel, iTerm2 inline images, and the kitty
-          // graphics protocol, which is what terminal-browser and terminal-doom
-          // speak. The addon turns on the CSI 14/16/18 t size reports those tools
-          // query to size their output to the pane.
+          // printing nothing. Protocols and limits live in TERMINAL_IMAGE_OPTIONS.
           try {
             const { ImageAddon: ImageAddonImpl } = await import('@xterm/addon-image');
             if (!disposed) {
-              const imageAddon = new ImageAddonImpl(TERMINAL_IMAGE_OPTIONS);
+              const imageAddon = new ImageAddonImpl(TERMINAL_IMAGE_ADDON_OPTIONS);
               terminal.loadAddon(imageAddon);
               imageAddonRef.current = imageAddon;
               devLog.debug('[TerminalPanel] ImageAddon loaded for panel', panel.id);

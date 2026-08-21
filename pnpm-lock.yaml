@@ -265,6 +265,9 @@ importers:
       '@xterm/addon-serialize':
         specifier: ^0.14.0
         version: 0.14.0
+      '@xterm/addon-unicode11':
+        specifier: 0.9.0
+        version: 0.9.0
       '@xterm/headless':
         specifier: ^6.0.0
         version: 6.0.0
@@ -3108,6 +3111,9 @@ packages:
     resolution: {integrity: sha512-BShRMWsKqoHs9fm0L96zjC4Du5L19bvmdZffm5LPKLbVWUAZj7cjjbpXuFU9FsITIJlvjTqeNfq1vulv60zRDA==}
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.301
+
+  '@xterm/addon-unicode11@0.9.0':
+    resolution: {integrity: sha512-FxDnYcyuXhNl+XSqGZL/t0U9eiNb/q3EWT5rYkQT/zuig8Gz/VagnQANKHdDWFM2lTMk9ly0EFQxxxtZUoRetw==}
 
   '@xterm/addon-web-links@0.13.0-beta.299':
     resolution: {integrity: sha512-br9eKXtyRVcYelnmnjgZChlMTV+ut0gnwIVSCabxDw1zCe247R7bIgGeWOz9dYmrfA61JM4FdfjLWhdsKydXzg==}
@@ -9626,6 +9632,8 @@ snapshots:
   '@xterm/addon-unicode11@0.10.0-beta.299(@xterm/xterm@6.1.0-beta.302)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.302
+
+  '@xterm/addon-unicode11@0.9.0': {}
 
   '@xterm/addon-web-links@0.13.0-beta.299(@xterm/xterm@6.1.0-beta.302)':
     dependencies:
