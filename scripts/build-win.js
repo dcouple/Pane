@@ -365,7 +365,15 @@ async function build() {
   // this is the first point it can be checked. afterPack already covered the
   // runtime window icon.
   console.log('\n🔧 Step 7: Verifying packaged icons...\n');
-  const unpackedDir = path.join(ROOT_DIR, 'dist-electron', 'win-unpacked');
+  // electron-builder names the default arch's output win-unpacked and every
+  // other arch win-<arch>-unpacked.
+  const unpackedDir = [`win-${arch}-unpacked`, 'win-unpacked']
+    .map((name) => path.join(ROOT_DIR, 'dist-electron', name))
+    .find((candidate) => fs.existsSync(candidate));
+  if (!unpackedDir) {
+    console.error(`No packaged output directory for ${arch} under dist-electron.`);
+    process.exit(1);
+  }
   verifyPackedApp(unpackedDir, 'win32');
 
   console.log('\n✅ Build complete!\n');
