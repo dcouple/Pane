@@ -1077,8 +1077,14 @@ async function initializeServices() {
 }
 
 if (launchRemoteSetup) {
+  // A rejection here used to go unhandled, which left the process alive with no
+  // output instead of failing: remote setup is a print-and-exit path, so a throw
+  // that never reaches app.exit() reads as a hang.
   void runRemoteSetupCli(process.argv).then((exitCode) => {
     app.exit(exitCode);
+  }).catch((error) => {
+    console.error('[Main] Remote setup failed:', error instanceof Error ? (error.stack ?? error.message) : error);
+    app.exit(1);
   });
 } else if (launchHeadlessDaemon) {
   startHeadlessPaneProcess();
