@@ -230,6 +230,19 @@ interface TerminalProcess {
   agentSessionScrapeBuffer: string;
 }
 
+/**
+ * Whether a viewer's answer to a terminal query reached the PTY.
+ *
+ * Reported rather than swallowed so a renderer can be tested for having
+ * deferred to the designated viewer, not merely for having stayed silent.
+ */
+export interface TerminalReplyResult {
+  delivered: boolean;
+}
+
+const REPLY_DELIVERED: TerminalReplyResult = { delivered: true };
+const REPLY_DROPPED: TerminalReplyResult = { delivered: false };
+
 interface CliLaunchResolution {
   commandToRun: string;
   customState: TerminalPanelState;
@@ -766,26 +779,54 @@ export class TerminalPanelManager {
   }
 
   /**
-   * The one viewer whose acks count for this panel.
+   * The one viewer that speaks for this panel.
    *
-   * `pendingBytes` is a single counter per PTY, so every viewer that writes the
-   * same broadcast chunk and acks it credits the counter again: two viewers
-   * drain it at twice the rate it was debited, the high watermark is never
-   * reached, and the PTY is never paused. Flow control only works with a single
-   * designated consumer.
+   * Two jobs, one answer, because both break the same way when more than one
+   * viewer does them.
+   *
+   * Acknowledgement: `pendingBytes` is a single counter per PTY, so every
+   * viewer that writes the same broadcast chunk and acks it credits the counter
+   * again — two viewers drain it at twice the rate it was debited, the high
+   * watermark is never reached, and the PTY is never paused. Flow control only
+   * works with a single designated consumer.
+   *
+   * Answering terminal queries: an agent asks *the* terminal where the cursor
+   * is, and expects one reply. A second answer from a second renderer moves the
+   * agent's idea of where its screen starts, which is what made a Codex pane
+   * mispaint while a Mission Control tile watched it.
    *
    * A primary viewer (a real terminal panel, a remote runtime) is preferred
    * because it is the one that must keep up. A preview viewer is designated
    * only when it is the only viewer there is, because otherwise nobody would
-   * ack and the PTY would stay paused forever.
+   * ack — and nobody would answer — and the agent would wait forever.
    */
-  private designatedAckViewer(panelId: string): string | undefined {
+  private designatedViewer(panelId: string): string | undefined {
     const viewers = this.visibleViewersByPanel.get(panelId);
     if (!viewers || viewers.size === 0) return undefined;
 
     const ids = [...viewers.keys()].sort();
     const primary = ids.find((id) => !this.visibilityViewerMatchesPrefix(id, MISSION_CONTROL_VIEWER_PREFIX));
     return primary ?? ids[0];
+  }
+
+  /**
+   * Answer a terminal query on behalf of one viewer.
+   *
+   * The renderer that produced the reply does not get to decide whether it
+   * ships: it cannot see the other windows, tiles or remote runtimes watching
+   * the same PTY. Main can, so the designation is checked here and a reply from
+   * anyone else is dropped. `delivered` is reported back so a renderer can be
+   * tested for having deferred rather than for having stayed silent.
+   */
+  writeTerminalReply(panelId: string, data: string, viewerId?: string): TerminalReplyResult {
+    if (!this.terminals.has(panelId)) return REPLY_DROPPED;
+    const designated = this.designatedViewer(panelId);
+    if (!designated) return REPLY_DROPPED;
+    if (viewerId === undefined) return REPLY_DROPPED;
+    if (this.normalizeVisibilityViewerId(viewerId) !== designated) return REPLY_DROPPED;
+
+    this.writeToTerminal(panelId, data);
+    return REPLY_DELIVERED;
   }
 
   acknowledgeBytes(panelId: string, bytesConsumed: number, viewerId?: string): void {
@@ -795,7 +836,7 @@ export class TerminalPanelManager {
     // An unidentified caller is treated as the consumer: every ack path
     // predates viewer ids, and refusing them would stall the PTY.
     if (viewerId) {
-      const designated = this.designatedAckViewer(panelId);
+      const designated = this.designatedViewer(panelId);
       if (designated && this.normalizeVisibilityViewerId(viewerId) !== designated) return;
     }
 

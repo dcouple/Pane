@@ -13,17 +13,18 @@ import {
   charHeightRatio,
   charWidthRatio,
   fitFontSize,
+  fitGridFontSize,
   rowHeight,
-  MAX_FOCUS_FONT_SIZE,
   MAX_TILE_FONT_SIZE,
-  MIN_TILE_FONT_SIZE,
   TERMINAL_CHROME_X,
   TERMINAL_CHROME_Y,
   TILE_LINE_HEIGHT,
 } from '../utils/terminalFit';
+import { loadTerminalCapabilities, terminalCapabilityOptions } from '../utils/terminalCapabilities';
+import { registerTerminalQueryHandlers } from '../utils/terminalQueries';
+import { subscribeToTerminalOutput } from '../services/terminalOutputBus';
 import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
-import type { TerminalOutputEvent } from '../../../shared/types/panels';
 import { terminalOutputByteLength } from '../utils/terminalRestore';
 
 /**
@@ -51,14 +52,22 @@ import { terminalOutputByteLength } from '../utils/terminalRestore';
  *    terminal in a 400px tile yields a ~4px glyph. Choosing a font size so the
  *    PTY's columns fit — clamped to a readable floor — shows far more and stays
  *    legible.
- * 4. **A tile must never answer the agent's terminal queries.** It is a second
- *    view of a PTY the real panel already answers for; see
- *    `suppressTerminalReplies`.
+ * 4. **Exactly one renderer answers the agent's terminal queries.** A tile is
+ *    usually a second view of a PTY the real panel answers for — but while
+ *    Mission Control is open that panel is unmounted, so a tile that always
+ *    stayed quiet would leave nobody to answer. The tile with the keyboard
+ *    answers; main drops the reply if a primary terminal exists after all. See
+ *    `terminalQueries`.
+ *
+ * A tile carries the same capabilities as the real panel — Unicode 11 widths,
+ * inline images, the user's kitty keyboard setting — because the agent cannot
+ * tell the two renderers apart. See `terminalCapabilities`.
  *
  * Also unlike `TerminalPanel`: no `WebglAddon` (instances sharing a font+theme
  * share a texture atlas, and Chromium caps live GL contexts at ~16), no
- * `FitAddon`, `disableStdin`, and a `MISSION_CONTROL_VIEWER_PREFIX`-scoped viewer id so the
- * visibility refcount in `terminalPanelManager` stays correct.
+ * `FitAddon`, `disableStdin` unless the tile has the keyboard, and a
+ * `MISSION_CONTROL_VIEWER_PREFIX`-scoped viewer id so the visibility refcount
+ * in `terminalPanelManager` stays correct.
  */
 
 const VISIBILITY_REFRESH_MS = 60_000;
@@ -77,11 +86,6 @@ const MAX_VIEWER_COLS = 400;
 const RESIZE_DEBOUNCE_MS = 200;
 
 const VIEWER_ID = getMissionControlViewerId();
-
-const terminalOutputPayloadSchema = boundary.object({
-  panelId: boundary.string,
-  output: boundary.string,
-});
 
 const terminalStateSchema = boundary.object({
   serializedBuffer: boundary.optional(boundary.string),
@@ -106,47 +110,6 @@ interface ViewerGeometry {
   fontSize: number;
   cols: number;
   rows: number;
-}
-
-/** DEC private mode for focus in/out reporting. */
-const FOCUS_REPORTING_MODE = 1004;
-
-/**
- * Keep the viewer from talking back to the agent.
- *
- * A tile is a *second* view of a PTY that already has one. Terminal queries —
- * cursor position (`CSI 6 n`), device attributes (`CSI c`), version, window
- * size — are answered by xterm through the very same `onData` stream that
- * carries keystrokes, so an interactive tile would inject answers to questions
- * the agent asked the *real* terminal. Codex places its inline viewport from
- * the cursor-position report: a second, differently-positioned answer moves its
- * idea of where the screen starts, and every redraw after that — including the
- * highlighted row of an approval prompt — lands on the wrong lines. That is why
- * a Codex pane looked frozen in Mission Control while a Claude pane, which asks
- * nothing, took input fine.
- *
- * Swallowing the queries (returning `true` marks them handled, so xterm's
- * built-in reply never runs) leaves the real panel as the single voice on the
- * PTY. Focus reporting goes the same way: a tile gaining focus is not the
- * agent's terminal gaining focus.
- */
-function suppressTerminalReplies(terminal: Terminal): IDisposable[] {
-  const swallow = () => true;
-  const swallowFocusReporting = (params: (number | number[])[]) =>
-    params.length === 1 && params[0] === FOCUS_REPORTING_MODE;
-
-  return [
-    terminal.parser.registerCsiHandler({ final: 'n' }, swallow),                     // DSR
-    terminal.parser.registerCsiHandler({ prefix: '?', final: 'n' }, swallow),        // DECDSR
-    terminal.parser.registerCsiHandler({ final: 'c' }, swallow),                     // DA1
-    terminal.parser.registerCsiHandler({ prefix: '>', final: 'c' }, swallow),        // DA2
-    terminal.parser.registerCsiHandler({ prefix: '=', final: 'c' }, swallow),        // DA3
-    terminal.parser.registerCsiHandler({ prefix: '>', final: 'q' }, swallow),        // XTVERSION
-    terminal.parser.registerCsiHandler({ final: 't' }, swallow),                     // window reports
-    terminal.parser.registerCsiHandler({ prefix: '?', intermediates: '$', final: 'p' }, swallow), // DECRQM
-    terminal.parser.registerCsiHandler({ prefix: '?', final: 'h' }, swallowFocusReporting),
-    terminal.parser.registerCsiHandler({ prefix: '?', final: 'l' }, swallowFocusReporting),
-  ];
 }
 
 /**
@@ -250,6 +213,15 @@ export interface UseMissionControlTerminalOptions {
    */
   matchPtyExactly?: boolean;
   /**
+   * The height the font is chosen against, when it differs from the wrapper's.
+   *
+   * The expanded view grows its wrapper when even the smallest font cannot get
+   * the whole grid into the budget (see `heightShortfall`), and a font refitted
+   * to the grown wrapper would grow too, need more height again, and never
+   * settle. So the budget is passed in and the fit stays anchored to it.
+   */
+  fitHeightPx?: number;
+  /**
    * Forward Escape to the agent instead of treating it as "I am done typing
    * here". Off by default: leaving a tile is the far more common intent, and an
    * Escape that cannot be taken back is a bad default in a grid of agents.
@@ -265,6 +237,7 @@ export function useMissionControlTerminal({
   rows,
   interactive = false,
   matchPtyExactly = false,
+  fitHeightPx = 0,
   sendEscape = false,
   onEscapeExit,
 }: UseMissionControlTerminalOptions) {
@@ -275,6 +248,9 @@ export function useMissionControlTerminal({
   // A tile mirrors a real panel, so it renders in the typeface that panel does.
   const userFont = useConfigStore(state => state.config?.terminalFontFamily) || DEFAULT_TERMINAL_FONT_FAMILY;
   const fontFamily = buildTerminalFontFamily(userFont);
+  // The same setting `TerminalPanel` reads. A program that asked for enhanced
+  // key reporting must get the same encoding whichever renderer it is typed in.
+  const kittyKeyboardEnabled = useConfigStore(state => state.config?.kittyKeyboardEnabled !== false);
   const { highContrast } = useTheme();
   // Read inside the persistent onData handler so toggling interactivity does
   // not tear the terminal down. Committed refs rather than writes during
@@ -287,6 +263,11 @@ export function useMissionControlTerminal({
   // rather than by rebuilding a tile mid-stream.
   const fontFamilyRef = useCommittedRef(fontFamily);
   const highContrastRef = useCommittedRef(highContrast);
+  const kittyKeyboardRef = useCommittedRef(kittyKeyboardEnabled);
+  // Read inside the terminal's own overflow check, which outlives any single
+  // render and must not rebuild the terminal when the budget changes.
+  const fitHeightRef = useCommittedRef(fitHeightPx);
+  const matchPtyExactlyRef = useCommittedRef(matchPtyExactly);
 
   /**
    * Pixels the terminal is pushed below the tile so its content ends where the
@@ -295,6 +276,15 @@ export function useMissionControlTerminal({
   const [bottomOverflow, setBottomOverflow] = useState(0);
   /** True when the PTY is wider than the tile, so text is cut off on the right. */
   const [clippedRight, setClippedRight] = useState(false);
+  /**
+   * Pixels the expanded tile is short of showing the agent's whole screen.
+   *
+   * The expanded view promises every row at once, and below the focus floor the
+   * font has nothing left to give: a 60-row screen needs about 560px however
+   * small the text. Rather than clip the oldest rows behind the wrapper and say
+   * nothing, the tile grows by this much and the grid scrolls to it.
+   */
+  const [heightShortfall, setHeightShortfall] = useState(0);
   /**
    * The live terminal's overflow check, so a resize can re-run it.
    *
@@ -336,17 +326,11 @@ export function useMissionControlTerminal({
     const glyphHeight = Math.max(height - inset - TERMINAL_CHROME_Y, 1);
 
     if (matchPtyExactly) {
-      // Fit the whole grid — both axes — and let the font shrink to suit.
-      // The height divisor is the measured cell, not `fontSize * lineHeight`:
-      // xterm multiplies the font's natural line box, which is taller than the
-      // font size, so the naive estimate produced a grid a quarter taller than
-      // the box it was fitted to and quietly pushed the oldest rows out.
-      const byWidth = glyphWidth / Math.max(ptyCols, 1) / ratio;
-      const byHeight = glyphHeight / Math.max(ptyRows, 1) / (heightRatio * TILE_LINE_HEIGHT);
-      const fontSize = Math.max(
-        Math.min(Math.floor(Math.min(byWidth, byHeight)), MAX_FOCUS_FONT_SIZE),
-        MIN_TILE_FONT_SIZE
-      );
+      // Fit the whole grid — both axes — and let the font shrink to suit, down
+      // to a floor lower than a preview's: this is the one view that promises
+      // the agent's entire screen. What the floor still cannot fit is reported
+      // as a shortfall and made scrollable rather than clipped away.
+      const { fontSize } = fitGridFontSize(glyphWidth, glyphHeight, ptyCols, ptyRows, ratio, heightRatio);
       return { fontSize, cols: ptyCols, rows: ptyRows };
     }
 
@@ -374,7 +358,10 @@ export function useMissionControlTerminal({
     if (!wrapper) return;
 
     const sync = () => {
-      const next = measure(wrapper.clientWidth, wrapper.clientHeight);
+      // Height from the budget, not from the wrapper: the wrapper may already
+      // have grown to carry a shortfall, and refitting to the grown box would
+      // grow the font, grow the grid, and never settle.
+      const next = measure(wrapper.clientWidth, fitHeightPx > 0 ? fitHeightPx : wrapper.clientHeight);
       setMeasured(true);
       setGeometry(current => (
         next.fontSize !== current.fontSize || next.cols !== current.cols || next.rows !== current.rows
@@ -396,7 +383,7 @@ export function useMissionControlTerminal({
       window.clearTimeout(debounce);
       observer.disconnect();
     };
-  }, [measure]);
+  }, [measure, fitHeightPx]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -413,7 +400,10 @@ export function useMissionControlTerminal({
     const startsInteractive = interactiveRef.current;
 
     const terminal = new Terminal({
-      allowProposedApi: true,
+      // Proposed APIs and the kitty keyboard setting, shared with the real
+      // panel: the agent cannot tell its two renderers apart, so neither may
+      // their capabilities.
+      ...terminalCapabilityOptions(kittyKeyboardRef.current),
       // No `convertEol`: a tile replays and then follows the same byte stream
       // the real panel does, and rewriting bare LFs as CRLF shifts every line a
       // TUI paints without one.
@@ -442,7 +432,6 @@ export function useMissionControlTerminal({
     // focusable helper textarea inside it. Taking that textarea out of the tab
     // order keeps focus from landing inside a hidden subtree.
     syncHelperTextareaFocusability(container, startsInteractive);
-    const replySuppressors = suppressTerminalReplies(terminal);
     if (startsInteractive) terminal.focus();
 
     // Escape leaves typing mode by default; the agent only receives it when the
@@ -457,6 +446,7 @@ export function useMissionControlTerminal({
     let disposed = false;
     /** True while the user is reading further up; suppresses auto-scroll. */
     let pinnedByUser = false;
+    let capabilities: { dispose(): void } | null = null;
 
     const syncOverflow = () => {
       if (disposed) return;
@@ -475,6 +465,17 @@ export function useMissionControlTerminal({
         && screen.getBoundingClientRect().right > wrapper.getBoundingClientRect().right + 1
       );
       setClippedRight(current => (current === clipped ? current : clipped));
+
+      // Both axes are checked against what actually rendered, not against the
+      // arithmetic that chose the font: a fit computed from cell ratios is an
+      // estimate, and the estimate being a few percent light is exactly how the
+      // top rows of an expanded tile went missing. Height is the axis the tile
+      // can still do something about, so it is the one reported.
+      const budget = fitHeightRef.current > 0 ? fitHeightRef.current : (wrapper?.clientHeight ?? 0);
+      const needed = matchPtyExactlyRef.current && container.clientHeight > 0
+        ? Math.max(0, Math.ceil(container.clientHeight + EXPANDED_INSET_PX - overflow - budget))
+        : 0;
+      setHeightShortfall(current => (current === needed ? current : needed));
     };
     syncOverflowRef.current = syncOverflow;
 
@@ -484,8 +485,40 @@ export function useMissionControlTerminal({
       pinnedByUser = !atBottom;
     });
 
-    // Keystrokes reach the real PTY only for the focused tile.
+    /**
+     * True while xterm is producing the answer to a query we let through.
+     *
+     * xterm hands replies and keystrokes to the very same `onData` stream, and
+     * the two need different destinations: a keystroke is this user typing, a
+     * reply is this renderer claiming to be the agent's terminal. The parser
+     * emits the reply synchronously while still inside the sequence, so the
+     * flag only has to survive the current task — a microtask later, anything
+     * arriving is a keystroke again.
+     */
+    let answeringQuery = false;
+    /**
+     * True while the saved buffer is being replayed into this terminal.
+     *
+     * The restore is a recording of bytes the agent already sent, queries
+     * included, and the real terminal answered them at the time. Answering them
+     * again on replay would put a cursor-position report on the PTY that
+     * corresponds to nothing the agent just asked — the exact confusion this
+     * arbitration exists to prevent, arriving from the other direction.
+     */
+    let replayingHistory = false;
+    // Registered once the addons are on, not here: xterm tries CSI handlers
+    // newest first, and the image addon's own size reports have to arrive
+    // *under* the arbitration rather than over it.
+    let queryHandlers: IDisposable[] = [];
+
+    // Keystrokes reach the real PTY only for the focused tile. Query answers go
+    // to `terminal:reply`, where main drops them unless this viewer is the one
+    // designated to speak for the panel.
     const inputDisposable = terminal.onData(data => {
+      if (answeringQuery) {
+        void window.electronAPI.invoke('terminal:reply', panelId, data, VIEWER_ID).catch(() => {});
+        return;
+      }
       if (!interactiveRef.current) return;
       void window.electronAPI.invoke('terminal:input', panelId, data).catch(() => {});
     });
@@ -499,20 +532,15 @@ export function useMissionControlTerminal({
     let hydrated = false;
     const pendingOutput: string[] = [];
 
-    const unsubscribe = window.electronAPI.events.onTerminalOutput((payload: TerminalOutputEvent) => {
-      // The output event is broadcast for every panel; reject the ones that are
-      // not ours before paying for a decode.
-      if (!('panelId' in payload) || payload.panelId !== panelId) return;
-      const data = decodeOptionalBoundary(payload, terminalOutputPayloadSchema);
-      if (!data) return;
+    const unsubscribe = subscribeToTerminalOutput(panelId, output => {
       if (!hydrated) {
-        pendingOutput.push(data.output);
+        pendingOutput.push(output);
         // Still ack: the bytes left the PTY's budget whether or not they are on
         // screen yet, and withholding the ack would pause a busy agent.
-        void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output), VIEWER_ID).catch(() => {});
+        void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(output), VIEWER_ID).catch(() => {});
         return;
       }
-      terminal.write(data.output, () => {
+      terminal.write(output, () => {
         if (disposed) return;
         // Follow new output, but never yank the view away from someone who
         // scrolled up to read.
@@ -520,7 +548,7 @@ export function useMissionControlTerminal({
         syncOverflow();
       });
       // Flow control is byte-counted per panel; a viewer that writes must ack.
-      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(data.output), VIEWER_ID).catch(() => {});
+      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(output), VIEWER_ID).catch(() => {});
     });
 
     // Main only treats a panel as visible while a viewer says so, and viewer
@@ -539,7 +567,12 @@ export function useMissionControlTerminal({
         const scrollback = state?.scrollbackBuffer;
         const restore = state?.serializedBuffer
           ?? (Array.isArray(scrollback) ? scrollback.join('\n') : scrollback ?? '');
-        if (restore) terminal.write(restore);
+        if (restore) {
+          replayingHistory = true;
+          // xterm invokes write callbacks in write order, so this clears before
+          // the live chunks below are parsed and they are answered normally.
+          terminal.write(restore, () => { replayingHistory = false; });
+        }
         // Flush in arrival order, after the restore, so live output lands on
         // top of the buffer it belongs after rather than under it.
         hydrated = true;
@@ -559,13 +592,54 @@ export function useMissionControlTerminal({
       } catch (err: unknown) {
         // Open the gate even on failure: holding output back forever would
         // leave a permanently blank tile for an agent that is still running.
+        replayingHistory = false;
         hydrated = true;
         for (const chunk of pendingOutput.splice(0, pendingOutput.length)) terminal.write(chunk);
         if (!disposed) setError(err instanceof Error ? err.message : 'Could not attach to terminal');
       }
     };
 
-    void hydrate();
+    /**
+     * Bring the tile up in the order the agent's bytes require.
+     *
+     * Capabilities first, so Unicode 11 widths and the image protocols are in
+     * place before a single byte is parsed; then the query arbitration, which
+     * has to sit above the addons that answer some of the same sequences; then
+     * the buffer replay. Output that arrives meanwhile is queued, not written.
+     */
+    const setup = async () => {
+      const loaded = await loadTerminalCapabilities(terminal, {
+        label: `mission-control tile ${panelId}`,
+        // A live tile is a screen the user reads a running agent in, so it
+        // renders what the agent draws — sixel, iTerm2 and kitty graphics
+        // included. The addon allocates image storage lazily, so a tile whose
+        // agent never draws one costs nothing for having the ability.
+        images: true,
+        isStale: () => disposed,
+      });
+      // The teardown may have run while the addons were being fetched, in which
+      // case it has no handle to dispose and this is the only owner left.
+      if (disposed) {
+        loaded.dispose();
+        return;
+      }
+      capabilities = loaded;
+
+      queryHandlers = registerTerminalQueryHandlers(terminal.parser, {
+        // Only the tile holding the keyboard speaks. A tile the user is merely
+        // watching stays quiet, exactly as a second view should — and `main`
+        // has the final say either way.
+        canAnswer: () => interactiveRef.current && !replayingHistory,
+        onAnswering: () => {
+          answeringQuery = true;
+          queueMicrotask(() => { answeringQuery = false; });
+        },
+      });
+
+      await hydrate();
+    };
+
+    void setup();
 
     return () => {
       disposed = true;
@@ -574,7 +648,8 @@ export function useMissionControlTerminal({
       unsubscribe();
       inputDisposable.dispose();
       scrollDisposable.dispose();
-      for (const suppressor of replySuppressors) suppressor.dispose();
+      for (const handler of queryHandlers) handler.dispose();
+      capabilities?.dispose();
       void window.electronAPI.invoke('terminal:setVisibility', panelId, false, VIEWER_ID).catch(() => {});
       // Never call clearTextureAtlas() here — it would poison other terminals.
       terminal.dispose();
@@ -582,7 +657,10 @@ export function useMissionControlTerminal({
     };
     // Geometry changes rebuild and re-hydrate rather than resizing a live
     // terminal — see the note on charWidthRatio.
-  }, [panelId, geometry, measured, interactiveRef, sendEscapeRef, escapeExitRef, fontFamilyRef, highContrastRef]);
+  }, [
+    panelId, geometry, measured, interactiveRef, sendEscapeRef, escapeExitRef,
+    fontFamilyRef, highContrastRef, kittyKeyboardRef, fitHeightRef, matchPtyExactlyRef,
+  ]);
 
   // A font or theme change is an option flip too: rebuilding every live tile
   // for a settings change would re-hydrate each one for nothing.
@@ -591,7 +669,16 @@ export function useMissionControlTerminal({
     if (!terminal) return;
     terminal.options.fontFamily = fontFamily;
     terminal.options.minimumContrastRatio = getMinimumContrastRatio(highContrast);
-  }, [fontFamily, highContrast]);
+    // vtExtensions is read per key event rather than at construction, so the
+    // setting takes effect on a live tile without a rebuild.
+    terminal.options.vtExtensions = { ...terminal.options.vtExtensions, kittyKeyboard: kittyKeyboardEnabled };
+  }, [fontFamily, highContrast, kittyKeyboardEnabled]);
+
+  // Collapsing back to preview size drops any growth the expanded view needed,
+  // rather than leaving the tile tall until the rebuilt terminal measures again.
+  useEffect(() => {
+    if (!matchPtyExactly) setHeightShortfall(0);
+  }, [matchPtyExactly]);
 
   // Toggling interactivity flips an option rather than rebuilding, so taking the
   // keyboard costs no re-hydrate. Expanding on focus is a different matter: the
@@ -618,5 +705,5 @@ export function useMissionControlTerminal({
     terminalRef.current?.focus();
   }, [interactiveRef]);
 
-  return { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight };
+  return { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight, heightShortfall };
 }

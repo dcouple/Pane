@@ -17,6 +17,18 @@ export const MIN_TILE_FONT_SIZE = 9;
 export const MAX_TILE_FONT_SIZE = 13;
 /** The focus view has room to breathe, so it may go a little larger. */
 export const MAX_FOCUS_FONT_SIZE = 16;
+/**
+ * A lower floor, for the one view that promises the agent's *whole* screen.
+ *
+ * A preview clips what does not fit and says so with a fade, so its floor is
+ * about legibility. The expanded view makes a different promise: every row of
+ * the PTY, at once. A 60-row screen in a short window cannot keep that promise
+ * at 9px, and the rows that lose are the oldest — pushed up and out behind the
+ * wrapper's clip, with nothing on screen to say so. Six pixels is small, but a
+ * small whole screen is what was asked for; below it the caller grows the tile
+ * instead and the grid scrolls.
+ */
+export const MIN_FOCUS_FONT_SIZE = 6;
 export const TILE_LINE_HEIGHT = 1.2;
 
 /**
@@ -116,7 +128,62 @@ export function fitFontSize(
   maxFontSize: number = MAX_TILE_FONT_SIZE,
 ): number {
   const ideal = width / Math.max(columns, 1) / ratio;
-  return Math.round(Math.min(Math.max(ideal, MIN_TILE_FONT_SIZE), maxFontSize));
+  // Floored, not rounded: an ideal of 9.6px rounds up to 10, and 10 is the size
+  // at which the last column lands outside the box this was asked to fit. The
+  // helper promises the largest size that *fits*, so it may only round down.
+  return Math.max(Math.min(Math.floor(ideal), maxFontSize), MIN_TILE_FONT_SIZE);
+}
+
+/** Rendered height of `rows` at this font. */
+export function fittedHeight(fontSize: number, rows: number, heightRatio: number): number {
+  return rows * fontSize * heightRatio * TILE_LINE_HEIGHT;
+}
+
+/** How a whole grid came out against the box it was fitted to. */
+export interface GridFit {
+  fontSize: number;
+  /** True when `columns` cells at `fontSize` fit the width they were given. */
+  fitsWidth: boolean;
+  /** True when `rows` at `fontSize` fit the height they were given. */
+  fitsHeight: boolean;
+}
+
+/**
+ * Largest font at which a whole `columns` x `rows` grid fits `width` x `height`.
+ *
+ * The expanded tile's fit, where both axes matter: the point of that view is
+ * the agent's entire screen, so a size that only satisfies the width would push
+ * the top rows out of a wrapper that clips them silently.
+ *
+ * The height divisor is the measured cell, not `fontSize * lineHeight`: xterm
+ * multiplies the font's natural line box, which is taller than the font size.
+ *
+ * Both boxes are glyph space — terminal chrome already taken out. The two
+ * `fits` flags are the caller's cue that the floor was reached before the grid
+ * fitted, and that it owes the user a scrollbar rather than a silent clip.
+ */
+export function fitGridFontSize(
+  width: number,
+  height: number,
+  columns: number,
+  rows: number,
+  widthRatio: number,
+  heightRatio: number,
+): GridFit {
+  const byWidth = width / Math.max(columns, 1) / widthRatio;
+  const byHeight = height / Math.max(rows, 1) / (heightRatio * TILE_LINE_HEIGHT);
+  const fontSize = Math.max(
+    Math.min(Math.floor(Math.min(byWidth, byHeight)), MAX_FOCUS_FONT_SIZE),
+    MIN_FOCUS_FONT_SIZE,
+  );
+
+  // A pixel of slack: the browser lays glyphs out in fractional pixels, and a
+  // grid that misses by a rounding error is not a grid that needs a scrollbar.
+  return {
+    fontSize,
+    fitsWidth: columns * fontSize * widthRatio <= width + 1,
+    fitsHeight: fittedHeight(fontSize, rows, heightRatio) <= height + 1,
+  };
 }
 
 /** Rendered width of `columns` cells at this font, chrome included. */

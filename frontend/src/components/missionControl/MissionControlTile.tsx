@@ -25,6 +25,59 @@ import { formatTimeAgo } from '../../utils/timestampUtils';
 const SNAPSHOT_FONT_SIZE_HINT = MIN_TILE_FONT_SIZE;
 const FOCUS_FONT_SIZE_HINT = 14;
 
+/**
+ * How far outside the viewport a tile still counts as worth a real terminal.
+ *
+ * Generous on purpose: promotion costs a `terminal:getState` round trip and a
+ * full-buffer replay, so a tile one flick of the wheel away should already be
+ * live rather than blank when it arrives.
+ */
+const NEAR_VIEWPORT_MARGIN = '600px';
+/**
+ * Grace before a tile that scrolled away gives its terminal up.
+ *
+ * A tile scrolled just past the edge is usually coming straight back, and
+ * tearing an xterm down and re-hydrating it costs more than holding it for a
+ * moment longer.
+ */
+const OFFSCREEN_GRACE_MS = 2000;
+
+/**
+ * Whether this tile is close enough to the viewport to carry a live terminal.
+ *
+ * "All live" mounts every tile in every open group, and an offscreen xterm is
+ * not a cheap one: it parses and paints every byte its agent produces, exactly
+ * like the ones on screen. Scrolling away should reduce the load, so it does —
+ * the tile falls back to its snapshot, which is a poll the grid pays for
+ * anyway.
+ */
+function useNearViewport(elementRef: React.RefObject<HTMLElement | null>): boolean {
+  const [nearViewport, setNearViewport] = useState(true);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+
+    let graceTimer: number | undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      window.clearTimeout(graceTimer);
+      if (entry.isIntersecting) {
+        setNearViewport(true);
+        return;
+      }
+      graceTimer = window.setTimeout(() => setNearViewport(false), OFFSCREEN_GRACE_MS);
+    }, { rootMargin: NEAR_VIEWPORT_MARGIN });
+
+    observer.observe(element);
+    return () => {
+      window.clearTimeout(graceTimer);
+      observer.disconnect();
+    };
+  }, [elementRef]);
+
+  return nearViewport;
+}
+
 /** Left accent per state, so a wall of tiles is scannable at a glance. */
 const ACCENT = {
   blocked: 'bg-status-error',
@@ -142,12 +195,15 @@ function LiveTerminalSurface({
   sendEscape: boolean;
   onEscapeExit: () => void;
 }) {
-  const { wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight } = useMissionControlTerminal({
+  const {
+    wrapperRef, containerRef, error, focusTerminal, bottomOverflow, clippedRight, heightShortfall,
+  } = useMissionControlTerminal({
     panelId,
     cols,
     rows,
-      interactive,
+    interactive,
     matchPtyExactly: fitWholeGrid,
+    fitHeightPx: height,
     sendEscape,
     onEscapeExit,
   });
@@ -162,7 +218,11 @@ function LiveTerminalSurface({
       className={`relative w-full overflow-hidden bg-[color:var(--color-terminal-bg,#0b0b10)] ${
         interactive ? '' : 'pane-mission-control-surface'
       } ${fitWholeGrid ? 'p-1' : ''}`}
-      style={{ height }}
+      // The budget, plus whatever the smallest legible font still could not fit
+      // (expanded only). Growing is what turns "the top rows are gone" into "the
+      // grid scrolls": the tile spans the row, so the height it takes is height
+      // the grid's own scroller can reach.
+      style={{ height: height + heightShortfall }}
     >
       {/*
         Bottom-anchored in every mode: the newest rows — and the prompt waiting
@@ -248,10 +308,15 @@ export const MissionControlTile = memo(function MissionControlTile({
   isSelected,
   registerElement,
 }: MissionControlTileProps) {
+  const articleRef = useRef<HTMLElement | null>(null);
   const registerTileElement = useCallback(
-    (element: HTMLElement | null) => registerElement(tile.panelId, element),
+    (element: HTMLElement | null) => {
+      articleRef.current = element;
+      registerElement(tile.panelId, element);
+    },
     [registerElement, tile.panelId],
   );
+  const nearViewport = useNearViewport(articleRef);
 
   // A tile mirrors a real panel, so both of its bodies render in the typeface
   // that panel does — a preview that changed typeface on promotion would read
@@ -271,7 +336,9 @@ export const MissionControlTile = memo(function MissionControlTile({
   // snapshot, so promoting would replay the stream into a guessed 80x24 grid
   // and wrap every line. Those tiles stay previews, which is what the footer
   // note already promises.
-  const showLive = isLiveView && canTakeKeyboard(tile) && ptyDims !== null;
+  // The focused tile keeps its terminal wherever it sits: it holds the keyboard,
+  // and dropping it mid-answer would lose what the user was typing.
+  const showLive = isLiveView && canTakeKeyboard(tile) && ptyDims !== null && (nearViewport || isFocused);
   // The body's footprint is fixed by the density budget rather than by whatever
   // font either body ended up fitting to, so hovering a tile never makes the
   // grid jump. Both bodies are bottom-anchored inside it, so the trailing rows

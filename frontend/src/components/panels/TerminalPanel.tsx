@@ -4,8 +4,6 @@ import { FitAddon } from '@xterm/addon-fit';
 import type { WebglAddon } from '@xterm/addon-webgl';
 import type { WebLinksAddon } from '@xterm/addon-web-links';
 import type { SerializeAddon } from '@xterm/addon-serialize';
-import type { Unicode11Addon } from '@xterm/addon-unicode11';
-import type { ImageAddon, IImageAddonOptions } from '@xterm/addon-image';
 import { useSession } from '../../contexts/SessionContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { TerminalPanelProps } from '../../types/panelComponents';
@@ -30,7 +28,9 @@ import { useTerminalSearch } from '../../hooks/useTerminalSearch';
 import { useScrollSurface } from '../../hooks/useScrollSurface';
 import { TerminalSearchOverlay } from '../terminal/TerminalSearchOverlay';
 import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
-import { TERMINAL_IMAGE_OPTIONS } from '../../../../shared/constants/terminalGraphics';
+import {
+  loadTerminalCapabilities, terminalCapabilityOptions, type LoadedTerminalCapabilities,
+} from '../../utils/terminalCapabilities';
 import { selectTerminalRestoreContent } from '../../utils/terminalRestore';
 import { TerminalInterceptor } from '../../services/terminalInterceptor/TerminalInterceptor';
 import { createAtTerminalHandler } from '../../services/terminalInterceptor/handlers/atTerminalHandler';
@@ -104,10 +104,6 @@ const MIN_VIABLE_RECT_PX = 100; // below this the container is hidden or mid-lay
 const MIN_PTY_COLS = 20;        // mirrors main-process floor
 const MIN_PTY_ROWS = 5;
 const NEAR_BOTTOM_THRESHOLD_ROWS = 3;
-
-// Sequence-size limits stay at the addon defaults (32 MB), which a 4K kitty frame
-// fits inside once zlib-compressed and base64-encoded.
-const TERMINAL_IMAGE_ADDON_OPTIONS: IImageAddonOptions = TERMINAL_IMAGE_OPTIONS;
 const terminalPasteImageResultSchema = boundary.object({
   filePath: boundary.string,
   imageNumber: boundary.number,
@@ -225,8 +221,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
   const webglAddonRef = useRef<WebglAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
   const serializeAddonRef = useRef<SerializeAddon | null>(null);
-  const unicode11AddonRef = useRef<Unicode11Addon | null>(null);
-  const imageAddonRef = useRef<ImageAddon | null>(null);
+  // Unicode 11 widths and the inline-image protocols, shared with every other
+  // renderer of the same PTY. See `terminalCapabilities`.
+  const capabilitiesRef = useRef<LoadedTerminalCapabilities | null>(null);
   const isActiveRef = useRef(isActive);
   const isNearBottomRef = useRef(true); // Track if user is scrolled near the bottom
   const [showScrollDown, setShowScrollDown] = useState(false); // Show jump-to-bottom pill
@@ -975,11 +972,7 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
           cursorWidth: 1,
           cursorInactiveStyle: 'outline',
           allowTransparency: false,
-          // Unlocks terminal.unicode, which the Unicode11Addon below needs.
-          // Without it that addon throws on load and the terminal silently
-          // falls back to Unicode 6 cell widths.
-          allowProposedApi: true,
-          vtExtensions: { kittyKeyboard: kittyKeyboardEnabledRef.current },
+          ...terminalCapabilityOptions(kittyKeyboardEnabledRef.current),
           scrollOnUserInput: true,
           scrollSensitivity: 1,
           altClickMovesCursor: true,
@@ -1215,41 +1208,22 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
             serializeAddonRef.current = null;
           }
 
-          // Load Unicode11Addon for better emoji/unicode width calculation
-          try {
-            const { Unicode11Addon: Unicode11AddonImpl } = await import('@xterm/addon-unicode11');
-            if (!disposed) {
-              const unicode11Addon = new Unicode11AddonImpl();
-              terminal.loadAddon(unicode11Addon);
-              terminal.unicode.activeVersion = '11';
-              unicode11AddonRef.current = unicode11Addon;
-              devLog.debug('[TerminalPanel] Unicode11Addon loaded for panel', panel.id);
-            }
-          } catch (e) {
-            console.warn('[TerminalPanel] Unicode11Addon failed to load for panel', panel.id, ':', e);
-            unicode11AddonRef.current = null;
-          }
-
-          // Load ImageAddon so image-emitting tools render inline instead of
-          // printing nothing. Protocols and limits live in TERMINAL_IMAGE_OPTIONS.
-          try {
-            const { ImageAddon: ImageAddonImpl } = await import('@xterm/addon-image');
-            if (!disposed) {
-              const imageAddon = new ImageAddonImpl(TERMINAL_IMAGE_ADDON_OPTIONS);
-              terminal.loadAddon(imageAddon);
-              imageAddonRef.current = imageAddon;
-              devLog.debug('[TerminalPanel] ImageAddon loaded for panel', panel.id);
-            }
-          } catch (e) {
-            console.warn('[TerminalPanel] ImageAddon failed to load for panel', panel.id, ':', e);
-            imageAddonRef.current = null;
-          }
+          // Unicode 11 cell widths and the inline-image protocols, from the
+          // same helper Mission Control tiles use: the agent cannot tell its
+          // renderers apart, so they must not differ on either.
+          const capabilities = await loadTerminalCapabilities(terminal, {
+            label: `panel ${panel.id}`,
+            images: true,
+            isStale: () => disposed,
+          });
 
           if (disposed) {
+            capabilities.dispose();
             terminal.dispose();
             fitAddon.dispose();
             return;
           }
+          capabilitiesRef.current = capabilities;
           xtermRef.current = terminal;
           setTerminalInstance(terminal);
           fitAddonRef.current = fitAddon;
@@ -1866,17 +1840,9 @@ const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({ panel, isActiv
         serializeAddonRef.current = null;
       }
 
-      // Dispose ImageAddon
-      if (imageAddonRef.current) {
-        try { imageAddonRef.current.dispose(); } catch { /* ignore */ }
-        imageAddonRef.current = null;
-      }
-
-      // Dispose Unicode11Addon
-      if (unicode11AddonRef.current) {
-        try { unicode11AddonRef.current.dispose(); } catch { /* ignore */ }
-        unicode11AddonRef.current = null;
-      }
+      // Dispose the shared capability addons (Unicode 11, images)
+      capabilitiesRef.current?.dispose();
+      capabilitiesRef.current = null;
 
       // Dispose XTerm instance only on final unmount
       if (xtermRef.current) {

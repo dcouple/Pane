@@ -394,6 +394,7 @@ const DAEMON_PANEL_CHANNELS = [
   'panels:send-terminal-input',
   'panels:shouldAutoCreate',
   'terminal:input',
+  'terminal:reply',
   'terminal:resize',
   'terminal:getState',
   'terminal:saveState',
@@ -660,6 +661,12 @@ export function registerPanelHandlers(
     return terminalPanelManager.writeToTerminal(panelId, data);
   });
   
+  // A reply to a query the agent asked its terminal, from a viewer that may not
+  // be the one allowed to answer. terminalPanelManager holds the designation.
+  commandRegistry.register('terminal:reply', async (panelId: string, data: string, viewerId?: string) => {
+    return terminalPanelManager.writeTerminalReply(panelId, data, viewerId);
+  });
+
   commandRegistry.register('terminal:resize', async (
     panelId: string,
     cols: number,

@@ -13,7 +13,10 @@ import { cycleIndex } from '../../utils/arrayUtils';
 import { PANE_CHAT_SESSION_ID } from '../../../../shared/types/paneChat';
 import { useWindowActive } from '../../hooks/useWindowActive';
 import { buildTerminalFontFamily, DEFAULT_TERMINAL_FONT_FAMILY } from '../../utils/terminalTheme';
-import { charWidthRatio, fittedWidth, MIN_TILE_FONT_SIZE } from '../../utils/terminalFit';
+import { DENSITY_OPTIONS, fitColumns, minTileWidth } from '../../utils/missionControlLayout';
+import {
+  createRequestGate, pruneSelection, pruneSnapshots, reconcileTileModels,
+} from '../../utils/missionControlRoster';
 import { useConfigStore } from '../../stores/configStore';
 import { AgentStatusDot } from '../ui/AgentStatusDot';
 import { Button } from '../ui/Button';
@@ -34,26 +37,13 @@ import { boundary, decodeBoundary, type BoundarySchema } from '../../../../share
 const POLL_INTERVAL_MS = 1500;
 /** Debounce before a hovered tile is promoted to a real terminal. */
 const PROMOTE_DELAY_MS = 250;
+/** Coalescing window for the panel and session events that change the roster. */
+const ROSTER_REFRESH_DEBOUNCE_MS = 150;
 
-/**
- * The width a tile needs before it is worth calling a view of a terminal.
- *
- * Derived rather than picked: a conventional 80-column screen at the legibility
- * floor is the narrowest thing that still reads as a terminal, and the cell
- * width depends on the font the user configured. An arbitrary constant here
- * would either starve tiles on a laptop or waste a 4K display.
- */
-const NOMINAL_TILE_COLUMNS = 80;
-/** Matches the grid's `gap-2.5`. */
-const GRID_GAP_PX = 10;
 /** Tile header, footer and the group heading above an expanded tile. */
 const EXPANDED_CHROME_PX = 96;
 /** Enough to be worth expanding into before the grid has been measured. */
 const MIN_EXPANDED_BODY_PX = 320;
-
-function minTileWidth(fontFamily: string): number {
-  return fittedWidth(MIN_TILE_FONT_SIZE, NOMINAL_TILE_COLUMNS, charWidthRatio(fontFamily));
-}
 
 const GROUPING_LABELS = {
   project: 'Project',
@@ -63,7 +53,6 @@ const GROUPING_LABELS = {
 } satisfies Record<MissionControlGrouping, string>;
 
 const GROUPING_VALUES: readonly MissionControlGrouping[] = ['project', 'status', 'agent', 'none'];
-const DENSITY_OPTIONS: readonly MissionControlDensity[] = [1, 2, 3, 4];
 
 /**
  * Above this many tiles, "all live" is refused: each live tile is a real xterm
@@ -126,30 +115,6 @@ function usePersistedOption<T>(
   }, [key]);
 
   return [value, set];
-}
-
-/**
- * The requested column count, reduced to what this width can carry.
- *
- * The cap is a function of the space available, so the same setting means more
- * columns on a large display and fewer on a laptop: a 4K screen honours 4x,
- * and a narrow window steps down rather than shrinking tiles past the point
- * where their content is readable.
- *
- * Walking the option list keeps the result inside the density union without an
- * assertion, and the options are ordered, so the last one that fits wins.
- */
-function fitColumns(density: MissionControlDensity, width: number, fontFamily: string): MissionControlDensity {
-  if (width <= 0) return density;
-  // n tiles carry n-1 gaps between them, so counting on width alone overshoots
-  // and leaves the last column a few characters short of nominal.
-  const tile = minTileWidth(fontFamily);
-  const capacity = Math.max(1, Math.floor((width + GRID_GAP_PX) / (tile + GRID_GAP_PX)));
-  let fitted: MissionControlDensity = 1;
-  for (const option of DENSITY_OPTIONS) {
-    if (option <= density && option <= capacity) fitted = option;
-  }
-  return fitted;
 }
 
 /** Grid movement for the arrow keys; a row is one density's worth of tiles. */
@@ -284,6 +249,10 @@ export function MissionControlView() {
 
   const promoteTimerRef = useRef<number | undefined>(undefined);
   const inFlightRef = useRef(false);
+  /** Roster loads overlap; only the newest one gets to set the roster. */
+  const rosterGateRef = useRef(createRequestGate());
+  /** Coalesces a burst of panel and session events into one reload. */
+  const rosterRefreshTimerRef = useRef<number | undefined>(undefined);
   /** Display order captured when a tile took the keyboard; see handleFocusAgent. */
   const frozenOrderRef = useRef<{ groups: string[]; tiles: string[] } | null>(null);
   /** Tile elements, so keyboard navigation can scroll a selection into view. */
@@ -315,8 +284,13 @@ export function MissionControlView() {
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
 
-  // The stored density is what the user asked for; this is what fits.
-  const columns = fitColumns(density, gridWidth, terminalFontFamily);
+  // Measured once per font rather than per group: the measurement touches the
+  // DOM, and every group's column count asks for it.
+  const tileWidth = useMemo(() => minTileWidth(terminalFontFamily), [terminalFontFamily]);
+  // The stored density is what the user asked for; this is what fits. Also the
+  // step the arrow keys move by, so it is counted over the whole grid rather
+  // than per group.
+  const columns = fitColumns(density, gridWidth, tileWidth, agents.length);
   const snapshotLines = LINES_BY_DENSITY[columns];
   // What is left for an expanded tile's terminal once its own chrome and the
   // group header above it are out of the way. Floored rather than allowed to
@@ -336,19 +310,37 @@ export function MissionControlView() {
   }, []);
 
   const loadAgents = useCallback(async () => {
+    // Request-owned: status churn, panel events and the refresh button can all
+    // start a load, and over a remote daemon they do not come back in order. An
+    // older roster landing last resurrects agents that are already gone.
+    const isCurrent = rosterGateRef.current.start();
     try {
       const response = await API.missionControl.listAgents();
+      if (!isCurrent()) return;
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to list agents');
       }
       setAgents(response.data);
       setError(null);
     } catch (err: unknown) {
+      if (!isCurrent()) return;
       setError(err instanceof Error ? err.message : 'Failed to list agents');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, []);
+
+  /**
+   * Reload the roster after the events that change it, coalesced.
+   *
+   * Archiving a session deletes its panes one at a time, so a burst of five
+   * `panel:deleted` events would otherwise be five list calls racing each
+   * other.
+   */
+  const scheduleRosterRefresh = useCallback(() => {
+    window.clearTimeout(rosterRefreshTimerRef.current);
+    rosterRefreshTimerRef.current = window.setTimeout(() => { void loadAgents(); }, ROSTER_REFRESH_DEBOUNCE_MS);
+  }, [loadAgents]);
 
   // Agents appearing or disappearing shows up as agent-status churn; refresh
   // the roster on it rather than polling the (heavier) list endpoint. This also
@@ -365,15 +357,59 @@ export function MissionControlView() {
     void loadAgents();
   }, [agentStatusSignature, loadAgents]);
 
+  /**
+   * Panels and sessions that come and go without touching agent status.
+   *
+   * Deleting a pane from RunPane, or archiving a session from the sidebar,
+   * removes the PTY and the panel but leaves the status map exactly as it was —
+   * the signature above never changes, so the roster never reloaded and the
+   * dead pane's tile sat there saying "Waiting for output..." until something
+   * unrelated forced a refresh. These events are the only notice the grid gets.
+   */
+  useEffect(() => {
+    const events = window.electronAPI?.events;
+    const unsubscribes = [
+      events?.onPanelCreated?.(scheduleRosterRefresh),
+      events?.onPanelDeleted?.(scheduleRosterRefresh),
+      events?.onSessionCreated?.(scheduleRosterRefresh),
+      events?.onSessionUpdated?.(scheduleRosterRefresh),
+      events?.onSessionDeleted?.(scheduleRosterRefresh),
+    ];
+    return () => {
+      window.clearTimeout(rosterRefreshTimerRef.current);
+      for (const unsubscribe of unsubscribes) unsubscribe?.();
+    };
+  }, [scheduleRosterRefresh]);
+
+  // Nothing in flight may set state after this view is gone.
+  useEffect(() => {
+    const gate = rosterGateRef.current;
+    return () => gate.abandon();
+  }, []);
+
+  /** The panels the roster still knows about. */
+  const rosterPanelIds = useMemo(
+    () => new Set(agents.map(agent => agent.panelId)),
+    [agents]
+  );
+
   const canLiveAll = agents.length <= MAX_LIVE_ALL_TILES;
   const liveAllActive = liveAll && canLiveAll;
 
+  /**
+   * Tile models, reusing the previous object wherever nothing on a tile moved.
+   *
+   * One agent's new output changes one snapshot; rebuilding all sixty-four
+   * models for it would make every memoised tile re-render, which is the whole
+   * grid doing React work because one terminal printed a line.
+   */
+  const tilesRef = useRef<MissionControlTileModel[]>([]);
   const tiles: MissionControlTileModel[] = useMemo(
-    () => agents.map(agent => ({
-      ...agent,
-      agentState: agentStatus[agent.panelId] ?? 'unknown',
-      snapshot: snapshots[agent.panelId] ?? null,
-    })),
+    () => {
+      const next = reconcileTileModels(tilesRef.current, agents, agentStatus, snapshots);
+      tilesRef.current = next;
+      return next;
+    },
     [agents, agentStatus, snapshots]
   );
 
@@ -563,11 +599,33 @@ export function MissionControlView() {
     ));
   }, [groups, collapsedGroups, focusedPanelId, setCollapsedGroupKeys]);
 
-  // A panel that disappears (session archived, agent stopped) must not leave a
-  // dialog attached to nothing.
+  /**
+   * Forget everything about a panel that has left the roster.
+   *
+   * A pane deleted through RunPane, or a session archived from the sidebar,
+   * takes its PTY with it. Whatever the view was still holding by that panel's
+   * id — the keyboard, the live terminal, the roving cursor, an open close
+   * confirmation, its last snapshot, its element — refers to something that no
+   * longer exists, and a close confirmation left open would fail on confirm.
+   */
   useEffect(() => {
-    if (focusedPanelId && !tiles.some(tile => tile.panelId === focusedPanelId)) setFocusedPanelId(null);
-  }, [focusedPanelId, tiles]);
+    const pruned = pruneSelection({
+      focusedPanelId,
+      liveTileId,
+      selectedPanelId,
+      pendingClosePanelId: pendingClose?.panelId ?? null,
+    }, rosterPanelIds);
+
+    if (pruned.focusedPanelId !== focusedPanelId) setFocusedPanelId(pruned.focusedPanelId);
+    if (pruned.liveTileId !== liveTileId) setLiveTileId(pruned.liveTileId);
+    if (pruned.selectedPanelId !== selectedPanelId) setSelectedPanelId(pruned.selectedPanelId);
+    if (pruned.pendingClosePanelId === null && pendingClose) setPendingClose(null);
+
+    setSnapshots(current => pruneSnapshots(current, rosterPanelIds));
+    for (const panelId of [...tileElementsRef.current.keys()]) {
+      if (!rosterPanelIds.has(panelId)) tileElementsRef.current.delete(panelId);
+    }
+  }, [rosterPanelIds, focusedPanelId, liveTileId, selectedPanelId, pendingClose]);
 
   // Drop the hover promotion when switching into all-live so the two modes
   // never both own a terminal for the same panel.
@@ -902,7 +960,14 @@ export function MissionControlView() {
                 {!isCollapsed && (
                   <div
                     className="grid items-start gap-2.5"
-                    style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+                    // Counted per group: a project with one agent gets one wide
+                    // tile rather than a third of a row and two thirds of
+                    // nothing.
+                    style={{
+                      gridTemplateColumns: `repeat(${
+                        fitColumns(density, gridWidth, tileWidth, group.tiles.length)
+                      }, minmax(0, 1fr))`,
+                    }}
                   >
                     {group.tiles.map(tile => (
                       <MissionControlTile

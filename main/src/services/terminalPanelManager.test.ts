@@ -57,6 +57,7 @@ type VisibilityAccess = {
   clearVisibilityViewersByPrefix(prefix: string): void;
   pruneVisibilityViewersByPrefix(prefix: string, staleAfterMs: number): void;
   acknowledgeBytes(panelId: string, bytesConsumed: number, viewerId?: string): void;
+  writeTerminalReply(panelId: string, data: string, viewerId?: string): { delivered: boolean };
 };
 
 type SnapshotAccess = {
@@ -515,6 +516,97 @@ describe('TerminalPanelManager hidden output delivery', () => {
       expect(terminal.flowControl.pendingBytes).toBe(900);
 
       disposeFlowControlRecord(terminal.flowControl);
+    });
+  });
+
+  describe('terminal query replies', () => {
+    const panelViewer = 'local:panel-viewer';
+    const tileViewer = `${MISSION_CONTROL_VIEWER_PREFIX}:tile-1`;
+    /** DSR cursor-position report — what Codex reads its viewport origin from. */
+    const CURSOR_POSITION_REPORT = '\x1b[24;80R';
+
+    function armed() {
+      const manager = testAccess<VisibilityAccess>(new TerminalPanelManager());
+      const terminal = createTerminal({ outputBuffer: '' });
+      manager.terminals.set(terminal.panelId, terminal);
+      return { manager, terminal };
+    }
+
+    it('lets a tile answer when it is the only renderer left', () => {
+      const { manager, terminal } = armed();
+      // Mission Control unmounts the session's terminal panel, so the tile is
+      // the only thing that can answer. Swallowing the query here is what made
+      // a Codex pane wait on a reply that never came.
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+
+      expect(manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, tileViewer))
+        .toEqual({ delivered: true });
+      expect(terminal.pty.write).toHaveBeenCalledWith(CURSOR_POSITION_REPORT);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('drops a tile reply while a real terminal panel is watching', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, panelViewer);
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+
+      // Two answers to one question move the agent's idea of where its screen
+      // starts, and every redraw after that lands on the wrong lines.
+      expect(manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, tileViewer))
+        .toEqual({ delivered: false });
+      expect(terminal.pty.write).not.toHaveBeenCalled();
+
+      expect(manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, panelViewer))
+        .toEqual({ delivered: true });
+      expect(terminal.pty.write).toHaveBeenCalledTimes(1);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('picks one voice when two Mission Control windows watch the same panel', () => {
+      const { manager, terminal } = armed();
+      const otherWindow = `${MISSION_CONTROL_VIEWER_PREFIX}:tile-2`;
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+      manager.setVisibility(terminal.panelId, true, otherWindow);
+
+      const first = manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, tileViewer);
+      const second = manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, otherWindow);
+
+      expect([first.delivered, second.delivered].filter(Boolean)).toHaveLength(1);
+      expect(terminal.pty.write).toHaveBeenCalledTimes(1);
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('resolves a bare viewer id to the scoped id it registered under', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, 'local:8f1c');
+
+      expect(manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT, '8f1c'))
+        .toEqual({ delivered: true });
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('refuses an unidentified reply, unlike an ack', () => {
+      const { manager, terminal } = armed();
+      manager.setVisibility(terminal.panelId, true, tileViewer);
+
+      // Acks accept a missing id because every ack path predates viewer ids.
+      // Replies have no such history, so an anonymous one is a second voice
+      // with nothing to arbitrate it.
+      expect(manager.writeTerminalReply(terminal.panelId, CURSOR_POSITION_REPORT))
+        .toEqual({ delivered: false });
+      expect(terminal.pty.write).not.toHaveBeenCalled();
+
+      disposeFlowControlRecord(terminal.flowControl);
+    });
+
+    it('drops a reply for a panel whose PTY is already gone', () => {
+      const manager = testAccess<VisibilityAccess>(new TerminalPanelManager());
+      expect(manager.writeTerminalReply('missing-panel', CURSOR_POSITION_REPORT, tileViewer))
+        .toEqual({ delivered: false });
     });
   });
 
