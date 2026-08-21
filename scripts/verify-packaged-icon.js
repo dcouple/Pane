@@ -31,6 +31,7 @@ const path = require('path');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const ASSETS_DIR = path.join(ROOT_DIR, 'main', 'assets');
+const PRODUCT_NAME = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8')).build.productName;
 
 /** Path of the runtime window icon inside the packaged asar, as index.ts resolves it. */
 const RUNTIME_ICON_IN_ASAR = ['main', 'dist', 'main', 'assets', 'icon.png'];
@@ -174,6 +175,7 @@ function checkRuntimeIcon(asarPath, failures) {
 function checkMacBundle(appPath, failures) {
   const plistPath = path.join(appPath, 'Contents', 'Info.plist');
   const icnsPath = path.join(appPath, 'Contents', 'Resources', 'icon.icns');
+  const before = failures.length;
 
   if (!fs.existsSync(icnsPath)) {
     failures.push(`${appPath} has no Contents/Resources/icon.icns — the bundle falls back to Electron's icon`);
@@ -186,7 +188,7 @@ function checkMacBundle(appPath, failures) {
     failures.push(`${appPath} does not declare CFBundleIconFile=icon.icns in Info.plist`);
   }
 
-  if (failures.length === 0) {
+  if (failures.length === before) {
     console.log(`[verify-icon] ${path.basename(appPath)} carries the Pane .icns ✓`);
   }
 }
@@ -252,10 +254,11 @@ function verifyPackedApp(appOutDir, platform) {
   } else {
     checkRuntimeIcon(path.join(appOutDir, 'resources', 'app.asar'), failures);
     if (platform === 'win32') {
-      const exe = fs
-        .readdirSync(appOutDir)
-        .filter((entry) => entry.toLowerCase().endsWith('.exe'))
-        .map((entry) => path.join(appOutDir, entry))[0];
+      // The launcher is named after productName; anything else at this level is
+      // a helper whose icon nobody sees.
+      const exes = fs.readdirSync(appOutDir).filter((entry) => entry.toLowerCase().endsWith('.exe'));
+      const name = exes.find((entry) => entry.toLowerCase() === `${PRODUCT_NAME.toLowerCase()}.exe`) ?? exes[0];
+      const exe = name ? path.join(appOutDir, name) : null;
       if (!exe) {
         failures.push(`No .exe in ${appOutDir}`);
       } else {
