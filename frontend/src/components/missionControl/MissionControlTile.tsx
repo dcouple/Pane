@@ -8,7 +8,7 @@ import { buildTerminalFontFamily, DEFAULT_TERMINAL_FONT_FAMILY } from '../../uti
 import {
   charWidthRatio, fittedWidth, fitFontSize, MIN_TILE_FONT_SIZE, rowHeight, widestLine,
 } from '../../utils/terminalFit';
-import { agentTypeLabel, canTakeKeyboard, describeMissionControlTile, STATE_LABEL } from '../../utils/missionControlGrouping';
+import { agentTypeLabel, describeMissionControlTile, STATE_LABEL } from '../../utils/missionControlGrouping';
 import type { AgentDisplayStatus } from '../../../../shared/types/agentStatus';
 import type { MissionControlTileModel } from '../../../../shared/types/missionControl';
 import { formatTimeAgo } from '../../utils/timestampUtils';
@@ -338,7 +338,8 @@ export const MissionControlTile = memo(function MissionControlTile({
   // note already promises.
   // The focused tile keeps its terminal wherever it sits: it holds the keyboard,
   // and dropping it mid-answer would lose what the user was typing.
-  const showLive = isLiveView && canTakeKeyboard(tile) && ptyDims !== null && (nearViewport || isFocused);
+  const canInteract = tile.isLive && ptyDims !== null;
+  const showLive = isLiveView && canInteract && (nearViewport || isFocused);
   // The body's footprint is fixed by the density budget rather than by whatever
   // font either body ended up fitting to, so hovering a tile never makes the
   // grid jump. Both bodies are bottom-anchored inside it, so the trailing rows
@@ -481,7 +482,7 @@ export const MissionControlTile = memo(function MissionControlTile({
         needs to be hovered into life first. Removed once focused, leaving the
         terminal itself to receive every click and keystroke.
       */}
-      {canTakeKeyboard(tile) && !isFocused && (
+      {canInteract && !isFocused && (
         <button
           type="button"
           onClick={() => onFocusAgent(tile)}

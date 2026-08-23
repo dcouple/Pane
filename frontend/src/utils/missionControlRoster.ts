@@ -133,21 +133,17 @@ export interface RequestGate {
 }
 
 export function createRequestGate(): RequestGate {
-  let issued = 0;
-  let newest = 0;
+  let generation = 0;
 
   return {
     start() {
-      issued += 1;
-      newest = issued;
-      const mine = issued;
-      return () => mine === newest;
+      const mine = ++generation;
+      return () => mine === generation;
     },
     abandon() {
-      // A token that can never be current again: `newest` moves past every
+      // A token that can never be current again: the generation moves past every
       // request already handed out.
-      issued += 1;
-      newest = issued;
+      generation += 1;
     },
   };
 }
