@@ -205,7 +205,7 @@ export const RUNPANE_CONTRACT = {
       "name": "panes archive",
       "summary": "Archive a Pane (session) exactly like the UI Archive action, including safe removal of its Pane-managed git worktree.",
       "usage": [
-        "runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes [--json]"
+        "runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes [--json]"
       ],
       "mutates": true,
       "jsonSchemas": [
@@ -606,7 +606,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
-        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes",
+        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes",
         "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
@@ -763,7 +763,7 @@ export const RUNPANE_CONTRACT = {
         "Commands:",
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
-        "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
+        "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] [--dry-run] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
@@ -816,9 +816,9 @@ export const RUNPANE_CONTRACT = {
       ],
       "panes archive": [
         "Usage:",
-        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes [--json]",
+        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes [--json]",
         "",
-        "Archives a Pane (session) exactly like the UI Archive action, including removal of its Pane-managed git worktree. Refuses to archive a pane with uncommitted, untracked, or unpushed-to-remote changes unless --force is passed. Waits for worktree removal to finish before returning.",
+        "Archives a Pane (session) exactly like the UI Archive action, including removal of its Pane-managed git worktree. Refreshes the configured upstream before checking for unpushed commits and reports exact commit evidence. Refuses unsafe archives unless --force is passed. Use --dry-run to print the evidence without mutating Pane state.",
         "",
         "Options:",
         "  --pane <pane-id>               Pane/session id to archive",
@@ -826,6 +826,7 @@ export const RUNPANE_CONTRACT = {
         "  --force                        Archive even if the pane has uncommitted, untracked, or unpushed changes",
         "  --pane-dir <path>              Connect to a specific Pane data directory",
         "  --json                         Print machine-readable output",
+        "  --dry-run                      Refresh and print archive safety evidence without archiving",
         "  --yes                          Skip confirmation for mutating commands"
       ],
       "panes pin": [
@@ -1044,7 +1045,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
-        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes",
+        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes",
         "  python -m runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
         "  runpane panels list --pane <pane-id> [--json]",
         "  runpane panels output --panel <panel-id> [--limit <count>] [--json]",
@@ -1190,7 +1191,7 @@ export const RUNPANE_CONTRACT = {
         "Commands:",
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [options]",
-        "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] --yes [--json]",
+        "  runpane panes archive --pane <pane-id> [--force] [--source user|agent] [--dry-run] --yes [--json]",
         "  runpane panes pin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes unpin --pane <pane-id> --yes [--dry-run] [--json]",
         "  runpane panes rename --pane <pane-id> --name <new-name> --yes [--dry-run] [--json]",
@@ -1243,9 +1244,9 @@ export const RUNPANE_CONTRACT = {
       ],
       "panes archive": [
         "Usage:",
-        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] --yes [--json]",
+        "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes [--json]",
         "",
-        "Archives a Pane (session) exactly like the UI Archive action, including removal of its Pane-managed git worktree. Refuses to archive a pane with uncommitted, untracked, or unpushed-to-remote changes unless --force is passed. Waits for worktree removal to finish before returning.",
+        "Archives a Pane (session) exactly like the UI Archive action, including removal of its Pane-managed git worktree. Refreshes the configured upstream before checking for unpushed commits and reports exact commit evidence. Refuses unsafe archives unless --force is passed. Use --dry-run to print the evidence without mutating Pane state.",
         "",
         "Options:",
         "  --pane <pane-id>",
@@ -1253,6 +1254,7 @@ export const RUNPANE_CONTRACT = {
         "  --force",
         "  --pane-dir <path>",
         "  --json",
+        "  --dry-run",
         "  --yes"
       ],
       "panes pin": [
@@ -1552,7 +1554,7 @@ export const RUNPANE_CONTRACT = {
       "`runpane panes list` lists Pane sessions, optionally scoped to one saved repository.",
       "`runpane panes create` connects to the running local Pane daemon, resolves the requested saved base repository, creates user-visible Pane sessions backed by Pane-managed worktrees/branches, opens terminal-backed tool tabs, and optionally sends initial input to the started tool. Built-in agent panes and `--source agent` default to background/no-focus unless `--focus` is passed. New Panes are pinned into the UI's favorite/pin set by default; pass `--no-pinned` to opt out. Panes created interactively in the Pane UI are unaffected.",
       "For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.",
-      "`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.",
+      "`runpane panes archive` refreshes the configured upstream, reports exact unpushed commit evidence, and refuses unsafe archive operations unless `--force` is used. Add `--dry-run` to inspect the same evidence without archiving. Successful archives wait for worktree removal and report `worktreeCleanup`.",
       "`runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.",
       "`runpane panels list` lists tool panels inside one Pane session.",
       "`runpane panels output` reads bounded recent terminal output from one panel and strips common terminal control noise for agent use.",
@@ -3013,6 +3015,9 @@ export const RUNPANE_CONTRACT = {
             "user",
             "agent"
           ]
+        },
+        "dryRun": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -3155,11 +3160,71 @@ export const RUNPANE_CONTRACT = {
                 "hasUpstream": {
                   "type": "boolean"
                 },
+                "upstream": {
+                  "type": "string"
+                },
+                "upstreamRefreshed": {
+                  "type": "boolean"
+                },
                 "unpushedCommits": {
                   "type": "number"
+                },
+                "unpushedCommitDetails": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "sha",
+                      "subject"
+                    ],
+                    "properties": {
+                      "sha": {
+                        "type": "string"
+                      },
+                      "subject": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
                 }
               },
               "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "ok",
+            "paneId",
+            "dryRun",
+            "wouldArchive",
+            "forced",
+            "safetyCheck"
+          ],
+          "properties": {
+            "ok": {
+              "const": true
+            },
+            "paneId": {
+              "type": "string"
+            },
+            "dryRun": {
+              "const": true
+            },
+            "wouldArchive": {
+              "type": "boolean"
+            },
+            "forced": {
+              "type": "boolean"
+            },
+            "safetyCheck": {
+              "$ref": "#/jsonSchemas/paneArchiveResult/oneOf/0/properties/safetyCheck"
+            },
+            "blocked": {
+              "$ref": "#/jsonSchemas/paneArchiveResult/oneOf/2/properties/blocked"
             }
           },
           "additionalProperties": false
@@ -3216,8 +3281,33 @@ export const RUNPANE_CONTRACT = {
                     "hasUpstream": {
                       "type": "boolean"
                     },
+                    "upstream": {
+                      "type": "string"
+                    },
+                    "upstreamRefreshed": {
+                      "type": "boolean"
+                    },
                     "unpushedCommits": {
                       "type": "number"
+                    },
+                    "unpushedCommitDetails": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "sha",
+                          "subject"
+                        ],
+                        "properties": {
+                          "sha": {
+                            "type": "string"
+                          },
+                          "subject": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "additionalProperties": false
@@ -4312,6 +4402,7 @@ export const RUNPANE_CONTRACT = {
             "--pane <pane-id>",
             "--source <user|agent>",
             "--force",
+            "--dry-run",
             "--yes",
             "--json"
           ]
@@ -4948,7 +5039,7 @@ export const RUNPANE_CONTRACT = {
       "panes archive": {
         "name": "panes archive",
         "summary": "Archive a Pane (session) exactly like the UI Archive action, including safe removal of its Pane-managed git worktree.",
-        "details": "Use this to close out a Pane once its PR has merged. Refuses to archive (unless --force) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes, so an agent cannot silently discard work. A merged and pushed branch has no unpushed commits, so it archives cleanly. Waits for worktree removal to finish before returning.",
+        "details": "Use this to close out a Pane once its PR has merged. The safety check refreshes the configured upstream before comparing it to HEAD and includes exact unpushed commit IDs and subjects. Refuses unsafe archive operations unless --force is used. Use --dry-run to inspect the same evidence without mutating Pane state.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -4975,6 +5066,11 @@ export const RUNPANE_CONTRACT = {
             "description": "Skip confirmation for mutating commands."
           },
           {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Refresh and print archive safety evidence without archiving."
+          },
+          {
             "name": "--json",
             "required": false,
             "description": "Print machine-readable output."
@@ -4982,6 +5078,7 @@ export const RUNPANE_CONTRACT = {
         ],
         "examples": [
           "runpane panes archive --pane <pane-id> --source agent --yes --json",
+          "runpane panes archive --pane <pane-id> --dry-run --json",
           "runpane panes archive --pane <pane-id> --force --yes --json"
         ],
         "jsonSchemas": [
@@ -4990,6 +5087,8 @@ export const RUNPANE_CONTRACT = {
         ],
         "notes": [
           "If the result has ok:false with a blocked field, the pane was NOT archived; inspect blocked.code and rerun with --force if discarding the flagged work is intentional.",
+          "Inspect safetyCheck.unpushedCommitDetails for exact commit IDs and subjects; upstreamRefreshed confirms the tracking ref was refreshed first.",
+          "A --dry-run result sets dryRun:true and wouldArchive without deleting the Pane or its worktree.",
           "A successful archive waits for the Pane-managed worktree to be removed before returning; check worktreeCleanup in the result for the final outcome.",
           "Archiving a main-repo Pane (no Pane-managed worktree) always succeeds immediately since nothing is deleted from disk."
         ]

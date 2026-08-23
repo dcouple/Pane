@@ -148,7 +148,7 @@ The wrapper must stream Pane stdout/stderr without reformatting because `pane --
 
 For `panes create --wait-ready`, `initialInput.verifiedSubmitted: true` is reported only after argument attachment or composer-clear plus activity evidence. Routing input does not by itself verify submission.
 
-`runpane panes archive` archives a Pane exactly like the UI Archive action, including removal of its Pane-managed git worktree, and refuses (unless `--force`) when the pane's branch has uncommitted, untracked, or unpushed-to-remote changes. It waits for worktree removal to finish before returning and reports the outcome in `worktreeCleanup`.
+`runpane panes archive` refreshes the configured upstream, reports exact unpushed commit evidence, and refuses unsafe archive operations unless `--force` is used. Add `--dry-run` to inspect the same evidence without archiving. Successful archives wait for worktree removal and report `worktreeCleanup`.
 
 `runpane panes rename` trims and updates a Pane's display name without changing its worktree, branch, panels, or focus, and returns the updated pane summary.
 

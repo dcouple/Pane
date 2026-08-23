@@ -14,6 +14,7 @@ import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { ArchiveProgressManager } from '../services/archiveProgressManager';
+import { CommandRunner } from '../utils/commandRunner';
 import { registerRunpaneHandlers } from './runpane';
 
 vi.spyOn(panelManager, 'createPanel');
@@ -179,6 +180,7 @@ function createTempGitRepo(name = 'repo'): string {
   const repoPath = path.join(parent, name);
   fs.mkdirSync(repoPath);
   execFileSync('git', ['init'], { cwd: repoPath, stdio: 'ignore' });
+  execFileSync('git', ['branch', '-M', 'main'], { cwd: repoPath, stdio: 'ignore' });
   execFileSync('git', ['config', 'user.name', 'Pane Test'], { cwd: repoPath, stdio: 'ignore' });
   execFileSync('git', ['config', 'user.email', 'pane-test@example.invalid'], { cwd: repoPath, stdio: 'ignore' });
   return repoPath;
@@ -2577,16 +2579,24 @@ describe('runpane IPC handlers', () => {
 
     it('refuses to archive a pane with commits unpushed to its remote upstream', async () => {
       const repoPath = createTempGitRepo('unpushed-repo');
+      const remotePath = path.join(path.dirname(repoPath), 'unpushed-remote.git');
+      execFileSync('git', ['init', '--bare', remotePath], { stdio: 'ignore' });
       execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
-      execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['branch', '-M', 'main'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['remote', 'add', 'origin', remotePath], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['push', '-u', 'origin', 'main'], { cwd: repoPath, stdio: 'ignore' });
       execFileSync('git', ['commit', '--allow-empty', '-m', 'unpushed change'], { cwd: repoPath, stdio: 'ignore' });
 
       const unpushedSession: Session = { ...session, worktreePath: repoPath };
+      const base = createServices();
       const services = createServices({
         // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
-          ...createServices().sessionManager,
+          ...base.sessionManager,
           getSession: vi.fn(() => unpushedSession),
+          getProjectContext: vi.fn(() => ({
+            commandRunner: new CommandRunner({ path: repoPath }),
+          })),
         } as never,
         // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         worktreeManager: {
@@ -2608,24 +2618,136 @@ describe('runpane IPC handlers', () => {
           safetyCheck: {
             performed: true,
             hasUpstream: true,
+            upstream: 'origin/main',
+            upstreamRefreshed: true,
             unpushedCommits: 1,
+            unpushedCommitDetails: [{
+              subject: 'unpushed change',
+            }],
           },
+        },
+      });
+      expect(result).toMatchObject({
+        blocked: {
+          safetyCheck: {
+            unpushedCommitDetails: [{
+              sha: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim(),
+            }],
+          },
+        },
+      });
+    });
+
+    it('refreshes a stale remote-tracking ref before deciding that pushed commits are unpushed', async () => {
+      const repoPath = createTempGitRepo('stale-upstream-repo');
+      const remotePath = path.join(path.dirname(repoPath), 'remote.git');
+      execFileSync('git', ['init', '--bare', remotePath], { stdio: 'ignore' });
+      execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['branch', '-M', 'main'], { cwd: repoPath, stdio: 'ignore' });
+      const staleSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+      execFileSync('git', ['remote', 'add', 'origin', remotePath], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['push', '-u', 'origin', 'main'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['commit', '--allow-empty', '-m', 'already pushed'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['push'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['update-ref', 'refs/remotes/origin/main', staleSha], { cwd: repoPath, stdio: 'ignore' });
+
+      const staleSession: Session = { ...session, worktreePath: repoPath };
+      const base = createServices();
+      // SAFETY: This test fixture intentionally supplies only the service methods exercised by archive safety.
+      const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal session manager surface exercised by the unit.
+        sessionManager: {
+          ...base.sessionManager,
+          getSession: vi.fn(() => staleSession),
+          getProjectContext: vi.fn(() => ({
+            commandRunner: new CommandRunner({ path: repoPath }),
+          })),
+        } as never,
+        // SAFETY: This test fixture intentionally supplies the minimal worktree manager surface exercised by the unit.
+        worktreeManager: {
+          getUpstream: vi.fn(async () => 'origin/main'),
+        } as never,
+        archiveProgressManager: new ArchiveProgressManager(),
+      } as never);
+      const registry = createRegistry(services);
+      const sessionsDelete = registerSessionsDeleteStub(registry, services);
+
+      const result = await registry.invoke('runpane:panes:archive', [{ paneId: session.id }]);
+
+      expect(sessionsDelete).toHaveBeenCalledWith(session.id);
+      expect(result).toMatchObject({
+        ok: true,
+        archived: true,
+        safetyCheck: {
+          performed: true,
+          hasUpstream: true,
+          upstream: 'origin/main',
+          upstreamRefreshed: true,
+          unpushedCommits: 0,
+          unpushedCommitDetails: [],
+        },
+      });
+    });
+
+    it('dry-runs archive safety without deleting the pane', async () => {
+      const repoPath = createTempGitRepo('archive-dry-run-repo');
+      execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
+      fs.writeFileSync(path.join(repoPath, 'untracked.txt'), 'local work');
+      const dryRunSession: Session = { ...session, worktreePath: repoPath };
+      const services = createServices({
+        // SAFETY: This test fixture intentionally supplies the minimal session manager surface exercised by the unit.
+        sessionManager: {
+          ...createServices().sessionManager,
+          getSession: vi.fn(() => dryRunSession),
+        } as never,
+      });
+      const registry = createRegistry(services);
+      const sessionsDelete = registerSessionsDeleteStub(registry, services);
+
+      const result = await registry.invoke('runpane:panes:archive', [{
+        paneId: session.id,
+        dryRun: true,
+      }]);
+
+      expect(sessionsDelete).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        ok: true,
+        paneId: session.id,
+        dryRun: true,
+        wouldArchive: false,
+        forced: false,
+        blocked: {
+          code: 'uncommitted-changes',
+        },
+        safetyCheck: {
+          performed: true,
+          hasUntrackedFiles: true,
+          unpushedCommits: 0,
+          unpushedCommitDetails: [],
         },
       });
     });
 
     it('archives a pane whose branch is merged and fully pushed (0 unpushed commits)', async () => {
       const repoPath = createTempGitRepo('merged-repo');
+      const remotePath = path.join(path.dirname(repoPath), 'merged-remote.git');
+      execFileSync('git', ['init', '--bare', remotePath], { stdio: 'ignore' });
       execFileSync('git', ['commit', '--allow-empty', '-m', 'init'], { cwd: repoPath, stdio: 'ignore' });
-      execFileSync('git', ['update-ref', 'refs/remotes/origin/main', 'HEAD'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['branch', '-M', 'main'], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['remote', 'add', 'origin', remotePath], { cwd: repoPath, stdio: 'ignore' });
+      execFileSync('git', ['push', '-u', 'origin', 'main'], { cwd: repoPath, stdio: 'ignore' });
 
       const mergedSession: Session = { ...session, worktreePath: repoPath };
+      const base = createServices();
       // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
       const services = createServices({
         // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         sessionManager: {
-          ...createServices().sessionManager,
+          ...base.sessionManager,
           getSession: vi.fn(() => mergedSession),
+          getProjectContext: vi.fn(() => ({
+            commandRunner: new CommandRunner({ path: repoPath }),
+          })),
         } as never,
         // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
         worktreeManager: {

@@ -265,6 +265,7 @@ export interface RunpanePaneArchiveRequest {
   paneId: string;
   force?: boolean;
   source?: RunpanePanelCreateSource;
+  dryRun?: boolean;
 }
 
 export type RunpaneWorktreeCleanupState = 'completed' | 'failed' | 'timeout' | 'not-applicable';
@@ -280,7 +281,15 @@ export interface RunpanePaneArchiveSafetyCheck {
   hasUncommittedChanges?: boolean;
   hasUntrackedFiles?: boolean;
   hasUpstream?: boolean;
+  upstream?: string;
+  upstreamRefreshed?: boolean;
   unpushedCommits?: number;
+  unpushedCommitDetails?: RunpanePaneArchiveCommit[];
+}
+
+export interface RunpanePaneArchiveCommit {
+  sha: string;
+  subject: string;
 }
 
 export interface RunpanePaneArchiveBlockReason {
@@ -306,9 +315,20 @@ export interface RunpanePaneArchiveSuccessResult {
   safetyCheck: RunpanePaneArchiveSafetyCheck;
 }
 
+export interface RunpanePaneArchiveDryRunResult {
+  ok: true;
+  paneId: string;
+  dryRun: true;
+  wouldArchive: boolean;
+  forced: boolean;
+  safetyCheck: RunpanePaneArchiveSafetyCheck;
+  blocked?: RunpanePaneArchiveBlockReason;
+}
+
 export type RunpanePaneArchiveResult =
   | RunpanePaneArchiveSuccessResult
-  | RunpanePaneArchiveBlockedResult;
+  | RunpanePaneArchiveBlockedResult
+  | RunpanePaneArchiveDryRunResult;
 
 export interface RunpanePanelSummary {
   id: string;

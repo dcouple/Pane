@@ -78,8 +78,9 @@ def run_panes_archive(parsed: Any) -> int:
 
     request: Dict[str, Any] = {
         "paneId": parsed.pane_id,
-        "force": parsed.force or None,
-        "source": parsed.source if parsed.source in ("user", "agent") else None,
+        **optional_value("force", True if parsed.force else None),
+        **optional_value("source", parsed.source if parsed.source in ("user", "agent") else None),
+        **optional_value("dryRun", True if parsed.dry_run else None),
     }
 
     confirm_pane_archive(parsed, request)
@@ -501,7 +502,7 @@ def confirm_pane_create(parsed: Any, request: Dict[str, Any]) -> None:
 
 
 def confirm_pane_archive(parsed: Any, request: Dict[str, Any]) -> None:
-    if parsed.yes:
+    if parsed.dry_run or parsed.yes:
         return
     if not is_interactive_shell():
         raise ValueError("runpane panes archive mutates Pane state. Rerun with --yes in non-interactive shells.")
@@ -658,14 +659,35 @@ def print_pane_create_result(result: Dict[str, Any]) -> None:
 
 
 def print_pane_archive_result(result: Dict[str, Any]) -> None:
+    if result.get("dryRun"):
+        action = "Would archive" if result.get("wouldArchive") else "Would refuse to archive"
+        forced = " (forced)" if result.get("forced") else ""
+        print(f"{action} pane {result.get('paneId')}{forced}.")
+        blocked = result.get("blocked") or {}
+        if blocked:
+            print(f"Safety: {blocked.get('message')}")
+        print_archive_commit_evidence(result.get("safetyCheck") or {})
+        return
+
     if "archived" not in result:
         blocked = result.get("blocked") or {}
         print(f"Refused to archive pane {result.get('paneId')}: {blocked.get('message')}", file=sys.stderr)
+        print_archive_commit_evidence(blocked.get("safetyCheck") or {}, file=sys.stderr)
         print(f"Next: {result.get('nextCommand')}", file=sys.stderr)
         return
 
     forced = " (forced)" if result.get("forced") else ""
     print(f"Archived pane {result.get('paneId')}{forced}. Worktree cleanup: {result.get('worktreeCleanup')}.")
+
+
+def print_archive_commit_evidence(safety_check: Dict[str, Any], file: Any = None) -> None:
+    destination = file if file is not None else sys.stdout
+    upstream = safety_check.get("upstream")
+    if upstream:
+        refreshed = " (refreshed)" if safety_check.get("upstreamRefreshed") else ""
+        print(f"Upstream: {upstream}{refreshed}", file=destination)
+    for commit in safety_check.get("unpushedCommitDetails") or []:
+        print(f"Unpushed: {commit.get('sha')} {commit.get('subject')}", file=destination)
 
 
 def print_panel_create_result(result: Dict[str, Any]) -> None:

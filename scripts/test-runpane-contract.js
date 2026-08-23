@@ -1245,6 +1245,98 @@ print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines(), "ref
   assert.strictEqual(python.pinConflictRefused, true);
 }
 
+async function checkPaneArchiveDryRunParity() {
+  const daemonClient = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
+  const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
+  const { runPanesArchive } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'localControl.js'));
+  const result = {
+    ok: true,
+    paneId: 'session-1',
+    dryRun: true,
+    wouldArchive: false,
+    forced: false,
+    safetyCheck: {
+      performed: true,
+      hasUpstream: true,
+      upstream: 'origin/main',
+      upstreamRefreshed: true,
+      unpushedCommits: 1,
+      unpushedCommitDetails: [{ sha: 'abc123', subject: 'local change' }],
+    },
+    blocked: {
+      code: 'unpushed-commits',
+      message: 'Pane has 1 commit not pushed to any remote.',
+      safetyCheck: {
+        performed: true,
+        hasUpstream: true,
+        upstream: 'origin/main',
+        upstreamRefreshed: true,
+        unpushedCommits: 1,
+        unpushedCommitDetails: [{ sha: 'abc123', subject: 'local change' }],
+      },
+    },
+  };
+  const originalInvokeDaemon = daemonClient.invokeDaemon;
+  const originalConsoleLog = console.log;
+  const calls = [];
+  const stdout = [];
+  daemonClient.invokeDaemon = async (channel, args) => {
+    calls.push({ channel, request: args[0] });
+    return result;
+  };
+  console.log = line => stdout.push(String(line));
+
+  try {
+    await runPanesArchive(parseRunpaneArgs(['panes', 'archive', '--pane', 'session-1', '--dry-run', '--json']));
+    await runPanesArchive(parseRunpaneArgs(['panes', 'archive', '--pane', 'session-1', '--dry-run']));
+  } finally {
+    daemonClient.invokeDaemon = originalInvokeDaemon;
+    console.log = originalConsoleLog;
+  }
+
+  assert.deepStrictEqual(calls, [{
+    channel: 'runpane:panes:archive',
+    request: { paneId: 'session-1', dryRun: true },
+  }, {
+    channel: 'runpane:panes:archive',
+    request: { paneId: 'session-1', dryRun: true },
+  }]);
+  assert.deepStrictEqual(JSON.parse(stdout[0]), result);
+  assertIncludes(stdout.slice(1).join('\n'), 'Would refuse to archive pane session-1.');
+  assertIncludes(stdout.slice(1).join('\n'), 'Upstream: origin/main (refreshed)');
+  assertIncludes(stdout.slice(1).join('\n'), 'Unpushed: abc123 local change');
+
+  const pythonOutput = runPythonSnippet(`
+import contextlib
+import io
+import json
+import runpane.local_control as local_control
+from runpane.cli import parse_args
+
+result = json.loads(${JSON.stringify(JSON.stringify(result))})
+calls = []
+def fake_invoke(channel, args, **kwargs):
+    calls.append({"channel": channel, "request": args[0]})
+    return result
+
+local_control.invoke_daemon = fake_invoke
+stdout = io.StringIO()
+with contextlib.redirect_stdout(stdout):
+    local_control.run_panes_archive(parse_args(["panes", "archive", "--pane", "session-1", "--dry-run", "--json"]))
+    local_control.run_panes_archive(parse_args(["panes", "archive", "--pane", "session-1", "--dry-run"]))
+print(json.dumps({"calls": calls, "stdout": stdout.getvalue().splitlines()}))
+`);
+  const python = JSON.parse(pythonOutput);
+  assert.deepStrictEqual(python.calls, JSON.parse(JSON.stringify(calls)));
+  const humanOutputIndex = python.stdout.indexOf('Would refuse to archive pane session-1.');
+  assert.ok(humanOutputIndex > 0);
+  assert.deepStrictEqual(JSON.parse(python.stdout.slice(0, humanOutputIndex).join('\n')), result);
+  const pythonHumanOutput = python.stdout.slice(humanOutputIndex).join('\n');
+  assertIncludes(pythonHumanOutput, 'Would refuse to archive pane session-1.');
+  assertIncludes(pythonHumanOutput, 'Upstream: origin/main (refreshed)');
+  assertIncludes(pythonHumanOutput, 'Unpushed: abc123 local change');
+}
+
 async function checkPaneRenameParity() {
   const daemonClient = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
   const { parseRunpaneArgs } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'commands.js'));
@@ -1619,6 +1711,7 @@ async function runChecks() {
   await checkExistingDaemonShortCircuit();
   checkWindowsPaneVersionDoesNotLaunchExecutable();
   await checkFromJsonAcceptsBom();
+  await checkPaneArchiveDryRunParity();
   await checkPanePinParity();
   await checkPaneRenameParity();
   await checkAgentTemplateParity();

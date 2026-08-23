@@ -135,6 +135,7 @@ interface PaneArchiveRequest {
   paneId: string;
   force?: boolean;
   source?: 'user' | 'agent';
+  dryRun?: boolean;
 }
 
 interface PanePinRequest {
@@ -168,7 +169,10 @@ interface PaneArchiveSafetyCheck {
   hasUncommittedChanges?: boolean;
   hasUntrackedFiles?: boolean;
   hasUpstream?: boolean;
+  upstream?: string;
+  upstreamRefreshed?: boolean;
   unpushedCommits?: number;
+  unpushedCommitDetails?: Array<{ sha: string; subject: string }>;
 }
 
 interface PaneArchiveBlockedResult {
@@ -192,7 +196,17 @@ interface PaneArchiveSuccessResult {
   safetyCheck: PaneArchiveSafetyCheck;
 }
 
-type PaneArchiveResult = PaneArchiveSuccessResult | PaneArchiveBlockedResult;
+interface PaneArchiveDryRunResult {
+  ok: true;
+  paneId: string;
+  dryRun: true;
+  wouldArchive: boolean;
+  forced: boolean;
+  safetyCheck: PaneArchiveSafetyCheck;
+  blocked?: PaneArchiveBlockedResult['blocked'];
+}
+
+type PaneArchiveResult = PaneArchiveSuccessResult | PaneArchiveBlockedResult | PaneArchiveDryRunResult;
 
 interface PanelSummary {
   id: string;
@@ -476,7 +490,13 @@ const archiveSafetySchema: BoundarySchema<PaneArchiveSafetyCheck> = boundary.obj
   hasUncommittedChanges: boundary.optional(boundary.boolean),
   hasUntrackedFiles: boundary.optional(boundary.boolean),
   hasUpstream: boundary.optional(boundary.boolean),
+  upstream: boundary.optional(boundary.string),
+  upstreamRefreshed: boundary.optional(boundary.boolean),
   unpushedCommits: boundary.optional(boundary.number),
+  unpushedCommitDetails: boundary.optional(boundary.array(boundary.object({
+    sha: boundary.string,
+    subject: boundary.string,
+  }))),
 });
 const panelSummarySchema: BoundarySchema<PanelSummary> = boundary.object({
   id: boundary.string,
@@ -546,6 +566,19 @@ const paneArchiveResultSchema: BoundarySchema<PaneArchiveResult> = boundary.unio
       safetyCheck: archiveSafetySchema,
     }),
     nextCommand: boundary.string,
+  }),
+  boundary.object({
+    ok: boundary.literal(true),
+    paneId: boundary.string,
+    dryRun: boundary.literal(true),
+    wouldArchive: boundary.boolean,
+    forced: boundary.boolean,
+    safetyCheck: archiveSafetySchema,
+    blocked: boundary.optional(boundary.object({
+      code: boundary.enumeration('uncommitted-changes', 'unpushed-commits', 'uncommitted-and-unpushed', 'status-unknown'),
+      message: boundary.string,
+      safetyCheck: archiveSafetySchema,
+    })),
   }),
   boundary.object({
     ok: boundary.boolean,
@@ -800,9 +833,10 @@ export async function runPanesArchive(parsed: ParsedArgs): Promise<number> {
 
   const request: PaneArchiveRequest = {
     paneId: parsed.paneId,
-    force: parsed.force || undefined,
-    source: parsed.source === 'user' || parsed.source === 'agent' ? parsed.source : undefined,
   };
+  if (parsed.force) request.force = true;
+  if (parsed.source === 'user' || parsed.source === 'agent') request.source = parsed.source;
+  if (parsed.dryRun) request.dryRun = true;
 
   await confirmPaneArchive(parsed, request);
 
@@ -1303,7 +1337,7 @@ async function confirmPaneCreate(parsed: ParsedArgs, request: PaneCreateRequest)
 }
 
 async function confirmPaneArchive(parsed: ParsedArgs, request: PaneArchiveRequest): Promise<void> {
-  if (parsed.yes) {
+  if (parsed.dryRun || parsed.yes) {
     return;
   }
 
@@ -1532,13 +1566,35 @@ function printPaneCreateResult(result: PaneCreateResult): void {
 }
 
 function printPaneArchiveResult(result: PaneArchiveResult): void {
+  if ('dryRun' in result) {
+    const action = result.wouldArchive ? 'Would archive' : 'Would refuse to archive';
+    console.log(`${action} pane ${result.paneId}${result.forced ? ' (forced)' : ''}.`);
+    if (result.blocked) {
+      console.log(`Safety: ${result.blocked.message}`);
+    }
+    printArchiveCommitEvidence(result.safetyCheck);
+    return;
+  }
   if (!('archived' in result)) {
     console.error(`Refused to archive pane ${result.paneId}: ${result.blocked.message}`);
+    printArchiveCommitEvidence(result.blocked.safetyCheck, console.error);
     console.error(`Next: ${result.nextCommand}`);
     return;
   }
 
   console.log(`Archived pane ${result.paneId}${result.forced ? ' (forced)' : ''}. Worktree cleanup: ${result.worktreeCleanup}.`);
+}
+
+function printArchiveCommitEvidence(
+  safetyCheck: PaneArchiveSafetyCheck,
+  print: (message: string) => void = console.log,
+): void {
+  if (safetyCheck.upstream) {
+    print(`Upstream: ${safetyCheck.upstream}${safetyCheck.upstreamRefreshed ? ' (refreshed)' : ''}`);
+  }
+  for (const commit of safetyCheck.unpushedCommitDetails ?? []) {
+    print(`Unpushed: ${commit.sha} ${commit.subject}`);
+  }
 }
 
 function printPanelCreateResult(result: PanelCreateResult): void {

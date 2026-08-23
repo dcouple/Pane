@@ -1,6 +1,7 @@
 import { execSync } from '../utils/commandExecutor';
 import * as fs from 'fs';
 import { WSLContext, linuxToUNCPath } from '../utils/wslUtils';
+import { escapeShellArg } from '../utils/shellEscape';
 
 /**
  * Optimized git commands using plumbing (low-level) commands
@@ -17,6 +18,11 @@ export interface GitIndexStatus {
 export interface GitAheadBehind {
   ahead: number;
   behind: number;
+}
+
+export interface GitCommitSummary {
+  sha: string;
+  subject: string;
 }
 
 export interface GitDiffStats {
@@ -137,6 +143,36 @@ export function fastGetAheadBehind(cwd: string, baseBranch: string, wslContext?:
   } catch {
     return { ahead: 0, behind: 0 };
   }
+}
+
+export function listCommitsAhead(
+  cwd: string,
+  baseBranch: string,
+  wslContext?: WSLContext | null,
+): GitCommitSummary[] {
+  if (!directoryExists(cwd, wslContext)) {
+    throw new Error(`Directory does not exist: ${cwd}`);
+  }
+
+  const range = escapeShellArg(`${baseBranch}..HEAD`);
+  const format = escapeShellArg('%H%x00%s');
+  const output = execSync(
+    `git log --format=${format} -z ${range}`,
+    { cwd, silent: true },
+    wslContext,
+  ).toString();
+  const fields = output.split('\0');
+  if (fields.at(-1) === '') fields.pop();
+  const commits: GitCommitSummary[] = [];
+  for (let index = 0; index < fields.length; index += 2) {
+    const sha = fields[index];
+    const subject = fields[index + 1];
+    if (!sha || subject === undefined) {
+      throw new Error(`Could not parse commit evidence for ${baseBranch}`);
+    }
+    commits.push({ sha, subject });
+  }
+  return commits;
 }
 
 /**

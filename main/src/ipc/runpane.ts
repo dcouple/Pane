@@ -6,12 +6,14 @@ import type { AppServices } from './types';
 import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
 import { PathResolver, ProjectEnvironment } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
+import { escapeShellArg } from '../utils/shellEscape';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
-import { fastCheckWorkingDirectory, fastGetAheadBehind } from '../services/gitPlumbingCommands';
+import { fastCheckWorkingDirectory, listCommitsAhead } from '../services/gitPlumbingCommands';
 import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEvidence';
 import type { ArchiveProgressManager, SerializedArchiveTask } from '../services/archiveProgressManager';
+import type { CommandRunner } from '../utils/commandRunner';
 import type { Project } from '../database/models';
 import type { Session, SessionOutput } from '../types/session';
 import type { CreatePanelRequest, TerminalPanelState, ToolPanel } from '../../../shared/types/panels';
@@ -380,8 +382,26 @@ export function registerRunpaneHandlers(
         ? await computeArchiveSafety(services, pane)
         : { performed: false };
 
+      const blockCode = classifyArchiveBlock(safetyCheck, worktreeCleanupApplicable);
+      if (normalized.dryRun) {
+        return {
+          ok: true,
+          paneId: normalized.paneId,
+          dryRun: true,
+          wouldArchive: Boolean(normalized.force) || !blockCode,
+          forced: Boolean(normalized.force),
+          safetyCheck: toPublicSafetyCheck(safetyCheck),
+          blocked: blockCode
+            ? {
+                code: blockCode,
+                message: describeArchiveBlock(blockCode, safetyCheck),
+                safetyCheck: toPublicSafetyCheck(safetyCheck),
+              }
+            : undefined,
+        };
+      }
+
       if (!normalized.force) {
-        const blockCode = classifyArchiveBlock(safetyCheck, worktreeCleanupApplicable);
         if (blockCode) {
           const blocked: RunpanePaneArchiveBlockedResult = {
             ok: false,
@@ -1997,25 +2017,68 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
 
     const upstream = await services.worktreeManager.getUpstream(pane.worktreePath, ctx.commandRunner);
     if (upstream) {
-      const { ahead } = fastGetAheadBehind(pane.worktreePath, upstream, ctx.commandRunner.wslContext);
-      return { performed: true, hasUncommittedChanges, hasUntrackedFiles, hasUpstream: true, unpushedCommits: ahead };
+      const remote = await resolveUpstreamRemote(pane.worktreePath, upstream, ctx.commandRunner);
+      await ctx.commandRunner.execAsync(
+        `git fetch --no-tags --prune ${escapeShellArg(remote)}`,
+        pane.worktreePath,
+        { timeout: 30000 },
+      );
+      const unpushedCommitDetails = listCommitsAhead(
+        pane.worktreePath,
+        upstream,
+        ctx.commandRunner.wslContext,
+      );
+      return {
+        performed: true,
+        hasUncommittedChanges,
+        hasUntrackedFiles,
+        hasUpstream: true,
+        upstream,
+        upstreamRefreshed: true,
+        unpushedCommits: unpushedCommitDetails.length,
+        unpushedCommitDetails,
+      };
     }
 
     // No upstream at all (never pushed, or detached HEAD): the branch's own
     // commits ahead of its base/comparison branch are the closest proxy for
     // "unpushed work".
     const comparisonBranch = await services.worktreeManager.getSessionComparisonBranch(pane, ctx);
-    const { ahead } = fastGetAheadBehind(pane.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+    const unpushedCommitDetails = listCommitsAhead(
+      pane.worktreePath,
+      comparisonBranch,
+      ctx.commandRunner.wslContext,
+    );
     return {
       performed: true,
       hasUncommittedChanges,
       hasUntrackedFiles,
       hasUpstream: false,
-      unpushedCommits: ahead,
+      upstreamRefreshed: false,
+      unpushedCommits: unpushedCommitDetails.length,
+      unpushedCommitDetails,
     };
   } catch {
     return { performed: false, reasonUnavailable: 'git-status-error' };
   }
+}
+
+async function resolveUpstreamRemote(
+  worktreePath: string,
+  upstream: string,
+  commandRunner: CommandRunner,
+): Promise<string> {
+  const { stdout } = await commandRunner.execAsync('git remote', worktreePath);
+  const remote = stdout
+    .split('\n')
+    .map(value => value.trim())
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+    .find(value => upstream.startsWith(`${value}/`));
+  if (!remote) {
+    throw new Error(`Could not resolve remote for upstream ${upstream}`);
+  }
+  return remote;
 }
 
 function classifyArchiveBlock(check: ArchiveSafetyCheck, applicable: boolean): RunpanePaneArchiveBlockCode | undefined {
@@ -2056,7 +2119,10 @@ function toPublicSafetyCheck(check: ArchiveSafetyCheck): RunpanePaneArchiveSafet
     hasUncommittedChanges: check.hasUncommittedChanges,
     hasUntrackedFiles: check.hasUntrackedFiles,
     hasUpstream: check.hasUpstream,
+    upstream: check.upstream,
+    upstreamRefreshed: check.upstreamRefreshed,
     unpushedCommits: check.unpushedCommits,
+    unpushedCommitDetails: check.unpushedCommitDetails,
   };
 }
 
@@ -2121,6 +2187,7 @@ function parsePaneArchiveRequest(value: PaneCommandValue): RunpanePaneArchiveReq
     paneId,
     force: optionalBoolean(value.force),
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
+    dryRun: optionalBoolean(value.dryRun),
   };
 }
 
