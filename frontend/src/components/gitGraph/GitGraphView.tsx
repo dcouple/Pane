@@ -123,7 +123,7 @@ function RefChip({
       type="button"
       onClick={event => { event.stopPropagation(); onFocus(name); }}
       aria-pressed={isFocused}
-      className={`inline-flex max-w-[14rem] flex-shrink-0 items-center gap-1 rounded border px-1.5 py-px text-[10px] leading-tight transition-colors hover:brightness-125 ${tone}`}
+      className={`pointer-events-auto inline-flex max-w-[14rem] flex-shrink-0 items-center gap-1 rounded border px-1.5 py-px text-[10px] leading-tight transition-colors hover:brightness-125 ${tone}`}
       title={[
         worktree ? `${name} — checked out in Pane session "${worktree.sessionName ?? worktree.path}"` : name,
         divergence ? `${divergence} vs the current branch` : null,
@@ -599,9 +599,11 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
                           type="button"
                           onClick={() => setSelectedHash(row.node.hash)}
                           aria-pressed={isSelected}
+                          aria-label={`Select commit ${row.node.subject}`}
                           title={`${row.node.subject}\n${row.node.shortHash} · ${row.node.authorName} <${row.node.authorEmail}> · ${formatDate(row.node.authorDate)}`}
-                          className="flex min-w-0 flex-1 items-stretch gap-2 pr-2 text-left"
-                        >
+                          className="absolute inset-0 z-0"
+                        />
+                        <div className="pointer-events-none relative z-10 flex min-w-0 flex-1 items-stretch gap-2 pr-2 text-left">
                           {/*
                             Lanes past the gutter's width are clipped rather
                             than squeezed — the positions of the ones on screen
@@ -669,10 +671,11 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
                               {formatAge(row.node.authorDate)}
                             </span>
                           </span>
-                        </button>
+                        </div>
 
                         {/* Sibling of the row button — a button inside a button is invalid. */}
-                        <Dropdown
+                        <div className="relative z-10 flex">
+                          <Dropdown
                           position="bottom-right"
                           width="sm"
                           items={[
@@ -713,7 +716,8 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
                               <MoreHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
                             </button>
                           }
-                        />
+                          />
+                        </div>
                       </div>
                     );
                   })}
