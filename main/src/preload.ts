@@ -132,7 +132,6 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'projects:',
   'prompts:',
   'resource-monitor:',
-  'pr:',
   'runpane:',
   'schedules:',
   'sessions:',

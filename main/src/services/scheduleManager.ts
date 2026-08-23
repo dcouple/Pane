@@ -41,6 +41,7 @@ export interface ScheduleStore {
 export class ScheduleManager {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private readonly executingIds = new Set<string>();
 
   /**
    * The store is injected rather than reached for: importing the database
@@ -64,6 +65,10 @@ export class ScheduleManager {
     } catch (error) {
       this.logger?.error('[Schedule] Failed to prime schedules', error instanceof Error ? error : undefined);
     }
+
+    void this.tick().catch(error => {
+      this.logger?.error('[Schedule] Initial tick failed', error instanceof Error ? error : undefined);
+    });
 
     this.timer = setInterval(() => {
       void this.tick().catch(error => {
@@ -138,6 +143,7 @@ export class ScheduleManager {
   async runNow(id: string): Promise<ScheduledRun | null> {
     const schedule = this.repo.get(id);
     if (!schedule) return null;
+    if (this.executingIds.has(id)) throw new Error('This schedule is already running');
     return this.execute(schedule, { manual: true });
   }
 
@@ -149,6 +155,7 @@ export class ScheduleManager {
     try {
       const nowMs = Date.now();
       for (const schedule of this.repo.listRunnable()) {
+        if (this.executingIds.has(schedule.id)) continue;
         if (isDue(schedule, nowMs)) {
           await this.execute(schedule, { manual: false });
         } else if (isMissed(schedule, nowMs)) {
@@ -207,36 +214,55 @@ export class ScheduleManager {
   }
 
   private async execute(schedule: ScheduledRun, options: { manual: boolean }): Promise<ScheduledRun> {
+    if (this.executingIds.has(schedule.id)) throw new Error('This schedule is already running');
+    this.executingIds.add(schedule.id);
     const startedAtMs = Date.now();
+    let lastRunStatus: ScheduledRun['lastRunStatus'];
+    let lastRunError: string | null;
+    let lastSessionId = schedule.lastSessionId;
 
     try {
-      const result = await this.startSession({
-        prompt: schedule.prompt,
-        worktreeTemplate: schedule.worktreeTemplate ?? '',
-        projectId: schedule.projectId,
-        toolType: schedule.toolType,
-      });
+      try {
+        const result = await this.startSession({
+          prompt: schedule.prompt,
+          worktreeTemplate: schedule.worktreeTemplate ?? '',
+          projectId: schedule.projectId,
+          toolType: schedule.toolType,
+        });
 
-      schedule.lastRunStatus = 'ok';
-      schedule.lastRunError = null;
-      schedule.lastSessionId = result.sessionId ?? null;
-      this.logger?.info(`[Schedule] Started "${schedule.name}"`);
-    } catch (error) {
-      schedule.lastRunStatus = 'failed';
-      schedule.lastRunError = error instanceof Error ? error.message : String(error);
-      this.logger?.error(`[Schedule] "${schedule.name}" failed to start: ${schedule.lastRunError}`);
+        lastRunStatus = 'ok';
+        lastRunError = null;
+        lastSessionId = result.sessionId ?? null;
+        this.logger?.info(`[Schedule] Started "${schedule.name}"`);
+      } catch (error) {
+        lastRunStatus = 'failed';
+        lastRunError = error instanceof Error ? error.message : String(error);
+        this.logger?.error(`[Schedule] "${schedule.name}" failed to start: ${lastRunError}`);
+      }
+
+      // The schedule may have been edited, disabled, or deleted while session
+      // creation was pending. Apply execution history only to the latest row.
+      const latest = this.repo.get(schedule.id);
+      const result = latest ?? { ...schedule };
+      result.lastRunAtMs = startedAtMs;
+      result.lastRunStatus = lastRunStatus;
+      result.lastRunError = lastRunError;
+      result.lastSessionId = lastSessionId;
+
+      if (!latest) return result;
+
+      // A manual run must not shift the cadence: "run now" is not "run at this
+      // time from now on".
+      if (!options.manual) {
+        result.nextRunAtMs = result.enabled
+          ? computeNextRun({ ...result, lastRunAtMs: startedAtMs }, startedAtMs)
+          : null;
+      }
+
+      this.repo.upsert(result);
+      return result;
+    } finally {
+      this.executingIds.delete(schedule.id);
     }
-
-    schedule.lastRunAtMs = startedAtMs;
-    // A manual run must not shift the cadence: "run now" is not "run at this
-    // time from now on".
-    if (!options.manual) {
-      schedule.nextRunAtMs = schedule.enabled
-        ? computeNextRun({ ...schedule, lastRunAtMs: startedAtMs }, startedAtMs)
-        : null;
-    }
-
-    this.repo.upsert(schedule);
-    return schedule;
   }
 }

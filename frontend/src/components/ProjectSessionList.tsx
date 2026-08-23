@@ -546,6 +546,10 @@ export function ProjectSessionList({
           projectId={schedulesFor.id}
           projectName={schedulesFor.name}
           onClose={() => setSchedulesFor(null)}
+          onOpenSession={(sessionId) => {
+            setSchedulesFor(null);
+            handleSessionClick(sessionId);
+          }}
         />
       )}
 

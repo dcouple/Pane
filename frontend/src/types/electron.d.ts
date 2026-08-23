@@ -36,7 +36,6 @@ import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { ScheduledRun, ScheduledRunInput } from '../../../shared/types/schedule';
-import type { GitDiffResult } from './diff';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';

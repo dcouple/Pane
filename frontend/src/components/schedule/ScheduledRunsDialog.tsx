@@ -48,6 +48,7 @@ export interface ScheduledRunsDialogProps {
   projectName: string;
   isOpen: boolean;
   onClose: () => void;
+  onOpenSession: (sessionId: string) => void;
 }
 
 /**
@@ -58,7 +59,7 @@ export interface ScheduledRunsDialogProps {
  * and because nobody debugs a cron expression at 3am to find out why the sweep
  * did not run.
  */
-export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose }: ScheduledRunsDialogProps) {
+export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose, onOpenSession }: ScheduledRunsDialogProps) {
   const [runs, setRuns] = useState<ScheduledRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -169,6 +170,15 @@ export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose }:
                           Last run {formatWhen(run.lastRunAtMs)} — {run.lastRunStatus}
                           {run.lastRunError ? `: ${run.lastRunError}` : ''}
                         </p>
+                      )}
+                      {run.lastSessionId && (
+                        <button
+                          type="button"
+                          onClick={() => run.lastSessionId && onOpenSession(run.lastSessionId)}
+                          className="mt-0.5 text-[11px] text-interactive hover:underline"
+                        >
+                          Open last session
+                        </button>
                       )}
                     </div>
 

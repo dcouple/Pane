@@ -245,6 +245,59 @@ describe('ScheduleManager.runNow', () => {
     const manager = new ScheduleManager(createStore(), vi.fn());
     expect(await manager.runNow('gone')).toBeNull();
   });
+
+  it('rejects a second run while the same schedule is starting', async () => {
+    let resolveStart: (value: { sessionId: string }) => void = () => {};
+    const start = vi.fn<SessionStarter>().mockImplementation(
+      () => new Promise(resolve => { resolveStart = resolve; })
+    );
+    const manager = new ScheduleManager(createStore([schedule()]), start);
+
+    const first = manager.runNow('sched-1');
+    await expect(manager.runNow('sched-1')).rejects.toThrow('already running');
+    resolveStart({ sessionId: 'manual' });
+    await first;
+
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not resurrect a schedule deleted while its session is starting', async () => {
+    let resolveStart: (value: { sessionId: string }) => void = () => {};
+    const start = vi.fn<SessionStarter>().mockImplementation(
+      () => new Promise(resolve => { resolveStart = resolve; })
+    );
+    const store = createStore([schedule()]);
+    const manager = new ScheduleManager(store, start);
+
+    const run = manager.runNow('sched-1');
+    manager.delete('sched-1');
+    resolveStart({ sessionId: 'manual' });
+    await run;
+
+    expect(store.rows.has('sched-1')).toBe(false);
+  });
+});
+
+describe('ScheduleManager concurrent mutations', () => {
+  it('preserves a disable made while an automatic run is starting', async () => {
+    let resolveStart: (value: { sessionId: string }) => void = () => {};
+    const start = vi.fn<SessionStarter>().mockImplementation(
+      () => new Promise(resolve => { resolveStart = resolve; })
+    );
+    const store = createStore([schedule({ nextRunAtMs: Date.now() - 1000 })]);
+    const manager = new ScheduleManager(store, start);
+
+    const tick = manager.tick();
+    manager.setEnabled('sched-1', false);
+    resolveStart({ sessionId: 'scheduled' });
+    await tick;
+
+    expect(store.rows.get('sched-1')).toMatchObject({
+      enabled: false,
+      nextRunAtMs: null,
+      lastSessionId: 'scheduled',
+    });
+  });
 });
 
 describe('ScheduleManager.setEnabled', () => {

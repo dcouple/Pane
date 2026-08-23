@@ -60,11 +60,11 @@ describe('ScheduleManager.start', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  /** start() plus the first tick, which is what a launch really consists of. */
+  /** start() includes the first tick, before the interval begins. */
   async function launch(store: ScheduleStore, start: SessionStarter) {
     const manager = new ScheduleManager(store, start);
     manager.start();
-    await manager.tick();
+    await vi.advanceTimersByTimeAsync(0);
     manager.stop();
     return manager;
   }
@@ -123,6 +123,16 @@ describe('ScheduleManager.start', () => {
     expect(after.lastRunStatus).toBe('ok');
     expect(after.lastSessionId).toBe('new-session');
     expect(after.nextRunAtMs).toBeGreaterThan(Date.now());
+  });
+
+  it('runs immediately when the grace window is about to expire', async () => {
+    const start = vi.fn<SessionStarter>().mockResolvedValue({ sessionId: 'new-session' });
+    const store = createStore([schedule({ nextRunAtMs: Date.now() - SCHEDULE_MISS_GRACE_MS + 1 })]);
+
+    await launch(store, start);
+
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(store.rows.get('sched-1')!.lastRunStatus).toBe('ok');
   });
 
   it('leaves a schedule that is not due yet exactly where it was', async () => {

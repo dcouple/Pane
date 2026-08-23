@@ -4,7 +4,7 @@ import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { ScheduleManager } from '../services/scheduleManager';
 import { ScheduleRepository } from '../services/scheduleRepository';
 import { databaseService } from '../services/database';
-import { MIN_INTERVAL_MINUTES, type ScheduledRunInput } from '../../../shared/types/schedule';
+import { validateScheduledRunInput } from '../services/scheduleValidation';
 
 export const DAEMON_SCHEDULE_CHANNELS = [
   'schedules:list',
@@ -13,26 +13,6 @@ export const DAEMON_SCHEDULE_CHANNELS = [
   'schedules:set-enabled',
   'schedules:run-now',
 ] as const;
-
-/** Reject a schedule that could never run before it is stored. */
-function validate(input: ScheduledRunInput): string | null {
-  if (!input) return 'No schedule given';
-  if (!input.prompt?.trim()) return 'A prompt is required — it is what the agent starts with';
-  if (!Number.isFinite(input.projectId)) return 'A project is required';
-
-  if (input.kind === 'interval') {
-    if (!input.intervalMinutes || input.intervalMinutes < MIN_INTERVAL_MINUTES) {
-      return `The shortest interval is ${MIN_INTERVAL_MINUTES} minutes`;
-    }
-    return null;
-  }
-
-  if (!/^\d{1,2}:\d{2}$/.test(input.timeOfDay ?? '')) return 'A time of day is required, as HH:MM';
-  if (input.kind === 'weekly' && (input.weekday === undefined || input.weekday < 0 || input.weekday > 6)) {
-    return 'A weekday is required';
-  }
-  return null;
-}
 
 /**
  * Recurring agent runs.
@@ -77,11 +57,11 @@ export function registerScheduleHandlers(
     }
   });
 
-  commandRegistry.register('schedules:save', async (input: ScheduledRunInput) => {
+  commandRegistry.register('schedules:save', async (input: unknown) => {
     try {
-      const problem = validate(input);
-      if (problem) return { success: false, error: problem };
-      return { success: true, data: scheduleManager.save(input) };
+      const result = validateScheduledRunInput(input);
+      if (!result.success) return result;
+      return { success: true, data: scheduleManager.save(result.data) };
     } catch (error) {
       console.error('[Schedule] Failed to save schedule:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Failed to save the schedule' };
