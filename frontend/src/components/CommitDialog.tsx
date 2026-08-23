@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { GitCommit } from 'lucide-react';
+import { composeCommitMessage, isCommitSubmitShortcut } from '../../../shared/utils/commitMessage';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
-import { composeCommitMessage } from '../utils/commitMessage';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
@@ -66,13 +66,13 @@ export const CommitDialog: React.FC<CommitDialogProps> = ({
   }, [description, onCommit, onClose, title]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (keyboardShortcutsEnabled && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    if (isCommitSubmitShortcut(e, keyboardShortcutsEnabled, !isCommitting && !!title.trim())) {
       e.preventDefault();
-      handleCommit();
+      void handleCommit();
     } else if (e.key === 'Escape') {
       onClose();
     }
-  }, [handleCommit, keyboardShortcutsEnabled, onClose]);
+  }, [handleCommit, isCommitting, keyboardShortcutsEnabled, onClose, title]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md">

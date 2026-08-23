@@ -1,4 +1,5 @@
 import type { IpcMain } from 'electron';
+import { hasCommitMessageTitle } from '../../../shared/utils/commitMessage';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { AppServices } from './types';
@@ -1105,6 +1106,10 @@ export function registerGitHandlers(
 
   commandRegistry.register('sessions:squash-and-rebase-to-main', async (sessionId: string, commitMessage: string) => {
     try {
+      if (!hasCommitMessageTitle(commitMessage)) {
+        return { success: false, error: 'Commit title is required' };
+      }
+
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
         return { success: false, error: 'Session not found' };
@@ -1802,6 +1807,10 @@ export function registerGitHandlers(
 
   commandRegistry.register('sessions:git-stage-and-commit', async (sessionId: string, message: string) => {
     try {
+      if (!hasCommitMessageTitle(message)) {
+        return { success: false, error: 'Commit title is required' };
+      }
+
       const session = await sessionManager.getSession(sessionId);
       if (!session) {
         return { success: false, error: 'Session not found' };

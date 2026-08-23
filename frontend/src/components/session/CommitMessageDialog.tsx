@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { composeCommitMessage, isCommitSubmitShortcut, splitCommitMessage } from '../../../../shared/utils/commitMessage';
 import type { GitCommands } from '../../types/session';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../stores/configStore';
-import { composeCommitMessage, splitCommitMessage } from '../../utils/commitMessage';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Checkbox, Input, Textarea } from '../ui/Input';
@@ -12,7 +12,7 @@ interface CommitMessageDialogProps {
   onClose: () => void;
   dialogType: 'squash' | 'rebase' | 'commit';
   gitCommands: GitCommands | null;
-  commitMessage: string;
+  commitMessage?: string;
   shouldSquash: boolean;
   setShouldSquash: (should: boolean) => void;
   onConfirm: (message: string) => void;
@@ -26,7 +26,7 @@ export const CommitMessageDialog: React.FC<CommitMessageDialogProps> = ({
   onClose,
   dialogType,
   gitCommands,
-  commitMessage,
+  commitMessage = '',
   shouldSquash,
   setShouldSquash,
   onConfirm,
@@ -44,13 +44,7 @@ export const CommitMessageDialog: React.FC<CommitMessageDialogProps> = ({
   const canConfirm = !isProcessing && (!isMessageRequired || !!title.trim());
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (
-      keyboardShortcutsEnabled
-      && !event.repeat
-      && event.key === 'Enter'
-      && (event.ctrlKey || event.metaKey)
-      && canConfirm
-    ) {
+    if (isCommitSubmitShortcut(event, keyboardShortcutsEnabled, canConfirm)) {
       event.preventDefault();
       onConfirm(composedMessage);
     }

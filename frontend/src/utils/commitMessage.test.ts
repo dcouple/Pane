@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { composeCommitMessage, splitCommitMessage } from './commitMessage';
+import {
+  composeCommitMessage,
+  hasCommitMessageTitle,
+  isCommitSubmitShortcut,
+  splitCommitMessage,
+} from '../../../shared/utils/commitMessage';
 
 describe('commitMessage', () => {
   it('composes a title and description using the conventional blank line separator', () => {
@@ -24,5 +29,19 @@ describe('commitMessage', () => {
       title: 'Add commit title field',
       description: 'Explain the change.',
     });
+  });
+
+  it('requires a non-empty first-line title at process boundaries', () => {
+    expect(hasCommitMessageTitle('Commit title\n\nDescription')).toBe(true);
+    expect(hasCommitMessageTitle('  \n\nDescription only')).toBe(false);
+  });
+
+  it('recognizes enabled, non-repeating modifier-enter submissions', () => {
+    const event = { key: 'Enter', ctrlKey: true, metaKey: false, repeat: false };
+
+    expect(isCommitSubmitShortcut(event, true, true)).toBe(true);
+    expect(isCommitSubmitShortcut({ ...event, repeat: true }, true, true)).toBe(false);
+    expect(isCommitSubmitShortcut(event, false, true)).toBe(false);
+    expect(isCommitSubmitShortcut(event, true, false)).toBe(false);
   });
 });
