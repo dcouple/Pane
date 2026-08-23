@@ -31,6 +31,7 @@ from .local_control import (
     run_panels_wait,
     run_panes_archive,
     run_panes_create,
+    run_panes_focus,
     run_panes_list,
     run_panes_pin,
     run_panes_rename,
@@ -187,6 +188,8 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panes_pin(parsed, False)
     if parsed.command == "panes rename":
         return run_panes_rename(parsed)
+    if parsed.command == "panes focus":
+        return run_panes_focus(parsed)
     if parsed.command == "panels list":
         return run_panels_list(parsed)
     if parsed.command == "panels create":
@@ -620,6 +623,7 @@ def is_runpane_local_command(command: str) -> bool:
         "panes pin",
         "panes unpin",
         "panes rename",
+        "panes focus",
         "panels create",
         "panels list",
         "panels output",

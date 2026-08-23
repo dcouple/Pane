@@ -20,6 +20,7 @@ vi.spyOn(panelManager, 'createPanel');
 vi.spyOn(panelManager, 'getPanel');
 vi.spyOn(panelManager, 'getPanelsForSession');
 vi.spyOn(panelManager, 'updatePanel');
+vi.spyOn(panelManager, 'setActivePanel');
 vi.spyOn(terminalPanelManager, 'initializeTerminal');
 vi.spyOn(terminalPanelManager, 'isTerminalInitialized');
 vi.spyOn(terminalPanelManager, 'getTerminalSnapshot');
@@ -224,6 +225,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.getPanel).mockReset();
     vi.mocked(panelManager.getPanelsForSession).mockReset();
     vi.mocked(panelManager.updatePanel).mockReset();
+    vi.mocked(panelManager.setActivePanel).mockReset();
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
@@ -240,6 +242,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.getPanelsForSession).mockImplementation((sessionId: string) =>
       sessionId === session.id ? [terminalPanel] : []
     );
+    vi.mocked(panelManager.setActivePanel).mockResolvedValue();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReturnValue(true);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(null);
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(null);
@@ -284,10 +287,11 @@ describe('runpane IPC handlers', () => {
         ]),
       },
     });
-    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
-    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
-    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
-    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:panes:rename');
+    // SAFETY: The doctor result shape is asserted immediately above before its channels are inspected.
+    const daemon = (result as { daemon: { channels: string[] } }).daemon;
+    expect(daemon.channels).toContain('runpane:doctor');
+    expect(daemon.channels).toContain('runpane:panes:rename');
+    expect(daemon.channels).toContain('runpane:panes:focus');
   });
 
   it('lists saved Pane repositories with session counts', async () => {
@@ -2683,6 +2687,136 @@ describe('runpane IPC handlers', () => {
         ok: true,
         worktreeCleanup: 'completed',
       });
+    });
+  });
+
+  describe('runpane:panes:focus', () => {
+    function createMockWindow() {
+      return {
+        isMinimized: vi.fn(() => false),
+        restore: vi.fn(),
+        show: vi.fn(),
+        focus: vi.fn(),
+        webContents: { send: vi.fn() },
+      };
+    }
+
+    function createWindowServices(
+      window: ReturnType<typeof createMockWindow>,
+      overrides: Partial<AppServices> = {},
+    ): AppServices {
+      return createServices({
+        ...overrides,
+        // SAFETY: Focus tests exercise only the BrowserWindow methods supplied by this fixture.
+        getMainWindow: () => window as never,
+      });
+    }
+
+    it('raises the window, selects the pane, and emits the focus event', async () => {
+      const window = createMockWindow();
+      const services = createWindowServices(window);
+      const registry = createRegistry(services);
+
+      const result = await registry.invoke('runpane:panes:focus', [{
+        paneId: session.id,
+        source: 'user',
+      }]);
+
+      expect(window.isMinimized).toHaveBeenCalledTimes(1);
+      expect(window.restore).not.toHaveBeenCalled();
+      expect(window.show).toHaveBeenCalledTimes(1);
+      expect(window.focus).toHaveBeenCalledTimes(1);
+      expect(window.webContents.send).toHaveBeenCalledWith('pane:focus-requested', {
+        paneId: session.id,
+        panelId: undefined,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        paneId: session.id,
+        focused: true,
+      });
+    });
+
+    it('restores a minimized window and selects the given panel', async () => {
+      const window = createMockWindow();
+      window.isMinimized.mockReturnValue(true);
+      const services = createWindowServices(window);
+      const registry = createRegistry(services);
+
+      const result = await registry.invoke('runpane:panes:focus', [{
+        paneId: session.id,
+        panelId: terminalPanel.id,
+      }]);
+
+      expect(window.restore).toHaveBeenCalledTimes(1);
+      expect(panelManager.setActivePanel).toHaveBeenCalledWith(session.id, terminalPanel.id);
+      expect(window.show).toHaveBeenCalledTimes(1);
+      expect(window.focus).toHaveBeenCalledTimes(1);
+      expect(window.webContents.send).toHaveBeenCalledWith('pane:focus-requested', {
+        paneId: session.id,
+        panelId: terminalPanel.id,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        paneId: session.id,
+        panelId: terminalPanel.id,
+        focused: true,
+      });
+    });
+
+    it('refuses to focus an archived pane and never touches the window', async () => {
+      const window = createMockWindow();
+      const services = createWindowServices(window, {
+        sessionManager: {
+          ...createServices().sessionManager,
+          getSession: vi.fn(() => ({ ...session, archived: true })),
+        },
+      });
+      const registry = createRegistry(services);
+
+      await expect(registry.invoke('runpane:panes:focus', [{
+        paneId: session.id,
+      }])).rejects.toThrow(/archived and cannot be focused/);
+
+      expect(window.show).not.toHaveBeenCalled();
+      expect(window.focus).not.toHaveBeenCalled();
+      expect(window.webContents.send).not.toHaveBeenCalled();
+    });
+
+    it('rejects focusing an unknown pane id', async () => {
+      const window = createMockWindow();
+      const services = createWindowServices(window, {
+        sessionManager: {
+          ...createServices().sessionManager,
+          getSession: vi.fn(() => undefined),
+        },
+      });
+      const registry = createRegistry(services);
+
+      await expect(registry.invoke('runpane:panes:focus', [{
+        paneId: 'no-such-pane',
+      }])).rejects.toThrow(/No Pane pane found/);
+
+      expect(window.show).not.toHaveBeenCalled();
+      expect(window.webContents.send).not.toHaveBeenCalled();
+    });
+
+    it('rejects a panel that does not belong to the focused pane', async () => {
+      const window = createMockWindow();
+      vi.mocked(panelManager.getPanel).mockReturnValue({
+        ...terminalPanel,
+        sessionId: 'other-session',
+      });
+      const services = createWindowServices(window);
+      const registry = createRegistry(services);
+
+      await expect(registry.invoke('runpane:panes:focus', [{
+        paneId: session.id,
+        panelId: terminalPanel.id,
+      }])).rejects.toThrow(/does not belong to Pane/);
+
+      expect(window.show).not.toHaveBeenCalled();
+      expect(window.webContents.send).not.toHaveBeenCalled();
     });
   });
 });
