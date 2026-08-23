@@ -782,7 +782,7 @@ export class PaneRemoteHttpApiServer {
     request: IncomingMessage,
   ): JsonValue[] {
     const args = [...invokeRequest.args];
-    if (invokeRequest.channel !== 'terminal:setVisibility') {
+    if (invokeRequest.channel !== 'terminal:setVisibility' && invokeRequest.channel !== 'terminal:ack') {
       return args;
     }
 

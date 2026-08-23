@@ -45,6 +45,7 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: JsonObject[];
   initialCombinedDiff?: JsonObject | null;
+  initialMissionControlAgents?: JsonObject[];
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
   forcedAgentUsageError?: string;
@@ -503,6 +504,20 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           configState.defaultOrchestratorAgent = agent === 'codex' || agent === 'cursor' ? agent : 'claude';
           return success(createPaneChatState());
         },
+      }),
+      missionControl: namespace({
+        listAgents: () => success(clone(mockOptions.initialMissionControlAgents ?? [])),
+        snapshots: (request: { panelIds?: string[] }) => success({
+          snapshots: (request?.panelIds ?? []).map((panelId) => ({
+            panelId,
+            text: `snapshot for ${panelId}`,
+            lineCount: 1,
+            isAlternateScreen: false,
+            isLive: true,
+            lastActivityAt: null,
+          })),
+          missing: [],
+        }),
       }),
       panels: namespace({
         getSessionPanels: (sessionId: string) => success(

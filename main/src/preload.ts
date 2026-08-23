@@ -127,6 +127,7 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'agent-usage:',
   'folders:',
   'logs:',
+  'mission-control:',
   'pane-chat:',
   'panels:',
   'projects:',
@@ -471,6 +472,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   paneChat: {
     getOrCreate: (): Promise<IPCResponse> => invokeIpc('pane-chat:get-or-create'),
     setAgent: (agent: 'claude' | 'codex' | 'cursor'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
+  },
+
+  // Mission Control — live overview of every agent pane across all sessions
+  missionControl: {
+    listAgents: (options?: { includeArchived?: boolean }): Promise<IPCResponse> => invokeIpc('mission-control:list-agents', options),
+    snapshots: (request: { panelIds: string[]; maxLines?: number }): Promise<IPCResponse> => invokeIpc('mission-control:snapshots', request),
   },
 
   // Session management

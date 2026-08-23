@@ -35,6 +35,7 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { MissionControlAgentPanel, MissionControlSnapshotRequest, MissionControlSnapshotResult } from '../../../shared/types/missionControl';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -122,6 +123,12 @@ interface ElectronAPI {
   paneChat: {
     getOrCreate: () => Promise<IPCResponse<PaneChatState<Session>>>;
     setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
+  };
+
+  // Mission Control — every agent pane across all sessions
+  missionControl: {
+    listAgents: (options?: { includeArchived?: boolean }) => Promise<IPCResponse<MissionControlAgentPanel[]>>;
+    snapshots: (request: MissionControlSnapshotRequest) => Promise<IPCResponse<MissionControlSnapshotResult>>;
   };
 
   // Session management

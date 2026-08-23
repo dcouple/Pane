@@ -23,3 +23,17 @@ export function usePanelAgentDisplayStatus(panelId: string, sessionId: string): 
   const unseen = usePanelStore((s) => Boolean(s.unviewedCompletedActivity[sessionId]));
   return toAgentDisplayStatus(raw, unseen);
 }
+
+/**
+ * Agents waiting on the user, anywhere. Both sidebars badge Mission Control with
+ * this, so it lives here rather than being recomputed in each of them.
+ */
+export function useBlockedAgentCount(): number {
+  return usePanelStore((s) => {
+    let count = 0;
+    for (const state of Object.values(s.agentStatus)) {
+      if (state === 'blocked') count += 1;
+    }
+    return count;
+  });
+}

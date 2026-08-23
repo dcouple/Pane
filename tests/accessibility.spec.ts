@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { expectNoAxeViolations } from './axeTest';
 import { installElectronApiMock } from './electronApiMock';
 import type { JsonValue } from '../shared/validation/boundaryDecoder';
@@ -351,6 +351,25 @@ test('seeded pane exposes separate compound actions and arrow-keyed panel tabs',
   await expectNoAxeViolations(page, { include: '.pane-session-shell' });
 });
 
+/**
+ * Press a key at the Pane Chat agent group and confirm the choice it names took
+ * the focus and the checkmark.
+ *
+ * Two things can swallow a single blind press on a loaded machine: the Pane Chat
+ * terminal takes focus a moment after it mounts, so a press aimed at a radio can
+ * land in the terminal instead, and the group ignores input while an agent
+ * switch is still in flight. Both settle, so re-aim and press again rather than
+ * assuming the first press arrived.
+ */
+async function pressAgentChoice(page: Page, aimAt: Locator, key: string, expected: Locator): Promise<void> {
+  await expect(async () => {
+    await aimAt.focus();
+    await page.keyboard.press(key);
+    await expect(expected).toBeFocused({ timeout: 1_000 });
+    await expect(expected).toBeChecked({ timeout: 2_000 });
+  }).toPass({ timeout: 10_000 });
+}
+
 test('Pane Chat agent choice uses native radio semantics', async ({ page }) => {
   await openDesktop(page, { paneChatAgentChangeDelayMs: 200 });
 
@@ -358,14 +377,11 @@ test('Pane Chat agent choice uses native radio semantics', async ({ page }) => {
   const radios = page.getByRole('radio');
   await expect(radios).toHaveCount(3);
   await expect(page.getByRole('radio', { checked: true })).toHaveCount(1);
-  await radios.first().focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(radios.nth(1)).toBeFocused();
-  await expect(radios.nth(1)).toBeChecked();
 
-  await radios.nth(2).focus();
-  await page.keyboard.press('Space');
-  await expect(radios.nth(2)).toBeChecked();
+  // An arrow key moves the choice and takes it, a space takes the focused one.
+  await pressAgentChoice(page, radios.first(), 'ArrowRight', radios.nth(1));
+  await pressAgentChoice(page, radios.nth(2), 'Space', radios.nth(2));
+
   const cursorState = await page.evaluate(async () => window.electronAPI.paneChat.getOrCreate());
   expect(cursorState.data?.panel.id).toBe('__pane_chat_terminal_cursor__');
   expect(cursorState.data?.panel.state.customState?.initialCommand).toBe('cursor-agent --force --trust');

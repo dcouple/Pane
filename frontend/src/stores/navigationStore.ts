@@ -10,8 +10,15 @@ let hasRegisteredInitialProjectIds = false;
 const toProjectIdArray = (projectIds: Set<number>): number[] =>
   Array.from(projectIds).sort((a, b) => a - b);
 
+/**
+ * Pane has no router — this enum is the whole navigation model. Adding a value
+ * here also requires a branch in `SessionView` and an entry in *both* sidebar
+ * components (`Sidebar` compact rail and `ProjectSessionList` expanded tree).
+ */
+export type ActiveView = 'sessions' | 'project' | 'pane-chat' | 'mission-control';
+
 interface NavigationState {
-  activeView: 'sessions' | 'project' | 'pane-chat';
+  activeView: ActiveView;
   activeProjectId: number | null;
 
   // Sidebar collapse
@@ -37,11 +44,12 @@ interface NavigationState {
   setSidebarNavigationScope: (scope: SidebarNavigationScope) => void;
 
   // Actions
-  setActiveView: (view: 'sessions' | 'project' | 'pane-chat') => void;
+  setActiveView: (view: ActiveView) => void;
   setActiveProjectId: (projectId: number | null) => void;
   navigateToProject: (projectId: number) => void;
   navigateToSessions: () => void;
   navigateToPaneChat: () => void;
+  navigateToMissionControl: () => void;
 }
 
 export const useNavigationStore = create<NavigationState>((set, get) => ({
@@ -116,6 +124,12 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
 
   navigateToPaneChat: () => set({
     activeView: 'pane-chat',
+    activeProjectId: null
+  }),
+
+  // Mission Control spans every project, so it clears the project scope.
+  navigateToMissionControl: () => set({
+    activeView: 'mission-control',
     activeProjectId: null
   }),
 }));

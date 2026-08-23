@@ -1,5 +1,6 @@
 import * as pty from '@lydell/node-pty';
 import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
+import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
 import { panelManager } from './panelManager';
 import * as path from 'path';
@@ -75,6 +76,14 @@ export interface TerminalPanelSnapshot {
   isCliReady?: boolean;
   agentType?: CliAgentType;
   agentSessionId?: string;
+  /**
+   * Live PTY dimensions. A secondary viewer must render at exactly these
+   * dimensions: agent TUIs emit absolute cursor positioning, so replaying
+   * their output into a differently-sized terminal wraps every line and
+   * scrolls without end.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
@@ -220,6 +229,19 @@ interface TerminalProcess {
   capturedAgentSessionId?: string;
   agentSessionScrapeBuffer: string;
 }
+
+/**
+ * Whether a viewer's answer to a terminal query reached the PTY.
+ *
+ * Reported rather than swallowed so a renderer can be tested for having
+ * deferred to the designated viewer, not merely for having stayed silent.
+ */
+export interface TerminalReplyResult {
+  delivered: boolean;
+}
+
+const REPLY_DELIVERED: TerminalReplyResult = { delivered: true };
+const REPLY_DROPPED: TerminalReplyResult = { delivered: false };
 
 interface CliLaunchResolution {
   commandToRun: string;
@@ -689,7 +711,7 @@ export class TerminalPanelManager {
     // state machine (see `main/src/ptyHost/flowControl.ts`).
     flowControlOnPtyBytes(
       terminal.flowControl,
-      data.length,
+      Buffer.byteLength(data, 'utf8'),
       () => this.pausePty(terminal),
       () => this.resumePty(terminal),
     );
@@ -756,9 +778,67 @@ export class TerminalPanelManager {
     terminal.pty.resume();
   }
 
-  acknowledgeBytes(panelId: string, bytesConsumed: number): void {
+  /**
+   * The one viewer that speaks for this panel.
+   *
+   * Two jobs, one answer, because both break the same way when more than one
+   * viewer does them.
+   *
+   * Acknowledgement: `pendingBytes` is a single counter per PTY, so every
+   * viewer that writes the same broadcast chunk and acks it credits the counter
+   * again — two viewers drain it at twice the rate it was debited, the high
+   * watermark is never reached, and the PTY is never paused. Flow control only
+   * works with a single designated consumer.
+   *
+   * Answering terminal queries: an agent asks *the* terminal where the cursor
+   * is, and expects one reply. A second answer from a second renderer moves the
+   * agent's idea of where its screen starts, which is what made a Codex pane
+   * mispaint while a Mission Control tile watched it.
+   *
+   * A primary viewer (a real terminal panel, a remote runtime) is preferred
+   * because it is the one that must keep up. A preview viewer is designated
+   * only when it is the only viewer there is, because otherwise nobody would
+   * ack — and nobody would answer — and the agent would wait forever.
+   */
+  private designatedViewer(panelId: string): string | undefined {
+    const viewers = this.visibleViewersByPanel.get(panelId);
+    if (!viewers || viewers.size === 0) return undefined;
+
+    const ids = [...viewers.keys()].sort();
+    const primary = ids.find((id) => !this.visibilityViewerMatchesPrefix(id, MISSION_CONTROL_VIEWER_PREFIX));
+    return primary ?? ids[0];
+  }
+
+  /**
+   * Answer a terminal query on behalf of one viewer.
+   *
+   * The renderer that produced the reply does not get to decide whether it
+   * ships: it cannot see the other windows, tiles or remote runtimes watching
+   * the same PTY. Main can, so the designation is checked here and a reply from
+   * anyone else is dropped. `delivered` is reported back so a renderer can be
+   * tested for having deferred rather than for having stayed silent.
+   */
+  writeTerminalReply(panelId: string, data: string, viewerId?: string): TerminalReplyResult {
+    if (!this.terminals.has(panelId)) return REPLY_DROPPED;
+    const designated = this.designatedViewer(panelId);
+    if (!designated) return REPLY_DROPPED;
+    if (viewerId === undefined) return REPLY_DROPPED;
+    if (this.normalizeVisibilityViewerId(viewerId) !== designated) return REPLY_DROPPED;
+
+    this.writeToTerminal(panelId, data);
+    return REPLY_DELIVERED;
+  }
+
+  acknowledgeBytes(panelId: string, bytesConsumed: number, viewerId?: string): void {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return;
+
+    // An unidentified caller is treated as the consumer: every ack path
+    // predates viewer ids, and refusing them would stall the PTY.
+    if (viewerId) {
+      const designated = this.designatedViewer(panelId);
+      if (designated && this.normalizeVisibilityViewerId(viewerId) !== designated) return;
+    }
 
     // Delegate to the shared flow-control helper. It decrements `pendingBytes`,
     // clears the safety timer, and invokes the resume callback only when the
@@ -838,9 +918,18 @@ export class TerminalPanelManager {
     }
   }
 
+  /**
+   * One spelling for a viewer id, whichever entry point it arrives through.
+   *
+   * Registration and acknowledgement have to agree exactly, because the ack
+   * path compares against the registered id. Scoping in only one of them meant
+   * a panel registered as `local:<uuid>` and acked as `<uuid>`, so every ack
+   * was dropped and the PTY jammed at the high watermark.
+   */
   private normalizeVisibilityViewerId(viewerId: string): string {
     const trimmed = viewerId.trim();
-    return trimmed.length > 0 ? trimmed : 'local:legacy';
+    if (trimmed.length === 0) return 'local:legacy';
+    return trimmed.includes(':') ? trimmed : `local:${trimmed}`;
   }
 
   private visibilityViewerMatchesPrefix(viewerId: string, prefix: string): boolean {
@@ -1368,6 +1457,11 @@ export class TerminalPanelManager {
         }
       );
 
+      // Persist before teardown: an agent that finishes on its own never went
+      // through destroyTerminal, so without this its last screen is lost and
+      // every reader falls back to the raw alternate-screen byte log.
+      void this.saveTerminalState(terminal.panelId);
+
       // Clean up
       terminal.screenEmulator?.dispose();
       this.terminals.delete(terminal.panelId);
@@ -1550,6 +1644,9 @@ export class TerminalPanelManager {
       cwd: cwd,
       scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
+      // Survives dispose: the emulator keeps its last screen text, so a panel
+      // saved on exit still knows what the agent finished on.
+      screenText: terminal.screenEmulator?.getScreenText(),
       isAlternateScreen: savedIsAlternateScreen,
       commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
@@ -1688,6 +1785,8 @@ export class TerminalPanelManager {
       isCliReady: customState.isCliReady,
       agentType,
       agentSessionId: customState.agentSessionId ?? terminal.capturedAgentSessionId,
+      cols: terminal.pty?.cols,
+      rows: terminal.pty?.rows,
     };
   }
 
