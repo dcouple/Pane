@@ -274,6 +274,11 @@ export interface RunpanePaneFocusResult {
   focused: true;
 }
 
+export type RunpanePaneFocusRequestedEvent = Pick<
+  RunpanePaneFocusRequest,
+  'paneId' | 'panelId'
+>;
+
 export interface RunpanePaneArchiveRequest {
   paneId: string;
   force?: boolean;

@@ -38,6 +38,7 @@ import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneCha
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
+import type { RunpanePaneFocusRequestedEvent } from '../../../shared/types/runpaneOrchestration';
 import type {
   ProjectDashboardData,
   ProjectDashboardSessionUpdateEvent,
@@ -352,7 +353,7 @@ interface ElectronAPI {
     onPermissionResolved: (callback: (event: PanePermissionResolvedEvent) => void) => () => void;
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
-    onPaneFocusRequested: (callback: (data: { paneId: string; panelId?: string }) => void) => () => void;
+    onPaneFocusRequested: (callback: (data: RunpanePaneFocusRequestedEvent) => void) => () => void;
     onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => () => void;
     onSessionsLoaded: (callback: (sessions: Session[]) => void) => () => void;
     onSessionOutput: (callback: (output: SessionOutput) => void) => () => void;

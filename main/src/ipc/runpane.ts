@@ -41,6 +41,7 @@ import type {
   RunpanePaneRenameRequest,
   RunpanePaneRenameResult,
   RunpanePaneFocusRequest,
+  RunpanePaneFocusRequestedEvent,
   RunpanePaneFocusResult,
   RunpanePaneCreateFailureItem,
   RunpanePaneCreateItem,
@@ -357,10 +358,11 @@ export function registerRunpaneHandlers(
       window.show();
       window.focus();
 
-      window.webContents.send('pane:focus-requested', {
+      const focusEvent: RunpanePaneFocusRequestedEvent = {
         paneId: pane.id,
         panelId: normalized.panelId,
-      });
+      };
+      window.webContents.send('pane:focus-requested', focusEvent);
 
       return {
         ok: true,
