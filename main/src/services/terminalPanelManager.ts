@@ -1940,14 +1940,8 @@ export class TerminalPanelManager {
   }
 
   /**
-   * Clean plain-text scrollback for a live terminal, sourced from the screen
-   * emulator rather than the raw append log. The append log accumulates every
-   * repaint frame; stripping its ANSI leaves overlapping fragments (e.g.
-   * "Workingorking•rking") for any output that updates in place via cursor
-   * motion. The emulator applies those motions like a real terminal, so its
-   * rendered buffer is corruption-free. Returns null when the panel has no live
-   * emulator (lazy/inactive terminals) so callers can fall back to persisted
-   * state.
+   * Clean plain-text scrollback from the rendered screen model. Returns null
+   * without a live emulator so callers can use persisted state.
    */
   async getCleanTerminalScrollback(panelId: string, maxLines: number): Promise<string | null> {
     const emulator = this.terminals.get(panelId)?.screenEmulator;

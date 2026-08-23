@@ -2095,33 +2095,18 @@ function outputToText(output: SessionOutput): string {
 async function panelScrollbackOutput(panel: ToolPanel, limit: number): Promise<{ text: string; hasMore: boolean; timestamp: string } | null> {
   const timestamp = toIsoString(panel.metadata.lastActiveAt) ?? new Date().toISOString();
 
-  // Prefer the live screen emulator. Its rendered buffer applies cursor motions
-  // in place, so callers building agent context never receive the overlapping
-  // fragment corruption (e.g. "Workingorking•rking") that ANSI-stripping the raw
-  // append log produces for in-place repaints (spinners, progress bars, TUIs).
-  // Request one extra line so hasMore reflects truncation.
-  const clean = await terminalPanelManager.getCleanTerminalScrollback(panel.id, limit + 1);
-  if (clean !== null) {
-    const cleanLines = clean.split('\n');
-    const hasMore = cleanLines.length > limit;
-    return { text: cleanLines.slice(-limit).join('\n'), hasMore, timestamp };
+  // Ask for one extra rendered line so hasMore reflects emulator truncation.
+  let text = await terminalPanelManager.getCleanTerminalScrollback(panel.id, limit + 1);
+  if (text === null) {
+    const rawScrollback = getPanelScrollback(panel);
+    if (!rawScrollback) return null;
+    text = sanitizeTerminalOutput(rawScrollback);
   }
+  if (!text) return null;
 
-  const rawScrollback = getPanelScrollback(panel);
-  if (!rawScrollback) {
-    return null;
-  }
-
-  const stripped = sanitizeTerminalOutput(rawScrollback);
-  if (!stripped) {
-    return null;
-  }
-
-  const allLines = stripped.split('\n');
+  const allLines = text.split('\n');
   const hasMore = allLines.length > limit;
-  const text = allLines.slice(-limit).join('\n');
-
-  return { text, hasMore, timestamp };
+  return { text: allLines.slice(-limit).join('\n'), hasMore, timestamp };
 }
 
 function getPanelScrollback(panel: ToolPanel): string | null {

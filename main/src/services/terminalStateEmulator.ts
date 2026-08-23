@@ -120,19 +120,12 @@ export class TerminalStateEmulator {
    * cursor moves rather than carriage returns).
    */
   getScrollbackText(maxLines?: number): string {
-    if (this.disposed) {
-      const lines = this.finalScrollbackText === '' ? [] : this.finalScrollbackText.split('\n');
-      return maxLines !== undefined && maxLines >= 0 && maxLines < lines.length
-        ? lines.slice(lines.length - maxLines).join('\n')
-        : this.finalScrollbackText;
-    }
-
-    const buffer = this.terminal.buffer.active;
-    const total = buffer.length;
-    const lines: string[] = [];
-
-    for (let index = 0; index < total; index += 1) {
-      lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+    const lines = this.disposed ? this.finalScrollbackText.split('\n') : [];
+    if (!this.disposed) {
+      const buffer = this.terminal.buffer.active;
+      for (let index = 0; index < buffer.length; index += 1) {
+        lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+      }
     }
 
     // Trim trailing blank rows first so `maxLines` counts real content, not the

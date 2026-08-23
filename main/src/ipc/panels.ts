@@ -121,6 +121,17 @@ function readPersistedScrollback(customState: PersistedCustomState | undefined):
   }
 }
 
+async function readCleanTerminalScrollback(panelId: string, lines: number): Promise<string | null> {
+  const liveScrollback = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
+  if (liveScrollback !== null) return liveScrollback;
+
+  const panel = panelManager.getPanel(panelId);
+  const persistedScrollback = readPersistedScrollback(panel?.state?.customState);
+  if (persistedScrollback === null || persistedScrollback === '') return null;
+
+  return sanitizeTerminalOutput(persistedScrollback).split('\n').slice(-lines).join('\n');
+}
+
 /**
  * Save file bytes for a session and return the path to pass to the CLI tool.
  *
@@ -718,33 +729,14 @@ export function registerPanelHandlers(
 
   commandRegistry.register('terminal:getScrollbackClean', async (panelId: string, lines: number) => {
     try {
-      // Prefer the live screen emulator: its rendered buffer applies cursor
-      // motions in place, so it never produces the overlapping-fragment
-      // corruption that ANSI-stripping the raw append log does for in-place
-      // repaints (spinners, progress bars, TUI status lines).
-      const clean = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
-      if (clean !== null) {
-        const lastLines = clean.split('\n');
-        const panelTitle = panelManager.getPanel(panelId)?.title ?? panelId;
-        return { success: true, data: { content: clean, lineCount: lastLines.length, panelTitle } };
-      }
-
-      // Fall back to persisted scrollback for lazy/inactive terminals with no
-      // live emulator.
-      const panel = panelManager.getPanel(panelId);
-      const rawScrollback = readPersistedScrollback(panel?.state?.customState);
-
-      if (rawScrollback === null || rawScrollback === '') {
+      const content = await readCleanTerminalScrollback(panelId, lines);
+      if (content === null) {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 
-      const stripped = sanitizeTerminalOutput(rawScrollback);
-      const allLines = stripped.split('\n');
-      const lastLines = allLines.slice(-lines);
-      const content = lastLines.join('\n');
+      const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
-
-      return { success: true, data: { content, lineCount: lastLines.length, panelTitle } };
+      return { success: true, data: { content, lineCount: content.split('\n').length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to get clean scrollback:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -825,26 +817,10 @@ export function registerPanelHandlers(
     lines: number,
   ) => {
     try {
-      // Prefer the live screen emulator (corruption-free rendered buffer) and
-      // fall back to persisted state for lazy/inactive terminals. The raw append
-      // log is never used directly: ANSI-stripping it mangles in-place repaints.
-      let content: string | null = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
-
-      if (content === null) {
-        const panelFallback = panelManager.getPanel(panelId);
-        const rawScrollback = readPersistedScrollback(panelFallback?.state?.customState);
-
-        if (rawScrollback !== null && rawScrollback !== '') {
-          const stripped = sanitizeTerminalOutput(rawScrollback);
-          content = stripped.split('\n').slice(-lines).join('\n');
-        }
-      }
-
+      const content = await readCleanTerminalScrollback(panelId, lines);
       if (content === null || content === '') {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
-
-      const lastLines = content.split('\n');
 
       const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
@@ -856,7 +832,7 @@ export function registerPanelHandlers(
       // Save to .pane/files/ — routes to WSL-native path for WSL sessions so
       // Claude CLI inside WSL can read the file at a native Linux path.
       const resolvedPath = await saveFileForSession(sessionId, 'files', filename, Buffer.from(content, 'utf-8'));
-      return { success: true, data: { filePath: resolvedPath, lineCount: lastLines.length, panelTitle } };
+      return { success: true, data: { filePath: resolvedPath, lineCount: content.split('\n').length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to save scrollback:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
