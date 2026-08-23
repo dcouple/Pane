@@ -104,10 +104,8 @@ function stripAnsi(str: string): string {
 function getMimeData(data: JsonObject, mime: string): string | undefined {
   const val = data[mime];
   if (val === undefined) return undefined;
-  const text = decodeOptionalBoundary(val, boundary.string);
-  if (text !== undefined) return text;
-  const lines = decodeOptionalBoundary(val, boundary.array(boundary.string));
-  if (lines) return lines.join('');
+  const text = decodeOptionalBoundary(val, stringOrLinesSchema);
+  if (text !== undefined) return Array.isArray(text) ? text.join('') : text;
   // For non-string values (e.g. application/json stored as object), stringify
   return JSON.stringify(val, null, 2);
 }
