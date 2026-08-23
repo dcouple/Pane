@@ -152,7 +152,7 @@ export const CommitMessageDialog: React.FC<CommitMessageDialogProps> = ({
         {dialogType === 'squash' && onMergeAndArchive && (
           <Button
             onClick={() => onMergeAndArchive(composedMessage)}
-            disabled={(shouldSquash && !title.trim()) || isProcessing}
+            disabled={!canConfirm}
             loading={isMergingAndArchiving}
             variant="secondary"
           >
@@ -161,7 +161,7 @@ export const CommitMessageDialog: React.FC<CommitMessageDialogProps> = ({
         )}
         <Button
           onClick={() => onConfirm(composedMessage)}
-          disabled={(isMessageRequired && !title.trim()) || isProcessing}
+          disabled={!canConfirm}
           loading={isMerging}
         >
           {isMerging
