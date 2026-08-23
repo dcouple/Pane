@@ -12,9 +12,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import {
   charHeightRatio,
   charWidthRatio,
-  fitFontSize,
-  fitGridFontSize,
+  fitTerminalViewerGeometry,
   rowHeight,
+  type TerminalViewerGeometry,
   MAX_TILE_FONT_SIZE,
   TERMINAL_CHROME_X,
   TERMINAL_CHROME_Y,
@@ -82,7 +82,6 @@ const EXPANDED_INSET_PX = 4;
 /** Fallbacks when a panel has no live PTY to report dimensions. */
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
-const MAX_VIEWER_COLS = 400;
 const RESIZE_DEBOUNCE_MS = 200;
 
 const VIEWER_ID = getMissionControlViewerId();
@@ -104,12 +103,6 @@ function getMissionControlViewerId(): string {
     // not the view: the stale-viewer sweep clears the orphan.
   }
   return id;
-}
-
-interface ViewerGeometry {
-  fontSize: number;
-  cols: number;
-  rows: number;
 }
 
 /**
@@ -308,13 +301,13 @@ export function useMissionControlTerminal({
 
   /** Until the wrapper has been measured, any geometry is a guess. */
   const [measured, setMeasured] = useState(false);
-  const [geometry, setGeometry] = useState<ViewerGeometry>({
+  const [geometry, setGeometry] = useState<TerminalViewerGeometry>({
     fontSize: MAX_TILE_FONT_SIZE,
     cols: ptyCols,
     rows: ptyRows,
   });
 
-  const measure = useCallback((width: number, height: number): ViewerGeometry => {
+  const measure = useCallback((width: number, height: number): TerminalViewerGeometry => {
     const ratio = charWidthRatio(fontFamily);
     const heightRatio = charHeightRatio(fontFamily);
     // The box handed in is the wrapper, but the glyphs only get what is left of
@@ -325,32 +318,18 @@ export function useMissionControlTerminal({
     const glyphWidth = Math.max(width - inset - TERMINAL_CHROME_X, 1);
     const glyphHeight = Math.max(height - inset - TERMINAL_CHROME_Y, 1);
 
-    if (matchPtyExactly) {
-      // Fit the whole grid — both axes — and let the font shrink to suit, down
-      // to a floor lower than a preview's: this is the one view that promises
-      // the agent's entire screen. What the floor still cannot fit is reported
-      // as a shortfall and made scrollable rather than clipped away.
-      const { fontSize } = fitGridFontSize(glyphWidth, glyphHeight, ptyCols, ptyRows, ratio, heightRatio);
-      return { fontSize, cols: ptyCols, rows: ptyRows };
-    }
-
-    // The same helper the snapshot body fits with: a tile that scaled one way
-    // as a preview and another once live would jump under the pointer.
-    const fontSize = fitFontSize(glyphWidth, ptyCols, ratio);
-
-    return {
-      fontSize,
-      // The PTY's width, exactly — see rule 1.
-      cols: Math.min(ptyCols, MAX_VIEWER_COLS),
-      // The PTY's height, always. A TUI redrawing its selection list against
-      // more rows than the viewer has scatters those redraws, and the terminal
-      // is bottom-anchored, so a taller grid still shows the same trailing
-      // lines. Deriving rows from the tile instead would make `rows` change the
-      // moment a tile takes the keyboard, and `rows` is what the terminal
-      // effect rebuilds on: focusing would cost a teardown and a re-hydrate at
-      // exactly the moment the user starts typing.
-      rows: ptyRows,
-    };
+    // Both preview and expanded terminals preserve the PTY's exact dimensions.
+    // A preview fits by width while the expanded view fits both axes and may use
+    // its lower font floor; neither is allowed to reflow the agent's screen.
+    return fitTerminalViewerGeometry(
+      glyphWidth,
+      glyphHeight,
+      ptyCols,
+      ptyRows,
+      ratio,
+      heightRatio,
+      matchPtyExactly,
+    );
   }, [ptyCols, ptyRows, matchPtyExactly, fontFamily]);
 
   useEffect(() => {

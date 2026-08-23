@@ -50,7 +50,6 @@ export interface MissionControlSnapshotRequest {
 
 export interface MissionControlSnapshotResult {
   snapshots: MissionControlSnapshot[];
-  capturedAt: string;
 }
 
 /**

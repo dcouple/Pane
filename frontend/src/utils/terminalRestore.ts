@@ -52,7 +52,7 @@ export interface TerminalOutputAcknowledger {
 /**
  * Batch acknowledgements after xterm reports that it consumed each chunk.
  * Callers own that ordering; this helper owns only the byte accounting and
- * bounded flush cadence shared by secondary terminal viewers.
+ * bounded flush cadence shared by terminal viewers.
  */
 export function createTerminalOutputAcknowledger(
   send: (bytes: number) => void,

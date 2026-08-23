@@ -207,7 +207,6 @@ export function registerMissionControlHandlers(
 
       const result: MissionControlSnapshotResult = {
         snapshots,
-        capturedAt: new Date().toISOString(),
       };
       return { success: true, data: result };
     } catch (error) {

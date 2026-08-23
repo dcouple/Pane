@@ -148,6 +148,31 @@ export interface GridFit {
   fitsHeight: boolean;
 }
 
+export interface TerminalViewerGeometry {
+  fontSize: number;
+  cols: number;
+  rows: number;
+}
+
+/**
+ * Fit a secondary terminal without ever changing the PTY dimensions it mirrors.
+ * The caller removes terminal chrome from the available glyph box first.
+ */
+export function fitTerminalViewerGeometry(
+  width: number,
+  height: number,
+  cols: number,
+  rows: number,
+  widthRatio: number,
+  heightRatio: number,
+  fitWholeGrid: boolean,
+): TerminalViewerGeometry {
+  const fontSize = fitWholeGrid
+    ? fitGridFontSize(width, height, cols, rows, widthRatio, heightRatio).fontSize
+    : fitFontSize(width, cols, widthRatio);
+  return { fontSize, cols, rows };
+}
+
 /**
  * Largest font at which a whole `columns` x `rows` grid fits `width` x `height`.
  *

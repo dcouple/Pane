@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   fitFontSize,
   fitGridFontSize,
+  fitTerminalViewerGeometry,
   fittedHeight,
   fittedWidth,
   MAX_FOCUS_FONT_SIZE,
@@ -130,5 +131,21 @@ describe('fitGridFontSize', () => {
 
     expect(fit.fontSize).toBe(MIN_FOCUS_FONT_SIZE);
     expect(fit.fitsWidth).toBe(false);
+  });
+});
+
+describe('fitTerminalViewerGeometry', () => {
+  it('preserves PTY dimensions above the old preview ceiling', () => {
+    expect(fitTerminalViewerGeometry(500, 300, 401, 24, RATIO, HEIGHT_RATIO, false)).toMatchObject({
+      cols: 401,
+      rows: 24,
+    });
+  });
+
+  it('preserves the same dimensions when fitting the whole grid', () => {
+    expect(fitTerminalViewerGeometry(500, 300, 512, 60, RATIO, HEIGHT_RATIO, true)).toMatchObject({
+      cols: 512,
+      rows: 60,
+    });
   });
 });
