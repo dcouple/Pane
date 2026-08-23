@@ -425,7 +425,6 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
         dialogType="commit"
         gitCommands={mainRepoGit.gitCommands}
         commitMessage={mainRepoGit.commitMessage}
-        setCommitMessage={mainRepoGit.setCommitMessage}
         shouldSquash={false}
         setShouldSquash={() => {}}
         onConfirm={mainRepoGit.handleCommit}
