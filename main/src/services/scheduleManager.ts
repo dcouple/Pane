@@ -33,7 +33,7 @@ export type SessionStarter = (input: {
 export interface ScheduleStore {
   list(projectId?: number): ScheduledRun[];
   get(id: string): ScheduledRun | null;
-  listRunnable(): ScheduledRun[];
+  listRunnable(nowMs: number): ScheduledRun[];
   upsert(schedule: ScheduledRun): void;
   delete(id: string): void;
 }
@@ -155,7 +155,7 @@ export class ScheduleManager {
 
     try {
       const nowMs = Date.now();
-      for (const schedule of this.repo.listRunnable()) {
+      for (const schedule of this.repo.listRunnable(nowMs)) {
         if (this.executingIds.has(schedule.id)) continue;
         if (isDue(schedule, nowMs)) {
           await this.execute(schedule, { manual: false });

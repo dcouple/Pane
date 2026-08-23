@@ -83,11 +83,11 @@ export class ScheduleRepository {
   }
 
   /** Everything enabled with a due time, newest deadline last. */
-  listRunnable(): ScheduledRun[] {
+  listRunnable(nowMs: number): ScheduledRun[] {
     // SAFETY: This SELECT reads rows from the scheduled_runs schema represented by ScheduleRow.
     const rows = this.db.prepare(
-      'SELECT * FROM scheduled_runs WHERE enabled = 1 AND next_run_at_ms IS NOT NULL ORDER BY next_run_at_ms ASC'
-    ).all() as ScheduleRow[];
+      'SELECT * FROM scheduled_runs WHERE enabled = 1 AND next_run_at_ms <= ? ORDER BY next_run_at_ms ASC'
+    ).all(nowMs) as ScheduleRow[];
     return rows.map(toSchedule);
   }
 
