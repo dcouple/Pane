@@ -60,7 +60,7 @@ export function PullRequestChanges({ sessionId, baseBranch }: PullRequestChanges
   }, [sessionId, baseBranch]);
 
   useEffect(() => {
-    if (!showDiff || diff || diffLoading) return;
+    if (!showDiff || diff) return;
 
     let cancelled = false;
     setDiffLoading(true);
@@ -80,7 +80,7 @@ export function PullRequestChanges({ sessionId, baseBranch }: PullRequestChanges
       .finally(() => { if (!cancelled) setDiffLoading(false); });
 
     return () => { cancelled = true; };
-  }, [showDiff, diff, diffLoading, sessionId, baseBranch]);
+  }, [showDiff, diff, sessionId, baseBranch]);
 
   const diffFiles = useMemo(() => (diff ? parseUnifiedDiffToFiles(diff.text) : []), [diff]);
 
