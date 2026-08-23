@@ -58,6 +58,13 @@ test.describe('Software Update dialog quit affordance', () => {
     await quit.click();
     expect(await readQuitCalls(page)).toBe(0);
 
+    // Any other action cancels the destructive confirmation. Following the
+    // release link must not leave the dialog one click away from quitting.
+    await dialog.getByRole('button', { name: 'View on GitHub' }).click();
+    await expect(dialog.getByRole('button', { name: /Quit Pane/ })).toBeVisible();
+    expect(await readQuitCalls(page)).toBe(0);
+
+    await dialog.getByRole('button', { name: /Quit Pane/ }).click();
     const confirm = dialog.getByRole('button', { name: /Quit now/ });
     await expect(confirm).toBeVisible();
     await confirm.click();

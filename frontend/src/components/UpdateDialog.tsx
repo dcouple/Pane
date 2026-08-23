@@ -333,6 +333,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
 
   const openDmgDownload = () => {
+    setQuitRequested(false);
     if (versionInfo?.downloadUrl) {
       window.electronAPI.openExternal(versionInfo.downloadUrl);
     }
@@ -393,7 +394,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           </Button>
           {versionInfo?.releaseUrl && (
             <Button
-              onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+              onClick={() => {
+                setQuitRequested(false);
+                window.electronAPI.openExternal(versionInfo.releaseUrl!);
+              }}
               variant="secondary"
               size="sm"
               icon={<ExternalLink className="w-4 h-4" />}
@@ -485,7 +489,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                   </Button>
                 ) : (
                   <Button
-                    onClick={() => versionInfo.releaseUrl && window.electronAPI.openExternal(versionInfo.releaseUrl)}
+                    onClick={() => {
+                      setQuitRequested(false);
+                      if (versionInfo.releaseUrl) window.electronAPI.openExternal(versionInfo.releaseUrl);
+                    }}
                     variant="primary"
                   >
                     View Release
@@ -653,7 +660,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                       </div>
                       {versionInfo?.releaseUrl && (
                         <button
-                          onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+                          onClick={() => {
+                            setQuitRequested(false);
+                            window.electronAPI.openExternal(versionInfo.releaseUrl!);
+                          }}
                           className="mt-3 text-sm text-interactive hover:text-interactive-hover underline"
                         >
                           View Release on GitHub
@@ -702,7 +712,13 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                         </blockquote>
                       ),
                       a: ({ href, children }) => (
-                        <a href={href} className="text-interactive hover:text-interactive-hover underline" target="_blank" rel="noopener noreferrer">
+                        <a
+                          href={href}
+                          className="text-interactive hover:text-interactive-hover underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setQuitRequested(false)}
+                        >
                           {children}
                         </a>
                       ),
@@ -727,7 +743,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           <div className="text-sm text-text-tertiary">
             {versionInfo?.releaseUrl && (
               <button
-                onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+                onClick={() => {
+                  setQuitRequested(false);
+                  window.electronAPI.openExternal(versionInfo.releaseUrl!);
+                }}
                 className="hover:text-text-secondary underline transition-colors"
               >
                 View on GitHub
