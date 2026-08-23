@@ -754,6 +754,7 @@ const paneCreateRequestInputSchema: BoundarySchema<PaneCreateRequestInput> = bou
 export async function runReposList(parsed: ParsedArgs): Promise<number> {
   const result = await invokeDaemon('runpane:repos:list', [], repoListResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -781,6 +782,7 @@ export async function runReposAdd(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:repos:add', [request], repoAddResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -797,6 +799,7 @@ export async function runPanesList(parsed: ParsedArgs): Promise<number> {
     repo: parsed.repo,
   }], paneListResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -814,6 +817,7 @@ export async function runPanesCreate(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panes:create', [request], paneCreateResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
     timeoutMs: (parsed.timeoutMs ?? 120_000) + (parsed.readyTimeoutMs ?? 30_000) + 10_000,
   });
 
@@ -842,6 +846,7 @@ export async function runPanesArchive(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panes:archive', [request], paneArchiveResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
     timeoutMs: 40_000,
   });
 
@@ -868,6 +873,7 @@ export async function runPanesPin(parsed: ParsedArgs, pinned: boolean): Promise<
 
   const result = await invokeDaemon('runpane:panes:pin', [request], panePinResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -897,6 +903,7 @@ export async function runPanesRename(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panes:rename', [request], paneRenameResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -917,6 +924,7 @@ export async function runPanelsList(parsed: ParsedArgs): Promise<number> {
     paneId: parsed.paneId,
   }], panelListResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -934,6 +942,7 @@ export async function runPanelsCreate(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panels:create', [request], panelCreateResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
     timeoutMs: (parsed.readyTimeoutMs ?? 30_000) + 10_000,
   });
 
@@ -956,6 +965,7 @@ export async function runPanelsOutput(parsed: ParsedArgs): Promise<number> {
     limit: parsed.limit,
   }], panelOutputResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -976,6 +986,7 @@ export async function runPanelsInput(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panels:input', [request], panelInputResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -997,6 +1008,7 @@ export async function runPanelsScreen(parsed: ParsedArgs): Promise<number> {
     limit: parsed.limit,
   }], panelScreenResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -1017,6 +1029,7 @@ export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
 
   const result = await invokeDaemon('runpane:panels:submit', [request], panelSubmitResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -1047,6 +1060,7 @@ export async function runPanelsSubmitComposer(parsed: ParsedArgs): Promise<numbe
     strategy: parsed.composerStrategy,
   }], panelSubmitComposerResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {
@@ -1078,6 +1092,7 @@ export async function runPanelsWait(parsed: ParsedArgs): Promise<number> {
     intervalMs: parsed.intervalMs,
   }], panelWaitResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
     timeoutMs: (parsed.timeoutMs ?? 30_000) + 5_000,
   });
 
@@ -1100,6 +1115,7 @@ export async function runAgentsDoctor(parsed: ParsedArgs): Promise<number> {
     repo: parsed.repo,
   }], agentDoctorResultSchema, {
     paneDir: parsed.paneDir,
+    retry: parsed.retry,
   });
 
   if (parsed.json) {

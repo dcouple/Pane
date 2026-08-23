@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import ntpath
@@ -7,6 +8,7 @@ import os
 import posixpath
 import socket
 import sys
+import time
 from typing import Any, Dict, List, Optional
 
 FRAME_DELIMITER = b"\n"
@@ -16,9 +18,10 @@ DEFAULT_TIMEOUT_MS = 130_000
 
 
 class PaneDaemonClientError(RuntimeError):
-    def __init__(self, message: str, code: Optional[str] = None) -> None:
+    def __init__(self, message: str, code: Optional[str] = None, retryable: bool = False) -> None:
         super().__init__(message)
         self.code = code
+        self.retryable = retryable
 
 
 def resolve_pane_directory(pane_dir: Optional[str] = None) -> str:
@@ -44,6 +47,7 @@ def invoke_daemon(
     args: Optional[List[Any]] = None,
     pane_dir: Optional[str] = None,
     timeout_ms: Optional[float] = None,
+    retry: int = 0,
 ) -> Any:
     endpoint = get_pane_daemon_endpoint(resolve_pane_directory(pane_dir))
     request = {
@@ -54,9 +58,17 @@ def invoke_daemon(
     }
     encoded = encode_frame(request)
 
-    if endpoint["transport"] == "pipe":
-        return invoke_windows_pipe(endpoint["path"], encoded, timeout_ms or DEFAULT_TIMEOUT_MS)
-    return invoke_unix_socket(endpoint["path"], encoded, timeout_ms or DEFAULT_TIMEOUT_MS)
+    for attempt in range(retry + 1):
+        try:
+            if endpoint["transport"] == "pipe":
+                return invoke_windows_pipe(endpoint["path"], encoded, timeout_ms or DEFAULT_TIMEOUT_MS)
+            return invoke_unix_socket(endpoint["path"], encoded, timeout_ms or DEFAULT_TIMEOUT_MS)
+        except PaneDaemonClientError as error:
+            if attempt >= retry or not error.retryable:
+                raise
+            time.sleep(min(0.05 * (2 ** attempt), 0.5))
+
+    raise AssertionError("unreachable")
 
 
 def invoke_unix_socket(socket_path: str, encoded_request: bytes, timeout_ms: float) -> Any:
@@ -66,7 +78,12 @@ def invoke_unix_socket(socket_path: str, encoded_request: bytes, timeout_ms: flo
         try:
             client.connect(socket_path)
         except OSError as error:
-            raise PaneDaemonClientError(f"Could not connect to Pane daemon at {socket_path}: {error}") from error
+            code = os_error_code(error)
+            raise PaneDaemonClientError(
+                f"Could not connect to Pane daemon at {socket_path}: {error}",
+                code,
+                is_retryable_connect_code(code),
+            ) from error
 
         client.sendall(encoded_request)
         while True:
@@ -83,9 +100,11 @@ def invoke_unix_socket(socket_path: str, encoded_request: bytes, timeout_ms: flo
 
 def invoke_windows_pipe(pipe_path: str, encoded_request: bytes, timeout_ms: float) -> Any:
     decoder = PaneDaemonFrameDecoder()
+    request_sent = False
     try:
         with open(pipe_path, "r+b", buffering=0) as pipe:
             pipe.write(encoded_request)
+            request_sent = True
             while True:
                 chunk = pipe.read(65536)
                 if not chunk:
@@ -97,7 +116,34 @@ def invoke_windows_pipe(pipe_path: str, encoded_request: bytes, timeout_ms: floa
                 if response is not None:
                     return response
     except OSError as error:
-        raise PaneDaemonClientError(f"Could not connect to Pane daemon at {pipe_path}: {error}") from error
+        code = os_error_code(error)
+        raise PaneDaemonClientError(
+            f"Could not connect to Pane daemon at {pipe_path}: {error}",
+            code,
+            not request_sent and is_retryable_connect_code(code),
+        ) from error
+
+
+def os_error_code(error: OSError) -> str:
+    if getattr(error, "winerror", None) == 231:
+        return "ERROR_PIPE_BUSY"
+    if error.errno is not None:
+        return errno.errorcode.get(error.errno, f"ERRNO_{error.errno}")
+    return "ERR_RUNPANE_DAEMON_CONNECT_FAILED"
+
+
+def is_retryable_connect_code(code: str) -> bool:
+    return code in {
+        "EAGAIN",
+        "EBUSY",
+        "ECONNREFUSED",
+        "EMFILE",
+        "ENFILE",
+        "ENOENT",
+        "ENOBUFS",
+        "ENOMEM",
+        "ERROR_PIPE_BUSY",
+    }
 
 
 def first_matching_response(frames: List[Dict[str, Any]]) -> Optional[Any]:
