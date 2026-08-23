@@ -10,6 +10,13 @@ interface IpcMainStub {
   handle(channel: string, listener: IpcHandler): void;
 }
 
+interface AppStub {
+  getVersion: () => string;
+  getName: () => string;
+  isPackaged: boolean;
+  quit: ReturnType<typeof vi.fn>;
+}
+
 function createIpcMainStub(): IpcMainStub {
   const handlers = new Map<string, IpcHandler>();
 
@@ -24,15 +31,15 @@ function createIpcMainStub(): IpcMainStub {
 const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
 
 describe('updater:quit-for-manual-install', () => {
-  let quit: ReturnType<typeof vi.fn>;
+  let app: AppStub;
   let ipcMain: IpcMainStub;
 
   beforeEach(() => {
-    quit = vi.fn();
+    app = { getVersion: () => '2.4.70', getName: () => 'Pane', isPackaged: true, quit: vi.fn() };
     ipcMain = createIpcMainStub();
     // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
     registerUpdaterHandlers(ipcMain, {
-      app: { getVersion: () => '2.4.70', getName: () => 'Pane', isPackaged: true, quit },
+      app,
       versionChecker: { checkForUpdates: vi.fn() },
     } as never);
   });
@@ -56,9 +63,9 @@ describe('updater:quit-for-manual-install', () => {
 
     // app.quit() is deferred a tick so the reply reaches the renderer before
     // index.ts's before-quit shutdown starts tearing the app down.
-    expect(quit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
     await new Promise<void>(resolve => setImmediate(resolve));
-    expect(quit).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
   });
 
   it('refuses off macOS, where the installer replaces Pane in place', async () => {
@@ -66,10 +73,23 @@ describe('updater:quit-for-manual-install', () => {
 
     expect(await invokeQuit()).toEqual({
       success: false,
-      error: 'Quitting for a manual install is only available on macOS',
+      error: 'Quitting for a manual install is only available in packaged macOS builds',
     });
 
     await new Promise<void>(resolve => setImmediate(resolve));
-    expect(quit).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unpackaged macOS renderer outside the manual-install path', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    app.isPackaged = false;
+
+    expect(await invokeQuit()).toEqual({
+      success: false,
+      error: 'Quitting for a manual install is only available in packaged macOS builds',
+    });
+
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(app.quit).not.toHaveBeenCalled();
   });
 });

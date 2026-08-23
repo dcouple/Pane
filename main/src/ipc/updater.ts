@@ -205,8 +205,8 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
    * choose to wait, so the renderer must stay usable after this resolves.
    */
   ipcMain.handle('updater:quit-for-manual-install', () => {
-    if (process.platform !== 'darwin') {
-      return { success: false, error: 'Quitting for a manual install is only available on macOS' };
+    if (!app.isPackaged || process.platform !== 'darwin') {
+      return { success: false, error: 'Quitting for a manual install is only available in packaged macOS builds' };
     }
 
     setImmediate(() => app.quit());
