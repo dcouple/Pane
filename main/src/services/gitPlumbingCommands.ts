@@ -1,6 +1,9 @@
 import { execSync } from '../utils/commandExecutor';
 import * as fs from 'fs';
 import { WSLContext, linuxToUNCPath } from '../utils/wslUtils';
+import type { GitDiffStats } from '../../../shared/types/diff';
+
+export type { GitDiffStats } from '../../../shared/types/diff';
 
 /**
  * Optimized git commands using plumbing (low-level) commands
@@ -17,12 +20,6 @@ export interface GitIndexStatus {
 export interface GitAheadBehind {
   ahead: number;
   behind: number;
-}
-
-export interface GitDiffStats {
-  additions: number;
-  deletions: number;
-  filesChanged: number;
 }
 
 /**

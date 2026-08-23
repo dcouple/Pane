@@ -45,6 +45,8 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: JsonObject[];
   initialCombinedDiff?: JsonObject | null;
+  initialGitGraph?: JsonObject;
+  initialCommitDetail?: JsonObject;
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
   forcedAgentUsageError?: string;
@@ -546,6 +548,12 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           { name: 'main', isCurrent: true, hasWorktree: false, isRemote: false },
         ]),
         refreshGitStatus: () => success(),
+        getGitGraph: (request: { focusRef?: string }) => {
+          const data = clone(mockOptions.initialGitGraph ?? {});
+          if (request.focusRef) data.focusRef = request.focusRef;
+          return success(data);
+        },
+        getCommitDetail: () => success(clone(mockOptions.initialCommitDetail ?? null)),
       }),
       prompts: namespace({
         getAll: () => success([]),
