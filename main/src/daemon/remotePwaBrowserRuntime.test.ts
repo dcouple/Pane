@@ -306,6 +306,28 @@ describe('Remote PWA browser runtime', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('classifies an auth failure before parsing a non-JSON response body', async () => {
+    installBrowserGlobals();
+    const fetchMock = vi.fn(async () => new Response('<h1>Unauthorized</h1>', {
+      headers: { 'Content-Type': 'text/html' },
+      status: 401,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new RemoteDaemonBrowserClient({
+      id: 'profile-1',
+      baseUrl: 'https://host.example.test',
+      label: 'Remote Host',
+      token: 'secret-token',
+      transport: 'http+sse',
+    });
+
+    await expect(client.invoke('sessions:get-all-with-projects', [])).rejects.toThrow(
+      /connection code is not accepted/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('shows a Safari Tailscale hint when health checks fail before HTTP', async () => {
     vi.useFakeTimers();
     try {

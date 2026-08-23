@@ -124,15 +124,13 @@ export class RemoteDaemonBrowserClient {
         });
 
         if (!response.ok) {
-          // SAFETY: The named IPC/API channel contract establishes this error payload type.
-          const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
-          const message = payload.ok
-            ? `Remote request failed with ${response.status}`
-            : payload.error?.message ?? 'Remote request failed';
-          if (isAuthFailureResponse(response.status)) {
+          const isAuthFailure = isAuthFailureResponse(response.status);
+          const isRetryable = isRetryableResponse(response.status);
+          const message = await readInvokeErrorMessage(response) ?? 'Remote request failed';
+          if (isAuthFailure) {
             throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
           }
-          if (!isRetryableResponse(response.status)) {
+          if (!isRetryable) {
             throw new NonRetryableRemoteError(message);
           }
           lastError = new Error(message);
@@ -540,6 +538,16 @@ function isRetryableResponse(status: number): boolean {
 
 function isAuthFailureResponse(status: number): boolean {
   return status === 401 || status === 403;
+}
+
+async function readInvokeErrorMessage(response: Response): Promise<string | undefined> {
+  try {
+    // SAFETY: The named IPC/API channel contract establishes this error payload type.
+    const payload = await response.json() as InvokeSuccessPayload<unknown> | InvokeErrorPayload;
+    return payload.ok ? undefined : payload.error?.message;
+  } catch {
+    return undefined;
+  }
 }
 
 function getRemoteAuthFailureMessage(serverMessage?: string): string {
