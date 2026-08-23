@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle, Clipboard, Download, ExternalLink, Loader2, Power, Terminal } from 'lucide-react';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
@@ -37,6 +37,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   const [message, setMessage] = useState<string | null>(null);
   const [isPackaged, setIsPackaged] = useState(false);
   const [quitRequested, setQuitRequested] = useState(false);
+  const quitHintId = useId();
   const userStartedUpdateRef = useRef(false);
   const downloadStartedRef = useRef(false);
   const installStartedRef = useRef(false);
@@ -202,6 +203,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   }, [clearInstallTimeout, installDownloadedUpdate, isOpen, startDownloadUpdate]);
 
   const handleStartUpdate = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -222,7 +224,9 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
         userStartedUpdateRef.current = false;
         if (response.success) {
           setUpdateState('idle');
-          setMessage('Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.');
+          setMessage(offerQuit
+            ? 'Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.'
+            : 'Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, quit Pane before dragging Pane.app into Applications.');
         } else {
           setError(response.error || 'Failed to open Terminal');
           setUpdateState('error');
@@ -243,6 +247,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
 
   const handleCopyUpdateCommand = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -266,6 +271,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
 
   const handleOpenTerminalWithCommand = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -733,7 +739,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 the downloaded and error states, so the ordinary macOS path — which
                 returns to 'idle' with a message — would otherwise offer no way out. */}
             {offerQuit && quitRequested && (
-              <span id="quit-confirm-hint" role="alert" className="text-sm text-text-secondary">
+              <span id={quitHintId} role="alert" className="text-sm text-text-secondary">
                 Quitting stops running agents.
                 <span className="sr-only"> Choose Quit now to confirm.</span>
               </span>
@@ -743,7 +749,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 onClick={handleQuitForManualInstall}
                 variant={quitRequested ? 'danger' : 'secondary'}
                 disabled={isUpdateBusy}
-                aria-describedby={quitRequested ? 'quit-confirm-hint' : undefined}
+                aria-describedby={quitRequested ? quitHintId : undefined}
                 icon={<Power className="w-4 h-4" />}
               >
                 {quitRequested ? 'Quit now' : 'Quit Pane'}
