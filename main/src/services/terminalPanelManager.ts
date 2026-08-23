@@ -64,6 +64,10 @@ function isValidUuid(value: string | undefined): value is string {
   return value !== undefined && UUID_PATTERN.test(value);
 }
 
+function boundedCommandHistory(history: string[] | undefined): string[] {
+  return history?.slice(-MAX_COMMAND_HISTORY) ?? [];
+}
+
 function terminalCustomState(state: ToolPanel['state']): TerminalPanelState {
   // SAFETY: TerminalPanelManager owns terminal panels and persists this exact
   // custom-state contract; non-terminal panel states never enter these paths.
@@ -1511,7 +1515,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen: savedIsAlternateScreen,
-      commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
+      commandHistory: boundedCommandHistory(terminal.commandHistory),
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
       serializedBuffer: terminal.screenEmulator?.isAlternateScreen
@@ -1561,7 +1565,7 @@ export class TerminalPanelManager {
       terminal.scrollbackBuffer = state.scrollbackBuffer;
     }
     terminal.alternateScreenBuffer = state.alternateScreenBuffer || '';
-    terminal.commandHistory = state.commandHistory || [];
+    terminal.commandHistory = boundedCommandHistory(state.commandHistory);
     
     // Send restoration indicator to terminal
     const restorationMsg = `\r\n[Session Restored from ${state.lastActivityTime || 'previous session'}]\r\n`;
@@ -1610,7 +1614,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: cappedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen,
-      commandHistory: terminal.commandHistory,
+      commandHistory: boundedCommandHistory(terminal.commandHistory),
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
       // An active alternate screen cannot be reconstructed from normal shell

@@ -3,7 +3,7 @@ import type { ConfigManager } from './configManager';
 import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import { createFlowControlRecord, disposeFlowControlRecord, type FlowControlRecord } from '../ptyHost/flowControl';
 import { TerminalStateEmulator } from './terminalStateEmulator';
-import type { TerminalPanelState } from '../../../shared/types/panels';
+import type { TerminalPanelOutputEvent, TerminalPanelState } from '../../../shared/types/panels';
 
 import { TerminalPanelManager } from './terminalPanelManager';
 import { panelManager } from '../test/setup';
@@ -247,8 +247,6 @@ function createConfigManagerStub(): ConfigManager {
     getUsePtyHost: () => false,
   });
 }
-
-type TerminalOutputEvent = { sessionId: string; panelId: string; output: string };
 
 type DataDrivenTerminal = TerminalUnderTest & {
   pty: TerminalUnderTest['pty'] & {
@@ -1068,7 +1066,7 @@ describe('TerminalPanelManager command scrape bounds', () => {
     return combinedSink;
   }
 
-  function cleanup(terminal: DataDrivenTerminal) {
+  function cleanup(terminal: TerminalUnderTest) {
     if (terminal.idleTimer) clearTimeout(terminal.idleTimer);
     if (terminal.outputFlushTimer) clearTimeout(terminal.outputFlushTimer);
     disposeFlowControlRecord(terminal.flowControl);
@@ -1122,7 +1120,7 @@ describe('TerminalPanelManager command scrape bounds', () => {
     // (`flushOutputBuffer`), which always sends `{ sessionId, panelId, output }`.
     const streamed = combinedSink.send.mock.calls
       .filter(([channel]) => channel === 'terminal:output')
-      .map(([, payload]) => (payload as TerminalOutputEvent).output)
+      .map(([, payload]) => (payload as TerminalPanelOutputEvent).output)
       .join('');
     expect(streamed).toBe(KITTY_FRAME.repeat(20));
 
@@ -1166,6 +1164,22 @@ describe('TerminalPanelManager command scrape bounds', () => {
     expect(terminal.commandHistory).toHaveLength(100);
     expect(terminal.commandHistory.at(-1)).toBe('echo 149');
     expect(terminal.commandHistory.at(0)).toBe('echo 50');
+
+    cleanup(terminal);
+  });
+
+  it('bounds and copies command history at state-read boundaries', async () => {
+    const manager = testAccess<SnapshotAccess>(new TerminalPanelManager());
+    const commandHistory = Array.from({ length: 151 }, (_, index) => `echo ${index}`);
+    const terminal = createTerminal({ commandHistory });
+    manager.terminals.set(terminal.panelId, terminal);
+
+    const state = await manager.getTerminalState(terminal.panelId);
+
+    expect(state?.commandHistory).toHaveLength(100);
+    expect(state?.commandHistory?.at(0)).toBe('echo 51');
+    expect(state?.commandHistory?.at(-1)).toBe('echo 150');
+    expect(state?.commandHistory).not.toBe(commandHistory);
 
     cleanup(terminal);
   });
