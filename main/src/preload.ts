@@ -795,8 +795,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('pane:focus-requested', wrappedCallback);
       return () => ipcRenderer.removeListener('pane:focus-requested', wrappedCallback);
     },
-    onSessionDeleted: (callback: (session: Session) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Session) => callback(session);
+    onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Pick<Session, 'id'>) => callback(session);
       ipcRenderer.on('session:deleted', wrappedCallback);
       return () => ipcRenderer.removeListener('session:deleted', wrappedCallback);
     },

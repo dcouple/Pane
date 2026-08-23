@@ -575,6 +575,12 @@ const paneRenameResultSchema: BoundarySchema<PaneRenameResult> = boundary.object
   dryRun: boundary.optional(boundary.literal(true)),
   pane: paneSummarySchema,
 });
+const paneFocusResultSchema: BoundarySchema<PaneFocusResult> = boundary.object({
+  ok: boundary.literal(true),
+  paneId: boundary.string,
+  panelId: boundary.optional(boundary.string),
+  focused: boundary.literal(true),
+});
 const panelListResultSchema: BoundarySchema<PanelListResult> = boundary.object({
   ok: boundary.literal(true),
   paneId: boundary.string,
@@ -886,7 +892,7 @@ export async function runPanesFocus(parsed: ParsedArgs): Promise<number> {
 
   await confirmPaneFocus(parsed, request);
 
-  const result = await invokeDaemon<PaneFocusResult>('runpane:panes:focus', [request], {
+  const result = await invokeDaemon('runpane:panes:focus', [request], paneFocusResultSchema, {
     paneDir: parsed.paneDir,
   });
 

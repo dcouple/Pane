@@ -20,6 +20,7 @@ vi.spyOn(panelManager, 'createPanel');
 vi.spyOn(panelManager, 'getPanel');
 vi.spyOn(panelManager, 'getPanelsForSession');
 vi.spyOn(panelManager, 'updatePanel');
+vi.spyOn(panelManager, 'setActivePanel');
 vi.spyOn(terminalPanelManager, 'initializeTerminal');
 vi.spyOn(terminalPanelManager, 'isTerminalInitialized');
 vi.spyOn(terminalPanelManager, 'getTerminalSnapshot');
@@ -224,6 +225,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.getPanel).mockReset();
     vi.mocked(panelManager.getPanelsForSession).mockReset();
     vi.mocked(panelManager.updatePanel).mockReset();
+    vi.mocked(panelManager.setActivePanel).mockReset();
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
@@ -240,6 +242,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(panelManager.getPanelsForSession).mockImplementation((sessionId: string) =>
       sessionId === session.id ? [terminalPanel] : []
     );
+    vi.mocked(panelManager.setActivePanel).mockResolvedValue();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReturnValue(true);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(null);
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(null);
@@ -2739,6 +2742,7 @@ describe('runpane IPC handlers', () => {
       }]);
 
       expect(window.restore).toHaveBeenCalledTimes(1);
+      expect(panelManager.setActivePanel).toHaveBeenCalledWith(session.id, terminalPanel.id);
       expect(window.show).toHaveBeenCalledTimes(1);
       expect(window.focus).toHaveBeenCalledTimes(1);
       expect(window.webContents.send).toHaveBeenCalledWith('pane:focus-requested', {

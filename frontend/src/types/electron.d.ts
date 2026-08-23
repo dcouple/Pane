@@ -353,7 +353,7 @@ interface ElectronAPI {
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
     onPaneFocusRequested: (callback: (data: { paneId: string; panelId?: string }) => void) => () => void;
-    onSessionDeleted: (callback: (session: Session) => void) => () => void;
+    onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => () => void;
     onSessionsLoaded: (callback: (sessions: Session[]) => void) => () => void;
     onSessionOutput: (callback: (output: SessionOutput) => void) => () => void;
     onSessionLog: (callback: (data: { sessionId: string; entry: LogEntry }) => void) => () => void;

@@ -208,7 +208,7 @@ export function useIPCEvents() {
     unsubscribeFunctions.push(unsubscribeSessionUpdated);
 
     const unsubscribePaneFocusRequested = window.electronAPI.events.onPaneFocusRequested(({ paneId, panelId }) => {
-      console.log('[useIPCEvents] Pane focus requested:', { paneId, panelId });
+      devLog.debug('[useIPCEvents] Pane focus requested:', { paneId, panelId });
       void useSessionStore.getState().setActiveSession(paneId).then(() => {
         if (panelId) {
           usePanelStore.getState().setActivePanel(paneId, panelId);
@@ -217,10 +217,9 @@ export function useIPCEvents() {
     });
     unsubscribeFunctions.push(unsubscribePaneFocusRequested);
 
-    const unsubscribeSessionDeleted = window.electronAPI.events.onSessionDeleted((sessionData: SessionDeletedEventData | string) => {
-      console.log('[useIPCEvents] Session deleted:', sessionData);
-      // The backend sends just { id } for deleted sessions
-      const sessionId = typeof sessionData === 'string' ? sessionData : sessionData.id || sessionData.sessionId;
+    const unsubscribeSessionDeleted = window.electronAPI.events.onSessionDeleted((sessionData) => {
+      devLog.debug('[useIPCEvents] Session deleted:', sessionData);
+      const sessionId = sessionData.id;
 
       // Drain any pending throttled git status calls for this session
       if (sessionId) {

@@ -326,8 +326,8 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.pane.paneId }));
   });
 
-  commandRegistry.register('runpane:panes:focus', async (request: unknown): Promise<RunpanePaneFocusResult> => {
-    return withRunpaneAction(services, 'panes:focus', {}, () => {
+  commandRegistry.register('runpane:panes:focus', async (request: PaneCommandValue): Promise<RunpanePaneFocusResult> => {
+    return withRunpaneAction(services, 'panes:focus', {}, async () => {
       const normalized = parsePaneFocusRequest(request);
       const pane = resolvePane(sessionManager, normalized.paneId);
 
@@ -345,6 +345,10 @@ export function registerRunpaneHandlers(
       const window = services.getMainWindow();
       if (!window) {
         throw new Error('Pane window is not available to focus');
+      }
+
+      if (normalized.panelId) {
+        await panelManager.setActivePanel(pane.id, normalized.panelId);
       }
 
       if (window.isMinimized()) {
@@ -367,7 +371,7 @@ export function registerRunpaneHandlers(
     }, result => ({ paneId: result.paneId, ok: result.ok }));
   });
 
-  commandRegistry.register('runpane:panes:create', async (request: unknown): Promise<RunpanePaneCreateResult> => {
+  commandRegistry.register('runpane:panes:create', async (request: PaneCommandValue): Promise<RunpanePaneCreateResult> => {
     return withRunpaneAction(services, 'panes:create', {}, async () => {
       const normalized = parsePaneCreateRequest(request);
       const repo = resolveRepoSelector(databaseService.getAllProjects(), normalized.repo);
@@ -2145,7 +2149,7 @@ function parsePaneRenameRequest(value: PaneCommandValue): RunpanePaneRenameReque
   };
 }
 
-function parsePaneFocusRequest(value: unknown): RunpanePaneFocusRequest {
+function parsePaneFocusRequest(value: PaneCommandValue): RunpanePaneFocusRequest {
   if (!isRecord(value)) {
     throw new Error('Pane focus request must be an object');
   }
