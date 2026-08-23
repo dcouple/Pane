@@ -6,9 +6,9 @@ import { join } from 'path';
 import {
   GitDiffManager,
   MAX_UNTRACKED_INLINE_FILES,
-  splitNulSeparated,
   untrackedFilePath,
 } from './gitDiffManager';
+import { splitNulSeparated } from './gitDiffParsers';
 import type { CommandRunner } from '../utils/commandRunner';
 
 /**

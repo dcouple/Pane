@@ -24,7 +24,7 @@ import {
   type PullRequestTarget,
 } from '../../../shared/types/pullRequest';
 import { MAX_FILES_PER_COMMIT, type GitCommitFileChange } from '../../../shared/types/git';
-import { mergeFileChanges, parseNameStatusZ, parseNumstatZ } from './gitDiffManager';
+import { mergeFileChanges, parseNameStatusZ, parseNumstatZ } from './gitDiffParsers';
 import { boundary, decodeBoundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 
 /**
@@ -271,6 +271,7 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
         login: boundary.optional(boundary.string),
       }))),
       state: boundary.optional(boundary.string),
+      submittedAt: boundary.optional(boundary.string),
     }))),
     comments: boundary.optional(boundary.array(boundary.json)),
     additions: boundary.optional(boundary.number),
@@ -281,11 +282,19 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
 
   // Only the newest review per person counts — GitHub shows it that way, and a
   // "changes requested" someone later approved is not an open objection.
-  const byAuthor = new Map<string, PullRequestReviewer>();
+  const byAuthor = new Map<string, { reviewer: PullRequestReviewer; submittedAt: number }>();
   for (const review of raw.reviews ?? []) {
     const login = review?.author?.login;
     if (!login) continue;
-    byAuthor.set(login, { login, state: review.state ?? 'COMMENTED' });
+    const parsedSubmittedAt = review.submittedAt ? Date.parse(review.submittedAt) : 0;
+    const submittedAt = Number.isNaN(parsedSubmittedAt) ? 0 : parsedSubmittedAt;
+    const previous = byAuthor.get(login);
+    if (!previous || submittedAt >= previous.submittedAt) {
+      byAuthor.set(login, {
+        reviewer: { login, state: review.state ?? 'COMMENTED' },
+        submittedAt,
+      });
+    }
   }
 
   const status: PullRequestStatus = {
@@ -298,7 +307,7 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
     headRefName: raw.headRefName ?? '',
     reviewDecision: normalizeReviewDecision(raw.reviewDecision),
     mergeable: (raw.mergeable ?? 'UNKNOWN').toUpperCase(),
-    reviewers: Array.from(byAuthor.values()),
+    reviewers: Array.from(byAuthor.values(), entry => entry.reviewer),
     commentCount: Array.isArray(raw.comments) ? raw.comments.length : 0,
     additions: raw.additions ?? 0,
     deletions: raw.deletions ?? 0,

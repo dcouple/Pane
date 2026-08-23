@@ -9,8 +9,14 @@ import {
   MAX_FILES_PER_COMMIT,
   type GitCommitFileChange,
   type GitCommitFilesResult,
-  type GitFileChangeStatus,
 } from '../../../shared/types/git';
+import {
+  mergeFileChanges,
+  parseNameStatusZ,
+  parseNumstatZ,
+  parseUntrackedPathsZ,
+  splitNulSeparated,
+} from './gitDiffParsers';
 
 export interface GitDiffStats {
   additions: number;
@@ -76,10 +82,6 @@ const MAX_DIFF_BUFFER_BYTES = 64 * 1024 * 1024;
  * trimmed here for the same reason — a leading or trailing space is part of the
  * name, not padding.
  */
-export function splitNulSeparated(raw: string): string[] {
-  return raw.split('\0').filter(entry => entry.length > 0);
-}
-
 /**
  * The path Node's `fs` needs for a file git named relative to the worktree.
  *
@@ -121,183 +123,6 @@ async function countNewlines(fsPath: string): Promise<number> {
     stream.on('error', reject);
     stream.on('close', () => resolve(count));
   });
-}
-
-interface NumstatEntry {
-  oldPath: string;
-  path: string;
-  additions: number | null;
-  deletions: number | null;
-  isBinary: boolean;
-}
-
-/**
- * Parse `--numstat -z` output.
- *
- * With `-z` each record is `<add>\t<del>\t<path>\0`, except renames/copies
- * which emit an empty path field followed by two NUL-separated paths:
- * `<add>\t<del>\t\0<oldPath>\0<newPath>\0`. Binary files report `-` for both
- * counts. Paths are never quoted under `-z`, so a tab or quote inside a
- * filename is safe as long as we only split on the first two tabs.
- */
-export function parseNumstatZ(raw: string): NumstatEntry[] {
-  const tokens = raw.split('\0');
-  const entries: NumstatEntry[] = [];
-  let i = 0;
-
-  while (i < tokens.length) {
-    const token = tokens[i];
-    i++;
-    if (!token) continue;
-
-    const firstTab = token.indexOf('\t');
-    if (firstTab < 0) continue;
-    const secondTab = token.indexOf('\t', firstTab + 1);
-    if (secondTab < 0) continue;
-
-    const addRaw = token.slice(0, firstTab);
-    const delRaw = token.slice(firstTab + 1, secondTab);
-    const pathField = token.slice(secondTab + 1);
-
-    let oldPath: string;
-    let path: string;
-    if (pathField === '') {
-      // Rename/copy: the two paths follow as separate NUL-delimited tokens.
-      oldPath = tokens[i] ?? '';
-      i++;
-      path = tokens[i] ?? '';
-      i++;
-      if (!path) path = oldPath;
-    } else {
-      oldPath = pathField;
-      path = pathField;
-    }
-
-    const isBinary = addRaw === '-' || delRaw === '-';
-    entries.push({
-      oldPath,
-      path,
-      additions: isBinary ? null : Number.parseInt(addRaw, 10) || 0,
-      deletions: isBinary ? null : Number.parseInt(delRaw, 10) || 0,
-      isBinary,
-    });
-  }
-
-  return entries;
-}
-
-function toFileChangeStatus(code: string): GitFileChangeStatus {
-  switch (code) {
-    case 'A': return 'added';
-    case 'M': return 'modified';
-    case 'D': return 'deleted';
-    case 'R': return 'renamed';
-    case 'C': return 'copied';
-    case 'T': return 'typechange';
-    case 'U': return 'unmerged';
-    default: return 'unknown';
-  }
-}
-
-interface NameStatusEntry {
-  oldPath: string;
-  path: string;
-  status: GitFileChangeStatus;
-  similarity?: number;
-}
-
-/**
- * Parse `--name-status -z` output: `M\0path\0`, `A\0path\0`,
- * `R100\0oldPath\0newPath\0`. Only `R` and `C` carry two paths.
- */
-export function parseNameStatusZ(raw: string): NameStatusEntry[] {
-  const tokens = raw.split('\0');
-  const entries: NameStatusEntry[] = [];
-  let i = 0;
-
-  while (i < tokens.length) {
-    const statusToken = tokens[i];
-    i++;
-    if (!statusToken) continue;
-
-    const code = statusToken[0];
-    const status = toFileChangeStatus(code);
-    const similarityRaw = statusToken.slice(1);
-    const similarity = similarityRaw ? Number.parseInt(similarityRaw, 10) : undefined;
-
-    if (code === 'R' || code === 'C') {
-      const oldPath = tokens[i] ?? '';
-      i++;
-      const path = tokens[i] ?? '';
-      i++;
-      if (!oldPath && !path) continue;
-      entries.push({
-        oldPath,
-        path: path || oldPath,
-        status,
-        similarity: similarity === undefined || Number.isNaN(similarity) ? undefined : similarity,
-      });
-    } else {
-      const path = tokens[i] ?? '';
-      i++;
-      if (!path) continue;
-      entries.push({ oldPath: path, path, status });
-    }
-  }
-
-  return entries;
-}
-
-/**
- * Zip numstat counts with name-status change kinds, keyed by post-change path.
- * numstat is the source of truth for the file set; a path missing from
- * name-status falls back to `modified`.
- */
-export function mergeFileChanges(
-  numstat: NumstatEntry[],
-  nameStatus: NameStatusEntry[]
-): GitCommitFileChange[] {
-  const statusByPath = new Map(nameStatus.map(entry => [entry.path, entry]));
-
-  return numstat.map(entry => {
-    const match = statusByPath.get(entry.path);
-    const file: GitCommitFileChange = {
-      path: entry.path,
-      oldPath: match?.oldPath || entry.oldPath || entry.path,
-      status: match?.status ?? 'modified',
-      additions: entry.additions,
-      deletions: entry.deletions,
-      isBinary: entry.isBinary,
-    };
-    if (match?.similarity !== undefined) file.similarity = match.similarity;
-    return file;
-  });
-}
-
-/**
- * Parse untracked paths out of `git status --porcelain -z`.
- *
- * Porcelain v1 with `-z` emits `XY <path>\0`; rename entries emit a second
- * path token which we skip. Only `??` records are returned.
- */
-export function parseUntrackedPathsZ(raw: string): string[] {
-  const tokens = raw.split('\0');
-  const paths: string[] = [];
-  let i = 0;
-
-  while (i < tokens.length) {
-    const token = tokens[i];
-    i++;
-    if (!token || token.length < 4) continue;
-
-    const code = token.slice(0, 2);
-    const path = token.slice(3);
-    // Rename/copy records carry the original path as an extra token.
-    if (code[0] === 'R' || code[0] === 'C') i++;
-    if (code === '??') paths.push(path);
-  }
-
-  return paths;
 }
 
 export class GitDiffManager {

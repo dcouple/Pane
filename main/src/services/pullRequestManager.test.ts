@@ -210,8 +210,8 @@ describe('parsePullRequestStatus', () => {
     reviewDecision: 'CHANGES_REQUESTED',
     mergeable: 'CONFLICTING',
     reviews: [
-      { author: { login: 'parsa' }, state: 'CHANGES_REQUESTED' },
-      { author: { login: 'parsa' }, state: 'APPROVED' },
+      { author: { login: 'parsa' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-08-20T10:00:00Z' },
+      { author: { login: 'parsa' }, state: 'APPROVED', submittedAt: '2026-08-21T10:00:00Z' },
       { author: { login: 'someone' }, state: 'COMMENTED' },
     ],
     comments: [{}, {}],
@@ -243,6 +243,18 @@ describe('parsePullRequestStatus', () => {
       { login: 'parsa', state: 'APPROVED' },
       { login: 'someone', state: 'COMMENTED' },
     ]);
+  });
+
+  it('uses submission time when reviews arrive out of order', () => {
+    const status = parsePullRequestStatus(JSON.stringify({
+      number: 382,
+      reviews: [
+        { author: { login: 'parsa' }, state: 'APPROVED', submittedAt: '2026-08-21T10:00:00Z' },
+        { author: { login: 'parsa' }, state: 'CHANGES_REQUESTED', submittedAt: '2026-08-20T10:00:00Z' },
+      ],
+    }));
+
+    expect(status?.reviewers).toEqual([{ login: 'parsa', state: 'APPROVED' }]);
   });
 
   it('fills in what gh left out rather than throwing', () => {
