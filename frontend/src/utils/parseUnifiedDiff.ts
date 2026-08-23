@@ -7,7 +7,7 @@ import type { FileDiff } from '../types/diff';
  * changed line — on a 50k-line uncommitted diff that is 50k throwaway strings
  * per file, on the UI thread. Scanning line starts directly costs nothing.
  */
-function countChangedLines(chunk: string): { additions: number; deletions: number } {
+function countChangedLines(chunk: string) {
   let additions = 0;
   let deletions = 0;
   let lineStart = 0;

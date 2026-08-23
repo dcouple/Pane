@@ -10,7 +10,7 @@ import type {
  * keeps the same colour for as long as it occupies the same lane, which is
  * what makes the graph readable while scrolling.
  */
-export const GRAPH_PALETTE_LENGTH = 8;
+const GRAPH_PALETTE_LENGTH = 8;
 
 /**
  * Assign a lane (column) to every commit and derive the edges to draw between
@@ -87,24 +87,26 @@ export function computeGitGraphLayout(nodes: GitGraphNode[]): GitGraphLayout {
 
     if (firstParent) {
       lanes[lane] = firstParent;
-      edges.push({
+      const edge: GitGraphEdge = {
         fromLane: lane,
         toLane: lane,
         kind: 'straight',
         colorIndex: lane % GRAPH_PALETTE_LENGTH,
-        ...(knownHashes.has(firstParent) ? {} : { danglesBelow: true }),
-      });
+      };
+      if (!knownHashes.has(firstParent)) edge.danglesBelow = true;
+      edges.push(edge);
     }
 
     for (const parent of otherParents) {
       const parentLane = claimLane(parent);
-      edges.push({
+      const edge: GitGraphEdge = {
         fromLane: lane,
         toLane: parentLane,
         kind: 'merge',
         colorIndex: parentLane % GRAPH_PALETTE_LENGTH,
-        ...(knownHashes.has(parent) ? {} : { danglesBelow: true }),
-      });
+      };
+      if (!knownHashes.has(parent)) edge.danglesBelow = true;
+      edges.push(edge);
     }
 
     // Unrelated branches still in flight keep their column through this row,
@@ -114,13 +116,14 @@ export function computeGitGraphLayout(nodes: GitGraphNode[]): GitGraphLayout {
       if (!reservedFor) continue;
       if (i === lane && firstParent) continue;
       if (edges.some(edge => edge.toLane === i)) continue;
-      edges.push({
+      const edge: GitGraphEdge = {
         fromLane: i,
         toLane: i,
         kind: 'passthrough',
         colorIndex: i % GRAPH_PALETTE_LENGTH,
-        ...(knownHashes.has(reservedFor) ? {} : { danglesBelow: true }),
-      });
+      };
+      if (!knownHashes.has(reservedFor)) edge.danglesBelow = true;
+      edges.push(edge);
     }
 
     // Trim trailing free lanes so the gutter does not stay wide after a branch

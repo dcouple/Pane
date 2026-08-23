@@ -13,9 +13,11 @@ import { GitGraphCommitDetail } from './GitGraphCommitDetail';
 import {
   GRAPH_REMOTE_ALL,
   GRAPH_REMOTE_NONE,
+  MAX_GRAPH_LIMIT,
   type GitGraphNode,
   type PaneWorktreeRef,
   type RepoGitGraph,
+  type RepoGitGraphRequest,
 } from '../../../../shared/types/gitGraph';
 
 /** Rows rendered outside the viewport on each side, to hide scroll seams. */
@@ -26,8 +28,6 @@ const VIRTUALIZE_THRESHOLD = 200;
 const REFRESH_DEBOUNCE_MS = 2000;
 
 const LIMIT_OPTIONS = [100, 300, 1000] as const;
-/** Hard ceiling the backend enforces; "load more" stops here. */
-const MAX_LIMIT = 2000;
 /**
  * Ref chips shown inline before a subject. Past this many the row is all
  * chips and no commit message — the rest collapse into a "+N" pill.
@@ -142,6 +142,12 @@ function RefChip({
   );
 }
 
+type SessionWorktree = PaneWorktreeRef & { sessionId: string };
+
+function hasSessionId(worktree: PaneWorktreeRef | undefined): worktree is SessionWorktree {
+  return worktree?.sessionId !== undefined;
+}
+
 export interface GitGraphViewProps {
   projectId: number;
   projectName?: string;
@@ -190,12 +196,10 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
     else setRefreshing(true);
 
     try {
-      const response = await API.projects.getGitGraph({
-        projectId,
-        limit,
-        ...(remoteScope === undefined ? {} : { remoteScope }),
-        ...(focusRef ? { focusRef } : {}),
-      });
+      const request: RepoGitGraphRequest = { projectId, limit };
+      if (remoteScope !== undefined) request.remoteScope = remoteScope;
+      if (focusRef) request.focusRef = focusRef;
+      const response = await API.projects.getGitGraph(request);
       if (requestId !== requestIdRef.current) return;
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to load repository graph');
@@ -347,7 +351,7 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
    */
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof HTMLElement ? event.target : null;
       const typing = target?.isContentEditable
         || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '');
 
@@ -692,12 +696,12 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
                             },
                             ...row.node.refs
                               .map(ref => worktreeByBranch.get(ref.name))
-                              .filter((worktree): worktree is PaneWorktreeRef => Boolean(worktree?.sessionId))
+                              .filter(hasSessionId)
                               .map(worktree => ({
                                 id: `open-${worktree.sessionId}`,
                                 label: `Open session “${worktree.sessionName ?? worktree.branch}”`,
                                 icon: GitBranch,
-                                onClick: () => openSession(worktree.sessionId as string),
+                                onClick: () => openSession(worktree.sessionId),
                               })),
                           ]}
                           trigger={
@@ -723,12 +727,12 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
               <span className="text-[11px] text-text-muted">
                 Showing the {graph.limit} most recent commits.
               </span>
-              {limit < MAX_LIMIT && (
+              {limit < MAX_GRAPH_LIMIT && (
                 <button
                   type="button"
                   onClick={() => setLimit(current => Math.min(
-                    LIMIT_OPTIONS.find(option => option > current) ?? MAX_LIMIT,
-                    MAX_LIMIT
+                    LIMIT_OPTIONS.find(option => option > current) ?? MAX_GRAPH_LIMIT,
+                    MAX_GRAPH_LIMIT
                   ))}
                   disabled={refreshing}
                   className="rounded border border-border-secondary px-2 py-0.5 text-[11px] text-text-secondary transition-colors hover:bg-surface-hover disabled:opacity-50"
@@ -769,12 +773,13 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
       {(graph?.paneWorktrees.length ?? 0) > 0 && (
         <footer className="flex flex-shrink-0 flex-wrap items-center gap-2 border-t border-border-primary bg-surface-secondary px-4 py-1.5">
           <span className="text-[10px] uppercase tracking-wider text-text-muted">Pane worktrees</span>
-          {graph?.paneWorktrees.map(worktree => (
-            worktree.sessionId ? (
+          {graph?.paneWorktrees.map(worktree => {
+            const sessionId = worktree.sessionId;
+            return sessionId ? (
               <button
                 key={worktree.path}
                 type="button"
-                onClick={() => openSession(worktree.sessionId as string)}
+                onClick={() => openSession(sessionId)}
                 title={worktree.path}
                 className="inline-flex items-center gap-1 rounded border border-interactive/40 bg-interactive/10 px-1.5 py-px text-[10px] text-interactive transition-colors hover:bg-interactive/20"
               >
@@ -790,12 +795,10 @@ export function GitGraphView({ projectId, projectName }: GitGraphViewProps) {
               >
                 {worktree.branch}{worktree.isMainCheckout ? ' (main checkout)' : ''}
               </span>
-            )
-          ))}
+            );
+          })}
         </footer>
       )}
     </div>
   );
 }
-
-export default GitGraphView;

@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   GitGraphManager,
+  type GitGraphCommandRunner,
   isPlainRefName,
   isPlainRemoteName,
   parseGraphLog,
@@ -8,7 +9,6 @@ import {
   resolveRemoteScope,
 } from './gitGraphManager';
 import { GRAPH_REMOTE_ALL, GRAPH_REMOTE_NONE } from '../../../shared/types/gitGraph';
-import type { CommandRunner } from '../utils/commandRunner';
 
 const REC = '\x01';
 const F = '\x00';
@@ -17,8 +17,14 @@ function logRecord(fields: string[]): string {
   return REC + fields.join(F);
 }
 
-function stubRunner(responses: Array<[match: string, output: string | Error]>): CommandRunner {
-  const exec = vi.fn((command: string) => {
+interface StubRunner extends GitGraphCommandRunner {
+  commands: string[];
+}
+
+function stubRunner(responses: Array<[match: string, output: string | Error]>): StubRunner {
+  const commands: string[] = [];
+  const exec = (command: string) => {
+    commands.push(command);
     for (const [match, output] of responses) {
       if (command.includes(match)) {
         if (output instanceof Error) throw output;
@@ -26,15 +32,15 @@ function stubRunner(responses: Array<[match: string, output: string | Error]>): 
       }
     }
     return '';
-  });
-  return { exec } as unknown as CommandRunner;
+  };
+  return { exec, commands };
 }
 
 const noWorktrees = async () => [];
 
 /** Every command the stub runner was asked to execute, in order. */
-function execCommands(runner: CommandRunner): string[] {
-  return (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls.map(call => call[0]);
+function execCommands(runner: StubRunner): string[] {
+  return runner.commands;
 }
 
 describe('parseGraphLog', () => {
@@ -311,7 +317,7 @@ describe('GitGraphManager focus and divergence', () => {
 
   it('falls back to the plain ref format when git has no ahead-behind', async () => {
     let attempt = 0;
-    const exec = vi.fn((command: string) => {
+    const exec = (command: string) => {
       if (command.includes('for-each-ref')) {
         attempt += 1;
         // git < 2.41 rejects the whole command rather than the one atom.
@@ -323,8 +329,8 @@ describe('GitGraphManager focus and divergence', () => {
       }
       if (command.includes('symbolic-ref')) return 'main\n';
       return '';
-    });
-    const runner = { exec } as unknown as CommandRunner;
+    };
+    const runner = { exec } satisfies GitGraphCommandRunner;
 
     const graph = await new GitGraphManager().getRepoGraph('/repo', {}, runner, noWorktrees);
 

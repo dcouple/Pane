@@ -37,7 +37,7 @@ export function GitGraphCommitDetail({ projectId, node }: GitGraphCommitDetailPr
         }
         setDiff(response.data);
       })
-      .catch((err: unknown) => {
+      .catch(err => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load commit');
       })
       .finally(() => {
@@ -121,5 +121,3 @@ export function GitGraphCommitDetail({ projectId, node }: GitGraphCommitDetailPr
     </div>
   );
 }
-
-export default GitGraphCommitDetail;

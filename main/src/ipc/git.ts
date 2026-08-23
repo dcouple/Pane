@@ -10,7 +10,7 @@ import { PanelEventType, PanelEvent } from '../../../shared/types/panels';
 import type { Session } from '../types/session';
 import type { GitCommit, GitGraphCommit } from '../services/gitDiffManager';
 import { GitGraphManager } from '../services/gitGraphManager';
-import type { RepoGitGraphRequest } from '../../../shared/types/gitGraph';
+import type { PaneWorktreeRef, RepoGitGraphRequest } from '../../../shared/types/gitGraph';
 import { CommandRunner } from '../utils/commandRunner';
 import { getShellPath } from '../utils/shellPath';
 import { parseWSLPath, validateWSLAvailable } from '../utils/wslUtils';
@@ -491,12 +491,16 @@ export function registerGitHandlers(
           return worktrees.map(worktree => {
             const key = normalizeWorktreePath(worktree.path);
             const session = sessionByPath.get(key);
-            return {
+            const paneWorktree: PaneWorktreeRef = {
               path: worktree.path,
               branch: worktree.branch,
               isMainCheckout: key === projectPathKey,
-              ...(session ? { sessionId: session.id, sessionName: session.name } : {}),
             };
+            if (session) {
+              paneWorktree.sessionId = session.id;
+              paneWorktree.sessionName = session.name;
+            }
+            return paneWorktree;
           });
         }
       );

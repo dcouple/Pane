@@ -101,5 +101,3 @@ export const GitGraphCanvas = memo(function GitGraphCanvas({ row, laneCount, isS
     </svg>
   );
 });
-
-export default GitGraphCanvas;

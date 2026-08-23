@@ -23,6 +23,8 @@ const RECORD_SEP = '\x01';
 const FIELD_SEP = '\x00';
 const LOG_FORMAT = '%x01%H%x00%h%x00%P%x00%s%x00%aI%x00%an%x00%ae';
 
+export type GitGraphCommandRunner = Pick<CommandRunner, 'exec'>;
+
 /** Git messages that mean "valid repo, just nothing to show". */
 function isEmptyRepoError(message: string): boolean {
   return /does not have any commits yet|bad default revision|unknown revision/i.test(message);
@@ -143,7 +145,7 @@ export class GitGraphManager {
   async getRepoGraph(
     projectPath: string,
     options: { limit?: number; remoteScope?: string; focusRef?: string },
-    commandRunner: CommandRunner,
+    commandRunner: GitGraphCommandRunner,
     resolveWorktrees: () => Promise<PaneWorktreeRef[]>
   ): Promise<RepoGitGraph> {
     const limit = Math.min(Math.max(options.limit ?? DEFAULT_GRAPH_LIMIT, 1), MAX_GRAPH_LIMIT);
@@ -165,8 +167,8 @@ export class GitGraphManager {
       limit,
       remotes,
       remoteScope,
-      ...(focusRef ? { focusRef } : {}),
     };
+    if (focusRef) empty.focusRef = focusRef;
 
     let nodes: GitGraphNode[];
     // Asking for one extra commit is how we detect that history continues past
@@ -229,7 +231,7 @@ export class GitGraphManager {
       );
     }
 
-    return {
+    const graph: RepoGitGraph = {
       nodes,
       refs,
       currentBranch,
@@ -238,13 +240,14 @@ export class GitGraphManager {
       limit,
       remotes,
       remoteScope,
-      ...(focusRef ? { focusRef } : {}),
-      ...(refsTruncated ? { notice: `Showing the first ${MAX_GRAPH_REFS} refs.` } : {}),
     };
+    if (focusRef) graph.focusRef = focusRef;
+    if (refsTruncated) graph.notice = `Showing the first ${MAX_GRAPH_REFS} refs.`;
+    return graph;
   }
 
   /** Remotes configured in this clone; empty for a repo with none. */
-  private getRemotes(projectPath: string, commandRunner: CommandRunner): string[] {
+  private getRemotes(projectPath: string, commandRunner: GitGraphCommandRunner): string[] {
     try {
       return commandRunner.exec('git remote', projectPath)
         .split('\n')
@@ -256,7 +259,7 @@ export class GitGraphManager {
     }
   }
 
-  private getCurrentBranch(projectPath: string, commandRunner: CommandRunner): string | null {
+  private getCurrentBranch(projectPath: string, commandRunner: GitGraphCommandRunner): string | null {
     try {
       const output = commandRunner.exec('git symbolic-ref --short -q HEAD', projectPath).trim();
       return output || null;
@@ -266,7 +269,7 @@ export class GitGraphManager {
     }
   }
 
-  private getHeadHash(projectPath: string, commandRunner: CommandRunner): string | null {
+  private getHeadHash(projectPath: string, commandRunner: GitGraphCommandRunner): string | null {
     try {
       return commandRunner.exec('git rev-parse HEAD', projectPath).trim() || null;
     } catch {
@@ -277,7 +280,7 @@ export class GitGraphManager {
   private isResolvableCommit(
     projectPath: string,
     refName: string,
-    commandRunner: CommandRunner
+    commandRunner: GitGraphCommandRunner
   ): boolean {
     try {
       return commandRunner.exec(
@@ -293,8 +296,8 @@ export class GitGraphManager {
     projectPath: string,
     currentBranch: string | null,
     remoteScope: string,
-    commandRunner: CommandRunner
-  ): { refs: GitRef[]; refsTruncated: boolean } {
+    commandRunner: GitGraphCommandRunner
+  ) {
     const scopes = remoteScope === GRAPH_REMOTE_ALL
       ? 'refs/heads refs/remotes refs/tags'
       : remoteScope === GRAPH_REMOTE_NONE
