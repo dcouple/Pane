@@ -1,6 +1,7 @@
 import {
   decodeRemoteDaemonEventEnvelope,
   decodeRemoteHeartbeatPayload,
+  decodeRemoteInvokeResponsePayload,
   type RemoteDaemonEventEnvelope,
   type RemoteDaemonHeartbeatPayload,
   type RemotePaneConnectionProfile,
@@ -19,19 +20,6 @@ export interface RemoteBrowserConnectionState {
   status: RemotePaneConnectionStatus;
   lastError: string | null;
   lastSeenAt: string | null;
-}
-
-interface InvokeSuccessPayload<T> {
-  ok: true;
-  result: T;
-}
-
-interface InvokeErrorPayload {
-  ok: false;
-  error?: {
-    message?: string;
-    code?: string;
-  };
 }
 
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
@@ -122,12 +110,12 @@ export class RemoteDaemonBrowserClient {
         const response = await fetch(this.endpoint('invoke'), request);
 
         if (response.ok) {
-          // SAFETY: The named IPC/API channel contract establishes this success payload type.
-          const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
+          const payload = decodeRemoteInvokeResponsePayload(await response.json());
           if (!payload.ok) {
-            throw new NonRetryableRemoteError(payload.error?.message ?? 'Remote request failed');
+            throw new NonRetryableRemoteError(payload.error.message);
           }
-          return payload.result;
+          // SAFETY: The channel-specific adapter method establishes the decoded JSON result type.
+          return payload.result as T;
         }
 
         const isAuthFailure = isAuthFailureResponse(response.status);
@@ -540,9 +528,8 @@ function isAuthFailureResponse(status: number): boolean {
 
 async function readInvokeErrorMessage(response: Response): Promise<string | undefined> {
   try {
-    // SAFETY: The named IPC/API channel contract establishes this error payload type.
-    const payload = await response.json() as InvokeSuccessPayload<unknown> | InvokeErrorPayload;
-    return payload.ok ? undefined : payload.error?.message;
+    const payload = decodeRemoteInvokeResponsePayload(await response.json());
+    return payload.ok ? undefined : payload.error.message;
   } catch {
     return undefined;
   }

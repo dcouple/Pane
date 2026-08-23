@@ -328,6 +328,39 @@ describe('Remote PWA browser runtime', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects malformed successful invoke response envelopes', async () => {
+    vi.useFakeTimers();
+    try {
+      installBrowserGlobals();
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+        ok: 'yes',
+        result: { projects: [] },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+        status: 200,
+      }));
+      vi.stubGlobal('fetch', fetchMock);
+
+      const client = new RemoteDaemonBrowserClient({
+        id: 'profile-1',
+        baseUrl: 'https://host.example.test',
+        label: 'Remote Host',
+        token: 'secret-token',
+        transport: 'http+sse',
+      });
+
+      const invoke = client.invoke('sessions:get-all-with-projects', []).catch((cause: unknown) => cause);
+      await vi.runAllTimersAsync();
+
+      const error = await invoke;
+      if (!(error instanceof Error)) throw new Error('Expected invoke to reject with Error');
+      expect(error.message).toMatch(/did not match any allowed shape/);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('shows a Safari Tailscale hint when health checks fail before HTTP', async () => {
     vi.useFakeTimers();
     try {
