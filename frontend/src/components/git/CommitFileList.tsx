@@ -4,40 +4,18 @@ import { API } from '../../utils/api';
 import type { GitCommitFileChange, GitCommitFilesResult, GitFileChangeStatus } from '../../../../shared/types/git';
 import { readCommitFileCache, writeCommitFileCache } from './commitFileCache';
 
-const STATUS_LABEL: Record<GitFileChangeStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  renamed: 'R',
-  copied: 'C',
-  typechange: 'T',
-  unmerged: 'U',
-  unknown: '?',
-};
+const STATUS_META = {
+  added: { label: 'A', className: 'text-status-success', title: 'Added' },
+  modified: { label: 'M', className: 'text-interactive', title: 'Modified' },
+  deleted: { label: 'D', className: 'text-status-error', title: 'Deleted' },
+  renamed: { label: 'R', className: 'text-interactive', title: 'Renamed' },
+  copied: { label: 'C', className: 'text-interactive', title: 'Copied' },
+  typechange: { label: 'T', className: 'text-status-warning', title: 'Type changed' },
+  unmerged: { label: 'U', className: 'text-status-warning', title: 'Unmerged' },
+  unknown: { label: '?', className: 'text-text-muted', title: 'Unknown change' },
+} satisfies Record<GitFileChangeStatus, { label: string; className: string; title: string }>;
 
-const STATUS_CLASS: Record<GitFileChangeStatus, string> = {
-  added: 'text-status-success',
-  modified: 'text-interactive',
-  deleted: 'text-status-error',
-  renamed: 'text-interactive',
-  copied: 'text-interactive',
-  typechange: 'text-status-warning',
-  unmerged: 'text-status-warning',
-  unknown: 'text-text-muted',
-};
-
-const STATUS_TITLE: Record<GitFileChangeStatus, string> = {
-  added: 'Added',
-  modified: 'Modified',
-  deleted: 'Deleted',
-  renamed: 'Renamed',
-  copied: 'Copied',
-  typechange: 'Type changed',
-  unmerged: 'Unmerged',
-  unknown: 'Unknown change',
-};
-
-function splitPath(path: string): { dir: string; name: string } {
+function splitPath(path: string) {
   const idx = path.lastIndexOf('/');
   if (idx < 0) return { dir: '', name: path };
   return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
@@ -51,18 +29,18 @@ function FileRow({
   onClick?: () => void;
 }) {
   const { dir, name } = splitPath(file.path);
-  const statusTitle = STATUS_TITLE[file.status];
+  const status = STATUS_META[file.status];
   const title = file.status === 'renamed' || file.status === 'copied'
-    ? `${statusTitle} from ${file.oldPath} to ${file.path}`
-    : `${statusTitle}: ${file.path}`;
+    ? `${status.title} from ${file.oldPath} to ${file.path}`
+    : `${status.title}: ${file.path}`;
 
   const body = (
     <>
       <span
-        className={`w-3 flex-shrink-0 font-mono text-[10px] leading-none ${STATUS_CLASS[file.status]}`}
+        className={`w-3 flex-shrink-0 font-mono text-[10px] leading-none ${status.className}`}
         aria-hidden="true"
       >
-        {STATUS_LABEL[file.status]}
+        {status.label}
       </span>
       <span className="min-w-0 flex-1 truncate text-left text-[11px] leading-snug">
         {dir && <span className="text-text-muted">{dir}</span>}
@@ -97,7 +75,7 @@ function FileRow({
       type="button"
       onClick={onClick}
       title={title}
-      aria-label={`${statusTitle}: ${file.path}. Show diff.`}
+      aria-label={`${status.title}: ${file.path}. Show diff.`}
       className="flex w-full items-center gap-1.5 rounded-sm py-0.5 pl-6 pr-2 transition-colors hover:bg-surface-hover focus:outline-none focus:ring-1 focus:ring-inset focus:ring-interactive"
     >
       {body}
@@ -148,7 +126,7 @@ export function CommitFileList({ sessionId, commitRef, onFileClick, className = 
         writeCommitFileCache(sessionId, commitRef, response.data);
         setResult(response.data);
       })
-      .catch((err: unknown) => {
+      .catch(err => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load changed files');
       })
@@ -202,5 +180,3 @@ export function CommitFileList({ sessionId, commitRef, onFileClick, className = 
     </div>
   );
 }
-
-export default CommitFileList;

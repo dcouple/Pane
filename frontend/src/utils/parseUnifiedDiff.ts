@@ -7,7 +7,7 @@ import type { FileDiff } from '../types/diff';
  * changed line — on a 50k-line uncommitted diff that is 50k throwaway strings
  * per file, on the UI thread. Scanning line starts directly costs nothing.
  */
-function countChangedLines(chunk: string): { additions: number; deletions: number } {
+function countChangedLines(chunk: string) {
   let additions = 0;
   let deletions = 0;
   let lineStart = 0;
@@ -31,17 +31,17 @@ function countChangedLines(chunk: string): { additions: number; deletions: numbe
   return { additions, deletions };
 }
 
-const GIT_ESCAPE_BYTES: Record<string, number> = {
-  a: 0x07,
-  b: 0x08,
-  t: 0x09,
-  n: 0x0a,
-  v: 0x0b,
-  f: 0x0c,
-  r: 0x0d,
-  '"': 0x22,
-  '\\': 0x5c,
-};
+const GIT_ESCAPE_BYTES = new Map([
+  ['a', 0x07],
+  ['b', 0x08],
+  ['t', 0x09],
+  ['n', 0x0a],
+  ['v', 0x0b],
+  ['f', 0x0c],
+  ['r', 0x0d],
+  ['"', 0x22],
+  ['\\', 0x5c],
+]);
 
 function decodeGitQuotedPath(token: string): string {
   const bytes: number[] = [];
@@ -65,7 +65,7 @@ function decodeGitQuotedPath(token: string): string {
       bytes.push(Number.parseInt(octal, 8));
       continue;
     }
-    bytes.push(GIT_ESCAPE_BYTES[escaped] ?? escaped.charCodeAt(0));
+    bytes.push(GIT_ESCAPE_BYTES.get(escaped) ?? escaped.charCodeAt(0));
   }
 
   return new TextDecoder().decode(Uint8Array.from(bytes));

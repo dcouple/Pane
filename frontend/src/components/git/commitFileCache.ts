@@ -1,4 +1,4 @@
-import type { GitCommitFilesResult } from '../../../../shared/types/git';
+import { WORKING_TREE_REF, type GitCommitFilesResult } from '../../../../shared/types/git';
 
 /**
  * Per-commit file listings are immutable, so they are cached for the lifetime
@@ -7,9 +7,7 @@ import type { GitCommitFilesResult } from '../../../../shared/types/git';
  */
 const cache = new Map<string, GitCommitFilesResult>();
 
-export const WORKING_TREE_REF = 'index';
-
-export function commitFileCacheKey(sessionId: string, commitRef: string): string {
+function commitFileCacheKey(sessionId: string, commitRef: string): string {
   return `${sessionId}:${commitRef}`;
 }
 
@@ -30,7 +28,7 @@ export function invalidateCommitFileCache(sessionId?: string): void {
     return;
   }
   const prefix = `${sessionId}:`;
-  for (const key of Array.from(cache.keys())) {
+  for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
   }
 }

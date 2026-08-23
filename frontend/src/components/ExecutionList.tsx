@@ -3,9 +3,7 @@ import { RotateCcw, GitCommitHorizontal, ChevronRight, ChevronDown } from 'lucid
 import type { ExecutionListProps, ExecutionDiff } from '../types/diff';
 import { useScrollSurface } from '../hooks/useScrollSurface';
 import { CommitFileList } from './git/CommitFileList';
-
-/** Pseudo-ref the backend understands for uncommitted working-tree changes. */
-const WORKING_TREE_REF = 'index';
+import { WORKING_TREE_REF } from '../../../shared/types/git';
 
 function executionRef(execution: ExecutionDiff): string | null {
   if (execution.id === 0) return WORKING_TREE_REF;

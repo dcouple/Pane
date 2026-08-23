@@ -5,9 +5,9 @@ import {
   parseNameStatusZ,
   parseUntrackedPathsZ,
   mergeFileChanges,
-  WORKING_TREE_REF,
 } from './gitDiffManager';
-import type { CommandRunner } from '../utils/commandRunner';
+import { WORKING_TREE_REF } from '../../../shared/types/git';
+import { CommandRunner } from '../utils/commandRunner';
 
 const COMMIT_HASH = 'a'.repeat(40);
 const MERGE_HASH = 'b'.repeat(40);
@@ -18,13 +18,14 @@ const LARGE_COMMIT_HASH = 'c'.repeat(40);
  * command, so each test only has to describe the outputs it cares about.
  */
 function stubRunner(responses: Array<[match: string, output: string]>): CommandRunner {
-  const exec = vi.fn((command: string) => {
+  const runner = new CommandRunner({ path: '/repo' });
+  vi.spyOn(runner, 'exec').mockImplementation((command: string) => {
     for (const [match, output] of responses) {
       if (command.includes(match)) return output;
     }
     return '';
   });
-  return { exec } as unknown as CommandRunner;
+  return runner;
 }
 
 describe('parseNumstatZ', () => {
@@ -150,7 +151,7 @@ describe('GitDiffManager.getCommitFileChanges', () => {
     const result = new GitDiffManager().getCommitFileChanges('/repo', MERGE_HASH, runner);
 
     expect(result.isMergeAgainstFirstParent).toBe(true);
-    const commands = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls.map(call => call[0]);
+    const commands = vi.mocked(runner.exec).mock.calls.map(call => call[0]);
     expect(commands.some(cmd => cmd.includes('--numstat') && cmd.includes('--first-parent'))).toBe(true);
   });
 
@@ -189,33 +190,16 @@ describe('GitDiffManager.getCommitFileChanges', () => {
   });
 
   it('returns an empty result instead of throwing on git failure', () => {
-    const runner = {
-      exec: vi.fn(() => {
-        throw new Error('fatal: bad revision');
-      }),
-    } as unknown as CommandRunner;
+    const runner = stubRunner([]);
+    vi.mocked(runner.exec).mockImplementation(() => {
+      throw new Error('fatal: bad revision');
+    });
 
     const result = new GitDiffManager().getCommitFileChanges('/repo', COMMIT_HASH, runner);
 
     expect(result.files).toEqual([]);
     expect(result.totalFiles).toBe(0);
   });
-});
-
-describe('GitDiffManager.getCommitFileChanges error handling', () => {
-  it('returns an empty result instead of throwing on git failure', () => {
-    const runner = {
-      exec: vi.fn(() => {
-        throw new Error('fatal: bad revision');
-      }),
-    } as unknown as CommandRunner;
-
-    const result = new GitDiffManager().getCommitFileChanges('/repo', COMMIT_HASH, runner);
-
-    expect(result.files).toEqual([]);
-    expect(result.totalFiles).toBe(0);
-  });
-
   it('rejects a shell-like ref before running a command', () => {
     const runner = stubRunner([]);
 

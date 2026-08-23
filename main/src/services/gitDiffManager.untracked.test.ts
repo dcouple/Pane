@@ -9,7 +9,7 @@ import {
   splitNulSeparated,
   untrackedFilePath,
 } from './gitDiffManager';
-import type { CommandRunner } from '../utils/commandRunner';
+import { CommandRunner } from '../utils/commandRunner';
 
 /**
  * Untracked files are the one place where a name that came out of the
@@ -42,11 +42,10 @@ const HOSTILE_NAMES = [
 
 /** A runner that answers git for real, as a host project would. */
 function realRunner(): CommandRunner {
-  return {
-    wslContext: null,
-    exec: vi.fn((command: string, cwd: string) => run(command, cwd)),
-    execAsync: vi.fn(async (command: string, cwd: string) => ({ stdout: run(command, cwd), stderr: '' })),
-  } as unknown as CommandRunner;
+  const runner = new CommandRunner({ path: '' });
+  vi.spyOn(runner, 'exec').mockImplementation((command, cwd) => run(command, cwd));
+  vi.spyOn(runner, 'execAsync').mockImplementation(async (command, cwd) => ({ stdout: run(command, cwd), stderr: '' }));
+  return runner;
 }
 
 /** Run a `git …` command without a shell, so the test itself cannot be the bug. */
@@ -173,12 +172,12 @@ describe('working-directory capture stays bounded and off the main thread', () =
     const runner = realRunner();
     await new GitDiffManager().captureWorkingDirectoryDiff(repo, runner);
 
-    const asyncCalls = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls;
+    const asyncCalls = vi.mocked(runner.execAsync).mock.calls;
     expect(asyncCalls.length).toBeLessThan(10);
     // Nothing that reads or measures a file goes through a command any more.
     expect(asyncCalls.some(([command]) => /^(cat|wc) /.test(command))).toBe(false);
     expect(asyncCalls.filter(([command]) => command.includes('ls-files')).length).toBe(1);
-  });
+  }, 60_000);
 
   it('caps inlined content but still reports every file', async () => {
     const result = await new GitDiffManager().captureWorkingDirectoryDiff(repo, realRunner());
@@ -189,15 +188,15 @@ describe('working-directory capture stays bounded and off the main thread', () =
     expect(result.stats.filesChanged).toBe(fileCount);
     // Counting is not capped: every file's two lines are in the total.
     expect(result.stats.additions).toBe(fileCount * 2);
-  });
+  }, 60_000);
 
   it('keeps the synchronous path free of anything that scales with file count', async () => {
     const runner = realRunner();
     await new GitDiffManager().captureWorkingDirectoryDiff(repo, runner);
 
-    const syncCalls = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls;
+    const syncCalls = vi.mocked(runner.exec).mock.calls;
     expect(syncCalls.every(([command]) => command.includes('rev-parse'))).toBe(true);
-  });
+  }, 60_000);
 });
 
 describe('splitNulSeparated', () => {

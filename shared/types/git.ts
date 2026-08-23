@@ -16,6 +16,9 @@ export type GitFileChangeStatus =
   | 'unmerged'
   | 'unknown';
 
+/** Pseudo-ref used to address uncommitted working-tree changes. */
+export const WORKING_TREE_REF = 'index';
+
 export interface GitCommitFileChange {
   /** Post-change path (the new path for renames/copies). */
   path: string;
