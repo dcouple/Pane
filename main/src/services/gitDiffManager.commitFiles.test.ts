@@ -74,10 +74,10 @@ describe('parseNameStatusZ', () => {
     ]);
   });
 
-  it('parses renames with a similarity score and two paths', () => {
+  it('parses renames with two paths', () => {
     const raw = 'R100\0old/name.ts\0new/name.ts\0';
     expect(parseNameStatusZ(raw)).toEqual([
-      { oldPath: 'old/name.ts', path: 'new/name.ts', status: 'renamed', similarity: 100 },
+      { oldPath: 'old/name.ts', path: 'new/name.ts', status: 'renamed' },
     ]);
   });
 
@@ -113,7 +113,6 @@ describe('mergeFileChanges', () => {
         additions: 1,
         deletions: 1,
         isBinary: false,
-        similarity: 95,
       },
     ]);
   });

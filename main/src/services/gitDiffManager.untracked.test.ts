@@ -138,6 +138,19 @@ describe('untracked files with hostile names', () => {
 
     await rm(join(repo, 'nested dir'), { recursive: true, force: true });
   });
+
+  it('keeps tracked filenames intact at the changed-files boundary', async () => {
+    const trackedName = 'tracked täst.txt';
+    await writeFile(join(repo, trackedName), 'before\n', 'utf8');
+    execFileSync('git', ['add', trackedName], { cwd: repo });
+    execFileSync('git', ['commit', '-q', '-m', 'add tracked path'], { cwd: repo });
+    await writeFile(join(repo, trackedName), 'after\n', 'utf8');
+
+    const result = await new GitDiffManager().captureWorkingDirectoryDiff(repo, realRunner());
+
+    expect(result.changedFiles).toContain(trackedName);
+    expect(result.changedFiles.some(file => file.includes('\\303'))).toBe(false);
+  });
 });
 
 /**

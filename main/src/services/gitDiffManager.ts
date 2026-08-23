@@ -203,7 +203,6 @@ interface NameStatusEntry {
   oldPath: string;
   path: string;
   status: GitFileChangeStatus;
-  similarity?: number;
 }
 
 /**
@@ -222,9 +221,6 @@ export function parseNameStatusZ(raw: string): NameStatusEntry[] {
 
     const code = statusToken[0];
     const status = toFileChangeStatus(code);
-    const similarityRaw = statusToken.slice(1);
-    const similarity = similarityRaw ? Number.parseInt(similarityRaw, 10) : undefined;
-
     if (code === 'R' || code === 'C') {
       const oldPath = tokens[i] ?? '';
       i++;
@@ -235,7 +231,6 @@ export function parseNameStatusZ(raw: string): NameStatusEntry[] {
         oldPath,
         path: path || oldPath,
         status,
-        similarity: similarity !== undefined && Number.isNaN(similarity) ? undefined : similarity,
       });
     } else {
       const path = tokens[i] ?? '';
@@ -269,7 +264,6 @@ export function mergeFileChanges(
       deletions: entry.deletions,
       isBinary: entry.isBinary,
     };
-    if (match?.similarity !== undefined) fileChange.similarity = match.similarity;
     return fileChange;
   });
 }
@@ -850,8 +844,8 @@ export class GitDiffManager {
     commandRunner: CommandRunner
   ): Promise<string[]> {
     try {
-      const { stdout } = await commandRunner.execAsync('git diff --name-only HEAD', worktreePath);
-      const tracked = (stdout ?? '').trim().split('\n').map(file => file.trim()).filter(Boolean);
+      const { stdout } = await commandRunner.execAsync('git diff --name-only -z HEAD', worktreePath);
+      const tracked = splitNulSeparated(stdout ?? '');
       return [...tracked, ...untrackedFiles];
     } catch {
       this.logger?.warn(`Could not get changed files in ${worktreePath}`);

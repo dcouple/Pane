@@ -29,8 +29,6 @@ export interface GitCommitFileChange {
   additions: number | null;
   deletions: number | null;
   isBinary: boolean;
-  /** Rename/copy similarity 0-100, when git reports it. */
-  similarity?: number;
 }
 
 export interface GitCommitFilesResult {
