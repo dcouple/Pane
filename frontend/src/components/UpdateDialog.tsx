@@ -82,6 +82,12 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     isMacPlatform: isMac(),
     hasUpdate: versionInfo?.hasUpdate === true,
   });
+  const manualInstallQuitInstruction = offerQuit
+    ? 'use Quit Pane below before dragging Pane.app into Applications'
+    : 'quit Pane before dragging Pane.app into Applications';
+  const manualInstallSteps = offerQuit
+    ? 'use Quit Pane below, then drag Pane.app into Applications and choose Replace'
+    : 'quit Pane, drag Pane.app into Applications, and choose Replace';
 
   const startDownloadUpdate = useCallback(async () => {
     if (!window.electronAPI?.updater) {
@@ -224,9 +230,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
         userStartedUpdateRef.current = false;
         if (response.success) {
           setUpdateState('idle');
-          setMessage(offerQuit
-            ? 'Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.'
-            : 'Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, quit Pane before dragging Pane.app into Applications.');
+          setMessage(`Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, ${manualInstallQuitInstruction}.`);
         } else {
           setError(response.error || 'Failed to open Terminal');
           setUpdateState('error');
@@ -281,9 +285,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       const response = await window.electronAPI.updater.openTerminalWithCommand();
       if (response.success) {
         setError(null);
-        setMessage(offerQuit
-          ? 'Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.'
-          : 'Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, quit Pane before dragging Pane.app into Applications.');
+        setMessage(`Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, ${manualInstallQuitInstruction}.`);
       } else {
         setMessage(null);
         setError(response.error || 'Failed to open Terminal');
@@ -414,9 +416,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           Paste it, press Return, and the latest Pane installer will download and open.
         </p>
         <p className="text-text-secondary">
-          {offerQuit
-            ? 'After the DMG opens: use Quit Pane below, then drag Pane.app into Applications and choose Replace.'
-            : 'After the DMG opens: quit Pane, drag Pane.app into Applications, and choose Replace.'}
+          After the DMG opens: {manualInstallSteps}.
           {' '}Your settings and sessions are preserved.
         </p>
         <code className="block bg-surface-primary border border-border-primary rounded px-3 py-2 text-xs text-text-primary font-mono break-all">
@@ -629,10 +629,8 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                       <div className="space-y-3">
                         {isMac() ? (
                           <p className="text-sm text-text-secondary">
-                            Use the update command above, or download the DMG directly. After the DMG opens,
-                            {offerQuit
-                              ? ' use Quit Pane below, then drag Pane.app into Applications and choose Replace.'
-                              : ' quit Pane, drag Pane.app into Applications, and choose Replace.'}
+                            Use the update command above, or download the DMG directly. After the DMG opens,{' '}
+                            {manualInstallSteps}.
                           </p>
                         ) : (
                           <>
