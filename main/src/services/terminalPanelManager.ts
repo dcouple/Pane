@@ -23,7 +23,7 @@ import { detectAgentState } from './agentStatus/manifestEngine';
 import { getManifestForAgent } from './agentStatus/manifests';
 import type { AgentState, PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { PaneEventArgument } from '../core/eventSink';
-import { stripInheritedAgentSession } from './panels/agentSessionEnv';
+import { stripInheritedAgentSession } from '../utils/agentSessionEnv';
 import { injectionSequence, INJECTION_PRIMER_DELAY_MS } from './panels/terminalInjection';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
