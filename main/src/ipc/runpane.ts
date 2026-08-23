@@ -108,6 +108,7 @@ const DEFAULT_PANEL_WAIT_TIMEOUT_MS = 30_000;
 const DEFAULT_PANEL_WAIT_INTERVAL_MS = 500;
 const DEFAULT_COMPOSER_VERIFY_TIMEOUT_MS = 3_000;
 const DEFAULT_COMPOSER_VERIFY_INTERVAL_MS = 100;
+const CODEX_SUBMIT_STAGE_DELAY_MS = 500;
 const MAX_CREATE_SUBMIT_ATTEMPTS = 3;
 const CREATE_SUBMIT_CONFIRMATION_DELAY_MS = 400;
 const DEFAULT_ARCHIVE_CLEANUP_TIMEOUT_MS = 30_000;
@@ -574,11 +575,37 @@ export function registerRunpaneHandlers(
   });
 
   commandRegistry.register('runpane:panels:submit', async (request: PaneCommandValue): Promise<RunpanePanelSubmitResult> => {
-    return withRunpaneAction(services, 'panels:submit', {}, () => {
+    return withRunpaneAction(services, 'panels:submit', {}, async () => {
       const normalized = parsePanelSubmitRequest(request);
       const panel = resolveTerminalPanel(normalized.panelId);
       if (!terminalPanelManager.isTerminalInitialized(panel.id)) {
         throw new Error(`Terminal panel ${panel.id} is not initialized`);
+      }
+
+      const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+      const stagedInput = stripSubmitEnter(normalized.input);
+      if (
+        stagedInput.length > 0 &&
+        beforeScreen.state.agentType === 'codex' &&
+        beforeScreen.state.activityStatus === 'idle' &&
+        beforeScreen.state.isCliReady === true &&
+        beforeScreen.composer.isPresent
+      ) {
+        terminalPanelManager.writeToTerminal(panel.id, stagedInput);
+        await sleep(CODEX_SUBMIT_STAGE_DELAY_MS);
+        const submission = await submitComposerForPanel(panel, 'auto');
+        return {
+          ok: submission.ok,
+          panelId: panel.id,
+          paneId: panel.sessionId,
+          inputBytes: Buffer.byteLength(stagedInput, 'utf8') + submission.inputBytes,
+          enter: 'cr',
+          sequenceName: submission.sequenceName,
+          verifiedSubmitted: submission.verifiedSubmitted,
+          sentAt: submission.sentAt,
+          blocked: submission.blocked,
+          nextCommand: submission.nextCommand,
+        };
       }
 
       const input = ensureSubmitEnter(normalized.input);
@@ -590,6 +617,8 @@ export function registerRunpaneHandlers(
         paneId: panel.sessionId,
         inputBytes: Buffer.byteLength(input, 'utf8'),
         enter: 'cr',
+        sequenceName: 'enter-cr',
+        verifiedSubmitted: false,
         sentAt: new Date().toISOString(),
         nextCommand: panelWaitCommand(panel.id),
       };
@@ -1093,6 +1122,7 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   const state = panelStateSummary(panel, liveSnapshot, customState);
   const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
   const bounded = boundSanitizedLines(rawText, limit);
+  const composer = detectPanelComposer(bounded.text, state.agentType);
 
   return {
     ok: true,
@@ -1104,7 +1134,36 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
     hasMore: bounded.hasMore,
     text: bounded.text,
     state,
+    composer,
     nextCommand: bounded.hasMore ? panelOutputCommand(panel.id) : panelWaitCommand(panel.id),
+  };
+}
+
+function detectPanelComposer(
+  text: string,
+  agentType: RunpaneAgentId | undefined,
+): RunpanePanelScreenResult['composer'] {
+  if (agentType !== 'codex') {
+    return { isPresent: false, hasUndeliveredText: false };
+  }
+
+  const lines = text.split(/\r?\n/u).map(line => line.trim());
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const match = lines[index].match(/^[›❯]\s*(.*)$/u);
+    if (!match) continue;
+
+    const content = match[1].trim();
+    const isPlaceholder = /^ask codex to do anything[.!]?$/iu.test(content);
+    return {
+      isPresent: true,
+      hasUndeliveredText: content.length > 0 && !isPlaceholder,
+    };
+  }
+
+  const hasPastedContent = /\[Pasted Content[^\]]*\]/iu.test(text);
+  return {
+    isPresent: hasPastedContent,
+    hasUndeliveredText: hasPastedContent,
   };
 }
 
@@ -1334,6 +1393,12 @@ function ensureSubmitEnter(input: string): string {
   return `${input}\r`;
 }
 
+function stripSubmitEnter(input: string): string {
+  if (input.endsWith('\r\n')) return input.slice(0, -2);
+  if (input.endsWith('\r') || input.endsWith('\n')) return input.slice(0, -1);
+  return input;
+}
+
 interface ComposerSubmit {
   strategy: 'codex-ctrl-enter' | 'enter';
   sequenceName: RunpanePanelSubmitComposerResult['sequenceName'];
@@ -1391,7 +1456,7 @@ async function verifyComposerSubmitted(
   verifiedSubmitted: boolean;
   blocked?: RunpanePanelBlockedState;
 }> {
-  const beforeHadComposerPrompt = looksLikePendingComposer(beforeScreen.text);
+  const beforeHadComposerPrompt = beforeScreen.composer.hasUndeliveredText || looksLikePendingComposer(beforeScreen.text);
   if (!beforeHadComposerPrompt && !beforeScreen.text.trim()) {
     return { ok: true, verifiedSubmitted: false };
   }
@@ -1406,13 +1471,13 @@ async function verifyComposerSubmitted(
       return { ok: true, verifiedSubmitted: true };
     }
 
-    if (beforeHadComposerPrompt && !looksLikePendingComposer(latestScreen.text)) {
+    if (beforeHadComposerPrompt && !latestScreen.composer.hasUndeliveredText && !looksLikePendingComposer(latestScreen.text)) {
       return { ok: true, verifiedSubmitted: true };
     }
 
   }
 
-  if (beforeHadComposerPrompt && looksLikePendingComposer(latestScreen.text)) {
+  if (beforeHadComposerPrompt && (latestScreen.composer.hasUndeliveredText || looksLikePendingComposer(latestScreen.text))) {
     return {
       ok: false,
       verifiedSubmitted: false,

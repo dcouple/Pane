@@ -858,6 +858,66 @@ describe('runpane IPC handlers', () => {
     );
   });
 
+  it('stages text before submitting an idle Codex composer', async () => {
+    vi.useFakeTimers();
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› Ask Codex to do anything\n', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('› Continue the existing task\n', 'idle'))
+      .mockReturnValueOnce(terminalSnapshot('Working\n', 'active'));
+    const registry = createRegistry();
+
+    const pendingResult = registry.invoke('runpane:panels:submit', [{
+      panelId: terminalPanel.id,
+      input: 'Continue the existing task\n',
+    }]);
+
+    await vi.advanceTimersByTimeAsync(600);
+    const result = await pendingResult;
+
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(
+      1,
+      terminalPanel.id,
+      'Continue the existing task',
+    );
+    expect(terminalPanelManager.writeToTerminal).toHaveBeenNthCalledWith(
+      2,
+      terminalPanel.id,
+      '\x1b[13;5u\r',
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      panelId: terminalPanel.id,
+      sequenceName: 'codex-ctrl-enter-cr',
+      verifiedSubmitted: true,
+    });
+  });
+
+  it('does not report success when submitted text remains in an idle Codex composer', async () => {
+    vi.useFakeTimers();
+    vi.mocked(terminalPanelManager.getTerminalSnapshot)
+      .mockReturnValueOnce(terminalSnapshot('› Ask Codex to do anything\n', 'idle'))
+      .mockReturnValue(terminalSnapshot('› Continue the existing task\n', 'idle'));
+    const registry = createRegistry();
+
+    const pendingResult = registry.invoke('runpane:panels:submit', [{
+      panelId: terminalPanel.id,
+      input: 'Continue the existing task',
+    }]);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    const result = await pendingResult;
+
+    expect(result).toMatchObject({
+      ok: false,
+      sequenceName: 'codex-ctrl-enter-cr',
+      verifiedSubmitted: false,
+      blocked: {
+        kind: 'agent-prompt',
+        suggestedCommand: `runpane panels screen --panel ${terminalPanel.id} --limit 80 --json`,
+      },
+    });
+  });
+
   it('submits a Codex composer with the effective Ctrl+Enter sequence and verifies composer cleared', async () => {
     vi.mocked(terminalPanelManager.getTerminalSnapshot)
       .mockReturnValueOnce({
@@ -983,6 +1043,33 @@ describe('runpane IPC handlers', () => {
         activityStatus: 'idle',
         isCliReady: true,
         agentType: 'codex',
+      },
+      composer: {
+        isPresent: false,
+        hasUndeliveredText: false,
+      },
+    });
+  });
+
+  it.each([
+    ['› Continue the existing task\n  gpt-5.6 high\n', true],
+    ['› [Pasted Content 2048 chars]\n  Ctrl+Enter to submit\n', true],
+    ['› Ask Codex to do anything\n  gpt-5.6 high\n', false],
+    ['previous output\n›\n  gpt-5.6 high\n', false],
+  ])('reports whether the Codex composer has undelivered text', async (text, expected) => {
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot(text, 'idle'),
+    );
+    const registry = createRegistry();
+
+    const result = await registry.invoke('runpane:panels:screen', [{
+      panelId: terminalPanel.id,
+    }]);
+
+    expect(result).toMatchObject({
+      composer: {
+        isPresent: true,
+        hasUndeliveredText: expected,
       },
     });
   });

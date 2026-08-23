@@ -304,7 +304,7 @@
     },
     {
       "name": "panels submit",
-      "summary": "Send text to a terminal panel and append a terminal Enter byte.",
+      "summary": "Send and submit text to a terminal panel, including idle agent composers.",
       "usage": [
         "runpane panels submit --panel <panel-id> (--text <text>|--input-file <path|->) --yes [--json]"
       ],
@@ -3533,7 +3533,8 @@
         "returnedLineCount",
         "hasMore",
         "text",
-        "state"
+        "state",
+        "composer"
       ],
       "properties": {
         "ok": {
@@ -3601,6 +3602,22 @@
           },
           "additionalProperties": false
         },
+        "composer": {
+          "type": "object",
+          "required": [
+            "isPresent",
+            "hasUndeliveredText"
+          ],
+          "properties": {
+            "isPresent": {
+              "type": "boolean"
+            },
+            "hasUndeliveredText": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
         "initialInput": {
           "$ref": "#/jsonSchemas/paneCreateResult/properties/items/items/oneOf/0/properties/initialInput"
         },
@@ -3633,11 +3650,13 @@
         "panelId",
         "inputBytes",
         "enter",
+        "sequenceName",
+        "verifiedSubmitted",
         "sentAt"
       ],
       "properties": {
         "ok": {
-          "const": true
+          "type": "boolean"
         },
         "panelId": {
           "type": "string"
@@ -3651,8 +3670,20 @@
         "enter": {
           "const": "cr"
         },
+        "sequenceName": {
+          "enum": [
+            "codex-ctrl-enter-cr",
+            "enter-cr"
+          ]
+        },
+        "verifiedSubmitted": {
+          "type": "boolean"
+        },
         "sentAt": {
           "type": "string"
+        },
+        "blocked": {
+          "$ref": "#/jsonSchemas/panelSubmitComposerResult/properties/blocked"
         },
         "nextCommand": {
           "type": "string"
@@ -4171,7 +4202,7 @@
         "If the repository exists on disk but is not saved in Pane, use `runpane repos add --path <repo> --yes --json` before creating panes.",
         "Use `runpane agents doctor --agent <codex|claude|cursor> --repo <selector> --json` when agent availability differs across host, Windows, WSL, or repo environments.",
         "Use `runpane panes create --wait-ready` to create Panes and validate initial terminal readiness in one call.",
-        "Use `runpane panels screen` for compact current state, `panels wait` for readiness/text checks, `panels submit` for ordinary Enter-submitted input, and `panels submit-composer --strategy auto` for agent composers.",
+        "Use `runpane panels screen` for compact current state, including Codex composer state. Use `panels wait` for readiness/text checks and `panels submit` to send and submit a new turn. Use `panels submit-composer --strategy auto` only for a composer that was filled separately.",
         "Use `runpane panels input` only when exact bytes are required, such as Ctrl-C or handcrafted terminal input.",
         "Pane terminals draw inline images: sixel, iTerm2 inline images, and the kitty graphics protocol. Tools that need kitty graphics, such as terminal-browser and terminal-doom, run inside a Pane panel; `runpane doctor --json` reports the exact list under `terminal.graphicsProtocols`.",
         "After creating Panes or sending terminal input, validate with `panels wait` or bounded `panels screen` before reporting success."
@@ -5297,13 +5328,14 @@
         ],
         "notes": [
           "Use this before `panels output` when an agent only needs the latest visible/current state.",
+          "The composer object reports whether a Codex composer is present and whether it holds undelivered text.",
           "If hasMore is true and context is missing, rerun with a larger --limit or use `panels output`."
         ]
       },
       "panels submit": {
         "name": "panels submit",
-        "summary": "Send text to a terminal panel and append a terminal Enter byte.",
-        "details": "Use this for ordinary interactive submissions. The daemon normalizes a final LF or CRLF to CR, or appends CR if no newline is present. Exact byte workflows remain on `panels input`.",
+        "summary": "Send and submit text to a terminal panel, including idle agent composers.",
+        "details": "Use this for ordinary interactive submissions. For an idle Codex composer, Pane stages the text, waits for Codex paste handling, sends the Codex submit sequence, and verifies that the turn started when visible evidence is available. Other terminals receive a normalized CR Enter. Exact byte workflows remain on `panels input`.",
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
@@ -5351,7 +5383,8 @@
           "panelSubmitResult"
         ],
         "notes": [
-          "The response includes nextCommand for validation. Run it before reporting that the input worked.",
+          "The response includes sequenceName, verifiedSubmitted, and nextCommand. If ok is false, inspect blocked and do not assume the turn started.",
+          "Do not follow `panels submit` with `panels submit-composer`; idle Codex composer submission is handled atomically.",
           "Use `panels input` for Ctrl-C, escape sequences, or any workflow requiring exact bytes."
         ]
       },

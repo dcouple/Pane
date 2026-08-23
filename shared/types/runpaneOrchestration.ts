@@ -402,6 +402,10 @@ export interface RunpanePanelScreenResult {
   hasMore: boolean;
   text: string;
   state: RunpanePanelStateSummary;
+  composer: {
+    isPresent: boolean;
+    hasUndeliveredText: boolean;
+  };
   nextCommand?: string;
 }
 
@@ -425,12 +429,15 @@ export interface RunpanePanelSubmitRequest {
 }
 
 export interface RunpanePanelSubmitResult {
-  ok: true;
+  ok: boolean;
   panelId: string;
   paneId?: string;
   inputBytes: number;
   enter: 'cr';
+  sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
+  verifiedSubmitted: boolean;
   sentAt: string;
+  blocked?: RunpanePanelBlockedState;
   nextCommand?: string;
 }
 

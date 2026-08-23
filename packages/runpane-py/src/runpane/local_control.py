@@ -251,10 +251,17 @@ def run_panels_submit(parsed: Any) -> int:
     else:
         input_bytes = result.get("inputBytes", 0)
         suffix = "" if input_bytes == 1 else "s"
-        print(f"Submitted {input_bytes} byte{suffix} with Enter to panel {result.get('panelId')}.")
+        verb = "Submitted" if result.get("ok") else "Could not verify"
+        verified = " verified" if result.get("verifiedSubmitted") else " unverified"
+        print(
+            f"{verb} {input_bytes} byte{suffix} via {result.get('sequenceName')} "
+            f"to panel {result.get('panelId')}.{verified}"
+        )
+        if result.get("blocked"):
+            print(f"Blocked: {result['blocked'].get('message')}")
         if result.get("nextCommand"):
             print(f"Next: {result.get('nextCommand')}")
-    return 0
+    return 0 if result.get("ok") else 1
 
 
 def run_panels_submit_composer(parsed: Any) -> int:

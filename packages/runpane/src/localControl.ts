@@ -311,16 +311,23 @@ interface PanelScreenResult {
   hasMore: boolean;
   text: string;
   state: PanelStateSummary;
+  composer: {
+    isPresent: boolean;
+    hasUndeliveredText: boolean;
+  };
   nextCommand?: string;
 }
 
 interface PanelSubmitResult {
-  ok: true;
+  ok: boolean;
   panelId: string;
   paneId?: string;
   inputBytes: number;
   enter: 'cr';
+  sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
+  verifiedSubmitted: boolean;
   sentAt: string;
+  blocked?: PanelBlockedState;
   nextCommand?: string;
 }
 
@@ -615,15 +622,22 @@ const panelScreenResultSchema: BoundarySchema<PanelScreenResult> = boundary.obje
   hasMore: boundary.boolean,
   text: boundary.string,
   state: panelStateSchema,
+  composer: boundary.object({
+    isPresent: boundary.boolean,
+    hasUndeliveredText: boundary.boolean,
+  }),
   nextCommand: boundary.optional(boundary.string),
 });
 const panelSubmitResultSchema: BoundarySchema<PanelSubmitResult> = boundary.object({
-  ok: boundary.literal(true),
+  ok: boundary.boolean,
   panelId: boundary.string,
   paneId: boundary.optional(boundary.string),
   inputBytes: boundary.number,
   enter: boundary.literal('cr'),
+  sequenceName: boundary.enumeration('codex-ctrl-enter-cr', 'enter-cr'),
+  verifiedSubmitted: boundary.boolean,
   sentAt: boundary.string,
+  blocked: boundary.optional(panelBlockedSchema),
   nextCommand: boundary.optional(boundary.string),
 });
 const panelSubmitComposerResultSchema: BoundarySchema<PanelSubmitComposerResult> = boundary.object({
@@ -974,13 +988,18 @@ export async function runPanelsSubmit(parsed: ParsedArgs): Promise<number> {
   if (parsed.json) {
     printJson(result);
   } else {
-    console.log(`Submitted ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} with Enter to panel ${result.panelId}.`);
+    const verb = result.ok ? 'Submitted' : 'Could not verify';
+    const verified = result.verifiedSubmitted ? ' verified' : ' unverified';
+    console.log(`${verb} ${result.inputBytes} byte${result.inputBytes === 1 ? '' : 's'} via ${result.sequenceName} to panel ${result.panelId}.${verified}`);
+    if (result.blocked) {
+      console.log(`Blocked: ${result.blocked.message}`);
+    }
     if (result.nextCommand) {
       console.log(`Next: ${result.nextCommand}`);
     }
   }
 
-  return 0;
+  return result.ok ? 0 : 1;
 }
 
 export async function runPanelsSubmitComposer(parsed: ParsedArgs): Promise<number> {
