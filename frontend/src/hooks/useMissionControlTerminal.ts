@@ -25,7 +25,7 @@ import { registerTerminalQueryHandlers } from '../utils/terminalQueries';
 import { subscribeToTerminalOutput } from '../services/terminalOutputBus';
 import { MISSION_CONTROL_VIEWER_PREFIX } from '../../../shared/types/missionControl';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
-import { terminalOutputByteLength } from '../utils/terminalRestore';
+import { createTerminalOutputAcknowledger } from '../utils/terminalRestore';
 
 /**
  * Read-only xterm for a Mission Control tile.
@@ -532,23 +532,27 @@ export function useMissionControlTerminal({
     let hydrated = false;
     const pendingOutput: string[] = [];
 
-    const unsubscribe = subscribeToTerminalOutput(panelId, output => {
-      if (!hydrated) {
-        pendingOutput.push(output);
-        // Still ack: the bytes left the PTY's budget whether or not they are on
-        // screen yet, and withholding the ack would pause a busy agent.
-        void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(output), VIEWER_ID).catch(() => {});
-        return;
-      }
+    const acknowledger = createTerminalOutputAcknowledger(bytes => {
+      void window.electronAPI.invoke('terminal:ack', panelId, bytes, VIEWER_ID).catch(() => {});
+    });
+
+    const writeLiveOutput = (output: string) => {
       terminal.write(output, () => {
         if (disposed) return;
+        acknowledger.acknowledge(output);
         // Follow new output, but never yank the view away from someone who
         // scrolled up to read.
         if (!pinnedByUser) scrollToLastContent(terminal);
         syncOverflow();
       });
-      // Flow control is byte-counted per panel; a viewer that writes must ack.
-      void window.electronAPI.invoke('terminal:ack', panelId, terminalOutputByteLength(output), VIEWER_ID).catch(() => {});
+    };
+
+    const unsubscribe = subscribeToTerminalOutput(panelId, output => {
+      if (!hydrated) {
+        pendingOutput.push(output);
+        return;
+      }
+      writeLiveOutput(output);
     });
 
     // Main only treats a panel as visible while a viewer says so, and viewer
@@ -577,7 +581,7 @@ export function useMissionControlTerminal({
         // top of the buffer it belongs after rather than under it.
         hydrated = true;
         const queued = pendingOutput.splice(0, pendingOutput.length);
-        for (const chunk of queued) terminal.write(chunk);
+        for (const chunk of queued) writeLiveOutput(chunk);
         terminal.write('', () => {
           if (disposed) return;
           scrollToLastContent(terminal);
@@ -594,7 +598,7 @@ export function useMissionControlTerminal({
         // leave a permanently blank tile for an agent that is still running.
         replayingHistory = false;
         hydrated = true;
-        for (const chunk of pendingOutput.splice(0, pendingOutput.length)) terminal.write(chunk);
+        for (const chunk of pendingOutput.splice(0, pendingOutput.length)) writeLiveOutput(chunk);
         if (!disposed) setError(err instanceof Error ? err.message : 'Could not attach to terminal');
       }
     };
@@ -643,6 +647,7 @@ export function useMissionControlTerminal({
 
     return () => {
       disposed = true;
+      acknowledger.dispose();
       syncOverflowRef.current = () => {};
       window.clearInterval(visibilityTimer);
       unsubscribe();

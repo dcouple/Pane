@@ -517,6 +517,21 @@ describe('TerminalPanelManager hidden output delivery', () => {
 
       disposeFlowControlRecord(terminal.flowControl);
     });
+
+    it('debits and credits multibyte output in UTF-8 bytes', () => {
+      const manager = testAccess<VisibilityAccess & FlushOutputBufferAccess>(new TerminalPanelManager());
+      const terminal = createTerminal({ isVisible: false, outputBuffer: '' });
+      manager.terminals.set(terminal.panelId, terminal);
+      manager.setVisibility(terminal.panelId, true, panelViewer);
+      terminal.outputBuffer = 'A界🙂';
+
+      manager.flushOutputBuffer(terminal);
+      expect(terminal.flowControl.pendingBytes).toBe(8);
+
+      manager.acknowledgeBytes(terminal.panelId, 8, panelViewer);
+      expect(terminal.flowControl.pendingBytes).toBe(0);
+      disposeFlowControlRecord(terminal.flowControl);
+    });
   });
 
   describe('terminal query replies', () => {

@@ -124,8 +124,14 @@ export function useRemoteTerminal({
         terminalOutputPayloadSchema,
       );
       if (!payload || payload.panelId !== panel.id) return;
-      terminal.write(payload.output);
-      void adapter.ackTerminalOutput(panel.id, terminalOutputByteLength(payload.output)).catch(() => {});
+      terminal.write(payload.output, () => {
+        if (disposed) return;
+        void adapter.ackTerminalOutput(
+          panel.id,
+          terminalOutputByteLength(payload.output),
+          TERMINAL_VIEWER_ID,
+        ).catch(() => {});
+      });
     });
 
     let disposed = false;
