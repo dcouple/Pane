@@ -401,6 +401,7 @@ describe('WorktreeManager.getSessionLocalBaseBranch', () => {
 
 describe('WorktreeManager.createPullRequest', () => {
   it('creates a pull request against the normalized base and returns its URL', async () => {
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
     const runner = commandRunner(async () => ({
       stdout: 'https://github.com/dcouple/Pane/pull/392\n',
       stderr: '',
