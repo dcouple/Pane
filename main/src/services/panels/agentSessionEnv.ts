@@ -15,20 +15,17 @@
  * Kept in its own module so it can be unit-tested without dragging in the
  * database singleton that `terminalPanelManager` depends on.
  */
-export const INHERITED_AGENT_SESSION_VARS = new Set([
+const INHERITED_AGENT_SESSION_VARS = new Set([
   'CLAUDE_CODE_CHILD_SESSION',
   'CLAUDE_CODE_SESSION_ID',
 ]);
 
 /** Copy an environment, dropping the launching agent's session identity. */
-export function stripInheritedAgentSession(
-  env: NodeJS.ProcessEnv
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (typeof value === 'string' && !INHERITED_AGENT_SESSION_VARS.has(key)) {
-      result[key] = value;
-    }
-  }
-  return result;
+export function stripInheritedAgentSession(env: NodeJS.ProcessEnv) {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && !INHERITED_AGENT_SESSION_VARS.has(entry[0])
+    )
+  );
 }

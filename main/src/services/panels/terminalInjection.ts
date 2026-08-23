@@ -16,7 +16,7 @@
  */
 
 /** Ctrl-U — kill line. Harmless at an empty prompt in bash, zsh and PSReadLine. */
-export const INJECTION_PRIMER = '\x15';
+const INJECTION_PRIMER = '\x15';
 
 /** Gap between the primer and the command, long enough to clear the window. */
 export const INJECTION_PRIMER_DELAY_MS = 60;

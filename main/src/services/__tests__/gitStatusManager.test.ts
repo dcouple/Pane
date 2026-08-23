@@ -414,8 +414,8 @@ describe('GitStatusManager', () => {
      * Only the lookups, not the one-off `gh --version` probe that decides
      * whether the GitHub CLI exists at all.
      */
-    const prListCalls = (runner: { execAsync: unknown }) =>
-      (runner.execAsync as Mock).mock.calls.filter(([command]) => String(command).includes('gh pr list'));
+    const prListCalls = (runner: { execAsync: Mock }) =>
+      runner.execAsync.mock.calls.filter(([command]) => String(command).includes('gh pr list'));
 
     it('caches PR misses for 20 seconds', async () => {
       const privates = managerPrivates(gitStatusManager);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { INHERITED_AGENT_SESSION_VARS, stripInheritedAgentSession } from './agentSessionEnv';
+import { stripInheritedAgentSession } from './agentSessionEnv';
 
 /**
  * Guards the resume path. If a parent agent's session markers reach a spawned
@@ -46,10 +46,9 @@ describe('stripInheritedAgentSession', () => {
     expect(parent.CLAUDE_CODE_CHILD_SESSION).toBe('1');
   });
 
-  it('names both markers explicitly', () => {
-    expect([...INHERITED_AGENT_SESSION_VARS].sort()).toEqual([
-      'CLAUDE_CODE_CHILD_SESSION',
-      'CLAUDE_CODE_SESSION_ID',
-    ]);
+  it('removes each inherited session marker independently', () => {
+    for (const marker of ['CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_SESSION_ID']) {
+      expect(stripInheritedAgentSession({ [marker]: 'set' })).not.toHaveProperty(marker);
+    }
   });
 });

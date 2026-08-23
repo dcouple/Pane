@@ -973,7 +973,7 @@ export class TerminalPanelManager {
     // Drops the launching agent's session markers — inheriting them makes
     // Claude Code disable transcript persistence, which silently breaks resume.
     const baseEnv = stripInheritedAgentSession(process.env);
-    const spawnEnv: Record<string, string> = {
+    const spawnEnv = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: enhancedPath,
@@ -1093,10 +1093,9 @@ export class TerminalPanelManager {
 
     // If we have an initial command, set up the prompt detection listener BEFORE
     // setupTerminalHandlers so we don't miss early shell output.
-    let commandToRun: string | undefined;
     if (initialCommand) {
       const launchResolution = this.resolveCliLaunchCommand(panel.id, initialCommand, existingState || {}, shellType);
-      commandToRun = launchResolution.commandToRun;
+      const commandToRun = launchResolution.commandToRun;
       const isCliCommand = launchResolution.isCliCommand;
 
       if (isCliCommand) {
@@ -1113,7 +1112,7 @@ export class TerminalPanelManager {
       // so banner lines ending with % or > don't trigger a false positive.
       const panelId = panel.id;
       const injectCommand = () => {
-        const [primer, line] = injectionSequence(commandToRun!);
+        const [primer, line] = injectionSequence(commandToRun);
 
         // The primer absorbs a byte the shell may swallow right after its
         // prompt; the command follows once that window has passed.
