@@ -250,12 +250,12 @@ function createConfigManagerStub(): ConfigManager {
 
 type TerminalOutputEvent = { sessionId: string; panelId: string; output: string };
 
-type DataDrivenPty = TerminalUnderTest['pty'] & {
-  onData(listener: (data: string) => void): { dispose(): void };
-  onExit(listener: (exit: { exitCode: number; signal?: number }) => void): { dispose(): void };
+type DataDrivenTerminal = TerminalUnderTest & {
+  pty: TerminalUnderTest['pty'] & {
+    onData(listener: (data: string) => void): { dispose(): void };
+    onExit(listener: (exit: { exitCode: number; signal?: number }) => void): { dispose(): void };
+  };
 };
-
-type DataDrivenTerminal = TerminalUnderTest & { pty: DataDrivenPty };
 
 type TerminalDataHandlerAccess = {
   setupTerminalHandlers(terminal: DataDrivenTerminal): void;
