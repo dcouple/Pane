@@ -12,10 +12,7 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
-import { registerFleetHandlers } from './fleet';
-import { registerPullRequestHandlers } from './pullRequest';
 import { registerScheduleHandlers } from './schedule';
-import { registerUsageHandlers } from './usage';
 import type { AppServices } from './types';
 
 const SCHEDULE_CHANNELS = [

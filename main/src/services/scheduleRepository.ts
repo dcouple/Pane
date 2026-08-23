@@ -30,25 +30,31 @@ interface ScheduleRow {
 }
 
 function toSchedule(row: ScheduleRow): ScheduledRun {
-  return {
+  // SAFETY: Schedule writes persist only ScheduleKind values.
+  const kind = row.kind as ScheduleKind;
+  // SAFETY: Schedule writes persist only ScheduleRunStatus values or null.
+  const lastRunStatus = row.last_run_status as ScheduleRunStatus | null;
+  const schedule: ScheduledRun = {
     id: row.id,
     name: row.name,
     projectId: row.project_id,
     prompt: row.prompt,
     toolType: row.tool_type === 'none' ? 'none' : 'claude',
-    ...(row.worktree_template ? { worktreeTemplate: row.worktree_template } : {}),
     enabled: row.enabled === 1,
-    kind: row.kind as ScheduleKind,
-    ...(row.interval_minutes !== null ? { intervalMinutes: row.interval_minutes } : {}),
-    ...(row.time_of_day !== null ? { timeOfDay: row.time_of_day } : {}),
-    ...(row.weekday !== null ? { weekday: row.weekday } : {}),
+    kind,
     lastRunAtMs: row.last_run_at_ms,
-    lastRunStatus: (row.last_run_status as ScheduleRunStatus | null) ?? null,
+    lastRunStatus,
     lastRunError: row.last_run_error,
     lastSessionId: row.last_session_id,
     nextRunAtMs: row.next_run_at_ms,
     createdAtMs: row.created_at_ms,
   };
+
+  if (row.worktree_template) schedule.worktreeTemplate = row.worktree_template;
+  if (row.interval_minutes !== null) schedule.intervalMinutes = row.interval_minutes;
+  if (row.time_of_day !== null) schedule.timeOfDay = row.time_of_day;
+  if (row.weekday !== null) schedule.weekday = row.weekday;
+  return schedule;
 }
 
 export class ScheduleRepository {
@@ -66,16 +72,19 @@ export class ScheduleRepository {
     const rows = projectId === undefined
       ? this.db.prepare('SELECT * FROM scheduled_runs ORDER BY created_at_ms DESC').all()
       : this.db.prepare('SELECT * FROM scheduled_runs WHERE project_id = ? ORDER BY created_at_ms DESC').all(projectId);
+    // SAFETY: Both SELECT statements enumerate rows from the scheduled_runs schema represented by ScheduleRow.
     return (rows as ScheduleRow[]).map(toSchedule);
   }
 
   get(id: string): ScheduledRun | null {
+    // SAFETY: This SELECT reads one row from the scheduled_runs schema represented by ScheduleRow.
     const row = this.db.prepare('SELECT * FROM scheduled_runs WHERE id = ?').get(id) as ScheduleRow | undefined;
     return row ? toSchedule(row) : null;
   }
 
   /** Everything enabled with a due time, newest deadline last. */
   listRunnable(): ScheduledRun[] {
+    // SAFETY: This SELECT reads rows from the scheduled_runs schema represented by ScheduleRow.
     const rows = this.db.prepare(
       'SELECT * FROM scheduled_runs WHERE enabled = 1 AND next_run_at_ms IS NOT NULL ORDER BY next_run_at_ms ASC'
     ).all() as ScheduleRow[];

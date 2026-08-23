@@ -15,7 +15,6 @@ import {
  */
 
 const MINUTE_MS = 60_000;
-const DAY_MS = 24 * 60 * MINUTE_MS;
 
 export interface ScheduleTiming {
   kind: ScheduleKind;
@@ -120,22 +119,3 @@ export function isMissed(schedule: Pick<ScheduledRun, 'enabled' | 'nextRunAtMs'>
   if (!schedule.enabled || schedule.nextRunAtMs === null) return false;
   return nowMs - schedule.nextRunAtMs > SCHEDULE_MISS_GRACE_MS;
 }
-
-/** One sentence describing a schedule, for the list and for accessibility. */
-export function describeSchedule(schedule: ScheduleTiming): string {
-  if (schedule.kind === 'interval') {
-    const minutes = Math.max(schedule.intervalMinutes ?? 0, MIN_INTERVAL_MINUTES);
-    if (minutes % (60 * 24) === 0) return `Every ${minutes / (60 * 24)} days`;
-    if (minutes % 60 === 0) return `Every ${minutes / 60} hours`;
-    return `Every ${minutes} minutes`;
-  }
-
-  const time = schedule.timeOfDay ?? '??:??';
-  if (schedule.kind === 'daily') return `Every day at ${time}`;
-
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const day = schedule.weekday !== undefined ? days[schedule.weekday] : 'a day';
-  return `Every ${day} at ${time}`;
-}
-
-export { DAY_MS as SCHEDULE_DAY_MS };

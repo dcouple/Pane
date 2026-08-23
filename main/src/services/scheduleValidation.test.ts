@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateScheduledRunInput } from './scheduleValidation';
+import { decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { scheduledRunInputSchema } from '../../../shared/types/schedule';
 
 const validInput = {
   name: 'Nightly sweep',
@@ -19,15 +21,20 @@ describe('validateScheduledRunInput', () => {
   });
 
   it.each([
-    [{ ...validInput, kind: 'monthly' }, 'Schedule kind'],
     [{ ...validInput, timeOfDay: '99:99' }, 'valid time'],
     [{ ...validInput, kind: 'weekly', weekday: 7 }, 'weekday'],
     [{ ...validInput, kind: 'interval', intervalMinutes: 5.5 }, 'shortest interval'],
-    [{ ...validInput, toolType: 'shell' }, 'supported agent'],
     [{ ...validInput, projectId: 1.5 }, 'project'],
   ])('rejects malformed daemon input %#', (input, message) => {
-    const result = validateScheduledRunInput(input);
+    const result = validateScheduledRunInput(decodeBoundary(input, scheduledRunInputSchema));
     expect(result.success).toBe(false);
     if (!result.success) expect(result.error).toContain(message);
+  });
+
+  it.each([
+    { ...validInput, kind: 'monthly' },
+    { ...validInput, toolType: 'shell' },
+  ])('rejects unsupported boundary values %#', (input) => {
+    expect(() => decodeBoundary(input, scheduledRunInputSchema)).toThrow();
   });
 });

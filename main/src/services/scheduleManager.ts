@@ -99,14 +99,8 @@ export class ScheduleManager {
       projectId: input.projectId,
       prompt: input.prompt,
       toolType: input.toolType,
-      ...(input.worktreeTemplate ? { worktreeTemplate: input.worktreeTemplate } : {}),
       enabled: input.enabled,
       kind: input.kind,
-      ...(input.intervalMinutes !== undefined
-        ? { intervalMinutes: Math.max(input.intervalMinutes, MIN_INTERVAL_MINUTES) }
-        : {}),
-      ...(input.timeOfDay !== undefined ? { timeOfDay: input.timeOfDay } : {}),
-      ...(input.weekday !== undefined ? { weekday: input.weekday } : {}),
       lastRunAtMs: existing?.lastRunAtMs ?? null,
       lastRunStatus: existing?.lastRunStatus ?? null,
       lastRunError: existing?.lastRunError ?? null,
@@ -115,8 +109,15 @@ export class ScheduleManager {
       createdAtMs: existing?.createdAtMs ?? nowMs,
     };
 
+    if (input.worktreeTemplate) schedule.worktreeTemplate = input.worktreeTemplate;
+    if (input.intervalMinutes !== undefined) {
+      schedule.intervalMinutes = Math.max(input.intervalMinutes, MIN_INTERVAL_MINUTES);
+    }
+    if (input.timeOfDay !== undefined) schedule.timeOfDay = input.timeOfDay;
+    if (input.weekday !== undefined) schedule.weekday = input.weekday;
+
     schedule.nextRunAtMs = schedule.enabled
-      ? computeNextRun({ ...schedule, lastRunAtMs: schedule.lastRunAtMs }, nowMs)
+      ? computeNextRun(schedule, nowMs)
       : null;
 
     this.repo.upsert(schedule);
@@ -133,7 +134,7 @@ export class ScheduleManager {
 
     schedule.enabled = enabled;
     schedule.nextRunAtMs = enabled
-      ? computeNextRun({ ...schedule, lastRunAtMs: schedule.lastRunAtMs }, Date.now())
+      ? computeNextRun(schedule, Date.now())
       : null;
     this.repo.upsert(schedule);
     return schedule;
@@ -189,7 +190,7 @@ export class ScheduleManager {
       if (!schedule.enabled) continue;
 
       if (schedule.nextRunAtMs === null) {
-        schedule.nextRunAtMs = computeNextRun({ ...schedule, lastRunAtMs: schedule.lastRunAtMs }, nowMs);
+        schedule.nextRunAtMs = computeNextRun(schedule, nowMs);
         this.repo.upsert(schedule);
         continue;
       }
@@ -255,7 +256,7 @@ export class ScheduleManager {
       // time from now on".
       if (!options.manual) {
         result.nextRunAtMs = result.enabled
-          ? computeNextRun({ ...result, lastRunAtMs: startedAtMs }, startedAtMs)
+          ? computeNextRun(result, startedAtMs)
           : null;
       }
 

@@ -1,3 +1,6 @@
+import { boundary } from '../validation/boundaryDecoder';
+import type { BoundarySchema } from '../validation/boundaryDecoder';
+
 /**
  * Recurring agent runs.
  *
@@ -46,6 +49,20 @@ export type ScheduledRunInput = Omit<
   ScheduledRun,
   'id' | 'lastRunAtMs' | 'lastRunStatus' | 'lastRunError' | 'lastSessionId' | 'nextRunAtMs' | 'createdAtMs'
 > & { id?: string };
+
+export const scheduledRunInputSchema = boundary.object({
+  id: boundary.optional(boundary.string),
+  name: boundary.string,
+  projectId: boundary.number,
+  prompt: boundary.string,
+  toolType: boundary.enumeration('claude', 'none'),
+  worktreeTemplate: boundary.optional(boundary.string),
+  enabled: boundary.boolean,
+  kind: boundary.enumeration('interval', 'daily', 'weekly'),
+  intervalMinutes: boundary.optional(boundary.number),
+  timeOfDay: boundary.optional(boundary.string),
+  weekday: boundary.optional(boundary.number),
+}) satisfies BoundarySchema<ScheduledRunInput>;
 
 /** How often the scheduler wakes to look for due runs. */
 export const SCHEDULE_TICK_MS = 30_000;

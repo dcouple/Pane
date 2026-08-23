@@ -5,8 +5,11 @@ import { ScheduleManager } from '../services/scheduleManager';
 import { ScheduleRepository } from '../services/scheduleRepository';
 import { databaseService } from '../services/database';
 import { validateScheduledRunInput } from '../services/scheduleValidation';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { scheduledRunInputSchema } from '../../../shared/types/schedule';
+import type { PaneCommandValue } from '../daemon/commandRegistry';
 
-export const DAEMON_SCHEDULE_CHANNELS = [
+const DAEMON_SCHEDULE_CHANNELS = [
   'schedules:list',
   'schedules:save',
   'schedules:delete',
@@ -45,11 +48,10 @@ export function registerScheduleHandlers(
     return { sessionId: result.sessionId };
   });
 
-  commandRegistry.register('schedules:list', async (projectId?: number) => {
+  commandRegistry.register('schedules:list', async (value?: PaneCommandValue) => {
     try {
-      const data = scheduleManager.list(
-        typeof projectId === 'number' && Number.isFinite(projectId) ? projectId : undefined
-      );
+      const projectId = decodeBoundary(value, boundary.optional(boundary.number));
+      const data = scheduleManager.list(Number.isFinite(projectId) ? projectId : undefined);
       return { success: true, data };
     } catch (error) {
       console.error('[Schedule] Failed to list schedules:', error);
@@ -57,8 +59,9 @@ export function registerScheduleHandlers(
     }
   });
 
-  commandRegistry.register('schedules:save', async (input: unknown) => {
+  commandRegistry.register('schedules:save', async (value: PaneCommandValue) => {
     try {
+      const input = decodeBoundary(value, scheduledRunInputSchema);
       const result = validateScheduledRunInput(input);
       if (!result.success) return result;
       return { success: true, data: scheduleManager.save(result.data) };

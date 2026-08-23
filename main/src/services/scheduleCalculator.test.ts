@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeNextRun,
-  describeSchedule,
   isDue,
   isMissed,
   parseTimeOfDay,
@@ -58,7 +57,9 @@ describe('computeNextRun — weekly', () => {
   it('finds the next matching weekday', () => {
     // 2026-08-11 is a Tuesday; asking for Friday (5).
     const next = computeNextRun({ kind: 'weekly', timeOfDay: '09:00', weekday: 5 }, at(2026, 8, 11, 10, 0));
-    expect(new Date(next as number).getDay()).toBe(5);
+    expect(next).not.toBeNull();
+    if (next === null) throw new Error('Expected a weekly run time');
+    expect(new Date(next).getDay()).toBe(5);
     expect(next).toBe(at(2026, 8, 14, 9, 0));
   });
 
@@ -135,15 +136,5 @@ describe('isDue and isMissed', () => {
     const overdue = now - SCHEDULE_MISS_GRACE_MS - 60_000;
     expect(isDue({ enabled: true, nextRunAtMs: overdue }, now)).toBe(false);
     expect(isMissed({ enabled: true, nextRunAtMs: overdue }, now)).toBe(true);
-  });
-});
-
-describe('describeSchedule', () => {
-  it('says what it does in one sentence', () => {
-    expect(describeSchedule({ kind: 'daily', timeOfDay: '03:30' })).toBe('Every day at 03:30');
-    expect(describeSchedule({ kind: 'weekly', timeOfDay: '09:00', weekday: 1 })).toBe('Every Monday at 09:00');
-    expect(describeSchedule({ kind: 'interval', intervalMinutes: 90 })).toBe('Every 90 minutes');
-    expect(describeSchedule({ kind: 'interval', intervalMinutes: 120 })).toBe('Every 2 hours');
-    expect(describeSchedule({ kind: 'interval', intervalMinutes: 2880 })).toBe('Every 2 days');
   });
 });

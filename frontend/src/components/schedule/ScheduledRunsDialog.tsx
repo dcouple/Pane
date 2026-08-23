@@ -12,7 +12,15 @@ import {
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-/** Mirrors `describeSchedule` in the main process, for the list rows. */
+function isScheduleKind(value: string): value is ScheduleKind {
+  return value === 'interval' || value === 'daily' || value === 'weekly';
+}
+
+function isToolType(value: string): value is ScheduledRun['toolType'] {
+  return value === 'claude' || value === 'none';
+}
+
+/** One sentence describing a schedule for the list rows. */
 function describe(run: Pick<ScheduledRun, 'kind' | 'intervalMinutes' | 'timeOfDay' | 'weekday'>): string {
   if (run.kind === 'interval') {
     const minutes = run.intervalMinutes ?? MIN_INTERVAL_MINUTES;
@@ -235,7 +243,9 @@ export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose, o
                     <span className="text-[11px] uppercase tracking-wider text-text-muted">Agent</span>
                     <select
                       value={form.toolType}
-                      onChange={event => setForm({ ...form, toolType: event.target.value as 'claude' | 'none' })}
+                      onChange={event => {
+                        if (isToolType(event.target.value)) setForm({ ...form, toolType: event.target.value });
+                      }}
                       className="mt-1 w-full rounded border border-border-secondary bg-surface-primary px-2 py-1 text-sm text-text-primary focus:border-interactive focus:outline-none"
                     >
                       <option value="claude">Claude</option>
@@ -261,15 +271,13 @@ export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose, o
                     <select
                       value={form.kind}
                       onChange={event => {
-                        const kind = event.target.value as ScheduleKind;
-                        setForm({
-                          ...form,
-                          kind,
-                          ...(kind === 'interval'
-                            ? { intervalMinutes: form.intervalMinutes ?? 60 }
-                            : { timeOfDay: form.timeOfDay ?? '03:30' }),
-                          ...(kind === 'weekly' ? { weekday: form.weekday ?? 1 } : {}),
-                        });
+                        const kind = event.target.value;
+                        if (!isScheduleKind(kind)) return;
+                        const nextForm = { ...form, kind };
+                        if (kind === 'interval') nextForm.intervalMinutes = form.intervalMinutes ?? 60;
+                        else nextForm.timeOfDay = form.timeOfDay ?? '03:30';
+                        if (kind === 'weekly') nextForm.weekday = form.weekday ?? 1;
+                        setForm(nextForm);
                       }}
                       className="mt-1 w-full rounded border border-border-secondary bg-surface-primary px-2 py-1 text-sm text-text-primary focus:border-interactive focus:outline-none"
                     >
@@ -356,5 +364,3 @@ export function ScheduledRunsDialog({ projectId, projectName, isOpen, onClose, o
     </Modal>
   );
 }
-
-export default ScheduledRunsDialog;
