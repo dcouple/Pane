@@ -150,7 +150,9 @@ export class GitGraphManager {
     const remotes = this.getRemotes(projectPath, commandRunner);
     const remoteScope = resolveRemoteScope(options.remoteScope, remotes);
     // A focused ref replaces the ref set entirely: "just this branch's history".
-    const focusRef = options.focusRef && isPlainRefName(options.focusRef)
+    const focusRef = options.focusRef
+      && isPlainRefName(options.focusRef)
+      && this.isResolvableCommit(projectPath, options.focusRef, commandRunner)
       ? options.focusRef
       : undefined;
 
@@ -269,6 +271,21 @@ export class GitGraphManager {
       return commandRunner.exec('git rev-parse HEAD', projectPath).trim() || null;
     } catch {
       return null;
+    }
+  }
+
+  private isResolvableCommit(
+    projectPath: string,
+    refName: string,
+    commandRunner: CommandRunner
+  ): boolean {
+    try {
+      return commandRunner.exec(
+        `git rev-parse --verify --quiet "${refName}^{commit}"`,
+        projectPath
+      ).trim().length > 0;
+    } catch {
+      return false;
     }
   }
 

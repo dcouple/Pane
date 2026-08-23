@@ -249,6 +249,7 @@ describe('GitGraphManager.getRepoGraph', () => {
 describe('GitGraphManager focus and divergence', () => {
   it('narrows history to one ref when asked to focus it', async () => {
     const runner = stubRunner([
+      ['rev-parse --verify', 'aaa\n'],
       ['git log', logRecord(['aaa', 'aaa', '', 'first', '2026-01-01T00:00:00Z', 'Ada', 'a@b.c'])],
       ['symbolic-ref', 'main\n'],
       ['for-each-ref', ''],
@@ -266,6 +267,27 @@ describe('GitGraphManager focus and divergence', () => {
     const logCmd = execCommands(runner).find(cmd => cmd.includes('git log')) ?? '';
     expect(logCmd).toContain('git log feature/x');
     expect(logCmd).not.toContain('--branches');
+  });
+
+  it('ignores a well-formed focus ref that does not resolve in this repository', async () => {
+    const runner = stubRunner([
+      ['rev-parse --verify', new Error('unknown revision')],
+      ['git log', logRecord(['aaa', 'aaa', '', 'first', '2026-01-01T00:00:00Z', 'Ada', 'a@b.c'])],
+      ['symbolic-ref', 'main\n'],
+      ['for-each-ref', ''],
+    ]);
+
+    const graph = await new GitGraphManager().getRepoGraph(
+      '/repo',
+      { focusRef: 'feature/from-another-repo' },
+      runner,
+      noWorktrees
+    );
+
+    expect(graph.focusRef).toBeUndefined();
+    const logCmd = execCommands(runner).find(cmd => cmd.includes('git log')) ?? '';
+    expect(logCmd).toContain('--branches --tags');
+    expect(logCmd).not.toContain('feature/from-another-repo');
   });
 
   it('ignores a focus ref that could reach the shell', async () => {

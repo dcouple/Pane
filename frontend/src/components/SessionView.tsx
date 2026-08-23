@@ -1618,7 +1618,7 @@ export const SessionView = memo(() => {
 
   // Repository-wide commit graph — project-scoped, not session-scoped.
   if (activeView === 'git-graph' && activeProjectId) {
-    return <GitGraphView projectId={activeProjectId} projectName={projectData?.name} />;
+    return <GitGraphView key={activeProjectId} projectId={activeProjectId} projectName={projectData?.name} />;
   }
 
   // Show project view if navigation is set to project

@@ -62,7 +62,8 @@ interface RawCommitData {
  */
 function normalizeWorktreePath(path: string | null | undefined): string {
   if (!path) return '';
-  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const normalized = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function isValidGitUrl(url: string): boolean {
@@ -125,7 +126,14 @@ export function registerGitHandlers(
   services: AppServices,
   commandRegistry: PaneCommandRegistry,
 ): void {
-  const { sessionManager, gitDiffManager, worktreeManager, claudeCodeManager, gitStatusManager } = services;
+  const {
+    sessionManager,
+    gitDiffManager,
+    worktreeManager,
+    claudeCodeManager,
+    gitStatusManager,
+    databaseService,
+  } = services;
 
   // Repo-wide graph reads are self-contained; no shared state to register.
   const gitGraphManager = new GitGraphManager();

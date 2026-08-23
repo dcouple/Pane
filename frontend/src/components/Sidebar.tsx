@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
+import { Archive, ArrowUpDown, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, Network, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { usePaneLogo } from '../hooks/usePaneLogo';
 import { IconButton } from './ui/Button';
@@ -388,6 +388,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   const activeView = useNavigationStore((state) => state.activeView);
   const expandedProjects = useNavigationStore((state) => state.expandedProjects);
   const navigateToProject = useNavigationStore((state) => state.navigateToProject);
+  const navigateToGitGraph = useNavigationStore((state) => state.navigateToGitGraph);
   const navigateToSessions = useNavigationStore((state) => state.navigateToSessions);
   const navigateToPaneChat = useNavigationStore((state) => state.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
@@ -642,6 +643,19 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                         {projectAgentState === 'unknown'
                           ? <AgentActivityDot active={false} size="sm" className="absolute bottom-0 right-0" />
                           : <AgentStatusDot status={projectAgentState} size="sm" className="absolute bottom-0 right-0" />}
+                      </button>
+                    </Tooltip>
+
+                    <Tooltip content={`Commit graph for ${project.name}`} side="right">
+                      <button
+                        type="button"
+                        data-testid={`compact-repository-graph-${project.id}`}
+                        data-compact-rail-item
+                        onClick={() => navigateToGitGraph(project.id)}
+                        aria-label={`Open commit graph for ${project.name}`}
+                        className={`${COMPACT_RAIL_BUTTON} ${activeProjectId === project.id && activeView === 'git-graph' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
+                      >
+                        <Network className="h-4 w-4" aria-hidden="true" />
                       </button>
                     </Tooltip>
 
