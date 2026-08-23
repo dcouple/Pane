@@ -2376,6 +2376,7 @@ export class DatabaseService {
 
     // Track which parser produced each transcript index, so a parser fix can
     // invalidate stale rows instead of only applying to future transcripts.
+    // SAFETY: SQLite PRAGMA table_info returns the SqliteTableInfo projection.
     const usageFilesInfo = this.db
       .prepare("PRAGMA table_info(usage_files)")
       .all() as SqliteTableInfo[];

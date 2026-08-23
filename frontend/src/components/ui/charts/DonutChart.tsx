@@ -106,5 +106,3 @@ export function DonutChart({
     </figure>
   );
 }
-
-export default DonutChart;

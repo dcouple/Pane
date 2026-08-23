@@ -235,6 +235,7 @@ export class UsageManager {
       this.repository.recordRateLimits(scanned.rateLimits);
     } catch (error) {
       // A single unreadable transcript must not abort the pass.
+      // SAFETY: Node filesystem failures may carry the optional errno code.
       const code = (error as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') {
         this.repository.forgetFile(path);

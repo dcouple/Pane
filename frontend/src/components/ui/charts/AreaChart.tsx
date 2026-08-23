@@ -20,6 +20,19 @@ export interface AreaChartProps {
   stacked?: boolean;
 }
 
+interface ChartPath {
+  area: string;
+  line: string;
+  color: string;
+}
+
+interface ChartGeometry {
+  paths: ChartPath[];
+  ticks: number[];
+  max: number;
+  stackedTops: number[][];
+}
+
 const PADDING = { top: 8, right: 8, bottom: 20, left: 44 };
 const VIEW_WIDTH = 640;
 
@@ -47,14 +60,14 @@ export function AreaChart({
   const innerWidth = VIEW_WIDTH - PADDING.left - PADDING.right;
   const innerHeight = height - PADDING.top - PADDING.bottom;
 
-  const { paths, ticks, max, stackedTops } = useMemo(() => {
+  const { paths, ticks, max, stackedTops } = useMemo<ChartGeometry>(() => {
     const pointCount = labels.length;
     if (pointCount === 0 || series.length === 0) {
       return {
-        paths: [] as Array<{ area: string; line: string; color: string }>,
+        paths: [],
         ticks: [0, 1],
         max: 1,
-        stackedTops: [] as number[][],
+        stackedTops: [],
       };
     }
 
@@ -269,5 +282,3 @@ export function AreaChart({
     </div>
   );
 }
-
-export default AreaChart;

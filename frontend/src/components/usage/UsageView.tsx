@@ -25,15 +25,10 @@ const PROVIDER_OPTIONS: Array<{ value: UsageProvider | 'all'; label: string }> =
   { value: 'codex', label: 'Codex' },
 ];
 
-const PROVIDER_LABEL: Record<UsageProvider, string> = {
-  claude: 'Anthropic',
-  codex: 'OpenAI',
-};
-
-const PROVIDER_COLOR: Record<UsageProvider, string> = {
-  claude: '#e0913a',
-  codex: '#37b877',
-};
+const PROVIDER_META = {
+  claude: { label: 'Anthropic', color: '#e0913a' },
+  codex: { label: 'OpenAI', color: '#37b877' },
+} satisfies Record<UsageProvider, { label: string; color: string }>;
 
 /** Chart palette, matching the graph view's lane colours. */
 const SERIES_COLORS = {
@@ -153,8 +148,8 @@ export function UsageView() {
       const response = await API.usage.getReport({
         fromMs: toMs - rangeDays * DAY_MS,
         toMs,
-        ...(provider === 'all' ? {} : { providers: [provider] }),
-        ...(windowLimitMTok ? { limitTokens: windowLimitMTok * 1_000_000 } : {}),
+        providers: provider === 'all' ? undefined : [provider],
+        limitTokens: windowLimitMTok === null ? undefined : windowLimitMTok * 1_000_000,
       });
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to load usage');
@@ -249,7 +244,7 @@ export function UsageView() {
       label: entry.model,
       value: entry.totalTokens,
       color: MODEL_COLORS[index % MODEL_COLORS.length],
-      tag: PROVIDER_LABEL[entry.provider],
+      tag: PROVIDER_META[entry.provider].label,
       share: total > 0 ? entry.totalTokens / total : 0,
       detail: entry.costIncomplete ? 'n/a' : formatUsd(entry.estimatedCostUsd),
       // Codex writes the active *profile* where a model id is expected, so a
@@ -307,9 +302,9 @@ export function UsageView() {
     return [...byProvider.entries()]
       .sort((a, b) => b[1].tokens - a[1].tokens)
       .map(([key, value]) => ({
-        label: PROVIDER_LABEL[key],
+        label: PROVIDER_META[key].label,
         value: value.tokens,
-        color: PROVIDER_COLOR[key],
+        color: PROVIDER_META[key].color,
         share: total > 0 ? value.tokens / total : 0,
         detail: value.incomplete ? 'n/a' : formatUsd(value.cost),
       }));
@@ -536,7 +531,7 @@ export function UsageView() {
                       <li key={`${limit.provider}-${limit.limitId}-${limit.scope}`}>
                         <div className="flex items-baseline justify-between gap-2 text-[11px]">
                           <span className="truncate text-text-secondary">
-                            {PROVIDER_LABEL[limit.provider]}
+                            {PROVIDER_META[limit.provider].label}
                             {limit.windowMinutes && (
                               <span className="ml-1 text-text-muted">
                                 {formatWindow(limit.windowMinutes)}

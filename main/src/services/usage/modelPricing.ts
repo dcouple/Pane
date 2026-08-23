@@ -77,6 +77,12 @@ export interface CostInput {
   cacheCreationTokens: number;
 }
 
+interface CostEstimate {
+  costUsd: number;
+  complete: boolean;
+  cacheSavingsUsd: number;
+}
+
 /**
  * Estimate cost in USD. `complete` is false when the model has no price
  * entry, so the UI can mark the figure as a lower bound.
@@ -86,7 +92,7 @@ export interface CostInput {
  */
 export function estimateCostUsd(
   input: CostInput
-): { costUsd: number; complete: boolean; cacheSavingsUsd: number } {
+): CostEstimate {
   const price = findModelPrice(input.model);
   if (!price) return { costUsd: 0, complete: false, cacheSavingsUsd: 0 };
 

@@ -107,5 +107,3 @@ export function BarChart({ data, formatValue, ariaLabel }: BarChartProps) {
     </ul>
   );
 }
-
-export default BarChart;

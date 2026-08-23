@@ -29,6 +29,17 @@ interface BucketRow extends TokenRow {
   bucket_start_ms: number;
 }
 
+interface ProviderFilter {
+  clause: string;
+  params: UsageProvider[];
+}
+
+interface ResolvedReportRange {
+  fromMs: number;
+  toMs: number;
+  bucket: 'hour' | 'day';
+}
+
 function emptyTotals(): UsageTotals {
   return {
     inputTokens: 0,
@@ -93,6 +104,7 @@ export class UsageAggregator {
    */
   getByModel(fromMs: number, toMs: number, providers?: UsageProvider[]): UsageByModel[] {
     const { clause, params } = this.providerFilter(providers);
+    // SAFETY: The fixed projection aliases every column required by TokenRow.
     const rows = this.db.prepare(`
       SELECT ${AGGREGATE_COLUMNS}
       FROM usage_events
@@ -118,6 +130,7 @@ export class UsageAggregator {
    */
   getByProject(fromMs: number, toMs: number, providers?: UsageProvider[]): UsageByProject[] {
     const { clause, params } = this.providerFilter(providers);
+    // SAFETY: The fixed projection aliases every TokenRow field plus cwd.
     const rows = this.db.prepare(`
       SELECT cwd, ${AGGREGATE_COLUMNS}
       FROM usage_events
@@ -144,6 +157,7 @@ export class UsageAggregator {
 
   getTotals(fromMs: number, toMs: number, providers?: UsageProvider[]): UsageTotals {
     const { clause, params } = this.providerFilter(providers);
+    // SAFETY: The fixed projection aliases every column required by TokenRow.
     const rows = this.db.prepare(`
       SELECT ${AGGREGATE_COLUMNS}
       FROM usage_events
@@ -167,6 +181,7 @@ export class UsageAggregator {
     const bucketMs = bucket === 'hour' ? HOUR_MS : DAY_MS;
     const { clause, params } = this.providerFilter(providers);
 
+    // SAFETY: The fixed projection aliases every column required by BucketRow.
     const rows = this.db.prepare(`
       SELECT
         (timestamp_ms / ${bucketMs}) * ${bucketMs} AS bucket_start_ms,
@@ -206,6 +221,7 @@ export class UsageAggregator {
     const totals = this.getTotals(windowStartMs, nowMs, providers);
     const { clause, params } = this.providerFilter(providers);
 
+    // SAFETY: This aggregate query always returns one nullable numeric column.
     const oldest = this.db.prepare(`
       SELECT MIN(timestamp_ms) AS oldest
       FROM usage_events
@@ -243,6 +259,7 @@ export class UsageAggregator {
    */
   private getObservedMaxWindowTokens(windowMs: number, providers?: UsageProvider[]): number {
     const { clause, params } = this.providerFilter(providers);
+    // SAFETY: The outer aggregate always returns one nullable numeric column.
     const row = this.db.prepare(`
       SELECT MAX(window_tokens) AS peak FROM (
         SELECT SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS window_tokens
@@ -255,7 +272,7 @@ export class UsageAggregator {
     return row.peak ?? 0;
   }
 
-  private providerFilter(providers?: UsageProvider[]): { clause: string; params: string[] } {
+  private providerFilter(providers?: UsageProvider[]): ProviderFilter {
     if (!providers || providers.length === 0) return { clause: '', params: [] };
     const placeholders = providers.map(() => '?').join(', ');
     return { clause: `AND provider IN (${placeholders})`, params: [...providers] };
@@ -267,7 +284,7 @@ export function resolveReportRange(
   request: UsageReportRequest | undefined,
   nowMs: number,
   defaultDays: number
-): { fromMs: number; toMs: number; bucket: 'hour' | 'day' } {
+): ResolvedReportRange {
   const toMs = request?.toMs ?? nowMs;
   const fromMs = request?.fromMs ?? toMs - defaultDays * DAY_MS;
   // An hourly series over months would return thousands of points; pick the
