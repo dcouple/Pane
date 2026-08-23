@@ -129,7 +129,7 @@ export class UsageManager {
       series: this.aggregator.getSeries(fromMs, toMs, bucket, providers),
       byModel: this.aggregator.getByModel(fromMs, toMs, providers),
       byProject: this.aggregator.getByProject(fromMs, toMs, providers),
-      window: this.aggregator.getWindow(nowMs, request?.limitTokens ?? null),
+      window: this.aggregator.getWindow(nowMs, request?.limitTokens ?? null, providers),
       rateLimits: this.safeRateLimits(nowMs, providers),
       index: this.getStatus(),
       pricingAsOf: PRICING_AS_OF,
@@ -246,8 +246,9 @@ export class UsageManager {
 
   private startWatching(): void {
     for (const root of transcriptRoots()) {
-      if (!existsSync(root.path)) continue;
-
+      // Chokidar intentionally receives missing paths too. It watches their
+      // nearest existing parent and begins reporting once a CLI creates the
+      // transcript root after Pane has started.
       const watcher = chokidar.watch(root.path, {
         ignoreInitial: true,
         depth: 6,

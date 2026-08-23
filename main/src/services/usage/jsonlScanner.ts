@@ -1,6 +1,4 @@
 import { createReadStream } from 'fs';
-import { stat } from 'fs/promises';
-import { createInterface } from 'readline';
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
 import {
   createCodexContext,
@@ -48,17 +46,11 @@ export async function scanJsonlFile(
   fallbackTimestampMs: number,
   seedContext?: CodexContextSnapshot | null
 ): Promise<ScannedFile> {
-  // Determine up front whether the file currently ends mid-line; the answer
-  // decides whether the final emitted line may be trusted.
-  const endsWithNewline = await fileEndsWithNewline(path);
-
   const events: Array<{ event: UsageEvent; byteOffset: number }> = [];
   let offset = startOffset;
-  let lastLineStart = startOffset;
   let linesRead = 0;
 
-  const stream = createReadStream(path, { start: startOffset, encoding: 'utf8' });
-  const reader = createInterface({ input: stream, crlfDelay: Infinity });
+  const stream = createReadStream(path, { start: startOffset });
 
   // Codex attributes usage from earlier lines in the same file (model, session,
   // cwd), so the parser carries state across the whole transcript — including
@@ -69,69 +61,35 @@ export async function scanJsonlFile(
   const carriedContext = (): CodexContextSnapshot | null =>
     codexContext ? snapshotCodexContext(codexContext) : null;
 
-  try {
-    for await (const line of reader) {
-      lastLineStart = offset;
-      // readline strips the terminator, so add it back to keep the cursor
-      // aligned with the file's actual bytes.
-      offset += Buffer.byteLength(line, 'utf8') + 1;
+  let pending = Buffer.alloc(0);
+  for await (const chunk of stream) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    pending = pending.length === 0 ? buffer : Buffer.concat([pending, buffer]);
+
+    let newlineIndex = pending.indexOf(0x0a);
+    while (newlineIndex >= 0) {
+      const lineStart = offset;
+      const lineEnd = newlineIndex > 0 && pending[newlineIndex - 1] === 0x0d
+        ? newlineIndex - 1
+        : newlineIndex;
+      const line = pending.subarray(0, lineEnd).toString('utf8');
+      offset += newlineIndex + 1;
+      pending = pending.subarray(newlineIndex + 1);
 
       const event = parseUsageLine(provider, line, fallbackTimestampMs, codexContext);
-      if (event) events.push({ event, byteOffset: lastLineStart });
+      if (event) events.push({ event, byteOffset: lineStart });
       linesRead += 1;
+      newlineIndex = pending.indexOf(0x0a);
     }
-  } finally {
-    reader.close();
-    stream.destroy();
   }
 
-  if (endsWithNewline || linesRead === 0) {
-    return {
-      events,
-      nextOffsetBytes: offset,
-      linesRead,
-      rateLimits: collectedRateLimits(),
-      context: carriedContext(),
-    };
-  }
-
-  // The last line was still being written. Rewind to its start and discard
-  // anything parsed from it, so the completed line is picked up next pass.
-  //
-  // The carried context is not rewound with it. A half-written line is either
-  // invalid JSON, which changes nothing, or a complete object whose newline has
-  // not landed yet — and re-reading that line next pass sets the same fields to
-  // the same values.
-  while (events.length > 0 && events[events.length - 1].byteOffset >= lastLineStart) {
-    events.pop();
-  }
   return {
     events,
-    nextOffsetBytes: Math.max(startOffset, lastLineStart),
-    linesRead: linesRead - 1,
+    nextOffsetBytes: offset,
+    linesRead,
     rateLimits: collectedRateLimits(),
     context: carriedContext(),
   };
-}
-
-/**
- * Whether the file's final byte is a newline. Only the last byte is read, so
- * this stays cheap even for very large transcripts.
- */
-async function fileEndsWithNewline(path: string): Promise<boolean> {
-  const stats = await stat(path);
-  if (stats.size === 0) return true;
-
-  return new Promise<boolean>((resolve) => {
-    const stream = createReadStream(path, { start: stats.size - 1, end: stats.size - 1 });
-    let byte: number | null = null;
-    stream.on('data', (chunk: string | Buffer) => {
-      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
-      if (buffer.length > 0) byte = buffer[buffer.length - 1];
-    });
-    stream.on('error', () => resolve(true));
-    stream.on('close', () => resolve(byte === 0x0a));
-  });
 }
 
 /**

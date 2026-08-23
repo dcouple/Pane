@@ -97,6 +97,20 @@ describe('scanJsonlFile', () => {
     expect(second.events[0].event.messageId).toBe('b');
   });
 
+  it('keeps byte offsets aligned across CRLF line endings', async () => {
+    const firstLine = assistantLine('a', 10);
+    await writeFile(file, `${firstLine}\r\n`, 'utf8');
+
+    const first = await scanJsonlFile(file, 'claude', 0, FALLBACK_MS);
+    expect(first.nextOffsetBytes).toBe(Buffer.byteLength(`${firstLine}\r\n`, 'utf8'));
+
+    await appendFile(file, `${assistantLine('b', 20)}\r\n`, 'utf8');
+    const second = await scanJsonlFile(file, 'claude', first.nextOffsetBytes, FALLBACK_MS);
+
+    expect(second.events).toHaveLength(1);
+    expect(second.events[0].event.messageId).toBe('b');
+  });
+
   it('holds back a partially written trailing line until it completes', async () => {
     const partial = assistantLine('b', 20).slice(0, 30);
     await writeFile(file, `${assistantLine('a', 10)}\n${partial}`, 'utf8');

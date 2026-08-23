@@ -6,6 +6,7 @@ import {
   migrateDataDirectory,
 } from '../utils/appDirectory';
 import { setupConsoleWrapper } from '../utils/consoleWrapper';
+import { usageManager } from '../services/usage/usageManager';
 
 let daemonHost: PaneDaemonHost | null = null;
 let shutdownInProgress = false;
@@ -18,6 +19,7 @@ async function shutdown(exitCode: number): Promise<void> {
 
   shutdownInProgress = true;
   try {
+    usageManager.stop();
     await daemonHost?.shutdown();
   } finally {
     process.exit(exitCode);
@@ -51,6 +53,7 @@ export function startHeadlessPaneProcess(): void {
       mode: 'headless',
       restoreSpotlights: false,
     });
+    await usageManager.start();
 
     const endpoint = daemonHost.paneDaemonServer?.getEndpoint();
     if (endpoint) {

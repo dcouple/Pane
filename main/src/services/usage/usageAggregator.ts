@@ -196,20 +196,27 @@ export class UsageAggregator {
    * used as a proxy: it is a lower bound on the real cap, which makes the
    * gauge useful without inventing a number.
    */
-  getWindow(nowMs: number, configuredLimitTokens: number | null): UsageWindow {
+  getWindow(
+    nowMs: number,
+    configuredLimitTokens: number | null,
+    providers?: UsageProvider[],
+  ): UsageWindow {
     const windowMs = USAGE_WINDOW_HOURS * HOUR_MS;
     const windowStartMs = nowMs - windowMs;
-    const totals = this.getTotals(windowStartMs, nowMs);
+    const totals = this.getTotals(windowStartMs, nowMs, providers);
+    const { clause, params } = this.providerFilter(providers);
 
-    const oldest = this.db.prepare(
-      'SELECT MIN(timestamp_ms) AS oldest FROM usage_events WHERE timestamp_ms >= ?'
-    ).get(windowStartMs) as { oldest: number | null };
+    const oldest = this.db.prepare(`
+      SELECT MIN(timestamp_ms) AS oldest
+      FROM usage_events
+      WHERE timestamp_ms >= ? ${clause}
+    `).get(windowStartMs, ...params) as { oldest: number | null };
 
     let limitTokens = configuredLimitTokens;
     let limitSource: UsageWindow['limitSource'] = configuredLimitTokens ? 'configured' : 'unknown';
 
     if (!limitTokens) {
-      const observed = this.getObservedMaxWindowTokens(windowMs);
+      const observed = this.getObservedMaxWindowTokens(windowMs, providers);
       if (observed > 0) {
         limitTokens = observed;
         limitSource = 'observed-max';
@@ -225,7 +232,7 @@ export class UsageAggregator {
       limitSource,
       utilization: limitTokens ? Math.min(totals.totalTokens / limitTokens, 1) : null,
       resetsAtMs: oldest.oldest ? oldest.oldest + windowMs : null,
-      recentHourTokens: this.getTotals(nowMs - HOUR_MS, nowMs).totalTokens,
+      recentHourTokens: this.getTotals(nowMs - HOUR_MS, nowMs, providers).totalTokens,
     };
   }
 
@@ -234,14 +241,16 @@ export class UsageAggregator {
    * bucketing on window boundaries. Exact sliding maxima would require a scan
    * over every event; the bucketed figure is close enough for a gauge.
    */
-  private getObservedMaxWindowTokens(windowMs: number): number {
+  private getObservedMaxWindowTokens(windowMs: number, providers?: UsageProvider[]): number {
+    const { clause, params } = this.providerFilter(providers);
     const row = this.db.prepare(`
       SELECT MAX(window_tokens) AS peak FROM (
         SELECT SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS window_tokens
         FROM usage_events
+        WHERE 1 = 1 ${clause}
         GROUP BY timestamp_ms / ${windowMs}
       )
-    `).get() as { peak: number | null };
+    `).get(...params) as { peak: number | null };
 
     return row.peak ?? 0;
   }

@@ -237,6 +237,25 @@ describe('UsageAggregator.getWindow', () => {
 
     expect(aggregator.getWindow(NOW, null).resetsAtMs).toBe(oldest + USAGE_WINDOW_HOURS * HOUR_MS);
   });
+
+  it('filters every rolling-window metric by provider', () => {
+    seed({ timestampMs: NOW - 2 * HOUR_MS, provider: 'claude', input: 100 });
+    seed({ timestampMs: NOW - 30 * 60 * 1000, provider: 'codex', model: 'gpt-5-codex', input: 900 });
+
+    const window = aggregator.getWindow(NOW, 1000, ['claude']);
+
+    expect(window.totals.totalTokens).toBe(100);
+    expect(window.recentHourTokens).toBe(0);
+    expect(window.utilization).toBe(0.1);
+    expect(window.resetsAtMs).toBe(NOW - 2 * HOUR_MS + USAGE_WINDOW_HOURS * HOUR_MS);
+  });
+
+  it('filters the observed maximum by provider', () => {
+    seed({ timestampMs: NOW - 40 * DAY_MS, provider: 'claude', input: 100 });
+    seed({ timestampMs: NOW - 40 * DAY_MS, provider: 'codex', model: 'gpt-5-codex', input: 900 });
+
+    expect(aggregator.getWindow(NOW, null, ['claude']).limitTokens).toBe(100);
+  });
 });
 
 describe('resolveReportRange', () => {
