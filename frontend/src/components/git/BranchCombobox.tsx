@@ -106,6 +106,7 @@ export function BranchCombobox({
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
+      // SAFETY: DOM mouse events always expose a Node target while dispatched from document.
       const target = event.target as Node;
       if (inputRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       setOpen(false);
@@ -247,5 +248,3 @@ export function BranchCombobox({
     </div>
   );
 }
-
-export default BranchCombobox;

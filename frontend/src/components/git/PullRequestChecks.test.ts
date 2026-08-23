@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parsePullRequestUrl } from './PullRequestChecks';
+import { parsePullRequestUrl } from './pullRequestUrl';
 
 describe('parsePullRequestUrl', () => {
   it('reads the repository and number from a pull request url', () => {

@@ -12,18 +12,9 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
-import { registerPullRequestHandlers } from './pullRequest';
+import { DAEMON_PULL_REQUEST_CHANNELS, registerPullRequestHandlers } from './pullRequest';
 import type { AppServices } from './types';
 
-const PULL_REQUEST_CHANNELS = [
-  'pr:get-draft',
-  'pr:create',
-  'pr:get-checks',
-  'pr:list-base-branches',
-  'pr:get-changes',
-  'pr:get-diff',
-  'pr:get-status',
-] as const;
 const PROJECT_CHANNELS = [
   'projects:get-all',
   'projects:get-active',
@@ -359,8 +350,8 @@ describe('daemon registry IPC bindings', () => {
 
     registerPullRequestHandlers(ipcMain, createServicesStub(), registry);
 
-    expect(registry.listChannels()).toEqual([...PULL_REQUEST_CHANNELS].sort());
-    expect(ipcMain.boundChannels.sort()).toEqual([...PULL_REQUEST_CHANNELS].sort());
+    expect(registry.listChannels()).toEqual([...DAEMON_PULL_REQUEST_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...DAEMON_PULL_REQUEST_CHANNELS].sort());
   });
 
   it('binds daemon-owned prompt channels through the shared registry', () => {

@@ -14,7 +14,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { API } from '../../utils/api';
-import { parsePullRequestUrl } from './PullRequestChecks';
+import { parsePullRequestUrl } from './pullRequestUrl';
 import type { PullRequestStatus } from '../../../../shared/types/pullRequest';
 
 /** Re-read while the review panel is on screen; GitHub state changes slowly. */
@@ -185,5 +185,3 @@ export function PullRequestStatusBar({ sessionId, prUrl }: PullRequestStatusBarP
     </div>
   );
 }
-
-export default PullRequestStatusBar;

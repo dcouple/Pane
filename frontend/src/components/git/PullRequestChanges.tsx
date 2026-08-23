@@ -50,7 +50,7 @@ export function PullRequestChanges({ sessionId, baseBranch }: PullRequestChanges
           }
           setChanges(response.data);
         })
-        .catch((err: unknown) => {
+        .catch(err => {
           if (!cancelled) setError(err instanceof Error ? err.message : 'Could not read the changed files');
         })
         .finally(() => { if (!cancelled) setLoading(false); });
@@ -74,7 +74,7 @@ export function PullRequestChanges({ sessionId, baseBranch }: PullRequestChanges
         }
         setDiff({ text: response.data.diff, truncated: response.data.truncated });
       })
-      .catch((err: unknown) => {
+      .catch(err => {
         if (!cancelled) setDiffError(err instanceof Error ? err.message : 'Could not read the diff');
       })
       .finally(() => { if (!cancelled) setDiffLoading(false); });
@@ -179,5 +179,3 @@ export function PullRequestChanges({ sessionId, baseBranch }: PullRequestChanges
     </section>
   );
 }
-
-export default PullRequestChanges;

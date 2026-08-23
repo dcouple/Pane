@@ -8,7 +8,7 @@ import type { GitCommitFileChange, GitFileChangeStatus } from '../../../../share
  * a base branch instead of a parent commit; both want the identical row.
  */
 
-const STATUS_LABEL: Record<GitFileChangeStatus, string> = {
+const STATUS_LABEL = {
   added: 'A',
   modified: 'M',
   deleted: 'D',
@@ -17,9 +17,9 @@ const STATUS_LABEL: Record<GitFileChangeStatus, string> = {
   typechange: 'T',
   unmerged: 'U',
   unknown: '?',
-};
+} satisfies Record<GitFileChangeStatus, string>;
 
-const STATUS_CLASS: Record<GitFileChangeStatus, string> = {
+const STATUS_CLASS = {
   added: 'text-status-success',
   modified: 'text-interactive',
   deleted: 'text-status-error',
@@ -28,9 +28,9 @@ const STATUS_CLASS: Record<GitFileChangeStatus, string> = {
   typechange: 'text-status-warning',
   unmerged: 'text-status-warning',
   unknown: 'text-text-muted',
-};
+} satisfies Record<GitFileChangeStatus, string>;
 
-const STATUS_TITLE: Record<GitFileChangeStatus, string> = {
+const STATUS_TITLE = {
   added: 'Added',
   modified: 'Modified',
   deleted: 'Deleted',
@@ -39,15 +39,15 @@ const STATUS_TITLE: Record<GitFileChangeStatus, string> = {
   typechange: 'Type changed',
   unmerged: 'Unmerged',
   unknown: 'Unknown change',
-};
+} satisfies Record<GitFileChangeStatus, string>;
 
-function splitPath(path: string): { dir: string; name: string } {
+function splitPath(path: string) {
   const idx = path.lastIndexOf('/');
   if (idx < 0) return { dir: '', name: path };
   return { dir: path.slice(0, idx + 1), name: path.slice(idx + 1) };
 }
 
-export function FileChangeRow({
+function FileChangeRow({
   file,
   onClick,
   indentClass = 'pl-6',
@@ -134,5 +134,3 @@ export function FileChangeList({ files, onFileClick, indentClass, className = ''
     </div>
   );
 }
-
-export default FileChangeList;

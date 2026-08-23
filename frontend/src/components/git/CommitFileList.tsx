@@ -48,7 +48,7 @@ export function CommitFileList({ sessionId, commitRef, onFileClick, className = 
         writeCommitFileCache(sessionId, commitRef, response.data);
         setResult(response.data);
       })
-      .catch((err: unknown) => {
+      .catch(err => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Failed to load changed files');
       })
@@ -99,5 +99,3 @@ export function CommitFileList({ sessionId, commitRef, onFileClick, className = 
     </div>
   );
 }
-
-export default CommitFileList;

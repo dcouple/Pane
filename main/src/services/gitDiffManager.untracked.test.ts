@@ -42,11 +42,12 @@ const HOSTILE_NAMES = [
 
 /** A runner that answers git for real, as a host project would. */
 function realRunner(): CommandRunner {
+  // SAFETY: The integration fixture supplies every CommandRunner member used by working-tree capture.
   return {
     wslContext: null,
     exec: vi.fn((command: string, cwd: string) => run(command, cwd)),
     execAsync: vi.fn(async (command: string, cwd: string) => ({ stdout: run(command, cwd), stderr: '' })),
-  } as unknown as CommandRunner;
+  } as CommandRunner;
 }
 
 /** Run a `git …` command without a shell, so the test itself cannot be the bug. */
@@ -173,7 +174,7 @@ describe('working-directory capture stays bounded and off the main thread', () =
     const runner = realRunner();
     await new GitDiffManager().captureWorkingDirectoryDiff(repo, runner);
 
-    const asyncCalls = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls;
+    const asyncCalls = vi.mocked(runner.execAsync).mock.calls;
     expect(asyncCalls.length).toBeLessThan(10);
     // Nothing that reads or measures a file goes through a command any more.
     expect(asyncCalls.some(([command]) => /^(cat|wc) /.test(command))).toBe(false);
@@ -195,7 +196,7 @@ describe('working-directory capture stays bounded and off the main thread', () =
     const runner = realRunner();
     await new GitDiffManager().captureWorkingDirectoryDiff(repo, runner);
 
-    const syncCalls = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls;
+    const syncCalls = vi.mocked(runner.exec).mock.calls;
     expect(syncCalls.every(([command]) => command.includes('rev-parse'))).toBe(true);
   });
 });

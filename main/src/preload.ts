@@ -27,6 +27,7 @@ import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
 import type { SubmitFeedbackRequest } from '../../shared/types/feedback';
+import type { CreatePullRequestRequest } from '../../shared/types/pullRequest';
 import type {
   PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
@@ -478,7 +479,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Pull requests, opened from a session's branch
   pullRequests: {
     getDraft: (sessionId: string): Promise<IPCResponse> => invokeIpc('pr:get-draft', sessionId),
-    create: (request: unknown): Promise<IPCResponse> => invokeIpc('pr:create', request),
+    create: (request: CreatePullRequestRequest): Promise<IPCResponse> => invokeIpc('pr:create', request),
     getChecks: (sessionId: string, repo: string, number: number): Promise<IPCResponse> => invokeIpc('pr:get-checks', sessionId, repo, number),
     listBaseBranches: (sessionId: string, repo: string): Promise<IPCResponse> => invokeIpc('pr:list-base-branches', sessionId, repo),
     getChanges: (sessionId: string, baseBranch?: string): Promise<IPCResponse> => invokeIpc('pr:get-changes', sessionId, baseBranch),

@@ -20,7 +20,8 @@ function stubRunner(responses: Array<[match: string, output: string]>): CommandR
     }
     return '';
   });
-  return { exec } as unknown as CommandRunner;
+  // SAFETY: These unit tests exercise only the synchronous exec member supplied here.
+  return { exec } as CommandRunner;
 }
 
 describe('parseNumstatZ', () => {
@@ -146,7 +147,7 @@ describe('GitDiffManager.getCommitFileChanges', () => {
     const result = new GitDiffManager().getCommitFileChanges('/repo', 'merge1', runner);
 
     expect(result.isMergeAgainstFirstParent).toBe(true);
-    const commands = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls.map(call => call[0]);
+    const commands = vi.mocked(runner.exec).mock.calls.map(call => call[0]);
     expect(commands.some(cmd => cmd.includes('--numstat') && cmd.includes('--first-parent'))).toBe(true);
   });
 
@@ -185,11 +186,12 @@ describe('GitDiffManager.getCommitFileChanges', () => {
   });
 
   it('returns an empty result instead of throwing on git failure', () => {
+    // SAFETY: This failure fixture intentionally implements only the exec path under test.
     const runner = {
       exec: vi.fn(() => {
         throw new Error('fatal: bad revision');
       }),
-    } as unknown as CommandRunner;
+    } as CommandRunner;
 
     const result = new GitDiffManager().getCommitFileChanges('/repo', 'nope', runner);
 
@@ -200,11 +202,12 @@ describe('GitDiffManager.getCommitFileChanges', () => {
 
 describe('GitDiffManager.getCommitFileChanges error handling', () => {
   it('returns an empty result instead of throwing on git failure', () => {
+    // SAFETY: This failure fixture intentionally implements only the exec path under test.
     const runner = {
       exec: vi.fn(() => {
         throw new Error('fatal: bad revision');
       }),
-    } as unknown as CommandRunner;
+    } as CommandRunner;
 
     const result = new GitDiffManager().getCommitFileChanges('/repo', 'nope', runner);
 

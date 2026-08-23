@@ -25,6 +25,7 @@ import {
 } from '../../../shared/types/pullRequest';
 import { MAX_FILES_PER_COMMIT, type GitCommitFileChange } from '../../../shared/types/git';
 import { mergeFileChanges, parseNameStatusZ, parseNumstatZ } from './gitDiffManager';
+import { boundary, decodeBoundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 
 /**
  * Opening pull requests through the GitHub CLI.
@@ -47,6 +48,31 @@ export interface CommitSummary {
   subject: string;
   body: string;
 }
+
+interface BodyFilePaths {
+  writePath: string;
+  ghPath: string;
+}
+
+interface DraftText {
+  title: string;
+  body: string;
+}
+
+interface ResolvedTargets {
+  targets: PullRequestTarget[];
+  defaultTarget: string;
+}
+
+export interface PullRequestFileOps {
+  writeFile(path: string, contents: string): void;
+  unlink(path: string): void;
+}
+
+const DEFAULT_FILE_OPS: PullRequestFileOps = {
+  writeFile: (path, contents) => writeFileSync(path, contents, 'utf8'),
+  unlink: path => unlinkSync(path),
+};
 
 /** Just enough of a {@link CommandRunner} to know which shell it targets. */
 type ShellTarget = { wslContext?: { distribution: string } | null };
@@ -78,7 +104,7 @@ export function quoteArg(target: ShellTarget, value: string): string {
 export function resolveBodyFile(
   distribution: string | null | undefined,
   fileName: string
-): { writePath: string; ghPath: string } {
+): BodyFilePaths {
   if (!distribution) {
     const hostPath = join(tmpdir(), fileName);
     return { writePath: hostPath, ghPath: hostPath };
@@ -99,7 +125,7 @@ export function resolveBodyFile(
 export function deriveDraftText(
   commits: CommitSummary[],
   template: string | null
-): { title: string; body: string } {
+): DraftText {
   const title = commits[0]?.subject.trim() ?? '';
 
   const sections: string[] = [];
@@ -127,27 +153,29 @@ export function resolveTargets(repoView: {
   nameWithOwner?: string;
   defaultBranchRef?: { name?: string } | null;
   parent?: { name?: string; owner?: { login?: string }; defaultBranchRef?: { name?: string } } | null;
-}): { targets: PullRequestTarget[]; defaultTarget: string } {
+}): ResolvedTargets {
   const targets: PullRequestTarget[] = [];
 
   const parentOwner = repoView.parent?.owner?.login;
   const parentName = repoView.parent?.name;
   if (parentOwner && parentName) {
-    targets.push({
+    const target: PullRequestTarget = {
       nameWithOwner: `${parentOwner}/${parentName}`,
       isParent: true,
-      ...(repoView.parent?.defaultBranchRef?.name
-        ? { defaultBranch: repoView.parent.defaultBranchRef.name }
-        : {}),
-    });
+    };
+    if (repoView.parent?.defaultBranchRef?.name) {
+      target.defaultBranch = repoView.parent.defaultBranchRef.name;
+    }
+    targets.push(target);
   }
 
   if (repoView.nameWithOwner) {
-    targets.push({
+    const target: PullRequestTarget = {
       nameWithOwner: repoView.nameWithOwner,
       isParent: false,
-      ...(repoView.defaultBranchRef?.name ? { defaultBranch: repoView.defaultBranchRef.name } : {}),
-    });
+    };
+    if (repoView.defaultBranchRef?.name) target.defaultBranch = repoView.defaultBranchRef.name;
+    targets.push(target);
   }
 
   return { targets, defaultTarget: targets[0]?.nameWithOwner ?? '' };
@@ -225,24 +253,31 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
   const trimmed = stdout.trim();
   if (!trimmed) return null;
 
-  const raw = JSON.parse(trimmed) as {
-    number?: number;
-    url?: string;
-    title?: string;
-    state?: string;
-    isDraft?: boolean;
-    baseRefName?: string;
-    headRefName?: string;
-    headRepositoryOwner?: { login?: string } | null;
-    reviewDecision?: string | null;
-    mergeable?: string | null;
-    reviews?: Array<{ author?: { login?: string } | null; state?: string }>;
-    comments?: unknown[];
-    additions?: number;
-    deletions?: number;
-    changedFiles?: number;
-  };
-  if (typeof raw.number !== 'number') return null;
+  const raw = decodeBoundary(JSON.parse(trimmed), boundary.object({
+    number: boundary.optional(boundary.number),
+    url: boundary.optional(boundary.string),
+    title: boundary.optional(boundary.string),
+    state: boundary.optional(boundary.string),
+    isDraft: boundary.optional(boundary.boolean),
+    baseRefName: boundary.optional(boundary.string),
+    headRefName: boundary.optional(boundary.string),
+    headRepositoryOwner: boundary.optional(boundary.nullable(boundary.object({
+      login: boundary.optional(boundary.string),
+    }))),
+    reviewDecision: boundary.optional(boundary.nullable(boundary.string)),
+    mergeable: boundary.optional(boundary.nullable(boundary.string)),
+    reviews: boundary.optional(boundary.array(boundary.object({
+      author: boundary.optional(boundary.nullable(boundary.object({
+        login: boundary.optional(boundary.string),
+      }))),
+      state: boundary.optional(boundary.string),
+    }))),
+    comments: boundary.optional(boundary.array(boundary.json)),
+    additions: boundary.optional(boundary.number),
+    deletions: boundary.optional(boundary.number),
+    changedFiles: boundary.optional(boundary.number),
+  }));
+  if (raw.number === undefined) return null;
 
   // Only the newest review per person counts — GitHub shows it that way, and a
   // "changes requested" someone later approved is not an open objection.
@@ -253,7 +288,7 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
     byAuthor.set(login, { login, state: review.state ?? 'COMMENTED' });
   }
 
-  return {
+  const status: PullRequestStatus = {
     number: raw.number,
     url: raw.url ?? '',
     title: raw.title ?? '',
@@ -261,7 +296,6 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
     isDraft: Boolean(raw.isDraft),
     baseRefName: raw.baseRefName ?? '',
     headRefName: raw.headRefName ?? '',
-    ...(raw.headRepositoryOwner?.login ? { headRepositoryOwner: raw.headRepositoryOwner.login } : {}),
     reviewDecision: normalizeReviewDecision(raw.reviewDecision),
     mergeable: (raw.mergeable ?? 'UNKNOWN').toUpperCase(),
     reviewers: Array.from(byAuthor.values()),
@@ -271,6 +305,8 @@ export function parsePullRequestStatus(stdout: string): PullRequestStatus | null
     changedFiles: raw.changedFiles ?? 0,
     fetchedAtMs: Date.now(),
   };
+  if (raw.headRepositoryOwner?.login) status.headRepositoryOwner = raw.headRepositoryOwner.login;
+  return status;
 }
 
 export function normalizeReviewDecision(raw: string | null | undefined): PullRequestReviewDecision {
@@ -286,20 +322,23 @@ export function parseChecks(stdout: string): PullRequestCheck[] {
   const trimmed = stdout.trim();
   if (!trimmed) return [];
 
-  const rows = JSON.parse(trimmed) as Array<{
-    name?: string;
-    state?: string;
-    bucket?: string;
-    link?: string;
-  }>;
+  const rows = decodeBoundary(JSON.parse(trimmed), boundary.array(boundary.object({
+    name: boundary.optional(boundary.string),
+    state: boundary.optional(boundary.string),
+    bucket: boundary.optional(boundary.string),
+    link: boundary.optional(boundary.string),
+  })));
 
   return rows
     .filter(row => Boolean(row?.name))
-    .map(row => ({
-      name: row.name as string,
-      state: normalizeCheckState(row.bucket ?? row.state),
-      ...(row.link ? { url: row.link } : {}),
-    }));
+    .map(row => {
+      const check: PullRequestCheck = {
+        name: row.name ?? '',
+        state: normalizeCheckState(row.bucket ?? row.state),
+      };
+      if (row.link) check.url = row.link;
+      return check;
+    });
 }
 
 /** Parse `git log --format=%s%x00%b%x01`. */
@@ -421,9 +460,14 @@ export function parseBranchNames(stdout: string): string[] {
   const trimmed = stdout.trim();
   if (!trimmed) return [];
 
-  const parsed = JSON.parse(trimmed) as Array<{ name?: string } | string>;
-  return parsed
-    .map(row => (typeof row === 'string' ? row : row?.name))
+  const parsed = JSON.parse(trimmed);
+  const stringRows = decodeOptionalBoundary(parsed, boundary.array(boundary.string));
+  if (stringRows) return stringRows;
+
+  return decodeBoundary(parsed, boundary.array(boundary.object({
+    name: boundary.optional(boundary.string),
+  })))
+    .map(row => row.name)
     .filter((name): name is string => Boolean(name));
 }
 
@@ -454,7 +498,10 @@ export class PullRequestManager {
   /** Resolved `gh` command per execution context; see `ghCandidatePaths`. */
   private ghCommand = new Map<string, string | null>();
 
-  constructor(private logger?: Logger) {}
+  constructor(
+    private logger?: Logger,
+    private fileOps: PullRequestFileOps = DEFAULT_FILE_OPS,
+  ) {}
 
   /**
    * The command that runs the GitHub CLI here, or null if it is not installed.
@@ -553,7 +600,7 @@ export class PullRequestManager {
     const template = this.readTemplate(projectPath);
     const { title, body } = deriveDraftText(commits, template);
 
-    return {
+    const draft: PullRequestDraft = {
       branch: branch ?? '',
       baseBranch: base,
       baseBranches: baseBranches.all,
@@ -564,9 +611,10 @@ export class PullRequestManager {
       hasUncommittedChanges,
       targets,
       defaultTarget,
-      ...(existing ? { existing } : {}),
       blockers,
     };
+    if (existing) draft.existing = existing;
+    return draft;
   }
 
   /** Push the branch, then open the pull request. */
@@ -601,7 +649,7 @@ export class PullRequestManager {
       commandRunner.wslContext?.distribution,
       `pane-pr-${randomUUID()}.md`
     );
-    writeFileSync(writePath, request.body, 'utf8');
+    this.fileOps.writeFile(writePath, request.body);
 
     try {
       const args = buildCreateArgs(request, { branch, forkOwner, bodyFile: ghPath });
@@ -615,7 +663,7 @@ export class PullRequestManager {
       return created;
     } finally {
       try {
-        unlinkSync(writePath);
+        this.fileOps.unlink(writePath);
       } catch {
         // A leftover temp file is not worth failing a created pull request over.
       }
@@ -1028,7 +1076,12 @@ export class PullRequestManager {
           projectPath,
           { timeout: GH_TIMEOUT_MS, silent: true }
         );
-        const rows = JSON.parse(stdout.trim() || '[]') as ExistingPullRequest[];
+        const rows = decodeBoundary(JSON.parse(stdout.trim() || '[]'), boundary.array(boundary.object({
+          number: boundary.number,
+          url: boundary.string,
+          state: boundary.string,
+          title: boundary.string,
+        })));
         if (rows[0]) return rows[0];
       } catch {
         // One inaccessible target should not hide a pull request in another.

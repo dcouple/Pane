@@ -65,7 +65,7 @@ export function CreatePullRequestDialog({
         setBaseBranches(response.data.baseBranches);
         setLocalBaseBranches(response.data.localBaseBranches);
       })
-      .catch((err: unknown) => {
+      .catch(err => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not prepare the pull request');
       })
       .finally(() => {
@@ -337,5 +337,3 @@ export function CreatePullRequestDialog({
     </Modal>
   );
 }
-
-export default CreatePullRequestDialog;

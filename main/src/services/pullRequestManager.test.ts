@@ -320,7 +320,7 @@ describe('ghCandidatePaths', () => {
     const paths = ghCandidatePaths('win32', {
       ProgramFiles: String.raw`C:\Program Files`,
       LOCALAPPDATA: String.raw`C:\Users\me\AppData\Local`,
-    } as NodeJS.ProcessEnv);
+    } satisfies NodeJS.ProcessEnv);
 
     expect(paths[0]).toBe(String.raw`C:\Program Files\GitHub CLI\gh.exe`);
     expect(paths[1]).toBe(String.raw`C:\Users\me\AppData\Local\Programs\GitHub CLI\gh.exe`);
@@ -332,17 +332,17 @@ describe('ghCandidatePaths', () => {
 
   it('does not double a separator the environment already ends with', () => {
     // Not String.raw here: a template literal cannot end on a backslash.
-    const paths = ghCandidatePaths('win32', { ProgramFiles: 'C:\\Program Files\\' } as NodeJS.ProcessEnv);
+    const paths = ghCandidatePaths('win32', { ProgramFiles: 'C:\\Program Files\\' } satisfies NodeJS.ProcessEnv);
     expect(paths[0]).toBe(String.raw`C:\Program Files\GitHub CLI\gh.exe`);
   });
 
   it('leaves out the user location when the environment has none', () => {
-    const paths = ghCandidatePaths('win32', { ProgramFiles: String.raw`C:\Program Files` } as NodeJS.ProcessEnv);
+    const paths = ghCandidatePaths('win32', { ProgramFiles: String.raw`C:\Program Files` } satisfies NodeJS.ProcessEnv);
     expect(paths).toHaveLength(1);
   });
 
   it('covers homebrew and the usual unix prefixes', () => {
-    const paths = ghCandidatePaths('darwin', {} as NodeJS.ProcessEnv);
+    const paths = ghCandidatePaths('darwin', {} satisfies NodeJS.ProcessEnv);
     expect(paths).toContain('/opt/homebrew/bin/gh');
     expect(paths).toContain('/usr/local/bin/gh');
   });
@@ -403,6 +403,7 @@ function stubRunner(responses: Array<[match: string, output: string | Error]>): 
     }
     return '';
   };
+  // SAFETY: The service tests exercise only the CommandRunner members supplied by this fixture.
   return {
     exec: vi.fn((command: string) => {
       const output = pick(command);
@@ -415,7 +416,7 @@ function stubRunner(responses: Array<[match: string, output: string | Error]>): 
       return { stdout: output, stderr: '' };
     }),
     wslContext: null,
-  } as unknown as CommandRunner;
+  } as CommandRunner;
 }
 
 describe('PullRequestManager.getDraft', () => {
@@ -485,7 +486,7 @@ describe('PullRequestManager.getDraft', () => {
 
     expect(draft.existing?.number).toBe(382);
     expect(draft.defaultTarget).toBe('dcouple/Pane');
-    const commands = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+    const commands = vi.mocked(runner.execAsync).mock.calls
       .map(call => call[0].replace(/["']/g, ''));
     expect(commands).toContainEqual(expect.stringContaining(
       'pr list --repo dcouple/Pane --head 0x92:feature/x'
@@ -531,7 +532,7 @@ describe('PullRequestManager.create', () => {
 
     expect(result).toEqual({ number: 391, url: 'https://github.com/dcouple/Pane/pull/391' });
 
-    const commands = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+    const commands = vi.mocked(runner.execAsync).mock.calls
       .map(c => c[0].replace(/["']/g, ''));
     const pushIndex = commands.findIndex(c => c.includes('git push'));
     const createIndex = commands.findIndex(c => c.includes('gh pr create'));
@@ -568,7 +569,7 @@ describe('PullRequestManager.create', () => {
       '/wt', '/repo', runner,
     )).rejects.toThrow(/Base branch missing was not found in dcouple\/Pane/);
 
-    const commands = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+    const commands = vi.mocked(runner.execAsync).mock.calls
       .map(call => call[0]);
     expect(commands.some(command => command.includes('git push'))).toBe(false);
   });
@@ -794,7 +795,7 @@ describe('PullRequestManager.getDiff', () => {
 
     expect(result).toMatchObject({ baseRef: 'origin/main', truncated: false });
     expect(result.diff).toContain('diff --git');
-    const commands = (runner.exec as unknown as { mock: { calls: string[][] } }).mock.calls.map(call => call[0]);
+    const commands = vi.mocked(runner.exec).mock.calls.map(call => call[0]);
     expect(commands.some(command => command.includes('...HEAD'))).toBe(true);
   });
 

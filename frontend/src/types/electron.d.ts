@@ -46,7 +46,6 @@ import type {
   PullRequestDraft,
   PullRequestStatus,
 } from '../../../shared/types/pullRequest';
-import type { GitDiffResult } from './diff';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';

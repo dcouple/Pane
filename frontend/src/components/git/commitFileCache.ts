@@ -7,9 +7,9 @@ import type { GitCommitFilesResult } from '../../../../shared/types/git';
  */
 const cache = new Map<string, GitCommitFilesResult>();
 
-export const WORKING_TREE_REF = 'index';
+const WORKING_TREE_REF = 'index';
 
-export function commitFileCacheKey(sessionId: string, commitRef: string): string {
+function commitFileCacheKey(sessionId: string, commitRef: string): string {
   return `${sessionId}:${commitRef}`;
 }
 

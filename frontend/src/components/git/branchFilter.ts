@@ -7,7 +7,7 @@
  */
 
 /** Rendering more than this at once is wasted work — nobody scrolls that far. */
-export const MAX_VISIBLE_BRANCHES = 200;
+const MAX_VISIBLE_BRANCHES = 200;
 
 export function filterBranches(
   branches: string[],

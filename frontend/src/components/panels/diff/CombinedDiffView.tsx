@@ -473,7 +473,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     commitDiffRequestIdRef.current += 1;
     setViewingCommitHash(commitRef);
     setSelectedExecutions([]);
-  }, []);
+  }, [viewingCommitHashRef]);
 
   const handleManualRefresh = () => {
     triggerSoftRefresh();

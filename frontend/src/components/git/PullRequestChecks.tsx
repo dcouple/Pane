@@ -1,23 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CircleCheck, CircleDot, CircleSlash, CircleX, Loader2 } from 'lucide-react';
 import { API } from '../../utils/api';
+import { parsePullRequestUrl } from './pullRequestUrl';
 import type { PullRequestChecksResult } from '../../../../shared/types/pullRequest';
 
 /** How often CI state is re-read while a review panel is on screen. */
 const POLL_MS = 60_000;
-
-/**
- * `https://github.com/owner/repo/pull/382` → `{ repo: 'owner/repo', number: 382 }`.
- *
- * The pull request URL is already stored on the session, so deriving the
- * repository from it avoids carrying a second field through the git status
- * cache, the database and the IPC layer for something git already knows.
- */
-export function parsePullRequestUrl(url: string | undefined): { repo: string; number: number } | null {
-  const match = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url ?? '');
-  if (!match) return null;
-  return { repo: match[1], number: Number(match[2]) };
-}
 
 const ICONS = {
   pass: CircleCheck,
@@ -99,5 +87,3 @@ export function PullRequestChecks({ sessionId, prUrl }: PullRequestChecksProps) 
     </button>
   );
 }
-
-export default PullRequestChecks;

@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { PullRequestManager, quoteArg, resolveBodyFile } from './pullRequestManager';
 import { escapeShellArg } from '../utils/shellEscape';
@@ -18,13 +17,14 @@ import type { CommandRunner } from '../utils/commandRunner';
  *    it.
  */
 
-vi.mock('fs', async importOriginal => {
-  const actual = await importOriginal<typeof import('fs')>();
-  return { ...actual, writeFileSync: vi.fn(), unlinkSync: vi.fn() };
-});
-
 /** A branch name git accepts and bash would otherwise execute. */
 const HOSTILE_BRANCH = 'fix-`whoami`-$(id)';
+const writeBodyFile = vi.fn();
+const unlinkBodyFile = vi.fn();
+const manager = () => new PullRequestManager(undefined, {
+  writeFile: writeBodyFile,
+  unlink: unlinkBodyFile,
+});
 
 function stubRunner(
   responses: Array<[match: string, output: string | Error]>,
@@ -37,6 +37,7 @@ function stubRunner(
     }
     return '';
   };
+  // SAFETY: These tests exercise only the CommandRunner members supplied by this fixture.
   return {
     exec: vi.fn((command: string) => {
       const output = pick(command);
@@ -49,7 +50,7 @@ function stubRunner(
       return { stdout: output, stderr: '' };
     }),
     wslContext: distribution ? { enabled: true, distribution, linuxPath: '/home/dev/p' } : null,
-  } as unknown as CommandRunner;
+  } as CommandRunner;
 }
 
 describe('quoteArg', () => {
@@ -125,7 +126,7 @@ describe('resolveBodyFile', () => {
  * matching has to happen on the unquoted text and read the original back.
  */
 function ghCreateCommand(commandRunner: CommandRunner): string {
-  const commands = (commandRunner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+  const commands = vi.mocked(commandRunner.execAsync).mock.calls
     .map(call => call[0]);
   const index = commands.findIndex(text => text.replace(/['"]/g, '').includes('pr create'));
   expect(index).toBeGreaterThanOrEqual(0);
@@ -144,7 +145,7 @@ describe('PullRequestManager.create on a WSL project', () => {
     ['pr create', 'https://github.com/dcouple/Pane/pull/391\n'],
   ], 'Ubuntu');
 
-  const create = (commandRunner: CommandRunner) => new PullRequestManager().create(
+  const create = (commandRunner: CommandRunner) => manager().create(
     {
       sessionId: 's1',
       title: 'Add `date` support for $HOME',
@@ -159,7 +160,7 @@ describe('PullRequestManager.create on a WSL project', () => {
     const commandRunner = runner();
     await create(commandRunner);
 
-    const commands = (commandRunner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+    const commands = vi.mocked(commandRunner.execAsync).mock.calls
       .map(call => call[0]);
 
     const push = commands.find(command => command.includes('git push'))!;
@@ -187,7 +188,7 @@ describe('PullRequestManager.create on a WSL project', () => {
     const bodyFile = /--body-file' '([^']+)'/.exec(command)?.[1];
     expect(bodyFile).toMatch(/^\/tmp\/pane-pr-[0-9a-f-]+\.md$/);
 
-    const written = vi.mocked(writeFileSync).mock.calls[0];
+    const written = writeBodyFile.mock.calls[0];
     expect(written[0]).toBe(`\\\\wsl.localhost\\Ubuntu\\tmp\\${bodyFile!.slice('/tmp/'.length)}`);
     expect(written[1]).toContain('`code` and $vars stay markdown.');
   });
@@ -196,7 +197,7 @@ describe('PullRequestManager.create on a WSL project', () => {
     const commandRunner = runner();
     await create(commandRunner);
 
-    expect(vi.mocked(unlinkSync).mock.calls[0][0]).toBe(vi.mocked(writeFileSync).mock.calls[0][0]);
+    expect(unlinkBodyFile.mock.calls[0][0]).toBe(writeBodyFile.mock.calls[0][0]);
   });
 
   it('cleans up even when gh fails', async () => {
@@ -209,7 +210,7 @@ describe('PullRequestManager.create on a WSL project', () => {
     ], 'Ubuntu');
 
     await expect(create(commandRunner)).rejects.toThrow();
-    expect(vi.mocked(unlinkSync)).toHaveBeenCalledWith(vi.mocked(writeFileSync).mock.calls[0][0]);
+    expect(unlinkBodyFile).toHaveBeenCalledWith(writeBodyFile.mock.calls[0][0]);
   });
 });
 
@@ -225,12 +226,12 @@ describe('PullRequestManager.create on a host project', () => {
       ['pr create', 'https://github.com/dcouple/Pane/pull/392\n'],
     ], null);
 
-    await new PullRequestManager().create(
+    await manager().create(
       { sessionId: 's1', title: 't', body: 'b', baseBranch: 'main', targetRepo: 'dcouple/Pane' },
       '/wt', '/repo', commandRunner,
     );
 
-    const written = String(vi.mocked(writeFileSync).mock.calls[0][0]);
+    const written = String(writeBodyFile.mock.calls[0][0]);
     expect(written.startsWith(tmpdir())).toBe(true);
   });
 });

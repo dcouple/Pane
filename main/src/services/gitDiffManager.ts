@@ -57,7 +57,7 @@ export const WORKING_TREE_REF = 'index';
  * build directory would otherwise hand it megabytes to chew through.
  */
 export const MAX_UNTRACKED_INLINE_FILES = 200;
-export const MAX_UNTRACKED_INLINE_BYTES = 2 * 1024 * 1024;
+const MAX_UNTRACKED_INLINE_BYTES = 2 * 1024 * 1024;
 
 /**
  * Per-file ceiling for inlining. Matches the buffer the previous `cat` had, so
@@ -113,7 +113,7 @@ async function countNewlines(fsPath: string): Promise<number> {
     const stream = createReadStream(fsPath, { highWaterMark: 64 * 1024 });
 
     stream.on('data', (chunk: string | Buffer) => {
-      const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       for (let i = 0; i < buffer.length; i++) {
         if (buffer[i] === 0x0a) count++;
       }
@@ -235,7 +235,7 @@ export function parseNameStatusZ(raw: string): NameStatusEntry[] {
         oldPath,
         path: path || oldPath,
         status,
-        similarity: Number.isNaN(similarity as number) ? undefined : similarity,
+        similarity: similarity === undefined || Number.isNaN(similarity) ? undefined : similarity,
       });
     } else {
       const path = tokens[i] ?? '';
@@ -261,15 +261,16 @@ export function mergeFileChanges(
 
   return numstat.map(entry => {
     const match = statusByPath.get(entry.path);
-    return {
+    const file: GitCommitFileChange = {
       path: entry.path,
       oldPath: match?.oldPath || entry.oldPath || entry.path,
       status: match?.status ?? 'modified',
       additions: entry.additions,
       deletions: entry.deletions,
       isBinary: entry.isBinary,
-      ...(match?.similarity !== undefined ? { similarity: match.similarity } : {}),
     };
+    if (match?.similarity !== undefined) file.similarity = match.similarity;
+    return file;
   });
 }
 
