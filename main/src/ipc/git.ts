@@ -1461,29 +1461,29 @@ export function registerGitHandlers(
         return { success: false, error: 'Cannot create a pull request from a detached HEAD' };
       }
 
-      const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
+      const baseBranch = await worktreeManager.getSessionLocalBaseBranch(session, ctx);
 
-      const startMessage = `ðŸ”„ GIT OPERATION\nCreating pull request...`;
+      const startMessage = `🔄 GIT OPERATION\nCreating pull request...`;
       emitGitOperationToProject(sessionId, 'git:operation_started', startMessage, {
         operation: 'create-pr',
         branch: currentBranch,
-        base: comparisonBranch,
+        base: baseBranch,
       });
 
       const result = await worktreeManager.createPullRequest(
         session.worktreePath,
-        comparisonBranch,
+        baseBranch,
         currentBranch,
         ctx.commandRunner,
       );
 
-      const successMessage = `âœ“ Successfully created pull request` +
+      const successMessage = `✓ Successfully created pull request` +
                             (result.url ? `\n\n${result.url}` : '') +
                             (result.output ? `\n\nGitHub CLI output:\n${result.output}` : '');
       emitGitOperationToProject(sessionId, 'git:operation_completed', successMessage, {
         operation: 'create-pr',
         output: result.output,
-        url: result.url,
+        url: result.url ?? null,
       });
       sessionManager.addSessionOutput(sessionId, {
         type: 'stdout',
@@ -1501,13 +1501,13 @@ export function registerGitHandlers(
     } catch (error: unknown) {
       console.error('Failed to create pull request:', error);
 
-      const gitError = error as GitError;
-      const errorMessage = `âœ— Create PR failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
+      const gitError = decodeGitError(error);
+      const errorMessage = `✗ Create PR failed: ${error instanceof Error ? error.message : 'Unknown error'}` +
                           (gitError.gitOutput ? `\n\nGitHub CLI output:\n${gitError.gitOutput}` : '');
       emitGitOperationToProject(sessionId, 'git:operation_failed', errorMessage, {
         operation: 'create-pr',
         error: error instanceof Error ? error.message : String(error),
-        gitOutput: gitError.gitOutput
+        gitOutput: gitError.gitOutput ?? null
       });
 
       return {
