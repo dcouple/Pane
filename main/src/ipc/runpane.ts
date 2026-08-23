@@ -2098,27 +2098,15 @@ async function panelScrollbackOutput(panel: ToolPanel, limit: number): Promise<{
   // Ask for one extra rendered line so hasMore reflects emulator truncation.
   let text = await terminalPanelManager.getCleanTerminalScrollback(panel.id, limit + 1);
   if (text === null) {
-    const rawScrollback = getPanelScrollback(panel);
-    if (!rawScrollback) return null;
-    text = sanitizeTerminalOutput(rawScrollback);
+    const persistedScrollback = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
+    if (!persistedScrollback) return null;
+    text = sanitizeTerminalOutput(persistedScrollback);
   }
   if (!text) return null;
 
   const allLines = text.split('\n');
   const hasMore = allLines.length > limit;
   return { text: allLines.slice(-limit).join('\n'), hasMore, timestamp };
-}
-
-function getPanelScrollback(panel: ToolPanel): string | null {
-  const liveScrollback = terminalPanelManager.getTerminalScrollback(panel.id);
-  if (liveScrollback !== null) {
-    return liveScrollback;
-  }
-
-  const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
-  if (persisted) return persisted;
-
-  return null;
 }
 
 function panelOutputCommand(panelId: string): string {

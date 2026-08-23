@@ -120,6 +120,10 @@ export class TerminalStateEmulator {
    * cursor moves rather than carriage returns).
    */
   getScrollbackText(maxLines?: number): string {
+    if (maxLines !== undefined && (!Number.isSafeInteger(maxLines) || maxLines < 0)) {
+      throw new RangeError('maxLines must be a non-negative safe integer');
+    }
+
     const lines = this.disposed ? this.finalScrollbackText.split('\n') : [];
     if (!this.disposed) {
       const buffer = this.terminal.buffer.active;

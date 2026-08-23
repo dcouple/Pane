@@ -31,7 +31,6 @@ vi.spyOn(terminalPanelManager, 'initializeTerminal');
 vi.spyOn(terminalPanelManager, 'isTerminalInitialized');
 vi.spyOn(terminalPanelManager, 'getTerminalSnapshot');
 vi.spyOn(terminalPanelManager, 'waitForTerminalState');
-vi.spyOn(terminalPanelManager, 'getTerminalScrollback');
 vi.spyOn(terminalPanelManager, 'getCleanTerminalScrollback');
 vi.spyOn(terminalPanelManager, 'writeToTerminal');
 vi.spyOn(terminalPanelManager, 'getLastOutputAt');
@@ -293,7 +292,6 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.initializeTerminal).mockReset();
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReset();
     vi.mocked(terminalPanelManager.getCleanTerminalScrollback).mockReset();
     vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReset();
@@ -327,7 +325,6 @@ describe('runpane IPC handlers', () => {
     );
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReturnValue(true);
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(null);
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(null);
     vi.mocked(terminalPanelManager.getCleanTerminalScrollback).mockResolvedValue(null);
   });
 
@@ -1269,7 +1266,7 @@ describe('runpane IPC handlers', () => {
   });
 
   it('reads live terminal scrollback before persisted output records', async () => {
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue('first\nsecond\nthird\n');
+    vi.mocked(terminalPanelManager.getCleanTerminalScrollback).mockResolvedValue('first\nsecond\nthird\n');
     const services = createServices();
     const registry = createRegistry(services);
 
@@ -1295,30 +1292,18 @@ describe('runpane IPC handlers', () => {
     });
   });
 
-  it('prefers clean emulator scrollback over the raw append log', async () => {
-    // Emulator renders in-place repaints cleanly; the raw append log would
-    // sanitize into overlapping garbage. The emulator source must win.
-    vi.mocked(terminalPanelManager.getCleanTerminalScrollback).mockResolvedValue('alpha\nbeta\ngamma');
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue('should-not-be-used');
-    const registry = createRegistry();
-
-    const result = await registry.invoke('runpane:panels:output', [{
-      panelId: terminalPanel.id,
-      limit: 2,
-    }]);
-
-    expect(terminalPanelManager.getCleanTerminalScrollback).toHaveBeenCalledWith(terminalPanel.id, 3);
-    expect(result).toMatchObject({
-      returnedCount: 1,
-      hasMore: true,
-      text: 'beta\ngamma',
-    });
-  });
-
-  it('strips terminal control sequences from live scrollback output', async () => {
-    vi.mocked(terminalPanelManager.getTerminalScrollback).mockReturnValue(
-      '\x1b[31mred\x1b[0m\n[?25h[?2004hprompt$ [?2004lecho next\nnext[?25l[?25h\n',
-    );
+  it('strips terminal control sequences from persisted scrollback output', async () => {
+    const panelWithPersistedScrollback: ToolPanel = {
+      ...terminalPanel,
+      state: {
+        ...terminalPanel.state,
+        customState: {
+          ...terminalPanel.state.customState,
+          scrollbackBuffer: '\x1b[31mred\x1b[0m\n[?25h[?2004hprompt$ [?2004lecho next\nnext[?25l[?25h\n',
+        },
+      },
+    };
+    vi.mocked(panelManager.getPanel).mockReturnValue(panelWithPersistedScrollback);
     const registry = createRegistry();
 
     const result = await registry.invoke('runpane:panels:output', [{

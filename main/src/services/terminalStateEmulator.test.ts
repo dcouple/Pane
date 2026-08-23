@@ -143,6 +143,16 @@ describe('TerminalStateEmulator', () => {
     expect(emulator.getScrollbackText()).toContain('line-01');
   });
 
+  it('rejects invalid scrollback line limits', () => {
+    const emulator = new TerminalStateEmulator(40, 3);
+
+    expect(() => emulator.getScrollbackText(-1)).toThrow(RangeError);
+    expect(() => emulator.getScrollbackText(1.5)).toThrow(RangeError);
+    expect(() => emulator.getScrollbackText(Number.POSITIVE_INFINITY)).toThrow(RangeError);
+
+    emulator.dispose();
+  });
+
   it('captures OSC title set via the OSC 0 form', async () => {
     const emulator = new TerminalStateEmulator(20, 5);
     emulator.write('\x1b]0;Action Required · Codex\x07');

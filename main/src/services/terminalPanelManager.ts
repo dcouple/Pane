@@ -1932,14 +1932,6 @@ export class TerminalPanelManager {
   }
 
   /**
-   * Get scrollback buffer for a specific terminal.
-   * Returns null if terminal not found.
-   */
-  getTerminalScrollback(panelId: string): string | null {
-    return this.terminals.get(panelId)?.scrollbackBuffer ?? null;
-  }
-
-  /**
    * Clean plain-text scrollback from the rendered screen model. Returns null
    * without a live emulator so callers can use persisted state.
    */
