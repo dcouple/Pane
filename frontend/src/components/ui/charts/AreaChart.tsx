@@ -1,7 +1,7 @@
 import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import { linearScale, niceMax, niceTicks } from './chartScales';
 
-export interface AreaSeries {
+interface AreaSeries {
   label: string;
   color: string;
   /** One value per point, aligned with `labels`. */

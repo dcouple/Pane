@@ -3,7 +3,7 @@ import { stat } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { glob } from 'glob';
-import chokidar, { type FSWatcher } from 'chokidar';
+import chokidar from 'chokidar';
 import { databaseService } from '../database';
 import { UsageRepository } from './usageRepository';
 import { UsageAggregator, resolveReportRange } from './usageAggregator';
@@ -23,6 +23,43 @@ import {
 interface TranscriptRoot {
   provider: UsageProvider;
   path: string;
+}
+
+interface UsageWatcher {
+  on(event: 'add' | 'change', listener: (path: string) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  close(): Promise<void>;
+}
+
+type UsageWatchFactory = (
+  path: string,
+  options: NonNullable<Parameters<typeof chokidar.watch>[1]>,
+) => UsageWatcher;
+
+export function createTranscriptWatchers(
+  roots: readonly TranscriptRoot[],
+  createWatcher: UsageWatchFactory,
+  queueFile: (path: string, provider: UsageProvider) => void,
+): UsageWatcher[] {
+  return roots.map(root => {
+    // Missing paths are intentional. Chokidar watches the nearest existing
+    // parent and begins reporting once a CLI creates its transcript root.
+    const watcher = createWatcher(root.path, {
+      ignoreInitial: true,
+      depth: 6,
+      awaitWriteFinish: { stabilityThreshold: 1500, pollInterval: 300 },
+    });
+
+    const queue = (path: string) => {
+      if (path.endsWith('.jsonl')) queueFile(path, root.provider);
+    };
+    watcher.on('add', queue);
+    watcher.on('change', queue);
+    watcher.on('error', error => {
+      console.warn('[Usage] Watcher error:', error);
+    });
+    return watcher;
+  });
 }
 
 /** Yield to the event loop every N files so a first scan never blocks the UI. */
@@ -50,12 +87,12 @@ function transcriptRoots(): TranscriptRoot[] {
  * Windows with WSL-based projects the agents write inside the distro's home,
  * which this does not reach.
  */
-export class UsageManager {
+class UsageManager {
   // Resolved on first use, not in the constructor: this module is imported at
   // load time and the database handle is only guaranteed after initialisation.
   private repositoryRef: UsageRepository | null = null;
   private aggregatorRef: UsageAggregator | null = null;
-  private watchers: FSWatcher[] = [];
+  private watchers: UsageWatcher[] = [];
   private pendingFiles = new Map<string, UsageProvider>();
   private debounceTimer: NodeJS.Timeout | undefined;
   private scanning = false;
@@ -246,31 +283,14 @@ export class UsageManager {
   }
 
   private startWatching(): void {
-    for (const root of transcriptRoots()) {
-      // Chokidar intentionally receives missing paths too. It watches their
-      // nearest existing parent and begins reporting once a CLI creates the
-      // transcript root after Pane has started.
-      const watcher = chokidar.watch(root.path, {
-        ignoreInitial: true,
-        depth: 6,
-        // Transcripts are appended continuously; wait for a lull before reading.
-        awaitWriteFinish: { stabilityThreshold: 1500, pollInterval: 300 },
-      });
-
-      const queue = (path: string) => {
-        if (!path.endsWith('.jsonl')) return;
-        this.pendingFiles.set(path, root.provider);
+    this.watchers = createTranscriptWatchers(
+      transcriptRoots(),
+      (path, options) => chokidar.watch(path, options),
+      (path, provider) => {
+        this.pendingFiles.set(path, provider);
         this.scheduleFlush();
-      };
-
-      watcher.on('add', queue);
-      watcher.on('change', queue);
-      watcher.on('error', error => {
-        console.warn('[Usage] Watcher error:', error);
-      });
-
-      this.watchers.push(watcher);
-    }
+      },
+    );
   }
 
   private scheduleFlush(): void {

@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3-multiple-ciphers';
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
 import { usageEventId, type CodexContextSnapshot } from './usageParser';
+import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 
 export interface UsageFileCursor {
   path: string;
@@ -30,16 +31,17 @@ interface UsageFileRow {
   parse_context: string | null;
 }
 
+const codexContextSchema = boundary.object({
+  model: boundary.nullable(boundary.string),
+  sessionId: boundary.nullable(boundary.string),
+  cwd: boundary.nullable(boundary.string),
+});
+
 /** A stored context, or null if the column is empty or no longer parses. */
 function readParseContext(raw: string | null | undefined): CodexContextSnapshot | null {
   if (!raw) return null;
   try {
-    const value = JSON.parse(raw) as Partial<CodexContextSnapshot>;
-    return {
-      model: typeof value.model === 'string' ? value.model : null,
-      sessionId: typeof value.sessionId === 'string' ? value.sessionId : null,
-      cwd: typeof value.cwd === 'string' ? value.cwd : null,
-    };
+    return decodeOptionalBoundary(JSON.parse(raw), codexContextSchema) ?? null;
   } catch {
     return null;
   }
@@ -56,6 +58,7 @@ export class UsageRepository {
   constructor(private db: Database) {}
 
   getFileCursor(path: string): UsageFileCursor | null {
+    // SAFETY: The fixed SELECT * projection matches the usage_files schema.
     const row = this.db
       .prepare('SELECT * FROM usage_files WHERE path = ?')
       .get(path) as UsageFileRow | undefined;
@@ -191,6 +194,7 @@ export class UsageRepository {
    * about the present, and a progress bar makes it look like one.
    */
   getRateLimits(nowMs: number): UsageRateLimitSample[] {
+    // SAFETY: The fixed SELECT * projection matches usage_rate_limits below.
     const rows = this.db.prepare(`
       SELECT * FROM usage_rate_limits ORDER BY provider, scope, captured_at_ms DESC
     `).all() as Array<{
@@ -238,11 +242,13 @@ export class UsageRepository {
   }
 
   countFiles(): number {
+    // SAFETY: COUNT(*) always returns one numeric n column.
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM usage_files').get() as { n: number };
     return row.n;
   }
 
   countEvents(): number {
+    // SAFETY: COUNT(*) always returns one numeric n column.
     const row = this.db.prepare('SELECT COUNT(*) AS n FROM usage_events').get() as { n: number };
     return row.n;
   }

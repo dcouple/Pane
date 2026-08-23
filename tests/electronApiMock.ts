@@ -47,6 +47,7 @@ type ElectronApiMockOptions = {
   initialCombinedDiff?: JsonObject | null;
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
+  initialUsageReport?: JsonObject;
   forcedAgentUsageError?: string;
   detectedBranch?: string | null;
   detectedBranchByPath?: Record<string, string | null>;
@@ -399,6 +400,80 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
             fetchedAt: new Date(0).toISOString(),
           }));
         },
+      }),
+      usage: namespace({
+        getReport: () => success(clone(mockOptions.initialUsageReport ?? {
+          totals: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            totalTokens: 0,
+            messageCount: 0,
+            estimatedCostUsd: 0,
+            costIncomplete: false,
+            cacheSavingsUsd: 0,
+          },
+          series: [],
+          byModel: [],
+          byProject: [],
+          window: {
+            windowHours: 5,
+            windowStartMs: 0,
+            windowEndMs: 0,
+            totals: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              totalTokens: 0,
+              messageCount: 0,
+              estimatedCostUsd: 0,
+              costIncomplete: false,
+              cacheSavingsUsd: 0,
+            },
+            limitTokens: null,
+            limitSource: 'unknown',
+            utilization: null,
+            resetsAtMs: null,
+            recentHourTokens: 0,
+          },
+          rateLimits: [],
+          index: {
+            lastScanStartedMs: null,
+            lastScanFinishedMs: null,
+            filesTracked: 0,
+            eventsIndexed: 0,
+            missingRoots: [],
+            scanning: false,
+            filesScanned: 0,
+            filesTotal: 0,
+            lastError: null,
+          },
+          pricingAsOf: '2026-08-10',
+        })),
+        getStatus: () => success({
+          lastScanStartedMs: null,
+          lastScanFinishedMs: null,
+          filesTracked: 0,
+          eventsIndexed: 0,
+          missingRoots: [],
+          scanning: false,
+          filesScanned: 0,
+          filesTotal: 0,
+          lastError: null,
+        }),
+        rescan: () => success({
+          lastScanStartedMs: null,
+          lastScanFinishedMs: null,
+          filesTracked: 0,
+          eventsIndexed: 0,
+          missingRoots: [],
+          scanning: false,
+          filesScanned: 0,
+          filesTotal: 0,
+          lastError: null,
+        }),
       }),
       cloud: namespace({
         getState: () => success(clone(cloudState)),

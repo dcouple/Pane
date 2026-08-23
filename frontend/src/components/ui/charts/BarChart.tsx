@@ -1,6 +1,6 @@
 import { linearScale, niceMax } from './chartScales';
 
-export interface BarDatum {
+interface BarDatum {
   label: string;
   value: number;
   color: string;

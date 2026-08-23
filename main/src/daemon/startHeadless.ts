@@ -12,6 +12,19 @@ let daemonHost: PaneDaemonHost | null = null;
 let shutdownInProgress = false;
 let startupRegistered = false;
 
+interface UsageLifecycle {
+  start(): Promise<void>;
+}
+
+export async function startHeadlessHost<Host>(
+  createHost: () => Promise<Host>,
+  usageLifecycle: UsageLifecycle,
+): Promise<Host> {
+  const host = await createHost();
+  await usageLifecycle.start();
+  return host;
+}
+
 async function shutdown(exitCode: number): Promise<void> {
   if (shutdownInProgress) {
     return;
@@ -46,14 +59,16 @@ export function startHeadlessPaneProcess(): void {
   }
 
   app.whenReady().then(async () => {
-    daemonHost = await createPaneDaemonHost({
-      app,
-      getMainWindow: () => null,
-      getPtyHostRuntime: () => null,
-      mode: 'headless',
-      restoreSpotlights: false,
-    });
-    await usageManager.start();
+    daemonHost = await startHeadlessHost(
+      () => createPaneDaemonHost({
+        app,
+        getMainWindow: () => null,
+        getPtyHostRuntime: () => null,
+        mode: 'headless',
+        restoreSpotlights: false,
+      }),
+      usageManager,
+    );
 
     const endpoint = daemonHost.paneDaemonServer?.getEndpoint();
     if (endpoint) {

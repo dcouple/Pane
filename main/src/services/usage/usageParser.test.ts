@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { parseUsageLine, parseClaudeLine, parseCodexLine, usageEventId, createCodexContext } from './usageParser';
+import type { JsonObject } from '../../../../shared/validation/boundaryDecoder';
 
 const FALLBACK_MS = 1_700_000_000_000;
 
-function claudeLine(overrides: Record<string, unknown> = {}, usage: Record<string, unknown> = {}) {
+function claudeLine(overrides: JsonObject = {}, usage: JsonObject = {}) {
   return JSON.stringify({
     type: 'assistant',
     timestamp: '2026-05-01T10:00:00.000Z',

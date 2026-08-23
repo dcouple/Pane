@@ -1,29 +1,39 @@
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
+import {
+  boundary,
+  decodeBoundary,
+  decodeOptionalBoundary,
+  type JsonObject,
+  type JsonValue,
+} from '../../../../shared/validation/boundaryDecoder';
 
 /**
  * Transcript line -> {@link UsageEvent}. Pure: no filesystem, no clock.
  *
- * Transcript shapes drift between CLI releases, so every field is narrowed
- * from `unknown` and any unrecognised line yields `null` rather than throwing.
+ * Transcript shapes drift between CLI releases, so JSON crosses the shared
+ * boundary decoder before fields are read, and unrecognised lines yield null.
  * A malformed line must never abort a scan.
  */
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+function asObject(value: JsonValue | undefined): JsonObject | null {
+  return decodeOptionalBoundary(value, boundary.jsonObject) ?? null;
 }
 
-function asNumber(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+function asNumber(value: JsonValue | undefined): number {
+  const number = decodeOptionalBoundary(value, boundary.number);
+  return number !== undefined && Number.isFinite(number) ? number : 0;
 }
 
-function asString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+function asString(value: JsonValue | undefined): string | null {
+  const string = decodeOptionalBoundary(value, boundary.string);
+  return string && string.length > 0 ? string : null;
 }
 
-function toEpochMs(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+function toEpochMs(value: JsonValue | undefined): number | null {
+  const number = decodeOptionalBoundary(value, boundary.number);
+  if (number !== undefined && Number.isFinite(number)) {
     // Codex has used both seconds and milliseconds over time.
-    return value > 1e12 ? value : value * 1000;
+    return number > 1e12 ? number : number * 1000;
   }
   const raw = asString(value);
   if (!raw) return null;
@@ -35,20 +45,21 @@ function toEpochMs(value: unknown): number | null {
  * Cache-creation tokens are reported either as a flat count or, in newer
  * Claude builds, as a breakdown object keyed by TTL. Sum whatever is there.
  */
-function readCacheCreation(usage: Record<string, unknown>): number {
+function readCacheCreation(usage: JsonObject): number {
   const flat = asNumber(usage.cache_creation_input_tokens);
   if (flat > 0) return flat;
 
   const breakdown = usage.cache_creation;
-  if (isRecord(breakdown)) {
-    return Object.values(breakdown).reduce<number>((sum, entry) => sum + asNumber(entry), 0);
+  const breakdownObject = asObject(breakdown);
+  if (breakdownObject) {
+    return Object.values(breakdownObject).reduce<number>((sum, entry) => sum + asNumber(entry), 0);
   }
   return 0;
 }
 
 function buildEvent(
   provider: UsageProvider,
-  usage: Record<string, unknown>,
+  usage: JsonObject,
   meta: { model: string; timestampMs: number; messageId: string | null; agentSessionId: string | null; cwd: string | null }
 ): UsageEvent | null {
   const inputTokens = asNumber(usage.input_tokens);
@@ -79,22 +90,23 @@ function buildEvent(
  * Assistant entries carry `message.usage`; the timestamp, `sessionId` and
  * `cwd` live at the top level.
  */
-export function parseClaudeLine(value: unknown, fallbackTimestampMs: number): UsageEvent | null {
-  if (!isRecord(value)) return null;
-  if (value.type !== 'assistant') return null;
+export function parseClaudeLine(value: JsonValue, fallbackTimestampMs: number): UsageEvent | null {
+  const record = asObject(value);
+  if (!record) return null;
+  if (record.type !== 'assistant') return null;
 
-  const message = value.message;
-  if (!isRecord(message)) return null;
+  const message = asObject(record.message);
+  if (!message) return null;
 
-  const usage = message.usage;
-  if (!isRecord(usage)) return null;
+  const usage = asObject(message.usage);
+  if (!usage) return null;
 
   return buildEvent('claude', usage, {
     model: asString(message.model) ?? 'unknown',
-    timestampMs: toEpochMs(value.timestamp) ?? fallbackTimestampMs,
+    timestampMs: toEpochMs(record.timestamp) ?? fallbackTimestampMs,
     messageId: asString(message.id),
-    agentSessionId: asString(value.sessionId),
-    cwd: asString(value.cwd),
+    agentSessionId: asString(record.sessionId),
+    cwd: asString(record.cwd),
   });
 }
 
@@ -152,19 +164,20 @@ export function snapshotCodexContext(context: CodexParseContext): CodexContextSn
  * it directly, rather than us inferring it from token sums.
  */
 function collectCodexRateLimits(
-  payload: Record<string, unknown>,
+  payload: JsonObject,
   capturedAtMs: number,
   context: CodexParseContext
 ): void {
   const rateLimits = payload.rate_limits;
-  if (!isRecord(rateLimits)) return;
+  const rateLimitObject = asObject(rateLimits);
+  if (!rateLimitObject) return;
 
-  const limitId = asString(rateLimits.limit_id) ?? 'codex';
-  const planType = asString(rateLimits.plan_type);
+  const limitId = asString(rateLimitObject.limit_id) ?? 'codex';
+  const planType = asString(rateLimitObject.plan_type);
 
   for (const scope of ['primary', 'secondary'] as const) {
-    const entry = rateLimits[scope];
-    if (!isRecord(entry)) continue;
+    const entry = asObject(rateLimitObject[scope]);
+    if (!entry) continue;
 
     const usedPercent = asNumber(entry.used_percent);
     const windowMinutes = asNumber(entry.window_minutes);
@@ -208,44 +221,45 @@ function collectCodexRateLimits(
  * cached part is subtracted out to keep the two priced separately.
  */
 export function parseCodexLine(
-  value: unknown,
+  value: JsonValue,
   fallbackTimestampMs: number,
   context?: CodexParseContext
 ): UsageEvent | null {
-  if (!isRecord(value)) return null;
-  const payload = isRecord(value.payload) ? value.payload : null;
+  const record = asObject(value);
+  if (!record) return null;
+  const payload = asObject(record.payload);
 
   // Context-carrying lines: remember what later usage events will need.
   if (context) {
-    if (value.type === 'session_meta' && payload) {
+    if (record.type === 'session_meta' && payload) {
       context.sessionId = asString(payload.id) ?? context.sessionId;
       context.cwd = asString(payload.cwd) ?? context.cwd;
       context.model = asString(payload.model) ?? context.model;
-    } else if ((value.type === 'turn_context' || value.type === 'world_state') && payload) {
+    } else if ((record.type === 'turn_context' || record.type === 'world_state') && payload) {
       context.model = asString(payload.model) ?? context.model;
       context.cwd = asString(payload.cwd) ?? context.cwd;
     }
   }
 
-  if (value.type !== 'event_msg' || !payload || payload.type !== 'token_count') return null;
+  if (record.type !== 'event_msg' || !payload || payload.type !== 'token_count') return null;
 
-  const timestampMs = toEpochMs(value.timestamp) ?? fallbackTimestampMs;
+  const timestampMs = toEpochMs(record.timestamp) ?? fallbackTimestampMs;
   if (context) collectCodexRateLimits(payload, timestampMs, context);
 
-  const info = isRecord(payload.info) ? payload.info : null;
-  const last = info && isRecord(info.last_token_usage) ? info.last_token_usage : null;
+  const info = asObject(payload.info);
+  const last = asObject(info?.last_token_usage);
   if (!last) return null;
 
   const cachedInput = asNumber(last.cached_input_tokens);
   const totalInput = asNumber(last.input_tokens);
 
-  const normalized: Record<string, unknown> = {
+  const normalized = {
     // Fresh (uncached) input, so cache reads are not billed twice.
     input_tokens: Math.max(totalInput - cachedInput, 0),
     output_tokens: asNumber(last.output_tokens),
     cache_read_input_tokens: cachedInput,
     cache_creation_input_tokens: asNumber(last.cache_write_input_tokens),
-  };
+  } satisfies JsonObject;
 
   return buildEvent('codex', normalized, {
     model: context?.model ?? asString(payload.model) ?? 'codex',
@@ -270,9 +284,9 @@ export function parseUsageLine(
   const trimmed = line.trim();
   if (!trimmed || trimmed[0] !== '{') return null;
 
-  let value: unknown;
+  let value: JsonValue;
   try {
-    value = JSON.parse(trimmed);
+    value = decodeBoundary(JSON.parse(trimmed), boundary.json);
   } catch {
     return null;
   }

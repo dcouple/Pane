@@ -3,7 +3,7 @@ import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { usageManager } from '../services/usage/usageManager';
 import type { UsageReportRequest } from '../../../shared/types/usage';
 
-export const DAEMON_USAGE_CHANNELS = [
+const DAEMON_USAGE_CHANNELS = [
   'usage:get-report',
   'usage:get-status',
   'usage:rescan',

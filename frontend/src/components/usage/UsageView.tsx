@@ -682,5 +682,3 @@ export function UsageView() {
     </div>
   );
 }
-
-export default UsageView;

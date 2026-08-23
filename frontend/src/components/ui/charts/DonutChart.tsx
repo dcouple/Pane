@@ -1,6 +1,6 @@
 import { arcPath } from './chartScales';
 
-export interface DonutSlice {
+interface DonutSlice {
   label: string;
   value: number;
   color: string;

@@ -125,5 +125,3 @@ export function LimitGauge({ window: usageWindow }: LimitGaugeProps) {
     </div>
   );
 }
-
-export default LimitGauge;
