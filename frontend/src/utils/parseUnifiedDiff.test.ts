@@ -64,6 +64,16 @@ describe('parseUnifiedDiffToFiles', () => {
     expect(files[0].isBinary).toBe(true);
   });
 
+  it('decodes Git-quoted non-ASCII paths for file reveal matching', () => {
+    const files = parseUnifiedDiffToFiles(
+      'diff --git "a/t\\303\\244st.txt" "b/t\\303\\244st.txt"\n--- "a/t\\303\\244st.txt"\n+++ "b/t\\303\\244st.txt"\n@@ -1 +1,2 @@\n old\n+new\n'
+    );
+
+    expect(files).toHaveLength(1);
+    expect(files[0].oldPath).toBe('täst.txt');
+    expect(files[0].path).toBe('täst.txt');
+  });
+
   it('handles a large diff without pathological cost', () => {
     // 50k added lines in one file — the shape that made Review crawl.
     const body = Array.from({ length: 50_000 }, (_, i) => `+line ${i}`).join('\n');

@@ -31,6 +31,66 @@ function countChangedLines(chunk: string): { additions: number; deletions: numbe
   return { additions, deletions };
 }
 
+const GIT_ESCAPE_BYTES: Record<string, number> = {
+  a: 0x07,
+  b: 0x08,
+  t: 0x09,
+  n: 0x0a,
+  v: 0x0b,
+  f: 0x0c,
+  r: 0x0d,
+  '"': 0x22,
+  '\\': 0x5c,
+};
+
+function decodeGitQuotedPath(token: string): string {
+  const bytes: number[] = [];
+  const encoder = new TextEncoder();
+  const content = token.slice(1, -1);
+
+  for (let index = 0; index < content.length; index++) {
+    const character = content[index];
+    if (character !== '\\') {
+      bytes.push(...encoder.encode(character));
+      continue;
+    }
+
+    const escaped = content[++index];
+    if (escaped === undefined) break;
+    if (/[0-7]/.test(escaped)) {
+      let octal = escaped;
+      while (octal.length < 3 && /[0-7]/.test(content[index + 1] ?? '')) {
+        octal += content[++index];
+      }
+      bytes.push(Number.parseInt(octal, 8));
+      continue;
+    }
+    bytes.push(GIT_ESCAPE_BYTES[escaped] ?? escaped.charCodeAt(0));
+  }
+
+  return new TextDecoder().decode(Uint8Array.from(bytes));
+}
+
+function parseDiffHeaderPaths(chunk: string): { oldPath: string; newPath: string } | null {
+  const lineEnd = chunk.indexOf('\n');
+  const header = chunk.slice('diff --git '.length, lineEnd < 0 ? chunk.length : lineEnd);
+
+  if (header.startsWith('"')) {
+    const separator = header.indexOf('" "', 1);
+    if (separator < 0 || !header.endsWith('"')) return null;
+    const oldToken = header.slice(0, separator + 1);
+    const newToken = header.slice(separator + 2);
+    const oldPath = decodeGitQuotedPath(oldToken);
+    const newPath = decodeGitQuotedPath(newToken);
+    if (!oldPath.startsWith('a/') || !newPath.startsWith('b/')) return null;
+    return { oldPath: oldPath.slice(2), newPath: newPath.slice(2) };
+  }
+
+  const match = header.match(/^a\/(.*?) b\/(.*)$/);
+  if (!match) return null;
+  return { oldPath: match[1], newPath: match[2] };
+}
+
 /**
  * Split a unified diff into one {@link FileDiff} per `diff --git` chunk.
  *
@@ -44,10 +104,9 @@ export function parseUnifiedDiffToFiles(diff: string): FileDiff[] {
   if (!fileChunks) return [];
 
   return fileChunks.flatMap(chunk => {
-    const nameMatch = chunk.match(/diff --git a\/(.*?) b\/(.*?)(?:\n|$)/);
-    if (!nameMatch) return [];
-    const oldPath = nameMatch[1];
-    const newPath = nameMatch[2];
+    const paths = parseDiffHeaderPaths(chunk);
+    if (!paths) return [];
+    const { oldPath, newPath } = paths;
     const isBinary = chunk.includes('Binary files') || chunk.includes('GIT binary patch');
 
     let type: FileDiff['type'] = 'modified';

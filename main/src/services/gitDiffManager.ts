@@ -50,6 +50,8 @@ export interface GitGraphCommit {
 /** Uncommitted working-tree changes are addressed by this pseudo-ref. */
 export const WORKING_TREE_REF = 'index';
 
+const COMMIT_OBJECT_ID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+
 /**
  * Caps on inlining untracked file content into a synthesized diff.
  *
@@ -558,6 +560,10 @@ export class GitDiffManager {
     try {
       if (ref === WORKING_TREE_REF || ref === 'UNCOMMITTED') {
         return this.getWorkingTreeFileChanges(worktreePath, commandRunner);
+      }
+      if (!COMMIT_OBJECT_ID_PATTERN.test(ref)) {
+        this.logger?.warn(`Rejected invalid commit object ID: ${ref}`);
+        return empty;
       }
 
       // `git show` prints nothing for a merge commit unless we ask for a
