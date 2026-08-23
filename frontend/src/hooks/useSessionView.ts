@@ -22,16 +22,6 @@ interface PromptMarker {
   completion_timestamp?: string;
 }
 
-interface CreatePrResponseData {
-  url?: string;
-}
-
-function isCreatePrResponseData(value: unknown): value is CreatePrResponseData {
-  return typeof value === 'object' &&
-    value !== null &&
-    (!('url' in value) || typeof value.url === 'string');
-}
-
 export const useSessionView = (
   activeSession: Session | undefined,
 ) => {
@@ -1014,7 +1004,7 @@ export const useSessionView = (
         return;
       }
 
-      if (isCreatePrResponseData(response.data) && response.data.url) {
+      if (response.data?.url) {
         await window.electronAPI?.openExternal(response.data.url);
       }
     } catch (error) {

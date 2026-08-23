@@ -189,7 +189,7 @@ interface ElectronAPI {
     // Git pull/push operations
     gitPull: (sessionId: string) => Promise<IPCResponse>;
     gitPush: (sessionId: string) => Promise<IPCResponse>;
-    createPr: (sessionId: string) => Promise<IPCResponse>;
+    createPr: (sessionId: string) => Promise<IPCResponse<{ output: string; url?: string }>>;
     gitFetch: (sessionId: string) => Promise<IPCResponse>;
     gitStash: (sessionId: string, message?: string) => Promise<IPCResponse>;
     gitStashPop: (sessionId: string) => Promise<IPCResponse>;

@@ -1471,6 +1471,25 @@ export const SessionView = memo(() => {
       : activeSession.status === 'running' || activeSession.status === 'initializing'
         ? 'Session is currently running'
         : undefined;
+    const createPrState = activeSession.gitStatus?.prUrl
+      ? {
+          description: `Pull request already exists: ${activeSession.gitStatus.prUrl}`,
+          disabledReason: 'Pull request already exists',
+        }
+      : activeSession.gitStatus?.ahead
+        ? {
+            description: 'Push this branch before creating a pull request',
+            disabledReason: 'Push branch first',
+          }
+        : activeSession.gitStatus?.totalCommits
+          ? {
+              description: `Create a pull request from ${hook.gitCommands?.currentBranch || 'current branch'}`,
+              disabledReason: undefined,
+            }
+          : {
+              description: 'No commits for a pull request',
+              disabledReason: 'No commits for a pull request',
+            };
     
     return activeSession.isMainRepo ? [
       {
@@ -1587,26 +1606,10 @@ export const SessionView = memo(() => {
         label: 'PR',
         icon: GitPullRequestArrow,
         onClick: hook.handleCreatePr,
-        disabled: hook.isMerging || activeSession.status === 'running' || activeSession.status === 'initializing' ||
-                  Boolean(activeSession.gitStatus?.prUrl) ||
-                  Boolean(activeSession.gitStatus?.ahead && activeSession.gitStatus.ahead > 0) ||
-                  !activeSession.gitStatus?.totalCommits,
+        disabled: Boolean(busyReason ?? createPrState.disabledReason),
         variant: 'default' as const,
-        description: activeSession.gitStatus?.prUrl
-          ? `Pull request already exists: ${activeSession.gitStatus.prUrl}`
-          : activeSession.gitStatus?.ahead && activeSession.gitStatus.ahead > 0
-            ? 'Push this branch before creating a pull request'
-            : activeSession.gitStatus?.totalCommits
-              ? `Create a pull request from ${hook.gitCommands?.currentBranch || 'current branch'}`
-              : 'No commits for a pull request',
-        disabledReason: busyReason ??
-          (activeSession.gitStatus?.prUrl
-            ? 'Pull request already exists'
-            : activeSession.gitStatus?.ahead && activeSession.gitStatus.ahead > 0
-              ? 'Push branch first'
-              : activeSession.gitStatus?.totalCommits
-                ? undefined
-                : 'No commits for a pull request'),
+        description: createPrState.description,
+        disabledReason: busyReason ?? createPrState.disabledReason,
       },
       // --- Main branch operations (last) ---
       {

@@ -528,7 +528,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Git pull/push operations
     gitPull: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-pull', sessionId),
     gitPush: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-push', sessionId),
-    createPr: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:create-pr', sessionId),
+    createPr: (sessionId: string): Promise<IPCResponse<{ output: string; url?: string }>> =>
+      invokeIpc('sessions:create-pr', sessionId),
     gitFetch: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-fetch', sessionId),
     gitStash: (sessionId: string, message?: string): Promise<IPCResponse> => invokeIpc('sessions:git-stash', sessionId, message),
     gitStashPop: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-stash-pop', sessionId),
