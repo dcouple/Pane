@@ -903,7 +903,7 @@ export async function runPanesFocus(parsed: ParsedArgs): Promise<number> {
     console.log(`Focused ${result.paneId}${panelSuffix}`);
   }
 
-  return result.ok ? 0 : 1;
+  return 0;
 }
 
 export async function runPanelsList(parsed: ParsedArgs): Promise<number> {

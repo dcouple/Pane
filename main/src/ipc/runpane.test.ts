@@ -287,11 +287,11 @@ describe('runpane IPC handlers', () => {
         ]),
       },
     });
-    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
-    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:doctor');
-    // SAFETY: This test fixture intentionally supplies the minimal structural substitute exercised by the unit.
-    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:panes:rename');
-    expect((result as { daemon: { channels: string[] } }).daemon.channels).toContain('runpane:panes:focus');
+    // SAFETY: The doctor result shape is asserted immediately above before its channels are inspected.
+    const daemon = (result as { daemon: { channels: string[] } }).daemon;
+    expect(daemon.channels).toContain('runpane:doctor');
+    expect(daemon.channels).toContain('runpane:panes:rename');
+    expect(daemon.channels).toContain('runpane:panes:focus');
   });
 
   it('lists saved Pane repositories with session counts', async () => {
@@ -2701,11 +2701,20 @@ describe('runpane IPC handlers', () => {
       };
     }
 
-    it('raises the window, selects the pane, and emits the focus event', async () => {
-      const window = createMockWindow();
-      const services = createServices({
+    function createWindowServices(
+      window: ReturnType<typeof createMockWindow>,
+      overrides: Partial<AppServices> = {},
+    ): AppServices {
+      return createServices({
+        ...overrides,
+        // SAFETY: Focus tests exercise only the BrowserWindow methods supplied by this fixture.
         getMainWindow: () => window as never,
       });
+    }
+
+    it('raises the window, selects the pane, and emits the focus event', async () => {
+      const window = createMockWindow();
+      const services = createWindowServices(window);
       const registry = createRegistry(services);
 
       const result = await registry.invoke('runpane:panes:focus', [{
@@ -2731,9 +2740,7 @@ describe('runpane IPC handlers', () => {
     it('restores a minimized window and selects the given panel', async () => {
       const window = createMockWindow();
       window.isMinimized.mockReturnValue(true);
-      const services = createServices({
-        getMainWindow: () => window as never,
-      });
+      const services = createWindowServices(window);
       const registry = createRegistry(services);
 
       const result = await registry.invoke('runpane:panes:focus', [{
@@ -2759,12 +2766,11 @@ describe('runpane IPC handlers', () => {
 
     it('refuses to focus an archived pane and never touches the window', async () => {
       const window = createMockWindow();
-      const services = createServices({
-        getMainWindow: () => window as never,
+      const services = createWindowServices(window, {
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => ({ ...session, archived: true })),
-        } as never,
+        },
       });
       const registry = createRegistry(services);
 
@@ -2779,12 +2785,11 @@ describe('runpane IPC handlers', () => {
 
     it('rejects focusing an unknown pane id', async () => {
       const window = createMockWindow();
-      const services = createServices({
-        getMainWindow: () => window as never,
+      const services = createWindowServices(window, {
         sessionManager: {
           ...createServices().sessionManager,
           getSession: vi.fn(() => undefined),
-        } as never,
+        },
       });
       const registry = createRegistry(services);
 
@@ -2802,9 +2807,7 @@ describe('runpane IPC handlers', () => {
         ...terminalPanel,
         sessionId: 'other-session',
       });
-      const services = createServices({
-        getMainWindow: () => window as never,
-      });
+      const services = createWindowServices(window);
       const registry = createRegistry(services);
 
       await expect(registry.invoke('runpane:panes:focus', [{
