@@ -18,6 +18,7 @@ export class TerminalStateEmulator {
   private finalIsAlternateScreen = false;
   private finalSerializedBuffer = '';
   private finalScreenText = '';
+  private finalScrollbackText = '';
   private currentTitle = '';
   private currentProgress = '';
 
@@ -119,7 +120,12 @@ export class TerminalStateEmulator {
    * cursor moves rather than carriage returns).
    */
   getScrollbackText(maxLines?: number): string {
-    if (this.disposed) return this.finalScreenText;
+    if (this.disposed) {
+      const lines = this.finalScrollbackText === '' ? [] : this.finalScrollbackText.split('\n');
+      return maxLines !== undefined && maxLines >= 0 && maxLines < lines.length
+        ? lines.slice(lines.length - maxLines).join('\n')
+        : this.finalScrollbackText;
+    }
 
     const buffer = this.terminal.buffer.active;
     const total = buffer.length;
@@ -163,6 +169,7 @@ export class TerminalStateEmulator {
     // viewport-only capture would silently drop the session's history.
     this.finalSerializedBuffer = this.serializeForRestore(true);
     this.finalScreenText = this.getScreenText();
+    this.finalScrollbackText = this.getScrollbackText();
     this.disposed = true;
     this.terminal.dispose();
     const resolvers = this.idleResolvers;

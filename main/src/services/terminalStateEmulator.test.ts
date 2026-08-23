@@ -130,6 +130,19 @@ describe('TerminalStateEmulator', () => {
     emulator.dispose();
   });
 
+  it('preserves bounded scrollback reads after disposal', async () => {
+    const emulator = new TerminalStateEmulator(40, 3);
+    for (let i = 1; i <= 10; i++) {
+      emulator.write(`line-${String(i).padStart(2, '0')}\r\n`);
+    }
+    await emulator.waitForIdle();
+
+    emulator.dispose();
+
+    expect(emulator.getScrollbackText(2)).toBe('line-09\nline-10');
+    expect(emulator.getScrollbackText()).toContain('line-01');
+  });
+
   it('captures OSC title set via the OSC 0 form', async () => {
     const emulator = new TerminalStateEmulator(20, 5);
     emulator.write('\x1b]0;Action Required · Codex\x07');
