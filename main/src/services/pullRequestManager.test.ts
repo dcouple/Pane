@@ -485,6 +485,11 @@ describe('PullRequestManager.getDraft', () => {
 
     expect(draft.existing?.number).toBe(382);
     expect(draft.defaultTarget).toBe('dcouple/Pane');
+    const commands = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+      .map(call => call[0].replace(/["']/g, ''));
+    expect(commands).toContainEqual(expect.stringContaining(
+      'pr list --repo dcouple/Pane --head 0x92:feature/x'
+    ));
   });
 
   it('reports uncommitted work so the dialog can offer to commit first', async () => {
@@ -548,6 +553,24 @@ describe('PullRequestManager.create', () => {
       { sessionId: 's1', title: 't', body: 'b', baseBranch: 'main', targetRepo: 'dcouple/Pane' },
       '/wt', '/repo', runner,
     )).rejects.toThrow(/did not return a pull request URL/);
+  });
+
+  it('rejects a missing target base before pushing the branch', async () => {
+    const runner = stubRunner([
+      ['branch --show-current', 'feature/x\n'],
+      ['git remote', 'origin\n'],
+      ['--version', 'gh version 2.97.0'],
+      ['repos/dcouple/Pane/branches/missing', new Error('HTTP 404')],
+    ]);
+
+    await expect(new PullRequestManager().create(
+      { sessionId: 's1', title: 't', body: 'b', baseBranch: 'missing', targetRepo: 'dcouple/Pane' },
+      '/wt', '/repo', runner,
+    )).rejects.toThrow(/Base branch missing was not found in dcouple\/Pane/);
+
+    const commands = (runner.execAsync as unknown as { mock: { calls: string[][] } }).mock.calls
+      .map(call => call[0]);
+    expect(commands.some(command => command.includes('git push'))).toBe(false);
   });
 });
 
@@ -781,4 +804,3 @@ describe('PullRequestManager.getDiff', () => {
       .toEqual({ baseRef: 'ghost', diff: '', truncated: false });
   });
 });
-

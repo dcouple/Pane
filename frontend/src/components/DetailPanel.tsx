@@ -23,6 +23,7 @@ interface DetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
+  onCommitFileClick?: (hash: string, path: string) => void;
 }
 
 const sidebarButtonClass = 'w-full justify-start text-sm !px-2';

@@ -522,6 +522,7 @@ export class PullRequestManager {
 
     let targets: PullRequestTarget[] = [];
     let defaultTarget = '';
+    let forkOwner: string | null = null;
     let existing: ExistingPullRequest | undefined;
 
     const gh = await this.resolveGh(worktreePath, commandRunner);
@@ -535,11 +536,14 @@ export class PullRequestManager {
         const resolved = resolveTargets(view);
         targets = resolved.targets;
         defaultTarget = resolved.defaultTarget;
+        forkOwner = view.nameWithOwner?.split('/')[0] ?? null;
       } else {
         blockers.push('This repository has no GitHub remote that gh recognises.');
       }
 
-      if (branch) existing = await this.findExisting(projectPath, branch, commandRunner);
+      if (branch) {
+        existing = await this.findExisting(projectPath, branch, targets, forkOwner, commandRunner);
+      }
       if (defaultTarget) {
         const targetDefault = targets.find(target => target.nameWithOwner === defaultTarget)?.defaultBranch;
         baseBranches = await this.listBaseBranches(defaultTarget, projectPath, commandRunner, targetDefault);
@@ -578,6 +582,10 @@ export class PullRequestManager {
     const remote = resolvePushRemote(this.remotes(worktreePath, commandRunner));
     if (!remote) throw new Error('This repository has no remote to push to.');
 
+    const gh = await this.resolveGh(worktreePath, commandRunner);
+    if (!gh) throw new Error('The GitHub CLI (gh) was not found. Install it from https://cli.github.com.');
+    await this.assertBaseBranchExists(gh, request.targetRepo, request.baseBranch, projectPath, commandRunner);
+
     await commandRunner.execAsync(
       `git push -u ${quoteArg(commandRunner, remote)} ${quoteArg(commandRunner, branch)}`,
       worktreePath,
@@ -596,9 +604,6 @@ export class PullRequestManager {
     writeFileSync(writePath, request.body, 'utf8');
 
     try {
-      const gh = await this.resolveGh(worktreePath, commandRunner);
-      if (!gh) throw new Error('The GitHub CLI (gh) was not found. Install it from https://cli.github.com.');
-
       const args = buildCreateArgs(request, { branch, forkOwner, bodyFile: ghPath });
       const command = `${quoteArg(commandRunner, gh)} ${args.map(arg => quoteArg(commandRunner, arg)).join(' ')}`;
       const { stdout } = await commandRunner.execAsync(command, worktreePath, { timeout: GH_TIMEOUT_MS });
@@ -1005,20 +1010,50 @@ export class PullRequestManager {
   private async findExisting(
     projectPath: string,
     branch: string,
+    targets: PullRequestTarget[],
+    forkOwner: string | null,
     commandRunner: CommandRunner
   ): Promise<ExistingPullRequest | undefined> {
+    const gh = await this.resolveGh(projectPath, commandRunner);
+    if (!gh) return undefined;
+
+    for (const target of targets) {
+      try {
+        const targetOwner = target.nameWithOwner.split('/')[0];
+        const head = forkOwner && targetOwner.toLowerCase() !== forkOwner.toLowerCase()
+          ? `${forkOwner}:${branch}`
+          : branch;
+        const { stdout } = await commandRunner.execAsync(
+          `${quoteArg(commandRunner, gh)} pr list --repo ${quoteArg(commandRunner, target.nameWithOwner)} --head ${quoteArg(commandRunner, head)} --state all --json number,url,state,title --limit 1`,
+          projectPath,
+          { timeout: GH_TIMEOUT_MS, silent: true }
+        );
+        const rows = JSON.parse(stdout.trim() || '[]') as ExistingPullRequest[];
+        if (rows[0]) return rows[0];
+      } catch {
+        // One inaccessible target should not hide a pull request in another.
+      }
+    }
+
+    return undefined;
+  }
+
+  private async assertBaseBranchExists(
+    gh: string,
+    repo: string,
+    branch: string,
+    projectPath: string,
+    commandRunner: CommandRunner
+  ): Promise<void> {
+    const endpoint = `repos/${repo}/branches/${encodeURIComponent(branch)}`;
     try {
-      const gh = await this.resolveGh(projectPath, commandRunner);
-      if (!gh) return undefined;
-      const { stdout } = await commandRunner.execAsync(
-        `${quoteArg(commandRunner, gh)} pr list --head ${quoteArg(commandRunner, branch)} --state all --json number,url,state,title --limit 1`,
+      await commandRunner.execAsync(
+        `${quoteArg(commandRunner, gh)} api ${quoteArg(commandRunner, endpoint)} --silent`,
         projectPath,
         { timeout: GH_TIMEOUT_MS, silent: true }
       );
-      const rows = JSON.parse(stdout.trim() || '[]') as ExistingPullRequest[];
-      return rows[0];
     } catch {
-      return undefined;
+      throw new Error(`Base branch ${branch} was not found in ${repo}. Choose a branch that exists in the target repository.`);
     }
   }
 }

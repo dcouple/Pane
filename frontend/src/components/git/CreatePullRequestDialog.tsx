@@ -147,7 +147,8 @@ export function CreatePullRequestDialog({
   );
 
   const blocked = (draft?.blockers.length ?? 0) > 0;
-  const canSubmit = Boolean(draft) && !blocked && !submitting && title.trim().length > 0 && targetRepo.length > 0 && baseBranch.trim().length > 0;
+  const canSubmit = Boolean(draft) && !blocked && !baseIsUnknown && !submitting
+    && title.trim().length > 0 && targetRepo.length > 0 && baseBranch.trim().length > 0;
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="lg" ariaLabel="Create pull request" showCloseButton={false}>
