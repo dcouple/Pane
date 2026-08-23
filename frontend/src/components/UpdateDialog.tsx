@@ -23,9 +23,6 @@ interface UpdateDialogProps {
 
 type UpdateState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error';
 
-const QUIT_CONFIRM_ANNOUNCEMENT =
-  'Quitting stops running agents and closes Pane so the new version can replace it. Choose Quit now to confirm.';
-
 interface DownloadProgress {
   bytesPerSecond: number;
   percent: number;
@@ -78,6 +75,12 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       });
     }
   }, []);
+
+  const offerQuit = shouldOfferQuitForManualInstall({
+    isPackaged,
+    isMacPlatform: isMac(),
+    hasUpdate: versionInfo?.hasUpdate === true,
+  });
 
   const startDownloadUpdate = useCallback(async () => {
     if (!window.electronAPI?.updater) {
@@ -272,7 +275,9 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       const response = await window.electronAPI.updater.openTerminalWithCommand();
       if (response.success) {
         setError(null);
-        setMessage('Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.');
+        setMessage(offerQuit
+          ? 'Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, use Quit Pane below before dragging Pane.app into Applications.'
+          : 'Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, quit Pane before dragging Pane.app into Applications.');
       } else {
         setMessage(null);
         setError(response.error || 'Failed to open Terminal');
@@ -340,11 +345,6 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
   const isUpdateBusy = updateState === 'checking' || updateState === 'available' || updateState === 'downloading' || updateState === 'installing';
   const progressMilestone = downloadProgress ? Math.floor(downloadProgress.percent / 10) * 10 : 0;
-  const offerQuit = shouldOfferQuitForManualInstall({
-    isPackaged,
-    isMacPlatform: isMac(),
-    hasUpdate: versionInfo?.hasUpdate === true,
-  });
   const statusAnnouncement = message ?? ({
     idle: '',
     checking: 'Checking for updates',
@@ -427,7 +427,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       closeOnEscape={!isUpdateBusy}
       closeOnOverlayClick={!isUpdateBusy}
     >
-      <LiveRegion>{quitRequested ? QUIT_CONFIRM_ANNOUNCEMENT : statusAnnouncement}</LiveRegion>
+      <LiveRegion>{statusAnnouncement}</LiveRegion>
       <ModalHeader
         title="Software Update"
         icon={<Download className="w-6 h-6 text-interactive" />}
@@ -733,8 +733,9 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 the downloaded and error states, so the ordinary macOS path — which
                 returns to 'idle' with a message — would otherwise offer no way out. */}
             {offerQuit && quitRequested && (
-              <span className="text-sm text-text-secondary text-right">
+              <span id="quit-confirm-hint" role="alert" className="text-sm text-text-secondary">
                 Quitting stops running agents.
+                <span className="sr-only"> Choose Quit now to confirm.</span>
               </span>
             )}
             {offerQuit && (
@@ -742,6 +743,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 onClick={handleQuitForManualInstall}
                 variant={quitRequested ? 'danger' : 'secondary'}
                 disabled={isUpdateBusy}
+                aria-describedby={quitRequested ? 'quit-confirm-hint' : undefined}
                 icon={<Power className="w-4 h-4" />}
               >
                 {quitRequested ? 'Quit now' : 'Quit Pane'}
