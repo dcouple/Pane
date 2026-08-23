@@ -447,6 +447,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installUpdate: (): Promise<IPCResponse> => invokeIpc('updater:install-update'),
     copyUpdateCommand: (): Promise<IPCResponse> => invokeIpc('updater:copy-update-command'),
     openTerminalWithCommand: (): Promise<IPCResponse> => invokeIpc('updater:open-terminal-with-command'),
+    quitForManualInstall: (): Promise<IPCResponse> => invokeIpc('updater:quit-for-manual-install'),
   },
 
   // System utilities

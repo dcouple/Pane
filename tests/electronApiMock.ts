@@ -55,12 +55,32 @@ type ElectronApiMockOptions = {
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
   feedbackOutcome?: 'success' | 'failure';
+  /** Whether main reports a packaged build; several update affordances gate on it. */
+  isPackaged?: boolean;
+  /**
+   * Overrides `navigator.platform`, which is what `isMac()` reads. Without this a
+   * macOS-only assertion would pass on a Mac and silently vanish on CI's Linux.
+   */
+  navigatorPlatform?: string;
+  updateCheckResult?: {
+    current: string;
+    latest: string;
+    hasUpdate: boolean;
+    releaseUrl?: string;
+    downloadUrl?: string;
+  };
 };
 
 export async function installElectronApiMock(page: Page, options: ElectronApiMockOptions = {}) {
   await page.addInitScript((mockOptions: ElectronApiMockOptions) => {
     if (mockOptions.notificationsSupported === false) {
       Reflect.deleteProperty(window, 'Notification');
+    }
+    if (mockOptions.navigatorPlatform !== undefined) {
+      Object.defineProperty(navigator, 'platform', {
+        configurable: true,
+        value: mockOptions.navigatorPlatform,
+      });
     }
     function success(): Promise<{ success: true; data: null }>;
     function success<Value>(data: Value): Promise<{ success: true; data: Value }>;
@@ -233,6 +253,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
     let sessionsGetCount = 0;
+    let quitForManualInstallCalls = 0;
 
     const subscribe = (channel: string, callback: MockEventCallback) => {
       const callbacks = listeners.get(channel) ?? new Set<MockEventCallback>();
@@ -348,8 +369,15 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         latest: 'test',
         hasUpdate: false,
       }),
-      isPackaged: () => Promise.resolve(false),
-      checkForUpdates: () => success({ hasUpdate: false }),
+      isPackaged: () => Promise.resolve(mockOptions.isPackaged === true),
+      checkForUpdates: () => success(mockOptions.updateCheckResult ?? { hasUpdate: false }),
+      updater: namespace({
+        quitForManualInstall: () => {
+          quitForManualInstallCalls += 1;
+          // The real handler quits Pane; a test only needs to see that it was asked.
+          return success();
+        },
+      }),
       openExternal: (url: string) => {
         openedExternalUrls.push(url);
         // Matches preload's Promise<IPCResponse> contract; callers await this result.
@@ -882,6 +910,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getSessionFavoriteToggleCalls() {
           return clone(sessionFavoriteToggleCalls);
+        },
+        getQuitForManualInstallCalls() {
+          return quitForManualInstallCalls;
         },
       },
     });

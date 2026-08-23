@@ -191,6 +191,29 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
   });
 
   /**
+   * Completes the macOS manual-install path: the DMG mounts while Pane is still
+   * running, so dragging Pane.app into /Applications fails until Pane exits.
+   *
+   * `app.quit()` is what releases the bundle. It runs index.ts's `before-quit`
+   * shutdown, whose `destroyAllTerminals()` kills the PTY processes holding
+   * `pty.node` inside Pane.app. A window close would not do this — on darwin
+   * `window-all-closed` deliberately keeps the app alive.
+   *
+   * Deferred by one tick so this reply reaches the renderer before teardown
+   * begins. Success means "quit requested", not "Pane is gone": the shutdown
+   * still asks the user about in-flight archive tasks and is abandoned if they
+   * choose to wait, so the renderer must stay usable after this resolves.
+   */
+  ipcMain.handle('updater:quit-for-manual-install', () => {
+    if (process.platform !== 'darwin') {
+      return { success: false, error: 'Quitting for a manual install is only available on macOS' };
+    }
+
+    setImmediate(() => app.quit());
+    return { success: true };
+  });
+
+  /**
    * Temporary workaround pending Apple code signing:
    * `quitAndInstall()` does not work on unsigned macOS builds because Gatekeeper
    * quarantines the downloaded update, preventing it from replacing the running app.

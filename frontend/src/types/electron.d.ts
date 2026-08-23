@@ -104,6 +104,7 @@ interface ElectronAPI {
     installUpdate: () => Promise<IPCResponse>;
     copyUpdateCommand: () => Promise<IPCResponse<{ command: string }>>;
     openTerminalWithCommand: () => Promise<IPCResponse<{ command: string }>>;
+    quitForManualInstall: () => Promise<IPCResponse>;
   };
 
   // System utilities
