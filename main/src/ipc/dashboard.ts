@@ -4,6 +4,7 @@ import type { AppServices } from './types';
 import fs from 'fs';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
+import { escapeShellArg } from '../utils/shellEscape';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 interface MainBranchStatus {
@@ -685,7 +686,7 @@ async function getSessionBranchInfoAsync(
       // Silent: `gh` is optional, and a machine without it (or a repo with no
       // GitHub remote) would log two errors per session on every dashboard load.
       const prResult = await ctx.commandRunner.execAsync(
-        `gh pr list --head ${branchName} --state all --json number,title,state,url --limit 1`,
+        `gh pr list --head ${escapeShellArg(branchName)} --state all --json number,title,state,url --limit 1`,
         projectPath,
         { timeout: 10000, silent: true }
       );
