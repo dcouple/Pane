@@ -27,6 +27,7 @@ import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
 import type { SubmitFeedbackRequest } from '../../shared/types/feedback';
+import type { CreatePullRequestResult } from '../../shared/types/git';
 import type {
   PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
@@ -528,7 +529,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Git pull/push operations
     gitPull: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-pull', sessionId),
     gitPush: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-push', sessionId),
-    createPr: (sessionId: string): Promise<IPCResponse<{ output: string; url?: string }>> =>
+    createPr: (sessionId: string): Promise<IPCResponse<CreatePullRequestResult>> =>
       invokeIpc('sessions:create-pr', sessionId),
     gitFetch: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-fetch', sessionId),
     gitStash: (sessionId: string, message?: string): Promise<IPCResponse> => invokeIpc('sessions:git-stash', sessionId, message),

@@ -9,6 +9,7 @@ import { CommandRunner } from '../utils/commandRunner';
 import { getGitAttributionEnv } from '../utils/attribution';
 import { worktreePoolManager } from './worktreePoolManager';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import type { CreatePullRequestResult } from '../../../shared/types/git';
 
 type WorktreeAuditSource = 'session-delete' | 'project-delete' | 'create-cleanup';
 
@@ -1294,7 +1295,7 @@ Co-Authored-By: Pane <runpane@users.noreply.github.com>` : commitMessage;
     baseBranch: string,
     currentBranch: string,
     commandRunner: CommandRunner,
-  ): Promise<{ output: string; url?: string }> {
+  ): Promise<CreatePullRequestResult> {
     try {
       const normalizedBaseBranch = baseBranch.replace(/^origin\//, '');
       const command = [

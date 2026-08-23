@@ -33,6 +33,7 @@ import type {
 } from '../../../shared/types/panels';
 import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
+import type { CreatePullRequestResult } from '../../../shared/types/git';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { CreateSessionRequest } from './session';
@@ -189,7 +190,7 @@ interface ElectronAPI {
     // Git pull/push operations
     gitPull: (sessionId: string) => Promise<IPCResponse>;
     gitPush: (sessionId: string) => Promise<IPCResponse>;
-    createPr: (sessionId: string) => Promise<IPCResponse<{ output: string; url?: string }>>;
+    createPr: (sessionId: string) => Promise<IPCResponse<CreatePullRequestResult>>;
     gitFetch: (sessionId: string) => Promise<IPCResponse>;
     gitStash: (sessionId: string, message?: string) => Promise<IPCResponse>;
     gitStashPop: (sessionId: string) => Promise<IPCResponse>;
