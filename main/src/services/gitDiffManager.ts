@@ -1,20 +1,9 @@
 import type { Logger } from '../utils/logger';
 import type { AnalyticsManager } from './analyticsManager';
 import { CommandRunner } from '../utils/commandRunner';
+import type { GitDiffResult, GitDiffStats } from '../../../shared/types/diff';
 
-export interface GitDiffStats {
-  additions: number;
-  deletions: number;
-  filesChanged: number;
-}
-
-export interface GitDiffResult {
-  diff: string;
-  stats: GitDiffStats;
-  changedFiles: string[];
-  beforeHash?: string;
-  afterHash?: string;
-}
+export type { GitDiffResult, GitDiffStats } from '../../../shared/types/diff';
 
 export interface GitCommit {
   hash: string;

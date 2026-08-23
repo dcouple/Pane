@@ -2,7 +2,7 @@ import type { IpcMain } from 'electron';
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { AppServices } from './types';
-import type { PaneCommandRegistry } from '../daemon/commandRegistry';
+import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
 import { buildGitCommitCommand } from '../utils/shellEscape';
 import { getPaneEventSink } from '../core/runtime';
 import { panelEventBus } from '../services/panelEventBus';
@@ -69,6 +69,23 @@ function normalizeWorktreePath(path: string | null | undefined): string {
 function isValidGitUrl(url: string): boolean {
   // Accept https://, ssh://, and scp-style git@host:path formats
   return /^(https?:\/\/[\w./:@-]+|ssh:\/\/[\w./:@-]+|git@[\w.-]+:[\w./-]+)(\.git)?$/.test(url);
+}
+
+export function decodeRepoGitGraphRequest(value: PaneCommandValue): RepoGitGraphRequest {
+  const request = decodeBoundary(value, boundary.object({
+    projectId: boundary.number,
+    limit: boundary.optional(boundary.number),
+    remoteScope: boundary.optional(boundary.string),
+    focusRef: boundary.optional(boundary.string),
+  }));
+
+  if (!Number.isInteger(request.projectId) || request.projectId <= 0) {
+    throw new Error('projectId must be a positive integer');
+  }
+  if (request.limit !== undefined && !Number.isInteger(request.limit)) {
+    throw new Error('limit must be an integer');
+  }
+  return request;
 }
 
 function extractRepoName(url: string): string {
@@ -460,12 +477,10 @@ export function registerGitHandlers(
    * branches of a second repository that happens to share the clone as a
    * remote (see `resolveRemoteScope`).
    */
-  commandRegistry.register('projects:get-git-graph', async (request: RepoGitGraphRequest) => {
+  commandRegistry.register('projects:get-git-graph', async (input: PaneCommandValue) => {
     try {
-      const projectId = Number(request?.projectId);
-      if (!Number.isFinite(projectId)) {
-        return { success: false, error: 'A projectId is required' };
-      }
+      const request = decodeRepoGitGraphRequest(input);
+      const { projectId } = request;
 
       const ctx = sessionManager.getProjectContextByProjectId(projectId);
       if (!ctx?.project?.path) {

@@ -10,6 +10,7 @@ import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { clearPendingViewCommit, takePendingViewCommit } from './pendingViewCommit';
 import { useCommittedRef } from '../../../hooks/useCommittedRef';
+import { parseUnifiedDiffToFiles } from '../../../utils/parseUnifiedDiff';
 
 const HISTORY_LIMIT = 50;
 
@@ -35,33 +36,6 @@ async function loadCommitDiff(sessionId: string, commitHash: string): Promise<Co
       error: error instanceof Error ? error.message : 'Failed to load commit diff',
     };
   }
-}
-
-// --- Unified diff parser (single pass, shared between FileList and DiffViewer) ---
-
-function parseUnifiedDiffToFiles(diff: string): FileDiff[] {
-  if (!diff?.trim()) return [];
-
-  const fileChunks = diff.match(/diff --git[\s\S]*?(?=diff --git|$)/g);
-  if (!fileChunks) return [];
-
-  return fileChunks.flatMap(chunk => {
-    const nameMatch = chunk.match(/diff --git a\/(.*?) b\/(.*?)(?:\n|$)/);
-    if (!nameMatch) return [];
-    const oldPath = nameMatch[1];
-    const newPath = nameMatch[2];
-    const isBinary = chunk.includes('Binary files') || chunk.includes('GIT binary patch');
-
-    let type: FileDiff['type'] = 'modified';
-    if (chunk.includes('new file mode')) type = 'added';
-    else if (chunk.includes('deleted file mode')) type = 'deleted';
-    else if (chunk.includes('rename from') && chunk.includes('rename to')) type = 'renamed';
-
-    const additions = (chunk.match(/^\+(?!\+\+)/gm) || []).length;
-    const deletions = (chunk.match(/^-(?!--)/gm) || []).length;
-
-    return [{ path: newPath || oldPath, oldPath, type, isBinary, additions, deletions, rawDiff: chunk }];
-  });
 }
 
 // --- CombinedDiffView ---
