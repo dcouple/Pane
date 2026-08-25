@@ -215,7 +215,7 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
         onClose={requestClose}
         size="full"
         showCloseButton={false}
-        className="h-[calc(100vh-4rem)] min-h-[560px] max-h-[760px] max-w-6xl"
+        className="mx-auto h-[calc(100vh-4rem)] min-h-[560px] max-h-[760px] max-w-6xl"
       >
         <ModalHeader title="Pane Settings" icon={<SettingsIcon className="h-5 w-5" />} onClose={requestClose} />
         {persistence.isLoading && !persistence.config ? (

@@ -319,6 +319,21 @@ test.describe('Settings', () => {
     await page.screenshot({ path: 'test-results/settings-narrow.png' });
   });
 
+  test('centers the dialog in the window', async ({ page }) => {
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 640, height: 760 }]) {
+      await page.setViewportSize(viewport);
+      await bootSettings(page);
+
+      const panel = page.getByRole('dialog', { name: 'Pane Settings' }).locator(':scope > div').first();
+      const box = await panel.boundingBox();
+      if (!box) throw new Error('Settings dialog has no bounding box');
+      expect(box.x).toBeCloseTo((viewport.width - box.width) / 2, 0);
+      expect(box.y).toBeCloseTo((viewport.height - box.height) / 2, 0);
+
+      await page.getByRole('button', { name: 'Close modal' }).click();
+    }
+  });
+
   test('shows Windows shell controls only when the platform supports them', async ({ page }) => {
     await bootSettings(page, {
       platform: 'win32',
