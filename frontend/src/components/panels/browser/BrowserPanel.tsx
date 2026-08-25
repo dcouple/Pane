@@ -6,20 +6,11 @@ import { panelApi } from '../../../services/panelApi';
 import { usePanelStore } from '../../../stores/panelStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useResizable } from '../../../hooks/useResizable';
+import { normalizeUrl } from './browserUrl';
 
 interface BrowserPanelProps {
   panel: ToolPanel;
   isActive: boolean;
-}
-
-function normalizeUrl(input: string): string {
-  let url = input.trim();
-  if (!/^https?:\/\//i.test(url)) {
-    // Local hosts default to http, everything else to https
-    const isLocalHost = url.startsWith('localhost') || url.startsWith('127.0.0.1') || url.startsWith('[::1]');
-    url = (isLocalHost ? 'http://' : 'https://') + url;
-  }
-  return url;
 }
 
 const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
@@ -108,8 +99,8 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     } catch {
       parsed = null;
     }
-    if (!parsed || (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')) {
-      setUrlError('Enter a valid http or https URL');
+    if (!parsed || !['http:', 'https:', 'file:'].includes(parsed.protocol)) {
+      setUrlError('Enter a valid http, https, or file URL');
       return;
     }
     setUrlError('');
@@ -295,7 +286,11 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
       const customEvent = e as CustomEvent<{ url: string; sessionId: string }>;
       if (customEvent.detail.sessionId === panel.sessionId) {
         e.stopImmediatePropagation();
-        navigateTo(customEvent.detail.url);
+        if (customEvent.detail.url === url) {
+          webviewRef.current?.reload();
+        } else {
+          navigateTo(customEvent.detail.url);
+        }
         // Auto-focus this browser panel
         setActivePanelInStore(panel.sessionId, panel.id);
         panelApi.setActivePanel(panel.sessionId, panel.id).catch(() => {});
@@ -303,8 +298,7 @@ const BrowserPanel: React.FC<BrowserPanelProps> = ({ panel, isActive }) => {
     };
     window.addEventListener('browser-panel:navigate', handler);
     return () => window.removeEventListener('browser-panel:navigate', handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- navigateTo reads from refs; re-registering on sessionId change is sufficient
-  }, [panel.sessionId, panel.id, setActivePanelInStore]);
+  }, [panel.sessionId, panel.id, setActivePanelInStore, navigateTo, url]);
 
   // Hide/show DevTools overlay when switching between panel tabs.
   // Close the WebContentsView when inactive so it doesn't cover other panels,

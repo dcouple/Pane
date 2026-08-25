@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron';
 import { shell } from 'electron';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { glob } from 'glob';
 import type { PaneCommandRegistry } from '../daemon/commandRegistry';
 import type { AppServices } from './types';
@@ -415,24 +416,8 @@ export function registerFileHandlers(
   // Get the full path for a file in a session's worktree
   commandRegistry.register('file:getPath', async (request: FilePathRequest) => {
     try {
-      const session = sessionManager.getSession(request.sessionId);
-      if (!session) {
-        throw new Error(`Session not found: ${request.sessionId}`);
-      }
-
-      const ctx = sessionManager.getProjectContext(request.sessionId);
-      if (!ctx) throw new Error('Project not found for session');
-      const { pathResolver } = ctx;
-
-      // Ensure the file path is relative and safe
-      const normalizedPath = path.normalize(request.filePath);
-      if (normalizedPath.startsWith('..') || path.isAbsolute(normalizedPath)) {
-        throw new Error('Invalid file path');
-      }
-
-      const basePath = pathResolver.toFileSystem(session.worktreePath);
-      const fullPath = path.join(basePath, normalizedPath);
-      return { success: true, path: fullPath };
+      const { fullPath } = await resolveWorktreePath(request.sessionId, request.filePath);
+      return { success: true, path: fullPath, url: pathToFileURL(fullPath).href };
     } catch (error) {
       console.error('Error getting file path:', error);
       return {

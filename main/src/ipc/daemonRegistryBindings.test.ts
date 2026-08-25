@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
+import { pathToFileURL } from 'url';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 import { registerFileHandlers } from './file';
@@ -384,6 +386,35 @@ describe('daemon registry IPC bindings', () => {
       [...FILE_CHANNELS].sort(),
     );
     expect(registry.has('file:showInFolder')).toBe(false);
+  });
+
+  it('returns a file URL for a path inside the session worktree', async () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+    const worktreePath = path.join(process.cwd(), 'Pane Preview');
+    const filePath = path.join(worktreePath, 'index.html');
+
+    // SAFETY: This test fixture supplies the session and path resolver used by file:getPath.
+    registerFileHandlers(ipcMain, createServicesStub({
+      sessionManager: {
+        getSession: () => ({ worktreePath }),
+        getProjectContext: () => ({
+          pathResolver: {
+            toFileSystem: (value: string) => value,
+            isWithin: async () => true,
+          },
+        }),
+      },
+    } as Partial<AppServices>), registry);
+
+    await expect(registry.invoke('file:getPath', [{
+      sessionId: 'session-1',
+      filePath: 'index.html',
+    }])).resolves.toEqual({
+      success: true,
+      path: filePath,
+      url: pathToFileURL(filePath).href,
+    });
   });
 
   it('keeps browser and clipboard panel adapters outside the daemon registry surface', () => {

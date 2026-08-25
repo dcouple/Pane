@@ -20,6 +20,10 @@ import { TerminalPopover, PopoverButton } from '../../terminal/TerminalPopover';
 import { areKeyboardShortcutsEnabled, useConfigStore } from '../../../stores/configStore';
 import { LiveRegion } from '../../ui/LiveRegion';
 import { boundary, decodeBoundary } from '../../../../../shared/validation/boundaryDecoder';
+import type { BrowserPanelState, ToolPanel } from '../../../../../shared/types/panels';
+import { panelApi } from '../../../services/panelApi';
+import { usePanelStore } from '../../../stores/panelStore';
+import { isHtmlFile } from './htmlFile';
 interface LanguageByExtension {
   [extension: string]: string;
 }
@@ -37,6 +41,12 @@ const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp']);
 const PDF_EXTENSIONS = new Set(['pdf']);
 
+const filePathResponseSchema = boundary.object({
+  success: boundary.boolean,
+  url: boundary.optional(boundary.string),
+  error: boundary.optional(boundary.string),
+});
+
 function containsEventTarget(container: Node, target: EventTarget | null): boolean {
   return target instanceof Node && container.contains(target);
 }
@@ -50,6 +60,7 @@ interface HeadlessFileTreeProps {
   initialSearchQuery?: string;
   initialShowSearch?: boolean;
   onTreeStateChange?: (state: { expandedDirs: string[]; searchQuery: string; showSearch: boolean }) => void;
+  onHtmlPreview: (filePath: string) => void;
 }
 
 function HeadlessFileTree({
@@ -61,6 +72,7 @@ function HeadlessFileTree({
   initialSearchQuery,
   initialShowSearch,
   onTreeStateChange,
+  onHtmlPreview,
 }: HeadlessFileTreeProps) {
   // Cache stores loaded directory contents. Key = dirPath, Value = FileItem[].
   const filesCacheRef = useRef(new Map<string, FileItem[]>());
@@ -878,33 +890,47 @@ function HeadlessFileTree({
       {searchQuery && (
         <div className="flex-1 overflow-auto">
           {getFilteredFiles().map(file => (
-            <button
-              type="button"
+            <div
               key={file.path}
-              disabled={file.isDirectory}
-              className={`flex w-full items-center px-2 py-1 text-left hover:bg-surface-hover group disabled:cursor-default ${
+              className={`flex w-full items-center hover:bg-surface-hover group ${
                 selectedPath === file.path ? 'bg-interactive' : ''
               }`}
-              style={{ paddingLeft: '8px' }}
-              onClick={() => onFileSelect(file)}
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 setContextMenu({ x: e.clientX, y: e.clientY, file });
               }}
             >
-              {file.isDirectory ? (
-                <Folder className="w-4 h-4 mr-2 text-interactive flex-shrink-0" />
-              ) : (
-                <File className="w-4 h-4 mr-2 text-text-tertiary flex-shrink-0" />
+              <button
+                type="button"
+                disabled={file.isDirectory}
+                className="flex min-w-0 flex-1 items-center px-2 py-1 text-left disabled:cursor-default"
+                onClick={() => onFileSelect(file)}
+              >
+                {file.isDirectory ? (
+                  <Folder className="w-4 h-4 mr-2 text-interactive flex-shrink-0" />
+                ) : (
+                  <File className="w-4 h-4 mr-2 text-text-tertiary flex-shrink-0" />
+                )}
+                <span className="flex-1 text-sm truncate text-text-primary">
+                  {highlightText(file.name, searchQuery)}
+                </span>
+                <span className="text-xs text-text-tertiary ml-2 truncate max-w-[120px]">
+                  {file.path}
+                </span>
+              </button>
+              {!file.isDirectory && isHtmlFile(file.path) && (
+                <button
+                  type="button"
+                  onClick={() => onHtmlPreview(file.path)}
+                  className="p-1 mr-1 hover:bg-surface-hover rounded text-text-tertiary hover:text-text-primary"
+                  title={`Preview ${file.name}`}
+                  aria-label={`Preview ${file.name}`}
+                >
+                  <Eye className="w-3 h-3" />
+                </button>
               )}
-              <span className="flex-1 text-sm truncate text-text-primary">
-                {highlightText(file.name, searchQuery)}
-              </span>
-              <span className="text-xs text-text-tertiary ml-2 truncate max-w-[120px]">
-                {file.path}
-              </span>
-            </button>
+            </div>
           ))}
           {getFilteredFiles().length === 0 && (
             <div className="p-4 text-text-secondary text-sm">No matching files</div>
@@ -1070,6 +1096,20 @@ function HeadlessFileTree({
                   <RefreshCw className="w-3 h-3" />
                 </button>
               )}
+              {!isFolder && isHtmlFile(data.path) && renamingPath !== data.path && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onHtmlPreview(data.path);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 hover:bg-surface-hover rounded text-text-tertiary hover:text-text-primary"
+                  title={`Preview ${data.name}`}
+                  aria-label={`Preview ${data.name}`}
+                >
+                  <Eye className="w-3 h-3" />
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -1222,6 +1262,9 @@ export function FileEditor({
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
   const pendingEditorFocusPathRef = useRef<string | null>(null);
+  const addPanel = usePanelStore((state) => state.addPanel);
+  const setActivePanel = usePanelStore((state) => state.setActivePanel);
+  const updatePanelState = usePanelStore((state) => state.updatePanelState);
 
   // Keep ref in sync and clean up blob URLs to prevent memory leaks
   useEffect(() => {
@@ -1279,6 +1322,57 @@ export function FileEditor({
   }, [selectedFile]);
 
   const isBinaryPreview = isImageFile || isPdfFile;
+
+  const previewHtmlFile = useCallback(async (filePath: string) => {
+    setError(null);
+    try {
+      const result = decodeBoundary(
+        await window.electronAPI.invoke('file:getPath', { sessionId, filePath }),
+        filePathResponseSchema,
+      );
+      if (!result.success || !result.url) {
+        throw new Error(result.error || 'Failed to resolve HTML preview URL');
+      }
+
+      const panels = usePanelStore.getState().getSessionPanels(sessionId);
+      const existingPanel = panels.find((candidate) => candidate.type === 'browser');
+      let browserPanel: ToolPanel;
+
+      if (existingPanel) {
+        // SAFETY: The browser panel type discriminator establishes BrowserPanelState.
+        const existingCustomState = (existingPanel.state.customState ?? {}) as BrowserPanelState;
+        browserPanel = {
+          ...existingPanel,
+          title: filePath.split('/').pop() || 'Browser',
+          state: {
+            ...existingPanel.state,
+            customState: { ...existingCustomState, currentUrl: result.url },
+          },
+        };
+        await panelApi.updatePanel(browserPanel.id, {
+          title: browserPanel.title,
+          state: browserPanel.state,
+        });
+        updatePanelState(browserPanel);
+      } else {
+        browserPanel = await panelApi.createPanel({
+          sessionId,
+          type: 'browser',
+          title: filePath.split('/').pop() || 'Browser',
+          initialState: { customState: { currentUrl: result.url } },
+        });
+        addPanel(browserPanel);
+      }
+
+      setActivePanel(sessionId, browserPanel.id);
+      await panelApi.setActivePanel(sessionId, browserPanel.id);
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url: result.url, sessionId },
+      }));
+    } catch (previewError) {
+      setError(previewError instanceof Error ? previewError.message : 'Failed to preview HTML file');
+    }
+  }, [sessionId, addPanel, setActivePanel, updatePanelState]);
 
   const loadFile = useCallback(async (file: FileItem | null) => {
     if (!file || file.isDirectory) return;
@@ -1626,6 +1720,7 @@ export function FileEditor({
           initialSearchQuery={initialState?.searchQuery}
           initialShowSearch={initialState?.showSearch}
           onTreeStateChange={handleTreeStateChange}
+          onHtmlPreview={previewHtmlFile}
         />
         
         {/* Resize handle */}
@@ -1642,6 +1737,18 @@ export function FileEditor({
           <>
             <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border-primary">
               <div className="flex min-w-0 items-center gap-2">
+                {isHtmlFile(selectedFile.path) && (
+                  <button
+                    type="button"
+                    onClick={() => previewHtmlFile(selectedFile.path)}
+                    className="flex flex-shrink-0 items-center gap-1 rounded-lg border border-border-primary bg-surface-tertiary px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                    title="Preview file as HTML"
+                    aria-label="Preview file as HTML"
+                  >
+                    <Eye className="w-3 h-3" />
+                    Preview as HTML
+                  </button>
+                )}
                 <File className="w-4 h-4 text-text-tertiary" />
                 <span className="min-w-0 truncate text-sm text-text-primary">
                   {selectedFile.path}
