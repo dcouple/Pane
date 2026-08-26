@@ -202,7 +202,7 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
           pushes content down so it never covers it. Single-group panes
           render no strip here (the top bar is the strip then). */}
       {multiGroup && (
-        <div className="flex-shrink-0 flex items-center bg-bg-chrome border-b border-border-primary px-2">
+        <div className="flex-shrink-0 flex items-center bg-bg-chrome border-b border-border-primary pr-2">
           <PanelTabStrip
             idNamespace={group.id}
             panels={stripPanels}

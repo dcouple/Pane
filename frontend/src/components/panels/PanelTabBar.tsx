@@ -524,7 +524,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     <div className={cn("panel-tab-bar bg-bg-chrome flex-shrink-0", barCollapsed && "hidden")}>
       {/* Flex container */}
       <div
-        className="relative flex items-center min-h-[var(--panel-tab-height)] px-2"
+        className="relative flex items-center min-h-[var(--panel-tab-height)] pr-2"
         onDragOver={tabsInGroups && isTabDragging ? () => setDragOverBar(true) : undefined}
         onDragLeave={tabsInGroups && isTabDragging ? () => setDragOverBar(false) : undefined}
       >
