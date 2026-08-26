@@ -686,6 +686,12 @@ For Pane work:
 Do not report a delegated action as done until you have observed it through
 Pane state or terminal output.
 
+A \`panes create\` that exits non-zero or omits a pane id may still have created
+the pane and worktree. Before retrying any create that did not return a clean
+pane id, reconcile against \`runpane panes list --json\`. Never re-run a failed
+create without checking first. A \`-1\`/\`-2\` suffix on a worktree path is often
+the only evidence of duplicates.
+
 ## Local Workflow References
 
 Use these local cached files. Do not fetch GitHub just to initialize yourself.
@@ -698,6 +704,16 @@ Use these local cached files. Do not fetch GitHub just to initialize yourself.
 - Workflow map source: \`${workflowMapSource}\`
 - Skill legend image: \`${skillLegend}\`
 - Skill legend source: \`${skillLegendSource}\`
+
+## Before Archiving
+
+A clean worktree does not mean a pane produced nothing. Investigation,
+research, review, and discussion panes deliver their result as a report in
+terminal scrollback, not in files. Archiving destroys scrollback permanently.
+Before archiving any pane whose job was to produce knowledge rather than code,
+ask the agent to write its findings to a file outside the worktree, or extract
+them from \`runpane panels screen\`. \`git status\` is the wrong safety check for
+these panes.
 
 ## Hard Stops
 
