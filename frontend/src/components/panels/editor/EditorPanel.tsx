@@ -132,18 +132,6 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     debouncedUpdate(panel.id, panel.sessionId, newState);
   }, [debouncedUpdate, panel.id, panel.sessionId]);
   
-  // Update panel title when file changes
-  const handleFileChange = useCallback((filePath: string | undefined, isDirty: boolean) => {
-    if (filePath) {
-      const filename = filePath.split('/').pop() || 'Explorer';
-      const title = isDirty ? `${filename} *` : filename;
-      panelApi.updatePanel(panel.id, { title });
-      
-      // Also update state
-      handleStateChange({ filePath, isDirty });
-    }
-  }, [panel.id, handleStateChange]);
-
   // Only render when active. Explorer is cheap to initialize and should not
   // keep Monaco, file tree loading, or git file-status checks alive in the
   // background while the user is working in another panel.
@@ -162,9 +150,7 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     <div className="h-full w-full">
       <FileEditor
         sessionId={panel.sessionId}
-        initialFilePath={explorerState?.filePath}
         initialState={explorerState}
-        onFileChange={handleFileChange}
         onStateChange={handleStateChange}
       />
     </div>

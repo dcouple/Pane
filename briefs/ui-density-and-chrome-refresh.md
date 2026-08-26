@@ -98,9 +98,14 @@ Explorer and Review switch to a stacked layout below 600px via a container
 query. Applied to both `SessionView` (worktrees) and `ProjectView` (main
 repo).
 
-Follow-up: clicking a file in Files still opens it in the Explorer's own
-editor inside the rail. Opening it as a center editor tab needs a new
-`editor` panel type (FileEditor is a 1,900-line tree+Monaco unit today).
+Files opens files as center `editor` tabs with VS Code semantics
+(`services/openFileInEditor.ts`): single-click → one preview tab per
+session (italic title, re-targeted by the next single-click); double-click
+in the tree or on the tab, or editing the file → pinned. A file already
+open is focused, not duplicated. The Explorer's Monaco half became
+`FileEditorView` (used by `FileEditorTabPanel`); the Files tab is tree-only
+and highlights the active tab's file. Review "Open in editor" and terminal
+file links open pinned tabs; `editor` never appears in the `+` menu.
 
 ## Step 6 — `+` tab button and Superset-style popover
 

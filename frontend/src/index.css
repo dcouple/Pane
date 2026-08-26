@@ -1037,19 +1037,17 @@ body.understory {
   animation: none !important;
 }
 
-/* Inspector-hosted panels. The Explorer and Review panels were laid out for
-   the full stage: a list on the left, content on the right. Inside the rail
-   they stack instead once the host is narrower than a comfortable pair. */
+/* Inspector-hosted Review panel. It was laid out for the full stage: a
+   list on the left, diff on the right. Inside the rail it stacks instead
+   once the host is narrower than a comfortable pair. */
 .pane-inspector-host {
   container-type: inline-size;
 }
 
 @container (max-width: 600px) {
-  .pane-explorer-split,
   .pane-review-split {
     flex-direction: column;
   }
-  .pane-explorer-tree,
   .pane-review-list {
     width: 100% !important;
     max-width: 100%;
@@ -1057,15 +1055,6 @@ body.understory {
     border-right: 0;
     border-bottom: var(--border-hairline) solid var(--color-border-primary);
   }
-  /* With nothing open, the tree takes the whole rail. */
-  .pane-explorer-split[data-empty="true"] .pane-explorer-tree {
-    max-height: none;
-    flex: 1;
-  }
-  .pane-explorer-split[data-empty="true"] .pane-explorer-editor {
-    display: none;
-  }
-  .pane-explorer-tree > .cursor-col-resize,
   .pane-review-handle {
     display: none;
   }

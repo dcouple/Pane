@@ -607,7 +607,7 @@ export function registerPanelHandlers(
     }
 
     // Explorer panels don't need initialization
-    if (panel.type === 'explorer') {
+    if (panel.type === 'explorer' || panel.type === 'editor') {
       return true;
     }
 

@@ -265,7 +265,11 @@ class PanelManager {
 
       // Track that this panel type was explicitly closed by the user
       // This prevents auto-recreation when the session is reopened
-      databaseService.addClosedPanelType(panel.sessionId, panel.type);
+      // Editor tabs are opened per file, so closing one says nothing about
+      // wanting the type back.
+      if (panel.type !== 'editor') {
+        databaseService.addClosedPanelType(panel.sessionId, panel.type);
+      }
 
       // Remove from database
       databaseService.deletePanel(panelId);

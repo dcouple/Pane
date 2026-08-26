@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, GitBranch, FileCode, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
+import { Plus, X, Terminal, GitBranch, FileCode, FileText, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -364,8 +364,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       // Exclude permanent panels
       if (capabilities.permanent) return false;
 
-      // Exclude logs panel - it's only created automatically when running scripts
-      if (type === 'logs') return false;
+      // Logs is created by running scripts; editor tabs by opening files
+      if (type === 'logs' || type === 'editor') return false;
 
       // Enforce singleton panels
       if (capabilities.singleton) {
@@ -393,6 +393,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
         return <GitBranch className="w-4 h-4" />;
       case 'explorer':
         return <FolderTree className="w-4 h-4" />;
+      case 'editor':
+        return <FileText className="w-4 h-4" />;
       case 'logs':
         return <FileCode className="w-4 h-4" />;
       case 'dashboard':

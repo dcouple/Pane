@@ -6,8 +6,7 @@ import { API } from '../../../utils/api';
 import type { CombinedDiffViewProps, FileDiff } from '../../../types/diff';
 import type { ExecutionDiff, GitDiffResult } from '../../../types/diff';
 import { RefreshCw } from 'lucide-react';
-import { panelApi } from '../../../services/panelApi';
-import { usePanelStore } from '../../../stores/panelStore';
+import { openFileInEditor } from '../../../services/openFileInEditor';
 import { clearPendingViewCommit, takePendingViewCommit } from './pendingViewCommit';
 import { useCommittedRef } from '../../../hooks/useCommittedRef';
 
@@ -77,8 +76,6 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   isMainRepo = false,
   isVisible = true,
 }, ref) => {
-  const addPanel = usePanelStore((state) => state.addPanel);
-  const setActivePanelInStore = usePanelStore((state) => state.setActivePanel);
   const [executions, setExecutions] = useState<ExecutionDiff[]>([]);
   const [selectedExecutions, setSelectedExecutions] = useState<number[]>(initialSelected);
   const [lastSessionId, setLastSessionId] = useState<string>(sessionId);
@@ -547,21 +544,9 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     }
   }, [sessionId, triggerSoftRefresh]);
 
-  // Open file in an Explorer (editor) panel
   const handleOpenInEditor = useCallback(async (filePath: string) => {
-    const filename = filePath.split(/[/\\]/).pop() || 'Editor';
-    const newPanel = await panelApi.createPanel({
-      sessionId,
-      type: 'explorer',
-      title: filename,
-      initialState: {
-        customState: { filePath },
-      },
-    });
-    addPanel(newPanel);
-    setActivePanelInStore(sessionId, newPanel.id);
-    await panelApi.setActivePanel(sessionId, newPanel.id);
-  }, [sessionId, addPanel, setActivePanelInStore]);
+    await openFileInEditor({ sessionId, filePath, pin: true });
+  }, [sessionId]);
 
   if (showInitialSkeleton) {
     return (

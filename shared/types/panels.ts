@@ -14,13 +14,13 @@ export interface ToolPanel {
   metadata: ToolPanelMetadata;   // Creation time, position, etc.
 }
 
-export type ToolPanelType = 'terminal' | 'diff' | 'explorer' | 'logs' | 'dashboard' | 'setup-tasks' | 'browser'; // Will expand later
+export type ToolPanelType = 'terminal' | 'diff' | 'explorer' | 'editor' | 'logs' | 'dashboard' | 'setup-tasks' | 'browser';
 
 export interface ToolPanelState {
   isActive: boolean;
   isPinned?: boolean;
   hasBeenViewed?: boolean;       // Track if panel has ever been viewed
-  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | object;
+  customState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | EditorPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | object;
 }
 
 export interface TerminalPanelState {
@@ -132,6 +132,20 @@ export interface ExplorerPanelState {
   showSearch?: boolean;           // Whether search is visible
 }
 
+/**
+ * A center editor tab opened from the Files inspector, the Review panel or a
+ * terminal link. Follows VS Code's preview semantics: a single click opens a
+ * preview tab (italic title) that the next single-click re-targets; double-
+ * clicking the file or the tab, or editing the file, pins it.
+ */
+export interface EditorPanelState {
+  filePath: string;
+  isPreview?: boolean;
+  isDirty?: boolean;
+  cursorPosition?: { line: number; column: number };
+  scrollPosition?: number;
+}
+
 export interface LogsPanelState {
   isRunning: boolean;             // Process currently running
   processId?: number;             // Active process PID
@@ -175,7 +189,7 @@ export interface CreatePanelRequest {
   sessionId: string;
   type: ToolPanelType;
   title?: string;                // Optional custom title
-  initialState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | { customState?: unknown };
+  initialState?: TerminalPanelState | DiffPanelState | ExplorerPanelState | EditorPanelState | LogsPanelState | DashboardPanelState | SetupTasksPanelState | BrowserPanelState | { customState?: unknown };
   metadata?: Partial<ToolPanelMetadata>; // Optional metadata overrides
   activate?: boolean;            // Defaults to true; false creates the panel in the background.
 }
@@ -262,6 +276,7 @@ interface PanelCapabilityRegistry {
   terminal: PanelCapabilities;
   diff: PanelCapabilities;
   explorer: PanelCapabilities;
+  editor: PanelCapabilities;
   logs: PanelCapabilities;
   dashboard: PanelCapabilities;
   'setup-tasks': PanelCapabilities;
@@ -294,6 +309,14 @@ export const PANEL_CAPABILITIES: PanelCapabilityRegistry = {
     singleton: false,                // Multiple explorers allowed
     canAppearInProjects: true,       // Explorer can appear in projects
     canAppearInWorktrees: true       // Explorer can appear in worktrees
+  },
+  editor: {
+    canEmit: ['explorer:file_saved', 'explorer:file_changed'],
+    canConsume: ['files:changed'],
+    requiresProcess: false,
+    singleton: false,                // One tab per open file
+    canAppearInProjects: true,
+    canAppearInWorktrees: true
   },
   logs: {
     canEmit: ['process:started', 'process:output', 'process:ended'],

@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
-import { X, Terminal, GitBranch, FileCode, FolderTree, BarChart3, Globe } from 'lucide-react';
+import { X, Terminal, GitBranch, FileCode, FileText, FolderTree, BarChart3, Globe } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { ToolPanel, ToolPanelType, LogsPanelState } from '../../../../shared/types/panels';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
@@ -18,6 +18,7 @@ import { getCliBrandIcon } from '../ui/brandIconRegistry';
 import { PanelTabStatusDot } from './PanelTabStatusDot';
 import type { PanelTabPresentationResolver } from '../../types/panelComponents';
 import { getPanelTabId, getPanelTabPanelId } from './panelTabIds';
+import { editorPanelState, pinEditorPanel } from '../../services/openFileInEditor';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -79,6 +80,8 @@ function getPanelIcon(type: ToolPanelType, panel?: ToolPanel, iconClass = 'w-4 h
       return <GitBranch className={iconClass} />;
     case 'explorer':
       return <FolderTree className={iconClass} />;
+    case 'editor':
+      return <FileText className={iconClass} />;
     case 'logs':
       return <FileCode className={iconClass} />;
     case 'dashboard':
@@ -341,6 +344,7 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
         const isActive = panel.id === activePanelId;
         const isDragged = panel.id === draggedPanelId;
         const isCompactTab = panel.type === 'diff' || panel.type === 'explorer' || panel.type === 'browser';
+        const isPreviewTab = editorPanelState(panel)?.isPreview === true;
         const shortcutHint = shortcutHints[index];
         const tabId = getPanelTabId(idNamespace, panel.id);
         const tabPanelId = getPanelTabPanelId(idNamespace, panel.id);
@@ -366,7 +370,10 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
             onFocus={() => setRovingPanelId(panel.id)}
             onClick={() => { if (!isDisabled) onPanelSelect(panel); }}
             onDoubleClick={(event) => {
-              if (!isDisabled && !isPermanent && !isDiffPanel) handleStartRename(event, panel);
+              if (isDisabled) return;
+              // Editor tabs pin on double-click (VS Code); other tabs rename.
+              if (panel.type === 'editor') { void pinEditorPanel(panel); return; }
+              if (!isPermanent && !isDiffPanel) handleStartRename(event, panel);
             }}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
             className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus-ring-subtle"
@@ -444,7 +451,7 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
                     The title is the only shrinkable element in the tab, so
                     squeezed tabs truncate the text instead of crushing the
                     status dot / icon or spilling under the close button. */}
-                <span className={cn("min-w-0 truncate", compact && isPrimary && "font-semibold")}>{displayTitle}</span>
+                <span className={cn("min-w-0 truncate", compact && isPrimary && "font-semibold", isPreviewTab && "italic")}>{displayTitle}</span>
               </span>
             )}
 

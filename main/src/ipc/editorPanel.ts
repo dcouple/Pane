@@ -49,7 +49,7 @@ export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServi
       // Create the panel
       const panel = await panelManager.createPanel({
         sessionId,
-        type: 'explorer',
+        type: 'editor',
         title: panelTitle,
         initialState: filePath ? {
           customState: {
@@ -85,7 +85,7 @@ export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServi
       // If no panel specified, find an existing editor panel or create one
       if (!targetPanelId) {
         const panels = panelManager.getPanelsForSession(sessionId);
-        const editorPanel = panels.find(p => p.type === 'explorer' && !editorFilePath(p.state?.customState));
+        const editorPanel = panels.find(p => p.type === 'editor' && !editorFilePath(p.state?.customState));
         
         if (editorPanel) {
           targetPanelId = editorPanel.id;
@@ -93,7 +93,7 @@ export function registerEditorPanelHandlers(ipcMain: IpcMain, services: AppServi
           // Create a new editor panel
           const newPanel = await panelManager.createPanel({
             sessionId,
-            type: 'explorer',
+            type: 'editor',
             title: path.basename(filePath)
           });
           targetPanelId = newPanel.id;
