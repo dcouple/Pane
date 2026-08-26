@@ -122,10 +122,11 @@ body.understory {
     linear-gradient(180deg, #1e1914 0%, #131911 100%);
 }
 
-/* Scrollbars stay functional but visually hidden */
+/* Scrollbars: 6px overlay-style, thumb visible only while the surface is
+   hovered, so scrollable regions read as flat until you reach for them. */
 ::-webkit-scrollbar {
-  width: 0;
-  height: 0;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -134,18 +135,19 @@ body.understory {
 
 ::-webkit-scrollbar-thumb {
   background: transparent;
-  border-radius: 0;
-  transition: none;
+  border-radius: 3px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  background: var(--color-border-hover);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: transparent;
+  background: var(--color-text-muted);
 }
 
-/* Firefox scrollbar support */
-* {
-  scrollbar-width: none;
-  scrollbar-color: transparent transparent;
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Tab indicator — default fill mode */

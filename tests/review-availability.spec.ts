@@ -224,7 +224,7 @@ test('Add Tool keeps long custom commands inside a narrow viewport', async ({ pa
     },
   });
 
-  await page.getByRole('button', { name: 'Add Tool', exact: true }).click();
+  await page.getByRole('button', { name: 'Add tool', exact: true }).click();
   const menu = page.getByRole('menu');
   const commandLabel = menu.getByText(expectedLabel, { exact: true });
   const commandButton = menu.getByRole('menuitem', { name: expectedLabel, exact: false });

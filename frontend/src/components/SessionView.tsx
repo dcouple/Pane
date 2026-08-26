@@ -48,7 +48,7 @@ import {
   mergeAllGroups,
   type DropZone,
 } from '../utils/panelLayout';
-import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
+import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2 } from 'lucide-react';
 import { getCliBrandIcon } from './ui/brandIconRegistry';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import type { Project } from '../types/project';
@@ -56,7 +56,6 @@ import { devLog, renderLog } from '../utils/console';
 import { useConfigStore } from '../stores/configStore';
 import { cycleIndex } from '../utils/arrayUtils';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
-import { Tooltip } from './ui/Tooltip';
 import { Kbd } from './ui/Kbd';
 import { useErrorStore } from '../stores/errorStore';
 import ProjectSettings from './ProjectSettings';
@@ -78,17 +77,13 @@ export const SessionView = memo(() => {
   const [currentUpstream, setCurrentUpstream] = useState<string | null>(null);
 
   // Config store for custom commands in terminal row pills
-  const { config, fetchConfig, updateConfig } = useConfigStore();
+  const { config, fetchConfig } = useConfigStore();
   useEffect(() => { if (!config) { fetchConfig(); } }, [config, fetchConfig]);
   const customCommands = useMemo(
     () => (config?.customCommands ?? []).filter(cmd => cmd?.name && cmd?.command),
     [config?.customCommands]
   );
   const isRemoteMode = config?.remoteDaemon?.client.mode === 'remote';
-  const deleteCustomCommand = useCallback((index: number) => {
-    const existing = config?.customCommands ?? [];
-    updateConfig({ customCommands: existing.filter((_, i) => i !== index) }).catch(() => {});
-  }, [config, updateConfig]);
 
   // Get active session by subscribing directly to store state
   // This ensures the component re-renders when git status or other session properties update
@@ -1669,6 +1664,44 @@ export const SessionView = memo(() => {
     return <HomePage />;
   }
   
+  // The empty stage is the "+" menu laid out inline: one click (or the
+  // shortcut beside it) from a running tool, instead of a placeholder.
+  const emptyStage = (
+    <div className="flex h-full flex-1 items-center justify-center">
+      <div className="w-64">
+        <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Open</div>
+        {[
+          { key: 'terminal', label: 'Terminal', icon: <Terminal className="h-3.5 w-3.5" />, hotkeyId: 'add-tool-terminal', onClick: () => handlePanelCreate('terminal') },
+          ...agentPresets.map(preset => ({
+            key: preset.id,
+            label: preset.title,
+            icon: getCliBrandIcon(preset.iconKey, 'h-3.5 w-3.5'),
+            hotkeyId: preset.hotkeyId,
+            onClick: () => handlePanelCreate('terminal', { initialCommand: preset.command, title: preset.title }),
+          })),
+          ...customCommands.map((cmd, index) => ({
+            key: `custom-${index}`,
+            label: cmd.name,
+            icon: getCliBrandIcon(cmd.command, 'h-3.5 w-3.5') || <TerminalSquare className="h-3.5 w-3.5" />,
+            hotkeyId: `add-tool-custom-${index}`,
+            onClick: () => handlePanelCreate('terminal', { initialCommand: cmd.command, title: cmd.name }),
+          })),
+        ].map(item => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={item.onClick}
+            className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+          >
+            <span className="flex-shrink-0 text-text-tertiary">{item.icon}</span>
+            <span className="truncate">{item.label}</span>
+            {hotkeyDisplay(item.hotkeyId) && <Kbd variant="inline" className="ml-auto pl-3">{hotkeyDisplay(item.hotkeyId)}</Kbd>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     <div className="pane-session-shell flex-1 flex flex-col overflow-hidden bg-bg-primary">
       <LiveRegion mode={activeSession.status === 'error' ? 'assertive' : 'polite'}>
@@ -1709,15 +1742,7 @@ export const SessionView = memo(() => {
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {/* Top: active panel content */}
                 <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
-                  {editorStageElement || (
-                    <div className="flex-1 flex items-center justify-center text-text-secondary h-full">
-                      <div className="text-center p-8">
-                        <div className="text-4xl mb-4">⚡</div>
-                        <h2 className="text-xl font-semibold mb-2">No Active Panel</h2>
-                        <p className="text-sm">Add a tool panel to get started</p>
-                      </div>
-                    </div>
-                  )}
+                  {editorStageElement || emptyStage}
                 </div>
 
                 {/* Bottom: horizontal detail panel */}
@@ -1778,15 +1803,7 @@ export const SessionView = memo(() => {
               <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                 {/* Top: active panel content */}
                 <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
-                  {editorStageElement || (
-                    <div className="flex-1 flex items-center justify-center text-text-secondary h-full">
-                      <div className="text-center p-8">
-                        <div className="text-4xl mb-4">⚡</div>
-                        <h2 className="text-xl font-semibold mb-2">No Active Panel</h2>
-                        <p className="text-sm">Add a tool panel to get started</p>
-                      </div>
-                    </div>
-                  )}
+                  {editorStageElement || emptyStage}
                 </div>
 
                 {/* Bottom: persistent terminal (collapsible) */}
@@ -1812,63 +1829,7 @@ export const SessionView = memo(() => {
                       <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
                       <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
 
-                      {/* Middle: scrollable pill shortcuts */}
-                      <div className="flex-1 flex items-center gap-2 overflow-x-auto ml-3 scrollbar-none">
-                        {/* Agent pills */}
-                        {agentPresets.map(preset => (
-                          <Tooltip key={preset.id} content={hotkeyDisplay(preset.hotkeyId) ? <Kbd>{hotkeyDisplay(preset.hotkeyId)}</Kbd> : undefined} side="top">
-                            <button
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                              onClick={() => handlePanelCreate('terminal', {
-                                initialCommand: preset.command,
-                                title: preset.title
-                              })}
-                            >
-                              {getCliBrandIcon(preset.iconKey, 'w-3 h-3')}
-                              {preset.title.split(' ')[0]}
-                            </button>
-                          </Tooltip>
-                        ))}
-
-                        {/* Custom command pills */}
-                        {customCommands.map((cmd, index) => {
-                          const shortcutDisplay = hotkeyDisplay(`add-tool-custom-${index}`);
-                          const commandButton = (
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 pl-2 py-0.5 text-[11px] font-medium text-text-tertiary hover:text-text-secondary whitespace-nowrap"
-                              onClick={() => handlePanelCreate('terminal', {
-                                initialCommand: cmd.command,
-                                title: cmd.name
-                              })}
-                              title={cmd.command}
-                            >
-                              {getCliBrandIcon(cmd.command, 'w-3 h-3') || <TerminalSquare className="w-3 h-3" />}
-                              {cmd.name.length > 13 ? cmd.name.slice(0, 13) + '…' : cmd.name}
-                            </button>
-                          );
-                          return (
-                            <span
-                              key={`shortcut-${index}`}
-                              className="group/pill inline-flex items-center gap-0 pr-1 rounded-full text-text-tertiary border border-border-primary hover:bg-surface-hover transition-colors whitespace-nowrap flex-shrink-0"
-                            >
-                              {shortcutDisplay ? (
-                                <Tooltip content={<Kbd>{shortcutDisplay}</Kbd>} side="top">
-                                  {commandButton}
-                                </Tooltip>
-                              ) : commandButton}
-                              <button
-                                type="button"
-                                className="p-0.5 rounded-full opacity-0 group-hover/pill:opacity-100 group-focus-within/pill:opacity-100 hover:bg-surface-tertiary hover:text-text-primary transition-all"
-                                onClick={() => deleteCustomCommand(index)}
-                                aria-label={`Remove ${cmd.name} shortcut`}
-                              >
-                                <X className="w-2.5 h-2.5" />
-                              </button>
-                            </span>
-                          );
-                        })}
-                      </div>
+                      <div className="flex-1" />
 
                       {/* Right: resize grip (only when expanded, always outside scroll container) */}
                       {!isTerminalCollapsed && (
