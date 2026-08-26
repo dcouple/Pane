@@ -45,6 +45,8 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: JsonObject[];
   initialCombinedDiff?: JsonObject | null;
+  initialCommitDiff?: JsonObject | null;
+  initialCommitFiles?: JsonObject[];
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
   forcedAgentUsageError?: string;
@@ -589,6 +591,14 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getResumable: () => success([]),
         getExecutions: () => success(clone(mockOptions.initialExecutions ?? [])),
         getCombinedDiff: () => success(clone(mockOptions.initialCombinedDiff ?? null)),
+        getCommitDiffByHash: () => success(clone(mockOptions.initialCommitDiff ?? mockOptions.initialCombinedDiff ?? null)),
+        getCommitFiles: (_sessionId: string, ref: string) => success({
+          ref,
+          files: clone(mockOptions.initialCommitFiles ?? []),
+          totalFiles: (mockOptions.initialCommitFiles ?? []).length,
+          truncated: false,
+          isMergeAgainstFirstParent: false,
+        }),
       }),
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),

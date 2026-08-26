@@ -175,6 +175,7 @@ const GIT_STATUS_CHANNELS = [
   'git:file-status',
   'sessions:git-diff',
   'sessions:get-commit-diff-by-hash',
+  'sessions:get-commit-files',
   'sessions:get-combined-diff',
   'sessions:check-rebase-conflicts',
   'sessions:has-stash',

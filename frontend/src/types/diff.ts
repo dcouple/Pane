@@ -60,6 +60,11 @@ export interface ExecutionListProps {
   onRestore?: () => void;
   historyLimitReached?: boolean;
   historyLimit?: number;
+  /**
+   * Called when a file inside an expanded commit is activated.
+   * `commitRef` is a commit hash, or `index` for uncommitted changes.
+   */
+  onFileClick?: (commitRef: string, path: string) => void;
 }
 
 export interface CombinedDiffViewProps {

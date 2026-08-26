@@ -316,6 +316,44 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(splitMode).toHaveClass(/bg-interactive/);
 });
 
+test('Review expands commit file details and reveals the selected file diff', async ({ page }, testInfo) => {
+  await installElectronApiMock(page, {
+    initialProjects: [project],
+    initialSessions: [createSession()],
+    initialPanels: panels,
+    initialExecutions: localExecutions,
+    initialCombinedDiff: localCombinedDiff,
+    initialCommitDiff: localCombinedDiff,
+    initialCommitFiles: [{
+      path: 'src/review.ts',
+      oldPath: 'src/review.ts',
+      status: 'modified',
+      additions: 8,
+      deletions: 3,
+      isBinary: false,
+    }],
+    activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Review fixture$/ }).click();
+  await page.getByRole('button', { name: 'Review changes before PR', exact: true }).click();
+  await page.getByRole('tab', { name: 'Review', exact: true }).click();
+
+  const fileToggle = page.getByRole('button', { name: 'Show changed files', exact: true });
+  await fileToggle.click();
+  await expect(page.getByRole('button', { name: 'Hide changed files', exact: true })).toHaveAttribute('aria-expanded', 'true');
+
+  const fileRow = page.getByRole('button', { name: 'Modified: src/review.ts. Show diff.', exact: true });
+  await expect(fileRow).toBeVisible();
+  await expect(fileRow.getByText('+8', { exact: true })).toBeVisible();
+  await expect(fileRow.getByText('-3', { exact: true })).toBeVisible();
+  await capture(page, testInfo, '06-commit-file-details-expanded.png');
+
+  await fileRow.click();
+  await expect(page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true })).toBeVisible();
+  await capture(page, testInfo, '07-selected-file-diff-revealed.png');
+});
+
 test('Review shows a clean local empty state before a pull request exists', async ({ page }) => {
   await openSession(page, baseGitStatus, { withLocalChanges: false });
 

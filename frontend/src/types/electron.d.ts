@@ -35,6 +35,7 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { GitCommitFilesResult } from '../../../shared/types/git';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -154,6 +155,7 @@ interface ElectronAPI {
     gitDiff: (sessionId: string) => Promise<IPCResponse>;
     getCombinedDiff: (sessionId: string, executionIds?: number[]) => Promise<IPCResponse>;
     getCommitDiffByHash: (sessionId: string, commitHash: string) => Promise<IPCResponse>;
+    getCommitFiles: (sessionId: string, ref: string) => Promise<IPCResponse<GitCommitFilesResult>>;
 
     // Script operations
     hasRunScript: (sessionId: string) => Promise<IPCResponse>;
