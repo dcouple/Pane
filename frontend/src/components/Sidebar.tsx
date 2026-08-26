@@ -755,18 +755,10 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           className="absolute top-0 right-0 w-1 h-full cursor-col-resize group z-10"
           onMouseDown={onResize}
         >
-          {/* Visual indicator */}
-          <div className="absolute inset-0 group-hover:bg-interactive transition-colors" />
+          {/* Visual indicator: the theme's border-hover tone, not the accent */}
+          <div className="absolute inset-0 group-hover:bg-border-hover group-active:bg-border-hover" />
           {/* Larger grab area */}
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
-          {/* Drag indicator dots */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-0 transform translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="flex flex-col gap-1">
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-              <div className="w-1 h-1 bg-interactive rounded-full" />
-            </div>
-          </div>
         </div>
         {titleBarControlsSlot
           ? createPortal(headerControls, titleBarControlsSlot)

@@ -1831,7 +1831,7 @@ export const SessionView = memo(() => {
                     className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
                     onMouseDown={startRightTerminalResize}
                   >
-                    <div className="absolute inset-0 bg-border-secondary group-hover:bg-interactive transition-colors" />
+                    <div className="absolute inset-0 bg-border-secondary group-hover:bg-border-hover group-active:bg-border-hover" />
                     <div className="absolute -left-2 right-0 top-0 bottom-0" />
                   </div>
 
