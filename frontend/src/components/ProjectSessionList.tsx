@@ -599,14 +599,17 @@ function SessionRowContent({
         )}>
           {title}
         </span>
-        {prNumber ? (
-          <span className="flex-shrink-0 text-xs text-text-tertiary">#{prNumber}</span>
-        ) : hasDiff ? (
-          <span className="flex flex-shrink-0 items-center gap-1 text-xs">
-            <span className="font-semibold text-status-success">+{adds}</span>
-            <span className="font-semibold text-status-error">-{dels}</span>
+        {showMetadata && (
+          <span className="flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums">
+            {hasDiff && (
+              <span className="flex items-center gap-1">
+                <span className="font-semibold text-status-success">+{adds}</span>
+                <span className="font-semibold text-status-error">-{dels}</span>
+              </span>
+            )}
+            {prNumber && <span className="text-text-tertiary">#{prNumber}</span>}
           </span>
-        ) : null}
+        )}
       </div>
     );
   }
@@ -738,11 +741,11 @@ function SessionRow({
       className={cn(
         'group/session relative w-full text-left pl-3 pr-2 transition-colors flex items-center gap-1',
         rowLayout === 'single' ? 'py-1' : 'py-1.5',
-        isActive ? 'bg-surface-hover' : 'hover:bg-surface-hover'
+        isActive ? 'bg-surface-selected' : 'hover:bg-surface-hover'
       )}
     >
       {/* Always-present left accent bar reflecting the agent status. */}
-      <StatusAccentBar status={agentDisplayStatus} isActive={isActive} />
+      <StatusAccentBar status={agentDisplayStatus} />
       <Tooltip
         content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName showDiffStats={false} globalIndex={globalIndex} />}
         side="right"

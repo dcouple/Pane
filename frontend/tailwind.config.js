@@ -73,6 +73,7 @@ export default {
           'secondary': 'var(--color-surface-secondary)',
           'tertiary': 'var(--color-surface-tertiary)',
           'hover': 'var(--color-surface-hover)',
+          'selected': 'var(--color-surface-selected)',
           'interactive': 'var(--color-surface-interactive)',
           'interactive-hover': 'var(--color-surface-interactive-hover)',
         },

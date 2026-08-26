@@ -91,7 +91,7 @@ interface CompactSessionMenuState {
 }
 const COMPACT_RAIL_BUTTON = 'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive';
 const COMPACT_RAIL_IDLE = 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary';
-const COMPACT_RAIL_ACTIVE = 'bg-surface-hover text-text-primary';
+const COMPACT_RAIL_ACTIVE = 'bg-surface-selected text-text-primary';
 
 
 const HelpCircleIcon = ({ className }: { className?: string }) => (

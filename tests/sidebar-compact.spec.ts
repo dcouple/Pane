@@ -107,7 +107,7 @@ test.describe('compact sidebar', () => {
     const fullSidebarPane = page.getByRole('button', { name: 'Regular work', exact: true });
     await fullSidebarPane.click();
     await expect(fullSidebarPane).toHaveAttribute('aria-current', 'page');
-    await expect(fullSidebarPane.locator('..')).toHaveClass(/bg-surface-hover/);
+    await expect(fullSidebarPane.locator('..')).toHaveClass(/bg-surface-selected/);
     await fullSidebarPane.evaluate(element => element.blur());
     await page.mouse.move(640, 360);
     await page.screenshot({
@@ -117,7 +117,7 @@ test.describe('compact sidebar', () => {
 
     await collapseSidebar(page);
     const compactSidebarPane = page.getByTestId('compact-repository-pane-regular');
-    await expect(compactSidebarPane).toHaveClass(/bg-surface-hover/);
+    await expect(compactSidebarPane).toHaveClass(/bg-surface-selected/);
     await page.mouse.move(320, 180);
     await page.screenshot({
       path: 'test-results/sidebar-active-pane-compact.png',

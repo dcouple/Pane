@@ -483,6 +483,9 @@
   --color-surface-secondary: var(--gh-800);
   --color-surface-tertiary: var(--gh-700);
   --color-surface-hover: rgba(255, 255, 255, 0.04);
+  /* Selected row (sidebar). Mixed from the theme's own text colour so every
+     theme gets a fitting shade without a per-theme override. */
+  --color-surface-selected: color-mix(in srgb, var(--color-text-primary) 9%, transparent);
 
   /* Structural tokens for theme-aware layout */
   --color-bg-chrome: var(--color-bg-primary);
