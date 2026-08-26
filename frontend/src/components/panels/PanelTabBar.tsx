@@ -538,6 +538,17 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   {shortcut('add-tool-explorer')}
                 </button>
               )}
+              {availablePanelTypes.includes('browser') && (
+                <button
+                  ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
+                  role="menuitem"
+                  className={menuItemClass}
+                  onClick={() => handleAddPanel('browser')}
+                >
+                  <Globe className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span className="truncate">Browser</span>
+                </button>
+              )}
               {availablePanelTypes.includes('terminal') && agentPresets.length > 0 && (
                 <>
                   {separator}
@@ -654,9 +665,9 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   </button>
                 )
               )}
-              {/* Other panel types (excluding terminal and explorer, already listed above) */}
-              {availablePanelTypes.some(t => t !== 'terminal' && t !== 'explorer') && separator}
-              {availablePanelTypes.filter(t => t !== 'terminal' && t !== 'explorer').map((type) => {
+              {/* Other panel types (terminal, explorer and browser are listed above) */}
+              {availablePanelTypes.some(t => t !== 'terminal' && t !== 'explorer' && t !== 'browser') && separator}
+              {availablePanelTypes.filter(t => t !== 'terminal' && t !== 'explorer' && t !== 'browser').map((type) => {
                 const currentRefIndex = refIndex++;
                 return (
                 <button

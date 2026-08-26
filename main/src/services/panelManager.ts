@@ -72,6 +72,12 @@ class PanelManager {
           });
         }
       }
+      // Browser panels used to be created as permanent default tabs; they are
+      // now ordinary closable tools opened from the "+" menu.
+      if (panel.type === 'browser' && panel.metadata?.permanent) {
+        panel.metadata = { ...panel.metadata, permanent: false };
+        databaseService.updatePanel(panel.id, { metadata: panel.metadata });
+      }
       // Cache the panel
       this.panels.set(panel.id, panel);
     });

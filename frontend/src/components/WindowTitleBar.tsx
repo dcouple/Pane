@@ -137,7 +137,7 @@ export function WindowTitleBar({ projects, controlsSlotRef }: WindowTitleBarProp
 
   return (
     <div
-      className="relative flex-shrink-0 flex items-center justify-center overflow-hidden bg-bg-primary select-none"
+      className="relative flex-shrink-0 flex items-center justify-center overflow-hidden bg-surface-primary select-none"
       style={{ ...TITLE_BAR_STYLE, ...(isMac() ? MAC_INSET_STYLE : OVERLAY_INSET_STYLE) }}
       data-testid="window-title-bar"
     >

@@ -11,8 +11,8 @@
  * `--color-bg-primary` and `--color-text-secondary` resolve to.
  */
 
-/** Plate colour: the title bar strip's own background (`bg-bg-primary`). */
-const OVERLAY_COLOR_TOKEN = '--color-bg-primary';
+/** Plate colour: the title bar strip's own background (`bg-surface-primary`, shared with the sidebar). */
+const OVERLAY_COLOR_TOKEN = '--color-surface-primary';
 /** Glyph colour: the same token the strip's pane name uses. */
 const OVERLAY_SYMBOL_COLOR_TOKEN = '--color-text-secondary';
 

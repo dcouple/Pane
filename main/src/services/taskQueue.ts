@@ -289,10 +289,10 @@ export class TaskQueue {
         }
         
         // Ensure default panels exist for this session (run in parallel)
+        // Browser is on demand from the "+" menu, not a default tab.
         await Promise.all([
           panelManager.ensureExplorerPanel(session.id),
           panelManager.ensureDiffPanel(session.id),
-          panelManager.ensureBrowserPanel(session.id),
         ]);
 
         // Each createPanel marks the new panel active, so the parallel ensures
