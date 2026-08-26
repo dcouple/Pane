@@ -23,6 +23,7 @@ interface DetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
+  onCommitFileClick?: (hash: string, path: string) => void;
 }
 
 const sidebarButtonClass = 'w-full justify-start text-sm !px-2';
@@ -53,6 +54,7 @@ export function DetailPanel({
   onSwapLayout,
   terminalShortcuts,
   onCommitClick,
+  onCommitFileClick,
 }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
@@ -90,6 +92,7 @@ export function DetailPanel({
         onSwapLayout={onSwapLayout}
         terminalShortcuts={terminalShortcuts}
         onCommitClick={onCommitClick}
+        onCommitFileClick={onCommitFileClick}
       />
     );
   }
@@ -251,6 +254,8 @@ export function DetailPanel({
                 sessionId={session.id}
                 baseBranch={session.baseBranch || 'main'}
                 onCommitClick={onCommitClick}
+                expandable
+                onFileClick={onCommitFileClick}
               />
             </div>
           </div>

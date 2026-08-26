@@ -3,6 +3,13 @@ import type { CloudVmState } from '../shared/types/cloud';
 import type { PaneChatAgent } from '../shared/types/paneChat';
 import type { PanePermissionRequest, PanePermissionResponse } from '../shared/types/permissions';
 import type {
+  BaseBranchOptions,
+  PullRequestChanges,
+  PullRequestDiff,
+  PullRequestDraft,
+  PullRequestStatus,
+} from '../shared/types/pullRequest';
+import type {
   RemoteDaemonClientRecord,
   RemoteDaemonConfig,
   RemoteDaemonHostConfig,
@@ -45,6 +52,12 @@ type ElectronApiMockOptions = {
   }>;
   initialExecutions?: JsonObject[];
   initialCombinedDiff?: JsonObject | null;
+  initialCommitFiles?: JsonObject[];
+  pullRequestDraft?: PullRequestDraft;
+  pullRequestBranches?: BaseBranchOptions;
+  pullRequestChanges?: PullRequestChanges;
+  pullRequestDiff?: PullRequestDiff;
+  pullRequestStatus?: PullRequestStatus | null;
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
   forcedAgentUsageError?: string;
@@ -504,6 +517,13 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           return success(createPaneChatState());
         },
       }),
+      pullRequests: namespace({
+        getDraft: () => success(clone(mockOptions.pullRequestDraft ?? null)),
+        listBaseBranches: () => success(clone(mockOptions.pullRequestBranches ?? { all: [], local: [] })),
+        getChanges: () => success(clone(mockOptions.pullRequestChanges ?? null)),
+        getDiff: () => success(clone(mockOptions.pullRequestDiff ?? null)),
+        getStatus: () => success(clone(mockOptions.pullRequestStatus ?? null)),
+      }),
       panels: namespace({
         getSessionPanels: (sessionId: string) => success(
           clone(mockPanels.filter((panel) => panel.sessionId === sessionId)),
@@ -589,6 +609,13 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getResumable: () => success([]),
         getExecutions: () => success(clone(mockOptions.initialExecutions ?? [])),
         getCombinedDiff: () => success(clone(mockOptions.initialCombinedDiff ?? null)),
+        getCommitFiles: (_sessionId: string, ref: string) => success({
+          ref,
+          files: clone(mockOptions.initialCommitFiles ?? []),
+          totalFiles: (mockOptions.initialCommitFiles ?? []).length,
+          truncated: false,
+          isMergeAgainstFirstParent: false,
+        }),
       }),
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),

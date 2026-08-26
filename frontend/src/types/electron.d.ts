@@ -35,6 +35,17 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { GitCommitFilesResult } from '../../../shared/types/git';
+import type {
+  CreatePullRequestRequest,
+  CreatePullRequestResult,
+  BaseBranchOptions,
+  PullRequestChanges,
+  PullRequestChecksResult,
+  PullRequestDiff,
+  PullRequestDraft,
+  PullRequestStatus,
+} from '../../../shared/types/pullRequest';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -124,6 +135,16 @@ interface ElectronAPI {
     setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
   };
 
+  // Pull requests, opened from a session's branch
+  pullRequests: {
+    getDraft: (sessionId: string) => Promise<IPCResponse<PullRequestDraft>>;
+    create: (request: CreatePullRequestRequest) => Promise<IPCResponse<CreatePullRequestResult>>;
+    getChecks: (sessionId: string, repo: string, number: number) => Promise<IPCResponse<PullRequestChecksResult>>;
+    listBaseBranches: (sessionId: string, repo: string) => Promise<IPCResponse<BaseBranchOptions>>;
+    getChanges: (sessionId: string, baseBranch?: string) => Promise<IPCResponse<PullRequestChanges>>;
+    getDiff: (sessionId: string, baseBranch?: string) => Promise<IPCResponse<PullRequestDiff>>;
+    getStatus: (sessionId: string, repo: string, number: number) => Promise<IPCResponse<PullRequestStatus | null>>;
+  };
   // Session management
   sessions: {
     getAll: () => Promise<IPCResponse>;
@@ -154,6 +175,7 @@ interface ElectronAPI {
     gitDiff: (sessionId: string) => Promise<IPCResponse>;
     getCombinedDiff: (sessionId: string, executionIds?: number[]) => Promise<IPCResponse>;
     getCommitDiffByHash: (sessionId: string, commitHash: string) => Promise<IPCResponse>;
+    getCommitFiles: (sessionId: string, ref: string) => Promise<IPCResponse<GitCommitFilesResult>>;
 
     // Script operations
     hasRunScript: (sessionId: string) => Promise<IPCResponse>;

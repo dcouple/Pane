@@ -14,6 +14,7 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
+import { DAEMON_PULL_REQUEST_CHANNELS, registerPullRequestHandlers } from './pullRequest';
 import type { AppServices } from './types';
 
 const PROJECT_CHANNELS = [
@@ -175,6 +176,7 @@ const GIT_STATUS_CHANNELS = [
   'git:file-status',
   'sessions:git-diff',
   'sessions:get-commit-diff-by-hash',
+  'sessions:get-commit-files',
   'sessions:get-combined-diff',
   'sessions:check-rebase-conflicts',
   'sessions:has-stash',
@@ -342,6 +344,16 @@ describe('daemon registry IPC bindings', () => {
 
     expect(registry.listChannels()).toEqual([...VOICE_CHANNELS].sort());
     expect(ipcMain.boundChannels.sort()).toEqual([...VOICE_CHANNELS].sort());
+  });
+
+  it('binds daemon-owned pull request channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerPullRequestHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...DAEMON_PULL_REQUEST_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...DAEMON_PULL_REQUEST_CHANNELS].sort());
   });
 
   it('binds daemon-owned prompt channels through the shared registry', () => {

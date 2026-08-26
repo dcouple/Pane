@@ -16,6 +16,7 @@ import { CommitMessageDialog } from './session/CommitMessageDialog';
 import { FolderArchiveDialog } from './session/FolderArchiveDialog';
 import { ConfirmDialog } from './ConfirmDialog';
 import { ProjectView } from './ProjectView';
+import { CreatePullRequestDialog } from './git/CreatePullRequestDialog';
 import { API } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
@@ -47,7 +48,7 @@ import {
   mergeAllGroups,
   type DropZone,
 } from '../utils/panelLayout';
-import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
+import { Download, Upload, GitMerge, GitPullRequest, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2, X } from 'lucide-react';
 import { getCliBrandIcon } from './ui/brandIconRegistry';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import type { Project } from '../types/project';
@@ -73,6 +74,7 @@ export const SessionView = memo(() => {
   const [isProjectLoading, setIsProjectLoading] = useState(false);
   const [sessionProject, setSessionProject] = useState<Project | null>(null);
   const [showSetTrackingDialog, setShowSetTrackingDialog] = useState(false);
+  const [showCreatePrDialog, setShowCreatePrDialog] = useState(false);
   const [remoteBranches, setRemoteBranches] = useState<string[]>([]);
   const [currentUpstream, setCurrentUpstream] = useState<string | null>(null);
 
@@ -578,23 +580,31 @@ export const SessionView = memo(() => {
   );
 
   const handleCommitClick = useCallback(
-    async (commitHash: string) => {
+    async (commitHash: string, filePath?: string) => {
       if (!activeSession || sessionPanels.length === 0) return;
       const diffPanel = sessionPanels.find(p => p.type === 'diff');
       if (!diffPanel) return;
       // Store pending hash before dispatching — if the diff panel is not
       // currently active, CombinedDiffView is unmounted and will read this
       // module-level variable when it mounts after the panel switch.
-      setPendingViewCommit(activeSession.id, commitHash);
+      setPendingViewCommit(activeSession.id, commitHash, filePath);
       requestLocalReviewMode(activeSession.id);
       await handlePanelSelect(diffPanel);
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('diff:view-commit', {
-          detail: { sessionId: activeSession.id, commitHash },
+          detail: { sessionId: activeSession.id, commitHash, filePath },
         }));
       }, 0);
     },
     [activeSession, sessionPanels, handlePanelSelect]
+  );
+
+  // A file inside an expanded commit in the history graph was clicked.
+  const handleCommitFileClick = useCallback(
+    (commitHash: string, filePath: string) => {
+      void handleCommitClick(commitHash, filePath);
+    },
+    [handleCommitClick]
   );
 
   // Tab cycling: navigates between panels in the focused group using
@@ -1582,6 +1592,25 @@ export const SessionView = memo(() => {
           : 'No commits to push',
         disabledReason: busyReason ?? (activeSession.gitStatus?.ahead ? undefined : 'No commits to push'),
       },
+      {
+        id: 'create-pull-request',
+        label: activeSession.gitStatus?.prNumber ? `Pull Request #${activeSession.gitStatus.prNumber}` : 'Create Pull Request',
+        icon: GitPullRequest,
+        onClick: () => {
+          // An existing pull request is a link, not a form.
+          if (activeSession.gitStatus?.prUrl) {
+            void window.electronAPI.openExternal(activeSession.gitStatus.prUrl);
+            return;
+          }
+          setShowCreatePrDialog(true);
+        },
+        disabled: hook.isMerging || activeSession.status === 'initializing',
+        variant: 'default' as const,
+        description: activeSession.gitStatus?.prNumber
+          ? 'Open this branch’s pull request on GitHub'
+          : 'Push this branch and open a pull request',
+        disabledReason: busyReason,
+      },
       // --- Main branch operations (last) ---
       {
         id: 'rebase-from-main',
@@ -1727,6 +1756,7 @@ export const SessionView = memo(() => {
                   onToggleCollapse={toggleDetailCollapse}
                   onSwapLayout={toggleLayoutSwap}
                   onCommitClick={handleCommitClick}
+                  onCommitFileClick={handleCommitFileClick}
                   terminalShortcuts={
                     <>
                       {agentPresets.map(preset => (
@@ -1936,6 +1966,7 @@ export const SessionView = memo(() => {
                 mergeError={hook.mergeError}
                 onSwapLayout={toggleLayoutSwap}
                 onCommitClick={handleCommitClick}
+                onCommitFileClick={handleCommitFileClick}
               />
             </>
           )}
@@ -1943,6 +1974,15 @@ export const SessionView = memo(() => {
 
       </SessionProvider>
 
+      {activeSession && (
+        <CreatePullRequestDialog
+          sessionId={activeSession.id}
+          sessionName={activeSession.name}
+          isOpen={showCreatePrDialog}
+          onClose={() => setShowCreatePrDialog(false)}
+          onCreated={(url) => { void window.electronAPI.openExternal(url); }}
+        />
+      )}
       <CommitMessageDialog
         isOpen={hook.showCommitMessageDialog}
         onClose={() => hook.setShowCommitMessageDialog(false)}

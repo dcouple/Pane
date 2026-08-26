@@ -27,6 +27,7 @@ import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
 import type { SubmitFeedbackRequest } from '../../shared/types/feedback';
+import type { CreatePullRequestRequest } from '../../shared/types/pullRequest';
 import type {
   PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
@@ -132,7 +133,9 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'projects:',
   'prompts:',
   'resource-monitor:',
+  'pr:',
   'runpane:',
+  'schedules:',
   'sessions:',
   'terminal:',
   'voice:',
@@ -473,6 +476,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setAgent: (agent: 'claude' | 'codex' | 'cursor'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
   },
 
+  // Pull requests, opened from a session's branch
+  pullRequests: {
+    getDraft: (sessionId: string): Promise<IPCResponse> => invokeIpc('pr:get-draft', sessionId),
+    create: (request: CreatePullRequestRequest): Promise<IPCResponse> => invokeIpc('pr:create', request),
+    getChecks: (sessionId: string, repo: string, number: number): Promise<IPCResponse> => invokeIpc('pr:get-checks', sessionId, repo, number),
+    listBaseBranches: (sessionId: string, repo: string): Promise<IPCResponse> => invokeIpc('pr:list-base-branches', sessionId, repo),
+    getChanges: (sessionId: string, baseBranch?: string): Promise<IPCResponse> => invokeIpc('pr:get-changes', sessionId, baseBranch),
+    getDiff: (sessionId: string, baseBranch?: string): Promise<IPCResponse> => invokeIpc('pr:get-diff', sessionId, baseBranch),
+    getStatus: (sessionId: string, repo: string, number: number): Promise<IPCResponse> => invokeIpc('pr:get-status', sessionId, repo, number),
+  },
   // Session management
   sessions: {
     getAll: (): Promise<IPCResponse> => invokeIpc('sessions:get-all'),
@@ -503,6 +516,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     gitDiff: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-diff', sessionId),
     getCombinedDiff: (sessionId: string, executionIds?: number[]): Promise<IPCResponse> => invokeIpc('sessions:get-combined-diff', sessionId, executionIds),
     getCommitDiffByHash: (sessionId: string, commitHash: string): Promise<IPCResponse> => invokeIpc('sessions:get-commit-diff-by-hash', sessionId, commitHash),
+    getCommitFiles: (sessionId: string, ref: string): Promise<IPCResponse> => invokeIpc('sessions:get-commit-files', sessionId, ref),
 
     // Main repo session
     getOrCreateMainRepoSession: (projectId: number): Promise<IPCResponse> => invokeIpc('sessions:get-or-create-main-repo', projectId),
