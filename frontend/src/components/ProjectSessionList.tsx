@@ -29,9 +29,9 @@ import {
 
 const SIDEBAR_ROW_BASE = 'flex w-full items-center text-left transition-colors';
 const SIDEBAR_ROW_PADDING = 'px-4';
-const SIDEBAR_ROW_GAP = 'gap-2.5';
-const SIDEBAR_SECTION_ROW = 'mt-2 flex w-full items-center justify-between gap-2 pl-3.5 pr-2 pt-1 pb-1';
-const SIDEBAR_SECTION_LABEL = 'truncate text-[13px] font-semibold uppercase leading-4 text-text-tertiary';
+const SIDEBAR_ROW_GAP = 'gap-2';
+const SIDEBAR_SECTION_ROW = 'mt-1.5 flex w-full items-center justify-between gap-2 pl-3.5 pr-2 py-0.5';
+const SIDEBAR_SECTION_LABEL = 'truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary';
 
 interface ProjectSessionListProps {
   projects: Project[];
@@ -289,7 +289,7 @@ export function ProjectSessionList({
             setActiveSession(null);
             navigateToSessions();
           }}
-          className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
+          className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-7 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
         >
           <Home className="w-4 h-4" />
           <span>Home</span>
@@ -343,7 +343,7 @@ export function ProjectSessionList({
             <button
               type="button"
               onClick={onRemoteDesktopClick}
-              className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
+              className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-7 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
             >
               <Monitor className="w-4 h-4" />
               <span>Remote Desktop</span>
@@ -449,11 +449,11 @@ export function ProjectSessionList({
           ];
 
           return (
-            <div key={project.id} className="first:mt-2">
+            <div key={project.id} className="first:mt-1">
               {/* Project header */}
               <div
                 className={cn(
-                  "group/project relative flex items-center gap-1.5 pl-3 pr-2 py-1.5 hover:bg-surface-hover transition-colors",
+                  "group/project relative flex items-center gap-1.5 pl-3 pr-2 py-1 hover:bg-surface-hover transition-colors",
                   dragOverProjectId === project.id && dragProjectId !== project.id && "bg-interactive/20",
                   dragProjectId === project.id && "opacity-50"
                 )}
@@ -745,7 +745,7 @@ function SessionRow({
     <div
       className={cn(
         'group/session relative w-full text-left pl-3 pr-2 transition-colors flex items-center gap-1',
-        rowLayout === 'single' ? 'py-1.5' : 'py-2',
+        rowLayout === 'single' ? 'py-1' : 'py-1.5',
         isActive ? 'bg-surface-hover' : 'hover:bg-surface-hover'
       )}
     >

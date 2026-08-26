@@ -5,7 +5,6 @@ import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
 import { Archive, ArrowUpDown, BarChart3, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
-import { usePaneLogo } from '../hooks/usePaneLogo';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { Kbd } from './ui/Kbd';
@@ -76,6 +75,8 @@ interface SidebarProps {
   onResize: (e: React.MouseEvent) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Title-bar slot the toggle and menu render into; null keeps them in the sidebar header. */
+  titleBarControlsSlot?: HTMLDivElement | null;
   onHelpClick: () => void;
   onDocsClick: () => void;
   onFeedbackClick: () => void;
@@ -108,8 +109,7 @@ const HelpCircleIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, width, onResize, collapsed, onToggleCollapse, onHelpClick, onDocsClick, onFeedbackClick }: SidebarProps) {
-  const paneLogo = usePaneLogo();
+export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, width, onResize, collapsed, onToggleCollapse, titleBarControlsSlot, onHelpClick, onDocsClick, onFeedbackClick }: SidebarProps) {
   const hotkeys = useHotkeyStore((s) => s.hotkeys);
   const hotkeyDisplay = useCallback((id: string) => {
     const keys = hotkeys.get(id)?.keys;
@@ -481,6 +481,66 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   }, [compactSessionMenu]);
 
   // Collapsed sidebar view
+  const headerControls = (
+    <>
+      {onToggleCollapse && (
+        <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="bottom">
+          <IconButton
+            onClick={onToggleCollapse}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            size="sm"
+            icon={collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          />
+        </Tooltip>
+      )}
+    <Dropdown
+      trigger={
+        <button
+          ref={resourceMenuButtonRef}
+          className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
+          aria-label="Sidebar menu"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+      }
+      items={[
+        {
+          id: 'help',
+          label: 'Help',
+          icon: HelpCircleIcon,
+          onClick: onHelpClick
+        },
+        {
+          id: 'settings',
+          label: 'Settings',
+          icon: SettingsIcon,
+          onClick: onSettingsClick
+        },
+        {
+          id: 'resources',
+          label: 'Resource Usage',
+          icon: Cpu,
+          onClick: openResourcePopover
+        },
+        {
+          id: 'sort',
+          label: sessionSortAscending ? 'Sort: Oldest first' : 'Sort: Newest first',
+          icon: ArrowUpDown,
+          onClick: toggleSessionSortOrder
+        },
+        {
+          id: 'refresh',
+          label: 'Refresh git status',
+          icon: RefreshCw,
+          onClick: handleRefreshGitStatus
+        }
+      ] satisfies DropdownItem[]}
+      position="bottom-right"
+      width="sm"
+    />
+    </>
+  );
+
   if (collapsed) {
     return (
       <>
@@ -489,10 +549,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           className="pane-sidebar-shell pane-sidebar-shell-collapsed bg-surface-primary text-text-primary h-full flex flex-col flex-shrink-0"
           style={{ width: '48px' }}
         >
-          {/* Logo */}
-          <div className="flex shrink-0 items-center justify-center border-b border-border-primary px-1 py-2">
-            <img src={paneLogo} alt="Pane" className="h-6 w-6" />
-          </div>
+          {titleBarControlsSlot && createPortal(headerControls, titleBarControlsSlot)}
 
           <div className="flex shrink-0 flex-col items-center gap-1 border-b border-border-primary py-2">
             <Tooltip content="Home" side="right">
@@ -735,17 +792,19 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                 <SettingsIcon className="h-4 w-4" />
               </button>
             </Tooltip>
-            <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="right">
-              <button
-                type="button"
-                data-compact-rail-item
-                onClick={onToggleCollapse}
-                aria-label="Expand sidebar"
-                className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
-              >
-                <PanelLeftOpen className="h-4 w-4" />
-              </button>
-            </Tooltip>
+            {!titleBarControlsSlot && (
+              <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="right">
+                <button
+                  type="button"
+                  data-compact-rail-item
+                  onClick={onToggleCollapse}
+                  aria-label="Expand sidebar"
+                  className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+                >
+                  <PanelLeftOpen className="h-4 w-4" />
+                </button>
+              </Tooltip>
+            )}
           </div>
         </div>
 
@@ -811,69 +870,13 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
             </div>
           </div>
         </div>
-        <div className="px-3 py-2 border-b border-border-primary flex items-center justify-between overflow-hidden">
-          <div className="flex items-center space-x-2 min-w-0">
-            <img src={paneLogo} alt="Pane" className="h-6 w-6 flex-shrink-0" />
-            <h1 className="text-xl font-bold truncate">Pane</h1>
-          </div>
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            {onToggleCollapse && (
-              <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="bottom">
-                <IconButton
-                  onClick={onToggleCollapse}
-                  aria-label="Collapse sidebar"
-                  size="md"
-                  icon={<PanelLeftClose className="w-5 h-5" />}
-                />
-              </Tooltip>
-            )}
-            <Dropdown
-              trigger={
-                <button
-                  ref={resourceMenuButtonRef}
-                  className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
-                  aria-label="Sidebar menu"
-                >
-                  <MoreHorizontal size={14} />
-                </button>
-              }
-              items={[
-                {
-                  id: 'help',
-                  label: 'Help',
-                  icon: HelpCircleIcon,
-                  onClick: onHelpClick
-                },
-                {
-                  id: 'settings',
-                  label: 'Settings',
-                  icon: SettingsIcon,
-                  onClick: onSettingsClick
-                },
-                {
-                  id: 'resources',
-                  label: 'Resource Usage',
-                  icon: Cpu,
-                  onClick: openResourcePopover
-                },
-                {
-                  id: 'sort',
-                  label: sessionSortAscending ? 'Sort: Oldest first' : 'Sort: Newest first',
-                  icon: ArrowUpDown,
-                  onClick: toggleSessionSortOrder
-                },
-                {
-                  id: 'refresh',
-                  label: 'Refresh git status',
-                  icon: RefreshCw,
-                  onClick: handleRefreshGitStatus
-                }
-              ] satisfies DropdownItem[]}
-              position="bottom-right"
-              width="sm"
-            />
-          </div>
-        </div>
+        {titleBarControlsSlot
+          ? createPortal(headerControls, titleBarControlsSlot)
+          : (
+            <div className="flex h-8 items-center justify-end gap-0.5 border-b border-border-primary px-1.5">
+              {headerControls}
+            </div>
+          )}
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
           <ProjectSessionList
@@ -901,48 +904,39 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           {/* Archive progress indicator above version */}
           <ArchiveProgress />
 
-          {/* Version display at bottom */}
-          <div className="px-3 py-2 border-t border-border-primary space-y-1.5">
-            <div className="flex items-center justify-center gap-2">
-              <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250}>
-                <button
-                  type="button"
-                  onClick={onRemoteSettingsClick}
-                  aria-label={remoteFooterStatus.ariaLabel}
-                  className="flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors truncate"
-                >
-                  <span className={`h-2 w-2 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
-                  <span className="font-medium">Remote</span>
-                </button>
-              </Tooltip>
+          <div className="flex h-7 items-center justify-center gap-2 border-t border-border-primary px-2 text-[11px] text-text-tertiary">
+            <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250}>
               <button
                 type="button"
-                onClick={onFeedbackClick}
-                className="rounded-full border border-border-primary px-2 py-0.5 text-[11px] font-medium text-text-tertiary transition-colors hover:border-border-secondary hover:bg-surface-hover hover:text-text-secondary focus:outline-none focus:ring-2 focus:ring-interactive"
+                onClick={onRemoteSettingsClick}
+                aria-label={remoteFooterStatus.ariaLabel}
+                className="flex min-w-0 items-center gap-1.5 hover:text-text-secondary truncate"
               >
-                Feedback
+                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
+                <span className="font-medium">Remote</span>
               </button>
-            </div>
+            </Tooltip>
+            <span className="text-border-primary">&middot;</span>
+            <button type="button" onClick={onFeedbackClick} className="hover:text-text-secondary">
+              Feedback
+            </button>
             {version && (
-              <div className="flex items-center justify-center gap-1.5 text-xs text-text-tertiary truncate">
+              <>
+                <span className="text-border-primary">&middot;</span>
                 <button
                   type="button"
-                  className="hover:text-text-secondary transition-colors"
+                  className="truncate hover:text-text-secondary"
                   onClick={onAboutClick}
                   aria-label={`About Pane version ${version}`}
                 >
                   v{version}{worktreeName && ` \u00b7 ${worktreeName}`}{gitCommit && ` \u00b7 ${gitCommit}`}
                 </button>
-                <span className="text-border-primary">&middot;</span>
-                <button
-                  type="button"
-                  className="hover:text-text-secondary transition-colors"
-                  onClick={onDocsClick}
-                >
-                  Docs
-                </button>
-              </div>
+              </>
             )}
+            <span className="text-border-primary">&middot;</span>
+            <button type="button" className="hover:text-text-secondary" onClick={onDocsClick}>
+              Docs
+            </button>
           </div>
         </div>
     </div>
