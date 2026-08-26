@@ -535,7 +535,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           onClick: handleRefreshGitStatus
         }
       ] satisfies DropdownItem[]}
-      position="bottom-right"
+      position="bottom-left"
       width="sm"
     />
     </>

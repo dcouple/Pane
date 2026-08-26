@@ -87,28 +87,23 @@ test.describe('motion', () => {
     expect(panel?.transition).toBe('0s');
   });
 
-  test('a menu grows from the corner it is pinned to', async ({ page }) => {
+  test('the sidebar menu hangs from the left edge of its trigger', async ({ page }) => {
     await openDesktop(page);
 
     await page.getByRole('button', { name: 'Sidebar menu' }).click();
     const menu = page.getByRole('menu');
     await expect(menu).toBeVisible();
 
-    // `position="bottom-right"`: the menu hangs below the trigger with its right
-    // edge aligned to it, so it has to scale out of its own top-right corner.
-    //
-    // Both numbers are read inside the page, and the width comes from
-    // `offsetWidth` rather than `boundingBox()`. The entrance is still scaling
-    // the element at this point, and a bounding box is the *transformed* box —
-    // measuring it mid-animation reports ~96% of the real width, which is what
-    // `transform-origin` will never equal.
-    const { origin, width } = await menu.evaluate((element: HTMLElement) => ({
+    // The trigger sits beside the window controls at the left edge of the
+    // strip, so the menu is anchored by its left edge and stays on screen.
+    const { origin, left } = await menu.evaluate((element: HTMLElement) => ({
       origin: getComputedStyle(element).transformOrigin,
-      width: element.offsetWidth,
+      left: element.getBoundingClientRect().left,
     }));
     const [originX, originY] = origin.split(' ').map(Number.parseFloat);
     expect(originY).toBe(0);
-    expect(originX).toBeCloseTo(width, 0);
+    expect(originX).toBe(0);
+    expect(left).toBeGreaterThanOrEqual(8);
   });
 
   test('buttons do not scale or ease under the pointer', async ({ page }) => {

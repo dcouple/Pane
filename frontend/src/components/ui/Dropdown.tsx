@@ -94,7 +94,7 @@ export function Dropdown({
   style,
 }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [actualPosition, setActualPosition] = useState<'bottom-left' | 'bottom-right' | 'top-left' | 'top-right'>('bottom-right');
+  const [, setActualPosition] = useState<'bottom-left' | 'bottom-right' | 'top-left' | 'top-right'>('bottom-right');
   const [activeIndex, setActiveIndex] = useState(-1);
   const menuId = useId();
   const portalContainer = usePortalContainer();
@@ -244,12 +244,19 @@ export function Dropdown({
         pos.maxHeight = viewportHeight - rect.bottom - gap - edgePadding;
       }
       pos.overflowY = 'auto';
-      // Align right edge to trigger right edge, but keep on screen
-      const rightEdge = viewportWidth - rect.right;
-      if (rightEdge < 0) {
-        pos.left = Math.max(8, rect.left);
+      // Horizontal anchor. `*-left` positions hang the menu from the trigger's
+      // left edge, `*-right` from its right edge; either way the menu flips to
+      // the side that keeps it inside the viewport (a trigger beside the window
+      // controls has no room to its left).
+      const menuWidth = contentRef.current?.offsetWidth ?? 224;
+      const wantsLeft = position === 'bottom-left' || position === 'top-left';
+      const fitsLeftAligned = rect.left + menuWidth <= viewportWidth - 8;
+      const fitsRightAligned = rect.right - menuWidth >= 8;
+      const alignLeft = wantsLeft ? (fitsLeftAligned || !fitsRightAligned) : (!fitsRightAligned && fitsLeftAligned);
+      if (alignLeft) {
+        pos.left = Math.max(8, Math.min(rect.left, viewportWidth - 8 - menuWidth));
       } else {
-        pos.right = Math.max(8, rightEdge);
+        pos.right = Math.max(8, viewportWidth - rect.right);
       }
       // When width="full", match the trigger's width instead of using CSS w-full
       // (portal renders to body, so w-full = viewport width, not trigger width)
@@ -338,11 +345,8 @@ export function Dropdown({
           onKeyDown={handleMenuKeyDown}
           className={cn(
             'z-[10000] pointer-events-auto',
-            'bg-surface-primary rounded-md shadow-dropdown-elevated',
-            'border border-border-subtle/60',
-            'backdrop-blur-sm',
-            actualPosition.includes('top') ? 'animate-dropdown-enter-up' : 'animate-dropdown-enter',
-            'ring-1 ring-border-secondary/30 dark:ring-white/5',
+            'bg-surface-primary rounded-md shadow-dropdown',
+            'border border-border-primary',
             'overflow-hidden',
             width !== 'full' && widthClasses[width],
             menuClassName
@@ -355,10 +359,9 @@ export function Dropdown({
             // from that corner is what makes the menu look like it came from the
             // button you pressed instead of appearing over it.
             transformOrigin: `${fixedStyle.bottom !== undefined ? 'bottom' : 'top'} ${fixedStyle.right !== undefined ? 'right' : 'left'}`,
-            boxShadow: 'var(--shadow-dropdown-elevated), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
           }}
         >
-            <div className="p-1.5 max-h-[70vh] overflow-y-auto">
+            <div className="py-1 max-h-[70vh] overflow-y-auto">
               {items.map((item, index) => {
                 const Icon = item.icon;
                 const isSelectable = selectedId !== undefined;
@@ -385,16 +388,10 @@ export function Dropdown({
                       onMouseEnter={() => !item.disabled && setActiveIndex(index)}
                       disabled={item.disabled}
                       className={cn(
-                        'w-full text-left px-3 py-2.5 rounded-sm',
-                        // Colours only, and fast. A menu row is highlighted by
-                        // running the pointer down the list, so anything slower
-                        // than about 100ms leaves the highlight visibly trailing
-                        // the cursor. `transition-all` also animated layout and
-                        // shadow properties off the compositor on every row the
-                        // pointer crossed.
-                        'transition-[color,background-color,border-color,box-shadow] duration-100 ease-out flex items-center gap-3',
-                        'focus:outline-none focus:ring-2 focus:ring-focus-ring-subtle',
-                        'min-h-[2.5rem] group relative',
+                        'w-full text-left px-2.5 py-1',
+                        'flex items-center gap-2',
+                        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus-ring-subtle',
+                        'min-h-[1.75rem] group relative',
                         item.disabled && 'opacity-50 cursor-not-allowed',
                         !item.disabled && !isSelected && variantStyles[variant],
                         isSelected && selectedVariantStyles[variant],
@@ -402,25 +399,24 @@ export function Dropdown({
                       )}
                     >
                       {Icon && (
-                        <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
+                        <div className="flex items-center justify-center w-4 h-4 flex-shrink-0">
                           <Icon className={cn(
-                            'w-4 h-4 transition-colors duration-100 ease-out',
+                            'w-3.5 h-3.5',
                             'stroke-[1.5]',
                             item.iconColor || 'text-current'
                           )} />
                         </div>
                       )}
 
-                      <div className="flex-1 min-w-0 py-0.5">
+                      <div className="flex-1 min-w-0">
                         <div className={cn(
-                          'text-sm font-medium leading-tight',
-                          'transition-colors duration-100 ease-out',
+                          'text-[13px] leading-tight truncate',
                           'group-hover:text-inherit'
                         )}>
                           {item.label}
                         </div>
                         {item.description && (
-                          <div className="text-xs text-text-tertiary mt-1 leading-tight transition-colors duration-100 ease-out">
+                          <div className="text-[11px] text-text-tertiary mt-0.5 leading-tight">
                             {item.description}
                           </div>
                         )}
@@ -479,21 +475,21 @@ export function DropdownMenuItem({
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-2.5 rounded-sm',
-        'text-text-secondary hover:bg-interactive/10 hover:text-text-primary hover:shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]',
-        'transition-[color,background-color,box-shadow] duration-100 ease-out flex items-center gap-3',
-        'focus:outline-none focus:ring-2 focus:ring-focus-ring-subtle',
-        'min-h-[2.5rem] group', // Better touch target and consistent height
+        'w-full text-left px-2.5 py-1',
+        'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+        'flex items-center gap-2',
+        'focus:outline-none focus:ring-2 focus:ring-inset focus:ring-focus-ring-subtle',
+        'min-h-[1.75rem] group',
         className
       )}
       {...props}
     >
       {Icon && (
-        <div className="flex items-center justify-center w-5 h-5 flex-shrink-0">
-          <Icon className="w-4 h-4 text-text-tertiary group-hover:text-current stroke-[1.5] transition-colors duration-100 ease-out" />
+        <div className="flex items-center justify-center w-4 h-4 flex-shrink-0">
+          <Icon className="w-3.5 h-3.5 text-text-tertiary group-hover:text-current stroke-[1.5]" />
         </div>
       )}
-      <span className="text-sm font-medium group-hover:text-inherit transition-colors duration-100 ease-out">{label}</span>
+      <span className="text-[13px] group-hover:text-inherit">{label}</span>
     </button>
   );
 }
