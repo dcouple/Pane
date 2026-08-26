@@ -932,11 +932,11 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         </div>
 
         {/* Add repository + settings, like Superset's sidebar foot */}
-        <div className="flex h-8 flex-shrink-0 items-center border-t border-border-primary pl-1 pr-1.5">
+        <div className="flex h-11 flex-shrink-0 items-center gap-1 border-t border-border-primary pl-1.5 pr-2">
           <button
             type="button"
             onClick={() => addRepositoryRef.current?.()}
-            className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded px-2 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+            className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
           >
             <Plus className="h-4 w-4 flex-shrink-0" />
             <span className="truncate">Add repository</span>

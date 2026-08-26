@@ -394,7 +394,7 @@ export function ProjectSessionList({
         )}
 
         {/* Projects */}
-        {projects.map(project => {
+        {projects.map((project, projectIndex) => {
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
@@ -429,7 +429,7 @@ export function ProjectSessionList({
           ];
 
           return (
-            <div key={project.id} className="first:mt-1">
+            <div key={project.id} className={cn(projectIndex > 0 && "mt-1 border-t border-border-primary pt-1")}>
               {/* Project header */}
               <div
                 className={cn(
@@ -495,6 +495,18 @@ export function ProjectSessionList({
                   aria-label={`New pane in ${project.name}`}
                 >
                   <Plus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleProject(project.id);
+                  }}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="relative z-10 inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
+                >
+                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
               </div>
 
