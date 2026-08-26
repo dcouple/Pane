@@ -241,6 +241,11 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     handleSidebarSectionExpandedChange('pinned', expanded);
   }, [handleSidebarSectionExpandedChange]);
 
+  const addRepositoryRef = useRef<(() => void) | null>(null);
+  const registerAddRepository = useCallback((open: () => void) => {
+    addRepositoryRef.current = open;
+  }, []);
+
   const handleRepositoriesSectionExpandedChange = useCallback((expanded: boolean) => {
     handleSidebarSectionExpandedChange('repositories', expanded);
   }, [handleSidebarSectionExpandedChange]);
@@ -885,9 +890,8 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
             onProjectsRefresh={loadProjects}
             sessionSortAscending={sessionSortAscending}
             pinnedSectionExpanded={sidebarSectionExpansion.pinned}
-            repositoriesSectionExpanded={sidebarSectionExpansion.repositories}
             onPinnedSectionExpandedChange={handlePinnedSectionExpandedChange}
-            onRepositoriesSectionExpandedChange={handleRepositoriesSectionExpandedChange}
+            onRegisterAddRepository={registerAddRepository}
             showRemoteDesktopLink={showRemoteDesktopLink}
             onRemoteDesktopClick={handleOpenRemoteDesktop}
             remoteDesktopTooltip={REMOTE_DESKTOP_TOOLTIP}
@@ -897,6 +901,25 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         {/* Archived sessions - pinned above bottom */}
         <div className="flex-shrink-0">
           <ArchivedSessions />
+        </div>
+
+        {/* Add repository + settings, like Superset's sidebar foot */}
+        <div className="flex h-8 flex-shrink-0 items-center border-t border-border-primary pl-1 pr-1.5">
+          <button
+            type="button"
+            onClick={() => addRepositoryRef.current?.()}
+            className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded px-2 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary"
+          >
+            <Plus className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">Add repository</span>
+          </button>
+          <IconButton
+            aria-label="Settings"
+            onClick={onSettingsClick}
+            size="sm"
+            variant="ghost"
+            icon={<SettingsIcon className="h-4 w-4" />}
+          />
         </div>
 
         {/* Bottom section - always visible */}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, BarChart3 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, BarChart3 } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
@@ -39,9 +39,9 @@ interface ProjectSessionListProps {
   onProjectsRefresh: () => void;
   sessionSortAscending: boolean;
   pinnedSectionExpanded: boolean;
-  repositoriesSectionExpanded: boolean;
   onPinnedSectionExpandedChange: (expanded: boolean) => void;
-  onRepositoriesSectionExpandedChange: (expanded: boolean) => void;
+  /** Lets the sidebar footer's "Add repository" open this list's dialog. */
+  onRegisterAddRepository?: (open: () => void) => void;
   showRemoteDesktopLink?: boolean;
   onRemoteDesktopClick?: () => void;
   remoteDesktopTooltip?: string;
@@ -53,9 +53,8 @@ export function ProjectSessionList({
   onProjectsRefresh,
   sessionSortAscending,
   pinnedSectionExpanded,
-  repositoriesSectionExpanded,
   onPinnedSectionExpandedChange,
-  onRepositoriesSectionExpandedChange,
+  onRegisterAddRepository,
   showRemoteDesktopLink = false,
   onRemoteDesktopClick,
   remoteDesktopTooltip,
@@ -67,6 +66,9 @@ export function ProjectSessionList({
 
   // Add project dialog state
   const [showAddProjectDialog, setShowAddProjectDialog] = useState(false);
+  useEffect(() => {
+    onRegisterAddRepository?.(() => setShowAddProjectDialog(true));
+  }, [onRegisterAddRepository]);
 
   // Drag-to-reorder state
   const [dragProjectId, setDragProjectId] = useState<number | null>(null);
@@ -351,6 +353,8 @@ export function ProjectSessionList({
           </Tooltip>
         )}
 
+        <div className="mx-2 my-2 border-t border-border-primary" aria-hidden="true" />
+
         {pinnedSessions.length > 0 && (
           <>
             <div className={SIDEBAR_SECTION_ROW}>
@@ -389,32 +393,8 @@ export function ProjectSessionList({
           </>
         )}
 
-        <div className={SIDEBAR_SECTION_ROW}>
-          <button
-            type="button"
-            onClick={() => onRepositoriesSectionExpandedChange(!repositoriesSectionExpanded)}
-            className="group/section flex min-w-0 flex-1 items-center justify-between gap-2 text-left text-sm text-text-tertiary hover:text-text-primary focus-visible:text-text-primary transition-colors"
-          >
-            <span className={SIDEBAR_SECTION_LABEL}>Repositories</span>
-            <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
-              {repositoriesSectionExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5 text-current" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5 text-current" />
-              )}
-            </span>
-          </button>
-          <button
-            onClick={() => setShowAddProjectDialog(true)}
-            className="inline-flex items-center justify-center rounded-md p-1 text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors flex-shrink-0"
-            title="New repository"
-          >
-            <FolderPlus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
         {/* Projects */}
-        {repositoriesSectionExpanded && projects.map(project => {
+        {projects.map(project => {
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
