@@ -238,10 +238,13 @@ test('Home and About are axe-clean and the modal contains and restores focus', a
   await openDesktop(page);
   await expectNoAxeViolations(page);
 
-  const aboutButton = page.getByRole('button', { name: /About Pane version/i });
-  await expect(aboutButton).toBeVisible();
-  await aboutButton.focus();
-  await aboutButton.click();
+  // About lives in the sidebar's ⋯ menu; the menu trigger is what focus returns to.
+  const menuButton = page.getByRole('button', { name: 'Sidebar menu' });
+  await menuButton.focus();
+  await menuButton.click();
+  const aboutItem = page.getByRole('menuitem', { name: /About Pane/i });
+  await expect(aboutItem).toBeVisible();
+  await aboutItem.click();
 
   const dialog = page.getByRole('dialog', { name: 'About Pane' });
   await expect(dialog).toBeVisible();
@@ -260,7 +263,7 @@ test('Home and About are axe-clean and the modal contains and restores focus', a
   await expectNoAxeViolations(page);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
-  await expect(aboutButton).toBeFocused();
+  await expect(menuButton).toBeFocused();
 
   const themeTrigger = page.getByRole('button', { name: /\(sharp\)|\(rounded\)|OLED|Dusk|Forge|Ember|Aurora|Night Owl|Terracotta|Synthwave|Acid Terminal|Tokyo Rain|Folio|Newsprint|Walnut|Amber CRT|Teletype|Dot Matrix|Haar|Abyss|Understory|Colorblind Safe|Low Fatigue|High Legibility/ }).last();
   await themeTrigger.focus();

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, BarChart3, ChevronDown, ChevronRight, Cpu, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
+import { Archive, ArrowUpDown, BarChart3, BookOpen, ChevronDown, ChevronRight, Cpu, Info, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
@@ -538,6 +538,34 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           label: 'Refresh git status',
           icon: RefreshCw,
           onClick: handleRefreshGitStatus
+        },
+        {
+          id: 'remote',
+          label: 'Remote',
+          description: remoteFooterStatus.title,
+          icon: Monitor,
+          showDot: true,
+          dotColor: remoteFooterStatus.dotClassName,
+          onClick: onRemoteSettingsClick
+        },
+        {
+          id: 'feedback',
+          label: 'Feedback',
+          icon: MessageSquare,
+          onClick: onFeedbackClick
+        },
+        {
+          id: 'docs',
+          label: 'Docs',
+          icon: BookOpen,
+          onClick: onDocsClick
+        },
+        {
+          id: 'about',
+          label: version ? `About Pane · v${version}` : 'About Pane',
+          description: [worktreeName, gitCommit].filter(Boolean).join(' · ') || undefined,
+          icon: Info,
+          onClick: onAboutClick
         }
       ] satisfies DropdownItem[]}
       position="bottom-left"
@@ -927,40 +955,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           {/* Archive progress indicator above version */}
           <ArchiveProgress />
 
-          <div className="flex h-7 items-center justify-center gap-2 border-t border-border-primary px-2 text-[11px] text-text-tertiary">
-            <Tooltip content={remoteFooterTooltip} side="top" interactive delay={250}>
-              <button
-                type="button"
-                onClick={onRemoteSettingsClick}
-                aria-label={remoteFooterStatus.ariaLabel}
-                className="flex min-w-0 items-center gap-1.5 hover:text-text-secondary truncate"
-              >
-                <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${remoteFooterStatus.dotClassName}`} />
-                <span className="font-medium">Remote</span>
-              </button>
-            </Tooltip>
-            <span className="text-border-primary">&middot;</span>
-            <button type="button" onClick={onFeedbackClick} className="hover:text-text-secondary">
-              Feedback
-            </button>
-            {version && (
-              <>
-                <span className="text-border-primary">&middot;</span>
-                <button
-                  type="button"
-                  className="truncate hover:text-text-secondary"
-                  onClick={onAboutClick}
-                  aria-label={`About Pane version ${version}`}
-                >
-                  v{version}{worktreeName && ` \u00b7 ${worktreeName}`}{gitCommit && ` \u00b7 ${gitCommit}`}
-                </button>
-              </>
-            )}
-            <span className="text-border-primary">&middot;</span>
-            <button type="button" className="hover:text-text-secondary" onClick={onDocsClick}>
-              Docs
-            </button>
-          </div>
         </div>
     </div>
 

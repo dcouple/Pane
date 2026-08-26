@@ -62,8 +62,8 @@ test.describe('Feedback entry points', () => {
     await bootApp(page);
     await shot(page, testInfo, '01-expanded-sidebar');
 
-    const pill = page.getByRole('button', { name: 'Feedback', exact: true });
-    await pill.click();
+    await page.getByRole('button', { name: 'Sidebar menu' }).click();
+    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Send feedback' });
     await expect(dialog).toBeVisible();
     // The header owns the only close control; Modal's own corner button stays off so the
@@ -92,12 +92,13 @@ test.describe('Feedback entry points', () => {
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    await expect(pill).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Sidebar menu' })).toBeFocused();
   });
 
   test('failure keeps the text and offers the prefilled fallback', async ({ page }, testInfo) => {
     await bootApp(page, { feedbackOutcome: 'failure' });
-    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+    await page.getByRole('button', { name: 'Sidebar menu' }).click();
+    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Send feedback' });
     await dialog.locator('textarea').fill('Pane will not start after the update.');
     await dialog.getByRole('button', { name: 'Submit feedback' }).click();
