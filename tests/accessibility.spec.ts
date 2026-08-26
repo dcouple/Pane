@@ -69,6 +69,18 @@ const panels = [
       position: 2,
     },
   },
+  {
+    id: 'accessibility-logs',
+    sessionId: session.id,
+    type: 'logs',
+    title: 'Logs',
+    state: { isActive: false, hasBeenViewed: true },
+    metadata: {
+      createdAt: new Date(0).toISOString(),
+      lastActiveAt: new Date(0).toISOString(),
+      position: 9,
+    },
+  },
 ];
 
 const remoteSession = {
@@ -324,23 +336,26 @@ test('seeded pane exposes separate compound actions and arrow-keyed panel tabs',
   await expect(paneButton).not.toHaveAttribute('aria-current', 'page');
   await paneButton.click();
 
-  const explorerTab = page.getByRole('tab', { name: /^Explorer/ }).first();
+  // Explorer lives in the right inspector now, not the tab strip.
+  await expect(page.getByRole('tablist', { name: 'Inspector' }).getByRole('tab', { name: 'Files' })).toBeVisible();
   const dashboardTab = page.getByRole('tab', { name: /^Dashboard/ }).first();
-  await expect(explorerTab).toHaveAttribute('aria-selected', 'true');
-  await explorerTab.focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(dashboardTab).toBeFocused();
+  const logsTab = page.getByRole('tab', { name: /^Logs/ }).first();
+  await dashboardTab.click();
   await expect(dashboardTab).toHaveAttribute('aria-selected', 'true');
+  await dashboardTab.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(logsTab).toBeFocused();
+  await expect(logsTab).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Tab');
-  const closeDashboard = page.getByRole('button', { name: 'Close Dashboard' });
-  await expect(closeDashboard).toBeFocused();
+  const closeLogs = page.getByRole('button', { name: 'Close Logs' });
+  await expect(closeLogs).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(dashboardTab).toHaveCount(0);
-  await expect(explorerTab).toBeFocused();
+  await expect(logsTab).toHaveCount(0);
+  await expect(dashboardTab).toBeFocused();
 
-  const explorerTabId = await explorerTab.getAttribute('id');
+  const explorerTabId = await dashboardTab.getAttribute('id');
   expect(explorerTabId).not.toBeNull();
-  await explorerTab.dblclick();
+  await dashboardTab.dblclick();
   const panelTablist = page.locator('[role="tablist"][aria-label="Panel tabs"]').first();
   await expect.poll(async () => (
     (await panelTablist.getAttribute('aria-owns'))?.split(' ').includes(explorerTabId!) ?? false

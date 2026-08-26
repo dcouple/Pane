@@ -118,6 +118,7 @@ export interface PanelGroupViewProps {
   onDragEnd?: () => void;
   onStripDrop?: (panelId: string, insertIndex: number) => void;
   getPanelTabPresentation?: PanelTabPresentationResolver;
+  emptyState?: React.ReactNode;
 }
 
 export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
@@ -139,6 +140,7 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
   onDragEnd,
   onStripDrop,
   getPanelTabPresentation,
+  emptyState,
 }) => {
   const handleMouseDownCapture = useCallback(() => {
     onFocusGroup(group.id);
@@ -260,13 +262,13 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
         )}
 
         {/* Empty state */}
-        {orderedPanels.length === 0 && (
+        {orderedPanels.length === 0 && (emptyState ?? (
           <div className="flex-1 flex items-center justify-center text-text-secondary h-full">
             <div className="text-center p-4">
               <p className="text-sm">Empty group</p>
             </div>
           </div>
-        )}
+        ))}
       </div>
     </div>
   );

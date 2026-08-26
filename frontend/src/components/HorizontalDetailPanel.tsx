@@ -7,6 +7,9 @@ import { Dropdown, DropdownMenuItem } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
 import { GitHistoryGraph } from './GitHistoryGraph';
 import { useScrollSurface } from '../hooks/useScrollSurface';
+import { InspectorTabs, type InspectorTab } from './InspectorTabs';
+import { PanelContainer } from './panels/PanelContainer';
+import type { ToolPanel } from '../../../shared/types/panels';
 
 interface HorizontalDetailPanelProps {
   height?: number;
@@ -17,6 +20,12 @@ interface HorizontalDetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
+  inspectorTab?: InspectorTab;
+  onInspectorTabChange?: (tab: InspectorTab) => void;
+  filesPanel?: ToolPanel;
+  changesPanel?: ToolPanel;
+  changesCount?: number;
+  isMainRepo?: boolean;
 }
 
 export function HorizontalDetailPanel({
@@ -28,7 +37,15 @@ export function HorizontalDetailPanel({
   onSwapLayout,
   terminalShortcuts,
   onCommitClick,
+  inspectorTab = 'details',
+  onInspectorTabChange,
+  filesPanel,
+  changesPanel,
+  changesCount,
+  isMainRepo = false,
 }: HorizontalDetailPanelProps) {
+  const hostedPanel = inspectorTab === 'files' ? filesPanel : inspectorTab === 'changes' ? changesPanel : undefined;
+  const showDetails = inspectorTab === 'details' || !hostedPanel;
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
   const detailPanelRef = React.useRef<HTMLDivElement>(null);
@@ -89,6 +106,27 @@ export function HorizontalDetailPanel({
       )}
 
       <div className="pane-detail-panel-inner flex flex-col h-full min-h-0">
+        {onInspectorTabChange && !isCollapsed && (
+          <InspectorTabs
+            tab={showDetails ? 'details' : inspectorTab}
+            onTabChange={onInspectorTabChange}
+            filesPanel={filesPanel}
+            changesPanel={changesPanel}
+            changesCount={changesCount}
+          />
+        )}
+        {[filesPanel, changesPanel].map(panel => panel && (
+          <div
+            key={panel.id}
+            className="pane-inspector-host flex-1 min-h-0 relative"
+            style={{ display: panel === hostedPanel && !showDetails && !isCollapsed ? 'flex' : 'none' }}
+            aria-hidden={panel !== hostedPanel || showDetails || isCollapsed}
+            inert={panel !== hostedPanel || showDetails || isCollapsed ? true : undefined}
+          >
+            <PanelContainer panel={panel} isActive={!immersiveMode && panel === hostedPanel && !showDetails && !isCollapsed} isMainRepo={isMainRepo} autoFocus={false} />
+          </div>
+        ))}
+        {(showDetails || isCollapsed) && (<>
         <div className="flex items-start flex-shrink-0">
           <div className="flex items-center flex-wrap flex-1 min-w-0 min-h-[32px] px-3 gap-x-2 gap-y-1 py-1">
             <button
@@ -194,6 +232,7 @@ export function HorizontalDetailPanel({
             />
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

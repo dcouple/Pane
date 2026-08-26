@@ -259,8 +259,8 @@ async function openSession(page: Page, theme: string, opts: { highContrast?: boo
   const expandRepo = page.getByRole('button', { name: /^Expand repository pane$/ });
   if (await expandRepo.isVisible().catch(() => false)) await expandRepo.click();
   await page.getByRole('button', { name: session.name, exact: true }).click();
-  await expect(page.getByRole('tab', { name: 'Review', exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Review', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Changes', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Changes', exact: true }).click();
 
   const expandTerminal = page.getByRole('button', { name: 'Expand terminal', exact: true });
   if (await expandTerminal.isVisible().catch(() => false)) await expandTerminal.click();

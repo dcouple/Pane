@@ -71,6 +71,8 @@ export interface SplitLayoutProps {
   onDragEnd?: () => void;
   onStripDrop?: (groupId: string, panelId: string, insertIndex: number) => void;
   getPanelTabPresentation?: PanelTabPresentationResolver;
+  /** Rendered in a group that has no working panels. */
+  emptyState?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +97,7 @@ export const SplitLayout: React.FC<SplitLayoutProps> = React.memo(({
   onDragEnd,
   onStripDrop,
   getPanelTabPresentation,
+  emptyState,
 }) => {
   // Inject allotment theme CSS on first render
   React.useEffect(() => { injectTheme(); }, []);
@@ -190,6 +193,7 @@ export const SplitLayout: React.FC<SplitLayoutProps> = React.memo(({
           onDragEnd={onDragEnd}
           onStripDrop={onStripDrop ? (panelId, idx) => onStripDrop(node.id, panelId, idx) : undefined}
           getPanelTabPresentation={getPanelTabPresentation}
+              emptyState={emptyState}
         />
       );
     }

@@ -84,36 +84,23 @@ separately from the design work.
   row (`SessionView.tsx` ~L1735–1758) — both replaced by step 6. Keep an
   opt-in "Show preset bar" setting for people who like the chips.
 
-## Step 5 — Right-side inspector (Explorer / Review) — OPEN DECISION
+## Step 5 — Right-side inspector (Explorer / Review) — DONE (option A)
 
-Status: not started. Investigation found the plan's premise incomplete:
-Explorer and Review are *permanent panels* in the tab/layout system
-(split groups, drag/drop, `⌘⇧1-9` tab hotkeys, immersive mode is keyed to
-them, and `review-availability.spec` / `accessibility.spec` assert
-`role=tab name=Review`), and the session already has a right-side
-**Details** panel (branch, git actions, history; toggled from the tab bar).
+The existing right Details panel is the inspector: **Details · Files ·
+Changes** (`InspectorTabs.tsx`). Files hosts the Explorer panel, Changes
+hosts the Review panel with a file-count badge; both stay mounted so their
+state survives tab switches. Explorer/Review leave the tab strip, the
+strip's `⌘⇧1-9` indexes and split groups only see working panels, and a
+persisted active Explorer/Review from before the move just selects the
+matching inspector tab. Immersive mode is no longer keyed to them. The
+rail defaults to 360px (240–720) and is shown by default; inside it the
+Explorer and Review switch to a stacked layout below 600px via a container
+query. Applied to both `SessionView` (worktrees) and `ProjectView` (main
+repo).
 
-Two viable designs — pick one before building:
-
-A. **Fold into Details (recommended).** The existing right panel becomes
-   the inspector with tabs `Details · Files · Changes`; Explorer and
-   Review render inside it (their `PanelContainer`s hosted there instead
-   of the editor stage) and leave the tab strip. One right rail, matches
-   Superset's "Changes / Files" panel, keeps the Details toggle and
-   hotkey. Cost: 2–3 days — layout tree, focus/active-panel handling,
-   immersive mode, ~6 specs.
-B. **Second right rail.** Leave Details as is and add a Files/Changes
-   rail. Cheaper (~1 day) but two right-side panels compete for width and
-   the tab strip still carries the permanent tabs unless also refactored.
-
-
-- Move Explorer and Review out of the tool tabs into a collapsible right rail
-  hosted where `pane-terminal-rail` lives today (`SessionView.tsx:1775`):
-  tabs **Files · Changes · Review**, with a diff-count badge on Changes.
-- Resizable (existing 1px handle), remembers width, ⌘⇧E toggle, closes in
-  immersive mode.
-- Terminal rail stays bottom/right per current setting; inspector and
-  terminal rail coexist in a vertical split.
+Follow-up: clicking a file in Files still opens it in the Explorer's own
+editor inside the rail. Opening it as a center editor tab needs a new
+`editor` panel type (FileEditor is a 1,900-line tree+Monaco unit today).
 
 ## Step 6 — `+` tab button and Superset-style popover
 

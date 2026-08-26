@@ -9,6 +9,9 @@ import { Button } from './ui/Button';
 import { Dropdown, DropdownMenuItem } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
 import { useScrollSurface } from '../hooks/useScrollSurface';
+import { InspectorTabs, type InspectorTab } from './InspectorTabs';
+import { PanelContainer } from './panels/PanelContainer';
+import type { ToolPanel } from '../../../shared/types/panels';
 
 interface DetailPanelProps {
   isVisible: boolean;
@@ -23,6 +26,13 @@ interface DetailPanelProps {
   onSwapLayout?: () => void;
   terminalShortcuts?: React.ReactNode;
   onCommitClick?: (hash: string) => void;
+  /** Inspector tab state; Files and Changes host the Explorer and Review panels. */
+  inspectorTab?: InspectorTab;
+  onInspectorTabChange?: (tab: InspectorTab) => void;
+  filesPanel?: ToolPanel;
+  changesPanel?: ToolPanel;
+  changesCount?: number;
+  isMainRepo?: boolean;
 }
 
 const sidebarButtonClass = 'w-full justify-start text-sm !px-2';
@@ -53,6 +63,12 @@ export function DetailPanel({
   onSwapLayout,
   terminalShortcuts,
   onCommitClick,
+  inspectorTab = 'details',
+  onInspectorTabChange,
+  filesPanel,
+  changesPanel,
+  changesCount,
+  isMainRepo = false,
 }: DetailPanelProps) {
   const sessionContext = useSession();
   const immersiveMode = useNavigationStore(state => state.immersiveMode);
@@ -90,9 +106,18 @@ export function DetailPanel({
         onSwapLayout={onSwapLayout}
         terminalShortcuts={terminalShortcuts}
         onCommitClick={onCommitClick}
+        inspectorTab={inspectorTab}
+        onInspectorTabChange={onInspectorTabChange}
+        filesPanel={filesPanel}
+        changesPanel={changesPanel}
+        changesCount={changesCount}
+        isMainRepo={isMainRepo}
       />
     );
   }
+
+  const hostedPanel = inspectorTab === 'files' ? filesPanel : inspectorTab === 'changes' ? changesPanel : undefined;
+  const showDetails = inspectorTab === 'details' || !hostedPanel;
 
   const {
     session,
@@ -119,6 +144,29 @@ export function DetailPanel({
       </div>
 
       <div className="pane-detail-panel-inner flex flex-col h-full min-h-0">
+        {onInspectorTabChange && (
+          <InspectorTabs
+            tab={showDetails ? 'details' : inspectorTab}
+            onTabChange={onInspectorTabChange}
+            filesPanel={filesPanel}
+            changesPanel={changesPanel}
+            changesCount={changesCount}
+          />
+        )}
+        {/* Both hosted panels stay mounted so their state (expanded diffs,
+            open file, scroll) survives switching tabs; only one is shown. */}
+        {[filesPanel, changesPanel].map(panel => panel && (
+          <div
+            key={panel.id}
+            className="pane-inspector-host flex-1 min-h-0 relative"
+            style={{ display: panel === hostedPanel && !showDetails ? 'flex' : 'none' }}
+            aria-hidden={panel !== hostedPanel || showDetails}
+            inert={panel !== hostedPanel || showDetails ? true : undefined}
+          >
+            <PanelContainer panel={panel} isActive={isVisible && !immersiveMode && panel === hostedPanel && !showDetails} isMainRepo={isMainRepo} autoFocus={false} />
+          </div>
+        ))}
+        {showDetails && (<>
         <div className="flex-shrink-0 overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border-primary min-w-0">
             <GitBranch className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
@@ -255,6 +303,7 @@ export function DetailPanel({
             </div>
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

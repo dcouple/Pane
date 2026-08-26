@@ -616,8 +616,11 @@ async function createWindow() {
   if (isDevelopment) {
     const devPort = process.env.VITE_PORT || process.env.PORT || '4521';
     await mainWindow.loadURL(`http://localhost:${devPort}`);
-    mainWindow.webContents.openDevTools();
-    
+    // DevTools stay closed unless asked for: PANE_OPEN_DEVTOOLS=1 pnpm dev.
+    if (process.env.PANE_OPEN_DEVTOOLS === '1') {
+      mainWindow.webContents.openDevTools();
+    }
+
   } else {
     // In production, use app.getAppPath() to get the root directory
     // This works correctly whether the app is packaged in ASAR or not

@@ -635,10 +635,10 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
         </div>
       </div>
 
-      <div className="flex-1 flex min-h-0">
+      <div className="pane-review-split flex-1 flex min-h-0">
         {/* Commits selection sidebar */}
             <div
-              className="border-r border-border-primary bg-surface-secondary overflow-hidden flex flex-col flex-shrink-0"
+              className="pane-review-list border-r border-border-primary bg-surface-secondary overflow-hidden flex flex-col flex-shrink-0"
               style={{ width: sidebarWidth }}
             >
               {/* Execution list */}
@@ -659,7 +659,7 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
 
             {/* Resize handle */}
             <div
-              className="w-1 cursor-col-resize flex-shrink-0 bg-transparent"
+              className="pane-review-handle w-1 cursor-col-resize flex-shrink-0 bg-transparent"
               onMouseDown={handleResizeStart}
               title="Drag to resize sidebar"
             />

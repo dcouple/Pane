@@ -1704,9 +1704,9 @@ export function FileEditor({
   }, [selectedFile?.path]); // Run cleanup when file changes
 
   return (
-    <div className="h-full w-full min-w-0 flex overflow-hidden">
+    <div className="pane-explorer-split h-full w-full min-w-0 flex overflow-hidden" data-empty={selectedFile ? undefined : 'true'}>
       <div 
-        className="bg-surface-secondary border-r border-border-primary relative flex-shrink-0 max-w-[45%]"
+        className="pane-explorer-tree bg-surface-secondary border-r border-border-primary relative flex-shrink-0 max-w-[45%]"
         style={{ width: `${fileTreeWidth}px` }}
       >
         <HeadlessFileTree
@@ -1732,7 +1732,7 @@ export function FileEditor({
           <div className="absolute -left-2 -right-2 top-0 bottom-0" />
         </div>
       </div>
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+      <div className="pane-explorer-editor flex-1 min-w-0 flex flex-col overflow-hidden">
         {selectedFile ? (
           <>
             <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border-primary">

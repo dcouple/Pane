@@ -57,6 +57,7 @@ import { useConfigStore } from '../stores/configStore';
 import { cycleIndex } from '../utils/arrayUtils';
 import { formatKeyDisplay } from '../utils/hotkeyUtils';
 import { Kbd } from './ui/Kbd';
+import type { InspectorTab } from './InspectorTabs';
 import { useErrorStore } from '../stores/errorStore';
 import ProjectSettings from './ProjectSettings';
 
@@ -396,12 +397,20 @@ export const SessionView = memo(() => {
     [sessionPanels]
   );
 
-  // Non-terminal panels for the tab bar (exclude the default terminal that's pinned to the bottom)
+  // Explorer and Review live in the right inspector (Files / Changes), not
+  // in the tab strip.
+  const filesPanel = useMemo(() => sessionPanels.find(p => p.type === 'explorer'), [sessionPanels]);
+  const changesPanel = useMemo(() => sessionPanels.find(p => p.type === 'diff'), [sessionPanels]);
+  const isInspectorPanel = useCallback(
+    (p: ToolPanel) => p.type === 'explorer' || p.type === 'diff',
+    [],
+  );
+
+  // Working panels for the tab bar: exclude the inspector panels and the
+  // default terminal that's pinned to the bottom.
   const tabBarPanels = useMemo(
-    () => defaultTerminalPanel
-      ? sessionPanels.filter(p => p.id !== defaultTerminalPanel.id)
-      : sessionPanels,
-    [sessionPanels, defaultTerminalPanel]
+    () => sessionPanels.filter(p => !isInspectorPanel(p) && p.id !== defaultTerminalPanel?.id),
+    [sessionPanels, defaultTerminalPanel, isInspectorPanel]
   );
 
   // Sort tab bar panels same as PanelTabBar: explorer first, diff second, then by position
@@ -573,6 +582,35 @@ export const SessionView = memo(() => {
     [activeSession, setActivePanelInStore, addToHistory, handleGroupPanelSelect]
   );
 
+  // --- Inspector (right rail: Details / Files / Changes) ---
+  const [detailVisible, setDetailVisible] = useState(() => {
+    const stored = localStorage.getItem('pane-detail-panel-visible');
+    return stored !== null ? stored === 'true' : true;
+  });
+  useEffect(() => {
+    localStorage.setItem('pane-detail-panel-visible', String(detailVisible));
+  }, [detailVisible]);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>(() => {
+    const stored = localStorage.getItem('pane-inspector-tab');
+    return stored === 'files' || stored === 'changes' ? stored : 'details';
+  });
+  useEffect(() => {
+    localStorage.setItem('pane-inspector-tab', inspectorTab);
+  }, [inspectorTab]);
+  const [isDetailCollapsed, setIsDetailCollapsed] = useState(() => {
+    const stored = localStorage.getItem('pane-detail-collapsed');
+    return stored === null ? false : stored === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('pane-detail-collapsed', String(isDetailCollapsed));
+  }, [isDetailCollapsed]);
+  /** Show the inspector on the given tab, whichever layout is active. */
+  const openInspector = useCallback((tab: InspectorTab) => {
+    setInspectorTab(tab);
+    setDetailVisible(true);
+    setIsDetailCollapsed(false);
+  }, []);
+
   const handleCommitClick = useCallback(
     async (commitHash: string) => {
       if (!activeSession || sessionPanels.length === 0) return;
@@ -583,14 +621,14 @@ export const SessionView = memo(() => {
       // module-level variable when it mounts after the panel switch.
       setPendingViewCommit(activeSession.id, commitHash);
       requestLocalReviewMode(activeSession.id);
-      await handlePanelSelect(diffPanel);
+      openInspector('changes');
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('diff:view-commit', {
           detail: { sessionId: activeSession.id, commitHash },
         }));
       }, 0);
     },
-    [activeSession, sessionPanels, handlePanelSelect]
+    [activeSession, sessionPanels, openInspector]
   );
 
   // Tab cycling: navigates between panels in the focused group using
@@ -1089,6 +1127,50 @@ export const SessionView = memo(() => {
     setDropZones(new Map());
   }, [primaryGroupId, primaryGroupNode, activeSession, isSplitLayout, topBarPanels, applyLayout]);
 
+  const hotkeys = useHotkeyStore((s) => s.hotkeys);
+  const hotkeyDisplay = useCallback((id: string) => {
+    const keys = hotkeys.get(id)?.keys;
+    return keys ? formatKeyDisplay(keys) : null;
+  }, [hotkeys]);
+
+  // The empty stage is the "+" menu laid out inline: one click (or the
+  // shortcut beside it) from a running tool, instead of a placeholder.
+  const emptyStage = (
+    <div className="flex h-full flex-1 items-center justify-center">
+      <div className="w-64">
+        <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Open</div>
+        {[
+          { key: 'terminal', label: 'Terminal', icon: <Terminal className="h-3.5 w-3.5" />, hotkeyId: 'add-tool-terminal', onClick: () => handlePanelCreate('terminal') },
+          ...agentPresets.map(preset => ({
+            key: preset.id,
+            label: preset.title,
+            icon: getCliBrandIcon(preset.iconKey, 'h-3.5 w-3.5'),
+            hotkeyId: preset.hotkeyId,
+            onClick: () => handlePanelCreate('terminal', { initialCommand: preset.command, title: preset.title }),
+          })),
+          ...customCommands.map((cmd, index) => ({
+            key: `custom-${index}`,
+            label: cmd.name,
+            icon: getCliBrandIcon(cmd.command, 'h-3.5 w-3.5') || <TerminalSquare className="h-3.5 w-3.5" />,
+            hotkeyId: `add-tool-custom-${index}`,
+            onClick: () => handlePanelCreate('terminal', { initialCommand: cmd.command, title: cmd.name }),
+          })),
+        ].map(item => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={item.onClick}
+            className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+          >
+            <span className="flex-shrink-0 text-text-tertiary">{item.icon}</span>
+            <span className="truncate">{item.label}</span>
+            {hotkeyDisplay(item.hotkeyId) && <Kbd variant="inline" className="ml-auto pl-3">{hotkeyDisplay(item.hotkeyId)}</Kbd>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
   // --- Editor stage element (shared by both layouts) ---
   const editorStageElement = useMemo(() => {
     if (!sessionLayout || !activeSession) return null;
@@ -1111,23 +1193,19 @@ export const SessionView = memo(() => {
         onDragEnd={handleDragEnd}
         onStripDrop={handleStripDrop}
         getPanelTabPresentation={getPanelTabPresentation}
+        emptyState={emptyStage}
       />
     );
   }, [
     sessionLayout, activeSession, tabBarPanels, focusedGroupId,
     handleSizesChange, handleGroupPanelSelect, handlePanelClose, handleFocusGroup,
     isTabDragging, draggedPanelId, dropZones, handleDropZoneChange,
-    handleDropTab, handleDragStart, handleDragEnd, handleStripDrop, getPanelTabPresentation,
+    handleDropTab, handleDragStart, handleDragEnd, handleStripDrop, getPanelTabPresentation, emptyStage,
   ]);
 
   // Dynamic shortcuts for custom commands (mod+shift+5, 6, 7, ...)
   const registerHotkey = useHotkeyStore((s) => s.register);
   const unregisterHotkey = useHotkeyStore((s) => s.unregister);
-  const hotkeys = useHotkeyStore((s) => s.hotkeys);
-  const hotkeyDisplay = useCallback((id: string) => {
-    const keys = hotkeys.get(id)?.keys;
-    return keys ? formatKeyDisplay(keys) : null;
-  }, [hotkeys]);
   const handlePanelCreateRef = useCommittedRef(handlePanelCreate);
   const isInSessionViewRef = useCommittedRef(isInSessionView);
 
@@ -1301,22 +1379,11 @@ export const SessionView = memo(() => {
     }
   }, [activeSession, isRemoteMode]);
 
-  // Detail panel state
-  const [detailVisible, setDetailVisible] = useState(() => {
-    const stored = localStorage.getItem('pane-detail-panel-visible');
-    return stored !== null ? stored === 'true' : false;
-  });
-
-  // Persist detail panel visibility
-  useEffect(() => {
-    localStorage.setItem('pane-detail-panel-visible', String(detailVisible));
-  }, [detailVisible]);
-
   // Right-side resizable
   const { width: detailWidth, startResize: startDetailResize } = useResizable({
-    defaultWidth: 200,
-    minWidth: 140,
-    maxWidth: 350,
+    defaultWidth: 360,
+    minWidth: 240,
+    maxWidth: 720,
     storageKey: 'pane-detail-panel-width',
     side: 'right'
   });
@@ -1335,7 +1402,9 @@ export const SessionView = memo(() => {
   }, []);
 
   // Focused tool panels reserve the right/detail rail for the main workspace.
-  const isImmersivePanel = currentActivePanel ? currentActivePanel.type === 'diff' || currentActivePanel.type === 'explorer' : false;
+  // Explorer and Review now live in the inspector, so no panel reserves the
+  // right rail any more; immersive mode stays off.
+  const isImmersivePanel = false;
   const setImmersiveMode = useNavigationStore(s => s.setImmersiveMode);
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
 
@@ -1345,6 +1414,34 @@ export const SessionView = memo(() => {
       setImmersiveMode(false);
     };
   }, [isImmersivePanel, setImmersiveMode]);
+
+  // A persisted active panel that is now an inspector panel (Explorer /
+  // Review from before they moved to the rail) opens the inspector on that
+  // tab and hands the stage to the first working panel.
+  const staleActiveHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeSession || !currentActivePanel || !isInspectorPanel(currentActivePanel)) return;
+    const key = `${activeSession.id}:${currentActivePanel.id}`;
+    if (staleActiveHandledRef.current === key) return;
+    staleActiveHandledRef.current = key;
+    // Switch the inspector to the matching tab but respect the user's choice
+    // of whether the rail is shown at all.
+    setInspectorTab(currentActivePanel.type === 'diff' ? 'changes' : 'files');
+    const fallback = tabBarPanels[0];
+    if (fallback) void handlePanelSelect(fallback);
+  }, [activeSession, currentActivePanel, isInspectorPanel, tabBarPanels, handlePanelSelect]);
+
+  useEffect(() => {
+    if (!sessionLayout) return;
+    const inspectorIds = new Set(sessionPanels.filter(isInspectorPanel).map(p => p.id));
+    const working = new Set(tabBarPanels.map(p => p.id));
+    for (const group of allGroups(sessionLayout.root)) {
+      if (!group.activePanelId || !inspectorIds.has(group.activePanelId)) continue;
+      const nextId = group.panelIds.find(id => working.has(id));
+      const next = nextId ? tabBarPanels.find(p => p.id === nextId) : undefined;
+      if (next) handleGroupPanelSelect(group.id, next);
+    }
+  }, [sessionLayout, sessionPanels, tabBarPanels, isInspectorPanel, handleGroupPanelSelect]);
 
   // Auto-create terminal panel for existing sessions that don't have one
   // Unless the user has explicitly closed it previously
@@ -1399,15 +1496,6 @@ export const SessionView = memo(() => {
     maxHeight: 400,
     storageKey: 'pane-bottom-detail-height',
   });
-
-  const [isDetailCollapsed, setIsDetailCollapsed] = useState(() => {
-    const stored = localStorage.getItem('pane-detail-collapsed');
-    return stored === null ? false : stored === 'true';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('pane-detail-collapsed', String(isDetailCollapsed));
-  }, [isDetailCollapsed]);
 
   const toggleDetailCollapse = useCallback(() => {
     setIsDetailCollapsed(prev => !prev);
@@ -1664,44 +1752,6 @@ export const SessionView = memo(() => {
     return <HomePage />;
   }
   
-  // The empty stage is the "+" menu laid out inline: one click (or the
-  // shortcut beside it) from a running tool, instead of a placeholder.
-  const emptyStage = (
-    <div className="flex h-full flex-1 items-center justify-center">
-      <div className="w-64">
-        <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Open</div>
-        {[
-          { key: 'terminal', label: 'Terminal', icon: <Terminal className="h-3.5 w-3.5" />, hotkeyId: 'add-tool-terminal', onClick: () => handlePanelCreate('terminal') },
-          ...agentPresets.map(preset => ({
-            key: preset.id,
-            label: preset.title,
-            icon: getCliBrandIcon(preset.iconKey, 'h-3.5 w-3.5'),
-            hotkeyId: preset.hotkeyId,
-            onClick: () => handlePanelCreate('terminal', { initialCommand: preset.command, title: preset.title }),
-          })),
-          ...customCommands.map((cmd, index) => ({
-            key: `custom-${index}`,
-            label: cmd.name,
-            icon: getCliBrandIcon(cmd.command, 'h-3.5 w-3.5') || <TerminalSquare className="h-3.5 w-3.5" />,
-            hotkeyId: `add-tool-custom-${index}`,
-            onClick: () => handlePanelCreate('terminal', { initialCommand: cmd.command, title: cmd.name }),
-          })),
-        ].map(item => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={item.onClick}
-            className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
-          >
-            <span className="flex-shrink-0 text-text-tertiary">{item.icon}</span>
-            <span className="truncate">{item.label}</span>
-            {hotkeyDisplay(item.hotkeyId) && <Kbd variant="inline" className="ml-auto pl-3">{hotkeyDisplay(item.hotkeyId)}</Kbd>}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
     <div className="pane-session-shell flex-1 flex flex-col overflow-hidden bg-bg-primary">
       <LiveRegion mode={activeSession.status === 'error' ? 'assertive' : 'polite'}>
@@ -1758,6 +1808,12 @@ export const SessionView = memo(() => {
                   onToggleCollapse={toggleDetailCollapse}
                   onSwapLayout={toggleLayoutSwap}
                   onCommitClick={handleCommitClick}
+                  inspectorTab={inspectorTab}
+                  onInspectorTabChange={openInspector}
+                  filesPanel={filesPanel}
+                  changesPanel={changesPanel}
+                  changesCount={activeSession.gitStatus?.filesChanged || undefined}
+                  isMainRepo={!!activeSession.isMainRepo}
                 />
               </div>
 
@@ -1863,6 +1919,12 @@ export const SessionView = memo(() => {
                 mergeError={hook.mergeError}
                 onSwapLayout={toggleLayoutSwap}
                 onCommitClick={handleCommitClick}
+                inspectorTab={inspectorTab}
+                onInspectorTabChange={openInspector}
+                filesPanel={filesPanel}
+                changesPanel={changesPanel}
+                changesCount={activeSession.gitStatus?.filesChanged || undefined}
+                isMainRepo={!!activeSession.isMainRepo}
               />
             </>
           )}
