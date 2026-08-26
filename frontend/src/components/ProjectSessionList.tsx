@@ -306,7 +306,7 @@ export function ProjectSessionList({
             SIDEBAR_ROW_BASE,
             SIDEBAR_ROW_GAP,
             SIDEBAR_ROW_PADDING,
-            'py-2 text-sm hover:bg-surface-hover hover:text-text-primary',
+            'h-7 text-[13px] hover:bg-surface-hover hover:text-text-primary',
             activeView === 'pane-chat'
               ? 'bg-surface-hover text-text-primary'
               : 'text-text-secondary',
