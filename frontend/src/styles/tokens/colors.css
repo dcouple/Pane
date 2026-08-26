@@ -852,7 +852,7 @@
   --color-bg-chrome: var(--color-bg-primary);
   --color-bg-editor: var(--color-bg-primary);
   --tab-indicator-color: var(--aurora-accent-400);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal - only bg and black need to change */
   --color-terminal-bg: rgb(0 0 0);
@@ -1260,7 +1260,7 @@
 
   /* Tab indicator — UNDERLINE mode for Forge */
   --tab-indicator-color: var(--forge-blue6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — IntelliJ dark scheme */
   --color-terminal-bg: var(--forge-gray1);
@@ -1397,7 +1397,7 @@
   --color-scrollbar-thumb-hover: #9e7ac8;
 
   --tab-indicator-color: #ff6ac1;
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   --color-terminal-bg: #17111f;
   --color-terminal-fg: #f7eaff;
@@ -1690,7 +1690,7 @@
 
   /* Tab indicator — UNDERLINE mode for Night Owl */
   --tab-indicator-color: var(--owl-rose6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — warm palette, zero blue */
   --color-terminal-bg: var(--owl-950);
@@ -1848,7 +1848,7 @@
 
   /* Tab indicator — UNDERLINE mode */
   --tab-indicator-color: var(--owl-rose6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — warm palette, zero blue */
   --color-terminal-bg: rgb(0 0 0);
@@ -2006,7 +2006,7 @@
 
   /* Tab indicator — UNDERLINE mode for Terracotta */
   --tab-indicator-color: var(--terra-accent6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — warm earth palette, zero blue */
   --color-terminal-bg: var(--terra-950);
@@ -2164,7 +2164,7 @@
 
   /* Tab indicator — UNDERLINE mode */
   --tab-indicator-color: var(--syn-accent6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — every ANSI color ≥ 4.5:1 on --syn-950 */
   --color-terminal-bg: var(--syn-950);
@@ -2323,7 +2323,7 @@
 
   /* Tab indicator — UNDERLINE mode */
   --tab-indicator-color: var(--acid-accent6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — every ANSI color ≥ 4.5:1 on --acid-950 */
   --color-terminal-bg: var(--acid-950);
@@ -2482,7 +2482,7 @@
 
   /* Tab indicator — UNDERLINE mode */
   --tab-indicator-color: var(--rain-accent6);
-  --tab-indicator-height: 4px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — every ANSI color ≥ 4.5:1 on --rain-950 */
   --color-terminal-bg: var(--rain-950);
@@ -3124,7 +3124,7 @@
 
   /* Tab indicator — amber underline */
   --tab-indicator-color: var(--crt-amber);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — amber phosphor on glass; blue/magenta/cyan collapse into the warm ramp */
   --color-terminal-bg: var(--crt-950);
@@ -3275,7 +3275,7 @@
 
   /* Tab indicator — orange underline */
   --tab-indicator-color: var(--tty-orange-600);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — ink on paper (light-theme convention: black = paper, white = ink) */
   --color-terminal-bg: #f3ecdc;
@@ -3434,7 +3434,7 @@
 
   /* Tab indicator — green underline */
   --tab-indicator-color: var(--lcd-green-2);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — LCD greens; blue/cyan lean teal-mint, magenta is a desaturated sage-lilac, red is the hot accent */
   --color-terminal-bg: var(--lcd-950);
@@ -3754,7 +3754,7 @@
 
   /* Tab indicator — UNDERLINE mode (glow line) */
   --tab-indicator-color: var(--abyss-glow-500);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — trench black, sea-life ANSI (all >= 3:1 on bg) */
   --color-terminal-bg: var(--abyss-950);
@@ -3913,7 +3913,7 @@
 
   /* Tab indicator — UNDERLINE mode (lichen line) */
   --tab-indicator-color: var(--under-lichen-500);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Terminal — moss floor, woodland ANSI (all >= 3:1 on bg) */
   --color-terminal-bg: var(--under-950);
@@ -4091,7 +4091,7 @@
 
   /* Tab indicator — underline in sky blue */
   --tab-indicator-color: var(--okabe-sky);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Diff view (git-diff-view) — bluish green (add) vs vermillion (remove) mixed
      over the editor bg at 26% / 40% / 52%. 26% is the lowest content tint whose
@@ -4261,7 +4261,7 @@
 
   /* Tab indicator — gold underline */
   --tab-indicator-color: var(--lf-gold);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Diff view — sage (add) vs soft brick (remove) over the editor bg */
   --color-diff-add-bg: #3a3d2d;
@@ -4428,7 +4428,7 @@
 
   /* Tab indicator — blue underline */
   --tab-indicator-color: var(--hl-blue);
-  --tab-indicator-height: 3px;
+  --tab-indicator-height: 2px;
 
   /* Diff view — stronger tints than the light default; gutter numbers stay ≥ 7:1 */
   --color-diff-add-bg: #d3f2da;

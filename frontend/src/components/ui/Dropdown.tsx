@@ -427,7 +427,7 @@ export function Dropdown({
                       </div>
 
                       {item.shortcut && (
-                        <Kbd variant="muted" className="shrink-0">
+                        <Kbd variant="inline" className="shrink-0 pl-3">
                           {formatKeyDisplay(item.shortcut)}
                         </Kbd>
                       )}

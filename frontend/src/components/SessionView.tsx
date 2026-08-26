@@ -1733,46 +1733,6 @@ export const SessionView = memo(() => {
                   onToggleCollapse={toggleDetailCollapse}
                   onSwapLayout={toggleLayoutSwap}
                   onCommitClick={handleCommitClick}
-                  terminalShortcuts={
-                    <>
-                      {agentPresets.map(preset => (
-                        <Tooltip key={preset.id} content={hotkeyDisplay(preset.hotkeyId) ? <Kbd>{hotkeyDisplay(preset.hotkeyId)}</Kbd> : undefined} side="top">
-                          <button
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                            onClick={() => handlePanelCreate('terminal', {
-                              initialCommand: preset.command,
-                              title: preset.title
-                            })}
-                          >
-                            {getCliBrandIcon(preset.iconKey, 'w-3 h-3')}
-                            {preset.title.split(' ')[0]}
-                          </button>
-                        </Tooltip>
-                      ))}
-                      {customCommands.map((cmd, index) => {
-                        const shortcutDisplay = hotkeyDisplay(`add-tool-custom-${index}`);
-                        const pill = (
-                          <button
-                            key={`shortcut-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium text-text-tertiary border border-border-primary hover:bg-surface-hover hover:text-text-secondary transition-colors whitespace-nowrap flex-shrink-0"
-                            onClick={() => handlePanelCreate('terminal', {
-                              initialCommand: cmd.command,
-                              title: cmd.name
-                            })}
-                            title={cmd.command}
-                          >
-                            {getCliBrandIcon(cmd.command, 'w-3 h-3') || <TerminalSquare className="w-3 h-3" />}
-                            {cmd.name.length > 13 ? cmd.name.slice(0, 13) + '…' : cmd.name}
-                          </button>
-                        );
-                        return shortcutDisplay ? (
-                          <Tooltip key={`shortcut-${index}`} content={<Kbd>{shortcutDisplay}</Kbd>} side="top">
-                            {pill}
-                          </Tooltip>
-                        ) : pill;
-                      })}
-                    </>
-                  }
                 />
               </div>
 

@@ -1,11 +1,16 @@
 import { cn } from '../../utils/cn';
+import { isMac } from '../../utils/platformUtils';
 
 interface KbdProps {
   children: React.ReactNode;
   /** xs = compact (palette footer), sm = default (tooltips/inline), md = larger (help dialog) */
   size?: 'xs' | 'sm' | 'md';
-  /** muted adds text-text-tertiary color */
-  variant?: 'default' | 'muted';
+  /**
+   * muted adds text-text-tertiary color. inline drops the key-cap boxes and
+   * prints the chord as plain muted text ("⌘⌥1", "Ctrl+Alt+1") — the form for
+   * menus, tooltips and anywhere a shortcut sits beside a label.
+   */
+  variant?: 'default' | 'muted' | 'inline';
   className?: string;
 }
 
@@ -31,6 +36,23 @@ export function Kbd({ children, size = 'sm', variant = 'default', className }: K
   const text = children instanceof Object ? null : String(children ?? '').trim();
   const segments = text ? text.split(' + ').filter(Boolean) : null;
   const hasSegments = !!segments && segments.length > 1;
+
+  if (variant === 'inline') {
+    const label = segments
+      ? (isMac() ? segments.join('') : segments.join('+'))
+      : children;
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center whitespace-nowrap align-middle text-[11px] leading-none tabular-nums text-text-tertiary',
+          isMac() && 'tracking-[0.08em]',
+          className,
+        )}
+      >
+        {label}
+      </span>
+    );
+  }
 
   return (
     <span

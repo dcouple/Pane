@@ -314,7 +314,9 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
       ref={stripRef}
       className={cn(
         "flex items-center overflow-x-auto scrollbar-none min-w-0",
-        compact ? "max-w-full" : "flex-1",
+        // The strip hugs its tabs so the "+" sits right after the last one;
+        // while a tab is being dragged it grows to offer the trailing drop zone.
+        compact ? "max-w-full" : isTabDragging ? "flex-1" : "flex-initial max-w-full",
       )}
       onDragLeave={handleStripDragLeave}
     >
@@ -346,7 +348,7 @@ export const PanelTabStrip: React.FC<PanelTabStripProps> = React.memo(({
           <span className="flex flex-col items-start gap-1">
             <span className="text-text-secondary">{presentation?.disabledReason ?? displayTitle}</span>
             {shortcutHint && (
-              <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{shortcutHint}</Kbd>
+              <Kbd variant="inline">{shortcutHint}</Kbd>
             )}
           </span>
         ) : null;
