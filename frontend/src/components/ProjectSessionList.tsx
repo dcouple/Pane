@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useId } from 'react';
-import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, FolderPlus, GitBranch, MoreHorizontal, Home, Archive, ArchiveRestore, Trash2, GitPullRequest, Pin, Monitor, MessageSquare, Settings } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { useSessionStore } from '../stores/sessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { SETTINGS_PREFERENCE_KEYS, normalizeSidebarPaneRowLayout, type SidebarPaneRowLayout } from '../types/settings';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { AddProjectDialog } from './AddProjectDialog';
+import ProjectSettings from './ProjectSettings';
 import { Dropdown } from './ui/Dropdown';
 import { Tooltip } from './ui/Tooltip';
 import { StatusAccentBar } from './ui/StatusAccentBar';
@@ -62,6 +63,8 @@ export function ProjectSessionList({
 }: ProjectSessionListProps) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createForProject, setCreateForProject] = useState<Project | null>(null);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
+  const [showProjectSettings, setShowProjectSettings] = useState(false);
   const [sidebarPaneRowLayout, setSidebarPaneRowLayout] = useState<SidebarPaneRowLayout>('single');
   const knownSessionIdsRef = useRef<Set<string> | null>(null);
 
@@ -184,6 +187,23 @@ export function ProjectSessionList({
   const handleNewSession = (project: Project) => {
     setCreateForProject(project);
     setShowCreateDialog(true);
+  };
+
+  const handleOpenProjectSettings = (project: Project) => {
+    setSettingsProject(project);
+    setShowProjectSettings(true);
+  };
+
+  const handleProjectUpdated = () => {
+    loadProjects();
+    window.dispatchEvent(new Event('project-changed'));
+  };
+
+  const handleProjectSettingsDeleted = () => {
+    setShowProjectSettings(false);
+    setSettingsProject(null);
+    loadProjects();
+    window.dispatchEvent(new Event('project-changed'));
   };
 
   // Session operations
@@ -414,6 +434,12 @@ export function ProjectSessionList({
               onClick: () => navigateToProject(project.id),
             },
             {
+              id: 'project-settings',
+              label: 'Project Settings',
+              icon: Settings,
+              onClick: () => handleOpenProjectSettings(project),
+            },
+            {
               id: 'delete',
               label: 'Delete Project',
               icon: Trash2,
@@ -535,6 +561,19 @@ export function ProjectSessionList({
         isOpen={showAddProjectDialog}
         onClose={() => setShowAddProjectDialog(false)}
       />
+
+      {settingsProject && (
+        <ProjectSettings
+          project={settingsProject}
+          isOpen={showProjectSettings}
+          onClose={() => {
+            setShowProjectSettings(false);
+            setSettingsProject(null);
+          }}
+          onUpdate={handleProjectUpdated}
+          onDelete={handleProjectSettingsDeleted}
+        />
+      )}
     </>
   );
 }
