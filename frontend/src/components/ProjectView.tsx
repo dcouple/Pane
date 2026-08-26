@@ -15,6 +15,8 @@ import { useResizable } from '../hooks/useResizable';
 import { CommitMessageDialog } from './session/CommitMessageDialog';
 import { SetTrackingBranchDialog } from './session/SetTrackingBranchDialog';
 import { useMainRepoGitActions } from '../hooks/useMainRepoGitActions';
+import { useProjectViewActionsStore } from '../stores/projectViewActionsStore';
+import { PANEL_CAPABILITIES } from '../../../shared/types/panels';
 import type { ProjectEnvironment } from '../../../shared/types/panels';
 
 interface ProjectViewProps {
@@ -194,9 +196,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     async (panel: ToolPanel) => {
       if (!mainRepoSessionId) return;
 
-      // Find next panel to activate
-      const panelIndex = sessionPanels.findIndex(p => p.id === panel.id);
-      const nextPanel = sessionPanels[panelIndex + 1] || sessionPanels[panelIndex - 1];
+      // Activate the neighbouring working tab (never an inspector panel).
+      const panelIndex = workingPanels.findIndex(p => p.id === panel.id);
+      const nextPanel = workingPanels[panelIndex + 1] || workingPanels[panelIndex - 1];
 
       // Remove from store first for immediate UI update
       removePanel(mainRepoSessionId, panel.id);
@@ -210,7 +212,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // Delete on backend
       await panelApi.deletePanel(panel.id);
     },
-    [mainRepoSessionId, sessionPanels, removePanel, setActivePanelInStore]
+    [mainRepoSessionId, workingPanels, removePanel, setActivePanelInStore]
   );
 
   const handlePanelCreate = useCallback(
@@ -242,6 +244,31 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     [mainRepoSessionId, addPanel, setActivePanelInStore]
   );
   
+  // Expose this view's tab / inspector actions to the global hotkeys.
+  const setProjectViewActions = useProjectViewActionsStore((state) => state.setActions);
+  useEffect(() => {
+    setProjectViewActions({
+      toggleDetail: () => setDetailVisible((v) => !v),
+      showInspector: (tab) => { setInspectorTab(tab); setDetailVisible(true); },
+      addTerminal: () => { void handlePanelCreate('terminal'); },
+      tabCount: () => workingPanels.length,
+      selectTab: (index) => { const panel = workingPanels[index]; if (panel) handlePanelSelect(panel); },
+      cycleTab: (direction) => {
+        if (workingPanels.length < 2) return;
+        const current = workingPanels.findIndex((p) => p.id === currentActivePanel?.id);
+        const next = direction === 'next'
+          ? (current + 1) % workingPanels.length
+          : (current - 1 + workingPanels.length) % workingPanels.length;
+        handlePanelSelect(workingPanels[next]);
+      },
+      canCloseActiveTab: () => !!currentActivePanel
+        && !PANEL_CAPABILITIES[currentActivePanel.type]?.permanent
+        && !currentActivePanel.metadata?.permanent,
+      closeActiveTab: () => { if (currentActivePanel) handlePanelClose(currentActivePanel); },
+    });
+    return () => setProjectViewActions(null);
+  }, [setProjectViewActions, workingPanels, currentActivePanel, handlePanelCreate, handlePanelSelect, handlePanelClose]);
+
   // Get or create main repo session when panels are needed
   useEffect(() => {
     const requestGeneration = ++sessionRequestGeneration.current;

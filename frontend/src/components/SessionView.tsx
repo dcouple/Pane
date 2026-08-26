@@ -21,6 +21,7 @@ import { API } from '../utils/api';
 import { useResizable } from '../hooks/useResizable';
 import { useResizableHeight } from '../hooks/useResizableHeight';
 import { usePanelStore } from '../stores/panelStore';
+import { useProjectViewActionsStore } from '../stores/projectViewActionsStore';
 import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/pendingViewCommit';
 import { requestLocalReviewMode } from './panels/diff/reviewModePreference';
@@ -66,6 +67,11 @@ function pickDefaultPanel(panelList: ToolPanel[], hasReviewPr: boolean): ToolPan
     || panelList.find(p => p.type === 'explorer')
     || panelList.find(p => p.type !== 'diff')
     || panelList[0];
+}
+
+/** Explorer and Review render in the inspector rail, never on the stage. */
+function isInspectorPanelType(type: ToolPanel['type']): boolean {
+  return type === 'explorer' || type === 'diff';
 }
 
 export const SessionView = memo(() => {
@@ -254,8 +260,10 @@ export const SessionView = memo(() => {
 
         // --- Layout load + reconcile ---
         // The pinned terminal (first terminal) is excluded from the layout tree
+        // and so are the inspector panels (Explorer / Review), which never
+        // sit on the stage — otherwise a close could hand the group to one.
         const pinned = loadedPanels.find(p => p.type === 'terminal');
-        const livePanels = pinned ? loadedPanels.filter(p => p.id !== pinned.id) : loadedPanels;
+        const livePanels = loadedPanels.filter(p => p.id !== pinned?.id && !isInspectorPanelType(p.type));
 
         // Sort for initial layout creation (explorer first, diff second, then position)
         const typeOrder = (type: string) => {
@@ -277,7 +285,8 @@ export const SessionView = memo(() => {
           // current store adopts them as orphans instead of dropping them.
           const nowPanels = usePanelStore.getState().panels[sid] || [];
           const pinnedNow = nowPanels.find(p => p.type === 'terminal');
-          const liveIdsNow = (pinnedNow ? nowPanels.filter(p => p.id !== pinnedNow.id) : nowPanels)
+          const liveIdsNow = nowPanels
+            .filter(p => p.id !== pinnedNow?.id && !isInspectorPanelType(p.type))
             .map(p => p.id);
           // Treat unknown future layout versions as no stored layout rather
           // than reconciling a shape this build doesn't understand.
@@ -329,6 +338,7 @@ export const SessionView = memo(() => {
           if (pinnedTerminal && panel.id === pinnedTerminal.id) {
             return;
           }
+          if (isInspectorPanelType(panel.type)) return;
 
           // Add the new panel to the layout (into the focused group, falling
           // back to the primary group if focus is stale). addPanelToGroup is
@@ -634,7 +644,17 @@ export const SessionView = memo(() => {
   // Tab cycling: navigates between panels in the focused group using
   // keyboard shortcuts. Supports wrap-around (last → first). Only enabled
   // when there are 2+ panels. Uses focusedGroupPanels (layout order).
+  // Main-repo panes render ProjectView, which owns its own tabs and inspector;
+  // the hotkeys below act on it through this bridge instead of this view's state.
+  const isMainRepoPane = !!activeSession?.isMainRepo;
+  const projectActions = useCallback(
+    () => (isMainRepoPane ? useProjectViewActionsStore.getState().actions : null),
+    [isMainRepoPane],
+  );
+
   const cycleTab = useCallback((direction: 'next' | 'prev') => {
+    const bridged = projectActions();
+    if (bridged) { bridged.cycleTab(direction); return; }
     if (!activeSession || focusedGroupPanels.length < 2) return;
 
     const currentIndex = focusedGroupPanels.findIndex(
@@ -653,7 +673,7 @@ export const SessionView = memo(() => {
     label: 'Previous Tab',
     keys: 'mod+a',
     category: 'tabs',
-    enabled: () => focusedGroupPanels.length > 1,
+    enabled: () => (projectActions()?.tabCount() ?? focusedGroupPanels.length) > 1,
     action: () => cycleTab('prev'),
     showInPalette: true,
   });
@@ -663,7 +683,7 @@ export const SessionView = memo(() => {
     label: 'Next Tab',
     keys: 'mod+d',
     category: 'tabs',
-    enabled: () => focusedGroupPanels.length > 1,
+    enabled: () => (projectActions()?.tabCount() ?? focusedGroupPanels.length) > 1,
     action: () => cycleTab('next'),
     showInPalette: true,
   });
@@ -675,19 +695,20 @@ export const SessionView = memo(() => {
     const name = p.type === 'diff' ? 'Review' : p.title;
     return `Switch to ${name}`;
   };
-  useHotkey({ id: 'panel-tab-1', label: panelLabel(0), keys: 'mod+shift+1', category: 'tabs', enabled: () => !!focusedGroupPanels[0], action: () => { const p = focusedGroupPanels[0]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-2', label: panelLabel(1), keys: 'mod+shift+2', category: 'tabs', enabled: () => !!focusedGroupPanels[1], action: () => { const p = focusedGroupPanels[1]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-3', label: panelLabel(2), keys: 'mod+shift+3', category: 'tabs', enabled: () => !!focusedGroupPanels[2], action: () => { const p = focusedGroupPanels[2]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-4', label: panelLabel(3), keys: 'mod+shift+4', category: 'tabs', enabled: () => !!focusedGroupPanels[3], action: () => { const p = focusedGroupPanels[3]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-5', label: panelLabel(4), keys: 'mod+shift+5', category: 'tabs', enabled: () => !!focusedGroupPanels[4], action: () => { const p = focusedGroupPanels[4]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-6', label: panelLabel(5), keys: 'mod+shift+6', category: 'tabs', enabled: () => !!focusedGroupPanels[5], action: () => { const p = focusedGroupPanels[5]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-7', label: panelLabel(6), keys: 'mod+shift+7', category: 'tabs', enabled: () => !!focusedGroupPanels[6], action: () => { const p = focusedGroupPanels[6]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-8', label: panelLabel(7), keys: 'mod+shift+8', category: 'tabs', enabled: () => !!focusedGroupPanels[7], action: () => { const p = focusedGroupPanels[7]; if (p) handlePanelSelect(p); } });
-  useHotkey({ id: 'panel-tab-9', label: panelLabel(8), keys: 'mod+shift+9', category: 'tabs', enabled: () => !!focusedGroupPanels[8], action: () => { const p = focusedGroupPanels[8]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-1', label: panelLabel(0), keys: 'mod+shift+1', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 0 || !!focusedGroupPanels[0], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(0); return; } const p = focusedGroupPanels[0]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-2', label: panelLabel(1), keys: 'mod+shift+2', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 1 || !!focusedGroupPanels[1], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(1); return; } const p = focusedGroupPanels[1]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-3', label: panelLabel(2), keys: 'mod+shift+3', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 2 || !!focusedGroupPanels[2], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(2); return; } const p = focusedGroupPanels[2]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-4', label: panelLabel(3), keys: 'mod+shift+4', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 3 || !!focusedGroupPanels[3], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(3); return; } const p = focusedGroupPanels[3]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-5', label: panelLabel(4), keys: 'mod+shift+5', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 4 || !!focusedGroupPanels[4], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(4); return; } const p = focusedGroupPanels[4]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-6', label: panelLabel(5), keys: 'mod+shift+6', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 5 || !!focusedGroupPanels[5], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(5); return; } const p = focusedGroupPanels[5]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-7', label: panelLabel(6), keys: 'mod+shift+7', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 6 || !!focusedGroupPanels[6], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(6); return; } const p = focusedGroupPanels[6]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-8', label: panelLabel(7), keys: 'mod+shift+8', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 7 || !!focusedGroupPanels[7], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(7); return; } const p = focusedGroupPanels[7]; if (p) handlePanelSelect(p); } });
+  useHotkey({ id: 'panel-tab-9', label: panelLabel(8), keys: 'mod+shift+9', category: 'tabs', enabled: () => (projectActions()?.tabCount() ?? 0) > 8 || !!focusedGroupPanels[8], action: () => { const bridged = projectActions(); if (bridged) { bridged.selectTab(8); return; } const p = focusedGroupPanels[8]; if (p) handlePanelSelect(p); } });
 
   // --- Add Tool commands (palette-only, no keybindings) ---
   // Only enabled in session view (not project view) to prevent hidden panel mutations
-  const isInSessionView = !!activeSession && activeView === 'sessions';
+  // Worktree panes are the 'sessions' view; a main-repo pane is 'project'.
+  const isInSessionView = !!activeSession && (activeView === 'sessions' || activeView === 'project');
 
   useHotkey({
     id: 'add-tool-terminal',
@@ -695,25 +716,29 @@ export const SessionView = memo(() => {
     keys: 'mod+alt+1',
     category: 'tools',
     enabled: () => isInSessionView,
-    action: () => handlePanelCreate('terminal'),
+    action: () => { const bridged = projectActions(); if (bridged) bridged.addTerminal(); else void handlePanelCreate('terminal'); },
   });
 
   useHotkey({
     id: 'add-tool-explorer',
-    label: 'Add Explorer',
+    label: 'Show Files',
     keys: 'mod+alt+2',
     category: 'tools',
-    enabled: () => isInSessionView && !sessionPanels.some(p => p.type === 'explorer'),
-    action: () => handlePanelCreate('explorer'),
+    enabled: () => isInSessionView,
+    action: () => { const bridged = projectActions(); if (bridged) bridged.showInspector('files'); else openInspector('files'); },
   });
 
   // Close active panel tab (skip permanent panels like diff)
   const closeTabEnabled = () => {
+    const bridged = projectActions();
+    if (bridged) return bridged.canCloseActiveTab();
     if (!currentActivePanel) return false;
     const caps = PANEL_CAPABILITIES[currentActivePanel.type];
     return !caps?.permanent && !currentActivePanel.metadata?.permanent;
   };
   const closeTabAction = () => {
+    const bridged = projectActions();
+    if (bridged) { bridged.closeActiveTab(); return; }
     if (currentActivePanel) handlePanelClose(currentActivePanel);
   };
 
@@ -1544,7 +1569,7 @@ export const SessionView = memo(() => {
     keys: 'mod+shift+b',
     category: 'view',
     enabled: () => isInSessionView && !immersiveMode,
-    action: handleToggleDetailPanel,
+    action: () => { const bridged = projectActions(); if (bridged) bridged.toggleDetail(); else handleToggleDetailPanel(); },
   });
 
   // Create branch actions for the panel bar

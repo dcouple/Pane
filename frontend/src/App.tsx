@@ -246,6 +246,13 @@ function App() {
     category: 'navigation',
     action: () => {
       if (sidebarCollapsed) handleToggleSidebar();
+      // Land on the selected pane (or the first row) so arrow keys work from here.
+      requestAnimationFrame(() => {
+        const shell = document.querySelector<HTMLElement>('.pane-sidebar-shell');
+        const target = shell?.querySelector<HTMLElement>('[aria-current="page"]')
+          ?? shell?.querySelector<HTMLElement>('button, [tabindex="0"]');
+        target?.focus();
+      });
     },
   });
 

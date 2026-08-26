@@ -256,9 +256,12 @@ class PanelManager {
       // If this was the active panel, activate another one
       const activePanelId = databaseService.getActivePanel(panel.sessionId)?.id;
       if (activePanelId === panelId) {
+        // Prefer a working tab: Explorer and Review live in the inspector rail,
+        // so activating one of those would leave the stage empty.
         const otherPanels = this.getPanelsForSession(panel.sessionId).filter(p => p.id !== panelId);
-        if (otherPanels.length > 0) {
-          await this.setActivePanel(panel.sessionId, otherPanels[0].id);
+        const nextPanel = otherPanels.find(p => p.type !== 'explorer' && p.type !== 'diff') ?? otherPanels[0];
+        if (nextPanel) {
+          await this.setActivePanel(panel.sessionId, nextPanel.id);
         } else {
           await this.setActivePanel(panel.sessionId, null);
         }

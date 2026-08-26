@@ -20,6 +20,7 @@ const app = await electron.launch({
 });
 await app.evaluate(({ dialog }, repo) => { dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [repo] }); }, REPO);
 const page = await app.firstWindow();
+const consoleLog = []; page.on('console', (m) => { if (['error','warning'].includes(m.type()) && !m.text().includes('CommandExecutor')) consoleLog.push(m.type() + ': ' + m.text().slice(0, 300)); }); page.on('pageerror', (e) => consoleLog.push('pageerror: ' + String(e).slice(0, 300)));
 await page.setViewportSize({ width: 1400, height: 900 });
 await page.waitForLoadState('domcontentloaded');
 await page.waitForTimeout(2500);
@@ -51,6 +52,8 @@ try {
     if (s.startsWith('cdfile:')) { const n = s.slice(7); await page.getByRole('button', { name: `Open diff for ${n}`, exact: true }).dblclick(); await page.waitForTimeout(2000); }
     if (s === 'addterm') { await page.getByRole('button', { name: 'Add tool' }).first().click(); await page.waitForTimeout(400); await page.getByRole('menuitem', { name: /^Terminal/ }).first().click(); await page.waitForTimeout(2000); }
     if (s.startsWith('shot:')) { await shot(page, `e17-${s.slice(5)}.png`); }
+    if (s === 'state') { console.log('STATE', await page.evaluate(() => JSON.stringify({ sidebar: document.querySelector('.pane-sidebar-slot')?.style.width, inspector: !!document.querySelector('[role=tablist][aria-label=Inspector]'), title: document.querySelector('[data-testid=window-title-bar-label]')?.textContent, activeTab: Array.from(document.querySelectorAll('[role=tab][aria-selected=true]')).map(t => t.getAttribute('aria-label')).join('|'), dialogs: Array.from(document.querySelectorAll('[role=dialog]')).map(d => d.getAttribute('aria-label') || d.querySelector('h1,h2,h3')?.textContent || 'dialog').join('|'), menu: !!document.querySelector('[role=menu]'), palette: !!document.querySelector('[placeholder*="command" i],[aria-label*="Command Palette" i]'), dockOpen: (document.querySelector('.pane-terminal-shell-body')?.getBoundingClientRect().height ?? 0) > 20, active: (document.activeElement?.closest('.pane-sidebar-shell') ? 'sidebar:' : '') + (document.activeElement?.getAttribute('aria-label') || document.activeElement?.tagName) }))); }
+    if (s === 'logs') { console.log('LOGS\n' + consoleLog.splice(0).join('\n')); }
     if (s === 'tabs') { console.log('TABS', await page.evaluate(() => Array.from(document.querySelectorAll('[role=tab]')).map(t => { const span = t.parentElement?.querySelector('span.truncate'); const italic = span ? getComputedStyle(span).fontStyle : '?'; return `${(t.getAttribute('aria-label') || '').trim()}[${italic}${t.getAttribute('aria-selected')==='true'?',active':''}]`; }).join(' | '))); }
     if (s === 'sidemenu') { await page.getByRole('button', { name: 'Sidebar menu' }).click(); await page.waitForTimeout(500); await shot(page, 'e11-sidemenu.png'); await page.keyboard.press('Escape'); }
     if (s === 'focus') { await page.locator('.xterm').first().click({ position: { x: 300, y: 200 } }); await page.waitForTimeout(300); }
