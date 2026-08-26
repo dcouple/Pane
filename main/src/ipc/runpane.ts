@@ -48,6 +48,8 @@ import type {
   RunpanePaneCreateResult,
   RunpanePaneCreateResultItem,
   RunpanePaneReadiness,
+  RunpanePaneSummary,
+  RunpanePanelActivityStatus,
   RunpanePanelBlockedState,
   RunpanePanelCreateRequest,
   RunpanePanelCreateResult,
@@ -622,6 +624,7 @@ export function registerRunpaneHandlers(
           enter: 'cr',
           sequenceName: submission.sequenceName,
           verifiedSubmitted: submission.verifiedSubmitted,
+          verification: submission.verification,
           sentAt: submission.sentAt,
           blocked: submission.blocked,
           nextCommand: submission.nextCommand,
@@ -713,21 +716,35 @@ function projectToRepoSummary(project: Project, sessionCount: number): RunpaneRe
   };
 }
 
-function sessionToPaneSummary(session: Session, project: Project) {
+function sessionToPaneSummary(session: Session, project: Project): RunpanePaneSummary {
+  const panels = panelManager.getPanelsForSession(session.id);
+  const agentStatus = resolveAggregatedAgentStatus(panels);
+
   return {
     id: session.id,
     paneId: session.id,
     name: session.name,
     status: session.status,
+    agentStatus,
     worktreePath: session.worktreePath,
     repoId: project.id,
     repoName: project.name,
-    panelCount: panelManager.getPanelsForSession(session.id).length,
+    panelCount: panels.length,
     pinned: Boolean(session.isFavorite),
     createdAt: toIsoString(session.createdAt),
     lastActivity: toIsoString(session.lastActivity),
     archived: session.archived || undefined,
   };
+}
+
+function resolveAggregatedAgentStatus(panels: readonly ToolPanel[]): RunpanePanelActivityStatus {
+  for (const panel of panels) {
+    const snapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
+    if (snapshot?.activityStatus === 'active') {
+      return 'active';
+    }
+  }
+  return 'idle';
 }
 
 function panelToSummary(panel: ToolPanel) {
@@ -927,6 +944,7 @@ async function submitCreateComposerInput(
   for (let attempt = 1; attempt <= MAX_CREATE_SUBMIT_ATTEMPTS; attempt += 1) {
     attempts = attempt;
     const beforeScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
+    const beforeWasActive = beforeScreen.state.activityStatus === 'active';
     const outputGenerationBeforeSubmit = terminalPanelManager.getOutputGeneration(panel.id);
     terminalPanelManager.writeToTerminal(panel.id, submit.input);
     const attemptStartedAt = Date.now();
@@ -941,14 +959,16 @@ async function submitCreateComposerInput(
         stagedText: input,
       });
 
-      if (lastVerdict === 'cleared' && afterScreen.state.activityStatus === 'active') {
+      const activityTransitioned = afterScreen.state.activityStatus === 'active' && !beforeWasActive;
+      if (lastVerdict === 'cleared' && (activityTransitioned || afterScreen.state.activityStatus === 'active')) {
         return {
           delivered: true,
           submitted: true,
           inputBytes: Buffer.byteLength(input, 'utf8'),
           strategy: submit.strategy,
           sequenceName: submit.sequenceName,
-          verifiedSubmitted: true,
+          verifiedSubmitted: !beforeWasActive,
+          verification: beforeWasActive ? 'unverifiable' as const : 'observed' as const,
           staged: false,
           attempts,
           sentAt: new Date().toISOString(),
@@ -1027,8 +1047,12 @@ async function createPaneItem(
     throw new Error('Task queue not initialized');
   }
 
+  const tool = resolveToolSpec(item.tool, new PathResolver(repo).environment);
+
+  let createdSessionId: string | undefined;
+  let createdWorktreePath: string | undefined;
+
   try {
-    const tool = resolveToolSpec(item.tool, new PathResolver(repo).environment);
     const sessionResult = await taskQueue.createSessionAndWait({
       prompt: item.sessionPrompt ?? '',
       worktreeTemplate: item.worktreeName ?? item.name,
@@ -1039,10 +1063,13 @@ async function createPaneItem(
       activateOnCreate: options.activate !== false,
     }, { timeoutMs: options.timeoutMs });
 
+    createdSessionId = sessionResult.sessionId;
+
     const session = sessionManager.getSession(sessionResult.sessionId);
     if (!session) {
       throw new Error(`Created session ${sessionResult.sessionId} was not found`);
     }
+    createdWorktreePath = session.worktreePath;
 
     const { panel, readiness, initialInput } = await createTerminalPanelForSession(services, session, tool, {
       activate: options.activate,
@@ -1068,7 +1095,7 @@ async function createPaneItem(
       initialInput,
     };
   } catch (error) {
-    return createFailureItem(index, item, error);
+    return createFailureItem(index, item, error, createdSessionId, createdWorktreePath);
   }
 }
 
@@ -1462,6 +1489,7 @@ async function submitComposerForPanel(
     strategy: submit.strategy,
     sequenceName: submit.sequenceName,
     verifiedSubmitted: verification.verifiedSubmitted,
+    verification: verification.verification,
     sentAt: new Date().toISOString(),
     blocked: verification.blocked,
     nextCommand: verification.blocked?.suggestedCommand ?? panelWaitCommand(panel.id),
@@ -1474,12 +1502,14 @@ async function verifyComposerSubmitted(
 ): Promise<{
   ok: boolean;
   verifiedSubmitted: boolean;
+  verification?: 'observed' | 'unverifiable';
   blocked?: RunpanePanelBlockedState;
 }> {
   const beforeHadComposerPrompt = beforeScreen.composer.hasUndeliveredText || looksLikePendingComposer(beforeScreen.text);
   if (!beforeHadComposerPrompt && !beforeScreen.text.trim()) {
     return { ok: true, verifiedSubmitted: false };
   }
+  const beforeWasActive = beforeScreen.state.activityStatus === 'active';
   let latestScreen = beforeScreen;
   const startedAt = Date.now();
 
@@ -1487,12 +1517,12 @@ async function verifyComposerSubmitted(
     await sleep(DEFAULT_COMPOSER_VERIFY_INTERVAL_MS);
     latestScreen = await buildPanelScreenResult(panel, DEFAULT_PANEL_SCREEN_LIMIT);
 
-    if (latestScreen.state.activityStatus === 'active') {
-      return { ok: true, verifiedSubmitted: true };
+    if (latestScreen.state.activityStatus === 'active' && !beforeWasActive) {
+      return { ok: true, verifiedSubmitted: true, verification: 'observed' };
     }
 
     if (beforeHadComposerPrompt && !latestScreen.composer.hasUndeliveredText && !looksLikePendingComposer(latestScreen.text)) {
-      return { ok: true, verifiedSubmitted: true };
+      return { ok: true, verifiedSubmitted: true, verification: 'observed' };
     }
 
   }
@@ -1501,6 +1531,7 @@ async function verifyComposerSubmitted(
     return {
       ok: false,
       verifiedSubmitted: false,
+      verification: beforeWasActive ? 'unverifiable' : undefined,
       blocked: {
         kind: 'agent-prompt',
         message: 'Pane sent the composer submit sequence, but the prompt still appears to be sitting in the composer.',
@@ -1509,11 +1540,15 @@ async function verifyComposerSubmitted(
     };
   }
 
+  if (beforeWasActive) {
+    return { ok: true, verifiedSubmitted: false, verification: 'unverifiable' };
+  }
+
   return { ok: true, verifiedSubmitted: false };
 }
 
 function looksLikePendingComposer(text: string): boolean {
-  return /\[Pasted Content[^\]]*\]/i.test(text) ||
+  return /\[Pasted (?:Content|text)[^\]]*\]/i.test(text) ||
     /(?:press\s+)?(?:ctrl|control)\+enter\s+to\s+submit/i.test(text);
 }
 
@@ -2444,11 +2479,20 @@ function describeTool(tool: RunpaneResolvedTool): DescribedTool {
   };
 }
 
-function createFailureItem(index: number, item: RunpanePaneCreateItem, cause: unknown): RunpanePaneCreateFailureItem {
+function createFailureItem(
+  index: number,
+  item: RunpanePaneCreateItem,
+  cause: unknown,
+  sessionId?: string,
+  worktreePath?: string,
+): RunpanePaneCreateFailureItem {
   return {
     ok: false,
     index,
     name: item.name,
+    sessionId,
+    paneId: sessionId,
+    worktreePath,
     error: {
       message: cause instanceof Error ? cause.message : String(cause),
       code: 'ERR_RUNPANE_PANE_CREATE_FAILED',

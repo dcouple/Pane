@@ -2331,9 +2331,15 @@
         "message"
       ],
       "properties": {
-        "ok": { "type": "boolean" },
-        "changed": { "type": "boolean" },
-        "paneDir": { "type": "string" },
+        "ok": {
+          "type": "boolean"
+        },
+        "changed": {
+          "type": "boolean"
+        },
+        "paneDir": {
+          "type": "string"
+        },
         "strategy": {
           "enum": [
             "systemd-user",
@@ -2343,10 +2349,20 @@
             "skipped"
           ]
         },
-        "launcherPath": { "type": "string" },
-        "before": { "type": "object", "additionalProperties": true },
-        "after": { "type": "object", "additionalProperties": true },
-        "message": { "type": "string" }
+        "launcherPath": {
+          "type": "string"
+        },
+        "before": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "after": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "message": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
@@ -2861,6 +2877,12 @@
                       },
                       "nextCommand": {
                         "type": "string"
+                      },
+                      "verification": {
+                        "enum": [
+                          "observed",
+                          "unverifiable"
+                        ]
                       }
                     },
                     "additionalProperties": false
@@ -2899,6 +2921,15 @@
                       }
                     },
                     "additionalProperties": false
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "paneId": {
+                    "type": "string"
+                  },
+                  "worktreePath": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -2934,7 +2965,8 @@
               "worktreePath",
               "repoId",
               "panelCount",
-              "pinned"
+              "pinned",
+              "agentStatus"
             ],
             "properties": {
               "id": {
@@ -2972,6 +3004,12 @@
               },
               "archived": {
                 "type": "boolean"
+              },
+              "agentStatus": {
+                "enum": [
+                  "active",
+                  "idle"
+                ]
               }
             },
             "additionalProperties": false
@@ -3777,6 +3815,12 @@
         },
         "nextCommand": {
           "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "observed",
+            "unverifiable"
+          ]
         }
       },
       "additionalProperties": false
@@ -4265,6 +4309,12 @@
         },
         "nextCommand": {
           "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "observed",
+            "unverifiable"
+          ]
         }
       },
       "additionalProperties": false

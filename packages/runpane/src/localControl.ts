@@ -86,6 +86,9 @@ interface PaneCreateFailureItem {
   ok: false;
   index: number;
   name?: string;
+  sessionId?: string;
+  paneId?: string;
+  worktreePath?: string;
   error: { message: string; code?: string };
 }
 
@@ -102,6 +105,7 @@ interface InitialInputDeliveryResult {
   strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
   sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
   verifiedSubmitted?: boolean;
+  verification?: 'observed' | 'unverifiable';
   staged?: boolean;
   attempts?: number;
   sentAt?: string;
@@ -115,6 +119,7 @@ interface PaneSummary {
   paneId: string;
   name: string;
   status: string;
+  agentStatus: 'active' | 'idle';
   worktreePath: string;
   repoId: number;
   repoName?: string;
@@ -340,6 +345,7 @@ interface PanelSubmitResult {
   enter: 'cr';
   sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
   verifiedSubmitted: boolean;
+  verification?: 'observed' | 'unverifiable';
   sentAt: string;
   blocked?: PanelBlockedState;
   nextCommand?: string;
@@ -353,6 +359,7 @@ interface PanelSubmitComposerResult {
   strategy: 'codex-ctrl-enter' | 'enter';
   sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
   verifiedSubmitted: boolean;
+  verification?: 'observed' | 'unverifiable';
   sentAt: string;
   blocked?: PanelBlockedState;
   nextCommand?: string;
@@ -435,6 +442,7 @@ const paneSummarySchema: BoundarySchema<PaneSummary> = boundary.object({
   paneId: boundary.string,
   name: boundary.string,
   status: boundary.string,
+  agentStatus: boundary.enumeration('active', 'idle'),
   worktreePath: boundary.string,
   repoId: boundary.number,
   repoName: boundary.optional(boundary.string),
@@ -468,6 +476,7 @@ const panelReadinessSchema: BoundarySchema<PanelReadiness> = boundary.object({
   blocked: boundary.optional(panelBlockedSchema),
   nextCommand: boundary.optional(boundary.string),
 });
+const verificationSchema = boundary.optional(boundary.enumeration('observed', 'unverifiable'));
 const initialInputSchema: BoundarySchema<InitialInputDeliveryResult> = boundary.object({
   delivered: boundary.boolean,
   submitted: boundary.boolean,
@@ -475,6 +484,7 @@ const initialInputSchema: BoundarySchema<InitialInputDeliveryResult> = boundary.
   strategy: boundary.optional(boundary.enumeration('codex-ctrl-enter', 'enter', 'argument')),
   sequenceName: boundary.optional(boundary.enumeration('codex-ctrl-enter-cr', 'enter-cr', 'argument')),
   verifiedSubmitted: boundary.optional(boundary.boolean),
+  verification: verificationSchema,
   staged: boundary.optional(boundary.boolean),
   attempts: boundary.optional(boundary.number),
   sentAt: boundary.optional(boundary.string),
@@ -549,6 +559,9 @@ const paneCreateResultSchema: BoundarySchema<PaneCreateResult> = boundary.object
       ok: boundary.literal(false),
       index: boundary.number,
       name: boundary.optional(boundary.string),
+      sessionId: boundary.optional(boundary.string),
+      paneId: boundary.optional(boundary.string),
+      worktreePath: boundary.optional(boundary.string),
       error: boundary.object({
       message: boundary.string,
       code: boundary.optional(boundary.string),
@@ -669,6 +682,7 @@ const panelSubmitResultSchema: BoundarySchema<PanelSubmitResult> = boundary.obje
   enter: boundary.literal('cr'),
   sequenceName: boundary.enumeration('codex-ctrl-enter-cr', 'enter-cr'),
   verifiedSubmitted: boundary.boolean,
+  verification: verificationSchema,
   sentAt: boundary.string,
   blocked: boundary.optional(panelBlockedSchema),
   nextCommand: boundary.optional(boundary.string),
@@ -681,6 +695,7 @@ const panelSubmitComposerResultSchema: BoundarySchema<PanelSubmitComposerResult>
   strategy: boundary.enumeration('codex-ctrl-enter', 'enter'),
   sequenceName: boundary.enumeration('codex-ctrl-enter-cr', 'enter-cr'),
   verifiedSubmitted: boundary.boolean,
+  verification: verificationSchema,
   sentAt: boundary.string,
   blocked: boundary.optional(panelBlockedSchema),
   nextCommand: boundary.optional(boundary.string),

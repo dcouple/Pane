@@ -164,6 +164,7 @@ export interface RunpaneInitialInputDeliveryResult {
   strategy?: 'codex-ctrl-enter' | 'enter' | 'argument';
   sequenceName?: 'codex-ctrl-enter-cr' | 'enter-cr' | 'argument';
   verifiedSubmitted?: boolean;
+  verification?: RunpanePanelVerification;
   staged?: boolean;
   attempts?: number;
   sentAt?: string;
@@ -197,6 +198,9 @@ export interface RunpanePaneCreateFailureItem {
   ok: false;
   index: number;
   name?: string;
+  sessionId?: string;
+  paneId?: string;
+  worktreePath?: string;
   error: RunpaneErrorPayload;
 }
 
@@ -215,6 +219,7 @@ export interface RunpanePaneSummary {
   paneId: string;
   name: string;
   status: string;
+  agentStatus: RunpanePanelActivityStatus;
   worktreePath: string;
   repoId: number;
   repoName?: string;
@@ -448,6 +453,8 @@ export interface RunpanePanelSubmitRequest {
   input: string;
 }
 
+export type RunpanePanelVerification = 'observed' | 'unverifiable';
+
 export interface RunpanePanelSubmitResult {
   ok: boolean;
   panelId: string;
@@ -456,6 +463,7 @@ export interface RunpanePanelSubmitResult {
   enter: 'cr';
   sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
   verifiedSubmitted: boolean;
+  verification?: RunpanePanelVerification;
   sentAt: string;
   blocked?: RunpanePanelBlockedState;
   nextCommand?: string;
@@ -476,6 +484,7 @@ export interface RunpanePanelSubmitComposerResult {
   strategy: 'codex-ctrl-enter' | 'enter';
   sequenceName: 'codex-ctrl-enter-cr' | 'enter-cr';
   verifiedSubmitted: boolean;
+  verification?: RunpanePanelVerification;
   sentAt: string;
   blocked?: RunpanePanelBlockedState;
   nextCommand?: string;

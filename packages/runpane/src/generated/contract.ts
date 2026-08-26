@@ -2879,6 +2879,12 @@ export const RUNPANE_CONTRACT = {
                       },
                       "nextCommand": {
                         "type": "string"
+                      },
+                      "verification": {
+                        "enum": [
+                          "observed",
+                          "unverifiable"
+                        ]
                       }
                     },
                     "additionalProperties": false
@@ -2917,6 +2923,15 @@ export const RUNPANE_CONTRACT = {
                       }
                     },
                     "additionalProperties": false
+                  },
+                  "sessionId": {
+                    "type": "string"
+                  },
+                  "paneId": {
+                    "type": "string"
+                  },
+                  "worktreePath": {
+                    "type": "string"
                   }
                 },
                 "additionalProperties": false
@@ -2952,7 +2967,8 @@ export const RUNPANE_CONTRACT = {
               "worktreePath",
               "repoId",
               "panelCount",
-              "pinned"
+              "pinned",
+              "agentStatus"
             ],
             "properties": {
               "id": {
@@ -2990,6 +3006,12 @@ export const RUNPANE_CONTRACT = {
               },
               "archived": {
                 "type": "boolean"
+              },
+              "agentStatus": {
+                "enum": [
+                  "active",
+                  "idle"
+                ]
               }
             },
             "additionalProperties": false
@@ -3795,6 +3817,12 @@ export const RUNPANE_CONTRACT = {
         },
         "nextCommand": {
           "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "observed",
+            "unverifiable"
+          ]
         }
       },
       "additionalProperties": false
@@ -4283,6 +4311,12 @@ export const RUNPANE_CONTRACT = {
         },
         "nextCommand": {
           "type": "string"
+        },
+        "verification": {
+          "enum": [
+            "observed",
+            "unverifiable"
+          ]
         }
       },
       "additionalProperties": false
