@@ -30,6 +30,19 @@ html, body, #root {
 body {
   overflow: hidden;
   font-family: var(--font-family-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Light surfaces read crisper with the platform's default (subpixel) smoothing. */
+body.light,
+body.light-rounded,
+body.folio,
+body.newsprint,
+body.haar,
+body.low-fatigue,
+body.high-legibility {
+  -webkit-font-smoothing: auto;
 }
 
 /* Body colors using design tokens */
@@ -186,570 +199,15 @@ body.understory {
   min-width: 0;
 }
 
-:root.dusk .pane-sidebar-shell,
-:root.forge .pane-sidebar-shell,
-:root.ember .pane-sidebar-shell,
-:root.aurora .pane-sidebar-shell,
-:root.night-owl .pane-sidebar-shell,
-:root.night-owl-oled .pane-sidebar-shell,
-:root.terracotta .pane-sidebar-shell,
-:root.synthwave .pane-sidebar-shell,
-:root.acid .pane-sidebar-shell,
-:root.tokyo-rain .pane-sidebar-shell,
-:root.amber-crt .pane-sidebar-shell,
-:root.teletype .pane-sidebar-shell,
-:root.dot-matrix .pane-sidebar-shell,
-:root.haar .pane-sidebar-shell,
-:root.abyss .pane-sidebar-shell,
-:root.understory .pane-sidebar-shell,
-:root.colorblind-safe .pane-sidebar-shell,
-:root.low-fatigue .pane-sidebar-shell,
-:root.high-legibility .pane-sidebar-shell,
-:root.light-rounded .pane-sidebar-shell {
-  border: 3px solid var(--color-border-primary);
-  border-radius: var(--app-shell-radius);
-  overflow: hidden;
-  box-shadow: var(--panel-shell-shadow);
+/* Flat chrome. Every theme shares one edge-to-edge layout: surfaces are
+   separated by a single hairline and a tonal step, never by cards, radii or
+   shadows. Theme personality lives in colour tokens, not in the frame. */
+.pane-sidebar-shell {
+  border-right: var(--border-hairline) solid var(--color-border-primary);
 }
 
-:root.dusk .pane-session-shell,
-:root.forge .pane-session-shell,
-:root.ember .pane-session-shell,
-:root.aurora .pane-session-shell,
-:root.night-owl .pane-session-shell,
-:root.night-owl-oled .pane-session-shell,
-:root.terracotta .pane-session-shell,
-:root.synthwave .pane-session-shell,
-:root.acid .pane-session-shell,
-:root.tokyo-rain .pane-session-shell,
-:root.amber-crt .pane-session-shell,
-:root.teletype .pane-session-shell,
-:root.dot-matrix .pane-session-shell,
-:root.haar .pane-session-shell,
-:root.abyss .pane-session-shell,
-:root.understory .pane-session-shell,
-:root.colorblind-safe .pane-session-shell,
-:root.low-fatigue .pane-session-shell,
-:root.high-legibility .pane-session-shell,
-:root.light-rounded .pane-session-shell {
-  gap: var(--panel-shell-gap);
-}
-
-:root.dusk .panel-tab-bar,
-:root.forge .panel-tab-bar,
-:root.ember .panel-tab-bar,
-:root.aurora .panel-tab-bar,
-:root.night-owl .panel-tab-bar,
-:root.night-owl-oled .panel-tab-bar,
-:root.terracotta .panel-tab-bar,
-:root.synthwave .panel-tab-bar,
-:root.acid .panel-tab-bar,
-:root.tokyo-rain .panel-tab-bar,
-:root.amber-crt .panel-tab-bar,
-:root.teletype .panel-tab-bar,
-:root.dot-matrix .panel-tab-bar,
-:root.haar .panel-tab-bar,
-:root.abyss .panel-tab-bar,
-:root.understory .panel-tab-bar,
-:root.colorblind-safe .panel-tab-bar,
-:root.low-fatigue .panel-tab-bar,
-:root.high-legibility .panel-tab-bar,
-:root.light-rounded .panel-tab-bar {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--panel-shell-radius);
-  overflow: hidden;
-  box-shadow: var(--panel-shell-shadow);
-}
-
-:root.dusk .pane-editor-stage,
-:root.forge .pane-editor-stage,
-:root.ember .pane-editor-stage,
-:root.aurora .pane-editor-stage,
-:root.night-owl .pane-editor-stage,
-:root.night-owl-oled .pane-editor-stage,
-:root.terracotta .pane-editor-stage,
-:root.synthwave .pane-editor-stage,
-:root.acid .pane-editor-stage,
-:root.tokyo-rain .pane-editor-stage,
-:root.amber-crt .pane-editor-stage,
-:root.teletype .pane-editor-stage,
-:root.dot-matrix .pane-editor-stage,
-:root.haar .pane-editor-stage,
-:root.abyss .pane-editor-stage,
-:root.understory .pane-editor-stage,
-:root.colorblind-safe .pane-editor-stage,
-:root.low-fatigue .pane-editor-stage,
-:root.high-legibility .pane-editor-stage,
-:root.light-rounded .pane-editor-stage {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--panel-shell-radius);
-  overflow: hidden;
-  box-shadow: var(--panel-shell-shadow);
-}
-
-:root.dusk .pane-terminal-dock,
-:root.forge .pane-terminal-dock,
-:root.ember .pane-terminal-dock,
-:root.aurora .pane-terminal-dock,
-:root.night-owl .pane-terminal-dock,
-:root.night-owl-oled .pane-terminal-dock,
-:root.terracotta .pane-terminal-dock,
-:root.synthwave .pane-terminal-dock,
-:root.acid .pane-terminal-dock,
-:root.tokyo-rain .pane-terminal-dock,
-:root.amber-crt .pane-terminal-dock,
-:root.teletype .pane-terminal-dock,
-:root.dot-matrix .pane-terminal-dock,
-:root.haar .pane-terminal-dock,
-:root.abyss .pane-terminal-dock,
-:root.understory .pane-terminal-dock,
-:root.colorblind-safe .pane-terminal-dock,
-:root.low-fatigue .pane-terminal-dock,
-:root.high-legibility .pane-terminal-dock,
-:root.light-rounded .pane-terminal-dock {
-  margin-top: var(--panel-shell-gap);
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--panel-shell-radius);
-  overflow: hidden;
-  box-shadow: var(--panel-shell-shadow);
-}
-
-:root.dusk .pane-terminal-rail,
-:root.forge .pane-terminal-rail,
-:root.ember .pane-terminal-rail,
-:root.aurora .pane-terminal-rail,
-:root.night-owl .pane-terminal-rail,
-:root.night-owl-oled .pane-terminal-rail,
-:root.terracotta .pane-terminal-rail,
-:root.synthwave .pane-terminal-rail,
-:root.acid .pane-terminal-rail,
-:root.tokyo-rain .pane-terminal-rail,
-:root.amber-crt .pane-terminal-rail,
-:root.teletype .pane-terminal-rail,
-:root.dot-matrix .pane-terminal-rail,
-:root.haar .pane-terminal-rail,
-:root.abyss .pane-terminal-rail,
-:root.understory .pane-terminal-rail,
-:root.colorblind-safe .pane-terminal-rail,
-:root.low-fatigue .pane-terminal-rail,
-:root.high-legibility .pane-terminal-rail,
-:root.light-rounded .pane-terminal-rail,
-:root.dusk .pane-detail-panel,
-:root.forge .pane-detail-panel,
-:root.ember .pane-detail-panel,
-:root.aurora .pane-detail-panel,
-:root.night-owl .pane-detail-panel,
-:root.night-owl-oled .pane-detail-panel,
-:root.terracotta .pane-detail-panel,
-:root.synthwave .pane-detail-panel,
-:root.acid .pane-detail-panel,
-:root.tokyo-rain .pane-detail-panel,
-:root.amber-crt .pane-detail-panel,
-:root.teletype .pane-detail-panel,
-:root.dot-matrix .pane-detail-panel,
-:root.haar .pane-detail-panel,
-:root.abyss .pane-detail-panel,
-:root.understory .pane-detail-panel,
-:root.colorblind-safe .pane-detail-panel,
-:root.low-fatigue .pane-detail-panel,
-:root.high-legibility .pane-detail-panel,
-:root.light-rounded .pane-detail-panel {
-  border-color: transparent !important;
-  background: transparent;
-}
-
-:root.dusk .pane-terminal-rail-shell,
-:root.forge .pane-terminal-rail-shell,
-:root.ember .pane-terminal-rail-shell,
-:root.aurora .pane-terminal-rail-shell,
-:root.night-owl .pane-terminal-rail-shell,
-:root.night-owl-oled .pane-terminal-rail-shell,
-:root.terracotta .pane-terminal-rail-shell,
-:root.synthwave .pane-terminal-rail-shell,
-:root.acid .pane-terminal-rail-shell,
-:root.tokyo-rain .pane-terminal-rail-shell,
-:root.amber-crt .pane-terminal-rail-shell,
-:root.teletype .pane-terminal-rail-shell,
-:root.dot-matrix .pane-terminal-rail-shell,
-:root.haar .pane-terminal-rail-shell,
-:root.abyss .pane-terminal-rail-shell,
-:root.understory .pane-terminal-rail-shell,
-:root.colorblind-safe .pane-terminal-rail-shell,
-:root.low-fatigue .pane-terminal-rail-shell,
-:root.high-legibility .pane-terminal-rail-shell,
-:root.light-rounded .pane-terminal-rail-shell,
-:root.dusk .pane-detail-panel-inner,
-:root.forge .pane-detail-panel-inner,
-:root.ember .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-inner,
-:root.night-owl .pane-detail-panel-inner,
-:root.night-owl-oled .pane-detail-panel-inner,
-:root.terracotta .pane-detail-panel-inner,
-:root.synthwave .pane-detail-panel-inner,
-:root.acid .pane-detail-panel-inner,
-:root.tokyo-rain .pane-detail-panel-inner,
-:root.amber-crt .pane-detail-panel-inner,
-:root.teletype .pane-detail-panel-inner,
-:root.dot-matrix .pane-detail-panel-inner,
-:root.haar .pane-detail-panel-inner,
-:root.abyss .pane-detail-panel-inner,
-:root.understory .pane-detail-panel-inner,
-:root.colorblind-safe .pane-detail-panel-inner,
-:root.low-fatigue .pane-detail-panel-inner,
-:root.high-legibility .pane-detail-panel-inner,
-:root.light-rounded .pane-detail-panel-inner {
-  border: 1px solid var(--color-border-primary);
-  border-radius: var(--panel-shell-radius);
-  overflow: hidden;
-  box-shadow: var(--panel-shell-shadow);
-}
-
-:root.dusk .pane-terminal-rail-shell,
-:root.forge .pane-terminal-rail-shell,
-:root.ember .pane-terminal-rail-shell,
-:root.aurora .pane-terminal-rail-shell,
-:root.night-owl .pane-terminal-rail-shell,
-:root.night-owl-oled .pane-terminal-rail-shell,
-:root.terracotta .pane-terminal-rail-shell,
-:root.synthwave .pane-terminal-rail-shell,
-:root.acid .pane-terminal-rail-shell,
-:root.tokyo-rain .pane-terminal-rail-shell,
-:root.amber-crt .pane-terminal-rail-shell,
-:root.teletype .pane-terminal-rail-shell,
-:root.dot-matrix .pane-terminal-rail-shell,
-:root.haar .pane-terminal-rail-shell,
-:root.abyss .pane-terminal-rail-shell,
-:root.understory .pane-terminal-rail-shell,
-:root.colorblind-safe .pane-terminal-rail-shell,
-:root.low-fatigue .pane-terminal-rail-shell,
-:root.high-legibility .pane-terminal-rail-shell,
-:root.light-rounded .pane-terminal-rail-shell,
-:root.dusk .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.forge .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.ember .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.night-owl .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.night-owl-oled .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.terracotta .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.synthwave .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.acid .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.tokyo-rain .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.amber-crt .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.teletype .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.dot-matrix .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.haar .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.abyss .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.understory .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.colorblind-safe .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.low-fatigue .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.high-legibility .pane-detail-panel-vertical .pane-detail-panel-inner,
-:root.light-rounded .pane-detail-panel-vertical .pane-detail-panel-inner {
-  margin-left: var(--panel-shell-gap);
-}
-
-:root.dusk .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.forge .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.ember .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.aurora .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.night-owl .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.night-owl-oled .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.terracotta .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.synthwave .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.acid .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.tokyo-rain .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.amber-crt .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.teletype .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.dot-matrix .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.haar .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.abyss .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.understory .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.colorblind-safe .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.low-fatigue .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.high-legibility .pane-detail-panel-horizontal .pane-detail-panel-inner,
-:root.light-rounded .pane-detail-panel-horizontal .pane-detail-panel-inner {
-  margin-top: var(--panel-shell-gap);
-}
-
-:root.dusk .panel-tab-bar,
-:root.dusk .pane-editor-stage,
-:root.dusk .pane-terminal-dock,
-:root.dusk .pane-terminal-rail-shell,
-:root.dusk .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(255, 255, 255, 0.16);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.22),
-    0 0 0 1px rgba(255, 255, 255, 0.03),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-:root.forge .panel-tab-bar,
-:root.forge .pane-editor-stage,
-:root.forge .pane-terminal-dock,
-:root.forge .pane-terminal-rail-shell,
-:root.forge .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: var(--forge-gray5);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.18),
-    0 0 0 1px rgba(255, 255, 255, 0.025),
-    inset 0 1px 0 rgba(255, 255, 255, 0.035);
-}
-
-:root.night-owl .panel-tab-bar,
-:root.night-owl .pane-editor-stage,
-:root.night-owl .pane-terminal-dock,
-:root.night-owl .pane-terminal-rail-shell,
-:root.night-owl .pane-detail-panel-inner,
-:root.night-owl-oled .panel-tab-bar,
-:root.night-owl-oled .pane-editor-stage,
-:root.night-owl-oled .pane-terminal-dock,
-:root.night-owl-oled .pane-terminal-rail-shell,
-:root.night-owl-oled .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(196, 92, 92, 0.18);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.22),
-    0 0 0 1px rgba(196, 92, 92, 0.04),
-    inset 0 1px 0 rgba(196, 92, 92, 0.06);
-}
-
-:root.terracotta .panel-tab-bar,
-:root.terracotta .pane-editor-stage,
-:root.terracotta .pane-terminal-dock,
-:root.terracotta .pane-terminal-rail-shell,
-:root.terracotta .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(192, 112, 80, 0.18);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.22),
-    0 0 0 1px rgba(192, 112, 80, 0.04),
-    inset 0 1px 0 rgba(192, 112, 80, 0.06);
-}
-
-:root.synthwave .panel-tab-bar,
-:root.synthwave .pane-editor-stage,
-:root.synthwave .pane-terminal-dock,
-:root.synthwave .pane-terminal-rail-shell,
-:root.synthwave .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(255, 95, 215, 0.20);
-}
-
-:root.acid .panel-tab-bar,
-:root.acid .pane-editor-stage,
-:root.acid .pane-terminal-dock,
-:root.acid .pane-terminal-rail-shell,
-:root.acid .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(180, 255, 58, 0.18);
-}
-
-:root.tokyo-rain .panel-tab-bar,
-:root.tokyo-rain .pane-editor-stage,
-:root.tokyo-rain .pane-terminal-dock,
-:root.tokyo-rain .pane-terminal-rail-shell,
-:root.tokyo-rain .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(255, 79, 154, 0.18);
-}
-
-:root.amber-crt .panel-tab-bar,
-:root.amber-crt .pane-editor-stage,
-:root.amber-crt .pane-terminal-dock,
-:root.amber-crt .pane-terminal-rail-shell,
-:root.amber-crt .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(255, 176, 0, 0.16);
-  box-shadow:
-    0 0 22px rgba(255, 176, 0, 0.06),
-    0 0 0 1px rgba(255, 176, 0, 0.04),
-    inset 0 1px 0 rgba(255, 176, 0, 0.06);
-}
-
-:root.teletype .panel-tab-bar,
-:root.teletype .pane-editor-stage,
-:root.teletype .pane-terminal-dock,
-:root.teletype .pane-terminal-rail-shell,
-:root.teletype .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(43, 33, 22, 0.14);
-  box-shadow:
-    0 8px 20px rgba(43, 33, 22, 0.08),
-    0 0 0 1px rgba(255, 252, 245, 0.7),
-    inset 0 1px 0 rgba(255, 252, 245, 0.9);
-}
-
-:root.dot-matrix .panel-tab-bar,
-:root.dot-matrix .pane-editor-stage,
-:root.dot-matrix .pane-terminal-dock,
-:root.dot-matrix .pane-terminal-rail-shell,
-:root.dot-matrix .pane-detail-panel-inner {
-  border-width: 1px;
-  border-color: rgba(155, 188, 15, 0.22);
-  box-shadow: none;
-}
-
-:root.haar .panel-tab-bar,
-:root.haar .pane-editor-stage,
-:root.haar .pane-terminal-dock,
-:root.haar .pane-terminal-rail-shell,
-:root.haar .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(37, 45, 54, 0.12);
-  box-shadow:
-    0 8px 20px rgba(21, 27, 33, 0.07),
-    0 0 0 1px rgba(255, 255, 255, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-}
-
-:root.abyss .panel-tab-bar,
-:root.abyss .pane-editor-stage,
-:root.abyss .pane-terminal-dock,
-:root.abyss .pane-terminal-rail-shell,
-:root.abyss .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(77, 184, 171, 0.16);
-  box-shadow:
-    0 12px 26px rgba(1, 4, 8, 0.4),
-    0 0 0 1px rgba(77, 184, 171, 0.04),
-    inset 0 1px 0 rgba(159, 227, 216, 0.05);
-}
-
-:root.understory .panel-tab-bar,
-:root.understory .pane-editor-stage,
-:root.understory .pane-terminal-dock,
-:root.understory .pane-terminal-rail-shell,
-:root.understory .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(70, 57, 46, 0.7);
-  box-shadow:
-    0 10px 22px rgba(4, 6, 3, 0.3),
-    0 0 0 1px rgba(166, 181, 109, 0.03),
-    inset 0 1px 0 rgba(211, 221, 168, 0.04);
-}
-
-:root.ember .panel-tab-bar,
-:root.ember .pane-editor-stage,
-:root.ember .pane-terminal-dock,
-:root.ember .pane-terminal-rail-shell,
-:root.ember .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(255, 106, 193, 0.22);
-  box-shadow:
-    0 12px 26px rgba(7, 2, 17, 0.32),
-    0 0 0 1px rgba(255, 106, 193, 0.08),
-    inset 0 1px 0 rgba(255, 214, 244, 0.08);
-}
-
-:root.aurora .panel-tab-bar,
-:root.aurora .pane-editor-stage,
-:root.aurora .pane-terminal-dock,
-:root.aurora .pane-terminal-rail-shell,
-:root.aurora .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(196, 167, 231, 0.2);
-  box-shadow:
-    0 12px 24px rgba(15, 12, 28, 0.24),
-    0 0 0 1px rgba(196, 167, 231, 0.06),
-    inset 0 1px 0 rgba(246, 193, 119, 0.04);
-}
-
-:root.light-rounded .panel-tab-bar,
-:root.light-rounded .pane-editor-stage,
-:root.light-rounded .pane-terminal-dock,
-:root.light-rounded .pane-terminal-rail-shell,
-:root.light-rounded .pane-detail-panel-inner {
-  border-width: 1.25px;
-  border-color: rgba(31, 35, 40, 0.1);
-  box-shadow:
-    0 8px 20px rgba(15, 23, 42, 0.06),
-    0 0 0 1px rgba(255, 255, 255, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-}
-
-/* Colorblind Safe — neutral 1px borders; no colored glow so hue stays semantic */
-:root.colorblind-safe .panel-tab-bar,
-:root.colorblind-safe .pane-editor-stage,
-:root.colorblind-safe .pane-terminal-dock,
-:root.colorblind-safe .pane-terminal-rail-shell,
-:root.colorblind-safe .pane-detail-panel-inner {
-  border-width: 1px;
-  border-color: var(--cbs-600);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
-}
-
-/* Low Fatigue — soft warm borders, low-contrast shadow */
-:root.low-fatigue .panel-tab-bar,
-:root.low-fatigue .pane-editor-stage,
-:root.low-fatigue .pane-terminal-dock,
-:root.low-fatigue .pane-terminal-rail-shell,
-:root.low-fatigue .pane-detail-panel-inner {
-  border-width: 1px;
-  border-color: var(--lf-600);
-  box-shadow: 0 8px 20px rgba(20, 16, 12, 0.24);
-}
-
-/* High Legibility — solid 4.5:1 borders, flat (no shadow) so edges are unambiguous */
-:root.high-legibility .pane-sidebar-shell {
-  border-width: 1px;
-}
-:root.high-legibility .panel-tab-bar,
-:root.high-legibility .pane-editor-stage,
-:root.high-legibility .pane-terminal-dock,
-:root.high-legibility .pane-terminal-rail-shell,
-:root.high-legibility .pane-detail-panel-inner {
-  border-width: 1px;
-  border-color: var(--hl-500);
-  box-shadow: none;
-}
-
-/* Theme-specific terminal rounding should come from shell containers first */
-:root.dusk .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.forge .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.night-owl .xterm,
-:root.night-owl-oled .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.terracotta .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.synthwave .xterm,
-:root.acid .xterm,
-:root.tokyo-rain .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.amber-crt .xterm,
-:root.teletype .xterm,
-:root.dot-matrix .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.haar .xterm,
-:root.abyss .xterm,
-:root.understory .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.colorblind-safe .xterm,
-:root.low-fatigue .xterm,
-:root.high-legibility .xterm {
-  border-radius: var(--panel-shell-radius);
-}
-
-:root.ember .xterm,
-:root.aurora .xterm,
-:root.light-rounded .xterm {
-  border-radius: var(--panel-shell-radius);
+.panel-tab-bar {
+  border-bottom: var(--border-hairline) solid var(--color-border-primary);
 }
 
 /* Hide scrollbar completely */
@@ -942,46 +400,10 @@ body.understory {
    "busy", and removing them would remove information rather than motion.
    --------------------------------------------------------------------------- */
 
-@keyframes pane-reduced-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   /* No scale under the pointer; the colour change still confirms the press. */
   .pane-press:active:not(:disabled):not([aria-disabled='true']) {
     transform: none;
-  }
-
-  /* Reveals jump to their end state instead of sweeping the layout across. */
-  .pane-reveal {
-    transition-duration: 1ms !important;
-  }
-
-  /* Entrances keep their fade and drop the travel. */
-  .animate-dropdown-enter,
-  .animate-dropdown-enter-up,
-  .animate-modal-enter,
-  .animate-title-pill-enter,
-  .pane-sheet[data-state='open'],
-  .pane-drawer[data-state='open'] {
-    animation: pane-reduced-fade var(--duration-100) linear;
-  }
-
-  /* Exits are the same bargain read backwards: the surface still leaves, it just
-     fades out where it stands instead of sliding off an edge. They keep their own
-     duration because something else — a focus restore, a re-render — is waiting
-     on the animation to end. */
-  .pane-sheet[data-state='closed'],
-  .pane-drawer[data-state='closed'] {
-    animation: pane-reduced-fade var(--duration-sheet-exit) linear reverse;
-  }
-
-  /* The joystick returns to centre without the travel. Snapping is what it did
-     before this pass; under reduced motion that is the correct behaviour, not a
-     regression. */
-  .pane-joystick-return {
-    transition-duration: 1ms !important;
   }
 
   /* "Still looking for the host" is information, so the reaching ring keeps
@@ -1580,4 +1002,35 @@ body.understory {
   --diff-hunk-content-color--: #262626;
   --diff-add-widget--: #1e40af;
   --diff-add-widget-color--: #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+   No chrome motion. Layout reveals, hover colour fades, menu/dialog entrances
+   and exits all happen instantly. The only motion left is information:
+   spinners, pulses, progress sweeps and status rings that say "busy".
+   --------------------------------------------------------------------------- */
+*, *::before, *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+.pane-press:active:not(:disabled):not([aria-disabled='true']) {
+  transform: none;
+}
+
+.animate-dropdown-enter,
+.animate-dropdown-enter-up,
+.animate-modal-enter,
+.animate-modal-overlay-enter,
+.animate-title-pill-enter,
+.animate-fade-in,
+.animate-sidebar-active-label,
+[class*="animate-zoom-in"],
+.pane-sheet[data-state='open'],
+.pane-sheet[data-state='closed'],
+.pane-drawer[data-state='open'],
+.pane-drawer[data-state='closed'],
+.pane-scrim[data-state='open'],
+.pane-scrim[data-state='closed'] {
+  animation: none !important;
 }

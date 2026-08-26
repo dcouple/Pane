@@ -83,9 +83,6 @@
   --button-padding-y: var(--space-1-5);   /* 6px (was 8px) */
   --card-padding: var(--space-2);         /* 8px (was 12px) */
   --card-padding-lg: var(--space-4);      /* 16px (was 24px) */
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Forge Theme — Medium density (IntelliJ-inspired) */
@@ -94,9 +91,6 @@
   --button-padding-x: var(--space-4);     /* 16px (same) */
   --button-padding-y: var(--space-2);     /* 8px (same) */
   --card-padding: var(--space-3);         /* 12px (same) */
-  --app-frame-padding: var(--space-2);
-  --app-frame-gap: var(--space-2);
-  --panel-shell-gap: var(--space-2);
 }
 
 /* Ember Theme — warm editorial density */
@@ -105,9 +99,6 @@
   --button-padding-x: var(--space-3-5);
   --button-padding-y: var(--space-1-5);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Aurora Theme — spacious luminous density */
@@ -116,9 +107,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-3);
-  --app-frame-gap: var(--space-3);
-  --panel-shell-gap: var(--space-3);
 }
 
 /* Synthwave Theme — medium density */
@@ -127,9 +115,6 @@
   --button-padding-x: var(--space-3-5);
   --button-padding-y: var(--space-1-5);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Acid Terminal Theme — compact terminal density */
@@ -139,9 +124,6 @@
   --button-padding-y: var(--space-1-5);
   --card-padding: var(--space-2);
   --card-padding-lg: var(--space-4);
-  --app-frame-padding: var(--space-2);
-  --app-frame-gap: var(--space-2);
-  --panel-shell-gap: var(--space-2);
 }
 
 /* Tokyo Rain Theme — spacious density */
@@ -150,9 +132,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-3);
-  --app-frame-gap: var(--space-3);
-  --panel-shell-gap: var(--space-3);
 }
 
 /* Light Rounded — light palette with islanded shell layout */
@@ -161,9 +140,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Amber CRT — medium density, islanded shells */
@@ -172,9 +148,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Teletype — roomy paper margins */
@@ -183,9 +156,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Dot Matrix — compact LCD density */
@@ -194,9 +164,6 @@
   --button-padding-x: var(--space-3);
   --button-padding-y: var(--space-1-5);
   --card-padding: var(--space-2);
-  --app-frame-padding: var(--space-2);
-  --app-frame-gap: var(--space-2);
-  --panel-shell-gap: var(--space-2);
 }
 
 /* Haar — airy fog spacing, islanded shells */
@@ -205,9 +172,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Abyss — medium density, islanded shells */
@@ -216,9 +180,6 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Understory — medium density, islanded shells */
@@ -227,17 +188,11 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Colorblind Safe — standard density with islanded shells */
 :root.colorblind-safe {
   --panel-tab-height: 2.25rem;
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }
 
 /* Low Fatigue — slightly relaxed density; taller tabs and more breathing room */
@@ -246,15 +201,9 @@
   --button-padding-x: var(--space-4);
   --button-padding-y: var(--space-2);
   --card-padding: var(--space-3);
-  --app-frame-padding: var(--space-3);
-  --app-frame-gap: var(--space-3);
-  --panel-shell-gap: var(--space-3);
 }
 
 /* High Legibility — standard density; larger tab targets */
 :root.high-legibility {
   --panel-tab-height: 2.5rem;
-  --app-frame-padding: var(--space-2-5);
-  --app-frame-gap: var(--space-2-5);
-  --panel-shell-gap: var(--space-2-5);
 }

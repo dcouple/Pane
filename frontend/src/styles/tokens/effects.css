@@ -22,6 +22,7 @@
   /* Border Widths */
   --border-0: 0;
   --border-1: 1px;
+  --border-hairline: 1px;   /* the only chrome border width */
   --border-2: 2px;
   --border-4: 4px;
   --border-8: 8px;
@@ -178,9 +179,6 @@
   --button-shadow: var(--shadow-none);    /* no button shadow */
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);        /* subtle shadow on cards only */
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-xs);
 }
 
 /* Forge Theme — specific radii, NO shadows (IntelliJ-inspired) */
@@ -194,9 +192,6 @@
   --card-shadow: var(--shadow-none);      /* NO shadows — depth via bg color only */
   --modal-shadow: var(--shadow-none);
   --dropdown-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);  /* exception: dropdowns need depth */
-  --app-shell-radius: 0.625rem;
-  --panel-shell-radius: 0.5rem;
-  --panel-shell-shadow: var(--shadow-none);
 }
 
 /* Ember Theme — soft editorial panels */
@@ -207,9 +202,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Aurora Theme — glassy rounded shells */
@@ -220,9 +212,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-2xl);
-  --panel-shell-radius: var(--radius-xl);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Synthwave Theme — soft rounded shells, magenta glow lives here only */
@@ -233,13 +222,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-glow: rgba(255, 95, 215, 0.10);
-  --panel-shell-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.28),
-    0 0 0 1px var(--panel-shell-glow),
-    inset 0 1px 0 rgba(255, 95, 215, 0.06);
 }
 
 /* Acid Terminal Theme — tight radii, lime hairline glow */
@@ -250,13 +232,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-none);
-  --app-shell-radius: 0.625rem;
-  --panel-shell-radius: 0.5rem;
-  --panel-shell-glow: rgba(180, 255, 58, 0.08);
-  --panel-shell-shadow:
-    0 8px 18px rgba(0, 0, 0, 0.26),
-    0 0 0 1px var(--panel-shell-glow),
-    inset 0 1px 0 rgba(180, 255, 58, 0.05);
 }
 
 /* Tokyo Rain Theme — rounded shells, cool blue rain glow */
@@ -267,13 +242,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-2xl);
-  --panel-shell-radius: var(--radius-xl);
-  --panel-shell-glow: rgba(92, 179, 255, 0.10);
-  --panel-shell-shadow:
-    0 12px 24px rgba(0, 0, 0, 0.30),
-    0 0 0 1px var(--panel-shell-glow),
-    inset 0 1px 0 rgba(92, 179, 255, 0.06);
 }
 
 /* Light Rounded — Forge-like rounded light shells */
@@ -284,9 +252,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-2xl);
-  --panel-shell-radius: var(--radius-xl);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Folio / Newsprint / Walnut deliberately keep the flat, edge-to-edge shell
@@ -337,9 +302,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-none);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: 0 0 22px rgba(255, 176, 0, 0.06);
 }
 
 /* Teletype — Braun-style rounded shells, quiet paper shadows */
@@ -350,9 +312,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-2xl);
-  --panel-shell-radius: var(--radius-xl);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Dot Matrix — tight pixel radii, no shadows (LCD has no depth) */
@@ -365,9 +324,6 @@
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-none);
   --modal-shadow: var(--shadow-none);
-  --app-shell-radius: var(--radius-md);
-  --panel-shell-radius: var(--radius-default);
-  --panel-shell-shadow: var(--shadow-none);
 }
 
 /* Haar — soft fog radii, whisper shadows */
@@ -378,9 +334,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-2xl);
-  --panel-shell-radius: var(--radius-xl);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Abyss — deep, rounded shells with pressure-depth shadows */
@@ -391,9 +344,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-sm);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-sm);
 }
 
 /* Understory — organic radii, matte surfaces */
@@ -404,9 +354,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-xs);
 }
 
 /* Colorblind Safe — clean rounded shells, no button shadows */
@@ -417,9 +364,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-xs);
 }
 
 /* Low Fatigue — soft radii, minimal shadows (nothing sharp for long sessions) */
@@ -430,9 +374,6 @@
   --button-shadow: var(--shadow-none);
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-xs);
-  --app-shell-radius: var(--radius-xl);
-  --panel-shell-radius: var(--radius-lg);
-  --panel-shell-shadow: var(--shadow-xs);
 }
 
 /* High Legibility — modest radii, flat surfaces; edges come from borders, not shadows */
@@ -444,7 +385,4 @@
   --button-shadow-hover: var(--shadow-none);
   --card-shadow: var(--shadow-none);
   --modal-shadow: var(--shadow-lg);
-  --app-shell-radius: var(--radius-lg);
-  --panel-shell-radius: var(--radius-md);
-  --panel-shell-shadow: var(--shadow-none);
 }

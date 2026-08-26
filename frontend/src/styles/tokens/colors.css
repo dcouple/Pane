@@ -500,9 +500,9 @@
   --color-text-disabled: rgb(72 79 88);
 
   /* Semantic Tokens - Borders */
-  --color-border-primary: rgba(255, 255, 255, 0.08);
-  --color-border-secondary: rgba(255, 255, 255, 0.05);
-  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-border-primary: rgba(255, 255, 255, 0.06);
+  --color-border-secondary: rgba(255, 255, 255, 0.04);
+  --color-border-hover: rgba(255, 255, 255, 0.10);
   --color-border-focus: rgb(88 166 255);
 
   /* Semantic Tokens - Interactive */
@@ -526,8 +526,8 @@
   --color-interactive-surface-hover: rgba(var(--color-interactive-rgb), 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(var(--color-interactive-rgb), 0.5);
   --color-interactive-border-hover: rgba(var(--color-interactive-rgb), 0.7);
 
@@ -602,7 +602,7 @@
   --color-text-navigation-section: rgb(114 122 133);  /* #727a85 — 4.7:1 on bg-primary (AA) */
   --color-text-navigation-brand: rgb(125 133 144);
 
-  --color-border-navigation: rgba(255, 255, 255, 0.06);
+  --color-border-navigation: rgba(255, 255, 255, 0.05);
   --color-divider-navigation: rgba(255, 255, 255, 0.05);
   --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
 
@@ -809,16 +809,16 @@
   --color-surface-hover: rgba(255, 255, 255, 0.06);
 
   /* Borders - slightly brighter for separation on pure black */
-  --color-border-primary: rgba(255, 255, 255, 0.10);
-  --color-border-secondary: rgba(255, 255, 255, 0.07);
-  --color-border-hover: rgba(255, 255, 255, 0.15);
+  --color-border-primary: rgba(255, 255, 255, 0.06);
+  --color-border-secondary: rgba(255, 255, 255, 0.04);
+  --color-border-hover: rgba(255, 255, 255, 0.10);
 
   /* Interactive surfaces */
   --color-surface-interactive: rgb(15 15 15);
   --color-surface-interactive-hover: rgb(25 25 25);
 
   /* Interactive borders - slightly brighter */
-  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
 
   /* Buttons - secondary/ghost need darker backgrounds */
   --color-button-secondary-bg: rgb(25 25 25);
@@ -884,9 +884,9 @@
   --color-text-disabled: var(--dusk-600);
 
   /* Borders */
-  --color-border-primary: rgba(255, 255, 255, 0.08);
-  --color-border-secondary: rgba(255, 255, 255, 0.05);
-  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-border-primary: rgba(255, 255, 255, 0.06);
+  --color-border-secondary: rgba(255, 255, 255, 0.04);
+  --color-border-hover: rgba(255, 255, 255, 0.10);
   --color-border-focus: #3b82f6;
 
   /* Interactive */
@@ -910,8 +910,8 @@
   --color-interactive-surface-hover: rgba(59, 130, 246, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(59, 130, 246, 0.5);
   --color-interactive-border-hover: rgba(59, 130, 246, 0.7);
 
@@ -972,7 +972,7 @@
   --color-text-navigation-hover: var(--dusk-100);
   --color-text-navigation-section: #7c8492;  /* 4.7:1 on --dusk-900 (AA) */
   --color-text-navigation-brand: var(--dusk-400);
-  --color-border-navigation: rgba(255, 255, 255, 0.06);
+  --color-border-navigation: rgba(255, 255, 255, 0.05);
   --color-divider-navigation: rgba(255, 255, 255, 0.05);
   --color-divider-navigation-subtle: rgba(255, 255, 255, 0.03);
 
@@ -1018,9 +1018,9 @@
   --color-text-disabled: var(--dusk-600);
 
   /* Borders */
-  --color-border-primary: rgba(255, 255, 255, 0.12);
-  --color-border-secondary: rgba(255, 255, 255, 0.07);
-  --color-border-hover: rgba(255, 255, 255, 0.16);
+  --color-border-primary: rgba(255, 255, 255, 0.06);
+  --color-border-secondary: rgba(255, 255, 255, 0.04);
+  --color-border-hover: rgba(255, 255, 255, 0.10);
   --color-border-focus: #3b82f6;
 
   /* Interactive */
@@ -1044,8 +1044,8 @@
   --color-interactive-surface-hover: rgba(59, 130, 246, 0.26);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(59, 130, 246, 0.55);
   --color-interactive-border-hover: rgba(59, 130, 246, 0.75);
 
@@ -1106,7 +1106,7 @@
   --color-text-navigation-hover: var(--dusk-100);
   --color-text-navigation-section: #7c8492;  /* 5.6:1 on pure black (AA) */
   --color-text-navigation-brand: var(--dusk-400);
-  --color-border-navigation: rgba(255, 255, 255, 0.08);
+  --color-border-navigation: rgba(255, 255, 255, 0.05);
   --color-divider-navigation: rgba(255, 255, 255, 0.06);
   --color-divider-navigation-subtle: rgba(255, 255, 255, 0.04);
 
@@ -1177,8 +1177,8 @@
   --color-interactive-surface-hover: rgba(53, 116, 240, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(53, 116, 240, 0.5);
   --color-interactive-border-hover: rgba(53, 116, 240, 0.7);
 
@@ -1327,8 +1327,8 @@
   --color-interactive-surface: rgba(255, 106, 193, 0.18);
   --color-interactive-surface-hover: rgba(255, 106, 193, 0.28);
 
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(255, 106, 193, 0.52);
   --color-interactive-border-hover: rgba(255, 106, 193, 0.72);
   --color-text-interactive-muted: #9e7ac8;
@@ -1463,8 +1463,8 @@
   --color-interactive-surface: rgba(196, 167, 231, 0.16);
   --color-interactive-surface-hover: rgba(196, 167, 231, 0.24);
 
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(196, 167, 231, 0.5);
   --color-interactive-border-hover: rgba(196, 167, 231, 0.7);
   --color-text-interactive-muted: #908caa;
@@ -1607,8 +1607,8 @@
   --color-interactive-surface-hover: rgba(196, 92, 92, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(196, 92, 92, 0.5);
   --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
 
@@ -1765,8 +1765,8 @@
   --color-interactive-surface-hover: rgba(196, 92, 92, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-interactive: rgba(255, 255, 255, 0.12);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(196, 92, 92, 0.5);
   --color-interactive-border-hover: rgba(196, 92, 92, 0.7);
 
@@ -1923,8 +1923,8 @@
   --color-interactive-surface-hover: rgba(192, 112, 80, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(192, 112, 80, 0.5);
   --color-interactive-border-hover: rgba(192, 112, 80, 0.7);
 
@@ -2081,8 +2081,8 @@
   --color-interactive-surface-hover: rgba(255, 95, 215, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(255, 95, 215, 0.5);
   --color-interactive-border-hover: rgba(255, 95, 215, 0.7);
 
@@ -2240,8 +2240,8 @@
   --color-interactive-surface-hover: rgba(180, 255, 58, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(180, 255, 58, 0.5);
   --color-interactive-border-hover: rgba(180, 255, 58, 0.7);
 
@@ -2399,8 +2399,8 @@
   --color-interactive-surface-hover: rgba(255, 79, 154, 0.25);
 
   /* Interactive border tokens */
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.06);
-  --color-border-interactive: rgba(255, 255, 255, 0.1);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(255, 79, 154, 0.5);
   --color-interactive-border-hover: rgba(255, 79, 154, 0.7);
 
@@ -4007,8 +4007,8 @@
   --color-interactive-surface: rgba(86, 180, 233, 0.15);
   --color-interactive-surface-hover: rgba(86, 180, 233, 0.25);
 
-  --color-border-interactive-subtle: rgba(255, 255, 255, 0.08);
-  --color-border-interactive: rgba(255, 255, 255, 0.14);
+  --color-border-interactive-subtle: rgba(255, 255, 255, 0.05);
+  --color-border-interactive: rgba(255, 255, 255, 0.08);
   --color-interactive-border: rgba(86, 180, 233, 0.5);
   --color-interactive-border-hover: rgba(86, 180, 233, 0.7);
 
