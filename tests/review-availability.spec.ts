@@ -271,17 +271,18 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(diffSummary.getByText('+8', { exact: true })).toBeVisible();
   await expect(diffSummary.getByText('-3', { exact: true })).toBeVisible();
 
-  const reviewFile = page.getByRole('button', { name: 'Expand diff for src/review.ts', exact: true });
-  await expect(reviewFile).toHaveAttribute('aria-expanded', 'false');
+  // Files in Changes open as center diff tabs (preview on single-click), not inline.
+  const reviewFile = page.getByRole('button', { name: 'Open diff for src/review.ts', exact: true });
   await reviewFile.click();
-  const expandedReviewFile = page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true });
-  await expect(expandedReviewFile).toHaveAttribute('aria-expanded', 'true');
+  const diffTab = page.getByRole('tab', { name: 'review.ts (Changes)', exact: true });
+  await expect(diffTab).toHaveAttribute('aria-selected', 'true');
+  await expect(reviewFile).toHaveAttribute('aria-current', 'true');
   const splitMode = page.getByRole('button', { name: 'Split', exact: true });
   await splitMode.click();
+  await expect(splitMode).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('tab', { name: 'Files', exact: true }).click();
   await reviewTab.click();
-  await expect(page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true })).toHaveAttribute('aria-expanded', 'true');
-  await expect(splitMode).toHaveClass(/bg-interactive/);
+  await expect(diffTab).toHaveAttribute('aria-selected', 'true');
   await capture(page, testInfo, '01-local-review-before-pr.png');
 
   await page.evaluate((gitStatus) => {
@@ -313,8 +314,9 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await capture(page, testInfo, '03-github-review-selected.png');
 
   await localMode.click();
-  await expect(page.getByRole('button', { name: 'Collapse diff for src/review.ts', exact: true })).toHaveAttribute('aria-expanded', 'true');
-  await expect(splitMode).toHaveClass(/bg-interactive/);
+  await expect(reviewFile).toHaveAttribute('aria-current', 'true');
+  await expect(diffTab).toHaveAttribute('aria-selected', 'true');
+  await expect(splitMode).toHaveAttribute('aria-pressed', 'true');
 });
 
 test('Review shows a clean local empty state before a pull request exists', async ({ page }) => {

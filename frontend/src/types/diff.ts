@@ -47,7 +47,10 @@ export interface DiffViewerProps {
   files: FileDiff[];
   className?: string;
   sessionId?: string;
-  onOpenInEditor?: (filePath: string) => void;
+  /** Path shown by the active editor tab, highlighted in the list. */
+  activePath?: string | null;
+  /** Single-click previews (pin=false); double-click pins. */
+  onFileOpen: (file: FileDiff, pin: boolean) => void;
 }
 
 export interface ExecutionListProps {

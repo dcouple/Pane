@@ -1,12 +1,15 @@
 import React, { useState, useEffect, memo, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
-import DiffViewer, { DiffViewerHandle } from './DiffViewer';
+import DiffViewer from './DiffViewer';
 import ExecutionList from '../../ExecutionList';
 import { CommitDialog } from '../../CommitDialog';
 import { API } from '../../../utils/api';
 import type { CombinedDiffViewProps, FileDiff } from '../../../types/diff';
 import type { ExecutionDiff, GitDiffResult } from '../../../types/diff';
 import { RefreshCw } from 'lucide-react';
-import { openFileInEditor } from '../../../services/openFileInEditor';
+import { editorPanelState, openFileInEditor } from '../../../services/openFileInEditor';
+import { usePanelStore } from '../../../stores/panelStore';
+import { parseUnifiedDiffToFiles } from './diffSource';
+import type { EditorDiffRef } from '../../../../../shared/types/panels';
 import { clearPendingViewCommit, takePendingViewCommit } from './pendingViewCommit';
 import { useCommittedRef } from '../../../hooks/useCommittedRef';
 
@@ -34,33 +37,6 @@ async function loadCommitDiff(sessionId: string, commitHash: string): Promise<Co
       error: error instanceof Error ? error.message : 'Failed to load commit diff',
     };
   }
-}
-
-// --- Unified diff parser (single pass, shared between FileList and DiffViewer) ---
-
-function parseUnifiedDiffToFiles(diff: string): FileDiff[] {
-  if (!diff?.trim()) return [];
-
-  const fileChunks = diff.match(/diff --git[\s\S]*?(?=diff --git|$)/g);
-  if (!fileChunks) return [];
-
-  return fileChunks.flatMap(chunk => {
-    const nameMatch = chunk.match(/diff --git a\/(.*?) b\/(.*?)(?:\n|$)/);
-    if (!nameMatch) return [];
-    const oldPath = nameMatch[1];
-    const newPath = nameMatch[2];
-    const isBinary = chunk.includes('Binary files') || chunk.includes('GIT binary patch');
-
-    let type: FileDiff['type'] = 'modified';
-    if (chunk.includes('new file mode')) type = 'added';
-    else if (chunk.includes('deleted file mode')) type = 'deleted';
-    else if (chunk.includes('rename from') && chunk.includes('rename to')) type = 'renamed';
-
-    const additions = (chunk.match(/^\+(?!\+\+)/gm) || []).length;
-    const deletions = (chunk.match(/^-(?!--)/gm) || []).length;
-
-    return [{ path: newPath || oldPath, oldPath, type, isBinary, additions, deletions, rawDiff: chunk }];
-  });
 }
 
 // --- CombinedDiffView ---
@@ -114,7 +90,6 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
   });
   const [isResizing, setIsResizing] = useState(false);
 
-  const diffViewerRef = useRef<DiffViewerHandle>(null);
 
   const isAnyLoading = executionsLoading || diffLoading || commitDiffLoading;
   const showInitialSkeleton = executionsLoading && executions.length === 0;
@@ -544,9 +519,28 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     }
   }, [sessionId, triggerSoftRefresh]);
 
-  const handleOpenInEditor = useCallback(async (filePath: string) => {
-    await openFileInEditor({ sessionId, filePath, pin: true });
-  }, [sessionId]);
+  // The diff ref the tab will re-fetch by; mirrors the request made above.
+  const currentDiffRef = useMemo<EditorDiffRef>(() => {
+    if (viewingCommitHash) return { kind: 'commit', hash: viewingCommitHash };
+    if (selectedExecutions.length === 1) {
+      return selectedExecutions[0] === 0
+        ? { kind: 'range', executionIds: [0] }
+        : { kind: 'range', executionIds: [selectedExecutions[0], selectedExecutions[0]] };
+    }
+    if (selectedExecutions.length === executions.length) return { kind: 'range' };
+    return { kind: 'range', executionIds: selectedExecutions };
+  }, [viewingCommitHash, selectedExecutions, executions.length]);
+
+  const handleFileOpen = useCallback((file: FileDiff, pin: boolean) => {
+    void openFileInEditor({ sessionId, filePath: file.path, pin, diff: currentDiffRef });
+  }, [sessionId, currentDiffRef]);
+
+  const activeDiffPath = usePanelStore((state) => {
+    const activeId = state.activePanels[sessionId];
+    const active = (state.panels[sessionId] || []).find((panel) => panel.id === activeId);
+    const editorState = active ? editorPanelState(active) : undefined;
+    return editorState?.diff ? editorState.filePath : null;
+  });
 
   if (showInitialSkeleton) {
     return (
@@ -670,11 +664,11 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
             </div>
           ) : combinedDiff ? (
             <DiffViewer
-              ref={diffViewerRef}
               files={parsedFiles}
               sessionId={sessionId}
               className="h-full"
-              onOpenInEditor={handleOpenInEditor}
+              activePath={activeDiffPath}
+              onFileOpen={handleFileOpen}
             />
           ) : error ? (
             <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded m-4">

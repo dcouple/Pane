@@ -1,5 +1,5 @@
 import React, { useCallback, memo, useState, useRef, useEffect, useMemo } from 'react';
-import { Plus, X, Terminal, GitBranch, FileCode, FileText, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
+import { Plus, X, Terminal, GitBranch, FileCode, FileDiff, FileText, BarChart3, PanelRight, FolderTree, TerminalSquare, Play, Globe } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../utils/cn';
 import { useHotkey } from '../../hooks/useHotkey';
@@ -10,6 +10,7 @@ import { useConfigStore } from '../../stores/configStore';
 import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
+import { editorPanelState } from '../../services/openFileInEditor';
 import { Kbd } from '../ui/Kbd';
 import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/brandIconRegistry';
 import { visibleAgentPresets } from '../../utils/agentPresets';
@@ -394,7 +395,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       case 'explorer':
         return <FolderTree className="w-4 h-4" />;
       case 'editor':
-        return <FileText className="w-4 h-4" />;
+        return panel && editorPanelState(panel)?.diff ? <FileDiff className="w-4 h-4" /> : <FileText className="w-4 h-4" />;
       case 'logs':
         return <FileCode className="w-4 h-4" />;
       case 'dashboard':

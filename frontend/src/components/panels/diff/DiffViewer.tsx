@@ -1,219 +1,60 @@
-import { useState, useEffect, useMemo, memo, forwardRef, useImperativeHandle, useRef, useCallback, useId } from 'react';
-import { DiffView, DiffModeEnum } from '@git-diff-view/react';
-import type { DiffHighlighter } from '@git-diff-view/shiki';
-import { getDiffViewHighlighter } from '@git-diff-view/shiki';
-import { FileText, ChevronRight, ChevronDown, ExternalLink, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
+import { memo } from 'react';
+import { FileText } from 'lucide-react';
 import type { DiffViewerProps, FileDiff } from '../../../types/diff';
-import { isLightTheme, useTheme } from '../../../contexts/ThemeContext';
+import { cn } from '../../../utils/cn';
 import { useScrollSurface } from '../../../hooks/useScrollSurface';
-import "@git-diff-view/react/styles/diff-view.css";
 
-// --- Shiki singleton ---
-let shikiPromise: Promise<DiffHighlighter> | null = null;
-
-function getShikiHighlighter(): Promise<DiffHighlighter> {
-  if (!shikiPromise) {
-    shikiPromise = getDiffViewHighlighter();
-  }
-  return shikiPromise;
-}
-
-// --- FileAccordion ---
-
-interface FileAccordionProps {
+interface FileRowProps {
   file: FileDiff;
-  index: number;
-  isExpanded: boolean;
-  onToggle: () => void;
-  viewType: DiffModeEnum;
-  isDarkMode: boolean;
-  highlighter: DiffHighlighter | null;
-  onOpenInEditor?: (filePath: string) => void;
+  isActive: boolean;
+  onOpen: (file: FileDiff, pin: boolean) => void;
 }
 
-const FileAccordion = memo<FileAccordionProps>(({
-  file,
-  index,
-  isExpanded,
-  onToggle,
-  viewType,
-  isDarkMode,
-  highlighter,
-  onOpenInEditor,
-}) => {
-  const contentId = useId();
-  const hasHunks = file.rawDiff.includes('@@');
-  const diffData = useMemo(() => {
-    if (!isExpanded || file.isBinary || !hasHunks) return null;
-    return {
-      oldFile: { fileName: file.oldPath || file.path },
-      newFile: { fileName: file.path },
-      hunks: [file.rawDiff],
-    };
-  }, [isExpanded, file, hasHunks]);
-
-  return (
-    <div id={`file-${index}`} className="border-b border-border-primary">
-      {/* Clickable header */}
-      <div className="group relative px-4 py-2.5 bg-surface-secondary hover:bg-surface-hover transition-colors flex items-center justify-between">
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          aria-controls={contentId}
-          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} diff for ${file.path}`}
-          onClick={onToggle}
-          className="absolute inset-0 z-0 rounded focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
-        />
-        <div className="relative z-10 pointer-events-none flex items-center gap-2 min-w-0">
-          {isExpanded
-            ? <ChevronDown className="w-4 h-4 flex-shrink-0 text-text-tertiary" />
-            : <ChevronRight className="w-4 h-4 flex-shrink-0 text-text-tertiary" />}
-          <FileText className="w-4 h-4 flex-shrink-0 text-text-tertiary" />
-          <span className="text-sm font-medium text-text-primary truncate">{file.path}</span>
-          {file.type === 'deleted' && (
-            <span className="text-xs bg-status-error text-text-on-status-error px-1.5 py-0.5 rounded flex-shrink-0">Deleted</span>
-          )}
-          {file.type === 'added' && (
-            <span className="text-xs bg-status-success text-text-on-status-success px-1.5 py-0.5 rounded flex-shrink-0">New</span>
-          )}
-          {file.type === 'renamed' && (
-            <span className="text-xs text-text-tertiary flex-shrink-0">
-              from {file.oldPath}
-            </span>
-          )}
-        </div>
-
-        <div className="relative z-10 pointer-events-none flex items-center gap-2 flex-shrink-0">
-          {file.additions > 0 && (
-            <span className="text-xs text-status-success font-semibold">+{file.additions}</span>
-          )}
-          {file.deletions > 0 && (
-            <span className="text-xs text-status-error font-semibold">-{file.deletions}</span>
-          )}
-          {file.type !== 'deleted' && onOpenInEditor ? (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onOpenInEditor(file.path); }}
-              aria-label={`Open ${file.path} in Editor`}
-              className="pointer-events-auto p-1 rounded hover:bg-surface-hover opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
-            >
-              <ExternalLink className="w-3.5 h-3.5 text-text-tertiary" />
-            </button>
-          ) : onOpenInEditor ? (
-            <div className="p-1"><div className="w-3.5 h-3.5" /></div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div id={contentId} className="border-t border-border-primary">
-          {file.isBinary ? (
-            <div className="p-4 text-text-secondary text-sm">Binary file</div>
-          ) : diffData && diffData.hunks.length > 0 ? (
-            <DiffView
-              data={diffData}
-              diffViewMode={viewType}
-              diffViewTheme={isDarkMode ? 'dark' : 'light'}
-              diffViewHighlight={!!highlighter}
-              registerHighlighter={highlighter ?? undefined}
-              diffViewWrap={true}
-              diffViewFontSize={13}
-            />
-          ) : (
-            <div className="p-4 text-text-tertiary text-sm">
-              {file.type === 'renamed' ? 'File renamed (no content changes)' : 'No content changes'}
-            </div>
-          )}
-        </div>
+/** One changed file. Single-click previews its diff in a center tab; double-click pins it. */
+const FileRow = memo<FileRowProps>(({ file, isActive, onOpen }) => (
+  <div
+    className={cn(
+      'group relative flex h-8 items-center justify-between gap-2 pl-4 pr-3',
+      isActive ? 'bg-surface-selected' : 'hover:bg-surface-hover',
+    )}
+  >
+    <button
+      type="button"
+      aria-label={`Open diff for ${file.path}`}
+      aria-current={isActive ? 'true' : undefined}
+      onClick={() => onOpen(file, false)}
+      onDoubleClick={() => onOpen(file, true)}
+      className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+    />
+    <div className="relative z-10 pointer-events-none flex min-w-0 items-center gap-2">
+      <FileText className="w-3.5 h-3.5 flex-shrink-0 text-text-tertiary" />
+      <span className="min-w-0 truncate text-[13px] text-text-primary">{file.path}</span>
+      {file.type === 'deleted' && (
+        <span className="flex-shrink-0 rounded bg-status-error px-1.5 py-0.5 text-[10px] text-text-on-status-error">Deleted</span>
+      )}
+      {file.type === 'added' && (
+        <span className="flex-shrink-0 rounded bg-status-success px-1.5 py-0.5 text-[10px] text-text-on-status-success">New</span>
+      )}
+      {file.type === 'renamed' && (
+        <span className="flex-shrink-0 text-xs text-text-tertiary">from {file.oldPath}</span>
       )}
     </div>
-  );
-});
+    <div className="relative z-10 pointer-events-none flex flex-shrink-0 items-center gap-1 text-xs tabular-nums">
+      {file.additions > 0 && <span className="font-semibold text-status-success">+{file.additions}</span>}
+      {file.deletions > 0 && <span className="font-semibold text-status-error">-{file.deletions}</span>}
+    </div>
+  </div>
+));
 
-FileAccordion.displayName = 'FileAccordion';
+FileRow.displayName = 'FileRow';
 
-// --- DiffViewer ---
-
-export interface DiffViewerHandle {
-  scrollToFile: (index: number) => void;
-}
-
-const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, className = '', sessionId, onOpenInEditor }, ref) => {
-  const { theme } = useTheme();
-  const isDarkMode = !isLightTheme(theme);
-  const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set());
-  const [highlighter, setHighlighter] = useState<DiffHighlighter | null>(null);
-  const viewerRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
+/** The Review panel's changed-file list. Diffs open as center tabs, not inline. */
+const DiffViewer = memo<DiffViewerProps>(({ files, className = '', sessionId, activePath, onFileOpen }) => {
   const registerScrollSurface = useScrollSurface<HTMLDivElement>({
     id: `diff:${sessionId ?? 'unscoped'}`,
     sessionId,
     priority: 90,
-    ownerElement: () => viewerRef.current,
   });
-  const setScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
-    scrollContainerRef.current = element;
-    registerScrollSurface(element);
-  }, [registerScrollSurface]);
-  const prevFingerprintRef = useRef<string>('');
-
-  const [viewType, setViewType] = useState<DiffModeEnum>(() => {
-    const saved = localStorage.getItem('diffViewType');
-    return saved === 'split' ? DiffModeEnum.Split : DiffModeEnum.Unified;
-  });
-
-  // Initialize Shiki once
-  useEffect(() => {
-    getShikiHighlighter().then(setHighlighter);
-  }, []);
-
-  const handleViewTypeChange = useCallback((mode: DiffModeEnum) => {
-    setViewType(mode);
-    localStorage.setItem('diffViewType', mode === DiffModeEnum.Split ? 'split' : 'inline');
-  }, []);
-
-  const toggleFile = useCallback((index: number) => {
-    setExpandedFiles(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  }, []);
-
-  const expandAll = useCallback(() => {
-    setExpandedFiles(new Set(files.map((_, i) => i)));
-  }, [files]);
-
-  const collapseAll = useCallback(() => {
-    setExpandedFiles(new Set());
-  }, []);
-
-  // Reset expanded files only when the actual file list changes (not just the array reference).
-  // Expand all files by default.
-  const fingerprint = useMemo(() => files.map(f => f.path).join('\0'), [files]);
-  useEffect(() => {
-    if (fingerprint !== prevFingerprintRef.current) {
-      prevFingerprintRef.current = fingerprint;
-      setExpandedFiles(new Set());
-    }
-  }, [fingerprint, files.length]);
-
-  // Expose scrollToFile to parent
-  useImperativeHandle(ref, () => ({
-    scrollToFile: (index: number) => {
-      // Expand the file if collapsed
-      if (!expandedFiles.has(index)) {
-        setExpandedFiles(prev => new Set([...prev, index]));
-      }
-      // Scroll after a tick so the DOM updates
-      setTimeout(() => {
-        const el = scrollContainerRef.current?.querySelector(`#file-${index}`);
-        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }, 3);
-    }
-  }), [expandedFiles]);
 
   if (files.length === 0) {
     return (
@@ -224,73 +65,23 @@ const DiffViewer = memo(forwardRef<DiffViewerHandle, DiffViewerProps>(({ files, 
   }
 
   return (
-    <div ref={viewerRef} className={`diff-viewer ${className}`} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div className="flex justify-between items-center px-4 py-2 flex-shrink-0 bg-surface-secondary border-b border-border-primary">
-        <span className="text-sm text-text-secondary">
-          {files.length} {files.length === 1 ? 'file' : 'files'} changed
-        </span>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={expandAll}
-              title="Expand all files"
-              className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
-            >
-              <ChevronsUpDown className="w-4 h-4" />
-            </button>
-            <button
-              onClick={collapseAll}
-              title="Collapse all files"
-              className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
-            >
-              <ChevronsDownUp className="w-4 h-4" />
-            </button>
-          </div>
-        <div className="inline-flex rounded-lg border border-border-primary bg-surface-primary">
-          <button
-            onClick={() => handleViewTypeChange(DiffModeEnum.Unified)}
-            className={`px-3 py-1 text-sm font-medium rounded-l-lg transition-colors ${
-              viewType === DiffModeEnum.Unified
-                ? 'bg-interactive text-text-on-interactive'
-                : 'text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            Unified
-          </button>
-          <button
-            onClick={() => handleViewTypeChange(DiffModeEnum.Split)}
-            className={`px-3 py-1 text-sm font-medium rounded-r-lg transition-colors ${
-              viewType === DiffModeEnum.Split
-                ? 'bg-interactive text-text-on-interactive'
-                : 'text-text-secondary hover:bg-surface-hover'
-            }`}
-          >
-            Split
-          </button>
-        </div>
-        </div>
+    <div className={`diff-viewer flex h-full flex-col ${className}`}>
+      <div className="flex h-8 flex-shrink-0 items-center px-4 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary bg-surface-secondary border-b border-border-primary">
+        {files.length} {files.length === 1 ? 'file' : 'files'} changed
       </div>
-
-      {/* File list */}
-      <div ref={setScrollContainerRef} tabIndex={-1} className="flex-1 overflow-auto">
+      <div ref={registerScrollSurface} tabIndex={-1} className="flex-1 overflow-auto py-1">
         {files.map((file, index) => (
-          <FileAccordion
+          <FileRow
             key={`${file.path}-${index}`}
             file={file}
-            index={index}
-            isExpanded={expandedFiles.has(index)}
-            onToggle={() => toggleFile(index)}
-            viewType={viewType}
-            isDarkMode={isDarkMode}
-            highlighter={highlighter}
-            onOpenInEditor={onOpenInEditor}
+            isActive={file.path === activePath}
+            onOpen={onFileOpen}
           />
         ))}
       </div>
     </div>
   );
-}));
+});
 
 DiffViewer.displayName = 'DiffViewer';
 

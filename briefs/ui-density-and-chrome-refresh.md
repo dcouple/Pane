@@ -106,6 +106,10 @@ open is focused, not duplicated. The Explorer's Monaco half became
 `FileEditorView` (used by `FileEditorTabPanel`); the Files tab is tree-only
 and highlights the active tab's file. Review "Open in editor" and terminal
 file links open pinned tabs; `editor` never appears in the `+` menu.
+Changes works the same way: the rail is a file list and a file's diff
+opens as a center tab (`DiffTabView`, `EditorPanelState.diff` holds the
+commit/range ref so the tab refetches on its own), with the Unified/Split
+toggle and an "Open file" button in the tab.
 
 ## Step 6 — `+` tab button and Superset-style popover
 

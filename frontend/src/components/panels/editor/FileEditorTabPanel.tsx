@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FileEditorView } from './FileEditorView';
+import { DiffTabView } from '../diff/DiffTabView';
 import { EditorPanelState, ToolPanel } from '../../../../../shared/types/panels';
 import { panelApi } from '../../../services/panelApi';
 import { debounce } from '../../../utils/debounce';
@@ -73,6 +74,14 @@ const FileEditorTabPanel: React.FC<FileEditorTabPanelProps> = ({ panel, isActive
           <div className="text-sm">{panel.title}</div>
           <div className="text-xs mt-1 text-text-tertiary">Click to activate</div>
         </div>
+      </div>
+    );
+  }
+
+  if (editorState?.diff) {
+    return (
+      <div className="h-full w-full">
+        <DiffTabView sessionId={panel.sessionId} filePath={filePath} diffRef={editorState.diff} />
       </div>
     );
   }

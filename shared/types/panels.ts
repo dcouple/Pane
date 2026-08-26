@@ -138,8 +138,19 @@ export interface ExplorerPanelState {
  * preview tab (italic title) that the next single-click re-targets; double-
  * clicking the file or the tab, or editing the file, pins it.
  */
+/**
+ * Which diff an editor tab shows. Mirrors the Review panel's two addressing
+ * modes: a commit hash (`'index'` = uncommitted) or an execution range
+ * (`[0]` = uncommitted, `[a, b]` = one commit, omitted = every commit).
+ */
+export type EditorDiffRef =
+  | { kind: 'commit'; hash: string }
+  | { kind: 'range'; executionIds?: number[] };
+
 export interface EditorPanelState {
   filePath: string;
+  /** When set, the tab shows this file's diff instead of an editable file. */
+  diff?: EditorDiffRef;
   isPreview?: boolean;
   isDirty?: boolean;
   cursorPosition?: { line: number; column: number };

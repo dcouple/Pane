@@ -7,7 +7,8 @@
  *   pinned tab, or pins the preview tab if it already shows this file.
  * - A file that is already open in any editor tab is focused, not duplicated.
  */
-import type { EditorPanelState, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
+import type { EditorDiffRef, EditorPanelState, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
+import { diffRefLabel, sameDiffRef } from '../components/panels/diff/diffSource';
 import { panelApi } from './panelApi';
 import { usePanelStore } from '../stores/panelStore';
 import { addPanelToGroup, findGroup, findGroupContainingPanel, primaryGroup } from '../utils/panelLayout';
@@ -18,6 +19,8 @@ export interface OpenFileInEditorOptions {
   /** Pin the tab (VS Code double-click). Defaults to a preview tab. */
   pin?: boolean;
   cursorPosition?: { line: number; column: number };
+  /** Open the file's diff (Review panel) instead of the editable file. */
+  diff?: EditorDiffRef;
 }
 
 /** IPC payloads are JSON: an explicit `undefined` is rejected at the boundary. */
@@ -36,9 +39,16 @@ export function editorPanelState(panel: ToolPanel): EditorPanelState | undefined
   return panel.state?.customState as EditorPanelState | undefined;
 }
 
-export function editorTitleFor(filePath: string, isDirty?: boolean): string {
+export function editorTitleFor(filePath: string, isDirty?: boolean, diff?: EditorDiffRef): string {
   const name = filePath.split(/[/\\]/).pop() || 'Editor';
+  if (diff) return `${name} (${diffRefLabel(diff)})`;
   return isDirty ? `${name} *` : name;
+}
+
+/** Same file *and* same diff context (an editor tab and a diff tab can coexist). */
+function showsTarget(panel: ToolPanel, filePath: string, diff: EditorDiffRef | undefined): boolean {
+  const state = editorPanelState(panel);
+  return state?.filePath === filePath && sameDiffRef(state.diff, diff);
 }
 
 /** Point the session's layout at `panelId`, inserting it if it is new. */
@@ -97,12 +107,12 @@ export async function pinEditorPanel(panel: ToolPanel): Promise<void> {
 }
 
 export async function openFileInEditor(options: OpenFileInEditorOptions): Promise<ToolPanel> {
-  const { sessionId, filePath, pin = false, cursorPosition } = options;
+  const { sessionId, filePath, pin = false, cursorPosition, diff } = options;
   const store = usePanelStore.getState();
   const editors = store.getSessionPanels(sessionId).filter((p) => p.type === 'editor');
 
   // Already open: focus it (and pin on request).
-  const existing = editors.find((p) => editorPanelState(p)?.filePath === filePath);
+  const existing = editors.find((p) => showsTarget(p, filePath, diff));
   if (existing) {
     let panel = existing;
     if (pin && editorPanelState(existing)?.isPreview) {
@@ -122,8 +132,8 @@ export async function openFileInEditor(options: OpenFileInEditorOptions): Promis
   if (!pin && preview) {
     const panel = await updateEditorPanel(
       preview,
-      { filePath, isPreview: true, isDirty: false, cursorPosition, scrollPosition: undefined },
-      editorTitleFor(filePath),
+      { filePath, diff, isPreview: true, isDirty: false, cursorPosition, scrollPosition: undefined },
+      editorTitleFor(filePath, false, diff),
     );
     await activate(sessionId, panel.id);
     return panel;
@@ -132,8 +142,8 @@ export async function openFileInEditor(options: OpenFileInEditorOptions): Promis
   const created = await panelApi.createPanel({
     sessionId,
     type: 'editor',
-    title: editorTitleFor(filePath),
-    initialState: { customState: withoutUndefined({ filePath, isPreview: !pin, isDirty: false, cursorPosition }) },
+    title: editorTitleFor(filePath, false, diff),
+    initialState: { customState: withoutUndefined({ filePath, diff, isPreview: !pin, isDirty: false, cursorPosition }) },
   });
   store.addPanel(created);
   await activate(sessionId, created.id);

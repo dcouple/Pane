@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
-import { X, Terminal, GitBranch, FileCode, FileText, FolderTree, BarChart3, Globe } from 'lucide-react';
+import { X, Terminal, GitBranch, FileCode, FileDiff, FileText, FolderTree, BarChart3, Globe } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { ToolPanel, ToolPanelType, LogsPanelState } from '../../../../shared/types/panels';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
@@ -81,7 +81,7 @@ function getPanelIcon(type: ToolPanelType, panel?: ToolPanel, iconClass = 'w-4 h
     case 'explorer':
       return <FolderTree className={iconClass} />;
     case 'editor':
-      return <FileText className={iconClass} />;
+      return panel && editorPanelState(panel)?.diff ? <FileDiff className={iconClass} /> : <FileText className={iconClass} />;
     case 'logs':
       return <FileCode className={iconClass} />;
     case 'dashboard':

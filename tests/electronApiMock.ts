@@ -584,6 +584,19 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getSessionPanels: (sessionId: string) => success(
           clone(mockPanels.filter((panel) => panel.sessionId === sessionId)),
         ),
+        createPanel: (sessionId: string, type: string, title: string, initialState?: JsonObject) => {
+          const now = new Date().toISOString();
+          const panel = {
+            id: `mock-panel-${mockPanels.length + 1}`,
+            sessionId,
+            type,
+            title,
+            state: { isActive: false, customState: initialState?.customState ?? initialState ?? {} },
+            metadata: { createdAt: now, lastActiveAt: now, position: mockPanels.length },
+          };
+          mockPanels.push(panel);
+          return success(clone(panel));
+        },
         shouldAutoCreate: () => success(false),
       }),
       permissions: namespace({
