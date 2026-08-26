@@ -29,7 +29,7 @@ export interface FileEditorViewProps {
   initialState?: EditorPanelState;
   onFileChange?: (filePath: string | undefined, isDirty: boolean) => void;
   onStateChange?: (state: Partial<EditorPanelState>) => void;
-  /** Fired the first time the user edits a file (used to pin preview tabs). */
+  /** Fired when the user edits or saves (⌘S) the file — pins preview tabs. */
   onUserEdit?: () => void;
 }
 
@@ -362,6 +362,23 @@ export function FileEditorView({
 
   useEffect(() => () => autoSave.flush(), [autoSave]);
 
+  // ⌘S / Ctrl+S: write any pending edit now and pin the tab (VS Code pins
+  // preview editors on save, whether or not anything changed).
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 's' || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      autoSave.flush();
+      onUserEdit?.();
+    };
+    container.addEventListener('keydown', handleKeyDown, true);
+    return () => container.removeEventListener('keydown', handleKeyDown, true);
+  }, [autoSave, onUserEdit]);
+
   const handleEditorChange = (value: string | undefined) => {
     const content = value || '';
     setFileContent(content);
@@ -435,7 +452,7 @@ export function FileEditorView({
   }, [selectedFile?.path]);
 
   return (
-    <div className="h-full w-full min-w-0 flex flex-col overflow-hidden">
+    <div ref={containerRef} className="h-full w-full min-w-0 flex flex-col overflow-hidden">
         {selectedFile ? (
           <>
             <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary border-b border-border-primary">

@@ -44,6 +44,8 @@ try {
     if (s.startsWith('file:')) { const n = s.slice(5); await page.locator('.pane-explorer-tree').getByText(n, { exact: true }).first().click(); await page.waitForTimeout(2000); await shot(page, `e12-file-${n.replace(/[^a-z0-9]/gi,'_')}.png`); }
     if (s.startsWith('dfile:')) { const n = s.slice(6); await page.locator('.pane-explorer-tree').getByText(n, { exact: true }).first().dblclick(); await page.waitForTimeout(2000); await shot(page, `e13-dfile-${n.replace(/[^a-z0-9]/gi,'_')}.png`); }
     if (s.startsWith('dtab:')) { const n = s.slice(5); await page.getByRole('tab', { name: n, exact: true }).first().dblclick(); await page.waitForTimeout(1500); await shot(page, `e14-dtab-${n.replace(/[^a-z0-9]/gi,'_')}.png`); }
+    if (s.startsWith('key:')) { await page.keyboard.press(s.slice(4)); await page.waitForTimeout(800); }
+    if (s === 'editor') { await page.locator('.monaco-editor').first().click({ position: { x: 200, y: 100 } }); await page.waitForTimeout(300); }
     if (s === 'tabs') { console.log('TABS', await page.evaluate(() => Array.from(document.querySelectorAll('[role=tab]')).map(t => { const span = t.parentElement?.querySelector('span.truncate'); const italic = span ? getComputedStyle(span).fontStyle : '?'; return `${(t.getAttribute('aria-label') || '').trim()}[${italic}${t.getAttribute('aria-selected')==='true'?',active':''}]`; }).join(' | '))); }
     if (s === 'sidemenu') { await page.getByRole('button', { name: 'Sidebar menu' }).click(); await page.waitForTimeout(500); await shot(page, 'e11-sidemenu.png'); await page.keyboard.press('Escape'); }
     if (s === 'focus') { await page.locator('.xterm').first().click({ position: { x: 300, y: 200 } }); await page.waitForTimeout(300); }
