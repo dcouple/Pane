@@ -106,6 +106,7 @@ export class SkillCacheManager {
   readonly codexPaneOrchestratorSkillPath: string;
   readonly claudePaneOrchestratorSkillPath: string;
   readonly cursorPaneOrchestratorRulePath: string;
+  readonly paneWatchScriptPath: string;
   readonly syncStatePath: string;
 
   private initialSyncTimer: NodeJS.Timeout | null = null;
@@ -125,6 +126,7 @@ export class SkillCacheManager {
     this.codexPaneOrchestratorSkillPath = path.join(this.codexProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.claudePaneOrchestratorSkillPath = path.join(this.claudeProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.cursorPaneOrchestratorRulePath = path.join(getAppDirectory(), '.cursor', 'rules', 'pane-orchestrator.mdc');
+    this.paneWatchScriptPath = path.join(getAppDirectory(), 'tools', 'pane-watch.sh');
     this.syncStatePath = path.join(this.cacheRoot, 'sync-state.json');
   }
 
@@ -316,6 +318,8 @@ export class SkillCacheManager {
     await this.writeTextFile(this.codexPaneOrchestratorSkillPath, orchestratorSkill);
     await this.writeTextFile(this.claudePaneOrchestratorSkillPath, orchestratorSkill);
     await this.writeTextFile(this.cursorPaneOrchestratorRulePath, this.toCursorRule(orchestratorSkill));
+    await this.writeTextFile(this.paneWatchScriptPath, this.buildPaneWatchScript());
+    await fs.chmod(this.paneWatchScriptPath, 0o755);
   }
 
   /** Cursor reads .cursor/rules/*.mdc, not SKILL.md files — swap the frontmatter. */
@@ -455,6 +459,7 @@ ${managedBlock}
     const skillLegendSource = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.excalidraw');
     const codexProjectSkillsRoot = this.codexProjectSkillsRoot;
     const claudeProjectSkillsRoot = this.claudeProjectSkillsRoot;
+    const paneWatchScript = this.paneWatchScriptPath;
 
     return `---
 name: pane-orchestrator
@@ -475,10 +480,9 @@ You are Pane Chat, the global orchestrator for this Pane workspace.
 5. Run the doctor command from the runtime context before taking Pane actions.
 6. Reconstitute the in-flight work picture with this bounded live-state sweep
    before acting or answering a status question:
-   1. Enumerate panes through RunPane. Use pane status, recent activity, running
-      panels, and linked artifacts to determine the active working set. Include
-      active unpinned panes; pinning is only a UI favorite signal, not an
-      activity signal.
+   1. Enumerate panes through RunPane. Use panel activity status, running panels,
+      and linked artifacts to determine the active working set. Include
+      unpinned panes; pinning is a UI favorite signal, not an activity signal.
    2. If activity is ambiguous, inspect all non-archived panes before narrowing
       to the active working set. Go wider than non-archived panes only when the
       user asks.
@@ -504,6 +508,12 @@ You are Pane Chat, the global orchestrator for this Pane workspace.
 Do not claim initialization is complete until you have loaded these workflow
 references, completed the bounded live-state sweep, and can name the intended
 lifecycle for the user's task.
+
+Arm \`${paneWatchScript}\` with the Monitor tool at session start; it emits
+READY/BUSY/NEW/GONE per pane on agent-activity transitions. Do not poll panes
+by hand or screen-scrape terminal text to decide whether an agent is working.
+\`panel.activityStatus\` is the accurate activity signal; \`pane.status\` is not —
+it reports "stopped" for panes whose agent is actively working.
 
 For read-only work questions, use \`pane-work-recap\` when the user asks what
 they worked on and \`pane-work-prioritizer\` when they ask what to work on next.
@@ -597,9 +607,6 @@ Use one unambiguous hierarchy:
 4. Agent-specific downstream skills are authoritative for how each lifecycle
    stage is performed.
 
-If layers appear to conflict, preserve the more specific authority above instead
-of merging both instructions into a new lifecycle.
-
 ## Workflow Discipline
 
 The active agent's cached \`runpane-orchestrator\` owns the lifecycle contract.
@@ -622,8 +629,6 @@ the brief. In that case, Pane Chat still synthesizes the discussion result befor
 advancing the upstream lifecycle.
 
 ## Pane Workflow Model
-
-Pane manages saved repositories and user-visible Panes.
 
 - Add a repository once, then use Pane to manage work against it. If no suitable
   repo exists, create a minimal local git repository and register it with Pane,
@@ -688,6 +693,91 @@ Stop before merge, deploy, release creation, publishing, version changes,
 production or destructive mutation, deleting user data, scope expansion, or
 other irreversible actions unless the user explicitly authorizes that exact
 step.
+`;
+  }
+
+  private buildPaneWatchScript(): string {
+    return `#!/bin/bash
+# pane-watch — universal Pane agent-activity monitor.
+#
+# Works for ANY Pane Chat user. No dependency on particular skills, orchestra,
+# repos, or file layouts: it discovers panes from RunPane and watches the agent
+# activity of every CLI panel it finds.
+#
+# Usage:  pane-watch.sh [name-filter] [interval-seconds]
+# Drive it with a Monitor tool — each stdout line becomes one notification.
+#
+# SIGNAL CHOICE (important):
+#   Use panel.activityStatus from \`runpane panels wait\`.
+#   Do NOT use pane.status — it reports "stopped" for panes whose agent is
+#   actively working, so it cannot distinguish thinking from finished.
+#   Do NOT screen-scrape terminal text — false positives and false negatives.
+#
+# Events:
+#   READY <pane>   agent finished a turn   (active -> idle)
+#   BUSY  <pane>   agent started a turn    (idle -> active)
+#   NEW   <pane>   pane appeared           (also catches orphaned creates)
+#   GONE  <pane>   pane archived/removed
+
+FILTER="\${1:-}"; INTERVAL="\${2:-60}"
+RP="npx --yes runpane@latest"
+STATE="\${PANE_WATCH_STATE:-$HOME/.pane/tools/.state}"
+mkdir -p "$STATE"
+
+while true; do
+  (cd /tmp && $RP panes list --json 2>/dev/null) | F="$FILTER" python3 -c "
+import json,sys,os
+f=os.environ.get('F','')
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for p in d.get('panes',[]):
+    if f and f not in p['name']: continue
+    print('%s\\t%s' % (p['id'], p['name']))
+" | sort > "$STATE/panes.new"
+
+  if [ -s "$STATE/panes.new" ]; then
+    if [ -f "$STATE/panes.old" ]; then
+      comm -13 "$STATE/panes.old" "$STATE/panes.new" | cut -f2 | while read -r n; do [ -n "$n" ] && echo "NEW   $n"; done
+      comm -23 "$STATE/panes.old" "$STATE/panes.new" | cut -f2 | while read -r n; do [ -n "$n" ] && echo "GONE  $n"; done
+    fi
+    cp "$STATE/panes.new" "$STATE/panes.old"
+  fi
+
+  while IFS=$'\\t' read -r pid pname; do
+    [ -z "$pid" ] && continue
+    (cd /tmp && $RP panels list --pane "$pid" --json 2>/dev/null) | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for p in d.get('panels',[]):
+    print(p['panelId'])
+" 2>/dev/null | while read -r panel; do
+      [ -z "$panel" ] && continue
+      CUR=$( (cd /tmp && $RP panels wait --panel "$panel" --for idle --timeout-ms 1200 --json 2>/dev/null) | python3 -c "
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+s=d.get('state') or {}
+# only CLI panels carry meaningful agent activity
+if not s.get('isCliPanel'): sys.exit(0)
+a=s.get('activityStatus')
+if a in ('active','idle'): print(a)
+" 2>/dev/null )
+      [ -z "$CUR" ] && continue          # non-CLI panel, or unreadable — record nothing
+      M="$STATE/act_$panel"
+      PREV=$(cat "$M" 2>/dev/null)
+      [ "$CUR" = "$PREV" ] && continue
+      echo "$CUR" > "$M"
+      [ -z "$PREV" ] && continue          # first sighting seeds the baseline, no event
+      case "$CUR" in
+        idle)   echo "READY $pname" ;;
+        active) echo "BUSY  $pname" ;;
+      esac
+    done
+  done < "$STATE/panes.new"
+
+  sleep "$INTERVAL"
+done
 `;
   }
 

@@ -139,9 +139,9 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(canonicalSkill).toContain('says: "do it yourself in this chat."');
     expect(canonicalSkill).toContain('Inspect the workflow map and skill legend');
     expect(canonicalSkill).toContain('Reconstitute the in-flight work picture with this bounded live-state sweep');
-    expect(canonicalSkill).toContain('Use pane status, recent activity, running');
-    expect(canonicalSkill).toContain('active unpinned panes');
-    expect(canonicalSkill).toContain('pinning is only a UI favorite signal');
+    expect(canonicalSkill).toContain('Use panel activity status, running panels');
+    expect(canonicalSkill).toContain('unpinned panes');
+    expect(canonicalSkill).toContain('pinning is a UI favorite signal');
     expect(canonicalSkill).toContain('inspect all non-archived panes before narrowing');
     expect(canonicalSkill).toContain('Do not infer ownership from the pane name');
     expect(canonicalSkill).toContain('Query the VCS host for live state');
