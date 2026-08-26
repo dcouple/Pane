@@ -2,18 +2,18 @@
  * PanelGroupView: renders a single tab group within the split layout.
  *
  * Each group has:
- * - A slim centered tab strip row (compact tabs) once the pane is split. It
- *   occupies a layout row so it pushes content down instead of covering it.
- *   The primary group's permanent tabs (Diff/Explorer/Browser) stay in
- *   PanelTabBar; only working tabs appear in strips. Single-group panes
- *   render no strip here at all (the pixel-identical rule).
+ * - A tab strip row once the pane is split: the group's working tabs and a
+ *   "+" for adding a tool to this group. It occupies a layout row so it
+ *   pushes content down instead of covering it. Single-group panes render no
+ *   strip here at all (the top bar is the strip then).
  * - An absolute-positioned panel stack (the editor-stage pattern: inactive
  *   terminals stay mounted behind display:none so xterm never reflows).
  * - A DropOverlay when a tab drag is in progress.
  * - A drag shield to intercept mouse events from webviews/xterm during drags.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
+import { Plus } from 'lucide-react';
 import { PanelTabStrip } from './PanelTabStrip';
 import { getPanelTabId, getPanelTabPanelId } from './panelTabIds';
 import { PanelContainer } from './PanelContainer';
@@ -179,6 +179,16 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
     ));
   }, [onStripDrop, group.panelIds, stripPanels]);
 
+  // New tools land in the focused group, so focus this one before asking the
+  // top bar (which owns the menu) to open it here.
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const handleAddTool = useCallback(() => {
+    onFocusGroup(group.id);
+    window.dispatchEvent(new CustomEvent('pane:open-add-tool', {
+      detail: { rect: addButtonRef.current?.getBoundingClientRect() ?? null },
+    }));
+  }, [onFocusGroup, group.id]);
+
   return (
     <div
       className={cn(
@@ -187,14 +197,12 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
       )}
       onMouseDownCapture={handleMouseDownCapture}
     >
-      {/* Slim centered tab strip row: once the pane is split, each group owns
-          its working tabs in a compact full-width row that pushes content
-          down so it never covers it. Hidden when the group has nothing to
-          show (e.g. the primary group holding only permanent tabs). */}
-      {multiGroup && stripPanels.length > 0 && (
-        <div
-          className="flex-shrink-0 flex justify-center bg-bg-chrome border-b border-border-primary px-2 py-0.5"
-        >
+      {/* Once the pane is split each group owns a full tab strip — its working
+          tabs plus a "+" that opens the add-tool menu for this group. The row
+          pushes content down so it never covers it. Single-group panes
+          render no strip here (the top bar is the strip then). */}
+      {multiGroup && (
+        <div className="flex-shrink-0 flex items-center bg-bg-chrome border-b border-border-primary px-2">
           <PanelTabStrip
             idNamespace={group.id}
             panels={stripPanels}
@@ -203,7 +211,7 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
             onPanelClose={onPanelClose}
             isPrimary={isPrimary}
             isFocused={isFocusedGroup}
-            variant="compact"
+            showShortcutHints={false}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
             onStripDrop={handleStripDrop}
@@ -211,6 +219,16 @@ export const PanelGroupView: React.FC<PanelGroupViewProps> = React.memo(({
             draggedPanelId={draggedPanelId}
             getPanelTabPresentation={getPanelTabPresentation}
           />
+          <button
+            ref={addButtonRef}
+            type="button"
+            aria-label="Add tool"
+            aria-haspopup="menu"
+            className="inline-flex items-center justify-center h-7 w-7 ml-0.5 flex-shrink-0 text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+            onClick={handleAddTool}
+          >
+            <Plus className="w-4 h-4" />
+          </button>
         </div>
       )}
 

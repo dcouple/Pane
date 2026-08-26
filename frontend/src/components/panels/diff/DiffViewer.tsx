@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useRef } from 'react';
 import { FileText } from 'lucide-react';
 import type { DiffViewerProps, FileDiff } from '../../../types/diff';
 import { cn } from '../../../utils/cn';
@@ -50,10 +50,12 @@ FileRow.displayName = 'FileRow';
 
 /** The Review panel's changed-file list. Diffs open as center tabs, not inline. */
 const DiffViewer = memo<DiffViewerProps>(({ files, className = '', sessionId, activePath, onFileOpen }) => {
+  const viewerRef = useRef<HTMLDivElement>(null);
   const registerScrollSurface = useScrollSurface<HTMLDivElement>({
     id: `diff:${sessionId ?? 'unscoped'}`,
     sessionId,
     priority: 90,
+    ownerElement: () => viewerRef.current,
   });
 
   if (files.length === 0) {
@@ -65,7 +67,7 @@ const DiffViewer = memo<DiffViewerProps>(({ files, className = '', sessionId, ac
   }
 
   return (
-    <div className={`diff-viewer flex h-full flex-col ${className}`}>
+    <div ref={viewerRef} className={`diff-viewer flex h-full flex-col ${className}`}>
       <div className="flex h-8 flex-shrink-0 items-center px-4 text-[11px] font-semibold uppercase tracking-wider text-text-tertiary bg-surface-secondary border-b border-border-primary">
         {files.length} {files.length === 1 ? 'file' : 'files'} changed
       </div>

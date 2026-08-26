@@ -10,6 +10,7 @@ import { useConfigStore } from '../../stores/configStore';
 import { formatKeyDisplay } from '../../utils/hotkeyUtils';
 import { useHotkeyStore } from '../../stores/hotkeyStore';
 import { Tooltip } from '../ui/Tooltip';
+import { useTitleBarSlotStore } from '../../stores/titleBarSlotStore';
 import { editorPanelState } from '../../services/openFileInEditor';
 import { Kbd } from '../ui/Kbd';
 import { CLI_BRAND_ICONS, getCliBrandIcon } from '../ui/brandIconRegistry';
@@ -99,6 +100,9 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   const addToolButtonRef = useRef<HTMLButtonElement>(null);
   const dropdownMenuRef = useRef<HTMLDivElement>(null);
   const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  // A group strip's "+" opens this same menu, anchored to that button instead.
+  const externalAnchorRef = useRef<DOMRect | null>(null);
+  const trailingSlot = useTitleBarSlotStore((state) => state.trailingSlot);
   // Rename state moved to PanelTabStrip
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCommand, setCustomCommand] = useState('');
@@ -166,7 +170,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     if (!showDropdown || !dropdownRef.current) return;
     const updatePosition = () => {
       if (!dropdownRef.current) return;
-      const rect = dropdownRef.current.getBoundingClientRect();
+      const rect = externalAnchorRef.current ?? dropdownRef.current.getBoundingClientRect();
       const width = Math.min(
         ADD_TOOL_MENU_WIDTH,
         window.innerWidth - (ADD_TOOL_MENU_VIEWPORT_MARGIN * 2),
@@ -240,6 +244,20 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
+  }, [showDropdown]);
+
+  // Group strips ask for the menu with their own "+" as the anchor.
+  useEffect(() => {
+    const handleOpenRequest = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      externalAnchorRef.current = event.detail?.rect ?? null;
+      setShowDropdown(true);
+    };
+    window.addEventListener('pane:open-add-tool', handleOpenRequest);
+    return () => window.removeEventListener('pane:open-add-tool', handleOpenRequest);
+  }, []);
+  useEffect(() => {
+    if (!showDropdown) externalAnchorRef.current = null;
   }, [showDropdown]);
 
   // Auto-focus custom command input when shown
@@ -428,9 +446,82 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
     });
   }, [panels]);
 
+  const rightActions = (
+        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+          {/* Run Dev Server button */}
+          {session && (
+            <Tooltip content={
+                <span className="flex flex-col items-start gap-1">
+                  <span className="text-text-secondary">
+                    {resolvedRunScript
+                      ? `Run: ${resolvedRunScript.command}`
+                      : 'Set up run script (via Claude)'}
+                  </span>
+                  {resolvedRunScript && (
+                    <span className="text-text-tertiary text-[10px]">from {resolvedRunScript.source}</span>
+                  )}
+                  {hotkeyDisplay('run-dev-server') && <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{hotkeyDisplay('run-dev-server')}</Kbd>}
+                </span>
+              } side="bottom">
+              <button
+                type="button"
+                aria-label={resolvedRunScript ? `Run ${resolvedRunScript.command}` : 'Set up run script'}
+                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
+                onClick={handleRunDevServer}
+              >
+                <Play aria-hidden="true" className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
+
+          {/* Detail panel toggle */}
+          {onToggleDetailPanel && (
+            <Tooltip
+              content={detailPanelToggleDisabled
+                ? detailPanelToggleDisabledReason
+                : (
+                  <span className="flex items-center gap-2">
+                    <span>{detailPanelVisible ? 'Hide details' : 'Show details'}</span>
+                    {hotkeyDisplay('toggle-detail-panel') && (
+                      <Kbd size="xs" variant="muted">{hotkeyDisplay('toggle-detail-panel')}</Kbd>
+                    )}
+                  </span>
+                )}
+              side="bottom"
+            >
+              <button
+                type="button"
+                onClick={detailPanelToggleDisabled ? undefined : onToggleDetailPanel}
+                disabled={detailPanelToggleDisabled}
+                aria-disabled={detailPanelToggleDisabled}
+                aria-label={detailPanelToggleDisabled
+                  ? detailPanelToggleDisabledReason
+                  : detailPanelVisible ? 'Hide details' : 'Show details'}
+                className={cn(
+                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] w-[var(--panel-tab-height)] rounded-md transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle",
+                  detailPanelToggleDisabled
+                    ? "text-text-muted cursor-not-allowed opacity-50"
+                    : detailPanelVisible
+                    ? "text-text-primary bg-surface-hover hover:text-interactive"
+                    : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
+                )}
+              >
+                <PanelRight aria-hidden="true" className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          )}
+        </div>
+  );
+
+  // Once the pane is split every tab lives in its group strip, so the top row
+  // has nothing to show and collapses — unless a drag is in flight (it is the
+  // drop target that merges the groups) or the title bar cannot host the
+  // controls (native-framed Linux).
+  const barCollapsed = tabsInGroups && !isTabDragging && !!trailingSlot;
+
   return (
     <>
-    <div className="panel-tab-bar bg-bg-chrome flex-shrink-0">
+    <div className={cn("panel-tab-bar bg-bg-chrome flex-shrink-0", barCollapsed && "hidden")}>
       {/* Flex container */}
       <div
         className="relative flex items-center min-h-[var(--panel-tab-height)] px-2"
@@ -481,7 +572,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             <button
               ref={addToolButtonRef}
               type="button"
-              className="inline-flex items-center justify-center h-7 w-7 ml-0.5 text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+              className={cn(
+                "inline-flex items-center justify-center h-7 w-7 ml-0.5 text-text-tertiary hover:text-text-primary hover:bg-surface-hover rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle",
+                tabsInGroups && "hidden",
+              )}
               onClick={() => setShowDropdown(!showDropdown)}
               aria-label="Add tool"
               onKeyDown={(e) => {
@@ -690,71 +784,9 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
           })()}
         </div>
 
-        {/* Right side actions */}
-        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-          {/* Run Dev Server button */}
-          {session && (
-            <Tooltip content={
-                <span className="flex flex-col items-start gap-1">
-                  <span className="text-text-secondary">
-                    {resolvedRunScript
-                      ? `Run: ${resolvedRunScript.command}`
-                      : 'Set up run script (via Claude)'}
-                  </span>
-                  {resolvedRunScript && (
-                    <span className="text-text-tertiary text-[10px]">from {resolvedRunScript.source}</span>
-                  )}
-                  {hotkeyDisplay('run-dev-server') && <Kbd size="xs" variant="muted" className="origin-left scale-[0.8]">{hotkeyDisplay('run-dev-server')}</Kbd>}
-                </span>
-              } side="bottom">
-              <button
-                type="button"
-                aria-label={resolvedRunScript ? `Run ${resolvedRunScript.command}` : 'Set up run script'}
-                className="inline-flex items-center justify-center h-[var(--panel-tab-height)] px-2.5 rounded text-text-tertiary hover:text-status-success hover:bg-surface-hover transition-colors flex-shrink-0"
-                onClick={handleRunDevServer}
-              >
-                <Play aria-hidden="true" className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          )}
-
-          {/* Detail panel toggle */}
-          {onToggleDetailPanel && (
-            <Tooltip
-              content={detailPanelToggleDisabled
-                ? detailPanelToggleDisabledReason
-                : (
-                  <span className="flex items-center gap-2">
-                    <span>{detailPanelVisible ? 'Hide details' : 'Show details'}</span>
-                    {hotkeyDisplay('toggle-detail-panel') && (
-                      <Kbd size="xs" variant="muted">{hotkeyDisplay('toggle-detail-panel')}</Kbd>
-                    )}
-                  </span>
-                )}
-              side="bottom"
-            >
-              <button
-                type="button"
-                onClick={detailPanelToggleDisabled ? undefined : onToggleDetailPanel}
-                disabled={detailPanelToggleDisabled}
-                aria-disabled={detailPanelToggleDisabled}
-                aria-label={detailPanelToggleDisabled
-                  ? detailPanelToggleDisabledReason
-                  : detailPanelVisible ? 'Hide details' : 'Show details'}
-                className={cn(
-                  "inline-flex items-center justify-center h-[var(--panel-tab-height)] w-[var(--panel-tab-height)] rounded-md transition-colors flex-shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle",
-                  detailPanelToggleDisabled
-                    ? "text-text-muted cursor-not-allowed opacity-50"
-                    : detailPanelVisible
-                    ? "text-text-primary bg-surface-hover hover:text-interactive"
-                    : "text-text-tertiary hover:text-text-primary hover:bg-surface-hover"
-                )}
-              >
-                <PanelRight aria-hidden="true" className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          )}
-        </div>
+        {/* Run / inspector controls live on the title plane when the
+            window owns its title bar; otherwise they stay at the bar's end. */}
+        {trailingSlot ? createPortal(rightActions, trailingSlot) : rightActions}
       </div>
     </div>
 
