@@ -259,7 +259,9 @@ test('main-repository branch detection never renders the previous repository bra
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.getByRole('button', { name: `Repository actions for ${project.name}`, exact: true }).click();
   await page.getByText('Open session on main', { exact: true }).click();
-  await page.getByRole('button', { name: 'Show details', exact: true }).click();
+  // The inspector is shown by default; open it only if it was hidden.
+  const showDetails = page.getByRole('button', { name: 'Show details', exact: true });
+  if (await showDetails.isVisible().catch(() => false)) await showDetails.click();
   const detailPanel = page.locator('.pane-detail-panel-vertical');
   await expect(detailPanel.getByText('main-a', { exact: true })).toBeVisible();
 
@@ -299,7 +301,9 @@ test('latest main-repository lookup wins across A to delayed B to A', async ({ p
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.getByRole('button', { name: `Repository actions for ${project.name}`, exact: true }).click();
   await page.getByText('Open session on main', { exact: true }).click();
-  await page.getByRole('button', { name: 'Show details', exact: true }).click();
+  // The inspector is shown by default; open it only if it was hidden.
+  const showDetails = page.getByRole('button', { name: 'Show details', exact: true });
+  if (await showDetails.isVisible().catch(() => false)) await showDetails.click();
   const detailPanel = page.locator('.pane-detail-panel-vertical');
   await expect(detailPanel.getByText('main-a', { exact: true })).toBeVisible();
   await page.evaluate(() => {
