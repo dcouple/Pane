@@ -23,6 +23,7 @@ export interface OpenFileInEditorOptions {
 /** IPC payloads are JSON: an explicit `undefined` is rejected at the boundary. */
 function withoutUndefined(state: EditorPanelState): EditorPanelState {
   const clean = { ...state };
+  // SAFETY: `clean` is a shallow copy of an EditorPanelState, so its keys are that type's keys.
   for (const key of Object.keys(clean) as (keyof EditorPanelState)[]) {
     if (clean[key] === undefined) delete clean[key];
   }

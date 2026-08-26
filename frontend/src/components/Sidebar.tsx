@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, BarChart3, BookOpen, ChevronDown, ChevronRight, Cpu, Info, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
+import { Archive, ArrowUpDown, BarChart3, BookOpen, ChevronDown, ChevronRight, Info, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
@@ -22,7 +22,6 @@ import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
-import { useResourceMonitor } from '../hooks/useResourceMonitor';
 import {
   createDefaultRemoteDaemonHostRuntimeState,
   createDefaultRemotePaneConnectionState,
@@ -84,9 +83,6 @@ interface SidebarProps {
 
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 const REMOTE_DESKTOP_TOOLTIP = 'Use Remote Desktop to access the host device for Electron apps, native windows, and UI running on the remote machine.';
-const RESOURCE_POPOVER_WIDTH = 320;
-const RESOURCE_POPOVER_GAP = 8;
-const RESOURCE_POPOVER_VIEWPORT_MARGIN = 8;
 type SidebarSection = 'pinned' | 'repositories';
 interface CompactSessionMenuState {
   session: Session;
@@ -97,11 +93,6 @@ const COMPACT_RAIL_BUTTON = 'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 item
 const COMPACT_RAIL_IDLE = 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary';
 const COMPACT_RAIL_ACTIVE = 'bg-surface-hover text-text-primary';
 
-function formatMemory(mb: number): string {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
-  if (mb >= 1) return `${Math.round(mb)} MB`;
-  return `${Math.round(mb * 1024)} KB`;
-}
 
 const HelpCircleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,12 +116,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   });
   const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
   const [remoteHostState, setRemoteHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
-  const resourceMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const resourcePopoverRef = useRef<HTMLDivElement>(null);
-  const [showResourcePopover, setShowResourcePopover] = useState(false);
-  const [resourcePopoverStyle, setResourcePopoverStyle] = useState<React.CSSProperties>({});
-  const [expandedResourceSections, setExpandedResourceSections] = useState<Set<string>>(new Set(['pane-app']));
-  const { snapshot, isLoading: resourceLoading, startActive, stopActive, refresh } = useResourceMonitor();
   const hydrateExpandedProjects = useNavigationStore(s => s.hydrateExpandedProjects);
 
   useEffect(() => {
@@ -250,120 +235,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     handleSidebarSectionExpandedChange('repositories', expanded);
   }, [handleSidebarSectionExpandedChange]);
 
-  const openResourcePopover = useCallback(() => {
-    setShowResourcePopover(true);
-    void refresh();
-    startActive();
-  }, [refresh, startActive]);
 
-  const closeResourcePopover = useCallback((restoreFocus = false) => {
-    setShowResourcePopover(false);
-    stopActive();
-    if (restoreFocus) {
-      requestAnimationFrame(() => resourceMenuButtonRef.current?.focus());
-    }
-  }, [stopActive]);
-
-  const toggleResourceSection = useCallback((id: string) => {
-    setExpandedResourceSections(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleResourceRefresh = useCallback(() => {
-    void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    if (!showResourcePopover || !resourceMenuButtonRef.current) return;
-
-    const updatePosition = () => {
-      if (!resourceMenuButtonRef.current) return;
-      const rect = resourceMenuButtonRef.current.getBoundingClientRect();
-      const popoverWidth = Math.min(
-        RESOURCE_POPOVER_WIDTH,
-        window.innerWidth - RESOURCE_POPOVER_VIEWPORT_MARGIN * 2,
-      );
-      const rightSideLeft = rect.right + RESOURCE_POPOVER_GAP;
-      const leftSideLeft = rect.left - RESOURCE_POPOVER_GAP - popoverWidth;
-      const maxLeft = window.innerWidth - popoverWidth - RESOURCE_POPOVER_VIEWPORT_MARGIN;
-      const left = rightSideLeft <= maxLeft
-        ? rightSideLeft
-        : Math.max(RESOURCE_POPOVER_VIEWPORT_MARGIN, leftSideLeft);
-
-      setResourcePopoverStyle({
-        position: 'fixed',
-        top: rect.bottom + 8,
-        left: Math.min(left, maxLeft),
-        zIndex: 10000,
-        // Hangs below the trigger; grow out of that corner.
-        transformOrigin: 'top left',
-      });
-    };
-
-    updatePosition();
-    window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition, true);
-    return () => {
-      window.removeEventListener('resize', updatePosition);
-      window.removeEventListener('scroll', updatePosition, true);
-    };
-  }, [showResourcePopover]);
-
-  useEffect(() => {
-    if (!showResourcePopover) return;
-
-    const focusFrame = requestAnimationFrame(() => {
-      resourcePopoverRef.current
-        ?.querySelector<HTMLElement>('button:not(:disabled), [tabindex="0"]')
-        ?.focus();
-    });
-
-    const handleClickOutside = (event: MouseEvent) => {
-      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
-      const target = event.target as Node;
-      if (
-        resourceMenuButtonRef.current && !resourceMenuButtonRef.current.contains(target) &&
-        resourcePopoverRef.current && !resourcePopoverRef.current.contains(target)
-      ) {
-        closeResourcePopover();
-      }
-    };
-
-    const timer = setTimeout(() => document.addEventListener('mousedown', handleClickOutside), 0);
-    return () => {
-      cancelAnimationFrame(focusFrame);
-      clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showResourcePopover, closeResourcePopover]);
-
-  useEffect(() => {
-    if (!showResourcePopover) return;
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        closeResourcePopover(true);
-      }
-    };
-
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [showResourcePopover, closeResourcePopover]);
-
-  const electronTotalCpu = useMemo(
-    () => snapshot?.electronProcesses.reduce((sum, p) => sum + p.cpuPercent, 0) ?? 0,
-    [snapshot],
-  );
-
-  const electronTotalMem = useMemo(
-    () => snapshot?.electronProcesses.reduce((sum, p) => sum + p.memoryMB, 0) ?? 0,
-    [snapshot],
-  );
 
   const sessions = useSessionStore((state) => state.sessions);
   const activeSessionId = useSessionStore((state) => state.activeSessionId);
@@ -501,7 +373,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     <Dropdown
       trigger={
         <button
-          ref={resourceMenuButtonRef}
           className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
           aria-label="Sidebar menu"
         >
@@ -520,12 +391,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           label: 'Settings',
           icon: SettingsIcon,
           onClick: onSettingsClick
-        },
-        {
-          id: 'resources',
-          label: 'Resource Usage',
-          icon: Cpu,
-          onClick: openResourcePopover
         },
         {
           id: 'sort',
@@ -932,7 +797,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         </div>
 
         {/* Add repository + settings, like Superset's sidebar foot */}
-        <div className="flex h-11 flex-shrink-0 items-center gap-1 border-t border-border-primary pl-1.5 pr-2">
+        <div className="flex h-12 flex-shrink-0 items-center gap-1 border-t border-border-primary pl-2 pr-2">
           <button
             type="button"
             onClick={() => addRepositoryRef.current?.()}
@@ -957,115 +822,6 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
 
         </div>
     </div>
-
-      {showResourcePopover && createPortal(
-        <div
-          ref={resourcePopoverRef}
-          role="dialog"
-          aria-label="Resource Usage"
-          aria-busy={resourceLoading}
-          tabIndex={-1}
-          className="bg-surface-primary border border-border-subtle/60 rounded-lg shadow-dropdown-elevated backdrop-blur-sm animate-dropdown-enter overflow-hidden w-[320px] max-w-[calc(100vw-16px)]"
-          style={resourcePopoverStyle}
-        >
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border-secondary">
-            <span className="text-[10px] font-semibold text-text-tertiary tracking-wider uppercase">
-              Resource Usage
-            </span>
-            <button
-              type="button"
-              onClick={handleResourceRefresh}
-              className="p-1 rounded text-text-tertiary hover:text-text-primary hover:bg-surface-hover transition-colors"
-              disabled={resourceLoading}
-              aria-label="Refresh resource usage"
-            >
-              <RefreshCw aria-hidden="true" className={`w-3.5 h-3.5 ${resourceLoading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-
-          {!snapshot ? (
-            <div className="px-3 py-4 text-sm text-text-secondary">
-              {resourceLoading ? 'Loading resource usage...' : 'No resource snapshot yet.'}
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center gap-4 px-3 py-2 border-b border-border-secondary">
-                <span className="text-sm text-text-secondary">
-                  CPU <strong className="text-text-primary">{snapshot.cpuReady ? `${snapshot.totalCpuPercent.toFixed(1)}%` : '-'}</strong>
-                </span>
-                <span className="text-sm text-text-secondary">
-                  Memory <strong className="text-text-primary">{formatMemory(snapshot.totalMemoryMB)}</strong>
-                </span>
-              </div>
-
-              <div className="max-h-[400px] overflow-y-auto">
-                <div className="border-b border-border-secondary">
-                  <button
-                    type="button"
-                    onClick={() => toggleResourceSection('pane-app')}
-                    aria-expanded={expandedResourceSections.has('pane-app')}
-                    aria-controls="resource-pane-app-processes"
-                    className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {expandedResourceSections.has('pane-app')
-                        ? <ChevronDown className="w-3 h-3 text-text-quaternary" />
-                        : <ChevronRight className="w-3 h-3 text-text-quaternary" />}
-                      <span className="text-sm font-medium text-text-primary">Pane App</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                      <span>{snapshot.cpuReady ? `${electronTotalCpu.toFixed(1)}%` : '-'}</span>
-                      <span>{formatMemory(electronTotalMem)}</span>
-                    </div>
-                  </button>
-                  {expandedResourceSections.has('pane-app') && <div id="resource-pane-app-processes">{snapshot.electronProcesses.map(p => (
-                    <div key={p.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                      <span className="text-xs text-text-secondary">{p.label}</span>
-                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono">
-                        <span>{snapshot.cpuReady ? `${p.cpuPercent.toFixed(1)}%` : '-'}</span>
-                        <span>{formatMemory(p.memoryMB)}</span>
-                      </div>
-                    </div>
-                  ))}</div>}
-                </div>
-
-                {snapshot.sessions.map(sess => (
-                  <div key={sess.sessionId} className="border-b border-border-secondary">
-                    <button
-                      type="button"
-                      onClick={() => toggleResourceSection(sess.sessionId)}
-                      aria-expanded={expandedResourceSections.has(sess.sessionId)}
-                      aria-controls={`resource-session-${sess.sessionId}`}
-                      className="flex items-center justify-between w-full px-3 py-1.5 hover:bg-surface-hover transition-colors"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        {expandedResourceSections.has(sess.sessionId)
-                          ? <ChevronDown className="w-3 h-3 text-text-quaternary flex-shrink-0" />
-                          : <ChevronRight className="w-3 h-3 text-text-quaternary flex-shrink-0" />}
-                        <span className="text-sm font-medium text-text-primary truncate">{sess.sessionName}</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                        <span>{snapshot.cpuReady ? `${sess.totalCpuPercent.toFixed(1)}%` : '-'}</span>
-                        <span>{formatMemory(sess.totalMemoryMB)}</span>
-                      </div>
-                    </button>
-                    {expandedResourceSections.has(sess.sessionId) && <div id={`resource-session-${sess.sessionId}`}>{sess.children.map(child => (
-                      <div key={child.pid} className="flex items-center justify-between px-3 py-1 pl-8">
-                        <span className="text-xs text-text-secondary truncate">{child.name}</span>
-                        <div className="flex items-center gap-3 text-xs text-text-tertiary font-mono flex-shrink-0 ml-2">
-                          <span>{snapshot.cpuReady ? `${child.cpuPercent.toFixed(1)}%` : '-'}</span>
-                          <span>{formatMemory(child.memoryMB)}</span>
-                        </div>
-                      </div>
-                    ))}</div>}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>,
-        document.body
-      )}
     </>
   );
 }

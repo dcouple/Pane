@@ -283,7 +283,7 @@ export function ProjectSessionList({
 
   return (
     <>
-      <div className="flex flex-col py-1">
+      <div className="flex flex-col py-1.5">
         {/* Home */}
         <button
           onClick={() => {
@@ -291,7 +291,7 @@ export function ProjectSessionList({
             setActiveSession(null);
             navigateToSessions();
           }}
-          className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-7 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
+          className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-8 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
         >
           <Home className="w-4 h-4" />
           <span>Home</span>
@@ -308,7 +308,7 @@ export function ProjectSessionList({
             SIDEBAR_ROW_BASE,
             SIDEBAR_ROW_GAP,
             SIDEBAR_ROW_PADDING,
-            'h-7 text-[13px] hover:bg-surface-hover hover:text-text-primary',
+            'h-8 text-[13px] hover:bg-surface-hover hover:text-text-primary',
             activeView === 'pane-chat'
               ? 'bg-surface-hover text-text-primary'
               : 'text-text-secondary',
@@ -345,7 +345,7 @@ export function ProjectSessionList({
             <button
               type="button"
               onClick={onRemoteDesktopClick}
-              className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-7 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
+              className={cn(SIDEBAR_ROW_BASE, SIDEBAR_ROW_GAP, SIDEBAR_ROW_PADDING, 'h-8 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary')}
             >
               <Monitor className="w-4 h-4" />
               <span>Remote Desktop</span>
@@ -923,7 +923,7 @@ export function ArchivedSessions() {
           onClick={toggleArchived}
           aria-expanded={showArchived}
           aria-controls={archivedContentId}
-          className="min-w-0 flex-1 flex items-center gap-2 py-2 pl-3 pr-1 text-[11px] font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
+          className="min-w-0 flex-1 flex h-10 items-center gap-2 pl-4 pr-1 text-[11px] font-semibold uppercase tracking-wider text-text-secondary hover:text-text-primary transition-colors"
         >
           {showArchived ? (
             <ChevronDown className="w-3 h-3 flex-shrink-0" />
