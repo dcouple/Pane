@@ -14,8 +14,16 @@ import { registerPromptHandlers } from './prompt';
 import { registerScriptHandlers } from './script';
 import { registerSessionHandlers } from './session';
 import { registerVoiceHandlers } from './voice';
+import { registerScheduleHandlers } from './schedule';
 import type { AppServices } from './types';
 
+const SCHEDULE_CHANNELS = [
+  'schedules:list',
+  'schedules:save',
+  'schedules:delete',
+  'schedules:set-enabled',
+  'schedules:run-now',
+] as const;
 const PROJECT_CHANNELS = [
   'projects:get-all',
   'projects:get-active',
@@ -344,6 +352,15 @@ describe('daemon registry IPC bindings', () => {
     expect(ipcMain.boundChannels.sort()).toEqual([...VOICE_CHANNELS].sort());
   });
 
+  it('binds daemon-owned schedule channels through the shared registry', () => {
+    const registry = new PaneCommandRegistry();
+    const ipcMain = createIpcMainStub();
+
+    registerScheduleHandlers(ipcMain, createServicesStub(), registry);
+
+    expect(registry.listChannels()).toEqual([...SCHEDULE_CHANNELS].sort());
+    expect(ipcMain.boundChannels.sort()).toEqual([...SCHEDULE_CHANNELS].sort());
+  });
   it('binds daemon-owned prompt channels through the shared registry', () => {
     const registry = new PaneCommandRegistry();
     const ipcMain = createIpcMainStub();

@@ -35,6 +35,7 @@ import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
+import type { ScheduledRun, ScheduledRunInput } from '../../../shared/types/schedule';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -124,6 +125,14 @@ interface ElectronAPI {
     setAgent: (agent: PaneChatAgent) => Promise<IPCResponse<PaneChatState<Session>>>;
   };
 
+  // Recurring agent runs
+  schedules: {
+    list: (projectId?: number) => Promise<IPCResponse<ScheduledRun[]>>;
+    save: (input: ScheduledRunInput) => Promise<IPCResponse<ScheduledRun>>;
+    delete: (id: string) => Promise<IPCResponse<void>>;
+    setEnabled: (id: string, enabled: boolean) => Promise<IPCResponse<ScheduledRun>>;
+    runNow: (id: string) => Promise<IPCResponse<ScheduledRun>>;
+  };
   // Session management
   sessions: {
     getAll: () => Promise<IPCResponse>;

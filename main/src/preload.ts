@@ -27,6 +27,7 @@ import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
 import type { SubmitFeedbackRequest } from '../../shared/types/feedback';
+import type { ScheduledRunInput } from '../../shared/types/schedule';
 import type {
   PanePermissionRequest as PermissionRequest,
   PanePermissionResponse as PermissionResponse,
@@ -133,6 +134,7 @@ const DAEMON_OWNED_CHANNEL_PREFIXES = [
   'prompts:',
   'resource-monitor:',
   'runpane:',
+  'schedules:',
   'sessions:',
   'terminal:',
   'voice:',
@@ -473,6 +475,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setAgent: (agent: 'claude' | 'codex' | 'cursor'): Promise<IPCResponse> => invokeIpc('pane-chat:set-agent', agent),
   },
 
+  // Recurring agent runs
+  schedules: {
+    list: (projectId?: number): Promise<IPCResponse> => invokeIpc('schedules:list', projectId),
+    save: (input: ScheduledRunInput): Promise<IPCResponse> => invokeIpc('schedules:save', input),
+    delete: (id: string): Promise<IPCResponse> => invokeIpc('schedules:delete', id),
+    setEnabled: (id: string, enabled: boolean): Promise<IPCResponse> => invokeIpc('schedules:set-enabled', id, enabled),
+    runNow: (id: string): Promise<IPCResponse> => invokeIpc('schedules:run-now', id),
+  },
   // Session management
   sessions: {
     getAll: (): Promise<IPCResponse> => invokeIpc('sessions:get-all'),
