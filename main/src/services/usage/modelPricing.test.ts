@@ -81,7 +81,7 @@ describe('getPricingSource', () => {
 
 describe('estimateCostUsd', () => {
   it('prices a Claude request across all four token classes', () => {
-    const { costUsd, complete, cacheReadCostUsd } = estimateCostUsd({
+    const { costUsd, complete } = estimateCostUsd({
       model: 'claude-opus-5',
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
