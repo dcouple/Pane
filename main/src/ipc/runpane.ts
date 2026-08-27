@@ -80,6 +80,7 @@ import type {
   RunpaneResolvedTool,
   RunpaneToolSpec,
   RunpaneWorktreeCleanupState,
+  RunpaneWorkspaceEntry,
   RunpaneWorkspaceEntryKind,
   RunpaneWorkspaceStateResult,
   RunpaneWorkspaceWaitRequest,
@@ -738,8 +739,10 @@ export function registerRunpaneHandlers(
       const filter: WorkspaceJournalFilter = {
         kinds: normalized.kinds,
         paneIds: normalized.paneIds,
+        excludePaneIds: normalized.excludePaneIds,
         repoId: project?.id,
         nameContains: normalized.nameContains,
+        agentsOnly: normalized.agentsOnly,
         includeHeldInput: normalized.includeHeldInput,
       };
       const timeoutMs = Math.min(normalized.timeoutMs ?? DEFAULT_WORKSPACE_WAIT_TIMEOUT_MS, MAX_WORKSPACE_WAIT_TIMEOUT_MS);
@@ -767,7 +770,8 @@ export function registerRunpaneHandlers(
       }
 
       if (reset) {
-        const baseline = workspaceStateReader.read(project?.id).entries
+        const silentBaseline = reset.reason === 'first-use' && normalized.from !== 'earliest';
+        const baseline = silentBaseline ? [] : workspaceStateReader.read(project?.id).entries
           .filter(entry => workspaceEntryMatches(entry, filter))
           .map(entry => reset?.reason === 'epoch-changed' ? { ...entry, changedWhileAway: true as const } : entry);
         return {
@@ -1951,8 +1955,10 @@ function parseWorkspaceWaitRequest(value: PaneCommandValue): RunpaneWorkspaceWai
     limit: parsePositiveInteger(value.limit, 'limit'),
     kinds: parseWorkspaceKinds(value.kinds),
     paneIds: parseStringArray(value.paneIds, 'paneIds'),
+    excludePaneIds: parseStringArray(value.excludePaneIds, 'excludePaneIds'),
     repo: value.repo === undefined || value.repo === null || value.repo === '' ? undefined : parseRepoSelector(value.repo),
     nameContains: optionalString(value.nameContains),
+    agentsOnly: optionalBoolean(value.agentsOnly),
     ackNow: optionalBoolean(value.ackNow),
     includeHeldInput: optionalBoolean(value.includeHeldInput),
   };
@@ -2844,13 +2850,15 @@ function createWorkspaceJournal(services: AppServices): WorkspaceJournal {
 }
 
 function workspaceEntryMatches(
-  entry: { kind: RunpaneWorkspaceEntryKind; paneId: string; repoId?: number; paneName: string },
+  entry: RunpaneWorkspaceEntry,
   filter: WorkspaceJournalFilter,
 ): boolean {
   if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
   if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
+  if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;
   if (filter.repoId !== undefined && entry.repoId !== filter.repoId) return false;
   if (filter.nameContains && !entry.paneName.toLocaleLowerCase().includes(filter.nameContains.toLocaleLowerCase())) return false;
+  if (filter.agentsOnly && !entry.agentType && entry.kind !== 'pane.created' && entry.kind !== 'pane.gone') return false;
   return true;
 }
 

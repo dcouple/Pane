@@ -223,6 +223,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
         paneId: panel.sessionId,
         isCliPanel: snapshot?.isCliPanel ?? customState.isCliPanel ?? false,
         agentType: snapshot?.agentType ?? customState.agentType,
+        panelTitle: panel.title,
         lastActivityAt: snapshot?.lastActivityTime,
         heldInput: snapshot?.screenText ? extractWorkspaceHeldInput(snapshot.screenText) : undefined,
       };

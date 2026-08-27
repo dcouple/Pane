@@ -6,6 +6,7 @@ import type { AgentState } from '../../../shared/types/agentStatus';
 import type {
   RunpaneWorkspaceEntry,
   RunpaneWorkspaceEntryKind,
+  RunpaneWorkspacePanelSummary,
   RunpaneWorkspaceStateResult,
 } from '../../../shared/types/runpaneOrchestration';
 
@@ -37,28 +38,49 @@ export class WorkspaceStateReader {
         worktreePath: session.worktreePath,
         baseline: true as const,
       };
-      entries.push({ ...common, kind: 'pane.created', source: 'session' });
+
+      const panelSummaries: RunpaneWorkspacePanelSummary[] = [];
+      const agentEntries: RunpaneWorkspaceEntry[] = [];
 
       for (const panel of panelManager.getPanelsForSession(session.id)) {
+        if (panel.type !== 'terminal') continue;
         const customState = decodeBoundary(panel.state.customState ?? {}, boundary.object({
           isCliPanel: boundary.optional(boundary.boolean),
           agentType: boundary.optional(boundary.string),
         }));
-        if (panel.type !== 'terminal' || customState?.isCliPanel !== true) continue;
-        const agentState = terminalPanelManager.getAgentStatus(panel.id) ?? 'unknown';
-        entries.push({
+        const agentState = resolveAgentState(panel.id);
+        panelSummaries.push({
+          panelId: panel.id,
+          title: panel.title,
+          agentType: customState.agentType,
+          agentState,
+        });
+
+        if (customState?.isCliPanel !== true) continue;
+        agentEntries.push({
           ...common,
           kind: entryKindForState(agentState),
           panelId: panel.id,
+          panelTitle: panel.title,
           agentType: customState.agentType,
           to: agentState,
           source: 'agent',
         });
       }
+
+      entries.push({ ...common, kind: 'pane.created', source: 'session', panels: panelSummaries });
+      entries.push(...agentEntries);
     }
 
     return { ok: true, epoch: this.getEpoch(), generation, entries };
   }
+}
+
+function resolveAgentState(panelId: string): AgentState {
+  const tracked = terminalPanelManager.getAgentStatus(panelId);
+  if (tracked) return tracked;
+  const initialized = terminalPanelManager.isTerminalInitialized(panelId);
+  return initialized ? 'unknown' : 'idle';
 }
 
 function entryKindForState(state: AgentState): RunpaneWorkspaceEntryKind {

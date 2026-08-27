@@ -25,6 +25,7 @@ export interface RunpaneWorkspaceEntry {
   repoName?: string;
   worktreePath?: string;
   panelId?: string;
+  panelTitle?: string;
   agentType?: string;
   from?: AgentState;
   to?: AgentState;
@@ -35,6 +36,14 @@ export interface RunpaneWorkspaceEntry {
   exitCode?: number;
   baseline?: true;
   changedWhileAway?: boolean;
+  panels?: RunpaneWorkspacePanelSummary[];
+}
+
+export interface RunpaneWorkspacePanelSummary {
+  panelId: string;
+  title: string;
+  agentType?: string;
+  agentState?: AgentState;
 }
 
 export interface RunpaneWorkspaceWaitRequest {
@@ -45,8 +54,10 @@ export interface RunpaneWorkspaceWaitRequest {
   limit?: number;
   kinds?: RunpaneWorkspaceEntryKind[];
   paneIds?: string[];
+  excludePaneIds?: string[];
   repo?: RunpaneRepoSelector;
   nameContains?: string;
+  agentsOnly?: boolean;
   ackNow?: boolean;
   includeHeldInput?: boolean;
 }

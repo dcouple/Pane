@@ -324,8 +324,11 @@ describe('runpane IPC handlers', () => {
       ok: true,
       generation: 0,
       entries: [
-        { kind: 'pane.created', paneId: session.id, baseline: true },
-        { kind: 'agent.ready', paneId: session.id, panelId: terminalPanel.id, baseline: true },
+        {
+          kind: 'pane.created', paneId: session.id, baseline: true,
+          panels: [{ panelId: terminalPanel.id, title: terminalPanel.title, agentType: 'codex', agentState: 'idle' }],
+        },
+        { kind: 'agent.ready', paneId: session.id, panelId: terminalPanel.id, panelTitle: terminalPanel.title, baseline: true },
       ],
     });
   });
@@ -379,6 +382,91 @@ describe('runpane IPC handlers', () => {
     expect(result.entries).toContainEqual(
       expect.objectContaining({ kind: 'pane.created', baseline: true }),
     );
+  });
+
+  it('emits zero data events for a new --from now cursor on a populated workspace', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cursor-test-'));
+    tempDirs.push(directory);
+    const workspaceJournal = new WorkspaceJournal();
+    const workspaceCursorStore = new WorkspaceCursorStore(
+      path.join(directory, 'workspace-cursors.json'),
+    );
+    const sessions = Array.from({ length: 60 }, (_, i) => ({
+      ...session,
+      id: `session-${i}`,
+      name: `pane-${i}`,
+    }));
+    const panels = sessions.map((s, i) => ({
+      ...terminalPanel,
+      id: `panel-${i}`,
+      sessionId: s.id,
+    }));
+    const services = createServices({ workspaceJournal, workspaceCursorStore });
+    vi.mocked(services.sessionManager.getAllSessions).mockReturnValue(sessions);
+    vi.mocked(services.sessionManager.getSessionsForProject).mockReturnValue(sessions);
+    vi.mocked(panelManager.getPanelsForSession).mockImplementation((sessionId: string) => {
+      const panel = panels.find(p => p.sessionId === sessionId);
+      return panel ? [panel] : [];
+    });
+    const registry = createRegistry(services);
+
+    const result = await registry.invoke('runpane:workspace:wait', [{
+      as: 'from-now-test',
+      from: 'now',
+      timeoutMs: 0,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      reset: { reason: 'first-use' },
+      entries: [],
+    });
+  });
+
+  it('emits baseline entries for a new --from earliest cursor', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cursor-test-'));
+    tempDirs.push(directory);
+    const workspaceJournal = new WorkspaceJournal();
+    const workspaceCursorStore = new WorkspaceCursorStore(
+      path.join(directory, 'workspace-cursors.json'),
+    );
+    const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
+
+    const result = await registry.invoke('runpane:workspace:wait', [{
+      as: 'earliest-test',
+      from: 'earliest',
+      timeoutMs: 0,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      reset: { reason: 'first-use' },
+    });
+    expect(result.entries.length).toBeGreaterThan(0);
+    expect(result.entries).toContainEqual(
+      expect.objectContaining({ kind: 'pane.created', baseline: true }),
+    );
+  });
+
+  it('emits zero data events for a new cursor with default from (implicit now)', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cursor-test-'));
+    tempDirs.push(directory);
+    const workspaceJournal = new WorkspaceJournal();
+    const workspaceCursorStore = new WorkspaceCursorStore(
+      path.join(directory, 'workspace-cursors.json'),
+    );
+    const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
+
+    const result = await registry.invoke('runpane:workspace:wait', [{
+      as: 'default-from-test',
+      timeoutMs: 0,
+    }]);
+
+    expect(result).toMatchObject({
+      ok: true,
+      reset: { reason: 'first-use' },
+      entries: [],
+    });
   });
 
   it('advances a truncated named cursor when its filter excludes retained entries', async () => {
