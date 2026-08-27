@@ -285,9 +285,10 @@ export const SessionView = memo(() => {
           // current store adopts them as orphans instead of dropping them.
           const nowPanels = usePanelStore.getState().panels[sid] || [];
           const pinnedNow = nowPanels.find(p => p.type === 'terminal');
-          const liveIdsNow = nowPanels
-            .filter(p => p.id !== pinnedNow?.id && !isInspectorPanelType(p.type))
-            .map(p => p.id);
+          const liveIdsNow: string[] = [];
+          for (const p of nowPanels) {
+            if (p.id !== pinnedNow?.id && !isInspectorPanelType(p.type)) liveIdsNow.push(p.id);
+          }
           // Treat unknown future layout versions as no stored layout rather
           // than reconciling a shape this build doesn't understand.
           const versionOk = stored?.version === 1;
@@ -1160,7 +1161,7 @@ export const SessionView = memo(() => {
 
   // The empty stage is the "+" menu laid out inline: one click (or the
   // shortcut beside it) from a running tool, instead of a placeholder.
-  const emptyStage = (
+  const emptyStage = useMemo(() => (
     <div className="flex h-full flex-1 items-center justify-center">
       <div className="w-64">
         <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Open</div>
@@ -1194,7 +1195,7 @@ export const SessionView = memo(() => {
         ))}
       </div>
     </div>
-  );
+  ), [agentPresets, customCommands, handlePanelCreate, hotkeyDisplay]);
 
   // --- Editor stage element (shared by both layouts) ---
   const editorStageElement = useMemo(() => {
@@ -1458,12 +1459,15 @@ export const SessionView = memo(() => {
 
   useEffect(() => {
     if (!sessionLayout) return;
-    const inspectorIds = new Set(sessionPanels.filter(isInspectorPanel).map(p => p.id));
-    const working = new Set(tabBarPanels.map(p => p.id));
+    const inspectorIds = new Set<string>();
+    for (const p of sessionPanels) {
+      if (isInspectorPanel(p)) inspectorIds.add(p.id);
+    }
+    const working = new Map(tabBarPanels.map(p => [p.id, p]));
     for (const group of allGroups(sessionLayout.root)) {
       if (!group.activePanelId || !inspectorIds.has(group.activePanelId)) continue;
       const nextId = group.panelIds.find(id => working.has(id));
-      const next = nextId ? tabBarPanels.find(p => p.id === nextId) : undefined;
+      const next = nextId ? working.get(nextId) : undefined;
       if (next) handleGroupPanelSelect(group.id, next);
     }
   }, [sessionLayout, sessionPanels, tabBarPanels, isInspectorPanel, handleGroupPanelSelect]);

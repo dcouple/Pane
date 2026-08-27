@@ -115,15 +115,20 @@ export async function openFileInEditor(options: OpenFileInEditorOptions): Promis
   const existing = editors.find((p) => showsTarget(p, filePath, diff));
   if (existing) {
     let panel = existing;
-    if (pin && editorPanelState(existing)?.isPreview) {
-      panel = await updateEditorPanel(existing, { isPreview: false });
-    }
+    const patch: Partial<EditorPanelState> = {};
+    if (pin && editorPanelState(existing)?.isPreview) patch.isPreview = false;
+    // Persist the requested position: a background tab mounts its editor only
+    // once activated, and restores the cursor from panel state on mount.
+    if (cursorPosition) patch.cursorPosition = cursorPosition;
+    if (Object.keys(patch).length > 0) panel = await updateEditorPanel(existing, patch);
+    await activate(sessionId, panel.id);
+    // An already-mounted editor will not remount, so ask it to move directly.
+    // Dispatched after activation so a freshly mounted view has its listener.
     if (cursorPosition) {
       window.dispatchEvent(new CustomEvent('editor-panel:reveal', {
-        detail: { panelId: panel.id, cursorPosition },
+        detail: { panelId: panel.id, filePath, cursorPosition },
       }));
     }
-    await activate(sessionId, panel.id);
     return panel;
   }
 

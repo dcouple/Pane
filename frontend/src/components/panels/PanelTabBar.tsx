@@ -595,7 +595,8 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
             // Track ref index for keyboard navigation
             let refIndex = 0;
             const menuItemClass = "flex items-center gap-2 w-full h-7 px-2.5 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus:bg-surface-hover focus:text-text-primary focus:outline-none text-left";
-            const separator = <div role="separator" className="my-1 border-t border-border-primary" />;
+            const separator = <hr className="my-1 border-t border-border-primary" />;
+            const otherPanelTypes = availablePanelTypes.filter(t => t !== 'terminal' && t !== 'explorer' && t !== 'browser');
             const groupLabel = (label: string) => (
               <div role="presentation" className="px-2.5 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">{label}</div>
             );
@@ -612,6 +613,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               {/* Terminal - plain terminal */}
               {availablePanelTypes.includes('terminal') && (
                 <button
+                  type="button"
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
@@ -625,6 +627,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               {/* Explorer */}
               {availablePanelTypes.includes('explorer') && (
                 <button
+                  type="button"
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
@@ -637,6 +640,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               )}
               {availablePanelTypes.includes('browser') && (
                 <button
+                  type="button"
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
@@ -656,6 +660,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
               {availablePanelTypes.includes('terminal') && agentPresets.map(preset => (
                 <button
                   key={preset.id}
+                  type="button"
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
@@ -752,6 +757,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   </div>
                 ) : (
                   <button
+                    type="button"
                     ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                     role="menuitem"
                     className={menuItemClass}
@@ -763,12 +769,13 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                 )
               )}
               {/* Other panel types (terminal, explorer and browser are listed above) */}
-              {availablePanelTypes.some(t => t !== 'terminal' && t !== 'explorer' && t !== 'browser') && separator}
-              {availablePanelTypes.filter(t => t !== 'terminal' && t !== 'explorer' && t !== 'browser').map((type) => {
+              {otherPanelTypes.length > 0 && separator}
+              {otherPanelTypes.map((type) => {
                 const currentRefIndex = refIndex++;
                 return (
                 <button
                   key={type}
+                  type="button"
                   ref={(el) => { dropdownItemsRef.current[currentRefIndex] = el; }}
                   role="menuitem"
                   className={menuItemClass}

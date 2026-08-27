@@ -132,20 +132,10 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
     debouncedUpdate(panel.id, panel.sessionId, newState);
   }, [debouncedUpdate, panel.id, panel.sessionId]);
   
-  // Only render when active. Explorer is cheap to initialize and should not
-  // keep Monaco, file tree loading, or git file-status checks alive in the
-  // background while the user is working in another panel.
-  if (!isActive) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-text-secondary">
-        <div className="text-center">
-          <div className="text-sm">Explorer panel not active</div>
-          <div className="text-xs mt-1 text-text-tertiary">Click to activate</div>
-        </div>
-      </div>
-    );
-  }
-  
+  // The tree stays mounted while its inspector tab is hidden (the host hides
+  // it with display:none) so loaded directories, scroll and selection survive
+  // switching between Files and Changes. Files themselves open as center
+  // editor tabs, so nothing heavy lives here.
   return (
     <div className="h-full w-full">
       <FileEditor

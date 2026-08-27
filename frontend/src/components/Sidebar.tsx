@@ -357,29 +357,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     }
   }, [compactSessionMenu]);
 
-  // Collapsed sidebar view
-  const headerControls = (
-    <>
-      {onToggleCollapse && (
-        <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="bottom">
-          <IconButton
-            onClick={onToggleCollapse}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            size="sm"
-            icon={collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-          />
-        </Tooltip>
-      )}
-    <Dropdown
-      trigger={
-        <button
-          className="p-1 rounded-md hover:bg-interactive/10 text-text-secondary hover:text-text-primary"
-          aria-label="Sidebar menu"
-        >
-          <MoreHorizontal size={14} />
-        </button>
-      }
-      items={[
+  const sidebarMenuItems = [
         {
           id: 'help',
           label: 'Help',
@@ -432,10 +410,36 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           icon: Info,
           onClick: onAboutClick
         }
-      ] satisfies DropdownItem[]}
-      position="bottom-left"
-      width="sm"
-    />
+  ] satisfies DropdownItem[];
+
+  // Title-strip controls (portalled into the window title bar when it has a
+  // slot; rendered inline by each layout otherwise).
+  const headerControls = (
+    <>
+      {onToggleCollapse && (
+        <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="bottom">
+          <IconButton
+            type="button"
+            onClick={onToggleCollapse}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            size="sm"
+            icon={collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          />
+        </Tooltip>
+      )}
+      <Dropdown
+        trigger={
+          <IconButton
+            type="button"
+            aria-label="Sidebar menu"
+            size="sm"
+            icon={<MoreHorizontal className="w-4 h-4" />}
+          />
+        }
+        items={sidebarMenuItems}
+        position="bottom-left"
+        width="sm"
+      />
     </>
   );
 
@@ -690,7 +694,22 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                 <SettingsIcon className="h-4 w-4" />
               </button>
             </Tooltip>
-            {!titleBarControlsSlot && (
+            {!titleBarControlsSlot && (<>
+              <Dropdown
+                trigger={
+                  <button
+                    type="button"
+                    data-compact-rail-item
+                    aria-label="Sidebar menu"
+                    className={`${COMPACT_RAIL_BUTTON} ${COMPACT_RAIL_IDLE}`}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                }
+                items={sidebarMenuItems}
+                position="top-right"
+                width="sm"
+              />
               <Tooltip content={hotkeyDisplay('toggle-sidebar') ? <Kbd>{hotkeyDisplay('toggle-sidebar')}</Kbd> : undefined} side="right">
                 <button
                   type="button"
@@ -702,7 +721,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                   <PanelLeftOpen className="h-4 w-4" />
                 </button>
               </Tooltip>
-            )}
+            </>)}
           </div>
         </div>
 

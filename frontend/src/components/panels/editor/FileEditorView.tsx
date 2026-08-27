@@ -64,6 +64,10 @@ export function FileEditorView({
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof monaco | null>(null);
   const pendingEditorFocusPathRef = useRef<string | null>(null);
+  // Monotonic load id: a load that finishes after the tab was re-targeted is stale.
+  const loadSeqRef = useRef(0);
+  // Monaco's debounced cursor/scroll saves, so a re-target can drop the old file's.
+  const positionSaversRef = useRef<{ cancel: () => void }[]>([]);
 
   // Keep ref in sync and clean up blob URLs to prevent memory leaks
   useEffect(() => {
@@ -117,6 +121,7 @@ export function FileEditorView({
   const loadFile = useCallback(async (file: FileItem | null) => {
     if (!file || file.isDirectory) return;
 
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError(null);
     setGitStatus('clean');
@@ -131,6 +136,7 @@ export function FileEditorView({
           sessionId,
           filePath: file.path,
         });
+        if (seq !== loadSeqRef.current) return;
         if (result.success && result.contentBase64) {
           // Revoke previous blob URL via ref (avoids stale closure from useCallback)
           if (binaryBlobUrlRef.current) URL.revokeObjectURL(binaryBlobUrlRef.current);
@@ -171,6 +177,7 @@ export function FileEditorView({
         sessionId,
         filePath: file.path
       });
+      if (seq !== loadSeqRef.current) return;
 
       if (result.success) {
         setBinaryBlobUrl(null);
@@ -237,9 +244,9 @@ export function FileEditorView({
         setError(result.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load file');
+      if (seq === loadSeqRef.current) setError(err instanceof Error ? err.message : 'Failed to load file');
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   }, [sessionId, onFileChange, onStateChange, initialState, binaryBlobUrlRef]);
 
@@ -282,6 +289,7 @@ export function FileEditorView({
         });
       }
     }, 500); // Debounce scroll position saves
+    positionSaversRef.current = [saveCursorPosition, saveScrollPosition];
     
     // Listen for cursor position changes
     monacoEditor.onDidChangeCursorPosition?.((e: monaco.editor.ICursorPositionChangedEvent) => {
@@ -422,11 +430,14 @@ export function FileEditorView({
   useEffect(() => {
     if (selectedFile?.path === filePath) return;
     autoSave.flush();
+    for (const saver of positionSaversRef.current) saver.cancel();
     loadFile({ name: filePath.split('/').pop() || '', path: filePath, isDirectory: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath]);
 
-  // Terminal links / re-opens can ask for a specific position after mount
+  // Terminal links / re-opens can ask for a specific position. Matched by
+  // file path; a tab that mounts after the request restores the position
+  // from its persisted panel state instead.
   useEffect(() => {
     const handleReveal = (event: Event) => {
       if (!(event instanceof CustomEvent)) return;

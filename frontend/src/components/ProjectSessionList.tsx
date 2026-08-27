@@ -286,6 +286,7 @@ export function ProjectSessionList({
       <div className="flex flex-col py-1.5">
         {/* Home */}
         <button
+          type="button"
           onClick={() => {
             setSidebarNavigationScope('repositories');
             setActiveSession(null);

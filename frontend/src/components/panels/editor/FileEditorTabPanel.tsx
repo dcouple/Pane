@@ -50,6 +50,12 @@ const FileEditorTabPanel: React.FC<FileEditorTabPanelProps> = ({ panel, isActive
   useEffect(() => {
     if (!isActive) debouncedUpdate.flush?.();
   }, [debouncedUpdate, isActive]);
+  // A preview tab re-targeted to another file: whatever the previous file had
+  // queued (cursor, scroll, dirty flag, its own path) must not land on the
+  // new target's state.
+  useEffect(() => {
+    debouncedUpdate.cancel?.();
+  }, [debouncedUpdate, filePath]);
 
   const handleStateChange = useCallback((newState: Partial<EditorPanelState>) => {
     debouncedUpdate(panel.id, panel.sessionId, newState);
