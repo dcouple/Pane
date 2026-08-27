@@ -1,8 +1,5 @@
 name: Notify website on release
 on:
-  push:
-    tags: ["v*"]
-  # Manual trigger for validation
   workflow_dispatch:
 
 jobs:
