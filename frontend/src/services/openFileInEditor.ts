@@ -85,7 +85,7 @@ async function activate(sessionId: string, panelId: string): Promise<void> {
 }
 
 /** Persist a pin / retarget on an existing editor tab. */
-export async function updateEditorPanel(
+async function updateEditorPanel(
   panel: ToolPanel,
   patch: Partial<EditorPanelState>,
   title?: string,

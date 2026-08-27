@@ -7,7 +7,7 @@ import type { InspectorTab } from '../components/InspectorTabs';
  * the active pane is the main repo it routes them here instead of at its own
  * (worktree) state, so ⌘⇧B, ⌘⌥1, ⌘⇧1-9, ⌘A/⌘D and ⌘W behave the same in both.
  */
-export interface ProjectViewActions {
+interface ProjectViewActions {
   toggleDetail: () => void;
   showInspector: (tab: InspectorTab) => void;
   addTerminal: () => void;
