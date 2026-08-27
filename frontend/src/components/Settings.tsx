@@ -94,16 +94,14 @@ export function Settings({ isOpen, onClose, category, onCategoryChange, openRequ
     }
   }, [isOpen]);
 
-  // Detect a Codex login each time Settings opens (main-process cache: 60 s). The last
-  // result is kept across closes so re-opening on the Usage tab does not flash it out.
+  // Show the Usage tab when Codex transcripts have been indexed (rate limits exist).
   useEffect(() => {
     if (!isOpen) return;
     let cancelled = false;
-    void window.electronAPI.agentUsage.get().then((response) => {
+    void API.usage.getReport({ providers: ['codex'] }).then((response) => {
       if (cancelled) return;
-      const available = response.success
-        && response.data?.providers.some((provider) => provider.id === 'codex' && provider.status === 'available') === true;
-      setCodexUsageDetection(available ? 'available' : 'unavailable');
+      const hasLimits = response.success && (response.data?.rateLimits.length ?? 0) > 0;
+      setCodexUsageDetection(hasLimits ? 'available' : 'unavailable');
     }).catch(() => {
       if (!cancelled) setCodexUsageDetection('unavailable');
     });

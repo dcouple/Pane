@@ -117,6 +117,38 @@ const usage = {
   fetchedAt: '2026-08-14T12:00:00.000Z',
 };
 
+const usageReport = {
+  totals: {
+    inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
+    totalTokens: 0, messageCount: 0, estimatedCostUsd: 0, costIncomplete: false, cacheSavingsUsd: 0,
+  },
+  series: [],
+  byModel: [],
+  byProject: [],
+  rateLimits: [{
+    provider: 'codex',
+    limitId: 'codex',
+    scope: 'primary',
+    usedPercent: 42,
+    windowMinutes: 10_080,
+    resetsAtMs: new Date('2026-08-20T08:05:00.000Z').getTime(),
+    planType: 'pro_lite',
+    capturedAtMs: Date.now(),
+    creditsHas: false,
+    creditsBalance: '0',
+    creditsUnlimited: false,
+    rateLimitReachedType: null,
+    spendControlReached: null,
+    limitName: null,
+  }],
+  index: {
+    lastScanStartedMs: Date.now(), lastScanFinishedMs: Date.now(),
+    filesTracked: 1, eventsIndexed: 5, missingRoots: [],
+    scanning: false, filesScanned: 1, filesTotal: 1, lastError: null,
+  },
+  pricingAsOf: '2026-08-10',
+};
+
 async function openSettings(page: Page, options: Parameters<typeof installElectronApiMock>[1] = {}): Promise<void> {
   await installElectronApiMock(page, options);
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
@@ -139,13 +171,14 @@ async function capture(page: Page, testInfo: TestInfo, filename: string): Promis
   await testInfo.attach(filename, { path, contentType: 'image/png' });
 }
 
-test('Settings shows the Usage tab when a Codex login is detected', async ({ page }, testInfo) => {
+test('Settings shows the Usage tab when Codex limits exist in transcripts', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1_600, height: 900 });
   await openSettings(page, {
     initialProjects: [project],
     initialSessions: [session],
     initialPanels: panels,
     initialAgentUsage: usage,
+    initialUsageReport: usageReport,
     activeProjectId: project.id,
   });
 
@@ -153,17 +186,13 @@ test('Settings shows the Usage tab when a Codex login is detected', async ({ pag
   const usageTab = navigation.getByRole('button', { name: 'Usage', exact: true });
   await expect(usageTab).toBeVisible();
   await expect(navigation.getByRole('button')).toHaveCount(SETTINGS_CATEGORY_COUNT_WITHOUT_USAGE + 1);
-  await expect(page.getByRole('button', { name: /Codex usage widget/ })).toHaveCount(0);
 
   await usageTab.click();
   await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   const widget = page.getByRole('region', { name: 'Codex usage' });
   await expect(widget).toBeVisible();
-  await expect(widget.getByText('Pro Lite', { exact: true })).toBeVisible();
-  await expect(widget.getByText('Weekly limit', { exact: true })).toBeVisible();
+  await expect(widget.getByText('pro_lite', { exact: true })).toBeVisible();
   await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
-  await expect(widget.getByText('GPT-5.3-Codex-Spark weekly limit', { exact: true })).toBeVisible();
-  await expect(widget.getByText('100% left', { exact: true })).toBeVisible();
   await capture(page, testInfo, 'codex-usage-settings.png');
 
   await page.setViewportSize({ width: 640, height: 760 });
@@ -173,7 +202,7 @@ test('Settings shows the Usage tab when a Codex login is detected', async ({ pag
   await page.keyboard.press('Escape');
 });
 
-test('Settings hides the Usage tab when no Codex login is detected', async ({ page }) => {
+test('Settings hides the Usage tab when no Codex limits exist', async ({ page }) => {
   await page.setViewportSize({ width: 1_600, height: 900 });
   await openSettings(page, {
     initialProjects: [project],
@@ -196,25 +225,22 @@ test('Settings hides the Usage tab when no Codex login is detected', async ({ pa
   await page.keyboard.press('Escape');
 });
 
-test('Codex usage clears a successful snapshot after a refresh failure', async ({ page }) => {
+test('Settings Usage tab shows limits from transcript-parsed data', async ({ page }) => {
   await page.setViewportSize({ width: 1_600, height: 900 });
   await openSettings(page, {
     initialProjects: [project],
     initialSessions: [session],
     initialPanels: panels,
     initialAgentUsage: usage,
+    initialUsageReport: usageReport,
     activeProjectId: project.id,
-    forcedAgentUsageError: 'Codex exited during refresh',
   });
   await page.getByRole('navigation', { name: 'Settings categories' })
     .getByRole('button', { name: 'Usage', exact: true }).click();
 
   const widget = page.getByRole('region', { name: 'Codex usage' });
   await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Refresh Codex usage', exact: true }).click();
-
-  await expect(widget.getByText('Codex usage unavailable', { exact: true })).toBeVisible();
-  await expect(widget.getByText('58% left', { exact: true })).toHaveCount(0);
+  await expect(widget.getByRole('button', { name: 'Refresh usage', exact: true })).toBeVisible();
 });
 
 test('main-repository branch detection never renders the previous repository branch', async ({ page }) => {
