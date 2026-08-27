@@ -135,4 +135,20 @@ describe('parseOpenRouterResponse', () => {
     expect(prices).toHaveLength(1);
     expect(prices[0].model).toBe('good');
   });
+
+  it('skips dynamic-pricing sentinels and negative cache rates', () => {
+    const prices = parseOpenRouterResponse({
+      data: [
+        { id: 'openrouter/auto', pricing: { prompt: '-1', completion: '0.002' } },
+        {
+          id: 'vendor/negative-cache',
+          pricing: { prompt: '0.001', completion: '0.002', input_cache_read: '-1' },
+        },
+        { id: 'vendor/good', pricing: { prompt: '0.001', completion: '0.002' } },
+      ],
+    });
+
+    expect(prices).toHaveLength(1);
+    expect(prices[0].model).toBe('good');
+  });
 });

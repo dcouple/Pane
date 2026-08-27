@@ -67,6 +67,10 @@ export function convertPricing(
     ? parseFloat(pricing.input_cache_write) : NaN;
   const cacheWritePerMTok = isNaN(cacheWriteRaw) ? inputPerMTok : cacheWriteRaw * 1_000_000;
 
+  if ([inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok].some(rate => rate < 0)) {
+    return null;
+  }
+
   return { model: bareId, inputPerMTok, outputPerMTok, cacheReadPerMTok, cacheWritePerMTok };
 }
 
