@@ -19,7 +19,7 @@ jobs:
         os: [macos-latest, ubuntu-latest]
         include:
           - os: macos-latest
-            release_cmd: release:mac:universal
+            release_cmd: release:mac
             ci_cmd: build:mac:ci
             artifact_path: |
               dist-electron/*.dmg

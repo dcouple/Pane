@@ -43,8 +43,10 @@ const artifactRelease = {
     { name: 'Pane-2.2.8-linux-arm64.AppImage', browser_download_url: 'https://example.test/linux-arm64.AppImage' },
     { name: 'Pane-2.2.8-linux-x86_64.deb', browser_download_url: 'https://example.test/linux-x64.deb' },
     { name: 'Pane-2.2.8-linux-arm64.deb', browser_download_url: 'https://example.test/linux-arm64.deb' },
-    { name: 'Pane-2.2.8-macOS-universal.dmg', browser_download_url: 'https://example.test/macos.dmg' },
-    { name: 'Pane-2.2.8-macOS-universal.zip', browser_download_url: 'https://example.test/macos.zip' },
+    { name: 'Pane-2.2.8-macOS-arm64.dmg', browser_download_url: 'https://example.test/macos-arm64.dmg' },
+    { name: 'Pane-2.2.8-macOS-arm64.zip', browser_download_url: 'https://example.test/macos-arm64.zip' },
+    { name: 'Pane-2.2.8-macOS-x64.dmg', browser_download_url: 'https://example.test/macos-x64.dmg' },
+    { name: 'Pane-2.2.8-macOS-x64.zip', browser_download_url: 'https://example.test/macos-x64.zip' },
     { name: 'Pane-2.2.8-Windows-x64.exe', browser_download_url: 'https://example.test/win-x64.exe' },
     { name: 'Pane-2.2.8-Windows-arm64.exe', browser_download_url: 'https://example.test/win-arm64.exe' }
   ]

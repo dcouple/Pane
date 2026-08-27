@@ -312,7 +312,8 @@ irm https://runpane.com/install.ps1 | iex
 |----------|------|
 | Windows (x64) | `Pane-x.x.x-Windows-x64.exe` |
 | Windows (ARM64) | `Pane-x.x.x-Windows-arm64.exe` |
-| macOS (Universal) | `Pane-x.x.x-macOS-universal.dmg` |
+| macOS (Apple Silicon) | `Pane-x.x.x-macOS-arm64.dmg` |
+| macOS (Intel) | `Pane-x.x.x-macOS-x64.dmg` |
 | Linux (x64) | `Pane-x.x.x-linux-x86_64.AppImage` or `.deb` |
 | Linux (ARM64) | `Pane-x.x.x-linux-arm64.AppImage` or `.deb` |
 
@@ -427,7 +428,7 @@ pnpm run electron-dev
 ```bash
 pnpm build:win:x64    # Windows (x64)
 pnpm build:win:arm64  # Windows (ARM64)
-pnpm build:mac        # macOS (Universal)
+pnpm build:mac        # macOS (Apple Silicon + Intel)
 pnpm build:linux  # Linux (x64 + ARM64)
 ```
 
