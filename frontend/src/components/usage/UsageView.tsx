@@ -5,8 +5,7 @@ import { AreaChart } from '../ui/charts/AreaChart';
 import { BarChart } from '../ui/charts/BarChart';
 import { DonutChart } from '../ui/charts/DonutChart';
 import { formatTokens, formatUsd } from '../ui/charts/chartScales';
-import { LimitGauge } from './LimitGauge';
-import { DEFAULT_USAGE_RANGE_DAYS, type UsageProvider, type UsageReport } from '../../../../shared/types/usage';
+import { DEFAULT_USAGE_RANGE_DAYS, type UsageProvider, type UsageRateLimitSample, type UsageReport } from '../../../../shared/types/usage';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Poll while a scan is running so the progress line stays honest. */
@@ -39,33 +38,6 @@ const SERIES_COLORS = {
 } as const;
 
 const MODEL_COLORS = ['#4f8ef7', '#37b877', '#e0913a', '#c765d6', '#e05a6b', '#3fb8c4', '#8f8ff0', '#c2a63a'];
-
-/**
- * The user's own cap for the rolling window, in millions of tokens.
- *
- * Kept client-side: it is a statement about the person's plan, not about the
- * indexed data, and no provider publishes a number Pane could fill in for them.
- */
-const WINDOW_LIMIT_KEY = 'pane.usage.windowLimitMTok';
-
-function readStoredLimit(): number | null {
-  try {
-    const raw = window.localStorage.getItem(WINDOW_LIMIT_KEY);
-    const parsed = raw === null ? NaN : Number(raw);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredLimit(value: number | null): void {
-  try {
-    if (value === null) window.localStorage.removeItem(WINDOW_LIMIT_KEY);
-    else window.localStorage.setItem(WINDOW_LIMIT_KEY, String(value));
-  } catch {
-    // Locked-down profile — the limit just stays session-only.
-  }
-}
 
 /** "10080" -> "7d", "300" -> "5h" — providers report windows in minutes. */
 function formatWindow(minutes: number): string {
@@ -112,12 +84,64 @@ function StatCard({
   );
 }
 
+function limitBarColor(usedPercent: number): string {
+  if (usedPercent >= 90) return 'var(--color-status-error, #e05a6b)';
+  if (usedPercent >= 70) return 'var(--color-status-warning, #e0913a)';
+  return 'var(--color-status-success, #37b877)';
+}
+
+function LimitStatusBanners({ limits }: { limits: UsageRateLimitSample[] }) {
+  const blocked = limits.find(l => l.rateLimitReachedType !== null);
+  const spendControl = limits.find(l => l.spendControlReached === true);
+
+  if (!blocked && !spendControl) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {blocked && (
+        <div className="rounded border border-status-error/30 bg-status-error/10 px-3 py-1.5 text-[11px] text-status-error">
+          Rate limited — {blocked.rateLimitReachedType}
+          {blocked.resetsAtMs && blocked.resetsAtMs > Date.now() && (
+            <span className="text-text-tertiary"> · resets {formatReset(blocked.resetsAtMs)}</span>
+          )}
+        </div>
+      )}
+      {spendControl && (
+        <div className="rounded border border-status-warning/30 bg-status-warning/10 px-3 py-1.5 text-[11px] text-status-warning">
+          Organisation spend control reached
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreditsLine({ limits }: { limits: UsageRateLimitSample[] }) {
+  const withCredits = limits.find(l => l.creditsHas !== null);
+  if (!withCredits) return null;
+
+  if (withCredits.creditsUnlimited) {
+    return <p className="text-[10px] text-text-tertiary">Unlimited credits</p>;
+  }
+
+  if (withCredits.creditsHas && withCredits.creditsBalance) {
+    return (
+      <p className="text-[10px] text-text-tertiary">
+        Credits remaining: ${withCredits.creditsBalance}
+      </p>
+    );
+  }
+
+  return null;
+}
+
 /**
  * Token usage, cost and rate-limit page.
  *
- * The numbers come from the agent CLIs' own transcripts, indexed in the main
- * process — Pane runs the agents as PTYs and never sees their token accounting
- * directly.
+ * Numbers come from two sources:
+ * - **Logs**: token counts, model split, cache rates, per-project — counted
+ *   directly from agent CLI transcripts.
+ * - **Provider**: rate limits, credits, blocked state — reported by Codex in
+ *   every token_count event. Anthropic does not expose plan limits locally.
  */
 export function UsageView() {
   const [report, setReport] = useState<UsageReport | null>(null);
@@ -128,18 +152,6 @@ export function UsageView() {
   const [provider, setProvider] = useState<UsageProvider | 'all'>('all');
   /** Series switched off in the legend — see `visibleAreaSeries`. */
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
-  /**
-   * The user's own cap for the rolling window, in millions of tokens.
-   *
-   * Providers publish no per-plan token cap, so inventing one would be worse
-   * than useless — this is the user stating theirs. Null means "compare against
-   * my own busiest window", the previous behaviour.
-   */
-  const [windowLimitMTok, setWindowLimitMTok] = useState<number | null>(() => readStoredLimit());
-  const [limitDraft, setLimitDraft] = useState<string>(() => {
-    const stored = readStoredLimit();
-    return stored === null ? '' : String(stored);
-  });
 
   const load = useCallback(async (mode: 'initial' | 'refresh') => {
     if (mode === 'refresh') setRefreshing(true);
@@ -149,7 +161,6 @@ export function UsageView() {
         fromMs: toMs - rangeDays * DAY_MS,
         toMs,
         providers: provider === 'all' ? undefined : [provider],
-        limitTokens: windowLimitMTok === null ? undefined : windowLimitMTok * 1_000_000,
       });
       if (!response.success || !response.data) {
         throw new Error(response.error || 'Failed to load usage');
@@ -162,18 +173,7 @@ export function UsageView() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [rangeDays, provider, windowLimitMTok]);
-
-  /** Apply the typed limit: persist it and reload so the gauge uses it. */
-  const applyLimit = useCallback(() => {
-    const parsed = Number(limitDraft);
-    const next = limitDraft.trim() === '' || !Number.isFinite(parsed) || parsed <= 0
-      ? null
-      : parsed;
-    writeStoredLimit(next);
-    setWindowLimitMTok(next);
-    setLimitDraft(next === null ? '' : String(next));
-  }, [limitDraft]);
+  }, [rangeDays, provider]);
 
   useEffect(() => {
     void load('initial');
@@ -214,14 +214,6 @@ export function UsageView() {
     ];
   }, [report]);
 
-  /**
-   * Series the chart is currently drawing.
-   *
-   * Cache reads run two orders of magnitude above input and output, so on a
-   * shared axis those two are a flat line on the floor — the chart looked like
-   * it had no input/output data at all. Switching a series off rescales the
-   * axis to what is left, which is the only way to see them.
-   */
   const visibleAreaSeries = useMemo(
     () => areaSeries.filter(entry => !hiddenSeries.includes(entry.label)),
     [areaSeries, hiddenSeries]
@@ -231,7 +223,6 @@ export function UsageView() {
     setHiddenSeries(current => (
       current.includes(label)
         ? current.filter(entry => entry !== label)
-        // Never hide the last one: an empty chart says nothing.
         : current.length === areaSeries.length - 1
           ? current
           : [...current, label]
@@ -247,8 +238,6 @@ export function UsageView() {
       tag: PROVIDER_META[entry.provider].label,
       share: total > 0 ? entry.totalTokens / total : 0,
       detail: entry.costIncomplete ? 'n/a' : formatUsd(entry.estimatedCostUsd),
-      // Codex writes the active *profile* where a model id is expected, so a
-      // row with no price is usually a sub-agent rather than a missing price.
       note: entry.costIncomplete ? 'no price' : undefined,
       detailTitle: entry.costIncomplete
         ? 'No published price for this id. Codex reports sub-agent profiles (for example codex-auto-review) in the model field, and those are billed under the model they run on.'
@@ -265,26 +254,15 @@ export function UsageView() {
       value: entry.totalTokens,
       color: MODEL_COLORS[index % MODEL_COLORS.length],
       share: total > 0 ? entry.totalTokens / total : 0,
-      detail: entry.costIncomplete ? 'n/a' : formatUsd(entry.estimatedCostUsd),
     }));
   }, [report]);
 
-  /**
-   * How much of the input never had to be re-read at full price.
-   *
-   * Cache reads dominate every other number on this page, and as a raw token
-   * count that reads as noise. As a hit rate plus the money it saved, it is the
-   * most actionable figure here.
-   */
-  const cacheEfficiency = useMemo(() => {
+  const cacheHitRate = useMemo(() => {
     const totals = report?.totals;
     if (!totals) return null;
     const readable = totals.inputTokens + totals.cacheReadTokens;
     if (readable === 0) return null;
-    return {
-      hitRate: totals.cacheReadTokens / readable,
-      savingsUsd: totals.cacheSavingsUsd,
-    };
+    return totals.cacheReadTokens / readable;
   }, [report]);
 
   /** Anthropic vs OpenAI roll-up — the split the model list alone doesn't show. */
@@ -306,7 +284,6 @@ export function UsageView() {
         value: value.tokens,
         color: PROVIDER_META[key].color,
         share: total > 0 ? value.tokens / total : 0,
-        detail: value.incomplete ? 'n/a' : formatUsd(value.cost),
       }));
   }, [report]);
 
@@ -413,7 +390,7 @@ export function UsageView() {
           </div>
         ) : report ? (
           <div className="mx-auto flex max-w-6xl flex-col gap-4">
-            {/* Summary */}
+            {/* Summary — all from logs */}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <StatCard
                 label="Total tokens"
@@ -422,33 +399,22 @@ export function UsageView() {
               />
               <StatCard label="Input" value={formatTokens(report.totals.inputTokens)} />
               <StatCard label="Output" value={formatTokens(report.totals.outputTokens)} />
-              {/*
-                Not a bill. These tokens were almost certainly paid for by a
-                flat-rate plan; the figure is what the same traffic would cost
-                billed per token through the APIs, which is the only number the
-                transcripts support.
-              */}
-              <StatCard
-                label="At API prices"
-                value={formatUsd(report.totals.estimatedCostUsd)}
-                detail={report.totals.costIncomplete
-                  ? 'What API billing would cost · some ids unpriced'
-                  : 'What API billing would cost, not your plan'}
-              />
-            </div>
-
-            {cacheEfficiency && (
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {cacheHitRate !== null ? (
                 <StatCard
                   label="Cache hit rate"
-                  value={`${Math.round(cacheEfficiency.hitRate * 100)}%`}
+                  value={`${Math.round(cacheHitRate * 100)}%`}
                   detail="of read input came from cache"
                 />
+              ) : (
                 <StatCard
-                  label="Saved by caching"
-                  value={formatUsd(cacheEfficiency.savingsUsd)}
-                  detail="vs. re-reading at full input price"
+                  label="Messages"
+                  value={report.totals.messageCount.toLocaleString()}
                 />
+              )}
+            </div>
+
+            {cacheHitRate !== null && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <StatCard
                   label="Messages"
                   value={report.totals.messageCount.toLocaleString()}
@@ -480,11 +446,6 @@ export function UsageView() {
                   formatValue={formatTokens}
                   ariaLabel={`Token usage over the last ${rangeDays} days, totalling ${formatTokens(report.totals.totalTokens)} tokens`}
                 />
-                {/*
-                  A legend that switches series on and off, because the axis is
-                  shared: with cache reads drawn, input and output are a flat
-                  line on the floor.
-                */}
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {areaSeries.map(entry => {
                     const hidden = hiddenSeries.includes(entry.label);
@@ -518,27 +479,31 @@ export function UsageView() {
                 </ul>
               </section>
 
-              {/* Limits */}
+              {/* Provider-reported limits */}
               <section className="rounded border border-border-primary bg-surface-secondary p-3">
                 <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-text-tertiary">
-                  Limits
+                  Provider limits
                 </h2>
 
-                {/* Provider-reported quota beats anything we could infer. */}
-                {report.rateLimits.length > 0 && (
-                  <ul className="mb-3 space-y-2">
+                <LimitStatusBanners limits={report.rateLimits} />
+
+                {report.rateLimits.length > 0 ? (
+                  <ul className="mt-2 space-y-2">
                     {report.rateLimits.map(limit => (
                       <li key={`${limit.provider}-${limit.limitId}-${limit.scope}`}>
                         <div className="flex items-baseline justify-between gap-2 text-[11px]">
                           <span className="truncate text-text-secondary">
                             {PROVIDER_META[limit.provider].label}
+                            {limit.planType && (
+                              <span className="ml-1 text-text-muted">· {limit.planType}</span>
+                            )}
                             {limit.windowMinutes && (
                               <span className="ml-1 text-text-muted">
                                 {formatWindow(limit.windowMinutes)}
                               </span>
                             )}
-                            {limit.planType && (
-                              <span className="ml-1 text-text-muted">· {limit.planType}</span>
+                            {limit.limitName && (
+                              <span className="ml-1 text-text-muted">· {limit.limitName}</span>
                             )}
                           </span>
                           <span className="flex-shrink-0 tabular-nums text-text-primary">
@@ -550,20 +515,10 @@ export function UsageView() {
                             className="h-full rounded-full"
                             style={{
                               width: `${Math.min(Math.max(limit.usedPercent, 0), 100)}%`,
-                              backgroundColor: limit.usedPercent >= 90
-                                ? 'var(--color-status-error, #e05a6b)'
-                                : limit.usedPercent >= 70
-                                  ? 'var(--color-status-warning, #e0913a)'
-                                  : 'var(--color-status-success, #37b877)',
+                              backgroundColor: limitBarColor(limit.usedPercent),
                             }}
                           />
                         </div>
-                        {/*
-                          When the reading was taken matters as much as the
-                          reading: these come from the last transcript line the
-                          agent wrote, and a 0% from yesterday is not a claim
-                          about now.
-                        */}
                         <p className="mt-0.5 text-[10px] text-text-muted">
                           Reported {formatAge(limit.capturedAtMs)}
                           {limit.resetsAtMs
@@ -574,49 +529,14 @@ export function UsageView() {
                         </p>
                       </li>
                     ))}
+                    <CreditsLine limits={report.rateLimits} />
                   </ul>
+                ) : (
+                  <p className="mt-2 text-[11px] text-text-muted">
+                    No provider-reported limits available. Codex writes quota state
+                    into its transcripts; Anthropic does not expose plan limits locally.
+                  </p>
                 )}
-
-                <LimitGauge window={report.window} />
-
-                {/*
-                  The window cap is the user's to state — no provider publishes
-                  a per-plan token number, and the gauge is guesswork until
-                  someone says what it is measuring against.
-                */}
-                <div className="mt-3 border-t border-border-primary pt-2">
-                  <label
-                    htmlFor="usage-window-limit"
-                    className="text-[10px] uppercase tracking-wider text-text-muted"
-                  >
-                    My {report.window.windowHours}h limit
-                  </label>
-                  <div className="mt-1 flex items-center gap-1.5">
-                    <input
-                      id="usage-window-limit"
-                      type="number"
-                      min={0}
-                      step={10}
-                      inputMode="decimal"
-                      value={limitDraft}
-                      placeholder="auto"
-                      onChange={event => setLimitDraft(event.target.value)}
-                      onBlur={applyLimit}
-                      onKeyDown={event => { if (event.key === 'Enter') applyLimit(); }}
-                      className="w-24 rounded border border-border-secondary bg-surface-primary px-1.5 py-0.5 text-[11px] tabular-nums text-text-primary focus:border-interactive focus:outline-none"
-                    />
-                    <span className="text-[10px] text-text-muted">million tokens</span>
-                    {windowLimitMTok !== null && (
-                      <button
-                        type="button"
-                        onClick={() => { setLimitDraft(''); writeStoredLimit(null); setWindowLimitMTok(null); }}
-                        className="ml-auto rounded px-1.5 py-0.5 text-[10px] text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                </div>
               </section>
             </div>
 
@@ -665,10 +585,8 @@ export function UsageView() {
             </div>
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-text-muted">
-              <span>Prices as of {report.pricingAsOf}; costs are estimates.</span>
               <span>{report.index.eventsIndexed.toLocaleString()} messages indexed from {report.index.filesTracked.toLocaleString()} transcripts.</span>
-              {/* The scanner reads this machine's home only; WSL distros keep their own. */}
-              <span>Agents running inside WSL write their transcripts in the distro’s home and are not counted.</span>
+              <span>Agents running inside WSL write their transcripts in the distro's home and are not counted.</span>
               {report.index.missingRoots.length > 0 && (
                 <span>Not found: {report.index.missingRoots.join(', ')}</span>
               )}

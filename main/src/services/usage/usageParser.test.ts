@@ -220,6 +220,107 @@ describe('parseCodexLine', () => {
     });
   });
 
+  it('captures credits, rate_limit_reached_type, spend_control_reached, and limit_name', () => {
+    const context = createCodexContext();
+    const line = JSON.stringify({
+      timestamp: '2026-05-01T11:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 10, output_tokens: 5 } },
+        rate_limits: {
+          limit_id: 'codex',
+          primary: { used_percent: 80, window_minutes: 300, resets_at: 1785497199 },
+          plan_type: 'pro',
+          limit_name: 'Standard rate limit',
+          rate_limit_reached_type: 'hard_cap',
+          spend_control_reached: true,
+          credits: { has_credits: true, balance: '42.50', unlimited: false },
+        },
+      },
+    });
+
+    parseUsageLine('codex', line, FALLBACK_MS, context);
+    const limits = [...context.rateLimits.values()];
+
+    expect(limits).toHaveLength(1);
+    expect(limits[0]).toMatchObject({
+      limitName: 'Standard rate limit',
+      rateLimitReachedType: 'hard_cap',
+      spendControlReached: true,
+      creditsHas: true,
+      creditsBalance: '42.50',
+      creditsUnlimited: false,
+    });
+  });
+
+  it('captures credits, blocked and spend-control fields', () => {
+    const context = createCodexContext();
+    const line = JSON.stringify({
+      timestamp: '2026-05-01T11:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 10, output_tokens: 5 } },
+        rate_limits: {
+          limit_id: 'codex',
+          limit_name: 'api-codex',
+          primary: { used_percent: 80, window_minutes: 10080, resets_at: 1785497199 },
+          secondary: null,
+          credits: { has_credits: true, unlimited: false, balance: '42.50' },
+          plan_type: 'pro',
+          rate_limit_reached_type: 'weekly',
+          spend_control_reached: true,
+        },
+      },
+    });
+
+    parseUsageLine('codex', line, FALLBACK_MS, context);
+    const limits = [...context.rateLimits.values()];
+
+    expect(limits).toHaveLength(1);
+    expect(limits[0]).toMatchObject({
+      creditsHas: true,
+      creditsBalance: '42.50',
+      creditsUnlimited: false,
+      rateLimitReachedType: 'weekly',
+      spendControlReached: true,
+      limitName: 'api-codex',
+    });
+  });
+
+  it('handles missing credits and null blocked/spend fields', () => {
+    const context = createCodexContext();
+    const line = JSON.stringify({
+      timestamp: '2026-05-01T11:00:00.000Z',
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        info: { last_token_usage: { input_tokens: 10, output_tokens: 5 } },
+        rate_limits: {
+          limit_id: 'codex',
+          primary: { used_percent: 19, window_minutes: 10080 },
+          secondary: null,
+          plan_type: 'pro',
+          rate_limit_reached_type: null,
+          spend_control_reached: null,
+        },
+      },
+    });
+
+    parseUsageLine('codex', line, FALLBACK_MS, context);
+    const limits = [...context.rateLimits.values()];
+
+    expect(limits[0]).toMatchObject({
+      creditsHas: null,
+      creditsBalance: null,
+      creditsUnlimited: null,
+      rateLimitReachedType: null,
+      spendControlReached: null,
+      limitName: null,
+    });
+  });
+
   it('keeps the newest quota sample when several appear', () => {
     const context = createCodexContext();
     const sample = (ts: string, used: number) => JSON.stringify({

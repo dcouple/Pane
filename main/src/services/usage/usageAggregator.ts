@@ -1,14 +1,12 @@
 import { basename } from 'path';
 import type { Database } from 'better-sqlite3-multiple-ciphers';
 import {
-  USAGE_WINDOW_HOURS,
   type UsageBucket,
   type UsageByModel,
   type UsageByProject,
   type UsageProvider,
   type UsageReportRequest,
   type UsageTotals,
-  type UsageWindow,
 } from '../../../../shared/types/usage';
 import { estimateCostUsd } from './modelPricing';
 
@@ -202,74 +200,6 @@ export class UsageAggregator {
     return [...byBucket.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([bucketStartMs, bucketRows]) => ({ bucketStartMs, ...foldTotals(bucketRows) }));
-  }
-
-  /**
-   * Rolling-window utilisation — "how much of my quota is left".
-   *
-   * When no explicit limit is configured, the largest window ever observed is
-   * used as a proxy: it is a lower bound on the real cap, which makes the
-   * gauge useful without inventing a number.
-   */
-  getWindow(
-    nowMs: number,
-    configuredLimitTokens: number | null,
-    providers?: UsageProvider[],
-  ): UsageWindow {
-    const windowMs = USAGE_WINDOW_HOURS * HOUR_MS;
-    const windowStartMs = nowMs - windowMs;
-    const totals = this.getTotals(windowStartMs, nowMs, providers);
-    const { clause, params } = this.providerFilter(providers);
-
-    // SAFETY: This aggregate query always returns one nullable numeric column.
-    const oldest = this.db.prepare(`
-      SELECT MIN(timestamp_ms) AS oldest
-      FROM usage_events
-      WHERE timestamp_ms >= ? ${clause}
-    `).get(windowStartMs, ...params) as { oldest: number | null };
-
-    let limitTokens = configuredLimitTokens;
-    let limitSource: UsageWindow['limitSource'] = configuredLimitTokens ? 'configured' : 'unknown';
-
-    if (!limitTokens) {
-      const observed = this.getObservedMaxWindowTokens(windowMs, providers);
-      if (observed > 0) {
-        limitTokens = observed;
-        limitSource = 'observed-max';
-      }
-    }
-
-    return {
-      windowHours: USAGE_WINDOW_HOURS,
-      windowStartMs,
-      windowEndMs: nowMs,
-      totals,
-      limitTokens: limitTokens ?? null,
-      limitSource,
-      utilization: limitTokens ? Math.min(totals.totalTokens / limitTokens, 1) : null,
-      resetsAtMs: oldest.oldest ? oldest.oldest + windowMs : null,
-      recentHourTokens: this.getTotals(nowMs - HOUR_MS, nowMs, providers).totalTokens,
-    };
-  }
-
-  /**
-   * Largest token count seen in any historical window, approximated by
-   * bucketing on window boundaries. Exact sliding maxima would require a scan
-   * over every event; the bucketed figure is close enough for a gauge.
-   */
-  private getObservedMaxWindowTokens(windowMs: number, providers?: UsageProvider[]): number {
-    const { clause, params } = this.providerFilter(providers);
-    // SAFETY: The outer aggregate always returns one nullable numeric column.
-    const row = this.db.prepare(`
-      SELECT MAX(window_tokens) AS peak FROM (
-        SELECT SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS window_tokens
-        FROM usage_events
-        WHERE 1 = 1 ${clause}
-        GROUP BY timestamp_ms / ${windowMs}
-      )
-    `).get(...params) as { peak: number | null };
-
-    return row.peak ?? 0;
   }
 
   private providerFilter(providers?: UsageProvider[]): ProviderFilter {

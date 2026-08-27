@@ -166,7 +166,6 @@ class UsageManager {
       series: this.aggregator.getSeries(fromMs, toMs, bucket, providers),
       byModel: this.aggregator.getByModel(fromMs, toMs, providers),
       byProject: this.aggregator.getByProject(fromMs, toMs, providers),
-      window: this.aggregator.getWindow(nowMs, request?.limitTokens ?? null, providers),
       rateLimits: this.safeRateLimits(nowMs, providers),
       index: this.getStatus(),
       pricingAsOf: PRICING_AS_OF,

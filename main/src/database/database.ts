@@ -2407,6 +2407,29 @@ export class DatabaseService {
         .run();
       console.log("[Database] Added parse_context column to usage_files table");
     }
+
+    // Codex rate-limit fields that v3 dropped: credits, blocked state, spend
+    // controls, and the provider's own window name.
+    // SAFETY: SQLite PRAGMA table_info returns the SqliteTableInfo projection.
+    const rateLimitsInfo = this.db
+      .prepare("PRAGMA table_info(usage_rate_limits)")
+      .all() as SqliteTableInfo[];
+    const rateLimitsExists = rateLimitsInfo.length > 0;
+    const hasCreditsHas = rateLimitsInfo.some(
+      (col: SqliteTableInfo) => col.name === "credits_has",
+    );
+
+    if (rateLimitsExists && !hasCreditsHas) {
+      this.db.exec(`
+        ALTER TABLE usage_rate_limits ADD COLUMN credits_has INTEGER;
+        ALTER TABLE usage_rate_limits ADD COLUMN credits_balance TEXT;
+        ALTER TABLE usage_rate_limits ADD COLUMN credits_unlimited INTEGER;
+        ALTER TABLE usage_rate_limits ADD COLUMN rate_limit_reached_type TEXT;
+        ALTER TABLE usage_rate_limits ADD COLUMN spend_control_reached INTEGER;
+        ALTER TABLE usage_rate_limits ADD COLUMN limit_name TEXT;
+      `);
+      console.log("[Database] Added credit and limit-state columns to usage_rate_limits table");
+    }
   }
 
   // Project operations

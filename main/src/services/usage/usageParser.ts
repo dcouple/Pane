@@ -174,6 +174,20 @@ function collectCodexRateLimits(
 
   const limitId = asString(rateLimitObject.limit_id) ?? 'codex';
   const planType = asString(rateLimitObject.plan_type);
+  const limitName = asString(rateLimitObject.limit_name);
+  const rateLimitReachedType = asString(rateLimitObject.rate_limit_reached_type);
+  const spendControlReached = rateLimitObject.spend_control_reached === true ? true
+    : rateLimitObject.spend_control_reached === false ? false
+    : null;
+
+  const credits = asObject(rateLimitObject.credits);
+  const creditsHas = credits?.has_credits === true ? true
+    : credits?.has_credits === false ? false
+    : null;
+  const creditsBalance = credits ? asString(credits.balance) : null;
+  const creditsUnlimited = credits?.unlimited === true ? true
+    : credits?.unlimited === false ? false
+    : null;
 
   for (const scope of ['primary', 'secondary'] as const) {
     const entry = asObject(rateLimitObject[scope]);
@@ -193,6 +207,12 @@ function collectCodexRateLimits(
       resetsAtMs: resetsAt > 0 ? resetsAt * 1000 : null,
       planType,
       capturedAtMs,
+      creditsHas,
+      creditsBalance,
+      creditsUnlimited,
+      rateLimitReachedType,
+      spendControlReached,
+      limitName,
     };
 
     const key = `${limitId}:${scope}`;

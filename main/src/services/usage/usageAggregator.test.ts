@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3-multiple-ciphers';
 import { UsageAggregator, resolveReportRange } from './usageAggregator';
-import { USAGE_WINDOW_HOURS } from '../../../../shared/types/usage';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -186,77 +185,6 @@ describe('UsageAggregator.getSeries', () => {
   });
 });
 
-describe('UsageAggregator.getWindow', () => {
-  it('counts only events inside the rolling window', () => {
-    seed({ timestampMs: NOW - (USAGE_WINDOW_HOURS + 1) * HOUR_MS, input: 1000 });
-    seed({ timestampMs: NOW - HOUR_MS, input: 25 });
-
-    const window = aggregator.getWindow(NOW, null);
-
-    expect(window.windowHours).toBe(USAGE_WINDOW_HOURS);
-    expect(window.totals.inputTokens).toBe(25);
-  });
-
-  it('uses a configured limit and reports utilisation', () => {
-    seed({ timestampMs: NOW - HOUR_MS, input: 250 });
-
-    const window = aggregator.getWindow(NOW, 1000);
-
-    expect(window.limitSource).toBe('configured');
-    expect(window.limitTokens).toBe(1000);
-    expect(window.utilization).toBeCloseTo(0.25, 6);
-  });
-
-  it('clamps utilisation at 1 when usage exceeds the limit', () => {
-    seed({ timestampMs: NOW - HOUR_MS, input: 5000 });
-    expect(aggregator.getWindow(NOW, 1000).utilization).toBe(1);
-  });
-
-  it('falls back to the largest observed window when no limit is configured', () => {
-    seed({ timestampMs: NOW - 40 * DAY_MS, input: 900 });
-    seed({ timestampMs: NOW - HOUR_MS, input: 100 });
-
-    const window = aggregator.getWindow(NOW, null);
-
-    expect(window.limitSource).toBe('observed-max');
-    expect(window.limitTokens).toBe(900);
-  });
-
-  it('reports an unknown limit and no utilisation for an empty database', () => {
-    const window = aggregator.getWindow(NOW, null);
-
-    expect(window.limitSource).toBe('unknown');
-    expect(window.limitTokens).toBeNull();
-    expect(window.utilization).toBeNull();
-    expect(window.resetsAtMs).toBeNull();
-  });
-
-  it('reports when the oldest event in the window ages out', () => {
-    const oldest = NOW - 2 * HOUR_MS;
-    seed({ timestampMs: oldest, input: 10 });
-
-    expect(aggregator.getWindow(NOW, null).resetsAtMs).toBe(oldest + USAGE_WINDOW_HOURS * HOUR_MS);
-  });
-
-  it('filters every rolling-window metric by provider', () => {
-    seed({ timestampMs: NOW - 2 * HOUR_MS, provider: 'claude', input: 100 });
-    seed({ timestampMs: NOW - 30 * 60 * 1000, provider: 'codex', model: 'gpt-5-codex', input: 900 });
-
-    const window = aggregator.getWindow(NOW, 1000, ['claude']);
-
-    expect(window.totals.totalTokens).toBe(100);
-    expect(window.recentHourTokens).toBe(0);
-    expect(window.utilization).toBe(0.1);
-    expect(window.resetsAtMs).toBe(NOW - 2 * HOUR_MS + USAGE_WINDOW_HOURS * HOUR_MS);
-  });
-
-  it('filters the observed maximum by provider', () => {
-    seed({ timestampMs: NOW - 40 * DAY_MS, provider: 'claude', input: 100 });
-    seed({ timestampMs: NOW - 40 * DAY_MS, provider: 'codex', model: 'gpt-5-codex', input: 900 });
-
-    expect(aggregator.getWindow(NOW, null, ['claude']).limitTokens).toBe(100);
-  });
-});
 
 describe('resolveReportRange', () => {
   it('defaults to the trailing window ending now', () => {

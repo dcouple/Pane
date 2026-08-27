@@ -78,39 +78,12 @@ export interface UsageByProject extends UsageTotals {
   label: string;
 }
 
-/** Rolling-window utilisation, the "how much limit is left" figure. */
-export interface UsageWindow {
-  windowHours: number;
-  windowStartMs: number;
-  windowEndMs: number;
-  totals: UsageTotals;
-  /** Configured cap, or the largest window observed historically. */
-  limitTokens: number | null;
-  limitSource: 'configured' | 'observed-max' | 'unknown';
-  /** 0..1, or null when no limit is known. */
-  utilization: number | null;
-  /** When the oldest event in the window ages out, epoch milliseconds. */
-  resetsAtMs: number | null;
-  /**
-   * Tokens in the last hour — the current pace, as opposed to the window's
-   * average. A window that is 10% full but filling fast is a different
-   * situation from one that is 10% full and idle.
-   */
-  recentHourTokens: number;
-}
-
 export interface UsageReportRequest {
   /** Inclusive epoch-ms range. Defaults to the last 30 days. */
   fromMs?: number;
   toMs?: number;
   bucket?: 'hour' | 'day';
   providers?: UsageProvider[];
-  /**
-   * The user's own cap for the rolling window, in tokens. Without one the
-   * gauge compares against the largest window ever observed, which flatters
-   * a heavy day and understates a quiet one.
-   */
-  limitTokens?: number | null;
 }
 
 /** Health of the background transcript index, surfaced in the page header. */
@@ -133,8 +106,8 @@ export interface UsageIndexStatus {
  *
  * Codex writes its live quota state into every `token_count` event, which
  * makes this a measured figure rather than an estimate. Claude Code's
- * transcripts carry no equivalent, so Claude falls back to
- * {@link UsageWindow}'s computed rolling window.
+ * transcripts carry no equivalent — Anthropic does not expose plan limits
+ * in the local transcript files.
  */
 export interface UsageRateLimitSample {
   provider: UsageProvider;
@@ -147,6 +120,18 @@ export interface UsageRateLimitSample {
   /** Subscription tier, when the provider names it. */
   planType: string | null;
   capturedAtMs: number;
+  /** Whether the account has any credits balance. */
+  creditsHas: boolean | null;
+  /** Credit balance as reported by the provider (string to preserve precision). */
+  creditsBalance: string | null;
+  /** Whether the account has unlimited credits. */
+  creditsUnlimited: boolean | null;
+  /** Non-null when the user is actively rate-limited; names the kind of limit hit. */
+  rateLimitReachedType: string | null;
+  /** True when the organisation's spend control has been reached. */
+  spendControlReached: boolean | null;
+  /** Provider's own display name for this limit window. */
+  limitName: string | null;
 }
 
 export interface UsageReport {
@@ -155,7 +140,6 @@ export interface UsageReport {
   byModel: UsageByModel[];
   /** Busiest working directories in the range, largest first. */
   byProject: UsageByProject[];
-  window: UsageWindow;
   /** Provider-reported quota state; empty when nobody reported any. */
   rateLimits: UsageRateLimitSample[];
   index: UsageIndexStatus;
@@ -174,11 +158,10 @@ export interface UsageReport {
  * v3: Codex attribution carried across an incremental scan. Every event a
  *     resumed pass produced before this was filed under model `codex` with no
  *     session and no cwd, so those rows have to be read again.
+ * v4: Codex rate-limit fields that the provider reports but v3 dropped:
+ *     credits, rate_limit_reached_type, spend_control_reached, limit_name.
  */
-export const USAGE_PARSER_VERSION = 3;
-
-/** Claude's published quota window, and the one ccusage-style tools track. */
-export const USAGE_WINDOW_HOURS = 5;
+export const USAGE_PARSER_VERSION = 4;
 export const DEFAULT_USAGE_RANGE_DAYS = 30;
 /** Events older than this are swept at startup to bound the table. */
 export const USAGE_RETENTION_DAYS = 180;
