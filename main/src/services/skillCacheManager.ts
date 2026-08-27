@@ -479,7 +479,7 @@ You are Pane Chat, the global orchestrator for this Pane workspace.
 5. Run the doctor command from the runtime context before taking Pane actions.
 6. Arm the event stream at session start:
        runpane watch --as <session> --from now --follow --include-held-input --json
-   Events arrive as NDJSON. Do not poll. A \`heldInput\` field on agent.ready means the prompt never submitted — resubmit it.
+   Events arrive as NDJSON. Do not poll. A \`heldInput\` field on agent.ready means text follows the idle prompt; on Claude panes that is usually a greyed placeholder suggestion, not typed input. Never resubmit it — \`panels screen\` and \`composer.hasUndeliveredText\` decide.
 7. Reconstitute the in-flight work picture with this bounded live-state sweep
    before acting or answering a status question:
    1. Enumerate panes through RunPane. Use panel activity status, running panels,
@@ -820,7 +820,7 @@ def emit_pane_entry(entry):
     emit(f"{label:<6} {name}")
     held_input = entry.get("heldInput")
     if held_input:
-        emit(f"STUCK  {name} :: {held_input[:70]}")
+        emit(f"HELD?  {name} :: {held_input[:70]}")  # may be a placeholder suggestion — verify before acting
 
 
 def watch_panes(name_filter, once):
