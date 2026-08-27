@@ -18,6 +18,12 @@ function createDb() {
       resets_at_ms INTEGER,
       plan_type TEXT,
       captured_at_ms INTEGER NOT NULL,
+      credits_has INTEGER,
+      credits_balance TEXT,
+      credits_unlimited INTEGER,
+      rate_limit_reached_type TEXT,
+      spend_control_reached INTEGER,
+      limit_name TEXT,
       PRIMARY KEY (provider, limit_id, scope)
     );
     CREATE TABLE IF NOT EXISTS usage_files (
