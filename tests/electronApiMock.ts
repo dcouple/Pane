@@ -401,6 +401,10 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           }));
         },
       }),
+      export: namespace({
+        saveImage: () => success(null),
+        shareImage: () => success({ method: 'clipboard' }),
+      }),
       usage: namespace({
         getReport: () => success(clone(mockOptions.initialUsageReport ?? {
           totals: {

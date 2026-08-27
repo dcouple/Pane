@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, Loader2, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BarChart3, Check, Download, Loader2, RefreshCw, Share2 } from 'lucide-react';
+import { toPng } from 'html-to-image';
 import { API } from '../../utils/api';
+import { useHotkey } from '../../hooks/useHotkey';
 import { AreaChart } from '../ui/charts/AreaChart';
 import { BarChart } from '../ui/charts/BarChart';
 import { DonutChart } from '../ui/charts/DonutChart';
@@ -120,12 +122,16 @@ function StatCard({
  * directly.
  */
 export function UsageView() {
+  const contentRef = useRef<HTMLDivElement>(null);
   const [report, setReport] = useState<UsageReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [rangeDays, setRangeDays] = useState<number>(DEFAULT_USAGE_RANGE_DAYS);
   const [provider, setProvider] = useState<UsageProvider | 'all'>('all');
+  const [downloadStatus, setDownloadStatus] = useState<'idle' | 'capturing' | 'done'>('idle');
+  const [shareStatus, setShareStatus] = useState<'idle' | 'capturing' | 'done'>('idle');
+  const [showWatermark, setShowWatermark] = useState(false);
   /** Series switched off in the legend — see `visibleAreaSeries`. */
   const [hiddenSeries, setHiddenSeries] = useState<string[]>([]);
   /**
@@ -196,6 +202,74 @@ export function UsageView() {
       setRefreshing(false);
     }
   }, [load]);
+
+  const rangeLabel = RANGE_OPTIONS.find(o => o.days === rangeDays)?.label ?? `${rangeDays}d`;
+
+  const captureImage = useCallback(async (): Promise<string | null> => {
+    if (!contentRef.current) return null;
+    setShowWatermark(true);
+    // Wait for watermark to render
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    try {
+      const dataUrl = await toPng(contentRef.current, { pixelRatio: 2 });
+      return dataUrl.replace(/^data:image\/png;base64,/, '');
+    } catch (err) {
+      console.error('[UsageView] Capture failed:', err);
+      return null;
+    } finally {
+      setShowWatermark(false);
+    }
+  }, []);
+
+  const handleDownload = useCallback(async () => {
+    if (downloadStatus !== 'idle') return;
+    setDownloadStatus('capturing');
+    try {
+      const data = await captureImage();
+      if (!data) { setDownloadStatus('idle'); return; }
+      const date = new Date().toISOString().slice(0, 10);
+      await API.export.saveImage(data, `pane-usage-${rangeLabel}-${date}.png`);
+      setDownloadStatus('done');
+      setTimeout(() => setDownloadStatus('idle'), 1500);
+    } catch {
+      setDownloadStatus('idle');
+    }
+  }, [captureImage, downloadStatus, rangeLabel]);
+
+  const handleShare = useCallback(async () => {
+    if (shareStatus !== 'idle') return;
+    setShareStatus('capturing');
+    try {
+      const data = await captureImage();
+      if (!data) { setShareStatus('idle'); return; }
+      const date = new Date().toISOString().slice(0, 10);
+      const response = await API.export.shareImage(data, `pane-usage-${rangeLabel}-${date}.png`);
+      if (response.success && response.data?.method === 'clipboard') {
+        setShareStatus('done');
+        setTimeout(() => setShareStatus('idle'), 1500);
+      } else {
+        setShareStatus('idle');
+      }
+    } catch {
+      setShareStatus('idle');
+    }
+  }, [captureImage, shareStatus, rangeLabel]);
+
+  useHotkey({
+    id: 'usage-download',
+    label: 'Download usage image',
+    keys: 'mod+shift+d',
+    category: 'tools',
+    action: () => { void handleDownload(); },
+  });
+
+  useHotkey({
+    id: 'usage-share',
+    label: 'Share usage image',
+    keys: 'mod+shift+s',
+    category: 'tools',
+    action: () => { void handleShare(); },
+  });
 
   const seriesLabels = useMemo(
     () => (report?.series ?? []).map(bucket =>
@@ -372,6 +446,34 @@ export function UsageView() {
             ))}
           </fieldset>
 
+          <span className="h-4 w-px bg-border-primary" aria-hidden="true" />
+
+          <button
+            type="button"
+            onClick={() => { void handleDownload(); }}
+            disabled={downloadStatus === 'capturing' || !report}
+            aria-label="Download usage as image"
+            title="Download usage as image"
+            className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            {downloadStatus === 'done'
+              ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+              : <Download className={`h-3.5 w-3.5 text-text-tertiary ${downloadStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => { void handleShare(); }}
+            disabled={shareStatus === 'capturing' || !report}
+            aria-label="Share usage image"
+            title="Share usage image"
+            className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+          >
+            {shareStatus === 'done'
+              ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+              : <Share2 className={`h-3.5 w-3.5 text-text-tertiary ${shareStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+          </button>
+
           <button
             type="button"
             onClick={() => { void handleRescan(); }}
@@ -391,7 +493,7 @@ export function UsageView() {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
+      <div ref={contentRef} className="relative min-h-0 flex-1 overflow-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-text-tertiary">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -678,6 +780,19 @@ export function UsageView() {
             </footer>
           </div>
         ) : null}
+
+        {showWatermark && (
+          <div
+            className="pointer-events-none absolute bottom-4 right-4 flex items-center gap-1.5 rounded-full bg-bg-primary/60 px-2.5 py-1"
+            aria-hidden="true"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="14" height="14" className="opacity-50">
+              <rect x="0" y="0" width="512" height="512" rx="100" className="fill-text-primary" />
+              <path d="M 147 121.954 C 143.054 123.309, 140.303 125.159, 137.265 128.502 C 129.560 136.978, 129.997 128.883, 130.022 262.432 C 130.043 375.632, 130.133 381.616, 131.848 383.845 C 133.623 386.152, 133.898 386.184, 148.576 385.826 C 161.682 385.505, 163.987 385.192, 167.500 383.253 C 172.495 380.496, 174.850 378.448, 178.137 374 C 183.395 366.885, 183.403 366.804, 184.049 315.500 C 184.381 289.100, 185.068 265.700, 185.576 263.500 C 187.005 257.312, 186.706 220.692, 185.202 217.852 C 183.612 214.846, 183.902 124.201, 185.500 125 C 186.050 125.275, 186.376 125.871, 186.225 126.324 C 186.074 126.778, 186.433 126.850, 187.024 126.485 C 188.357 125.661, 186.220 122.760, 184.662 123.279 C 184.092 123.469, 182.809 122.809, 181.813 121.813 C 179.125 119.125, 154.953 119.223, 147 121.954 M 198.861 121.917 L 196.500 123.834 196.834 146.167 C 197.140 166.677, 197.326 168.663, 199.111 170.500 C 201.002 172.445, 202.370 172.500, 248.778 172.500 C 295.868 172.500, 296.573 172.530, 302.021 174.736 C 305.058 175.966, 309.108 178.360, 311.021 180.055 C 312.935 181.750, 313.825 182.824, 313 182.442 C 312.175 182.060, 312.721 182.932, 314.213 184.380 C 318.108 188.159, 319.535 194.161, 318.147 200.922 C 316.740 207.771, 313.062 213.110, 307.125 216.920 C 298.119 222.699, 295.090 223, 246.012 223 C 207.294 223, 201.153 223.204, 199.223 224.557 C 197.035 226.089, 197.001 226.472, 197.032 248.807 C 197.056 266.352, 197.372 271.907, 198.423 273.292 C 199.705 274.983, 202.741 275.067, 251.641 274.763 C 301.926 274.451, 303.737 274.373, 311.301 272.194 C 315.592 270.957, 319.496 270.189, 319.976 270.485 C 320.457 270.782, 321.896 270.621, 323.175 270.126 C 325.061 269.397, 333.562 267.578, 339.704 266.590 C 340.367 266.483, 343.117 264.965, 345.816 263.216 C 353.494 258.241, 363.039 247.427, 367.658 238.472 C 371.442 231.135, 374.324 223.801, 372.277 226.717 C 371.739 227.483, 371.360 226.377, 371.255 223.732 C 371.163 221.420, 370.676 219.392, 370.174 219.225 C 369.659 219.053, 369.909 215.998, 370.749 212.210 C 372.706 203.381, 372.662 188.349, 370.651 179 C 365.496 155.029, 345.745 133.392, 321.275 124.907 C 309.060 120.672, 299.318 120.012, 248.861 120.006 C 203.392 120, 201.114 120.087, 198.861 121.917 M 362 301.367 C 354.852 303.458, 349.054 306.836, 343.346 312.234 C 334.291 320.798, 329.990 330.700, 330.012 342.932 C 330.044 360.480, 338.690 374.522, 354 381.890 C 360.967 385.244, 362.139 385.495, 370.500 385.427 C 377.755 385.368, 380.919 384.821, 386.819 382.605 C 391.196 380.962, 395.645 379.966, 397.885 380.128 C 402.844 380.486, 406.736 377.646, 411.916 369.888 C 415.736 364.167, 417.159 360.586, 418.426 353.500 L 418.962 350.500 417.869 353.638 C 416.856 356.544, 416.654 356.654, 415.138 355.138 C 413.824 353.824, 413.494 351.325, 413.468 342.500 C 413.442 333.542, 413.027 330.479, 411.233 326 C 407.185 315.900, 397.859 306.671, 387.803 302.814 C 381.169 300.270, 368.230 299.544, 362 301.367" className="fill-bg-primary" fillRule="evenodd"/>
+            </svg>
+            <span className="text-[10px] font-medium text-text-primary opacity-50">runpane.com</span>
+          </div>
+        )}
       </div>
     </div>
   );

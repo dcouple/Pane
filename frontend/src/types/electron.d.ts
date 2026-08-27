@@ -132,6 +132,12 @@ interface ElectronAPI {
     rescan: () => Promise<IPCResponse<UsageIndexStatus>>;
   };
 
+  // Image export (save-to-file / OS share sheet)
+  export: {
+    saveImage: (data: string, defaultFilename: string) => Promise<IPCResponse<{ filePath: string } | null>>;
+    shareImage: (data: string, filename: string) => Promise<IPCResponse<{ method: 'share' | 'clipboard' }>>;
+  };
+
   // Session management
   sessions: {
     getAll: () => Promise<IPCResponse>;

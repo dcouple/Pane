@@ -65,6 +65,18 @@ export class API {
     },
   };
 
+  // Image export
+  static export = {
+    async saveImage(data: string, defaultFilename: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.export.saveImage(data, defaultFilename);
+    },
+    async shareImage(data: string, filename: string) {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.export.shareImage(data, filename);
+    },
+  };
+
   // Token usage, cost and rate limits
   static usage = {
     /** Totals, time series, per-model breakdown and rolling-window state. */

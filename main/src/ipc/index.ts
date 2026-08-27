@@ -27,6 +27,7 @@ import { registerOnboardingHandlers } from './onboarding';
 import { registerVoiceHandlers } from './voice';
 import { registerPaneChatHandlers } from './paneChat';
 import { registerUsageHandlers } from './usage';
+import { registerExportHandlers } from './export';
 import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon';
 import { registerPermissionHandlers } from './permissions';
 import { registerAgentUsageHandlers } from './agentUsage';
@@ -61,6 +62,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services, commandRegistry);
   registerDialogHandlers(ipcMain, services);
+  registerExportHandlers(ipcMain, services);
   registerPermissionHandlers(ipcMain, services, commandRegistry);
   registerGitHandlers(ipcMain, services, commandRegistry);
   registerScriptHandlers(ipcMain, services, commandRegistry);
