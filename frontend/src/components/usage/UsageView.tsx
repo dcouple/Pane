@@ -236,10 +236,10 @@ export function UsageView() {
       tag: PROVIDER_META[entry.provider].label,
       share: total > 0 ? entry.totalTokens / total : 0,
       detail: entry.costIncomplete ? 'n/a' : formatUsd(entry.estimatedCostUsd),
-      note: entry.costIncomplete ? 'no price' : undefined,
+      note: entry.costIncomplete ? 'no price' : 'at API rates',
       detailTitle: entry.costIncomplete
         ? 'No published price for this id. Codex reports sub-agent profiles (for example codex-auto-review) in the model field, and those are billed under the model they run on.'
-        : undefined,
+        : 'Estimated at published API rates. Not what a flat-rate plan charges.',
     }));
   }, [report]);
 

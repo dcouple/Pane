@@ -145,7 +145,12 @@ export class UsageRepository {
     return run();
   }
 
-  /** Keep only the newest sample per limit; older re-scans must not regress it. */
+  /**
+   * Keep only the newest sample per limit; older re-scans must not regress it.
+   * Equal timestamps DO overwrite: a parser-version rescan re-reads the same
+   * newest event, and that is how columns added later (credits, limit_name)
+   * get backfilled on an upgraded installation.
+   */
   recordRateLimits(samples: UsageRateLimitSample[]): void {
     if (samples.length === 0) return;
 
@@ -168,7 +173,7 @@ export class UsageRepository {
         rate_limit_reached_type = excluded.rate_limit_reached_type,
         spend_control_reached = excluded.spend_control_reached,
         limit_name = excluded.limit_name
-      WHERE excluded.captured_at_ms > usage_rate_limits.captured_at_ms
+      WHERE excluded.captured_at_ms >= usage_rate_limits.captured_at_ms
     `);
 
     this.db.transaction(() => {
