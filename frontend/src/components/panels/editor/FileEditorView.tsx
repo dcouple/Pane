@@ -160,7 +160,6 @@ export function FileEditorView({
         }
         setSelectedFile(file);
         setViewMode('edit');
-        setLoading(false);
         onFileChange?.(file.path, false);
         onStateChange?.({ filePath: file.path });
 
