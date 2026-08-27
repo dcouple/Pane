@@ -19,7 +19,7 @@ jobs:
         os: [macos-latest, ubuntu-latest]
         include:
           - os: macos-latest
-            release_cmd: release:mac:universal
+            release_cmd: release:mac
             ci_cmd: build:mac:ci
             artifact_path: |
               dist-electron/*.dmg
@@ -311,3 +311,15 @@ jobs:
           --repo "${{ github.repository }}" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-website:
+    if: github.ref_type == 'tag'
+    needs: [checksums]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to runpane-website
+        uses: peter-evans/repository-dispatch@v4
+        with:
+          token: ${{ secrets.SITE_REPO_DISPATCH_TOKEN }}
+          repository: parsakhaz/runpane-website
+          event-type: pane-release

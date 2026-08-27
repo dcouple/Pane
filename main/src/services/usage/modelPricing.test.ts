@@ -1,8 +1,19 @@
-import { describe, it, expect } from 'vitest';
-import { findModelPrice, estimateCostUsd, MODEL_PRICES, PRICING_AS_OF } from './modelPricing';
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  findModelPrice,
+  estimateCostUsd,
+  MODEL_PRICES,
+  PRICING_AS_OF,
+  setLivePrices,
+  getPricingSource,
+} from './modelPricing';
+
+afterEach(() => {
+  setLivePrices([], null);
+});
 
 describe('findModelPrice', () => {
-  it('resolves Claude models', () => {
+  it('resolves Claude models from the bundled table', () => {
     expect(findModelPrice('claude-opus-5')?.model).toBe('claude-opus-5');
     expect(findModelPrice('claude-sonnet-5-20260101')?.model).toBe('claude-sonnet-5');
   });
@@ -15,7 +26,6 @@ describe('findModelPrice', () => {
   });
 
   it('prefers the longest matching id so variants beat their base model', () => {
-    // Every one of these also contains the shorter "gpt-5".
     expect(findModelPrice('gpt-5-mini')?.model).toBe('gpt-5-mini');
     expect(findModelPrice('gpt-5-nano')?.model).toBe('gpt-5-nano');
     expect(findModelPrice('gpt-5-pro')?.model).toBe('gpt-5-pro');
@@ -33,14 +43,44 @@ describe('findModelPrice', () => {
   it('returns null for unknown or empty models', () => {
     expect(findModelPrice('llama-4-70b')).toBeNull();
     expect(findModelPrice('')).toBeNull();
-    // The Codex parser's fallback label is deliberately unpriced.
     expect(findModelPrice('codex')).toBeNull();
+  });
+
+  it('prefers live prices over bundled when both have the model', () => {
+    setLivePrices(
+      [{ model: 'claude-opus-5', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 }],
+      'OpenRouter · 2026-08-26',
+    );
+
+    const price = findModelPrice('claude-opus-5');
+    expect(price?.inputPerMTok).toBe(5);
+    expect(price?.outputPerMTok).toBe(25);
+  });
+
+  it('falls back to bundled when the model is not in live prices', () => {
+    setLivePrices(
+      [{ model: 'some-other-model', inputPerMTok: 1, outputPerMTok: 2, cacheReadPerMTok: 0.1, cacheWritePerMTok: 1 }],
+      'OpenRouter · 2026-08-26',
+    );
+
+    expect(findModelPrice('claude-haiku-4-5')?.model).toBe('claude-haiku-4-5');
+  });
+});
+
+describe('getPricingSource', () => {
+  it('returns the bundled source when no live prices are set', () => {
+    expect(getPricingSource()).toContain('bundled');
+    expect(getPricingSource()).toContain(PRICING_AS_OF);
+  });
+
+  it('returns the live source after setLivePrices', () => {
+    setLivePrices([], 'OpenRouter · 2026-08-26');
+    expect(getPricingSource()).toBe('OpenRouter · 2026-08-26');
   });
 });
 
 describe('estimateCostUsd', () => {
   it('prices a Claude request across all four token classes', () => {
-    // opus-5: 15 in / 75 out / 1.5 cache-read / 18.75 cache-write per Mtok.
     const { costUsd, complete } = estimateCostUsd({
       model: 'claude-opus-5',
       inputTokens: 1_000_000,
@@ -49,6 +89,7 @@ describe('estimateCostUsd', () => {
       cacheCreationTokens: 1_000_000,
     });
     expect(complete).toBe(true);
+    // Bundled: 15 + 75 + 1.5 + 18.75 = 110.25
     expect(costUsd).toBeCloseTo(15 + 75 + 1.5 + 18.75, 6);
   });
 
@@ -85,6 +126,21 @@ describe('estimateCostUsd', () => {
       cacheCreationTokens: 0,
     }).costUsd).toBe(0);
   });
+
+  it('uses live prices when available', () => {
+    setLivePrices(
+      [{ model: 'claude-opus-5', inputPerMTok: 5, outputPerMTok: 25, cacheReadPerMTok: 0.5, cacheWritePerMTok: 6.25 }],
+      'test',
+    );
+    const { costUsd } = estimateCostUsd({
+      model: 'claude-opus-5',
+      inputTokens: 1_000_000,
+      outputTokens: 1_000_000,
+      cacheReadTokens: 1_000_000,
+      cacheCreationTokens: 1_000_000,
+    });
+    expect(costUsd).toBeCloseTo(5 + 25 + 0.5 + 6.25, 6);
+  });
 });
 
 describe('price table integrity', () => {
@@ -107,7 +163,7 @@ describe('price table integrity', () => {
     }
   });
 
-  it('carries a parseable as-of date, which the UI footer shows', () => {
+  it('carries a parseable bundled as-of date', () => {
     expect(Number.isNaN(Date.parse(PRICING_AS_OF))).toBe(false);
   });
 });

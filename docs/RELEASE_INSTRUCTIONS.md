@@ -79,7 +79,7 @@ Pushes to `main` run:
 `v*` tag pushes run:
 
 - `Build & Release`
-  - macOS universal installer
+  - macOS Apple Silicon and Intel installers
   - Linux installer artifacts
   - Windows x64 installer
   - Windows arm64 installer

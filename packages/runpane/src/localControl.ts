@@ -410,6 +410,13 @@ type WorkspaceEntryKind =
   | 'pane.gone'
   | 'panel.exited';
 
+interface WorkspacePanelSummary {
+  panelId: string;
+  title: string;
+  agentType?: string;
+  agentState?: 'blocked' | 'working' | 'idle' | 'unknown';
+}
+
 interface WorkspaceEntry {
   gen: number;
   at: string;
@@ -420,6 +427,7 @@ interface WorkspaceEntry {
   repoName?: string;
   worktreePath?: string;
   panelId?: string;
+  panelTitle?: string;
   agentType?: string;
   from?: 'blocked' | 'working' | 'idle' | 'unknown';
   to?: 'blocked' | 'working' | 'idle' | 'unknown';
@@ -430,6 +438,7 @@ interface WorkspaceEntry {
   exitCode?: number;
   baseline?: true;
   changedWhileAway?: boolean;
+  panels?: WorkspacePanelSummary[];
 }
 
 interface WorkspaceStateResult {
@@ -806,6 +815,12 @@ const workspaceEntryKindSchema = boundary.enumeration(
   'panel.exited',
 );
 const agentStateSchema = boundary.enumeration('blocked', 'working', 'idle', 'unknown');
+const workspacePanelSummarySchema: BoundarySchema<WorkspacePanelSummary> = boundary.object({
+  panelId: boundary.string,
+  title: boundary.string,
+  agentType: boundary.optional(boundary.string),
+  agentState: boundary.optional(agentStateSchema),
+});
 const workspaceEntrySchema: BoundarySchema<WorkspaceEntry> = boundary.object({
   gen: boundary.number,
   at: boundary.string,
@@ -816,6 +831,7 @@ const workspaceEntrySchema: BoundarySchema<WorkspaceEntry> = boundary.object({
   repoName: boundary.optional(boundary.string),
   worktreePath: boundary.optional(boundary.string),
   panelId: boundary.optional(boundary.string),
+  panelTitle: boundary.optional(boundary.string),
   agentType: boundary.optional(boundary.string),
   from: boundary.optional(agentStateSchema),
   to: boundary.optional(agentStateSchema),
@@ -826,6 +842,7 @@ const workspaceEntrySchema: BoundarySchema<WorkspaceEntry> = boundary.object({
   exitCode: boundary.optional(boundary.number),
   baseline: boundary.optional(boundary.literal(true)),
   changedWhileAway: boundary.optional(boundary.boolean),
+  panels: boundary.optional(boundary.array(workspacePanelSummarySchema)),
 });
 const workspaceStateResultSchema: BoundarySchema<WorkspaceStateResult> = boundary.object({
   ok: boundary.literal(true),
@@ -954,6 +971,7 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   if (parsed.watchAs && parsed.watchSince !== undefined) {
     throw new Error('runpane watch accepts either --as or --since, not both.');
   }
+  const effectiveAgentsOnly = parsed.agentsOnly ?? (parsed.follow ? true : undefined);
   const request = {
     as: parsed.watchAs,
     since: parsed.watchSince,
@@ -962,8 +980,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     limit: parsed.limit,
     kinds: parsed.watchKinds,
     paneIds: parsed.watchPaneIds,
+    excludePaneIds: parsed.watchExcludePaneIds,
     repo: parsed.repo,
     nameContains: parsed.nameContains,
+    agentsOnly: effectiveAgentsOnly,
     ackNow: parsed.ackNow || undefined,
     includeHeldInput: parsed.includeHeldInput || undefined,
   };

@@ -481,6 +481,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rescan: (): Promise<IPCResponse> => invokeIpc('usage:rescan'),
   },
 
+  // Image export (save-to-file / OS share sheet)
+  export: {
+    saveImage: (data: string, defaultFilename: string): Promise<IPCResponse> =>
+      invokeIpc('export:save-image', data, defaultFilename),
+    shareImage: (data: string, filename: string): Promise<IPCResponse> =>
+      invokeIpc('export:share-image', data, filename),
+  },
+
   // Session management
   sessions: {
     getAll: (): Promise<IPCResponse> => invokeIpc('sessions:get-all'),

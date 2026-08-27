@@ -20,6 +20,7 @@ interface WorkspacePanelMetadata {
   paneId: string;
   isCliPanel?: boolean;
   agentType?: string;
+  panelTitle?: string;
   lastActivityAt?: string;
   heldInput?: string;
 }
@@ -27,8 +28,10 @@ interface WorkspacePanelMetadata {
 export interface WorkspaceJournalFilter {
   kinds?: readonly RunpaneWorkspaceEntryKind[];
   paneIds?: readonly string[];
+  excludePaneIds?: readonly string[];
   repoId?: number;
   nameContains?: string;
+  agentsOnly?: boolean;
   includeHeldInput?: boolean;
 }
 
@@ -87,6 +90,7 @@ export class WorkspaceJournal implements PaneEventSink {
   private readonly ring: RunpaneWorkspaceEntry[] = [];
   private readonly paneById = new Map<string, WorkspacePaneMetadata>();
   private readonly stateByPanel = new Map<string, AgentState>();
+  private readonly exitedPanels = new Set<string>();
   private readonly waiters = new Set<WorkspaceWaiter>();
   private readonly capacity: number;
   private readonly now: () => number;
@@ -211,13 +215,18 @@ export class WorkspaceJournal implements PaneEventSink {
       const payload = decodeOptionalBoundary(args[0], panelExitEventSchema);
       if (!payload || payload.type !== 'terminal:exit') return;
       const { panelId, sessionId: paneId } = payload.source;
+      if (this.exitedPanels.has(panelId)) return;
+      this.exitedPanels.add(panelId);
       this.stateByPanel.delete(panelId);
       const pane = this.lookupPane(paneId);
       if (!pane) return;
+      const panel = this.resolvePanel?.(panelId);
       this.append({
         ...pane,
         kind: 'panel.exited',
         panelId,
+        panelTitle: panel?.panelTitle,
+        agentType: panel?.agentType,
         source: 'exit',
         exitCode: payload.data.exitCode,
         reason: payload.data.signal === undefined ? 'terminal:exit' : `signal:${payload.data.signal}`,
@@ -261,6 +270,7 @@ export class WorkspaceJournal implements PaneEventSink {
       ...pane,
       kind,
       panelId,
+      panelTitle: panel?.panelTitle,
       agentType: panel?.agentType,
       from: previous,
       to: state,
@@ -302,8 +312,10 @@ function agentEntryKind(state: AgentState, previous: AgentState | undefined): Ru
 function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
   if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
   if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
+  if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;
   if (filter.repoId !== undefined && entry.repoId !== filter.repoId) return false;
   if (filter.nameContains && !entry.paneName.toLocaleLowerCase().includes(filter.nameContains.toLocaleLowerCase())) return false;
+  if (filter.agentsOnly && !entry.agentType && entry.kind !== 'pane.created' && entry.kind !== 'pane.gone') return false;
   return true;
 }
 

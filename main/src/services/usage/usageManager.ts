@@ -8,7 +8,9 @@ import { databaseService } from '../database';
 import { UsageRepository } from './usageRepository';
 import { UsageAggregator, resolveReportRange } from './usageAggregator';
 import { isFileUnchanged, resolveStartOffset, scanJsonlFile } from './jsonlScanner';
-import { PRICING_AS_OF } from './modelPricing';
+import { getPricingSource } from './modelPricing';
+import { OpenRouterPriceProvider } from './openRouterPriceProvider';
+import { getAppDirectory } from '../../utils/appDirectory';
 import {
   DEFAULT_USAGE_RANGE_DAYS,
   USAGE_PARSER_VERSION,
@@ -92,6 +94,7 @@ class UsageManager {
   // load time and the database handle is only guaranteed after initialisation.
   private repositoryRef: UsageRepository | null = null;
   private aggregatorRef: UsageAggregator | null = null;
+  private priceProvider: OpenRouterPriceProvider | null = null;
   private watchers: UsageWatcher[] = [];
   private pendingFiles = new Map<string, UsageProvider>();
   private debounceTimer: NodeJS.Timeout | undefined;
@@ -125,6 +128,9 @@ class UsageManager {
     if (this.started) return;
     this.started = true;
 
+    this.priceProvider = new OpenRouterPriceProvider(getAppDirectory());
+    this.priceProvider.start();
+
     try {
       this.repository.pruneOlderThan(Date.now() - USAGE_RETENTION_DAYS * DAY_MS);
     } catch (error) {
@@ -137,6 +143,8 @@ class UsageManager {
 
   stop(): void {
     this.started = false;
+    this.priceProvider?.stop();
+    this.priceProvider = null;
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     for (const watcher of this.watchers) void watcher.close();
     this.watchers = [];
@@ -168,7 +176,7 @@ class UsageManager {
       byProject: this.aggregator.getByProject(fromMs, toMs, providers),
       rateLimits: this.safeRateLimits(nowMs, providers),
       index: this.getStatus(),
-      pricingAsOf: PRICING_AS_OF,
+      pricingAsOf: getPricingSource(),
     };
   }
 

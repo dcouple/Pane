@@ -60,8 +60,10 @@ export interface ParsedArgs {
   watchFrom?: 'now' | 'earliest';
   watchKinds?: string[];
   watchPaneIds?: string[];
+  watchExcludePaneIds?: string[];
   nameContains?: string;
   follow?: boolean;
+  agentsOnly?: boolean;
   ackNow?: boolean;
   includeHeldInput?: boolean;
   remoteSetupArgs: string[];
@@ -303,6 +305,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
     parsed.includeHeldInput = true;
     return;
   }
+  if (flag === '--agents-only') {
+    parsed.agentsOnly = true;
+    return;
+  }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
 }
@@ -322,6 +328,10 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     } else {
       parsed.paneId = value;
     }
+    return;
+  }
+  if (flag === '--exclude-pane') {
+    (parsed.watchExcludePaneIds ??= []).push(value);
     return;
   }
   if (flag === '--panel') {

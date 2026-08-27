@@ -1,6 +1,6 @@
 {
   "name": "Pane",
-  "version": "2.4.78",
+  "version": "2.4.79",
   "private": true,
   "description": "Pane - Terminal-first AI code assistant manager with Windows support",
   "author": {
@@ -161,10 +161,13 @@
       "target": [
         {
           "target": "default",
-          "arch": "universal"
+          "arch": [
+            "arm64",
+            "x64"
+          ]
         }
       ],
-      "artifactName": "${productName}-${version}-macOS-universal.${ext}",
+      "artifactName": "${productName}-${version}-macOS-${arch}.${ext}",
       "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/{**/*.node,**/*.dylib,**/spawn-helper}"
     },
     "linux": {

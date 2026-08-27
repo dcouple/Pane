@@ -858,7 +858,7 @@ def emit_pane_entry(entry):
 
 def watch_panes(name_filter, once):
     command = resolve_runpane() + [
-        "watch", "--as", "watch.py", "--json",
+        "watch", "--as", "watch.py", "--json", "--agents-only",
         "--include-held-input", "--timeout-ms", "0" if once else "60000",
     ]
     if name_filter:
