@@ -237,7 +237,7 @@ export const SplitLayout: React.FC<SplitLayoutProps> = React.memo(({
     resolvePanels, primaryGroupId, focusedGroupId, multiGroup, isMainRepo,
     onPanelSelect, onPanelClose, onFocusGroup, onSizesChange,
     isTabDragging, draggedPanelId, dropZones, onDropZoneChange,
-    onDropTab, onDragStart, onDragEnd, onStripDrop, getPanelTabPresentation, zoomedGroupId,
+    onDropTab, onDragStart, onDragEnd, onStripDrop, getPanelTabPresentation, zoomedGroupId, emptyState,
   ]);
 
   // Single-group root: render directly without Allotment

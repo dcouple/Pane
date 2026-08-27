@@ -666,7 +666,7 @@ export const SessionView = memo(() => {
 
     const nextPanel = focusedGroupPanels[nextIndex];
     handlePanelSelect(nextPanel);
-  }, [activeSession, focusedGroupPanels, currentActivePanel, handlePanelSelect]);
+  }, [activeSession, focusedGroupPanels, currentActivePanel, handlePanelSelect, projectActions]);
 
   // Tab cycling hotkeys
   useHotkey({

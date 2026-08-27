@@ -13,7 +13,10 @@ const LANGUAGE_BY_EXTENSION = new Map<string, string>([
   ['svelte', 'svelte'],
 ]);
 
+export function fileExtension(filePath: string): string {
+  return filePath.split('.').pop()?.toLowerCase() ?? '';
+}
+
 export function getLanguageFromPath(filePath: string): string {
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
-  return LANGUAGE_BY_EXTENSION.get(ext) ?? 'plaintext';
+  return LANGUAGE_BY_EXTENSION.get(fileExtension(filePath)) ?? 'plaintext';
 }

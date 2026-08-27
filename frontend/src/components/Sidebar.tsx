@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CreateSessionDialog } from './CreateSessionDialog';
 import { ProjectSessionList, ArchivedSessions } from './ProjectSessionList';
 import { ArchiveProgress } from './ArchiveProgress';
-import { Archive, ArrowUpDown, BarChart3, BookOpen, ChevronDown, ChevronRight, Info, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
+import { ArrowUpDown, BarChart3, BookOpen, ChevronDown, ChevronRight, Info, FolderGit2, Home, Monitor, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Pin, Settings as SettingsIcon, Plus, RefreshCw, MessageSquare, SquareTerminal } from 'lucide-react';
 import { SessionDetailTooltip } from './SessionDetailTooltip';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
@@ -22,17 +22,13 @@ import { API } from '../utils/api';
 import type { Project } from '../types/project';
 import type { Session } from '../types/session';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
-import {
-  createDefaultRemoteDaemonHostRuntimeState,
-  createDefaultRemotePaneConnectionState,
-  type RemoteDaemonHostRuntimeState,
-  type RemotePaneConnectionState,
-} from '../../../shared/types/remoteDaemon';
+import { useRemoteRuntimeState } from '../hooks/useRemoteRuntimeState';
+import { useAppBuildInfo } from '../hooks/useAppBuildInfo';
+import { CompactSessionMenu, type CompactSessionMenuState } from './CompactSessionMenu';
 import { getRemoteFooterStatus } from '../utils/remoteRuntimePresentation';
 import { usePanelStore } from '../stores/panelStore';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { createProjectById, getPinnedSessions, groupSessionsByProject } from '../utils/sessionOrdering';
-import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -84,11 +80,6 @@ interface SidebarProps {
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 const REMOTE_DESKTOP_TOOLTIP = 'Use Remote Desktop to access the host device for Electron apps, native windows, and UI running on the remote machine.';
 type SidebarSection = 'pinned' | 'repositories';
-interface CompactSessionMenuState {
-  session: Session;
-  x: number;
-  y: number;
-}
 const COMPACT_RAIL_BUTTON = 'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive';
 const COMPACT_RAIL_IDLE = 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary';
 const COMPACT_RAIL_ACTIVE = 'bg-surface-selected text-text-primary';
@@ -106,41 +97,17 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     const keys = hotkeys.get(id)?.keys;
     return keys ? formatKeyDisplay(keys) : null;
   }, [hotkeys]);
-  const [version, setVersion] = useState<string>('');
-  const [gitCommit, setGitCommit] = useState<string>('');
-  const [worktreeName, setWorktreeName] = useState<string>('');
+  const { version, gitCommit, worktreeName } = useAppBuildInfo();
   const [sessionSortAscending, setSessionSortAscending] = useState<boolean>(true); // Default to ascending (newest at bottom)
   const [sidebarSectionExpansion, setSidebarSectionExpansion] = useState<Record<SidebarSection, boolean>>({
     pinned: true,
     repositories: true,
   });
-  const [remoteConnectionState, setRemoteConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
-  const [remoteHostState, setRemoteHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
+  const { connectionState: remoteConnectionState, hostState: remoteHostState } = useRemoteRuntimeState();
   const hydrateExpandedProjects = useNavigationStore(s => s.hydrateExpandedProjects);
 
   useEffect(() => {
     let cancelled = false;
-
-    // Fetch version info and UI state on component mount
-    const fetchVersion = async () => {
-      try {
-        const result = await window.electronAPI.getVersionInfo();
-        if (cancelled) return;
-        if (result.success && result.data) {
-          if (result.data.current) {
-            setVersion(result.data.current);
-          }
-          if (result.data.gitCommit) {
-            setGitCommit(result.data.gitCommit);
-          }
-          if (result.data.worktreeName) {
-            setWorktreeName(result.data.worktreeName);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch version:', error);
-      }
-    };
 
     const loadUIState = async () => {
       try {
@@ -159,45 +126,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
       }
     };
 
-    void fetchVersion();
     void loadUIState();
 
     return () => {
       cancelled = true;
     };
   }, [hydrateExpandedProjects]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchRemoteState = async () => {
-      try {
-        const [connectionResponse, hostResponse] = await Promise.all([
-          API.remoteDaemon.getConnectionState(),
-          API.remoteDaemon.getHostState(),
-        ]);
-
-        if (!cancelled && connectionResponse.success && connectionResponse.data) {
-          setRemoteConnectionState(connectionResponse.data);
-        }
-        if (!cancelled && hostResponse.success && hostResponse.data) {
-          setRemoteHostState(hostResponse.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch remote runtime state:', error);
-      }
-    };
-
-    const unsubscribeConnectionState = API.remoteDaemon.onConnectionStateChanged(setRemoteConnectionState);
-    const unsubscribeHostState = API.remoteDaemon.onHostStateChanged(setRemoteHostState);
-    void fetchRemoteState();
-
-    return () => {
-      cancelled = true;
-      unsubscribeConnectionState();
-      unsubscribeHostState();
-    };
-  }, []);
 
   const toggleSessionSortOrder = async () => {
     const newValue = !sessionSortAscending;
@@ -734,30 +668,12 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           />
         )}
 
-        <TerminalPopover
-          visible={compactSessionMenu !== null}
-          x={compactSessionMenu?.x ?? 0}
-          y={compactSessionMenu?.y ?? 0}
+        <CompactSessionMenu
+          menu={compactSessionMenu}
           onClose={() => setCompactSessionMenu(null)}
-        >
-          <div role="menu" aria-label={`Pane actions for ${compactSessionMenu?.session.name || 'Untitled'}`}>
-            <PopoverButton role="menuitem" onClick={() => void toggleCompactSessionPinned()}>
-              <span className="flex items-center gap-2">
-                <Pin className="h-4 w-4 rotate-45" />
-                {compactSessionMenu?.session.isFavorite ? 'Unpin' : 'Pin'}
-              </span>
-            </PopoverButton>
-            {/* Archive sits last, past the divider: the menu opens under the cursor,
-                so the top slot is the one clicked by reflex. */}
-            <div className="my-1 border-t border-border-primary" />
-            <PopoverButton role="menuitem" variant="danger" onClick={() => void archiveCompactSession()}>
-              <span className="flex items-center gap-2">
-                <Archive className="h-4 w-4" />
-                Archive
-              </span>
-            </PopoverButton>
-          </div>
-        </TerminalPopover>
+          onTogglePinned={() => void toggleCompactSessionPinned()}
+          onArchive={() => void archiveCompactSession()}
+        />
       </>
     );
   }
