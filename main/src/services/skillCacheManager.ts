@@ -126,7 +126,7 @@ export class SkillCacheManager {
     this.codexPaneOrchestratorSkillPath = path.join(this.codexProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.claudePaneOrchestratorSkillPath = path.join(this.claudeProjectSkillsRoot, 'pane-orchestrator', 'SKILL.md');
     this.cursorPaneOrchestratorRulePath = path.join(getAppDirectory(), '.cursor', 'rules', 'pane-orchestrator.mdc');
-    this.paneWatchScriptPath = path.join(getAppDirectory(), 'tools', 'pane-watch.sh');
+    this.paneWatchScriptPath = path.join(getAppDirectory(), 'tools', 'watch.py');
     this.syncStatePath = path.join(this.cacheRoot, 'sync-state.json');
   }
 
@@ -509,11 +509,11 @@ Do not claim initialization is complete until you have loaded these workflow
 references, completed the bounded live-state sweep, and can name the intended
 lifecycle for the user's task.
 
-Arm \`${paneWatchScript}\` with the Monitor tool at session start; it emits
-READY/BUSY/NEW/GONE per pane on agent-activity transitions. Do not poll panes
-by hand or screen-scrape terminal text to decide whether an agent is working.
-\`panel.activityStatus\` is the accurate activity signal; \`pane.status\` is not —
-it reports "stopped" for panes whose agent is actively working.
+Arm \`python3 ${paneWatchScript}\` with the Monitor tool at session start; it
+emits READY/BUSY/NEW/GONE per pane on agent-activity transitions. Do not poll
+panes by hand or screen-scrape terminal text to decide whether an agent is
+working. \`panel.activityStatus\` is the accurate activity signal;
+\`pane.status\` is not — it reports "stopped" for actively working agents.
 
 For read-only work questions, use \`pane-work-recap\` when the user asks what
 they worked on and \`pane-work-prioritizer\` when they ask what to work on next.
@@ -697,87 +697,360 @@ step.
   }
 
   private buildPaneWatchScript(): string {
-    return `#!/bin/bash
-# pane-watch — universal Pane agent-activity monitor.
-#
-# Works for ANY Pane Chat user. No dependency on particular skills, orchestra,
-# repos, or file layouts: it discovers panes from RunPane and watches the agent
-# activity of every CLI panel it finds.
-#
-# Usage:  pane-watch.sh [name-filter] [interval-seconds]
-# Drive it with a Monitor tool — each stdout line becomes one notification.
-#
-# SIGNAL CHOICE (important):
-#   Use panel.activityStatus from \`runpane panels wait\`.
-#   Do NOT use pane.status — it reports "stopped" for panes whose agent is
-#   actively working, so it cannot distinguish thinking from finished.
-#   Do NOT screen-scrape terminal text — false positives and false negatives.
-#
-# Events:
-#   READY <pane>   agent finished a turn   (active -> idle)
-#   BUSY  <pane>   agent started a turn    (idle -> active)
-#   NEW   <pane>   pane appeared           (also catches orphaned creates)
-#   GONE  <pane>   pane archived/removed
+    return `#!/usr/bin/env python3
+"""watch.py — one generalized change-monitor for Pane workspaces.
 
-FILTER="\${1:-}"; INTERVAL="\${2:-60}"
-RP="npx --yes runpane@latest"
-STATE="\${PANE_WATCH_STATE:-$HOME/.pane/tools/.state}"
-mkdir -p "$STATE"
+Cross-platform: macOS, Windows, Linux. Python 3.8+, standard library only.
 
-while true; do
-  (cd /tmp && $RP panes list --json 2>/dev/null) | F="$FILTER" python3 -c "
-import json,sys,os
-f=os.environ.get('F','')
-try: d=json.load(sys.stdin)
-except Exception: sys.exit(0)
-for p in d.get('panes',[]):
-    if f and f not in p['name']: continue
-    print('%s\\t%s' % (p['id'], p['name']))
-" | sort > "$STATE/panes.new"
+Emits one line per STATE TRANSITION on stdout. Designed to be driven by a
+Monitor tool where each stdout line becomes a notification. Silent unless
+something actually changed.
 
-  if [ -s "$STATE/panes.new" ]; then
-    if [ -f "$STATE/panes.old" ]; then
-      comm -13 "$STATE/panes.old" "$STATE/panes.new" | cut -f2 | while read -r n; do [ -n "$n" ] && echo "NEW   $n"; done
-      comm -23 "$STATE/panes.old" "$STATE/panes.new" | cut -f2 | while read -r n; do [ -n "$n" ] && echo "GONE  $n"; done
-    fi
-    cp "$STATE/panes.new" "$STATE/panes.old"
-  fi
+    python3 watch.py [--panes FILTER] [--prs owner/repo ...] [--files PATH ...]
+                     [--interval SECONDS] [--state DIR] [--once]
 
-  while IFS=$'\\t' read -r pid pname; do
-    [ -z "$pid" ] && continue
-    (cd /tmp && $RP panels list --pane "$pid" --json 2>/dev/null) | python3 -c "
-import json,sys
-try: d=json.load(sys.stdin)
-except Exception: sys.exit(0)
-for p in d.get('panels',[]):
-    print(p['panelId'])
-" 2>/dev/null | while read -r panel; do
-      [ -z "$panel" ] && continue
-      CUR=$( (cd /tmp && $RP panels wait --panel "$panel" --for idle --timeout-ms 1200 --json 2>/dev/null) | python3 -c "
-import json,sys
-try: d=json.load(sys.stdin)
-except Exception: sys.exit(0)
-s=d.get('state') or {}
-# only CLI panels carry meaningful agent activity
-if not s.get('isCliPanel'): sys.exit(0)
-a=s.get('activityStatus')
-if a in ('active','idle'): print(a)
-" 2>/dev/null )
-      [ -z "$CUR" ] && continue          # non-CLI panel, or unreadable — record nothing
-      M="$STATE/act_$panel"
-      PREV=$(cat "$M" 2>/dev/null)
-      [ "$CUR" = "$PREV" ] && continue
-      echo "$CUR" > "$M"
-      [ -z "$PREV" ] && continue          # first sighting seeds the baseline, no event
-      case "$CUR" in
-        idle)   echo "READY $pname" ;;
-        active) echo "BUSY  $pname" ;;
-      esac
-    done
-  done < "$STATE/panes.new"
+Events emitted:
+    READY  <pane>              agent finished a turn        (active -> idle)
+    BUSY   <pane>              agent started a turn         (idle -> active)
+    NEW    <pane>              pane appeared                (catches orphaned creates)
+    GONE   <pane>              pane archived or removed
+    STUCK  <pane> :: <text>    went idle with unsubmitted composer text
+    PR READY FOR REVIEW: r#n   newly-opened PR: open, non-draft, mergeable, checks green
+    PR CHECKS FAILING:   r#n   newly-opened PR with a failing check
+    FILE   <name> (<n> lines)  a watched deliverable appeared
 
-  sleep "$INTERVAL"
-done
+---------------------------------------------------------------------------
+DESIGN RULES — every one of these was learned by getting it wrong in practice.
+Do not "simplify" them away.
+
+1.  SILENT BASELINE. The first pass records current state and emits nothing.
+    Without it, starting the watcher against a repo with 30 open PRs announces
+    all 30 as newly ready, and every existing pane as new.
+
+2.  USE panel.activityStatus, NEVER pane.status. pane.status reports "stopped"
+    for panes whose agent is actively working, so it cannot tell thinking from
+    finished. Measured: a pane mid-turn and a pane done twenty minutes ago both
+    report "stopped". See dcouple/Pane#514.
+
+3.  NEVER SCREEN-SCRAPE to decide whether an agent is working. Rendered
+    terminal text produces false positives and false negatives in both
+    directions. Structured fields only. The lone exception is STUCK detection,
+    which is inherently a question about what sits in the composer, and which
+    only ever adds information.
+
+4.  EMIT ON FAILURE STATES TOO. Silence must never be ambiguous between "fine"
+    and "died". GONE and CHECKS FAILING exist for exactly this.
+
+5.  NO SHELL. Every external call goes through subprocess with an argv list, so
+    quoting, spaces and Windows paths behave. No pipelines, no shell built-ins.
+---------------------------------------------------------------------------
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+IS_WINDOWS = os.name == "nt"
+
+
+def run_json(argv, timeout=45):
+    """Run a command, parse stdout as JSON. Returns None on any failure.
+
+    Never raises: a monitor must survive transient CLI/network errors rather
+    than dying and leaving the caller with silence that looks like calm.
+    """
+    try:
+        p = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+    except Exception:
+        return None
+    if not p.stdout:
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+def run_text(argv, timeout=45):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, shell=False)
+        return p.stdout or ""
+    except Exception:
+        return ""
+
+
+def resolve_runpane():
+    """Resolve the cheapest working runpane invocation.
+
+    PERFORMANCE, and it matters a lot: \`npx --yes runpane@latest\` re-resolves the
+    package on EVERY call (~2.0s vs ~1.2s calling the CLI directly). A monitor
+    makes one call per pane plus one per watched panel, so npx overhead alone can
+    add minutes to a single pass. Prefer, in order:
+      1. a real \`runpane\` on PATH
+      2. a cached npx install's cli.js, invoked via node
+      3. npx as the last resort
+    """
+    exe = shutil.which("runpane")
+    if exe:
+        return [exe]
+
+    node = shutil.which("node")
+    if node:
+        # npx caches installs under ~/.npm/_npx/<hash>/node_modules/runpane
+        npx_cache = Path.home() / (".npm/_npx" if not IS_WINDOWS else "AppData/Local/npm-cache/_npx")
+        try:
+            candidates = sorted(
+                npx_cache.glob("*/node_modules/runpane/dist/cli.js"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                return [node, str(candidates[0])]
+        except Exception:
+            pass
+
+    npx = shutil.which("npx") or ("npx.cmd" if IS_WINDOWS else "npx")
+    return [npx, "--yes", "runpane@latest"]
+
+
+def resolve_gh():
+    return shutil.which("gh") or ("gh.exe" if IS_WINDOWS else "gh")
+
+
+class State:
+    """Transition tracking, persisted so a restart does not replay history."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.data = {}
+        if self.path.exists():
+            try:
+                self.data = json.loads(self.path.read_text())
+            except Exception:
+                self.data = {}
+
+    def changed(self, key, value):
+        """True if value differs from what we last saw. Records the new value."""
+        prev = self.data.get(key)
+        if prev == value:
+            return False, prev
+        self.data[key] = value
+        return True, prev
+
+    def save(self):
+        try:
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.data))
+            tmp.replace(self.path)
+        except Exception:
+            pass
+
+
+def emit(line):
+    print(line, flush=True)
+
+
+def check_files(paths, state, first):
+    for raw in paths:
+        p = Path(raw).expanduser()
+        if not p.is_file():
+            continue
+        changed, _ = state.changed(f"file:{p}", True)
+        if not changed or first:
+            continue
+        try:
+            n = sum(1 for _ in p.open(errors="ignore"))
+        except Exception:
+            n = 0
+        emit(f"FILE   {p.name} ({n} lines)")
+
+
+def check_panes(rp, name_filter, state, first):
+    d = run_json(rp + ["panes", "list", "--json"])
+    if not d or "panes" not in d:
+        return []
+    panes = [
+        p for p in d["panes"]
+        if not name_filter or name_filter in p.get("name", "")
+    ]
+    seen = {p["id"]: p.get("name", p["id"]) for p in panes}
+
+    prev_ids = set(state.data.get("_pane_ids", []))
+    cur_ids = set(seen)
+    if not first and prev_ids:
+        for i in cur_ids - prev_ids:
+            emit(f"NEW    {seen[i]}")
+        gone = state.data.get("_pane_names", {})
+        for i in prev_ids - cur_ids:
+            emit(f"GONE   {gone.get(i, i)}")
+    state.data["_pane_ids"] = sorted(cur_ids)
+    state.data["_pane_names"] = seen
+    return panes
+
+
+def composer_text(screen_text):
+    """Return unsubmitted composer content, if the panel shows any.
+
+    Rule 3 exception: this is inherently about rendered composer content, and it
+    only ever adds information — it never decides whether an agent is working.
+    """
+    placeholders = ('Try "', "Ask Codex", "Ask Claude")
+    for line in reversed([x.strip() for x in screen_text.splitlines()]):
+        if line.startswith("❯") and len(line) > 3:
+            body = line[1:].strip()
+            if body and not any(ph in line for ph in placeholders):
+                return body[:70]
+    return None
+
+
+def cli_panels_for(rp, pane_id, state, rediscover):
+    """CLI panel ids for a pane, cached.
+
+    PERFORMANCE: \`panels list\` costs a full CLI invocation, and a pane's panel
+    layout almost never changes. Discovering it every pass turned one pass into
+    hundreds of calls. Cache the mapping and re-discover only occasionally, or
+    when the cache is empty.
+    """
+    key = f"panels:{pane_id}"
+    cached = state.data.get(key)
+    if cached is not None and not rediscover:
+        return cached
+
+    pl = run_json(rp + ["panels", "list", "--pane", pane_id, "--json"])
+    if not pl:
+        return cached or []
+
+    ids = []
+    for panel in pl.get("panels", []):
+        pid_ = panel.get("panelId")
+        if not pid_:
+            continue
+        # Only terminal-ish panels can host an agent; explorer/diff never do.
+        if panel.get("type") in (None, "terminal") or panel.get("isCliPanel"):
+            ids.append(pid_)
+    state.data[key] = ids
+    return ids
+
+
+def check_activity(rp, panes, state, first, rediscover=False):
+    for pane in panes:
+        pid, pname = pane["id"], pane.get("name", pane["id"])
+        for panel_id in cli_panels_for(rp, pid, state, rediscover):
+            # \`panels wait\` returns the structured activity state. Rule 2.
+            r = run_json(
+                rp + ["panels", "wait", "--panel", panel_id,
+                      "--for", "idle", "--timeout-ms", "1200", "--json"],
+                timeout=30,
+            )
+            if not r:
+                continue
+            s = r.get("state") or {}
+            if not s.get("isCliPanel"):
+                continue           # explorer/diff panels carry no agent activity
+            act = s.get("activityStatus")
+            if act not in ("active", "idle"):
+                continue
+            changed, prev = state.changed(f"act:{panel_id}", act)
+            if not changed or first or prev is None:
+                continue
+            if act == "idle":
+                emit(f"READY  {pname}")
+                held = composer_text((r.get("screen") or {}).get("text", ""))
+                if held:
+                    emit(f"STUCK  {pname} :: {held}")
+            else:
+                emit(f"BUSY   {pname}")
+
+
+def check_prs(gh, repos, state, first):
+    for repo in repos:
+        d = run_json([
+            gh, "pr", "list", "--repo", repo, "--limit", "40",
+            "--json", "number,isDraft,mergeable,title",
+        ])
+        if d is None:
+            continue
+        bkey = f"_baseline:{repo}"
+        if first or bkey not in state.data:
+            # Rule 1: everything already open is pre-existing, never reported.
+            state.data[bkey] = [p["number"] for p in d]
+            continue
+        baseline = set(state.data.get(bkey, []))
+        for p in d:
+            num = p["number"]
+            if num in baseline:
+                continue
+            out = run_text([gh, "pr", "checks", str(num), "--repo", repo])
+            buckets = [ln.split("\\t")[1] for ln in out.splitlines() if "\\t" in ln]
+            failing = any("fail" in b for b in buckets)
+            pending = any("pending" in b for b in buckets)
+            if not p["isDraft"] and p.get("mergeable") == "MERGEABLE" \\
+                    and not failing and not pending:
+                st = "ready"
+            elif failing:
+                st = "failing"
+            else:
+                st = "waiting"
+            changed, _ = state.changed(f"pr:{repo}:{num}", st)
+            if not changed:
+                continue
+            title = p.get("title", "")[:56]
+            if st == "ready":
+                emit(f"PR READY FOR REVIEW: {repo}#{num} — {title}")
+            elif st == "failing":
+                emit(f"PR CHECKS FAILING:   {repo}#{num} — {title}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Generalized Pane workspace monitor.")
+    ap.add_argument("--panes", default="", help="substring filter on pane name; empty = all")
+    ap.add_argument("--prs", nargs="*", default=[], help="repos to watch, e.g. owner/name")
+    ap.add_argument("--files", nargs="*", default=[], help="deliverable paths to watch for")
+    ap.add_argument("--interval", type=int, default=60)
+    ap.add_argument("--state", default=str(Path.home() / ".pane" / "tools" / "watch-state.json"))
+    ap.add_argument("--once", action="store_true", help="single pass (seeds baseline), for testing")
+    ap.add_argument("--no-panes", action="store_true", help="skip pane watching entirely")
+    args = ap.parse_args()
+
+    rp = resolve_runpane()
+    gh = resolve_gh()
+    state = State(Path(args.state))
+    first = "_seeded" not in state.data
+
+    while True:
+        try:
+            check_files(args.files, state, first)
+            if not args.no_panes:
+                panes = check_panes(rp, args.panes, state, first)
+                check_activity(rp, panes, state, first)
+            if args.prs:
+                check_prs(gh, args.prs, state, first)
+        except Exception as e:
+            # Never die on a transient error — silence would read as "all calm".
+            emit(f"WATCH ERROR: {type(e).__name__}: {e}")
+        if first:
+            state.data["_seeded"] = True
+            first = False
+        state.save()
+        if args.once:
+            return
+        time.sleep(args.interval)
+
+
+if __name__ == "__main__":
+    main()
 `;
   }
 
