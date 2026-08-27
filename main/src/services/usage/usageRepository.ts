@@ -237,6 +237,27 @@ export class UsageRepository {
       }
     }
 
+    // Retire scopes that no longer appear in the provider's latest events.
+    // When a plan change drops a window (e.g. OpenAI removes the 5h primary
+    // and promotes 7d into that slot), the absent scope stops getting new
+    // samples but its old row lingers until its window expires. Comparing
+    // capture timestamps detects this: within one token_count event, all
+    // active scopes share the same timestamp, so a scope lagging behind the
+    // provider's newest capture was not present in that event.
+    const maxCapturePerProvider = new Map<string, number>();
+    for (const sample of newestPerWindow.values()) {
+      const prev = maxCapturePerProvider.get(sample.provider) ?? 0;
+      if (sample.capturedAtMs > prev) {
+        maxCapturePerProvider.set(sample.provider, sample.capturedAtMs);
+      }
+    }
+    for (const [key, sample] of newestPerWindow) {
+      const providerMax = maxCapturePerProvider.get(sample.provider);
+      if (providerMax && sample.capturedAtMs < providerMax) {
+        newestPerWindow.delete(key);
+      }
+    }
+
     return [...newestPerWindow.values()]
       .sort((a, b) => a.provider.localeCompare(b.provider) || a.scope.localeCompare(b.scope));
   }

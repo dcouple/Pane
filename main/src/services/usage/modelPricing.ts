@@ -1,20 +1,22 @@
 import type { ModelPrice } from '../../../../shared/types/usage';
 
 /**
- * Bundled price table, USD per 1M tokens.
- *
- * Hard-coded prices go stale, so {@link PRICING_AS_OF} is rendered in the
- * usage page footer and unknown models are reported as `costIncomplete`
- * rather than silently priced at zero.
+ * Date the bundled price table was last verified. Shown in the UI footer
+ * when no live prices are available.
  */
-export const PRICING_AS_OF = '2026-08-10';
+const BUNDLED_PRICING_AS_OF = '2026-08-10';
 
 /**
+ * Bundled price table — the offline-last-resort fallback. Prices are USD per
+ * 1M tokens. These go stale (which is why OpenRouter prices are preferred),
+ * but they guarantee every model shipped in this build gets a price even with
+ * no network.
+ *
  * OpenAI publishes no separate cache-write price — writing to the prompt cache
  * bills at the standard input rate — so `cacheWritePerMTok` mirrors input for
  * those models.
  */
-const PRICES: ModelPrice[] = [
+const BUNDLED_PRICES: ModelPrice[] = [
   // --- Anthropic (Claude Code) ---
   // Claude 5 family
   { model: 'claude-opus-5', inputPerMTok: 15, outputPerMTok: 75, cacheReadPerMTok: 1.5, cacheWritePerMTok: 18.75 },
@@ -53,20 +55,45 @@ const PRICES: ModelPrice[] = [
   { model: 'gpt-5', inputPerMTok: 1.25, outputPerMTok: 10, cacheReadPerMTok: 0.125, cacheWritePerMTok: 1.25 },
 ];
 
-/**
- * Match by longest prefix so dated ids (`claude-sonnet-5-20260101`) and
- * region-prefixed ids resolve to their base model.
- */
-export function findModelPrice(model: string): ModelPrice | null {
-  if (!model) return null;
-  const normalized = model.toLowerCase();
+// ---------------------------------------------------------------------------
+// Live price tier — set by the OpenRouter provider, checked first.
+// ---------------------------------------------------------------------------
 
+let livePrices: ModelPrice[] = [];
+let livePricingSource: string | null = null;
+
+export function setLivePrices(prices: ModelPrice[], source: string | null): void {
+  livePrices = prices;
+  livePricingSource = source;
+}
+
+export function getPricingSource(): string {
+  return livePricingSource ?? `bundled · ${BUNDLED_PRICING_AS_OF}`;
+}
+
+// ---------------------------------------------------------------------------
+// Lookup
+// ---------------------------------------------------------------------------
+
+function findInTable(model: string, table: readonly ModelPrice[]): ModelPrice | null {
+  const normalized = model.toLowerCase();
   let best: ModelPrice | null = null;
-  for (const price of PRICES) {
+  for (const price of table) {
     if (!normalized.includes(price.model)) continue;
     if (!best || price.model.length > best.model.length) best = price;
   }
   return best;
+}
+
+/**
+ * Match by longest prefix so dated ids (`claude-sonnet-5-20260101`) and
+ * region-prefixed ids resolve to their base model.
+ *
+ * Checks live (OpenRouter) prices first, then falls back to the bundled table.
+ */
+export function findModelPrice(model: string): ModelPrice | null {
+  if (!model) return null;
+  return findInTable(model, livePrices) ?? findInTable(model, BUNDLED_PRICES);
 }
 
 export interface CostInput {
@@ -111,4 +138,5 @@ export function estimateCostUsd(
   return { costUsd, complete: true, cacheSavingsUsd };
 }
 
-export { PRICES as MODEL_PRICES };
+export { BUNDLED_PRICES as MODEL_PRICES };
+export { BUNDLED_PRICING_AS_OF as PRICING_AS_OF };

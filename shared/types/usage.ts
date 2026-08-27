@@ -159,7 +159,7 @@ export interface UsageReport {
   /** Provider-reported quota state; empty when nobody reported any. */
   rateLimits: UsageRateLimitSample[];
   index: UsageIndexStatus;
-  /** Date the bundled price table was last verified, shown in the footer. */
+  /** Pricing source and date, shown in the footer (e.g. "OpenRouter · 2026-08-26"). */
   pricingAsOf: string;
 }
 
