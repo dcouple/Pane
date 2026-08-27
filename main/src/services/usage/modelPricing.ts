@@ -79,6 +79,7 @@ function findInTable(model: string, table: readonly ModelPrice[]): ModelPrice | 
   const normalized = model.toLowerCase();
   let best: ModelPrice | null = null;
   for (const price of table) {
+    // Substring matching lets short router ids like "auto" capture ids such as "codex-auto-review".
     if (!normalized.includes(price.model)) continue;
     if (!best || price.model.length > best.model.length) best = price;
   }
@@ -121,7 +122,7 @@ export function estimateCostUsd(
   input: CostInput
 ): CostEstimate {
   const price = findModelPrice(input.model);
-  if (!price) return { costUsd: 0, complete: false, cacheSavingsUsd: 0 };
+  if (!price || hasNegativeRate(price)) return { costUsd: 0, complete: false, cacheSavingsUsd: 0 };
 
   const perToken = 1_000_000;
   const costUsd =
@@ -136,6 +137,11 @@ export function estimateCostUsd(
   );
 
   return { costUsd, complete: true, cacheSavingsUsd };
+}
+
+function hasNegativeRate(price: ModelPrice): boolean {
+  return [price.inputPerMTok, price.outputPerMTok, price.cacheReadPerMTok, price.cacheWritePerMTok]
+    .some(rate => rate < 0);
 }
 
 export { BUNDLED_PRICES as MODEL_PRICES };

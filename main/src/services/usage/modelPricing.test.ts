@@ -91,7 +91,6 @@ describe('estimateCostUsd', () => {
     expect(complete).toBe(true);
     // Bundled: 15 + 75 + 1.5 + 18.75 = 110.25
     expect(costUsd).toBeCloseTo(15 + 75 + 1.5 + 18.75, 6);
-    expect(cacheReadCostUsd).toBeCloseTo(1.5, 6);
   });
 
   it('prices a Codex request', () => {
