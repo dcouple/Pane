@@ -97,7 +97,11 @@ export function FileEditorView({
     dispatch({ type: 'load-start' });
     try {
       const loaded = await readEditorFile(sessionId, file.path);
-      if (seq !== loadSeqRef.current) return;
+      if (seq !== loadSeqRef.current) {
+        // Superseded by a re-target: nothing will own this blob, release it.
+        if (loaded.kind === 'binary') URL.revokeObjectURL(loaded.blobUrl);
+        return;
+      }
 
       if (loaded.kind === 'error' && !isBinaryPath(file.path)) {
         dispatch({ type: 'load-failed', message: loaded.message });
@@ -177,8 +181,11 @@ export function FileEditorView({
     }, 1000), // Auto-save after 1 second of inactivity
     [sessionId, onFileChange, onStateChange, refreshGitStatus, selectedFilePathRef],
   );
+  // Flush per instance: `autoSave` is rebuilt when a callback prop changes
+  // (the tab renames itself on the first dirty keystroke), and an outgoing
+  // instance's armed timer would otherwise fire later with older content.
+  useEffect(() => () => autoSave.flush(), [autoSave]);
   const autoSaveRef = useCommittedRef(autoSave);
-  useEffect(() => () => autoSaveRef.current.flush(), [autoSaveRef]);
 
   // ⌘S / Ctrl+S: write any pending edit now and pin the tab (VS Code pins
   // preview editors on save, whether or not anything changed).

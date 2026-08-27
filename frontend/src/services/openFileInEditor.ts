@@ -119,7 +119,11 @@ export async function openFileInEditor(options: OpenFileInEditorOptions): Promis
     if (pin && editorPanelState(existing)?.isPreview) patch.isPreview = false;
     // Persist the requested position: a background tab mounts its editor only
     // once activated, and restores the cursor from panel state on mount.
-    if (cursorPosition) patch.cursorPosition = cursorPosition;
+    if (cursorPosition) {
+      patch.cursorPosition = cursorPosition;
+      // A stale scroll offset would win over the cursor reveal on mount.
+      patch.scrollPosition = undefined;
+    }
     if (Object.keys(patch).length > 0) panel = await updateEditorPanel(existing, patch);
     await activate(sessionId, panel.id);
     // An already-mounted editor will not remount, so ask it to move directly.

@@ -15,8 +15,6 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   panel, 
   isActive 
 }) => {
-  const [isInitialized, setIsInitialized] = useState(false);
-  
   // Extract explorer state each render to ensure we get updates
   const explorerState = React.useMemo(() =>
     // SAFETY: The panel type discriminator determines the corresponding custom-state shape.
@@ -42,14 +40,6 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
       });
     }
   }, [isActive, panel.id, panel.state]);
-  
-  // Initialize the editor panel
-  useEffect(() => {
-    if (isActive && !isInitialized) {
-      setIsInitialized(true);
-      // If there's a file path in state, it will be loaded by FileEditor
-    }
-  }, [isActive, isInitialized]);
   
   const [debouncedUpdate] = useState(() => debounce((panelId: string, sessionId: string, newState: Partial<ExplorerPanelState>) => {
     devLog.debug('[ExplorerPanel] Saving state to database:', {
@@ -134,14 +124,15 @@ const ExplorerPanel: React.FC<ExplorerPanelProps> = ({
   
   // The tree stays mounted while its inspector tab is hidden (the host hides
   // it with display:none) so loaded directories, scroll and selection survive
-  // switching between Files and Changes. Files themselves open as center
-  // editor tabs, so nothing heavy lives here.
+  // switching between Files and Changes. Its window-level shortcuts (⌘F,
+  // rename, delete, clipboard) only apply while it is the visible panel.
   return (
     <div className="h-full w-full">
       <FileEditor
         sessionId={panel.sessionId}
         initialState={explorerState}
         onStateChange={handleStateChange}
+        shortcutsActive={isActive}
       />
     </div>
   );

@@ -42,6 +42,8 @@ interface HeadlessFileTreeProps {
   initialShowSearch?: boolean;
   onTreeStateChange?: (state: { expandedDirs: string[]; searchQuery: string; showSearch: boolean }) => void;
   onHtmlPreview: (filePath: string) => void;
+  /** Window-level shortcuts (⌘F, rename, delete, clipboard) only while the tree is the visible panel. */
+  shortcutsActive?: boolean;
 }
 
 function HeadlessFileTree({
@@ -55,6 +57,7 @@ function HeadlessFileTree({
   initialShowSearch,
   onTreeStateChange,
   onHtmlPreview,
+  shortcutsActive = true,
 }: HeadlessFileTreeProps) {
   // Cache stores loaded directory contents. Key = dirPath, Value = FileItem[].
   const filesCacheRef = useRef(new Map<string, FileItem[]>());
@@ -702,6 +705,7 @@ function HeadlessFileTree({
 
   // Keyboard shortcuts
   useEffect(() => {
+    if (!shortcutsActive) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target instanceof HTMLElement ? e.target : null;
       const isEditingText = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || !!target?.isContentEditable;
@@ -757,7 +761,7 @@ function HeadlessFileTree({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchQuery, showNewItemDialog, contextMenu, keyboardShortcutsEnabled, selectedItems, tree, startRename, handleDelete, clipboard, handlePaste]);
+  }, [shortcutsActive, searchQuery, showNewItemDialog, contextMenu, keyboardShortcutsEnabled, selectedItems, tree, startRename, handleDelete, clipboard, handlePaste]);
 
   return (
     <div
@@ -1207,6 +1211,8 @@ interface FileEditorProps {
   sessionId: string;
   initialState?: ExplorerPanelState;
   onStateChange?: (state: Partial<ExplorerPanelState>) => void;
+  /** False while the tree is mounted but hidden: its window-level shortcuts stay off. */
+  shortcutsActive?: boolean;
 }
 
 /**
@@ -1214,7 +1220,7 @@ interface FileEditorProps {
  * Single-click previews, double-click pins (VS Code semantics); the row of
  * the active editor tab's file is highlighted.
  */
-export function FileEditor({ sessionId, initialState, onStateChange }: FileEditorProps) {
+export function FileEditor({ sessionId, initialState, onStateChange, shortcutsActive = true }: FileEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const pendingFocusPathRef = useRef<string | null>(null);
 
@@ -1277,6 +1283,7 @@ export function FileEditor({ sessionId, initialState, onStateChange }: FileEdito
           initialShowSearch={initialState?.showSearch}
           onTreeStateChange={handleTreeStateChange}
           onHtmlPreview={previewHtmlFile}
+          shortcutsActive={shortcutsActive}
         />
       </div>
     </div>
