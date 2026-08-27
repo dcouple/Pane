@@ -9,8 +9,8 @@ import {
 
 /** Live Remote Pane connection + host state: fetched once, then pushed by main. */
 export function useRemoteRuntimeState() {
-  const [connectionState, setConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState());
-  const [hostState, setHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState());
+  const [connectionState, setConnectionState] = useState<RemotePaneConnectionState>(createDefaultRemotePaneConnectionState);
+  const [hostState, setHostState] = useState<RemoteDaemonHostRuntimeState>(createDefaultRemoteDaemonHostRuntimeState);
 
   useEffect(() => {
     let cancelled = false;
