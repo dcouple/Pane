@@ -2239,15 +2239,22 @@ print(json.dumps(prepare_doctor_failure_report(parsed, request["doctor"])))
     assert.strictEqual(pythonPrepared.sha256, first.sha256, 'npm and pip report bodies must match');
     assert.strictEqual(pythonPrepared.redactionCount, first.redactionCount);
 
+    let restoreSpawnSync = () => {};
     if (process.platform === 'win32') {
-      const stubSource = path.join(binDirectory, 'gh-stub.js');
-      fs.writeFileSync(stubSource, [
-        "const fs = require('fs');",
-        "fs.appendFileSync(process.env.RUNPANE_GH_LOG, process.argv.slice(2).join('\\n') + '\\n--call--\\n');",
-        "if (process.argv[2] === 'auth') process.exit(0);",
-        "console.log('https://github.com/dcouple/Pane/issues/999');",
-      ].join('\n'));
-      fs.writeFileSync(path.join(binDirectory, 'gh.cmd'), `@echo off\r\n"${process.execPath}" "${stubSource}" %*\r\n`);
+      const originalSpawnSync = childProcess.spawnSync;
+      childProcess.spawnSync = (command, args) => {
+        assert.strictEqual(command, 'gh');
+        const commandArgs = Array.isArray(args) ? args : [];
+        fs.appendFileSync(ghLog, `${commandArgs.join('\n')}\n--call--\n`);
+        return {
+          status: 0,
+          stdout: commandArgs[0] === 'auth' ? '' : 'https://github.com/dcouple/Pane/issues/999\n',
+          stderr: '',
+        };
+      };
+      restoreSpawnSync = () => {
+        childProcess.spawnSync = originalSpawnSync;
+      };
     } else {
       const stubPath = path.join(binDirectory, 'gh');
       fs.writeFileSync(stubPath, [
@@ -2275,10 +2282,27 @@ print(json.dumps(prepare_doctor_failure_report(parsed, request["doctor"])))
       assert.strictEqual((log.match(/^issue$/gm) || []).length, 1, 'confirmed filing must create one issue');
 
       fs.writeFileSync(ghLog, '');
+      const pythonWindowsSpawnStub = process.platform === 'win32' ? `
+import os
+import runpane.doctor as doctor_module
+from types import SimpleNamespace
+
+def fake_run(args, **_kwargs):
+    with open(os.environ["RUNPANE_GH_LOG"], "a", encoding="utf-8") as log:
+        log.write("\\n".join(args[1:]) + "\\n--call--\\n")
+    return SimpleNamespace(
+        returncode=0,
+        stdout="" if args[1] == "auth" else "https://github.com/dcouple/Pane/issues/999\\n",
+        stderr="",
+    )
+
+doctor_module.subprocess.run = fake_run
+` : '';
       const pythonFiled = JSON.parse(runPythonSnippet(`
 import json
 import sys
 from runpane.doctor import file_doctor_failure_report
+${pythonWindowsSpawnStub}
 
 prepared = json.loads(sys.stdin.read())
 file_doctor_failure_report(prepared)
@@ -2292,6 +2316,7 @@ print(json.dumps(prepared))
       assert.ok(!pythonLog.includes('title-secret'));
       assert.strictEqual((pythonLog.match(/^issue$/gm) || []).length, 1, 'Python filing must create one issue');
     } finally {
+      restoreSpawnSync();
       if (originalPath === undefined) delete process.env.PATH;
       else process.env.PATH = originalPath;
       delete process.env.RUNPANE_GH_LOG;
