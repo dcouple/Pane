@@ -226,6 +226,10 @@ export function FileEditorView({
 
   // Load the file this tab points at (and reload when it is re-targeted)
   useEffect(() => {
+    // Any load still in flight is for a path the tab no longer points at.
+    // Invalidate it before the same-path check: A → B → A while B is loading
+    // must not let B's response land on top of the A that is still shown.
+    loadSeqRef.current += 1;
     if (selectedFile?.path === filePath) return;
     autoSave.flush();
     positionTrackerRef.current?.cancel();

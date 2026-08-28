@@ -1053,7 +1053,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       invokeIpc('panels:create', { sessionId, type, title: name, initialState: config }),
     getSessionPanels: (sessionId: string): Promise<IPCResponse> => invokeIpc('panels:list', sessionId),
     deletePanel: (panelId: string): Promise<IPCResponse> => invokeIpc('panels:delete', panelId),
-    renamePanel: (panelId: string, name: string): Promise<IPCResponse> => invokeIpc('panels:update', panelId, { name }),
+    renamePanel: (panelId: string, name: string): Promise<IPCResponse> => invokeIpc('panels:update', panelId, { title: name }),
     setActivePanel: (sessionId: string, panelId: string): Promise<IPCResponse> => invokeIpc('panels:set-active', sessionId, panelId),
     resizeTerminal: (panelId: string, cols: number, rows: number): Promise<IPCResponse> => invokeIpc('panels:resize-terminal', panelId, cols, rows),
     sendTerminalInput: (panelId: string, data: string): Promise<IPCResponse> => invokeIpc('panels:send-terminal-input', panelId, data),
