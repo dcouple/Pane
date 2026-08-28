@@ -723,7 +723,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           <ArchivedSessions />
         </div>
 
-        {/* Add repository + settings, like Superset's sidebar foot */}
+        {/* Primary creation plus quiet utility actions. */}
         <div className="flex h-12 flex-shrink-0 items-center gap-1 border-t border-border-primary pl-2 pr-2">
           <button
             type="button"
@@ -732,6 +732,14 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
           >
             <Plus className="h-4 w-4 flex-shrink-0" />
             <span className="truncate">Add repository</span>
+          </button>
+          <button
+            type="button"
+            onClick={onFeedbackClick}
+            className="flex h-8 flex-shrink-0 items-center gap-1.5 rounded-md px-2 text-[12px] text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            <span>Feedback</span>
           </button>
           <IconButton
             aria-label="Settings"

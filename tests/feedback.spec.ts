@@ -58,12 +58,11 @@ async function openSettings(page: Page) {
 }
 
 test.describe('Feedback entry points', () => {
-  test('sidebar pill opens the dialog and submits the happy path', async ({ page }, testInfo) => {
+  test('expanded sidebar button opens the dialog and submits the happy path', async ({ page }, testInfo) => {
     await bootApp(page);
     await shot(page, testInfo, '01-expanded-sidebar');
 
-    await page.getByRole('button', { name: 'Sidebar menu' }).click();
-    await page.getByRole('menuitem', { name: 'Feedback', exact: true }).click();
+    await page.getByRole('button', { name: 'Feedback', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Send feedback' });
     await expect(dialog).toBeVisible();
     // The header owns the only close control; Modal's own corner button stays off so the
@@ -92,7 +91,7 @@ test.describe('Feedback entry points', () => {
 
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Sidebar menu' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Feedback', exact: true })).toBeFocused();
   });
 
   test('failure keeps the text and offers the prefilled fallback', async ({ page }, testInfo) => {
