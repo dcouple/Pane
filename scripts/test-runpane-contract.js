@@ -2274,6 +2274,9 @@ print(json.dumps(prepare_doctor_failure_report(parsed, request["doctor"])))
       assert.strictEqual(first.filed, true);
       assert.strictEqual(first.issueUrl, 'https://github.com/dcouple/Pane/issues/999');
       const log = fs.readFileSync(ghLog, 'utf8');
+      const calls = log.split('--call--\n').map(call => call.trim().split('\n')).filter(call => call[0]);
+      assert.deepStrictEqual(calls[0], ['auth', 'status']);
+      assert.strictEqual(calls.length, 2, 'confirmed filing must authenticate once and create once');
       assert.ok(log.includes('--body-file'));
       assert.ok(log.includes(first.path));
       assert.ok(!log.includes('do-not-leak'));
@@ -2311,6 +2314,9 @@ print(json.dumps(prepared))
       assert.strictEqual(pythonFiled.filed, true);
       assert.strictEqual(pythonFiled.issueUrl, 'https://github.com/dcouple/Pane/issues/999');
       const pythonLog = fs.readFileSync(ghLog, 'utf8');
+      const pythonCalls = pythonLog.split('--call--\n').map(call => call.trim().split('\n')).filter(call => call[0]);
+      assert.deepStrictEqual(pythonCalls[0], ['auth', 'status']);
+      assert.strictEqual(pythonCalls.length, 2, 'Python filing must authenticate once and create once');
       assert.ok(pythonLog.includes('--body-file'));
       assert.ok(pythonLog.includes(pythonPrepared.path));
       assert.ok(!pythonLog.includes('title-secret'));

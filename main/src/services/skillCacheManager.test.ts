@@ -69,16 +69,24 @@ const pythonExecutable = pythonProbe.status === 0
   ? pythonProbe.stdout.trim()
   : 'python3';
 
-async function writeLocalRunpaneStub(root: string, source: string): Promise<void> {
+async function writeLocalRunpaneStub(root: string, source: string): Promise<string | undefined> {
   const cliPath = path.join(root, 'packages', 'runpane', 'dist', 'cli.js');
   await fs.mkdir(path.dirname(cliPath), { recursive: true });
   await fs.writeFile(cliPath, source, 'utf8');
+  if (process.platform !== 'win32') return undefined;
+
+  const shimDirectory = path.join(root, 'shim-bin');
+  const installedCliPath = path.join(shimDirectory, 'node_modules', 'runpane', 'dist', 'cli.js');
+  await fs.mkdir(path.dirname(installedCliPath), { recursive: true });
+  await fs.writeFile(installedCliPath, source, 'utf8');
+  await fs.writeFile(path.join(shimDirectory, 'runpane.cmd'), '@echo off\r\nexit /b 99\r\n', 'utf8');
+  return shimDirectory;
 }
 
-function localCliEnvironment(): NodeJS.ProcessEnv {
+function localCliEnvironment(shimDirectory?: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    PATH: path.dirname(process.execPath),
+    PATH: [shimDirectory, path.dirname(process.execPath)].filter(Boolean).join(path.delimiter),
   };
 }
 
@@ -152,6 +160,9 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).toContain('command = resolve_runpane() + (');
     expect(watcher).toContain('["watch", "--follow"]');
     expect(watcher).toContain('stderr=subprocess.STDOUT');
+    expect(watcher).toContain('encoding="utf-8"');
+    expect(watcher).toContain('errors="replace"');
+    expect(watcher).toContain('installed_cli = Path(executable).parent / "node_modules"');
     expect(watcher).toContain('WATCH ERROR child-exit');
     expect(watcher).not.toContain('DEVNULL');
     expect(watcher).not.toContain('json.loads');
@@ -165,14 +176,14 @@ describe('SkillCacheManager Pane Chat guide', () => {
       const manager = new SkillCacheManager();
       await manager.ensurePaneChatGuide();
       if (!tempDir) throw new Error('expected test temp directory');
-      await writeLocalRunpaneStub(tempDir, [
+      const shimDirectory = await writeLocalRunpaneStub(tempDir, [
         "process.stderr.write('daemon-stderr\\n');",
         'process.exit(3);',
       ].join('\n'));
       const result = spawnSync(pythonExecutable, [manager.paneWatchScriptPath, '--once'], {
         encoding: 'utf8',
         cwd: tempDir,
-        env: localCliEnvironment(),
+        env: localCliEnvironment(shimDirectory),
       });
       expect(result.status).toBe(3);
       expect(result.stdout).toContain('daemon-stderr');
@@ -196,11 +207,14 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).toContain('PROMPT = re.compile');
     expect(watcher).toContain('TERMINAL = re.compile');
     expect(watcher).toContain('shell=False');
+    expect(watcher).toContain('encoding="utf-8"');
+    expect(watcher).toContain('errors="replace"');
+    expect(watcher).toContain('installed_cli = Path(executable).parent / "node_modules"');
     expect(watcher).not.toContain('panels submit');
     const compiled = spawnSync(pythonExecutable, ['-m', 'py_compile', manager.paneWatchScriptPath, manager.paneIdleWatchScriptPath]);
     expect(compiled.status).toBe(0);
     if (!tempDir) throw new Error('expected test temp directory');
-    await writeLocalRunpaneStub(tempDir, `
+    const shimDirectory = await writeLocalRunpaneStub(tempDir, `
 const args = process.argv.slice(2);
 const panelIndex = args.indexOf('--panel');
 const panel = panelIndex >= 0 ? args[panelIndex + 1] : '';
@@ -216,7 +230,7 @@ const payloads = {
 const payload = payloads[panel] ?? ${JSON.stringify({ ok: true, paneId: 'pane-real', text: '❯ esc to interrupt', panelId: 'panel-1' })};
 process.stdout.write(JSON.stringify(payload) + '\\n');
 `);
-    const env = localCliEnvironment();
+    const env = localCliEnvironment(shimDirectory);
     const options = { encoding: 'utf8' as const, cwd: tempDir, env };
     const success = spawnSync(pythonExecutable, [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Demo'], options);
     expect(success.status).toBe(0);

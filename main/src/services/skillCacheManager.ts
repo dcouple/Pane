@@ -730,11 +730,17 @@ from pathlib import Path
 
 
 def resolve_runpane():
+    node = shutil.which("node")
     executable = shutil.which("runpane")
     if executable:
-        return [executable]
+        shell_shim = os.name == "nt" and Path(executable).suffix.lower() in (".cmd", ".bat")
+        if not shell_shim:
+            return [executable]
+        if node:
+            installed_cli = Path(executable).parent / "node_modules" / "runpane" / "dist" / "cli.js"
+            if installed_cli.is_file():
+                return [node, str(installed_cli)]
 
-    node = shutil.which("node")
     if node:
         for root in (Path.cwd(), *Path.cwd().parents):
             local_cli = root / "packages" / "runpane" / "dist" / "cli.js"
@@ -755,8 +761,16 @@ def resolve_runpane():
         except OSError:
             pass
 
-    npx = shutil.which("npx") or ("npx.cmd" if os.name == "nt" else "npx")
-    return [npx, "--yes", "runpane@latest"]
+    npx = shutil.which("npx")
+    if npx and not (os.name == "nt" and Path(npx).suffix.lower() in (".cmd", ".bat")):
+        return [npx, "--yes", "runpane@latest"]
+    if os.name == "nt" and node:
+        npx_cli = Path(node).parent / "node_modules" / "npm" / "bin" / "npx-cli.js"
+        if npx_cli.is_file():
+            return [node, str(npx_cli), "--yes", "runpane@latest"]
+    if os.name != "nt":
+        return ["npx", "--yes", "runpane@latest"]
+    raise RuntimeError("no safe RunPane launcher found; install the runpane npm or Python package")
 
 
 def main():
@@ -770,6 +784,8 @@ def main():
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             shell=False,
         )
@@ -817,10 +833,16 @@ class WatchArgumentParser(argparse.ArgumentParser):
 
 
 def resolve_runpane():
+    node = shutil.which("node")
     executable = shutil.which("runpane")
     if executable:
-        return [executable]
-    node = shutil.which("node")
+        shell_shim = os.name == "nt" and Path(executable).suffix.lower() in (".cmd", ".bat")
+        if not shell_shim:
+            return [executable]
+        if node:
+            installed_cli = Path(executable).parent / "node_modules" / "runpane" / "dist" / "cli.js"
+            if installed_cli.is_file():
+                return [node, str(installed_cli)]
     if node:
         for root in (Path.cwd(), *Path.cwd().parents):
             local_cli = root / "packages" / "runpane" / "dist" / "cli.js"
@@ -833,8 +855,16 @@ def resolve_runpane():
                 return [node, str(matches[0])]
         except OSError:
             pass
-    npx = shutil.which("npx") or ("npx.cmd" if os.name == "nt" else "npx")
-    return [npx, "--yes", "runpane@latest"]
+    npx = shutil.which("npx")
+    if npx and not (os.name == "nt" and Path(npx).suffix.lower() in (".cmd", ".bat")):
+        return [npx, "--yes", "runpane@latest"]
+    if os.name == "nt" and node:
+        npx_cli = Path(node).parent / "node_modules" / "npm" / "bin" / "npx-cli.js"
+        if npx_cli.is_file():
+            return [node, str(npx_cli), "--yes", "runpane@latest"]
+    if os.name != "nt":
+        return ["npx", "--yes", "runpane@latest"]
+    raise RuntimeError("no safe RunPane launcher found; install the runpane npm or Python package")
 
 
 def emit(message):
@@ -862,6 +892,8 @@ def read_screen(runpane, panel_id):
         runpane + ["panels", "screen", "--panel", panel_id, "--limit", "40", "--json"],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=20,
         shell=False,
     )
