@@ -62,6 +62,26 @@ interface IncomingMessageLike extends EventEmitter {
   resume: () => void;
 }
 
+const pythonProbe = spawnSync('python3', ['-c', 'import sys; print(sys.executable)'], {
+  encoding: 'utf8',
+});
+const pythonExecutable = pythonProbe.status === 0
+  ? pythonProbe.stdout.trim()
+  : 'python3';
+
+async function writeLocalRunpaneStub(root: string, source: string): Promise<void> {
+  const cliPath = path.join(root, 'packages', 'runpane', 'dist', 'cli.js');
+  await fs.mkdir(path.dirname(cliPath), { recursive: true });
+  await fs.writeFile(cliPath, source, 'utf8');
+}
+
+function localCliEnvironment(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: path.dirname(process.execPath),
+  };
+}
+
 describe('SkillCacheManager Pane Chat guide', () => {
   const originalPaneDir = process.env.PANE_DIR;
   let tempDir: string | undefined;
@@ -139,19 +159,20 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).not.toContain('IDLE_INTERVAL');
   });
 
-  it.skipIf(spawnSync('python3', ['--version']).status !== 0)(
+  it.skipIf(pythonProbe.status !== 0)(
     'makes launcher child failures unmistakable',
     async () => {
       const manager = new SkillCacheManager();
       await manager.ensurePaneChatGuide();
       if (!tempDir) throw new Error('expected test temp directory');
-      const binDir = path.join(tempDir, 'bin');
-      await fs.mkdir(binDir, { recursive: true });
-      const stub = path.join(binDir, 'runpane');
-      await fs.writeFile(stub, '#!/bin/sh\necho daemon-stderr >&2\nexit 3\n', { mode: 0o755 });
-      const result = spawnSync('python3', [manager.paneWatchScriptPath, '--once'], {
+      await writeLocalRunpaneStub(tempDir, [
+        "process.stderr.write('daemon-stderr\\n');",
+        'process.exit(3);',
+      ].join('\n'));
+      const result = spawnSync(pythonExecutable, [manager.paneWatchScriptPath, '--once'], {
         encoding: 'utf8',
-        env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` },
+        cwd: tempDir,
+        env: localCliEnvironment(),
       });
       expect(result.status).toBe(3);
       expect(result.stdout).toContain('daemon-stderr');
@@ -164,7 +185,9 @@ describe('SkillCacheManager Pane Chat guide', () => {
     await manager.ensurePaneChatGuide();
     const watcher = await fs.readFile(manager.paneIdleWatchScriptPath, 'utf8');
     const mode = (await fs.stat(manager.paneIdleWatchScriptPath)).mode & 0o777;
-    expect(mode).toBe(0o755);
+    if (process.platform !== 'win32') {
+      expect(mode).toBe(0o755);
+    }
     expect(watcher).toContain('WATCH OK fallback');
     expect(watcher).toContain('WATCH ERROR {type(error).__name__}: {clean(error)}');
     expect(watcher).toContain('def resolve_runpane');
@@ -174,67 +197,73 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).toContain('TERMINAL = re.compile');
     expect(watcher).toContain('shell=False');
     expect(watcher).not.toContain('panels submit');
-    const compiled = spawnSync('python3', ['-m', 'py_compile', manager.paneWatchScriptPath, manager.paneIdleWatchScriptPath]);
+    const compiled = spawnSync(pythonExecutable, ['-m', 'py_compile', manager.paneWatchScriptPath, manager.paneIdleWatchScriptPath]);
     expect(compiled.status).toBe(0);
     if (!tempDir) throw new Error('expected test temp directory');
-    const binDir = path.join(tempDir, 'fallback-bin');
-    await fs.mkdir(binDir, { recursive: true });
-    const stub = path.join(binDir, 'runpane');
-    await fs.writeFile(stub, [
-      '#!/bin/sh',
-      'case "$*" in *"--panel bad"*) exit 3 ;; esac',
-      'case "$*" in *"--panel array"*) printf "%s\\n" "[]"; exit 0 ;; esac',
-      `case "$*" in *"--panel error"*) printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'API Error: broken', panelId: 'error', composer: { hasUndeliveredText: false } })}'; exit 0 ;; esac`,
-      `case "$*" in *"--panel working"*) printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'esc to interrupt', panelId: 'working', composer: { hasUndeliveredText: false } })}'; exit 0 ;; esac`,
-      `printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: '❯ esc to interrupt', panelId: 'panel-1' })}'`,
-    ].join('\n'), { mode: 0o755 });
-    const env = { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` };
-    const success = spawnSync('python3', [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Demo'], { encoding: 'utf8', env });
+    await writeLocalRunpaneStub(tempDir, `
+const args = process.argv.slice(2);
+const panelIndex = args.indexOf('--panel');
+const panel = panelIndex >= 0 ? args[panelIndex + 1] : '';
+if (panel === 'bad') process.exit(3);
+if (panel === 'array') {
+  process.stdout.write('[]\\n');
+  process.exit(0);
+}
+const payloads = {
+  error: ${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'API Error: broken', panelId: 'error', composer: { hasUndeliveredText: false } })},
+  working: ${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'esc to interrupt', panelId: 'working', composer: { hasUndeliveredText: false } })},
+};
+const payload = payloads[panel] ?? ${JSON.stringify({ ok: true, paneId: 'pane-real', text: '❯ esc to interrupt', panelId: 'panel-1' })};
+process.stdout.write(JSON.stringify(payload) + '\\n');
+`);
+    const env = localCliEnvironment();
+    const options = { encoding: 'utf8' as const, cwd: tempDir, env };
+    const success = spawnSync(pythonExecutable, [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Demo'], options);
     expect(success.status).toBe(0);
     expect(success.stdout).toContain('IDLE Demo 3m pane pane-real panel panel-1');
     expect(success.stdout).not.toContain('pane Demo');
-    const working = spawnSync('python3', [
+    const working = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'working:Working',
-    ], { encoding: 'utf8', env });
+    ], options);
     expect(working.status).toBe(0);
     expect(working.stdout).not.toContain('IDLE Working');
-    const classifiedError = spawnSync('python3', [
+    const classifiedError = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'error:Broken',
-    ], { encoding: 'utf8', env });
+    ], options);
     expect(classifiedError.status).toBe(2);
     expect(classifiedError.stdout).toContain('WATCH ERROR fallback-panel Broken pane pane-real panel error');
-    const failure = spawnSync('python3', [
+    const failure = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'panel-1:Demo',
       'bad:Broken',
-    ], { encoding: 'utf8', env });
+    ], options);
     expect(failure.status).toBe(2);
     expect(failure.stdout).toContain('WATCH ERROR RuntimeError: screen-failed panel bad');
-    const invalidJson = spawnSync('python3', [
+    const invalidJson = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'array:Broken',
-    ], { encoding: 'utf8', env });
+    ], options);
     expect(invalidJson.status).toBe(2);
     expect(invalidJson.stdout).toContain('WATCH ERROR RuntimeError: screen-invalid panel array');
-    const malformedTarget = spawnSync('python3', [
+    const malformedTarget = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'missing-separator',
-    ], { encoding: 'utf8', env });
+    ], options);
     expect(malformedTarget.status).toBe(2);
     expect(malformedTarget.stdout).toContain('WATCH ERROR ValueError: targets must use PANEL_ID:NAME');
     expect(malformedTarget.stderr).toBe('');
-    const malformedInterval = spawnSync('python3', [
+    const malformedInterval = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
       'panel-1:Demo',
-    ], { encoding: 'utf8', env: { ...env, IDLE_INTERVAL: 'not-a-number' } });
+    ], { ...options, env: { ...env, IDLE_INTERVAL: 'not-a-number' } });
     expect(malformedInterval.status).toBe(2);
     expect(malformedInterval.stdout).toContain('WATCH ERROR ValueError: invalid literal for int()');
     expect(malformedInterval.stderr).toBe('');

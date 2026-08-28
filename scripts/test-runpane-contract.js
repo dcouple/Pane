@@ -2201,7 +2201,9 @@ function checkDoctorReportSafety() {
   try {
     assert.strictEqual(first.sha256, second.sha256, 'doctor report hash must be deterministic');
     assert.strictEqual(first.filed, false);
-    assert.strictEqual(fs.statSync(first.path).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(first.path).mode & 0o777, 0o600);
+    }
     const contents = fs.readFileSync(first.path, 'utf8');
     assert.ok(contents.includes('daemon unreachable'));
     assert.ok(contents.includes('~/.pane'));
@@ -2230,7 +2232,9 @@ request = json.loads(sys.stdin.read())
 parsed = SimpleNamespace(body_file=request["bodyFile"], title=request["title"])
 print(json.dumps(prepare_doctor_failure_report(parsed, request["doctor"])))
 `, JSON.stringify({ bodyFile: evidencePath, title: requestedTitle, doctor: fakeDoctor })));
-    assert.strictEqual(fs.statSync(pythonPrepared.path).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') {
+      assert.strictEqual(fs.statSync(pythonPrepared.path).mode & 0o777, 0o600);
+    }
     pythonReportPath = pythonPrepared.path;
     assert.strictEqual(pythonPrepared.sha256, first.sha256, 'npm and pip report bodies must match');
     assert.strictEqual(pythonPrepared.redactionCount, first.redactionCount);
