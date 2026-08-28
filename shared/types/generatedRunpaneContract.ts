@@ -26,7 +26,14 @@ export const RUNPANE_CONTRACT = {
     "format": "auto",
     "dryRun": false,
     "yes": false,
-    "verbose": false
+    "verbose": false,
+    "watch": {
+      "format": "lines",
+      "heartbeatSeconds": 60,
+      "idleAfterMs": 600000,
+      "agentsOnly": true,
+      "includeHeldInputPresence": true
+    }
   },
   "enums": {
     "installTargets": [
@@ -117,7 +124,8 @@ export const RUNPANE_CONTRACT = {
       "name": "doctor",
       "summary": "Run platform, release, installed Pane, daemon reachability, and remote setup diagnostics.",
       "usage": [
-        "runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]"
+        "runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]",
+        "runpane doctor --report [--title <text>] --body-file <path|-> [--yes] [--json]"
       ],
       "jsonSchemas": [
         "doctorResult"
@@ -213,7 +221,7 @@ export const RUNPANE_CONTRACT = {
       "name": "watch",
       "summary": "Wait for workspace agent and Pane transitions using a daemon-held cursor.",
       "usage": [
-        "runpane watch [--as <name>|--since <generation>] [--follow] [--kinds <kind,...>] [--pane <id>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
+        "runpane watch [--as <name>|--since <generation>] [--follow] [--format <lines|json>] [--heartbeat <seconds>] [--idle-after <ms>] [--all-managed|--pane <id>] [--include-shells] [--self-test] [--kinds <kind,...>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
       ],
       "jsonSchemas": [
         "workspaceWaitRequest",
@@ -613,6 +621,31 @@ export const RUNPANE_CONTRACT = {
         "name": "--name-contains",
         "value": "<text>",
         "description": "Limit workspace events to Pane names containing text."
+      },
+      {
+        "name": "--exclude-pane",
+        "value": "<pane-id>",
+        "description": "Exclude a Pane from workspace watch results; repeatable."
+      },
+      {
+        "name": "--format",
+        "value": "<lines|json>",
+        "description": "Watch output format; scoped to the watch command."
+      },
+      {
+        "name": "--heartbeat",
+        "value": "<seconds>",
+        "description": "Maximum healthy silence in follow mode; 0 disables heartbeats."
+      },
+      {
+        "name": "--idle-after",
+        "value": "<milliseconds>",
+        "description": "Emit agent.idle after this READY duration; 0 disables idle events."
+      },
+      {
+        "name": "--body-file",
+        "value": "<path|->",
+        "description": "Read diagnostic report evidence from a file or stdin."
       }
     ],
     "localBoolean": [
@@ -655,6 +688,30 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--include-held-input",
         "description": "Include up to 120 characters of unsubmitted composer text in ready events."
+      },
+      {
+        "name": "--agents-only",
+        "description": "Limit workspace events to CLI agent panels."
+      },
+      {
+        "name": "--all-managed",
+        "description": "Watch all non-archived, non-hidden managed panes."
+      },
+      {
+        "name": "--include-shells",
+        "description": "Include ordinary shell panels in follow mode."
+      },
+      {
+        "name": "--no-held-input",
+        "description": "Disable redacted STUCK detection in lines follow mode."
+      },
+      {
+        "name": "--self-test",
+        "description": "Probe the current daemon watch path without advancing a named cursor."
+      },
+      {
+        "name": "--report",
+        "description": "Prepare a redacted doctor report; external filing still requires --yes."
       }
     ]
   },
@@ -668,6 +725,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane doctor --report --body-file <path|->",
         "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
@@ -676,7 +734,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes cost [--repo <selector>] [--pane <pane-id>] [--json]",
         "  runpane workspace state [--repo <selector>] [--json]",
-        "  runpane watch [--as <name>|--since <generation>] [--follow] [--json]",
+        "  runpane watch --follow",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
         "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes",
         "  runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
@@ -776,6 +834,7 @@ export const RUNPANE_CONTRACT = {
       "doctor": [
         "Usage:",
         "  runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]",
+        "  runpane doctor --report [--title <text>] --body-file <path|-> [--yes] [--json]",
         "",
         "Checks wrapper/runtime details, release metadata, installed Pane detection, and Pane daemon reachability.",
         "",
@@ -785,6 +844,10 @@ export const RUNPANE_CONTRACT = {
         "  --pane-path <path>             Inspect a specific Pane executable",
         "  --format <format>              Release artifact format to inspect",
         "  --verbose                      Print extra diagnostics",
+        "  --report                       Prepare a redacted, inspectable report",
+        "  --body-file <path|->           Read report evidence from a file or stdin",
+        "  --title <text>                 Report title",
+        "  --yes                          Confirm creating one dcouple/Pane issue",
         "",
         "Agent discovery:",
         "  runpane doctor --json",
@@ -871,7 +934,7 @@ export const RUNPANE_CONTRACT = {
         "",
         "Usage:",
         "  runpane workspace state [--repo <selector>] [--json]",
-        "  runpane watch [--as <name>|--since <generation>] [--follow] [options]"
+        "  runpane watch --follow"
       ],
       "workspace state": [
         "Usage:",
@@ -890,6 +953,14 @@ export const RUNPANE_CONTRACT = {
         "  --since <generation>           Use an explicit cursor instead",
         "  --from <now|earliest>          Starting point for a new named cursor",
         "  --follow                       Continue waiting until interrupted",
+        "  --format <lines|json>          Output format; lines is the follow default",
+        "  --heartbeat <seconds>          Healthy-silence bound; defaults to 60 under --follow",
+        "  --idle-after <ms>              Re-firing READY idle interval; defaults to 600000 under --follow",
+        "  --all-managed                  Explicitly watch all managed panes",
+        "  --include-shells               Include ordinary shell panels",
+        "  --agents-only                  Limit to CLI agent panels",
+        "  --exclude-pane <id>            Exclude a Pane; repeatable",
+        "  --self-test                    Anonymous, read-only daemon path probe",
         "  --kinds <kind,...>             Limit event kinds",
         "  --pane <id>                    Limit to a Pane; repeatable",
         "  --repo <selector>              Limit to a saved repository",
@@ -897,8 +968,9 @@ export const RUNPANE_CONTRACT = {
         "  --timeout-ms <ms>              Wait timeout; 0 polls once",
         "  --limit <count>                Maximum entries per response",
         "  --ack-now                      Use at-most-once named-cursor delivery",
-        "  --include-held-input           Include unsubmitted composer text",
-        "  --json                         Emit one NDJSON line per entry"
+        "  --include-held-input           Include unsubmitted composer text in JSON",
+        "  --no-held-input                Disable redacted STUCK detection",
+        "  --json                         Alias for --format json"
       ],
       "panes create": [
         "Usage:",
@@ -1157,6 +1229,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane update [options]",
         "  runpane version",
         "  runpane doctor",
+        "  runpane doctor --report --body-file <path|->",
         "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
@@ -1165,7 +1238,7 @@ export const RUNPANE_CONTRACT = {
         "  runpane panes list [--repo <selector>] [--json]",
         "  runpane panes cost [--repo <selector>] [--pane <pane-id>] [--json]",
         "  runpane workspace state [--repo <selector>] [--json]",
-        "  runpane watch [--as <name>|--since <generation>] [--follow] [--json]",
+        "  runpane watch --follow",
         "  runpane panes create --repo <selector> --name <name> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] [--wait-ready]",
         "  runpane panes archive --pane <pane-id> [--source user|agent] [--force] [--dry-run] --yes",
         "  python -m runpane panels create --pane <pane-id> --agent <codex|claude|cursor> [--source user|agent] [--focus|--no-focus] --yes",
@@ -1254,6 +1327,7 @@ export const RUNPANE_CONTRACT = {
       "doctor": [
         "Usage:",
         "  runpane doctor [--json] [--pane-dir <path>] [--pane-path <path>] [--format <format>] [--verbose]",
+        "  runpane doctor --report [--title <text>] --body-file <path|-> [--yes] [--json]",
         "",
         "Checks wrapper/runtime details, release metadata, installed Pane detection, and Pane daemon reachability.",
         "",
@@ -1263,6 +1337,10 @@ export const RUNPANE_CONTRACT = {
         "  --pane-path <path>",
         "  --format <format>",
         "  --verbose",
+        "  --report",
+        "  --body-file <path|->",
+        "  --title <text>",
+        "  --yes",
         "",
         "Agent discovery:",
         "  runpane doctor --json",
@@ -1349,7 +1427,7 @@ export const RUNPANE_CONTRACT = {
         "",
         "Usage:",
         "  runpane workspace state [--repo <selector>] [--json]",
-        "  runpane watch [--as <name>|--since <generation>] [--follow] [options]"
+        "  runpane watch --follow"
       ],
       "workspace state": [
         "Usage:",
@@ -1368,6 +1446,14 @@ export const RUNPANE_CONTRACT = {
         "  --since <generation>",
         "  --from <now|earliest>",
         "  --follow",
+        "  --format <lines|json>",
+        "  --heartbeat <seconds>",
+        "  --idle-after <ms>",
+        "  --all-managed",
+        "  --include-shells",
+        "  --agents-only",
+        "  --exclude-pane <id>            Repeatable",
+        "  --self-test",
         "  --kinds <kind,...>",
         "  --pane <id>                    Repeatable",
         "  --repo <selector>",
@@ -1376,7 +1462,8 @@ export const RUNPANE_CONTRACT = {
         "  --limit <count>",
         "  --ack-now",
         "  --include-held-input",
-        "  --json"
+        "  --no-held-input",
+        "  --json                         Alias for --format json"
       ],
       "panes create": [
         "Usage:",
@@ -1819,6 +1906,37 @@ export const RUNPANE_CONTRACT = {
         "--json",
         "--pane-dir",
         "/tmp/pane"
+      ],
+      [
+        "doctor",
+        "--report",
+        "--title",
+        "watch failed",
+        "--body-file",
+        "/tmp/watch-evidence.txt",
+        "--json"
+      ],
+      [
+        "watch",
+        "--as",
+        "monitor",
+        "--from",
+        "earliest",
+        "--follow",
+        "--format",
+        "lines",
+        "--heartbeat",
+        "60",
+        "--idle-after",
+        "600000",
+        "--all-managed",
+        "--agents-only",
+        "--exclude-pane",
+        "pane-old",
+        "--kinds",
+        "agent.ready,agent.idle",
+        "--include-held-input",
+        "--self-test"
       ],
       [
         "daemon",
@@ -3550,6 +3668,7 @@ export const RUNPANE_CONTRACT = {
             "agent.busy",
             "agent.blocked",
             "agent.unknown",
+            "agent.idle",
             "pane.created",
             "pane.gone",
             "panel.exited"
@@ -3612,8 +3731,17 @@ export const RUNPANE_CONTRACT = {
         "settledMs": {
           "type": "number"
         },
+        "idleMs": {
+          "type": "number"
+        },
+        "idleCount": {
+          "type": "number"
+        },
         "heldInput": {
           "type": "string"
+        },
+        "heldInputPresent": {
+          "type": "boolean"
         },
         "exitCode": {
           "type": "number"
@@ -3660,6 +3788,12 @@ export const RUNPANE_CONTRACT = {
             "type": "string"
           }
         },
+        "excludePaneIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "repo": {
           "oneOf": [
             {
@@ -3688,11 +3822,23 @@ export const RUNPANE_CONTRACT = {
         "nameContains": {
           "type": "string"
         },
+        "agentsOnly": {
+          "type": "boolean"
+        },
         "ackNow": {
           "type": "boolean"
         },
         "includeHeldInput": {
           "type": "boolean"
+        },
+        "includeHeldInputPresence": {
+          "type": "boolean"
+        },
+        "idleAfterMs": {
+          "type": "number"
+        },
+        "idleWindowStartMs": {
+          "type": "number"
         }
       },
       "additionalProperties": false
@@ -5524,11 +5670,34 @@ export const RUNPANE_CONTRACT = {
             "name": "--verbose",
             "required": false,
             "description": "Print extra diagnostics."
+          },
+          {
+            "name": "--report",
+            "required": false,
+            "description": "Prepare a redacted, inspectable diagnostic report."
+          },
+          {
+            "name": "--body-file",
+            "value": "<path|->",
+            "required": false,
+            "description": "Read report evidence from a file or stdin."
+          },
+          {
+            "name": "--title",
+            "value": "<text>",
+            "required": false,
+            "description": "Report title."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Confirm creating exactly one dcouple/Pane issue."
           }
         ],
         "examples": [
           "runpane doctor --json",
-          "runpane doctor"
+          "runpane doctor",
+          "runpane doctor --report --title \"runpane watch failed\" --body-file ./watch.txt --json"
         ],
         "jsonSchemas": [
           "doctorResult"
@@ -6609,7 +6778,7 @@ export const RUNPANE_CONTRACT = {
       "watch": {
         "name": "watch",
         "summary": "Wait for workspace transitions using the daemon journal.",
-        "details": "Named cursors persist in the Pane data directory so separate invocations do not need local state.",
+        "details": "`runpane watch --follow` is the canonical zero-flag monitor: lines, 60-second heartbeats, 10-minute re-firing IDLE, managed-agent scope, and redacted STUCK detection are follow defaults. Named cursors persist in the Pane data directory.",
         "requiresPaneDaemon": true,
         "mutates": false,
         "arguments": [
@@ -6631,16 +6800,51 @@ export const RUNPANE_CONTRACT = {
             "description": "Continue waiting until interrupted."
           },
           {
+            "name": "--format",
+            "value": "<lines|json>",
+            "required": false,
+            "description": "Output format; lines is the follow default."
+          },
+          {
+            "name": "--heartbeat",
+            "value": "<seconds>",
+            "required": false,
+            "description": "Healthy-silence bound; defaults to 60 under follow."
+          },
+          {
+            "name": "--idle-after",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Re-firing READY idle interval; defaults to 600000 under follow."
+          },
+          {
+            "name": "--all-managed",
+            "required": false,
+            "description": "Explicit spelling for the all-managed default scope."
+          },
+          {
+            "name": "--include-shells",
+            "required": false,
+            "description": "Include ordinary shell panels."
+          },
+          {
+            "name": "--self-test",
+            "required": false,
+            "description": "Probe the watch path anonymously without advancing a named cursor."
+          },
+          {
             "name": "--json",
             "required": false,
-            "description": "Emit one NDJSON line per entry."
+            "description": "Emit structured NDJSON; held-input content remains opt-in."
           }
         ],
         "examples": [
+          "runpane watch --follow",
           "runpane watch --as monitor --follow --json"
         ],
         "notes": [
-          "Journal loss is surfaced through reset and dropped metadata."
+          "Journal loss is surfaced through reset and dropped metadata.",
+          "The daemon treats omitted idleAfterMs as disabled so older clients never receive agent.idle unexpectedly."
         ]
       }
     },

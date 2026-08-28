@@ -33,6 +33,7 @@ export interface WorkspaceJournalFilter {
   nameContains?: string;
   agentsOnly?: boolean;
   includeHeldInput?: boolean;
+  includeHeldInputPresence?: boolean;
 }
 
 export interface WorkspaceJournalReadResult {
@@ -90,6 +91,7 @@ export class WorkspaceJournal implements PaneEventSink {
   private readonly ring: RunpaneWorkspaceEntry[] = [];
   private readonly paneById = new Map<string, WorkspacePaneMetadata>();
   private readonly stateByPanel = new Map<string, AgentState>();
+  private readonly readySinceByPanel = new Map<string, number>();
   private readonly exitedPanels = new Set<string>();
   private readonly waiters = new Set<WorkspaceWaiter>();
   private readonly capacity: number;
@@ -111,6 +113,10 @@ export class WorkspaceJournal implements PaneEventSink {
 
   get oldestGeneration(): number {
     return this.ring[0]?.gen ?? this.nextGeneration + 1;
+  }
+
+  readySince(panelId: string): number | undefined {
+    return this.readySinceByPanel.get(panelId);
   }
 
   rememberPane(metadata: WorkspacePaneMetadata): void {
@@ -137,7 +143,7 @@ export class WorkspaceJournal implements PaneEventSink {
       .filter(entry => entry.gen > effectiveCursor && matchesFilter(entry, filter));
     const entries = matchingEntries
       .slice(0, Math.max(1, limit))
-      .map(entry => filter.includeHeldInput ? entry : omitHeldInput(entry));
+      .map(entry => projectWorkspaceEntry(entry, filter));
     const generation = matchingEntries.length > entries.length
       ? entries.at(-1)?.gen ?? effectiveCursor
       : this.nextGeneration;
@@ -218,6 +224,7 @@ export class WorkspaceJournal implements PaneEventSink {
       if (this.exitedPanels.has(panelId)) return;
       this.exitedPanels.add(panelId);
       this.stateByPanel.delete(panelId);
+      this.readySinceByPanel.delete(panelId);
       const pane = this.lookupPane(paneId);
       if (!pane) return;
       const panel = this.resolvePanel?.(panelId);
@@ -254,6 +261,7 @@ export class WorkspaceJournal implements PaneEventSink {
 
     const previous = this.stateByPanel.get(panelId);
     this.stateByPanel.set(panelId, state);
+    if (state !== 'idle') this.readySinceByPanel.delete(panelId);
     if (previous === state) return;
 
     const kind = agentEntryKind(state, previous);
@@ -261,6 +269,7 @@ export class WorkspaceJournal implements PaneEventSink {
     const pane = this.lookupPane(paneId);
     if (!pane) return;
     const now = this.now();
+    if (kind === 'agent.ready') this.readySinceByPanel.set(panelId, now);
     const lastActivityMs = panel?.lastActivityAt ? Date.parse(panel.lastActivityAt) : Number.NaN;
     const settledMs = kind === 'agent.ready' && Number.isFinite(lastActivityMs)
       ? Math.max(0, now - lastActivityMs)
@@ -319,11 +328,18 @@ function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFil
   return true;
 }
 
-function omitHeldInput(entry: RunpaneWorkspaceEntry): RunpaneWorkspaceEntry {
-  if (entry.heldInput === undefined) return entry;
-  const sanitized = { ...entry };
-  delete sanitized.heldInput;
-  return sanitized;
+export function projectWorkspaceEntry(
+  entry: RunpaneWorkspaceEntry,
+  filter: WorkspaceJournalFilter,
+): RunpaneWorkspaceEntry {
+  const projected = { ...entry };
+  if (!filter.includeHeldInput) delete projected.heldInput;
+  if (filter.includeHeldInputPresence && (entry.heldInputPresent || entry.heldInput !== undefined)) {
+    projected.heldInputPresent = true;
+  } else {
+    delete projected.heldInputPresent;
+  }
+  return projected;
 }
 
 function truncateHeldInput(value: string | undefined): string | undefined {

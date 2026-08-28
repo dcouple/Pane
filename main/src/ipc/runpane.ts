@@ -12,6 +12,7 @@ import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/te
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { fastCheckWorkingDirectory, listCommitsAhead } from '../services/gitPlumbingCommands';
 import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEvidence';
+import { projectWorkspaceEntry } from '../services/workspaceJournal';
 import type { ArchiveProgressManager, SerializedArchiveTask } from '../services/archiveProgressManager';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { Project } from '../database/models';
@@ -94,6 +95,11 @@ import { WorkspaceJournal, type WorkspaceJournalFilter } from '../services/works
 import { WorkspaceStateReader } from '../services/workspaceStateReader';
 import { WorkspaceCursorStore } from '../services/workspaceCursorStore';
 import { usageManager } from '../services/usage/usageManager';
+import {
+  dueIdleEntries,
+  nextIdleDeadline,
+  type WorkspaceIdleCandidate,
+} from '../services/workspaceIdleTracker';
 
 const RUNPANE_CHANNELS = [
   'runpane:doctor',
@@ -161,6 +167,7 @@ export function registerRunpaneHandlers(
   const workspaceCursorStore = services.workspaceCursorStore ?? new WorkspaceCursorStore(
     path.join(getAppDirectory(), 'workspace-cursors.json'),
   );
+  const lastReadAtByConsumer = new Map<string, number>();
   services.workspaceJournal = workspaceJournal;
   services.workspaceStateReader = workspaceStateReader;
   services.workspaceCursorStore = workspaceCursorStore;
@@ -796,11 +803,26 @@ export function registerRunpaneHandlers(
         nameContains: normalized.nameContains,
         agentsOnly: normalized.agentsOnly,
         includeHeldInput: normalized.includeHeldInput,
+        includeHeldInputPresence: normalized.includeHeldInputPresence,
       };
       const timeoutMs = Math.min(normalized.timeoutMs ?? DEFAULT_WORKSPACE_WAIT_TIMEOUT_MS, MAX_WORKSPACE_WAIT_TIMEOUT_MS);
       const limit = normalized.limit ?? DEFAULT_WORKSPACE_WAIT_LIMIT;
+      const idleAfterMs = normalized.idleAfterMs ?? 0;
+      const requestStartedAt = Date.now();
+      const idleWindowStart = normalized.idleWindowStartMs ?? (normalized.as
+        ? lastReadAtByConsumer.get(normalized.as) ?? 0
+        : normalized.since !== undefined ? 0 : requestStartedAt);
       let cursor = normalized.since ?? workspaceJournal.generation;
       let reset: RunpaneWorkspaceWaitResult['reset'];
+      const currentIdleEntries = (): RunpaneWorkspaceEntry[] => dueIdleEntries(
+        workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
+        idleAfterMs,
+        idleWindowStart,
+        Date.now(),
+        workspaceJournal.generation,
+      )
+        .filter(entry => workspaceEntryMatches(entry, filter))
+        .map(entry => projectWorkspaceEntry(entry, filter));
 
       if (normalized.as) {
         const evicted = workspaceCursorStore.evictStale();
@@ -825,33 +847,53 @@ export function registerRunpaneHandlers(
         const silentBaseline = reset.reason === 'first-use' && normalized.from !== 'earliest';
         const baseline = silentBaseline ? [] : workspaceStateReader.read(project?.id).entries
           .filter(entry => workspaceEntryMatches(entry, filter))
+          .map(entry => projectWorkspaceEntry(entry, filter))
           .map(entry => reset?.reason === 'epoch-changed' ? { ...entry, changedWhileAway: true as const } : entry);
+        const entries = [...baseline, ...currentIdleEntries()];
+        if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
         return {
           ok: true,
           epoch: workspaceJournal.epoch,
           generation: workspaceJournal.generation,
-          entries: baseline,
+          entries,
           timedOut: false,
           reset,
           nextCommand: workspaceNextCommand(normalized, workspaceJournal.generation),
         };
       }
 
-      const waited = await workspaceJournal.waitAfter(
-        cursor,
-        filter,
-        timeoutMs,
-        limit,
-        normalized.as ?? 'anonymous',
-      );
+      const initial = workspaceJournal.readAfter(cursor, filter, limit);
+      const initialIdle = currentIdleEntries();
+      let waited: Awaited<ReturnType<WorkspaceJournal['waitAfter']>>;
+      if (initial.entries.length > 0 || initial.dropped !== undefined || initialIdle.length > 0) {
+        waited = { ...initial, timedOut: initial.entries.length === 0 };
+      } else {
+        const deadline = nextIdleDeadline(
+          workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
+          idleAfterMs,
+          Date.now(),
+        );
+        const parkMs = deadline === undefined
+          ? timeoutMs
+          : Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
+        waited = await workspaceJournal.waitAfter(
+          cursor,
+          filter,
+          parkMs,
+          limit,
+          normalized.as ?? 'anonymous',
+        );
+      }
       if (waited.dropped) {
         reset = { reason: 'cursor-truncated' };
       }
       let entries = waited.entries;
       if (reset) {
         entries = workspaceStateReader.read(project?.id).entries
-          .filter(entry => workspaceEntryMatches(entry, filter));
+          .filter(entry => workspaceEntryMatches(entry, filter))
+          .map(entry => projectWorkspaceEntry(entry, filter));
       }
+      entries = [...entries, ...currentIdleEntries()];
 
       if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
         workspaceCursorStore.advance(
@@ -861,13 +903,14 @@ export function registerRunpaneHandlers(
           !normalized.ackNow,
         );
       }
+      if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
 
       return {
         ok: true,
         epoch: workspaceJournal.epoch,
         generation: waited.generation,
         entries,
-        timedOut: waited.timedOut,
+        timedOut: entries.length === 0 && waited.timedOut,
         dropped: waited.dropped,
         reset,
         nextCommand: workspaceNextCommand(normalized, waited.generation),
@@ -2055,6 +2098,9 @@ function parseWorkspaceWaitRequest(value: PaneCommandValue): RunpaneWorkspaceWai
     agentsOnly: optionalBoolean(value.agentsOnly),
     ackNow: optionalBoolean(value.ackNow),
     includeHeldInput: optionalBoolean(value.includeHeldInput),
+    includeHeldInputPresence: optionalBoolean(value.includeHeldInputPresence),
+    idleAfterMs: parseNonNegativeInteger(value.idleAfterMs, 'idleAfterMs'),
+    idleWindowStartMs: parseNonNegativeInteger(value.idleWindowStartMs, 'idleWindowStartMs'),
   };
 }
 
@@ -2063,6 +2109,7 @@ const workspaceEntryKindSchema = boundary.enumeration(
   'agent.busy',
   'agent.blocked',
   'agent.unknown',
+  'agent.idle',
   'pane.created',
   'pane.gone',
   'panel.exited',
@@ -2923,6 +2970,8 @@ function createWorkspaceJournal(services: AppServices): WorkspaceJournal {
       return {
         panelId,
         paneId: panel.sessionId,
+        panelTitle: panel.title,
+        isCliPanel: snapshot?.isCliPanel ?? optionalBoolean(customState.isCliPanel) ?? false,
         agentType: snapshot?.agentType ?? optionalString(customState.agentType),
         lastActivityAt: snapshot?.lastActivityTime,
         heldInput: snapshot?.screenText ? composerEvidenceText(snapshot.screenText) : undefined,
@@ -2958,7 +3007,22 @@ function workspaceEntryMatches(
 
 function workspaceNextCommand(request: RunpaneWorkspaceWaitRequest, generation: number): string {
   const cursor = request.as ? `--as ${request.as}` : `--since ${generation}`;
-  return `runpane watch ${cursor} --json`;
+  return `runpane watch ${cursor}`;
+}
+
+function workspaceIdleCandidates(
+  workspaceStateReader: WorkspaceStateReader,
+  workspaceJournal: WorkspaceJournal,
+  repoId?: number,
+): WorkspaceIdleCandidate[] {
+  return workspaceStateReader.listManagedCliPanels(repoId).flatMap((panel) => {
+    if (panel.agentState !== 'idle' || !panel.agentType) return [];
+    const snapshotTime = panel.lastActivityTime ? Date.parse(panel.lastActivityTime) : Number.NaN;
+    const idleSinceMs = workspaceJournal.readySince(panel.panelId)
+      ?? (Number.isFinite(snapshotTime) ? snapshotTime : undefined);
+    if (idleSinceMs === undefined) return [];
+    return [{ ...panel, agentType: panel.agentType, idleSinceMs }];
+  });
 }
 
 function trackRunpaneAction(

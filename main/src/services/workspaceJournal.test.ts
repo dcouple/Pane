@@ -74,6 +74,36 @@ describe('WorkspaceJournal', () => {
     const entries = journal.readAfter(0, { includeHeldInput: true }).entries;
     expect(entries.map(entry => entry.kind)).toEqual(['pane.created', 'agent.busy', 'agent.ready', 'pane.gone']);
     expect(entries[2]).toMatchObject({ paneName: 'Monitor', settledMs: 20_000, heldInput: 'ship it' });
+    const presenceOnly = journal.readAfter(0, { includeHeldInputPresence: true }).entries[2];
+    expect(presenceOnly).toMatchObject({ heldInputPresent: true });
+    expect(presenceOnly).not.toHaveProperty('heldInput');
+    expect(journal.readySince('panel-1')).toBe(now);
+  });
+
+  it('clears the ready clock when a panel becomes busy or exits', () => {
+    let now = 1_000;
+    const journal = new WorkspaceJournal({
+      now: () => now,
+      resolvePanel: panelId => ({ panelId, paneId: 'pane-1', isCliPanel: true }),
+    });
+    journal.send('session:created', { id: 'pane-1', name: 'Monitor' });
+    journal.send('panel:agentStatus', { panelId: 'panel-1', sessionId: 'pane-1', state: 'working' });
+    now = 2_000;
+    journal.send('panel:agentStatus', { panelId: 'panel-1', sessionId: 'pane-1', state: 'idle' });
+    expect(journal.readySince('panel-1')).toBe(2_000);
+
+    journal.send('panel:agentStatus', { panelId: 'panel-1', sessionId: 'pane-1', state: 'working' });
+    expect(journal.readySince('panel-1')).toBeUndefined();
+
+    now = 3_000;
+    journal.send('panel:agentStatus', { panelId: 'panel-1', sessionId: 'pane-1', state: 'idle' });
+    expect(journal.readySince('panel-1')).toBe(3_000);
+    journal.send('panel:event', {
+      type: 'terminal:exit',
+      source: { panelId: 'panel-1', sessionId: 'pane-1' },
+      data: { exitCode: 0 },
+    });
+    expect(journal.readySince('panel-1')).toBeUndefined();
   });
 
   it('forgets panel state when a terminal exits', () => {

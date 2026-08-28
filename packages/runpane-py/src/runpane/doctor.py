@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import platform as system_platform
 import re
+import shlex
 import shutil
 import subprocess
+import sys
+import tempfile
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
@@ -24,12 +29,189 @@ REMOTE_DAEMON_UNIT = "pane-remote-daemon.service"
 def run_doctor(parsed, source: str = "pip") -> int:
     report = build_doctor_report(parsed, source)
 
+    if parsed.report:
+        prepared = prepare_doctor_failure_report(parsed, report)
+        if parsed.yes:
+            file_doctor_failure_report(prepared)
+        if parsed.json:
+            print(json.dumps(without_none(prepared), indent=2))
+        else:
+            print(f"Report: {prepared['path']}")
+            print(f"SHA-256: {prepared['sha256']}")
+            print(f"Redactions: {prepared['redactionCount']}")
+            if prepared.get("issueUrl"):
+                print(f"Issue: {prepared['issueUrl']}")
+            else:
+                print(f"Proposed: {prepared['proposedCommand']}")
+            if prepared.get("error"):
+                print(f"Report filing failed: {prepared['error']}", file=sys.stderr)
+        return 0 if prepared["ok"] else 1
+
     if parsed.json:
         print(json.dumps(without_none(report), indent=2))
         return 0
 
     render_doctor_text(report)
     return 0 if report["release"]["ok"] else 1
+
+
+def prepare_doctor_failure_report(parsed, doctor: Dict[str, Any]) -> Dict[str, Any]:
+    if not parsed.body_file:
+        raise ValueError("runpane doctor --report requires --body-file <path|->.")
+    requested_title = single_line((parsed.title or "RunPane watcher failure").strip() or "RunPane watcher failure")
+    redacted_title, _title_redactions = redact_doctor_report(requested_title)
+    title = single_line(redacted_title)
+    evidence = read_report_evidence(parsed.body_file)
+    daemon = doctor["daemon"]
+    diagnostics = {
+        "source": doctor["source"],
+        "wrapper": doctor["wrapper"],
+        "platform": doctor.get("platform"),
+        "release": doctor["release"],
+        "installedPane": doctor["installedPane"],
+        "daemon": {
+            "reachable": daemon["reachable"],
+            "endpoint": daemon["endpoint"],
+            "app": ((daemon.get("result") or {}).get("app")),
+            "error": daemon.get("error"),
+        },
+        "remoteSetup": doctor["remoteSetup"],
+    }
+    diagnostics_text = json.dumps(without_none(diagnostics), indent=2)
+    fence = markdown_fence(requested_title, evidence, diagnostics_text)
+    raw = "\n".join([
+        "# RunPane watcher failure report",
+        "",
+        "## Report title",
+        "",
+        fence,
+        requested_title,
+        fence,
+        "",
+        "## Failure evidence",
+        "",
+        fence,
+        evidence,
+        fence,
+        "",
+        "## RunPane diagnostics",
+        "",
+        fence,
+        diagnostics_text,
+        fence,
+        "",
+    ])
+    redacted, redaction_count = redact_doctor_report(raw)
+    directory = tempfile.mkdtemp(prefix="runpane-report-")
+    report_path = os.path.join(directory, "report.md")
+    descriptor = os.open(report_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(redacted)
+    os.chmod(report_path, 0o600)
+    digest = hashlib.sha256(redacted.encode("utf-8")).hexdigest()
+    proposed = " ".join([
+        "gh issue create --repo dcouple/Pane",
+        f"--title {shlex.quote(title)}",
+        f"--body-file {shlex.quote(report_path)}",
+        "--label bug",
+    ])
+    return {
+        "ok": True,
+        "title": title,
+        "path": report_path,
+        "sha256": digest,
+        "redactionCount": redaction_count,
+        "proposedCommand": proposed,
+        "filed": False,
+    }
+
+
+def redact_doctor_report(value: str, home: Optional[str] = None):
+    text = value
+    count = 0
+
+    def replace(pattern, replacement, should_count=lambda _match: True):
+        nonlocal text, count
+
+        def apply(match):
+            nonlocal count
+            if should_count(match):
+                count += 1
+            return replacement(match)
+
+        text = re.sub(pattern, apply, text, flags=re.IGNORECASE | re.MULTILINE)
+
+    home = os.path.expanduser("~") if home is None else home
+    if home:
+        replace(re.escape(home), lambda _match: "~")
+    replace(
+        r"\b(authorization|proxy-authorization|cookie|set-cookie)(\s*:\s*)[^\r\n]*",
+        lambda match: f"{match.group(1)}{match.group(2)}[REDACTED]",
+    )
+    replace(
+        r"([\"']?)((?:[a-z][a-z0-9_-]*?)?(?:token|password|passwd|secret|api[_-]?key|access[_-]?key)|authorization|proxy-authorization|cookie|set-cookie)\1(\s*[=:]\s*)([^\r\n]*)",
+        lambda match: (
+            f"{match.group(1)}{match.group(2)}{match.group(1)}{match.group(3)}"
+            f"{match.group(1)}[REDACTED]{match.group(1)}"
+            if match.group(1) else f"{match.group(2)}{match.group(3)}[REDACTED]"
+        ),
+        lambda match: re.fullmatch(r"([\"']?)\[REDACTED\]\1", match.group(4).strip(), re.IGNORECASE) is None,
+    )
+    replace(r"([?&][^=\s&]+)=([^&#\s]*)", lambda match: f"{match.group(1)}=[REDACTED]")
+    return text, count
+
+
+def markdown_fence(*values: str) -> str:
+    longest = max((len(match.group(0)) for value in values for match in re.finditer(r"`+", value)), default=2)
+    return "`" * (max(2, longest) + 1)
+
+
+def read_report_evidence(body_file: str) -> str:
+    if body_file == "-":
+        raw = sys.stdin.buffer.read(32 * 1024 + 1)
+    else:
+        with open(body_file, "rb") as handle:
+            raw = handle.read(32 * 1024 + 1)
+    if len(raw) > 32 * 1024:
+        raise ValueError("runpane doctor --report evidence exceeds the 32 KiB limit.")
+    return raw.decode("utf-8", errors="replace")
+
+
+def file_doctor_failure_report(prepared: Dict[str, Any]) -> None:
+    title = prepared["title"]
+    prepared["fallbackUrl"] = f"https://github.com/dcouple/Pane/issues/new?title={quote(title)}"
+    try:
+        auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True, timeout=10, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        prepared.update({"ok": False, "error": str(error)})
+        return
+    if auth.returncode != 0:
+        prepared.update({"ok": False, "error": auth.stderr.strip() or "gh auth status failed"})
+        return
+    base_args = ["gh", "issue", "create", "--repo", "dcouple/Pane", "--title", title, "--body-file", prepared["path"]]
+    try:
+        created = subprocess.run([*base_args, "--label", "bug"], capture_output=True, text=True, timeout=30, check=False)
+        if created.returncode != 0 and re.search(r"label|could not add", created.stderr, re.IGNORECASE):
+            created = subprocess.run(base_args, capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        prepared.update({"ok": False, "error": str(error)})
+        return
+    issue_url = next(
+        (value for value in created.stdout.split() if re.fullmatch(r"https://github\.com/dcouple/Pane/issues/\d+", value)),
+        None,
+    )
+    if created.returncode != 0 or not issue_url:
+        prepared.update({"ok": False, "error": created.stderr.strip() or "gh issue create did not return an issue URL"})
+        return
+    prepared.update({"filed": True, "issueUrl": issue_url})
+
+
+def single_line(value: str) -> str:
+    cleaned = "".join(
+        " " if ord(character) <= 31 or 127 <= ord(character) <= 159 else character
+        for character in value
+    )
+    return re.sub(r"\s+", " ", cleaned).strip()[:180] or "RunPane watcher failure"
 
 
 def build_doctor_report(parsed, source: str) -> Dict[str, Any]:

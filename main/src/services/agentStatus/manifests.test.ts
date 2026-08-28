@@ -76,6 +76,25 @@ describe('CLAUDE_MANIFEST', () => {
     expect(r.matchedRuleId).toBe('high_effort_thinking_working');
   });
 
+  it.each([
+    'Connection lost while your computer was asleep · Retrying in 0s · attempt 3/10',
+    'API error · Retrying in 0s · attempt 1/10',
+    'Connection dropped (ECONNRESET) · Retrying in 0s · attempt 4/10',
+  ])('keeps retry banners working: %s', (banner) => {
+    const s = [banner, '────────────────────', ' ❯ ', '────────────────────'].join('\n');
+    const r = detectAgentState(CLAUDE_MANIFEST, screen(s));
+    expect(r.state).toBe('working');
+    expect(r.visibleWorking).toBe(true);
+    expect(r.matchedRuleId).toBe('api_retry_working');
+  });
+
+  it('does not treat a terminal API Error line as a live retry banner', () => {
+    const s = ['API Error: request failed', '────────────────────', ' ❯ ', '────────────────────'].join('\n');
+    const r = detectAgentState(CLAUDE_MANIFEST, screen(s));
+    expect(r.state).toBe('idle');
+    expect(r.matchedRuleId).toBe('live_prompt_box');
+  });
+
   it('detects idle from the ✳ OSC title', () => {
     const r = detectAgentState(CLAUDE_MANIFEST, screen('', '✳ Ready'));
     expect(r.state).toBe('idle');

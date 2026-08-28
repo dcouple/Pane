@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import { spawnSync } from 'child_process';
 import { EventEmitter } from 'events';
 import https from 'https';
 import os from 'os';
@@ -99,6 +100,8 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(guide).toContain('when they ask what to work on next');
     expect(guide).toContain('Do not replace orchestration with a normal chat answer for Pane work.');
     expect(guide).toContain('verify its state with');
+    expect(guide).toContain('Liveness is governed by the Liveness Contract');
+    expect(guide).toContain('never write a watcher');
     expect(guide).toContain('## Contract Precedence');
     expect(guide).toContain("active agent's cached RunPane orchestrator skill is authoritative for the");
     expect(guide).toContain('review-feedback interrupts, current-head evidence invalidation, and');
@@ -118,7 +121,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(runtimeContext).toContain('Do not switch to a different Pane install.');
   });
 
-  it('writes the journal-backed Pane watcher without snapshot reconstruction', async () => {
+  it('writes a launcher for the one canonical daemon-backed watcher', async () => {
     const manager = new SkillCacheManager();
 
     await manager.ensurePaneChatGuide();
@@ -126,14 +129,115 @@ describe('SkillCacheManager Pane Chat guide', () => {
     const watcher = await fs.readFile(manager.paneWatchScriptPath, 'utf8');
     expect(watcher).toContain('def resolve_runpane');
     expect(watcher).toContain('root / "packages" / "runpane" / "dist" / "cli.js"');
-    expect(watcher).toContain('command = resolve_runpane() + [');
-    expect(watcher).toContain('"watch", "--as", "watch.py"');
-    expect(watcher).toContain('"--include-held-input"');
-    expect(watcher).toContain('command.append("--follow")');
-    expect(watcher).not.toContain('class State');
-    expect(watcher).not.toContain('def check_panes');
-    expect(watcher).not.toContain('def check_activity');
-    expect(watcher).not.toContain('def composer_text');
+    expect(watcher).toContain('command = resolve_runpane() + (');
+    expect(watcher).toContain('["watch", "--follow"]');
+    expect(watcher).toContain('stderr=subprocess.STDOUT');
+    expect(watcher).toContain('WATCH ERROR child-exit');
+    expect(watcher).not.toContain('DEVNULL');
+    expect(watcher).not.toContain('json.loads');
+    expect(watcher).not.toContain('HEARTBEAT');
+    expect(watcher).not.toContain('IDLE_INTERVAL');
+  });
+
+  it.skipIf(spawnSync('python3', ['--version']).status !== 0)(
+    'makes launcher child failures unmistakable',
+    async () => {
+      const manager = new SkillCacheManager();
+      await manager.ensurePaneChatGuide();
+      if (!tempDir) throw new Error('expected test temp directory');
+      const binDir = path.join(tempDir, 'bin');
+      await fs.mkdir(binDir, { recursive: true });
+      const stub = path.join(binDir, 'runpane');
+      await fs.writeFile(stub, '#!/bin/sh\necho daemon-stderr >&2\nexit 3\n', { mode: 0o755 });
+      const result = spawnSync('python3', [manager.paneWatchScriptPath, '--once'], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` },
+      });
+      expect(result.status).toBe(3);
+      expect(result.stdout).toContain('daemon-stderr');
+      expect(result.stdout).toContain('WATCH ERROR child-exit rc=3');
+    },
+  );
+
+  it('writes an executable, daemon-dependent fallback watcher', async () => {
+    const manager = new SkillCacheManager();
+    await manager.ensurePaneChatGuide();
+    const watcher = await fs.readFile(manager.paneIdleWatchScriptPath, 'utf8');
+    const mode = (await fs.stat(manager.paneIdleWatchScriptPath)).mode & 0o777;
+    expect(mode).toBe(0o755);
+    expect(watcher).toContain('WATCH OK fallback');
+    expect(watcher).toContain('WATCH ERROR {type(error).__name__}: {clean(error)}');
+    expect(watcher).toContain('def resolve_runpane');
+    expect(watcher).toContain('WORKING = re.compile');
+    expect(watcher).toContain('ERROR = re.compile');
+    expect(watcher).toContain('PROMPT = re.compile');
+    expect(watcher).toContain('TERMINAL = re.compile');
+    expect(watcher).toContain('shell=False');
+    expect(watcher).not.toContain('panels submit');
+    const compiled = spawnSync('python3', ['-m', 'py_compile', manager.paneWatchScriptPath, manager.paneIdleWatchScriptPath]);
+    expect(compiled.status).toBe(0);
+    if (!tempDir) throw new Error('expected test temp directory');
+    const binDir = path.join(tempDir, 'fallback-bin');
+    await fs.mkdir(binDir, { recursive: true });
+    const stub = path.join(binDir, 'runpane');
+    await fs.writeFile(stub, [
+      '#!/bin/sh',
+      'case "$*" in *"--panel bad"*) exit 3 ;; esac',
+      'case "$*" in *"--panel array"*) printf "%s\\n" "[]"; exit 0 ;; esac',
+      `case "$*" in *"--panel error"*) printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'API Error: broken', panelId: 'error', composer: { hasUndeliveredText: false } })}'; exit 0 ;; esac`,
+      `case "$*" in *"--panel working"*) printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: 'esc to interrupt', panelId: 'working', composer: { hasUndeliveredText: false } })}'; exit 0 ;; esac`,
+      `printf '%s\\n' '${JSON.stringify({ ok: true, paneId: 'pane-real', text: '❯ esc to interrupt', panelId: 'panel-1' })}'`,
+    ].join('\n'), { mode: 0o755 });
+    const env = { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ''}` };
+    const success = spawnSync('python3', [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Demo'], { encoding: 'utf8', env });
+    expect(success.status).toBe(0);
+    expect(success.stdout).toContain('IDLE Demo 3m pane pane-real panel panel-1');
+    expect(success.stdout).not.toContain('pane Demo');
+    const working = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'working:Working',
+    ], { encoding: 'utf8', env });
+    expect(working.status).toBe(0);
+    expect(working.stdout).not.toContain('IDLE Working');
+    const classifiedError = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'error:Broken',
+    ], { encoding: 'utf8', env });
+    expect(classifiedError.status).toBe(2);
+    expect(classifiedError.stdout).toContain('WATCH ERROR fallback-panel Broken pane pane-real panel error');
+    const failure = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'panel-1:Demo',
+      'bad:Broken',
+    ], { encoding: 'utf8', env });
+    expect(failure.status).toBe(2);
+    expect(failure.stdout).toContain('WATCH ERROR RuntimeError: screen-failed panel bad');
+    const invalidJson = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'array:Broken',
+    ], { encoding: 'utf8', env });
+    expect(invalidJson.status).toBe(2);
+    expect(invalidJson.stdout).toContain('WATCH ERROR RuntimeError: screen-invalid panel array');
+    const malformedTarget = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'missing-separator',
+    ], { encoding: 'utf8', env });
+    expect(malformedTarget.status).toBe(2);
+    expect(malformedTarget.stdout).toContain('WATCH ERROR ValueError: targets must use PANEL_ID:NAME');
+    expect(malformedTarget.stderr).toBe('');
+    const malformedInterval = spawnSync('python3', [
+      manager.paneIdleWatchScriptPath,
+      '--once',
+      'panel-1:Demo',
+    ], { encoding: 'utf8', env: { ...env, IDLE_INTERVAL: 'not-a-number' } });
+    expect(malformedInterval.status).toBe(2);
+    expect(malformedInterval.stdout).toContain('WATCH ERROR ValueError: invalid literal for int()');
+    expect(malformedInterval.stderr).toBe('');
   });
 
   it('writes project-scoped pane-orchestrator skills for Codex and Claude', async () => {
@@ -152,6 +256,19 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(claudeSkill).toBe(canonicalSkill);
     expect(canonicalSkill).toContain('name: pane-orchestrator');
     expect(canonicalSkill).toContain('You are an orchestrator, not an implementation worker.');
+    expect(canonicalSkill).toContain('## Liveness Contract (non-negotiable)');
+    expect(canonicalSkill).toContain('Never write, generate, or run an ad-hoc watcher');
+    expect(canonicalSkill).toContain('On 2026-08-28 an inline watcher');
+    expect(canonicalSkill).toContain('runpane watch --self-test');
+    expect(canonicalSkill).toContain('runpane watch --follow');
+    expect(canonicalSkill).toContain('READY <pane> pane P panel Q');
+    expect(canonicalSkill).toContain('BLOCKED <pane> pane P panel Q');
+    expect(canonicalSkill).toContain('IDLE <pane> 10m pane P panel Q');
+    expect(canonicalSkill).toContain('STUCK <pane> … held-input-present');
+    expect(canonicalSkill).toContain('HEARTBEAT gen N at T');
+    expect(canonicalSkill).toContain('WATCH ERROR <code>: <msg>');
+    expect(canonicalSkill).toContain('WATCH RECONNECTED gen N');
+    expect(canonicalSkill).toContain('daemon is unreachable → no watcher fallback works');
     expect(canonicalSkill).toContain('must delegate the actual work to a Pane agent or panel through RunPane');
     expect(canonicalSkill).toContain('unless the user explicitly');
     expect(canonicalSkill).toContain('says: "do it yourself in this chat."');

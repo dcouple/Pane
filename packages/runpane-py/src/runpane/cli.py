@@ -130,10 +130,21 @@ class ParsedArgs:
     watch_from: Optional[str] = None
     watch_kinds: List[str] = field(default_factory=list)
     watch_pane_ids: List[str] = field(default_factory=list)
+    watch_exclude_pane_ids: List[str] = field(default_factory=list)
     name_contains: Optional[str] = None
     follow: bool = False
+    agents_only: bool = False
     ack_now: bool = False
     include_held_input: bool = False
+    watch_format: Optional[str] = None
+    heartbeat_seconds: Optional[int] = None
+    idle_after_ms: Optional[int] = None
+    all_managed: bool = False
+    include_shells: bool = False
+    no_held_input: bool = False
+    self_test: bool = False
+    report: bool = False
+    body_file: Optional[str] = None
     help_topic: Optional[str] = None
     remote_setup_args: List[str] = field(default_factory=list)
 
@@ -165,6 +176,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             lambda: dispatch_parsed_command(parsed, telemetry_context),
         )
     except Exception as error:
+        if effective_argv and effective_argv[0] == "watch":
+            line = f"WATCH ERROR {type(error).__name__}: {error}"
+            print(line, flush=True)
+            print(line, file=sys.stderr, flush=True)
+            return 2
         print(str(error), file=sys.stderr)
         return 1
 
@@ -408,6 +424,10 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         parsed.target = "client"
 
     parse_flags(args, parsed)
+    if parsed.command == "watch" and parsed.all_managed and parsed.watch_pane_ids:
+        raise ValueError("runpane watch accepts either --all-managed or --pane, not both.")
+    if parsed.command == "watch" and parsed.json and parsed.watch_format == "lines":
+        raise ValueError("runpane watch accepts either --json or --format lines, not both.")
     return parsed
 
 
@@ -515,6 +535,24 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
     if flag == "--include-held-input":
         parsed.include_held_input = True
         return
+    if flag == "--agents-only":
+        parsed.agents_only = True
+        return
+    if flag == "--all-managed":
+        parsed.all_managed = True
+        return
+    if flag == "--include-shells":
+        parsed.include_shells = True
+        return
+    if flag == "--no-held-input":
+        parsed.no_held_input = True
+        return
+    if flag == "--self-test":
+        parsed.self_test = True
+        return
+    if flag == "--report":
+        parsed.report = True
+        return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 
 
@@ -530,6 +568,9 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             parsed.watch_pane_ids.append(value)
         else:
             parsed.pane_id = value
+        return
+    if flag == "--exclude-pane":
+        parsed.watch_exclude_pane_ids.append(value)
         return
     if flag == "--panel":
         parsed.panel_id = value
@@ -657,6 +698,37 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
         return
     if flag == "--name-contains":
         parsed.name_contains = value
+        return
+    if flag == "--format":
+        if parsed.command == "watch":
+            if value not in {"lines", "json"}:
+                raise ValueError("--format for watch must be lines or json.")
+            parsed.watch_format = value
+            return
+        if value not in FORMATS:
+            raise ValueError(f"Invalid --format {value}. Expected one of: {', '.join(sorted(FORMATS))}")
+        parsed.format = value
+        return
+    if flag == "--heartbeat":
+        try:
+            heartbeat_seconds = int(value)
+        except ValueError as error:
+            raise ValueError("--heartbeat must be a non-negative integer.") from error
+        if heartbeat_seconds < 0:
+            raise ValueError("--heartbeat must be a non-negative integer.")
+        parsed.heartbeat_seconds = heartbeat_seconds
+        return
+    if flag == "--idle-after":
+        try:
+            idle_after_ms = int(value)
+        except ValueError as error:
+            raise ValueError("--idle-after must be a non-negative integer.") from error
+        if idle_after_ms < 0:
+            raise ValueError("--idle-after must be a non-negative integer.")
+        parsed.idle_after_ms = idle_after_ms
+        return
+    if flag == "--body-file":
+        parsed.body_file = value
         return
     raise ValueError(f"Unknown option for {parsed.command}: {flag}")
 

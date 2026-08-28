@@ -46,6 +46,16 @@ export const CLAUDE_MANIFEST: AgentManifest = {
       lineRegex: [/^\s*·\s+.+…\s+\([^)]*\bthinking\b[^)]*\)\s*$/iu, /esc to interrupt/i],
     },
     {
+      id: 'api_retry_working',
+      state: 'working',
+      priority: 977,
+      region: 'bottom_non_empty_lines(6)',
+      visibleWorking: true,
+      lineRegex: [
+        /(?:Retrying in \d+s?\s*·\s*attempt \d+\/\d+)|(?:(?:API error|Connection (?:lost|dropped)[^·\n]*)\s*·\s*Retrying)/iu,
+      ],
+    },
+    {
       id: 'transcript_viewer',
       state: 'unknown',
       priority: 1000,

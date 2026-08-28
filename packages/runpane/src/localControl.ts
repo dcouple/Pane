@@ -6,6 +6,7 @@ import { invokeDaemon, PaneDaemonClientError } from './daemonClient';
 import { RUNPANE_CONTRACT } from './generated/contract';
 import type { ParsedArgs, RunpaneAgent } from './commands';
 import type { BoundarySchema, JsonValue } from './boundaryDecoder';
+import { effectiveWatchHeartbeatMs, formatNonEntry, formatWaitResult, type WatchFormat } from './watchLines';
 
 interface RepoSummary {
   id: number;
@@ -449,6 +450,7 @@ type WorkspaceEntryKind =
   | 'agent.busy'
   | 'agent.blocked'
   | 'agent.unknown'
+  | 'agent.idle'
   | 'pane.created'
   | 'pane.gone'
   | 'panel.exited';
@@ -477,7 +479,10 @@ interface WorkspaceEntry {
   source: 'agent' | 'exit' | 'session';
   reason?: string | null;
   settledMs?: number;
+  idleMs?: number;
+  idleCount?: number;
   heldInput?: string;
+  heldInputPresent?: boolean;
   exitCode?: number;
   baseline?: true;
   changedWhileAway?: boolean;
@@ -922,6 +927,7 @@ const workspaceEntryKindSchema = boundary.enumeration(
   'agent.busy',
   'agent.blocked',
   'agent.unknown',
+  'agent.idle',
   'pane.created',
   'pane.gone',
   'panel.exited',
@@ -950,7 +956,10 @@ const workspaceEntrySchema: BoundarySchema<WorkspaceEntry> = boundary.object({
   source: boundary.enumeration('agent', 'exit', 'session'),
   reason: boundary.optional(boundary.nullable(boundary.string)),
   settledMs: boundary.optional(boundary.number),
+  idleMs: boundary.optional(boundary.number),
+  idleCount: boundary.optional(boundary.number),
   heldInput: boundary.optional(boundary.string),
+  heldInputPresent: boundary.optional(boundary.boolean),
   exitCode: boundary.optional(boundary.number),
   baseline: boundary.optional(boundary.literal(true)),
   changedWhileAway: boundary.optional(boundary.boolean),
@@ -1100,9 +1109,21 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   if (parsed.watchAs && parsed.watchSince !== undefined) {
     throw new Error('runpane watch accepts either --as or --since, not both.');
   }
-  const effectiveAgentsOnly = parsed.agentsOnly ?? (parsed.follow ? true : undefined);
+  const defaults = RUNPANE_CONTRACT.defaults.watch;
+  const format: WatchFormat = parsed.watchFormat ?? (parsed.json ? 'json' : 'lines');
+  const heartbeatMs = effectiveWatchHeartbeatMs(
+    parsed.heartbeatSeconds ?? (parsed.follow ? defaults.heartbeatSeconds : 0),
+  );
+  const idleAfterMs = parsed.idleAfterMs ?? (parsed.follow ? defaults.idleAfterMs : 0);
+  const effectiveAgentsOnly = parsed.includeShells
+    ? undefined
+    : parsed.agentsOnly || parsed.follow ? true : undefined;
+  const includeHeldInput = parsed.includeHeldInput && !parsed.noHeldInput ? true : undefined;
+  const includeHeldInputPresence = defaults.includeHeldInputPresence
+    && !parsed.noHeldInput && parsed.follow && format === 'lines' ? true : undefined;
+  const watchAs = parsed.watchAs ?? (parsed.follow ? process.env.PANE_PANEL_ID : undefined);
   const request = {
-    as: parsed.watchAs,
+    as: watchAs,
     since: parsed.watchSince,
     from: parsed.watchFrom,
     timeoutMs: parsed.timeoutMs,
@@ -1114,26 +1135,83 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     nameContains: parsed.nameContains,
     agentsOnly: effectiveAgentsOnly,
     ackNow: parsed.ackNow || undefined,
-    includeHeldInput: parsed.includeHeldInput || undefined,
+    includeHeldInput,
+    includeHeldInputPresence,
+    idleAfterMs,
   };
 
+  let armed = false;
+  let failingCode: string | undefined;
+  let lastFailureAt = 0;
+  let lastHeartbeatAt = Date.now();
+  let anonymousIdleWindowStartMs = !watchAs && parsed.follow ? 0 : undefined;
   do {
-    const timeoutMs = parsed.timeoutMs ?? 60_000;
+    const requestedWaitMs = parsed.timeoutMs ?? (heartbeatMs > 0 ? heartbeatMs : 60_000);
+    const heartbeatWaitMs = heartbeatMs > 0
+      ? Math.max(0, heartbeatMs - (Date.now() - lastHeartbeatAt))
+      : requestedWaitMs;
+    const timeoutMs = parsed.selfTest ? 0 : Math.min(requestedWaitMs, heartbeatWaitMs, 120_000);
     try {
-      const result = await invokeDaemon('runpane:workspace:wait', [request], workspaceWaitResultSchema, {
+      const callRequest = parsed.selfTest
+        ? { ...request, as: undefined, since: undefined, from: 'now' as const, idleAfterMs: 0, timeoutMs: 0 }
+        : { ...request, timeoutMs, idleWindowStartMs: anonymousIdleWindowStartMs };
+      const result = await invokeDaemon('runpane:workspace:wait', [callRequest], workspaceWaitResultSchema, {
         paneDir: parsed.paneDir,
         timeoutMs: timeoutMs + 5_000,
         eventInclude: [],
       });
-      printWorkspaceWaitResult(result, parsed.json);
-      if (!parsed.watchAs) request.since = result.generation;
+      if (failingCode) {
+        emitWatchLine(formatNonEntry('_reconnected', { generation: result.generation }, format));
+        failingCode = undefined;
+      }
+      if (!armed && (parsed.follow || parsed.selfTest)) {
+        emitWatchLine(formatNonEntry('_ok', { generation: result.generation, epoch: result.epoch }, format));
+        armed = true;
+        if (parsed.selfTest) return 0;
+      }
+      for (const line of formatWaitResult(result, format)) emitWatchLine(line);
+      if (heartbeatMs > 0 && Date.now() - lastHeartbeatAt >= heartbeatMs) {
+        emitWatchLine(formatNonEntry('_heartbeat', {
+          generation: result.generation,
+          at: new Date().toISOString(),
+        }, format));
+        lastHeartbeatAt = Date.now();
+      }
+      if (!watchAs) {
+        request.since = result.generation;
+        if (parsed.follow) anonymousIdleWindowStartMs = Date.now();
+      }
     } catch (error) {
-      if (!(error instanceof Error) || !parsed.follow || !isRetryableWatchError(error)) throw error;
+      const watchError = error instanceof Error ? error : new Error(String(error));
+      if (!parsed.follow || !isRetryableWatchError(watchError)) {
+        return emitWatchFailure(watchError, format);
+      }
+      const code = watchErrorCode(watchError);
+      if (failingCode !== code || heartbeatMs > 0 && Date.now() - lastFailureAt >= heartbeatMs) {
+        emitWatchLine(formatNonEntry('_error', { code, message: watchError.message }, format));
+        lastFailureAt = Date.now();
+      }
+      failingCode = code;
       await new Promise(resolve => setTimeout(resolve, 1_000));
     }
   } while (parsed.follow);
 
   return 0;
+}
+
+function emitWatchLine(line: string): void {
+  output.write(`${line}\n`);
+}
+
+function watchErrorCode(error: Error): string {
+  return error instanceof PaneDaemonClientError ? error.code ?? 'PaneDaemonClientError' : error.name || 'Error';
+}
+
+function emitWatchFailure(error: Error, format: WatchFormat): number {
+  const line = formatNonEntry('_error', { code: watchErrorCode(error), message: error.message }, format);
+  emitWatchLine(line);
+  console.error(line);
+  return 2;
 }
 
 function isRetryableWatchError(error: Error): boolean {
@@ -1849,28 +1927,13 @@ function printJson<Value>(value: Value): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
-function printWorkspaceWaitResult(result: WorkspaceWaitResult, json: boolean): void {
-  if (result.reset) {
-    const reset = { kind: '_reset', reason: result.reset.reason, epoch: result.epoch };
-    if (json) output.write(`${JSON.stringify(reset)}\n`);
-    else console.log(`RESET\t${result.reset.reason}`);
-  }
-  for (const entry of result.entries) {
-    if (json) {
-      output.write(`${JSON.stringify(entry)}\n`);
-      continue;
-    }
-    console.log(`${workspaceLabel(entry.kind)}\t${entry.paneName}`);
-    if (entry.heldInput) console.log(`STUCK\t${entry.paneName} :: ${entry.heldInput.slice(0, 70)}`);
-  }
-}
-
 function workspaceLabel(kind: WorkspaceEntryKind): string {
   const labels = {
     'agent.ready': 'READY',
     'agent.busy': 'BUSY',
     'agent.blocked': 'BLOCKED',
     'agent.unknown': 'UNKNOWN',
+    'agent.idle': 'IDLE',
     'pane.created': 'NEW',
     'pane.gone': 'GONE',
     'panel.exited': 'EXIT',

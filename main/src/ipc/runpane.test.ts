@@ -430,6 +430,138 @@ describe('runpane IPC handlers', () => {
     });
   });
 
+  it('emits session-scoped, re-firing idle events without advancing the journal cursor', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('› ship it', 'idle', 'codex', '2026-01-01T11:49:00.000Z'),
+    );
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-idle-test-'));
+    tempDirs.push(directory);
+    const workspaceJournal = new WorkspaceJournal();
+    const workspaceCursorStore = new WorkspaceCursorStore(path.join(directory, 'workspace-cursors.json'));
+    const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
+
+    const first = await registry.invoke('runpane:workspace:wait', [{
+      as: 'fresh',
+      timeoutMs: 0,
+      idleAfterMs: 600_000,
+      includeHeldInputPresence: true,
+    }]);
+    const immediate = await registry.invoke('runpane:workspace:wait', [{
+      as: 'fresh',
+      timeoutMs: 0,
+      idleAfterMs: 600_000,
+    }]);
+
+    expect(first).toMatchObject({
+      generation: 0,
+      reset: { reason: 'first-use' },
+      timedOut: false,
+      entries: [{
+        kind: 'agent.idle',
+        paneId: session.id,
+        panelId: terminalPanel.id,
+        agentType: 'codex',
+        idleCount: 1,
+        heldInputPresent: true,
+      }],
+    });
+    expect(first).not.toMatchObject({ entries: [{ heldInput: expect.anything() }] });
+    expect(immediate).toMatchObject({ generation: 0, entries: [], timedOut: true });
+
+    vi.setSystemTime(new Date('2026-01-01T12:09:00.000Z'));
+    const refired = await registry.invoke('runpane:workspace:wait', [{
+      as: 'fresh',
+      timeoutMs: 0,
+      idleAfterMs: 600_000,
+    }]);
+    expect(refired).toMatchObject({
+      generation: 0,
+      timedOut: false,
+      entries: [{ kind: 'agent.idle', idleCount: 2, idleMs: 1_200_000 }],
+    });
+    expect(refired).not.toMatchObject({ entries: [{ heldInputPresent: expect.anything() }] });
+
+    const explicitRegistry = createRegistry(createServices({ workspaceJournal: new WorkspaceJournal() }));
+    const explicit = await explicitRegistry.invoke('runpane:workspace:wait', [{
+      since: 0,
+      timeoutMs: 0,
+      idleAfterMs: 600_000,
+    }]);
+    expect(explicit.entries).toContainEqual(expect.objectContaining({ kind: 'agent.idle', idleCount: 2 }));
+    expect(explicit.entries[0]).not.toHaveProperty('heldInputPresent');
+    const advancedWindow = await explicitRegistry.invoke('runpane:workspace:wait', [{
+      since: 0,
+      timeoutMs: 0,
+      idleAfterMs: 600_000,
+      idleWindowStartMs: Date.now(),
+    }]);
+    expect(advancedWindow.entries).toEqual([]);
+  });
+
+  it('keeps idle disabled for old clients and applies workspace filters', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('›', 'idle', 'codex', '2026-01-01T11:49:00.000Z'),
+    );
+    const registry = createRegistry(createServices({ workspaceJournal: new WorkspaceJournal() }));
+
+    const omitted = await registry.invoke('runpane:workspace:wait', [{ since: 0, timeoutMs: 0 }]);
+    const zero = await registry.invoke('runpane:workspace:wait', [{ since: 0, timeoutMs: 0, idleAfterMs: 0 }]);
+    const wrongKind = await registry.invoke('runpane:workspace:wait', [{
+      since: 0, timeoutMs: 0, idleAfterMs: 600_000, kinds: ['agent.ready'],
+    }]);
+    const excluded = await registry.invoke('runpane:workspace:wait', [{
+      since: 0, timeoutMs: 0, idleAfterMs: 600_000, excludePaneIds: [session.id], agentsOnly: true,
+    }]);
+    expect(omitted.entries).toEqual([]);
+    expect(zero.entries).toEqual([]);
+    expect(wrongKind.entries).toEqual([]);
+    expect(excluded.entries).toEqual([]);
+
+    vi.mocked(terminalPanelManager.getAgentStatus).mockReturnValue('working');
+    const busy = await registry.invoke('runpane:workspace:wait', [{
+      since: 0, timeoutMs: 0, idleAfterMs: 600_000, kinds: ['agent.idle'], agentsOnly: true,
+    }]);
+    expect(busy.entries).toEqual([]);
+  });
+
+  it('retains due idle entries across epoch and cursor-truncated resets', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReturnValue(
+      terminalSnapshot('›', 'idle', 'codex', '2026-01-01T11:49:00.000Z'),
+    );
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-idle-reset-test-'));
+    tempDirs.push(directory);
+
+    const epochJournal = new WorkspaceJournal();
+    const epochCursors = new WorkspaceCursorStore(path.join(directory, 'epoch-cursors.json'));
+    epochCursors.create('epoch-consumer', 0, 'old-epoch');
+    const epochRegistry = createRegistry(createServices({
+      workspaceJournal: epochJournal,
+      workspaceCursorStore: epochCursors,
+    }));
+    const epoch = await epochRegistry.invoke('runpane:workspace:wait', [{
+      as: 'epoch-consumer', timeoutMs: 0, idleAfterMs: 600_000,
+    }]);
+    expect(epoch).toMatchObject({ reset: { reason: 'epoch-changed' } });
+    expect(epoch.entries).toContainEqual(expect.objectContaining({ kind: 'agent.idle', idleCount: 1 }));
+
+    const truncatedJournal = new WorkspaceJournal({ capacity: 2 });
+    for (const paneId of ['one', 'two', 'three']) {
+      truncatedJournal.append({ kind: 'pane.created', paneId, paneName: paneId, source: 'session' });
+    }
+    const truncatedRegistry = createRegistry(createServices({ workspaceJournal: truncatedJournal }));
+    const truncated = await truncatedRegistry.invoke('runpane:workspace:wait', [{
+      since: 0, timeoutMs: 0, idleAfterMs: 600_000,
+    }]);
+    expect(truncated).toMatchObject({ reset: { reason: 'cursor-truncated' }, dropped: 1 });
+    expect(truncated.entries).toContainEqual(expect.objectContaining({ kind: 'agent.idle', idleCount: 1 }));
+  });
+
   it('announces an evicted named workspace cursor as unknown', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cursor-test-'));
     tempDirs.push(directory);

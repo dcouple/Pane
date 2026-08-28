@@ -66,6 +66,15 @@ export interface ParsedArgs {
   agentsOnly?: boolean;
   ackNow?: boolean;
   includeHeldInput?: boolean;
+  watchFormat?: 'lines' | 'json';
+  heartbeatSeconds?: number;
+  idleAfterMs?: number;
+  allManaged?: boolean;
+  includeShells?: boolean;
+  noHeldInput?: boolean;
+  selfTest?: boolean;
+  report?: boolean;
+  bodyFile?: string;
   remoteSetupArgs: string[];
 }
 
@@ -156,6 +165,12 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   }
 
   parseFlags(args, parsed);
+  if (parsed.command === 'watch' && parsed.allManaged && parsed.watchPaneIds?.length) {
+    throw new Error('runpane watch accepts either --all-managed or --pane, not both.');
+  }
+  if (parsed.command === 'watch' && parsed.json && parsed.watchFormat === 'lines') {
+    throw new Error('runpane watch accepts either --json or --format lines, not both.');
+  }
   return parsed;
 }
 
@@ -307,6 +322,26 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
   }
   if (flag === '--agents-only') {
     parsed.agentsOnly = true;
+    return;
+  }
+  if (flag === '--all-managed') {
+    parsed.allManaged = true;
+    return;
+  }
+  if (flag === '--include-shells') {
+    parsed.includeShells = true;
+    return;
+  }
+  if (flag === '--no-held-input') {
+    parsed.noHeldInput = true;
+    return;
+  }
+  if (flag === '--self-test') {
+    parsed.selfTest = true;
+    return;
+  }
+  if (flag === '--report') {
+    parsed.report = true;
     return;
   }
 
@@ -475,6 +510,40 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
   }
   if (flag === '--name-contains') {
     parsed.nameContains = value;
+    return;
+  }
+  if (flag === '--format') {
+    if (parsed.command === 'watch') {
+      if (value !== 'lines' && value !== 'json') {
+        throw new Error('--format for watch must be lines or json.');
+      }
+      parsed.watchFormat = value;
+      return;
+    }
+    if (!FORMATS.has(value)) {
+      throw new Error(`Invalid --format "${value}". Expected one of: ${[...FORMATS].join(', ')}`);
+    }
+    parsed.format = decodeBoundary(value, formatSchema);
+    return;
+  }
+  if (flag === '--heartbeat') {
+    const heartbeatSeconds = Number(value);
+    if (!Number.isInteger(heartbeatSeconds) || heartbeatSeconds < 0) {
+      throw new Error('--heartbeat must be a non-negative integer.');
+    }
+    parsed.heartbeatSeconds = heartbeatSeconds;
+    return;
+  }
+  if (flag === '--idle-after') {
+    const idleAfterMs = Number(value);
+    if (!Number.isInteger(idleAfterMs) || idleAfterMs < 0) {
+      throw new Error('--idle-after must be a non-negative integer.');
+    }
+    parsed.idleAfterMs = idleAfterMs;
+    return;
+  }
+  if (flag === '--body-file') {
+    parsed.bodyFile = value;
     return;
   }
 

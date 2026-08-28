@@ -63,6 +63,13 @@ export async function main(argv: string[]): Promise<number> {
     telemetryContext.failureStage = 'parse';
     telemetryContext.failureCategory = categorizeFailure(error);
     await trackWrapperEvent('runpane_wrapper_command_failed', telemetryContext);
+    if (argv[0] === 'watch') {
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      const line = `WATCH ERROR ${normalized.name || 'Error'}: ${normalized.message}`;
+      process.stdout.write(`${line}\n`);
+      process.stderr.write(`${line}\n`);
+      return 2;
+    }
     throw error;
   }
   applyParsedArgsToTelemetryContext(telemetryContext, parsed);

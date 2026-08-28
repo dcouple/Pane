@@ -68,6 +68,37 @@
       "/tmp/pane"
     ],
     [
+      "doctor",
+      "--report",
+      "--title",
+      "watch failed",
+      "--body-file",
+      "/tmp/watch-evidence.txt",
+      "--json"
+    ],
+    [
+      "watch",
+      "--as",
+      "monitor",
+      "--from",
+      "earliest",
+      "--follow",
+      "--format",
+      "lines",
+      "--heartbeat",
+      "60",
+      "--idle-after",
+      "600000",
+      "--all-managed",
+      "--agents-only",
+      "--exclude-pane",
+      "pane-old",
+      "--kinds",
+      "agent.ready,agent.idle",
+      "--include-held-input",
+      "--self-test"
+    ],
+    [
       "daemon",
       "repair",
       "--pane-dir",

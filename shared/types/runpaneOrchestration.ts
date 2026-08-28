@@ -12,6 +12,7 @@ export type RunpaneWorkspaceEntryKind =
   | 'agent.busy'
   | 'agent.blocked'
   | 'agent.unknown'
+  | 'agent.idle'
   | 'pane.created'
   | 'pane.gone'
   | 'panel.exited';
@@ -33,7 +34,10 @@ export interface RunpaneWorkspaceEntry {
   source: 'agent' | 'exit' | 'session';
   reason?: string | null;
   settledMs?: number;
+  idleMs?: number;
+  idleCount?: number;
   heldInput?: string;
+  heldInputPresent?: boolean;
   exitCode?: number;
   baseline?: true;
   changedWhileAway?: boolean;
@@ -61,6 +65,9 @@ export interface RunpaneWorkspaceWaitRequest {
   agentsOnly?: boolean;
   ackNow?: boolean;
   includeHeldInput?: boolean;
+  includeHeldInputPresence?: boolean;
+  idleAfterMs?: number;
+  idleWindowStartMs?: number;
 }
 
 export type RunpaneWorkspaceResetReason =

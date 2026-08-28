@@ -94,7 +94,8 @@
         "format",
         "dryRun",
         "yes",
-        "verbose"
+        "verbose",
+        "watch"
       ],
       "properties": {
         "target": {
@@ -117,6 +118,24 @@
         },
         "verbose": {
           "type": "boolean"
+        },
+        "watch": {
+          "type": "object",
+          "required": [
+            "format",
+            "heartbeatSeconds",
+            "idleAfterMs",
+            "agentsOnly",
+            "includeHeldInputPresence"
+          ],
+          "properties": {
+            "format": { "enum": ["lines", "json"] },
+            "heartbeatSeconds": { "type": "number" },
+            "idleAfterMs": { "type": "number" },
+            "agentsOnly": { "type": "boolean" },
+            "includeHeldInputPresence": { "type": "boolean" }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
