@@ -726,7 +726,14 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
 
 
 def resolve_runpane():
@@ -777,8 +784,8 @@ def main():
     parser = argparse.ArgumentParser(description="Launch the canonical RunPane watcher.")
     parser.add_argument("--once", action="store_true", help="run one diagnostic self-test")
     args = parser.parse_args()
-    command = resolve_runpane() + (["watch", "--self-test"] if args.once else ["watch", "--follow"])
     try:
+        command = resolve_runpane() + (["watch", "--self-test"] if args.once else ["watch", "--follow"])
         process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
@@ -816,6 +823,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -825,6 +833,11 @@ ERROR = re.compile(r"API Error:|Can't reach the API|prompt is too long|context w
 PROMPT = re.compile(r"Do you want to proceed|What should Claude do|Shall I proceed|\\?\\s*$", re.M)
 TERMINAL = re.compile(r"Hard stop|hard stop|PR #\\d+ is open|Full stop", re.I)
 ANSI = re.compile(r"\\x1b(?:\\[[0-?]*[ -/]*[@-~]|\\][^\\x07]*(?:\\x07|\\x1b\\\\))")
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
 
 
 class WatchArgumentParser(argparse.ArgumentParser):

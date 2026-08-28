@@ -162,6 +162,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).toContain('stderr=subprocess.STDOUT');
     expect(watcher).toContain('encoding="utf-8"');
     expect(watcher).toContain('errors="replace"');
+    expect(watcher).toContain('sys.stdout.reconfigure(encoding="utf-8", errors="replace")');
     expect(watcher).toContain('installed_cli = Path(executable).parent / "node_modules"');
     expect(watcher).toContain('WATCH ERROR child-exit');
     expect(watcher).not.toContain('DEVNULL');
@@ -177,6 +178,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
       await manager.ensurePaneChatGuide();
       if (!tempDir) throw new Error('expected test temp directory');
       const shimDirectory = await writeLocalRunpaneStub(tempDir, [
+        "process.stdout.write('READY Pane-雪 pane P panel Q\\n');",
         "process.stderr.write('daemon-stderr\\n');",
         'process.exit(3);',
       ].join('\n'));
@@ -186,8 +188,29 @@ describe('SkillCacheManager Pane Chat guide', () => {
         env: localCliEnvironment(shimDirectory),
       });
       expect(result.status).toBe(3);
+      expect(result.stdout).toContain('READY Pane-雪 pane P panel Q');
       expect(result.stdout).toContain('daemon-stderr');
       expect(result.stdout).toContain('WATCH ERROR child-exit rc=3');
+    },
+  );
+
+  it.skipIf(process.platform !== 'win32' || pythonProbe.status !== 0)(
+    'reports when Windows has no shell-safe launcher',
+    async () => {
+      const manager = new SkillCacheManager();
+      await manager.ensurePaneChatGuide();
+      if (!tempDir) throw new Error('expected test temp directory');
+      const shimDirectory = path.join(tempDir, 'unsafe-shim-bin');
+      await fs.mkdir(shimDirectory, { recursive: true });
+      await fs.writeFile(path.join(shimDirectory, 'runpane.cmd'), '@echo off\r\nexit /b 99\r\n', 'utf8');
+      const result = spawnSync(pythonExecutable, [manager.paneWatchScriptPath, '--once'], {
+        encoding: 'utf8',
+        cwd: tempDir,
+        env: { ...process.env, PATH: shimDirectory },
+      });
+      expect(result.status).toBe(2);
+      expect(result.stdout).toContain('WATCH ERROR RuntimeError: no safe RunPane launcher found');
+      expect(result.stderr).toBe('');
     },
   );
 
@@ -209,6 +232,7 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(watcher).toContain('shell=False');
     expect(watcher).toContain('encoding="utf-8"');
     expect(watcher).toContain('errors="replace"');
+    expect(watcher).toContain('sys.stdout.reconfigure(encoding="utf-8", errors="replace")');
     expect(watcher).toContain('installed_cli = Path(executable).parent / "node_modules"');
     expect(watcher).not.toContain('panels submit');
     const compiled = spawnSync(pythonExecutable, ['-m', 'py_compile', manager.paneWatchScriptPath, manager.paneIdleWatchScriptPath]);
@@ -232,10 +256,10 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
 `);
     const env = localCliEnvironment(shimDirectory);
     const options = { encoding: 'utf8' as const, cwd: tempDir, env };
-    const success = spawnSync(pythonExecutable, [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Demo'], options);
+    const success = spawnSync(pythonExecutable, [manager.paneIdleWatchScriptPath, '--once', 'panel-1:Démo雪'], options);
     expect(success.status).toBe(0);
-    expect(success.stdout).toContain('IDLE Demo 3m pane pane-real panel panel-1');
-    expect(success.stdout).not.toContain('pane Demo');
+    expect(success.stdout).toContain('IDLE Démo雪 3m pane pane-real panel panel-1');
+    expect(success.stdout).not.toContain('pane Démo雪');
     const working = spawnSync(pythonExecutable, [
       manager.paneIdleWatchScriptPath,
       '--once',
