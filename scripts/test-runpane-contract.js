@@ -369,10 +369,13 @@ async function checkWatchStreamParity() {
       );
       assert.ok(!oneShot.stdout.includes('"kind":"_ok"'), 'one-shot JSON must retain its legacy entry-only shape');
 
-      const healthyStartedAt = Date.now();
+      const healthyTimeouts = [];
       const healthy = await withFakeDaemon(
         paneDir,
-        frame => ({ result: watchResult(7), delayMs: Math.min(700, frame.args[0].timeoutMs) }),
+        frame => {
+          healthyTimeouts.push(frame.args[0].timeoutMs);
+          return { result: watchResult(7), delayMs: Math.min(700, frame.args[0].timeoutMs) };
+        },
         () => runWatchCli(
           runtime,
           ['watch', '--follow', '--heartbeat', '1', '--idle-after', '0', '--no-held-input'],
@@ -381,7 +384,8 @@ async function checkWatchStreamParity() {
         ),
       );
       assertIncludes(healthy.stdout, 'HEARTBEAT gen 7 at ');
-      assert.ok(Date.now() - healthyStartedAt < 1_500, 'heartbeat deadline must survive an early daemon response');
+      assert.ok(healthyTimeouts.length >= 2, 'healthy follow must issue a second wait after the early response');
+      assert.ok(healthyTimeouts[1] <= 600, 'second wait must use the remaining heartbeat deadline');
 
       let requestCount = 0;
       const followRequests = [];
