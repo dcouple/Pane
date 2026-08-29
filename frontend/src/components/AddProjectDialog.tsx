@@ -37,10 +37,6 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
     if (isOpen && !config) void fetchConfig().catch(() => undefined);
   }, [config, fetchConfig, isOpen]);
 
-  useEffect(() => {
-    if (isOpen) setCreateError(undefined);
-  }, [isOpen]);
-
   const detectCurrentBranch = async (path: string) => {
     if (!path) { setDetectedBranch(null); return; }
     try {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Archive, Pencil, Pin } from 'lucide-react';
 import type { Session } from '../types/session';
 import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
@@ -25,16 +25,36 @@ export function PaneContextMenu({
   onTogglePinned,
   onArchive,
 }: PaneContextMenuProps) {
+  return (
+    <TerminalPopover
+      visible={menu !== null}
+      x={menu?.x ?? 0}
+      y={menu?.y ?? 0}
+      onClose={onClose}
+    >
+      {menu && (
+        <PaneContextMenuBody
+          key={`${menu.session.id}:${menu.x}:${menu.y}`}
+          menu={menu}
+          onClose={onClose}
+          onRename={onRename}
+          onTogglePinned={onTogglePinned}
+          onArchive={onArchive}
+        />
+      )}
+    </TerminalPopover>
+  );
+}
+
+function PaneContextMenuBody({
+  menu,
+  onClose,
+  onRename,
+  onTogglePinned,
+  onArchive,
+}: Omit<PaneContextMenuProps, 'menu'> & { menu: PaneContextMenuState }) {
   const menuRef = useRef<HTMLDivElement>(null);
   const [focusedIndex, setFocusedIndex] = useState(0);
-
-  useEffect(() => {
-    if (!menu) return;
-    setFocusedIndex(0);
-    requestAnimationFrame(() => {
-      menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
-    });
-  }, [menu]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
@@ -60,7 +80,7 @@ export function PaneContextMenu({
     if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
-      const opener = menu?.opener;
+      const opener = menu.opener;
       onClose();
       requestAnimationFrame(() => opener?.focus());
       return;
@@ -69,32 +89,25 @@ export function PaneContextMenu({
   };
 
   return (
-    <TerminalPopover
-      visible={menu !== null}
-      x={menu?.x ?? 0}
-      y={menu?.y ?? 0}
-      onClose={onClose}
+    <div
+      ref={menuRef}
+      role="menu"
+      aria-label={`Pane actions for ${menu.session.name || 'Untitled'}`}
+      onKeyDown={handleKeyDown}
     >
-      <div
-        ref={menuRef}
-        role="menu"
-        aria-label={`Pane actions for ${menu?.session.name || 'Untitled'}`}
-        onKeyDown={handleKeyDown}
-      >
-        <PopoverButton role="menuitem" tabIndex={focusedIndex === 0 ? 0 : -1} onFocus={() => setFocusedIndex(0)} onClick={onRename}>
-          <span className="flex items-center gap-2"><Pencil className="h-4 w-4" />Rename</span>
-        </PopoverButton>
-        <PopoverButton role="menuitem" tabIndex={focusedIndex === 1 ? 0 : -1} onFocus={() => setFocusedIndex(1)} onClick={onTogglePinned}>
-          <span className="flex items-center gap-2">
-            <Pin className="h-4 w-4 rotate-45" />
-            {menu?.session.isFavorite ? 'Unpin' : 'Pin'}
-          </span>
-        </PopoverButton>
-        <div className="my-1 border-t border-border-primary" />
-        <PopoverButton role="menuitem" tabIndex={focusedIndex === 2 ? 0 : -1} onFocus={() => setFocusedIndex(2)} variant="danger" onClick={onArchive}>
-          <span className="flex items-center gap-2"><Archive className="h-4 w-4" />Archive</span>
-        </PopoverButton>
-      </div>
-    </TerminalPopover>
+      <PopoverButton autoFocus role="menuitem" tabIndex={focusedIndex === 0 ? 0 : -1} onFocus={() => setFocusedIndex(0)} onClick={onRename}>
+        <span className="flex items-center gap-2"><Pencil className="h-4 w-4" />Rename</span>
+      </PopoverButton>
+      <PopoverButton role="menuitem" tabIndex={focusedIndex === 1 ? 0 : -1} onFocus={() => setFocusedIndex(1)} onClick={onTogglePinned}>
+        <span className="flex items-center gap-2">
+          <Pin className="h-4 w-4 rotate-45" />
+          {menu.session.isFavorite ? 'Unpin' : 'Pin'}
+        </span>
+      </PopoverButton>
+      <div className="my-1 border-t border-border-primary" />
+      <PopoverButton role="menuitem" tabIndex={focusedIndex === 2 ? 0 : -1} onFocus={() => setFocusedIndex(2)} variant="danger" onClick={onArchive}>
+        <span className="flex items-center gap-2"><Archive className="h-4 w-4" />Archive</span>
+      </PopoverButton>
+    </div>
   );
 }

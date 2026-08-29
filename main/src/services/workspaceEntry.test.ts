@@ -40,7 +40,7 @@ vi.mock('./terminalPanelManager', () => ({
 // oxlint-disable-next-line anti-slop/no-module-mocking -- Doctor outcomes are the service boundary under test, including each validation failure.
 vi.mock('./agents/agentDoctor', () => ({ runAgentDoctor: mocks.runAgentDoctor }));
 
-import { launchDefaultAgentOnce } from './workspaceEntry';
+import { forgetProjectLaunchState, launchDefaultAgentOnce } from './workspaceEntry';
 
 let projectId = 100;
 const panelRecords = new Map<string, { id: string }>();
@@ -109,6 +109,7 @@ beforeEach(() => {
   mocks.getPanel.mockImplementation(panelId => panelRecords.get(panelId));
   mocks.removePanelFromMemory.mockImplementation(panelId => { panelRecords.delete(panelId); });
   mocks.getPanelsForSession.mockImplementation(sessionId => [{ id: `explorer-${sessionId}`, type: 'explorer' }]);
+  mocks.initializeTerminal.mockResolvedValue(undefined);
   mocks.getTerminalSnapshot.mockReturnValue({ isCliReady: true });
   mocks.isTerminalInitialized.mockReturnValue(true);
   mocks.runAgentDoctor.mockResolvedValue({ available: true, checks: [] });
@@ -409,11 +410,38 @@ describe('launchDefaultAgentOnce', () => {
     expect(mocks.createPanel).toHaveBeenCalledOnce();
   });
 
+  it('runs a fresh attempt after forgetting in-flight project launch state', async () => {
+    const { services, id, getSession, updateProject } = createServices();
+    let releaseFirstSession: (() => void) | undefined;
+    getSession.mockImplementationOnce(() => new Promise(resolve => {
+      releaseFirstSession = () => resolve({ id: `session-${id}`, worktreePath: `/repo/${id}` });
+    }));
+
+    const first = launchDisclosedCodex(services, id);
+    await vi.waitFor(() => expect(releaseFirstSession).toBeTypeOf('function'));
+    forgetProjectLaunchState(id);
+    const second = launchDisclosedCodex(services, id);
+    const secondResult = await second;
+    releaseFirstSession?.();
+    const firstResult = await first;
+    const replay = await launchDisclosedCodex(services, id);
+
+    expect(first).not.toBe(second);
+    expect(firstResult).toMatchObject({ status: 'launched' });
+    expect(secondResult).toMatchObject({ status: 'launched' });
+    expect(replay).toBe(secondResult);
+    expect(getSession).toHaveBeenCalledTimes(2);
+    expect(mocks.createPanel).toHaveBeenCalledTimes(2);
+    expect(updateProject).toHaveBeenCalledTimes(2);
+  });
+
   it('is imported by project IPC only', () => {
     const sourceRoot = path.resolve(process.cwd(), 'src');
     const imports = fs.readdirSync(sourceRoot, { recursive: true, encoding: 'utf8' })
-      .filter(file => file.endsWith('.ts') && !file.endsWith('.test.ts'))
-      .filter(file => fs.readFileSync(path.join(sourceRoot, file), 'utf8').includes('services/workspaceEntry'));
+      .map(file => ({ file, posixPath: file.split(path.sep).join(path.posix.sep) }))
+      .filter(({ posixPath }) => posixPath.endsWith('.ts') && !posixPath.endsWith('.test.ts'))
+      .filter(({ file }) => fs.readFileSync(path.join(sourceRoot, file), 'utf8').includes('services/workspaceEntry'))
+      .map(({ posixPath }) => posixPath);
     expect(imports).toEqual(['ipc/project.ts']);
   });
 });

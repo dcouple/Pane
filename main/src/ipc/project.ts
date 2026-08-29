@@ -17,7 +17,11 @@ import type { Project } from '../database/models';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { DefaultAgentLaunchResult } from '../../../shared/types/workspaceEntry';
 import type { ProjectEnvironment } from '../../../shared/types/panels';
-import { launchDefaultAgentOnce, resolveConfiguredLaunchPreset } from '../services/workspaceEntry';
+import {
+  forgetProjectLaunchState,
+  launchDefaultAgentOnce,
+  resolveConfiguredLaunchPreset,
+} from '../services/workspaceEntry';
 import { createRequire } from 'node:module';
 
 const loadProjectDependency = createRequire(__filename);
@@ -475,6 +479,7 @@ export function registerProjectHandlers(
 
       // Now safe to delete the project
       const success = databaseService.deleteProject(projectIdNum);
+      if (success) forgetProjectLaunchState(projectIdNum);
       return { success: true, data: success };
     } catch (error) {
       console.error('Failed to delete project:', error);

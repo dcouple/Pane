@@ -24,12 +24,13 @@ import type { Session } from '../types/session';
 import { useSessionNavigationHotkeys } from '../hooks/useSessionNavigationHotkeys';
 import { useRemoteRuntimeState } from '../hooks/useRemoteRuntimeState';
 import { useAppBuildInfo } from '../hooks/useAppBuildInfo';
-import { PaneContextMenu, type PaneContextMenuState } from './PaneContextMenu';
+import { PaneContextMenu } from './PaneContextMenu';
 import { RenamePaneDialog } from './RenamePaneDialog';
 import { getRemoteFooterStatus } from '../utils/remoteRuntimePresentation';
 import { usePanelStore } from '../stores/panelStore';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { createProjectById, getPinnedSessions, groupSessionsByProject } from '../utils/sessionOrdering';
+import { usePaneContextMenu } from '../hooks/usePaneContextMenu';
 
 // --- Collapsed sidebar tooltip content ---
 
@@ -195,9 +196,14 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   // State for collapsed sidebar
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [compactSessionMenu, setCompactSessionMenu] = useState<PaneContextMenuState | null>(null);
-  const [renameTarget, setRenameTarget] = useState<Session | null>(null);
-  const menuOpenerRef = useRef<HTMLElement | null>(null);
+  const {
+    menu: paneMenu,
+    openMenu,
+    closeMenu,
+    renameTarget,
+    startRename,
+    finishRename,
+  } = usePaneContextMenu();
   const activeProjectId = useNavigationStore((state) => state.activeProjectId);
   const activeView = useNavigationStore((state) => state.activeView);
   const expandedProjects = useNavigationStore((state) => state.expandedProjects);
@@ -260,45 +266,37 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
   );
 
   const openCompactSession = useCallback((sessionId: string, scope: 'pinned' | 'repositories') => {
-    setCompactSessionMenu(null);
+    closeMenu();
     setSidebarNavigationScope(scope);
     void setActiveSession(sessionId);
     navigateToSessions();
-  }, [navigateToSessions, setActiveSession, setSidebarNavigationScope]);
+  }, [closeMenu, navigateToSessions, setActiveSession, setSidebarNavigationScope]);
 
-  const openCompactSessionMenu = useCallback((event: React.MouseEvent<HTMLElement>, session: Session) => {
-    event.preventDefault();
-    event.stopPropagation();
-    menuOpenerRef.current = event.currentTarget;
-    setCompactSessionMenu({ session, opener: event.currentTarget, x: event.clientX, y: event.clientY });
-  }, []);
+  const openPaneMenu = useCallback((event: React.MouseEvent<HTMLElement>, session: Session) => {
+    openMenu(event, session, event.currentTarget);
+  }, [openMenu]);
 
-  const closeRenameDialog = useCallback(() => {
-    setRenameTarget(null);
-    requestAnimationFrame(() => menuOpenerRef.current?.focus());
-  }, []);
-
-  const archiveCompactSession = useCallback(async () => {
-    if (!compactSessionMenu) return;
-    const { id } = compactSessionMenu.session;
-    setCompactSessionMenu(null);
+  const archivePane = useCallback(async () => {
+    if (!paneMenu) return;
+    const { id } = paneMenu.session;
+    closeMenu();
     try {
       await API.sessions.delete(id);
     } catch (error) {
       console.error('Failed to archive session:', error);
     }
-  }, [compactSessionMenu]);
+  }, [closeMenu, paneMenu]);
 
-  const toggleCompactSessionPinned = useCallback(async () => {
-    if (!compactSessionMenu) return;
-    const { id } = compactSessionMenu.session;
-    setCompactSessionMenu(null);
+  const togglePanePinned = useCallback(async () => {
+    if (!paneMenu) return;
+    const { id } = paneMenu.session;
+    closeMenu();
     try {
       await API.sessions.toggleFavorite(id);
     } catch (error) {
       console.error('Failed to toggle pinned session:', error);
     }
-  }, [compactSessionMenu]);
+  }, [closeMenu, paneMenu]);
 
   const sidebarMenuItems = [
         {
@@ -497,7 +495,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                       data-testid={`compact-pinned-pane-${session.id}`}
                       data-compact-rail-item
                       onClick={() => openCompactSession(session.id, 'pinned')}
-                      onContextMenu={(event) => openCompactSessionMenu(event, session)}
+                      onContextMenu={(event) => openPaneMenu(event, session)}
                       aria-label={`Open pinned pane ${label}`}
                       className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
                     >
@@ -576,7 +574,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
                           data-testid={`compact-repository-pane-${session.id}`}
                           data-compact-rail-item
                           onClick={() => openCompactSession(session.id, 'repositories')}
-                          onContextMenu={(event) => openCompactSessionMenu(event, session)}
+                          onContextMenu={(event) => openPaneMenu(event, session)}
                           aria-label={`Open pane ${project.name}/${session.name || 'Untitled'}`}
                           className={`${COMPACT_RAIL_BUTTON} ${session.id === activeSessionId && activeView === 'sessions' ? COMPACT_RAIL_ACTIVE : COMPACT_RAIL_IDLE}`}
                         >
@@ -678,16 +676,13 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
         )}
 
         <PaneContextMenu
-          menu={compactSessionMenu}
-          onClose={() => setCompactSessionMenu(null)}
-          onRename={() => {
-            setRenameTarget(compactSessionMenu?.session ?? null);
-            setCompactSessionMenu(null);
-          }}
-          onTogglePinned={() => void toggleCompactSessionPinned()}
-          onArchive={() => void archiveCompactSession()}
+          menu={paneMenu}
+          onClose={closeMenu}
+          onRename={startRename}
+          onTogglePinned={() => void togglePanePinned()}
+          onArchive={() => void archivePane()}
         />
-        <RenamePaneDialog session={renameTarget} onClose={closeRenameDialog} />
+        <RenamePaneDialog session={renameTarget} onClose={finishRename} />
       </>
     );
   }

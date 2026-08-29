@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Session } from '../types/session';
 import { API } from '../utils/api';
 import { Button } from './ui/Button';
@@ -11,22 +11,19 @@ interface RenamePaneDialogProps {
 }
 
 export function RenamePaneDialog({ session, onClose }: RenamePaneDialogProps) {
-  const [name, setName] = useState('');
+  if (!session) return null;
+  return <RenamePaneDialogBody key={session.id} session={session} onClose={onClose} />;
+}
+
+function RenamePaneDialogBody({ session, onClose }: { session: Session; onClose: () => void }) {
+  const [name, setName] = useState(session.name ?? '');
   const [error, setError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const trimmedName = name.trim();
 
-  useEffect(() => {
-    if (!session) return;
-    setName(session.name ?? '');
-    setError(undefined);
-    setIsSaving(false);
-    requestAnimationFrame(() => inputRef.current?.select());
-  }, [session]);
-
   const submit = async () => {
-    if (!session || !trimmedName || isSaving) return;
+    if (!trimmedName || isSaving) return;
     setIsSaving(true);
     setError(undefined);
     try {
@@ -45,7 +42,7 @@ export function RenamePaneDialog({ session, onClose }: RenamePaneDialogProps) {
 
   return (
     <Modal
-      isOpen={session !== null}
+      isOpen
       onClose={onClose}
       size="sm"
       ariaLabel="Rename pane"
@@ -56,6 +53,7 @@ export function RenamePaneDialog({ session, onClose }: RenamePaneDialogProps) {
       <ModalBody>
         <EnhancedInput
           ref={inputRef}
+          onFocus={(event) => event.currentTarget.select()}
           label="Pane name"
           value={name}
           error={error ?? (!trimmedName ? 'Pane name cannot be blank' : undefined)}
