@@ -29,19 +29,19 @@ function JoinBanner({
         <div>
           <h4 className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary">Pane sends</h4>
           <ul className="mt-1 space-y-0.5 text-[11px] text-text-secondary">
-            <li>GitHub username or a one-way hash of your git email</li>
-            <li>Token totals: input, output, cache read, cache write</li>
-            <li>Message count and estimated cost at API prices</li>
-            <li>Per-model totals, time window (30 days), Pane version</li>
+            <li><span className="font-medium text-text-primary">GitHub username</span> or a one-way hash of your git email</li>
+            <li><span className="font-medium text-text-primary">Token totals</span>: input, output, cache read, cache write</li>
+            <li><span className="font-medium text-text-primary">Message count</span> and estimated cost at API prices</li>
+            <li><span className="font-medium text-text-primary">Per-model totals</span>, time window (30 days), Pane version</li>
           </ul>
         </div>
         <div>
           <h4 className="text-[10px] font-medium uppercase tracking-wider text-text-tertiary">Pane never sends</h4>
           <ul className="mt-1 space-y-0.5 text-[11px] text-text-secondary">
-            <li>Prompts, responses, or any session content</li>
-            <li>File paths, project or folder names</li>
-            <li>Transcripts, session ids, message ids</li>
-            <li>Your email address</li>
+            <li><span className="font-medium text-text-primary">Prompts, responses</span>, or any session content</li>
+            <li><span className="font-medium text-text-primary">File paths</span>, project or folder names</li>
+            <li><span className="font-medium text-text-primary">Transcripts</span>, session ids, message ids</li>
+            <li><span className="font-medium text-text-primary">Your email address</span></li>
           </ul>
         </div>
       </div>
@@ -73,9 +73,6 @@ function JoinBanner({
           DO_NOT_TRACK is set in your environment — leaderboard submissions are blocked while it is active.
         </p>
       )}
-      <p className="mt-2 text-[10px] text-text-muted">
-        Sent on app open and when you open this tab. Leave any time — your row is deleted.
-      </p>
     </div>
   );
 }
@@ -248,6 +245,7 @@ export function LeaderboardTab() {
   useEffect(() => {
     void loadAll().then(loadedStatus => {
       if (!loadedStatus?.optIn || loadedStatus.doNotTrack) return;
+      // Silent fire-and-forget — never surface errors from auto-submit
       void API.leaderboard.sendNow().then(submitRes => {
         if (submitRes.success && submitRes.data) {
           const data = submitRes.data;
@@ -257,6 +255,10 @@ export function LeaderboardTab() {
             lastDisplayName: data.displayName,
             lastSubmittedAtMs: Date.now(),
           } : prev);
+          // Re-fetch board after submit to pick up updated data
+          void API.leaderboard.fetch().then(boardRes => {
+            if (boardRes.success && boardRes.data) setBoard(boardRes.data);
+          });
         }
       }).catch(() => {});
     });
@@ -307,14 +309,22 @@ export function LeaderboardTab() {
     setSending(true);
     try {
       const res = await API.leaderboard.sendNow();
-      if (!res.success) throw new Error(res.error);
+      if (!res.success) {
+        const msg = res.error ?? '';
+        if (msg.includes('429') || msg.toLowerCase().includes('rate limit')) {
+          setError('Already sent recently — try again in a few minutes.');
+        } else {
+          throw new Error(msg);
+        }
+        return;
+      }
+      setError(null);
       setStatus(prev => prev ? {
         ...prev,
         lastRank: res.data?.rank ?? prev.lastRank,
         lastDisplayName: res.data?.displayName ?? prev.lastDisplayName,
         lastSubmittedAtMs: Date.now(),
       } : prev);
-      // Refresh the board
       const boardRes = await API.leaderboard.fetch();
       if (boardRes.success && boardRes.data) setBoard(boardRes.data);
     } catch (err) {
