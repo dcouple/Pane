@@ -357,6 +357,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onPanelCreated') {
           return (callback: MockEventCallback) => subscribe('panel:created', callback);
         }
+        if (prop === 'onConfigUpdated') {
+          return (callback: MockEventCallback) => subscribe('config:updated', callback);
+        }
         return () => unsubscribe;
       },
     });
