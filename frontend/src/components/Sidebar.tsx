@@ -270,7 +270,7 @@ export function Sidebar({ onAboutClick, onSettingsClick, onRemoteSettingsClick, 
     event.preventDefault();
     event.stopPropagation();
     menuOpenerRef.current = event.currentTarget;
-    setCompactSessionMenu({ session, label: session.name || 'Untitled', x: event.clientX, y: event.clientY });
+    setCompactSessionMenu({ session, opener: event.currentTarget, x: event.clientX, y: event.clientY });
   }, []);
 
   const closeRenameDialog = useCallback(() => {

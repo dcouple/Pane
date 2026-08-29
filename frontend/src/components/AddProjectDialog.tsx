@@ -37,6 +37,10 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
     if (isOpen && !config) void fetchConfig().catch(() => undefined);
   }, [config, fetchConfig, isOpen]);
 
+  useEffect(() => {
+    if (isOpen) setCreateError(undefined);
+  }, [isOpen]);
+
   const detectCurrentBranch = async (path: string) => {
     if (!path) { setDetectedBranch(null); return; }
     try {
@@ -57,10 +61,9 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
     setIsCreating(true);
     setCreateError(undefined);
     try {
-      const projectToCreate = {
-        ...newProject,
-        launchDefaultAgent: true,
-      };
+      const projectToCreate: CreateProjectRequest = launchPreset
+        ? { ...newProject, launchDefaultAgent: true }
+        : { ...newProject };
 
       const response = await API.projects.create(projectToCreate);
       if (!response.success || !response.data) {
@@ -105,10 +108,14 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
     onClose();
   };
 
+  const handleClose = () => {
+    if (!isCreating) resetAndClose();
+  };
+
   return (
     <Modal
       isOpen={isOpen}
-      onClose={resetAndClose}
+      onClose={handleClose}
       size="lg"
     >
       <ModalHeader title="Add New Repository" icon={<FolderPlus className="w-5 h-5" />} />

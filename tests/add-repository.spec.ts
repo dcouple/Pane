@@ -31,6 +31,8 @@ test.describe('add repository default agent', () => {
     await page.getByRole('button', { name: 'Create' }).click();
     await expect(page.getByRole('button', { name: 'Starting Codex…' })).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('Add New Repository')).toBeVisible();
     await expect(page.getByText('Add New Repository')).toBeHidden({ timeout: 5_000 });
     await expect.poll(() => page.evaluate(() => (
       // SAFETY: installElectronApiMock installs this test-only bridge before navigation.
@@ -83,7 +85,7 @@ test.describe('add repository default agent', () => {
     ).__paneTestElectronMock.getPanelCreateCalls())).toEqual([]);
   });
 
-  test('keeps a no-default repository blank and still sends the launch flag', async ({ page }) => {
+  test('keeps a no-default repository blank and omits the launch flag', async ({ page }) => {
     await installElectronApiMock(page, {
       omitDefaultOrchestratorAgent: true,
       projectCreateLaunchResult: { status: 'skipped', reason: 'no-default' },
@@ -97,7 +99,7 @@ test.describe('add repository default agent', () => {
       // SAFETY: installElectronApiMock installs this test-only bridge before navigation.
       window as typeof window & { __paneTestElectronMock: { getProjectCreateCalls: () => Array<{ launchDefaultAgent?: boolean }> } }
     ).__paneTestElectronMock.getProjectCreateCalls());
-    expect(calls[0]?.launchDefaultAgent).toBe(true);
+    expect(calls[0]).not.toHaveProperty('launchDefaultAgent');
   });
 
   test('does not send the launch flag from Clone from GitHub', async ({ page }) => {

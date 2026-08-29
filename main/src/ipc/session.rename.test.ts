@@ -93,4 +93,14 @@ describe('sessions:rename', () => {
     expect(updateSession).not.toHaveBeenCalled();
     expect(emitSessionUpdated).not.toHaveBeenCalled();
   });
+
+  it('does not expose unexpected rename errors', async () => {
+    updateSession.mockImplementationOnce(() => {
+      throw new Error('database connection details');
+    });
+
+    const result = await registry.invoke('sessions:rename', ['session-1', 'New label']);
+
+    expect(result).toEqual({ success: false, error: 'Failed to rename session' });
+  });
 });

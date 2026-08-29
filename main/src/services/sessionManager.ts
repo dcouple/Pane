@@ -39,7 +39,7 @@ interface CommandExecutionError {
   message?: string;
 }
 
-class SessionDisplayNameError extends Error {
+export class SessionDisplayNameError extends Error {
   override name = 'SessionDisplayNameError';
 }
 
@@ -591,20 +591,27 @@ export class SessionManager extends EventEmitter {
     });
   }
 
-  async getOrCreateMainRepoSessionAnnounced(projectId: number): Promise<Session> {
+  async getOrCreateMainRepoSessionAnnounced(
+    projectId: number,
+    options: { autoCreateTerminal?: boolean } = {},
+  ): Promise<Session> {
     const session = await this.getOrCreateMainRepoSession(projectId);
     const dbSession = this.db.getSession(session.id);
     if (dbSession?.status === 'pending') {
-      this.emitSessionCreated(session);
+      this.emitSessionCreated(session, options);
       this.updateSession(session.id, { status: 'stopped' });
     }
     return session;
   }
 
-  emitSessionCreated(session: Session, options: { activateOnCreate?: boolean } = {}): void {
+  emitSessionCreated(
+    session: Session,
+    options: { activateOnCreate?: boolean; autoCreateTerminal?: boolean } = {},
+  ): void {
     this.emit('session-created', {
       ...session,
       activateOnCreate: options.activateOnCreate !== false,
+      autoCreateTerminal: options.autoCreateTerminal !== false,
     });
   }
 

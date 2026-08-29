@@ -1,10 +1,11 @@
+import { useEffect, useRef, useState } from 'react';
 import { Archive, Pencil, Pin } from 'lucide-react';
 import type { Session } from '../types/session';
 import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
 
 export interface PaneContextMenuState {
   session: Session;
-  label: string;
+  opener: HTMLElement;
   x: number;
   y: number;
 }
@@ -24,6 +25,49 @@ export function PaneContextMenu({
   onTogglePinned,
   onArchive,
 }: PaneContextMenuProps) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+
+  useEffect(() => {
+    if (!menu) return;
+    setFocusedIndex(0);
+    requestAnimationFrame(() => {
+      menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    });
+  }, [menu]);
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+    if (items.length === 0) return;
+    const activeIndex = Math.max(0, items.findIndex(item => item === document.activeElement));
+
+    let nextIndex: number | undefined;
+    if (event.key === 'ArrowDown') nextIndex = (activeIndex + 1) % items.length;
+    if (event.key === 'ArrowUp') nextIndex = (activeIndex - 1 + items.length) % items.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = items.length - 1;
+    if (nextIndex !== undefined) {
+      event.preventDefault();
+      setFocusedIndex(nextIndex);
+      items[nextIndex]?.focus();
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      items[activeIndex]?.click();
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      const opener = menu?.opener;
+      onClose();
+      requestAnimationFrame(() => opener?.focus());
+      return;
+    }
+    if (event.key === 'Tab') onClose();
+  };
+
   return (
     <TerminalPopover
       visible={menu !== null}
@@ -31,18 +75,23 @@ export function PaneContextMenu({
       y={menu?.y ?? 0}
       onClose={onClose}
     >
-      <div role="menu" aria-label={`Pane actions for ${menu?.session.name || 'Untitled'}`}>
-        <PopoverButton role="menuitem" onClick={onRename}>
+      <div
+        ref={menuRef}
+        role="menu"
+        aria-label={`Pane actions for ${menu?.session.name || 'Untitled'}`}
+        onKeyDown={handleKeyDown}
+      >
+        <PopoverButton role="menuitem" tabIndex={focusedIndex === 0 ? 0 : -1} onFocus={() => setFocusedIndex(0)} onClick={onRename}>
           <span className="flex items-center gap-2"><Pencil className="h-4 w-4" />Rename</span>
         </PopoverButton>
-        <PopoverButton role="menuitem" onClick={onTogglePinned}>
+        <PopoverButton role="menuitem" tabIndex={focusedIndex === 1 ? 0 : -1} onFocus={() => setFocusedIndex(1)} onClick={onTogglePinned}>
           <span className="flex items-center gap-2">
             <Pin className="h-4 w-4 rotate-45" />
             {menu?.session.isFavorite ? 'Unpin' : 'Pin'}
           </span>
         </PopoverButton>
         <div className="my-1 border-t border-border-primary" />
-        <PopoverButton role="menuitem" variant="danger" onClick={onArchive}>
+        <PopoverButton role="menuitem" tabIndex={focusedIndex === 2 ? 0 : -1} onFocus={() => setFocusedIndex(2)} variant="danger" onClick={onArchive}>
           <span className="flex items-center gap-2"><Archive className="h-4 w-4" />Archive</span>
         </PopoverButton>
       </div>

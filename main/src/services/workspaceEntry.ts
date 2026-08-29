@@ -30,7 +30,7 @@ export function launchDefaultAgentOnce(
   const pending = inFlight.get(projectId);
   if (pending) return pending;
 
-  const attempt = (async (): Promise<DefaultAgentLaunchResult> => {
+  const runAttempt = async (): Promise<DefaultAgentLaunchResult> => {
     let result: DefaultAgentLaunchResult = { status: 'skipped', reason: 'no-default' };
     let preset: AgentLaunchPreset | null = null;
     let panelId: string | undefined;
@@ -55,7 +55,9 @@ export function launchDefaultAgentOnce(
         throw new AgentValidationError(failedCheck?.message ?? `${preset.title} is unavailable.`);
       }
 
-      const session = await services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId);
+      const session = await services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
+        autoCreateTerminal: false,
+      });
       sessionId = session.id;
       const panel = await panelManager.createPanel({
         sessionId,
@@ -102,6 +104,7 @@ export function launchDefaultAgentOnce(
       };
       return result;
     } catch (error) {
+      let stalePanelMessage: string | undefined;
       if (panelId && sessionId) {
         try {
           if (terminalPanelManager.isTerminalInitialized(panelId)) {
@@ -110,10 +113,23 @@ export function launchDefaultAgentOnce(
         } catch (cleanupError) {
           console.error('[WorkspaceEntry] Failed to destroy provisional terminal:', cleanupError);
         }
-        try {
-          await panelManager.deletePanel(panelId);
-        } catch (cleanupError) {
-          console.error('[WorkspaceEntry] Failed to delete provisional panel:', cleanupError);
+        for (let deleteAttempt = 0; deleteAttempt < 2 && panelManager.getPanel(panelId); deleteAttempt += 1) {
+          try {
+            await panelManager.deletePanel(panelId);
+          } catch (cleanupError) {
+            console.error('[WorkspaceEntry] Failed to delete provisional panel:', cleanupError);
+          }
+        }
+        if (panelManager.getPanel(panelId)) {
+          try {
+            services.databaseService.deletePanel(panelId);
+            panelManager.removePanelFromMemory(panelId);
+          } catch (cleanupError) {
+            console.error('[WorkspaceEntry] Failed to force-delete provisional panel:', cleanupError);
+          }
+        }
+        if (panelManager.getPanel(panelId)) {
+          stalePanelMessage = `A stale panel remained after cleanup (${panelId}).`;
         }
         try {
           const explorer = panelManager.getPanelsForSession(sessionId).find(panel => panel.type === 'explorer');
@@ -140,15 +156,19 @@ export function launchDefaultAgentOnce(
         agentTitle: preset.title,
         initialCommand: preset.command,
         reason: error instanceof AgentValidationError ? 'validation-failed' : 'launch-error',
-        message: error instanceof Error ? error.message : `Failed to start ${preset.title}.`,
+        message: [
+          error instanceof Error ? error.message : `Failed to start ${preset.title}.`,
+          stalePanelMessage,
+        ].filter((message): message is string => Boolean(message)).join(' '),
       };
       return result;
     } finally {
       attempted.set(projectId, result);
       inFlight.delete(projectId);
     }
-  })();
+  };
 
+  const attempt = Promise.resolve().then(runAttempt);
   inFlight.set(projectId, attempt);
   return attempt;
 }

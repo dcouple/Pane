@@ -6,6 +6,8 @@ import type { AppServices } from '../ipc/types';
 const mocks = vi.hoisted(() => ({
   createPanel: vi.fn(),
   deletePanel: vi.fn(),
+  getPanel: vi.fn(),
+  removePanelFromMemory: vi.fn(),
   getPanelsForSession: vi.fn(),
   setActivePanel: vi.fn(),
   initializeTerminal: vi.fn(),
@@ -20,6 +22,8 @@ vi.mock('./panelManager', () => ({
   panelManager: {
     createPanel: mocks.createPanel,
     deletePanel: mocks.deletePanel,
+    getPanel: mocks.getPanel,
+    removePanelFromMemory: mocks.removePanelFromMemory,
     getPanelsForSession: mocks.getPanelsForSession,
     setActivePanel: mocks.setActivePanel,
   },
@@ -39,6 +43,7 @@ vi.mock('./agents/agentDoctor', () => ({ runAgentDoctor: mocks.runAgentDoctor })
 import { launchDefaultAgentOnce } from './workspaceEntry';
 
 let projectId = 100;
+const panelRecords = new Map<string, { id: string }>();
 
 function createServices(options: {
   agent?: string;
@@ -52,6 +57,7 @@ function createServices(options: {
     id: `session-${projectId}`,
     worktreePath: `/repo/${projectId}`,
   }));
+  const deletePanel = vi.fn();
   // SAFETY: This fixture supplies every AppServices member exercised by workspaceEntry.
   const services = {
     databaseService: {
@@ -65,6 +71,7 @@ function createServices(options: {
         default_agent_launched_at: options.receipt,
       })),
       updateProject,
+      deletePanel,
     },
     configManager: { getConfig: vi.fn(() => ({ defaultOrchestratorAgent: options.agent ?? 'codex' })) },
     sessionManager: {
@@ -74,20 +81,28 @@ function createServices(options: {
       getSessionsForProject: vi.fn(() => []),
     },
   } as AppServices;
-  return { services, id: projectId, updateProject, getSession };
+  return { services, id: projectId, updateProject, getSession, deletePanel };
 }
 
 beforeEach(() => {
   vi.useRealTimers();
+  panelRecords.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
-  mocks.createPanel.mockImplementation(async request => ({
-    id: `panel-${request.sessionId}`,
-    sessionId: request.sessionId,
-    type: 'terminal',
-    title: request.title,
-    state: { isActive: true, customState: request.initialState },
-    metadata: { createdAt: '2026-01-01T00:00:00.000Z', lastActiveAt: '2026-01-01T00:00:00.000Z', position: 0 },
-  }));
+  mocks.createPanel.mockImplementation(async request => {
+    const panel = {
+      id: `panel-${request.sessionId}`,
+      sessionId: request.sessionId,
+      type: 'terminal',
+      title: request.title,
+      state: { isActive: true, customState: request.initialState },
+      metadata: { createdAt: '2026-01-01T00:00:00.000Z', lastActiveAt: '2026-01-01T00:00:00.000Z', position: 0 },
+    };
+    panelRecords.set(panel.id, panel);
+    return panel;
+  });
+  mocks.deletePanel.mockImplementation(async panelId => { panelRecords.delete(panelId); });
+  mocks.getPanel.mockImplementation(panelId => panelRecords.get(panelId));
+  mocks.removePanelFromMemory.mockImplementation(panelId => { panelRecords.delete(panelId); });
   mocks.getPanelsForSession.mockImplementation(sessionId => [{ id: `explorer-${sessionId}`, type: 'explorer' }]);
   mocks.getTerminalSnapshot.mockReturnValue({ isCliReady: true });
   mocks.isTerminalInitialized.mockReturnValue(true);
@@ -111,22 +126,36 @@ describe('launchDefaultAgentOnce', () => {
       title: expect.any(String),
       initialState: { initialCommand: command, agentType: agent, isCliPanel: true },
     });
+    expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced).toHaveBeenCalledWith(id, {
+      autoCreateTerminal: false,
+    });
   });
 
   it.each([undefined, 'invalid'] as const)('skips an absent or invalid default', async agent => {
-    const { services, id, updateProject } = createServices({ agent });
+    const { services, id, updateProject, getSession } = createServices({ agent });
     if (agent === undefined) {
       vi.mocked(services.configManager.getConfig).mockReturnValue({ defaultOrchestratorAgent: undefined });
     }
     await expect(launchDefaultAgentOnce(services, id)).resolves.toEqual({ status: 'skipped', reason: 'no-default' });
     expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
     expect(updateProject).not.toHaveBeenCalled();
   });
 
   it('skips a project with a durable receipt', async () => {
-    const { services, id } = createServices({ receipt: '2026-01-01T00:00:00.000Z' });
+    const { services, id, getSession } = createServices({ receipt: '2026-01-01T00:00:00.000Z' });
     await expect(launchDefaultAgentOnce(services, id)).resolves.toEqual({ status: 'skipped', reason: 'already-launched' });
     expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  it('clears the in-flight promise after a synchronous skip', async () => {
+    const { services, id } = createServices({ receipt: '2026-01-01T00:00:00.000Z' });
+    const first = launchDefaultAgentOnce(services, id);
+    await first;
+    const replay = launchDefaultAgentOnce(services, id);
+    expect(replay).not.toBe(first);
+    await expect(replay).resolves.toEqual({ status: 'skipped', reason: 'already-launched' });
   });
 
   it.each(['platform', 'repo-context', 'executable'])('returns validation failure for %s', async check => {
@@ -156,6 +185,34 @@ describe('launchDefaultAgentOnce', () => {
     await launchDefaultAgentOnce(services, id);
     expect(mocks.destroyTerminal).not.toHaveBeenCalled();
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
+  });
+
+  it('retries panel deletion when the first delete rejects', async () => {
+    mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
+    mocks.deletePanel
+      .mockRejectedValueOnce(new Error('delete failed'))
+      .mockImplementationOnce(async panelId => { panelRecords.delete(panelId); });
+    const { services, id } = createServices();
+
+    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed' });
+
+    expect(mocks.deletePanel).toHaveBeenCalledTimes(2);
+    expect(mocks.getPanel(`panel-session-${id}`)).toBeUndefined();
+  });
+
+  it('reports a stale panel when every cleanup layer leaves it behind', async () => {
+    mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
+    mocks.deletePanel.mockRejectedValue(new Error('delete failed'));
+    mocks.removePanelFromMemory.mockImplementation(() => undefined);
+    const { services, id, deletePanel } = createServices();
+
+    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('stale panel remained'),
+    });
+
+    expect(mocks.deletePanel).toHaveBeenCalledTimes(2);
+    expect(deletePanel).toHaveBeenCalledWith(`panel-session-${id}`);
   });
 
   it('cleans up when the PTY exits before readiness', async () => {

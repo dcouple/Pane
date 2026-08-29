@@ -31,6 +31,7 @@ export interface Session {
   pr_renamed?: boolean;
   nameManuallySet?: boolean;
   activateOnCreate?: boolean;
+  autoCreateTerminal?: boolean;
 }
 
 export interface GitStatus {

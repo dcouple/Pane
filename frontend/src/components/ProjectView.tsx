@@ -221,7 +221,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   const handlePanelCreate = useCallback(
     async (type: ToolPanelType, options?: PanelCreateOptions) => {
-      if (!mainRepoSessionId) return;
+      if (!mainRepoSessionId) return false;
 
       // For terminal panels with initialCommand (e.g., Terminal (Claude))
       let initialState: { customState?: unknown } | undefined = undefined;
@@ -246,6 +246,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // The panel:created event will also fire, but addPanel checks for duplicates
       addPanel(newPanel);
       setActivePanelInStore(mainRepoSessionId, newPanel.id);
+      return true;
     },
     [mainRepoSessionId, addPanel, setActivePanelInStore]
   );
@@ -455,7 +456,11 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
                       initialCommand: launchFailure.initialCommand,
                       title: launchFailure.agentTitle,
                       agentType: launchFailure.agentType,
-                    }).then(clearLaunchFailure);
+                    }).then(created => {
+                      if (created) clearLaunchFailure();
+                    }).catch(error => {
+                      console.error('Failed to open agent after automatic launch failure:', error);
+                    });
                   }}
                   onDismiss={clearLaunchFailure}
                 />

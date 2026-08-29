@@ -53,7 +53,20 @@ test.describe('sidebar pane actions', () => {
     await row.click();
     await row.click({ button: 'right' });
     let menu = page.getByRole('menu', { name: 'Pane actions for Regular work' });
-    await expect(menu.getByRole('menuitem').allTextContents()).resolves.toEqual(['Rename', 'Unpin', 'Archive']);
+    await expect(menu.getByRole('menuitem')).toHaveText(['Rename', 'Unpin', 'Archive']);
+    await expect(menu.getByRole('menuitem').first()).toBeFocused();
+    await page.keyboard.press('End');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('textbox', { name: 'Pane name' })).toBeVisible();
+    await page.getByRole('textbox', { name: 'Pane name' }).press('Escape');
+    await expect(row).toBeFocused();
+    await row.click({ button: 'right' });
+    menu = page.getByRole('menu', { name: 'Pane actions for Regular work' });
+    await page.keyboard.press('Escape');
+    await expect(row).toBeFocused();
+    await row.click({ button: 'right' });
+    menu = page.getByRole('menu', { name: 'Pane actions for Regular work' });
     await expectNoAxeViolations(page);
     await menu.getByRole('menuitem', { name: 'Rename' }).click();
 
