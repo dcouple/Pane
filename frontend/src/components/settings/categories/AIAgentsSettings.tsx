@@ -41,12 +41,12 @@ export function AIAgentsSettings({ persistence, onDirtyChange }: AIAgentsSetting
       <SettingsSection title="Agent defaults">
         <SettingRow
           settingId="default-pane-chat-agent"
-          label="Default Pane Chat agent"
-          description="Choose the agent used when Pane Chat opens a new global terminal."
+          label="Default agent"
+          description="Used when Pane Chat opens a new global terminal and when a newly added repository opens its first terminal."
           saveState={persistence.saveStates['default-pane-chat-agent']}
         >
           <SegmentedControl<PaneChatAgent>
-            label="Default Pane Chat agent"
+            label="Default agent"
             value={config.defaultOrchestratorAgent ?? 'claude'}
             options={paneChatAgentOptions}
             onChange={(value) => void persistence.saveConfig('default-pane-chat-agent', { defaultOrchestratorAgent: value })}
