@@ -50,6 +50,8 @@ type ElectronApiMockOptions = {
   initialTerminalStates?: Record<string, JsonObject>;
   initialAgentUsage?: JsonObject;
   initialUsageReport?: JsonObject;
+  initialLeaderboardStatus?: JsonObject;
+  initialLeaderboard?: JsonObject;
   forcedAgentUsageError?: string;
   detectedBranch?: string | null;
   detectedBranchByPath?: Record<string, string | null>;
@@ -485,6 +487,24 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           filesTotal: 0,
           lastError: null,
         }),
+      }),
+      leaderboard: namespace({
+        getStatus: () => success(clone(mockOptions.initialLeaderboardStatus ?? {
+          optIn: false,
+          lastRank: null,
+          lastDisplayName: null,
+          lastSubmittedAtMs: null,
+          doNotTrack: false,
+        })),
+        join: () => success({ rank: 1, displayName: '@testuser', verified: true, total: 1, installs: 1 }),
+        leave: () => success(undefined),
+        sendNow: () => success({ rank: 1, displayName: '@testuser', verified: true, total: 1, installs: 1 }),
+        fetch: () => success(clone(mockOptions.initialLeaderboard ?? {
+          windowDays: 30,
+          total: 0,
+          entries: [],
+          generatedAtMs: Date.now(),
+        })),
       }),
       cloud: namespace({
         getState: () => success(clone(cloudState)),
