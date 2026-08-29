@@ -36,6 +36,7 @@ import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { UsageIndexStatus, UsageReport, UsageReportRequest } from '../../../shared/types/usage';
+import type { LeaderboardResponse, LeaderboardStatus, LeaderboardSubmitResult } from '../../../shared/types/leaderboard';
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
@@ -130,6 +131,15 @@ interface ElectronAPI {
     getReport: (request?: UsageReportRequest) => Promise<IPCResponse<UsageReport>>;
     getStatus: () => Promise<IPCResponse<UsageIndexStatus>>;
     rescan: () => Promise<IPCResponse<UsageIndexStatus>>;
+  };
+
+  // Leaderboard opt-in and submission
+  leaderboard: {
+    getStatus: () => Promise<IPCResponse<LeaderboardStatus>>;
+    join: () => Promise<IPCResponse<LeaderboardSubmitResult>>;
+    leave: () => Promise<IPCResponse>;
+    sendNow: () => Promise<IPCResponse<LeaderboardSubmitResult>>;
+    fetch: () => Promise<IPCResponse<LeaderboardResponse>>;
   };
 
   // Image export (save-to-file / OS share sheet)

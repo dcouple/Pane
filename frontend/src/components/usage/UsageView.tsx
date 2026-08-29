@@ -8,6 +8,7 @@ import { BarChart } from '../ui/charts/BarChart';
 import { DonutChart } from '../ui/charts/DonutChart';
 import { formatTokens, formatUsd } from '../ui/charts/chartScales';
 import { LimitBar, LimitStatusBanners, CreditsLine } from './ProviderLimits';
+import { LeaderboardTab } from './LeaderboardTab';
 import {
   DEFAULT_USAGE_RANGE_DAYS,
   type UsageByPane,
@@ -139,8 +140,11 @@ function PaneUsageRow({ pane }: { pane: UsageByPane }) {
  * - **Provider**: rate limits, credits, blocked state — reported by Codex in
  *   every token_count event. Anthropic does not expose plan limits locally.
  */
+type UsageTab = 'usage' | 'leaderboard';
+
 export function UsageView() {
   const contentRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<UsageTab>('usage');
   const [report, setReport] = useState<UsageReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -400,94 +404,130 @@ export function UsageView() {
           <h1 className="text-sm font-medium text-text-primary">Usage &amp; limits</h1>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-3">
-          <fieldset className="flex items-center gap-1">
-            <legend className="sr-only">Provider</legend>
-            {PROVIDER_OPTIONS.map(option => (
-              <button
-                key={option.value}
-                type="button"
-                aria-pressed={provider === option.value}
-                onClick={() => setProvider(option.value)}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  provider === option.value
-                    ? 'bg-interactive text-text-on-interactive'
-                    : 'text-text-secondary hover:bg-surface-hover'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </fieldset>
-
-          <span className="h-4 w-px bg-border-primary" aria-hidden="true" />
-
-          <fieldset className="flex items-center gap-1">
-            <legend className="sr-only">Time range</legend>
-            {RANGE_OPTIONS.map(option => (
-              <button
-                key={option.days}
-                type="button"
-                aria-pressed={rangeDays === option.days}
-                onClick={() => setRangeDays(option.days)}
-                className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
-                  rangeDays === option.days
-                    ? 'bg-interactive text-text-on-interactive'
-                    : 'text-text-secondary hover:bg-surface-hover'
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </fieldset>
-
-          <span className="h-4 w-px bg-border-primary" aria-hidden="true" />
-
+        <nav className="flex items-center gap-1" role="tablist" aria-label="Usage views">
           <button
             type="button"
-            onClick={() => { void handleDownload(); }}
-            disabled={downloadStatus === 'capturing' || !report}
-            aria-label="Download usage as image"
-            title="Download usage as image"
-            className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+            role="tab"
+            aria-selected={activeTab === 'usage'}
+            onClick={() => setActiveTab('usage')}
+            className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              activeTab === 'usage'
+                ? 'bg-interactive text-text-on-interactive'
+                : 'text-text-secondary hover:bg-surface-hover'
+            }`}
           >
-            {downloadStatus === 'done'
-              ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
-              : <Download className={`h-3.5 w-3.5 text-text-tertiary ${downloadStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+            My usage
           </button>
-
           <button
             type="button"
-            onClick={() => { void handleShare(); }}
-            disabled={shareStatus === 'capturing' || !report}
-            aria-label="Share usage image"
-            title="Share usage image"
-            className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+            role="tab"
+            aria-selected={activeTab === 'leaderboard'}
+            onClick={() => setActiveTab('leaderboard')}
+            className={`rounded px-2.5 py-1 text-[11px] font-medium transition-colors ${
+              activeTab === 'leaderboard'
+                ? 'bg-interactive text-text-on-interactive'
+                : 'text-text-secondary hover:bg-surface-hover'
+            }`}
           >
-            {shareStatus === 'done'
-              ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
-              : <Share2 className={`h-3.5 w-3.5 text-text-tertiary ${shareStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+            Leaderboard
           </button>
+        </nav>
 
-          <button
-            type="button"
-            onClick={() => { void handleRescan(); }}
-            disabled={refreshing}
-            aria-label="Rescan transcripts"
-            className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 text-text-tertiary ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
-          </button>
-        </div>
+        {activeTab === 'usage' && (
+          <div className="ml-auto flex flex-wrap items-center gap-3">
+            <fieldset className="flex items-center gap-1">
+              <legend className="sr-only">Provider</legend>
+              {PROVIDER_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={provider === option.value}
+                  onClick={() => setProvider(option.value)}
+                  className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                    provider === option.value
+                      ? 'bg-interactive text-text-on-interactive'
+                      : 'text-text-secondary hover:bg-surface-hover'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </fieldset>
+
+            <span className="h-4 w-px bg-border-primary" aria-hidden="true" />
+
+            <fieldset className="flex items-center gap-1">
+              <legend className="sr-only">Time range</legend>
+              {RANGE_OPTIONS.map(option => (
+                <button
+                  key={option.days}
+                  type="button"
+                  aria-pressed={rangeDays === option.days}
+                  onClick={() => setRangeDays(option.days)}
+                  className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+                    rangeDays === option.days
+                      ? 'bg-interactive text-text-on-interactive'
+                      : 'text-text-secondary hover:bg-surface-hover'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </fieldset>
+
+            <span className="h-4 w-px bg-border-primary" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => { void handleDownload(); }}
+              disabled={downloadStatus === 'capturing' || !report}
+              aria-label="Download usage as image"
+              title="Download usage as image"
+              className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              {downloadStatus === 'done'
+                ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+                : <Download className={`h-3.5 w-3.5 text-text-tertiary ${downloadStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { void handleShare(); }}
+              disabled={shareStatus === 'capturing' || !report}
+              aria-label="Share usage image"
+              title="Share usage image"
+              className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              {shareStatus === 'done'
+                ? <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
+                : <Share2 className={`h-3.5 w-3.5 text-text-tertiary ${shareStatus === 'capturing' ? 'animate-pulse' : ''}`} aria-hidden="true" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { void handleRescan(); }}
+              disabled={refreshing}
+              aria-label="Rescan transcripts"
+              className="rounded p-1 transition-colors hover:bg-surface-hover disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-text-tertiary ${refreshing ? 'animate-spin' : ''}`} aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </header>
 
-      {report?.index.scanning && (
+      {activeTab === 'usage' && report?.index.scanning && (
         <div className="flex flex-shrink-0 items-center gap-2 border-b border-border-primary bg-surface-tertiary px-4 py-1 text-[11px] text-text-tertiary">
           <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
           Indexing transcripts… {report.index.filesScanned}/{report.index.filesTotal} files
         </div>
       )}
 
+      {activeTab === 'leaderboard' ? (
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <LeaderboardTab />
+        </div>
+      ) : (
       <div ref={contentRef} className="relative min-h-0 flex-1 overflow-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-xs text-text-tertiary">
@@ -759,6 +799,7 @@ export function UsageView() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

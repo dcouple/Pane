@@ -1,4 +1,5 @@
 import type { CloudVmConfig } from '../../../shared/types/cloud';
+import type { LeaderboardConfig } from '../../../shared/types/leaderboard';
 import type { RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
@@ -149,6 +150,8 @@ export interface AppConfig {
   remoteDaemon?: RemoteDaemonConfig;
   terminalFontFamily?: string;
   terminalFontSize?: number;
+  // Leaderboard opt-in and cached state
+  leaderboard?: LeaderboardConfig;
 }
 
 export interface UpdateConfigRequest {

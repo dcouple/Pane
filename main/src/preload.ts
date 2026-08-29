@@ -481,6 +481,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     rescan: (): Promise<IPCResponse> => invokeIpc('usage:rescan'),
   },
 
+  // Leaderboard opt-in and submission
+  leaderboard: {
+    getStatus: (): Promise<IPCResponse> => invokeIpc('leaderboard:get-status'),
+    join: (): Promise<IPCResponse> => invokeIpc('leaderboard:join'),
+    leave: (): Promise<IPCResponse> => invokeIpc('leaderboard:leave'),
+    sendNow: (): Promise<IPCResponse> => invokeIpc('leaderboard:send-now'),
+    fetch: (): Promise<IPCResponse> => invokeIpc('leaderboard:fetch'),
+  },
+
   // Image export (save-to-file / OS share sheet)
   export: {
     saveImage: (data: string, defaultFilename: string): Promise<IPCResponse> =>

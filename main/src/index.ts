@@ -96,6 +96,8 @@ import { terminalPanelManager } from './services/terminalPanelManager';
 import { panelManager } from './services/panelManager';
 import { worktreePoolManager } from './services/worktreePoolManager';
 import { usageManager } from './services/usage/usageManager';
+import { LeaderboardService } from './services/leaderboardService';
+import { registerLeaderboardHandlers } from './ipc/leaderboard';
 import { PtyHostSupervisor } from './ptyHost/ptyHostSupervisor';
 import { syncAutoStartOnBoot } from './utils/autoStart';
 import { createPaneDaemonHost, type PaneDaemonHost } from './daemon/bootstrap';
@@ -210,6 +212,7 @@ let databaseService: DatabaseService;
 let runCommandManager: RunCommandManager;
 let versionChecker: VersionChecker;
 let archiveProgressManager: ArchiveProgressManager;
+let leaderboardService: LeaderboardService;
 let analyticsManager: AnalyticsManager;
 let paneDaemonHost: PaneDaemonHost | null = null;
 let powerSaveManager: PowerSaveManager | null = null;
@@ -999,6 +1002,9 @@ async function initializeServices() {
   powerSaveManager = new PowerSaveManager(configManager, sessionManager);
   powerSaveManager.sync();
 
+  leaderboardService = new LeaderboardService(configManager);
+  registerLeaderboardHandlers(ipcMain, leaderboardService);
+
   ipcMain.handle('analytics:get-identity', async () => {
     try {
       const installId = await configManager.getOrCreateAnalyticsInstallId();
@@ -1273,9 +1279,11 @@ if (launchRemoteSetup) {
   // Index agent CLI transcripts for the usage page. Read-only, and deferred so
   // a first pass over a large ~/.claude never delays window creation.
   setTimeout(() => {
-    void usageManager.start().catch(error => {
-      console.warn('[Usage] Failed to start transcript indexing:', error);
-    });
+    void usageManager.start()
+      .then(() => leaderboardService.submitOnAppOpen())
+      .catch(error => {
+        console.warn('[Usage] Failed to start transcript indexing:', error);
+      });
   }, 8000);
 
     app.on('activate', () => {

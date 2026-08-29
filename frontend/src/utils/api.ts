@@ -5,6 +5,7 @@ import type { UpdateConfigRequest } from '../types/config';
 import type { SessionCreationPreferences } from '../stores/sessionPreferencesStore';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { UsageReportRequest } from '../../../shared/types/usage';
+import type { LeaderboardResponse, LeaderboardStatus, LeaderboardSubmitResult } from '../../../shared/types/leaderboard';
 import type {
   RemoteDaemonClientRecord,
   RemoteDaemonClientSettings,
@@ -92,6 +93,30 @@ export class API {
     async rescan() {
       if (!isElectron()) throw new Error('Electron API not available');
       return window.electronAPI.usage.rescan();
+    },
+  };
+
+  // Leaderboard
+  static leaderboard = {
+    async getStatus(): Promise<IPCResponse<LeaderboardStatus>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.leaderboard.getStatus();
+    },
+    async join(): Promise<IPCResponse<LeaderboardSubmitResult>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.leaderboard.join();
+    },
+    async leave(): Promise<IPCResponse> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.leaderboard.leave();
+    },
+    async sendNow(): Promise<IPCResponse<LeaderboardSubmitResult>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.leaderboard.sendNow();
+    },
+    async fetch(): Promise<IPCResponse<LeaderboardResponse>> {
+      if (!isElectron()) throw new Error('Electron API not available');
+      return window.electronAPI.leaderboard.fetch();
     },
   };
 
