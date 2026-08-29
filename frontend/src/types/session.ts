@@ -101,6 +101,7 @@ export interface Session {
   gitStatus?: GitStatus;
   baseCommit?: string;
   baseBranch?: string;
+  nameManuallySet?: boolean;
   activateOnCreate?: boolean;
 }
 

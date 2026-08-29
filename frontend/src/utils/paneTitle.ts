@@ -8,6 +8,10 @@ export interface PaneTitle {
   pane: string;
 }
 
+export function resolveSessionLabel(session: Session, displayName?: string): string {
+  return displayName ?? (session.name?.trim() || 'Untitled');
+}
+
 /**
  * Builds the `<project> · <pane name>` title shown in the window title bar.
  * Returns null when there is nothing worth naming (no pane, or no project for it).
