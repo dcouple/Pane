@@ -146,6 +146,31 @@ describe('launchDefaultAgentOnce', () => {
     expect(updateProject).not.toHaveBeenCalled();
   });
 
+  it('skips when the disclosed agent differs from the resolved launch preset', async () => {
+    const { services, id, updateProject, getSession } = createServices({ agent: 'codex' });
+
+    await expect(launchDefaultAgentOnce(services, id, { disclosedAgent: 'claude' })).resolves.toEqual({
+      status: 'skipped',
+      reason: 'disclosure-mismatch',
+    });
+
+    expect(getSession).not.toHaveBeenCalled();
+    expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('launches when the disclosed agent matches the resolved launch preset', async () => {
+    const { services, id } = createServices({ agent: 'codex' });
+
+    await expect(launchDefaultAgentOnce(services, id, { disclosedAgent: 'codex' })).resolves.toMatchObject({
+      status: 'launched',
+      agentType: 'codex',
+    });
+
+    expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced).toHaveBeenCalledOnce();
+    expect(mocks.createPanel).toHaveBeenCalledOnce();
+  });
+
   it('skips a project with a durable receipt', async () => {
     const { services, id, getSession } = createServices({ receipt: '2026-01-01T00:00:00.000Z' });
     await expect(launchDefaultAgentOnce(services, id)).resolves.toEqual({ status: 'skipped', reason: 'already-launched' });
@@ -267,6 +292,7 @@ describe('launchDefaultAgentOnce', () => {
   it('bounds terminal initialization with the overall launch deadline', async () => {
     vi.useFakeTimers();
     mocks.initializeTerminal.mockReturnValue(new Promise<void>(() => undefined));
+    mocks.isTerminalInitialized.mockReturnValue(false);
     const { services, id, updateProject } = createServices();
     const promise = launchDefaultAgentOnce(services, id);
     await vi.advanceTimersByTimeAsync(0);
@@ -278,11 +304,47 @@ describe('launchDefaultAgentOnce', () => {
       status: 'failed',
       message: 'Codex did not start within 45 s.',
     });
-    expect(mocks.destroyTerminal).toHaveBeenCalledOnce();
+    expect(mocks.destroyTerminal).not.toHaveBeenCalled();
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
     expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
     expect(updateProject).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('destroys a terminal that registers after the overall launch deadline', async () => {
+    vi.useFakeTimers();
+    let resolveInitialization: (() => void) | undefined;
+    let initialized = false;
+    mocks.initializeTerminal.mockReturnValue(new Promise<void>(resolve => { resolveInitialization = resolve; }));
+    mocks.isTerminalInitialized.mockImplementation(() => initialized);
+    const { services, id, updateProject } = createServices();
+    const promise = launchDefaultAgentOnce(services, id);
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    await expect(promise).resolves.toMatchObject({ status: 'failed' });
+    expect(mocks.destroyTerminal).not.toHaveBeenCalled();
+    expect(mocks.deletePanel).toHaveBeenCalledOnce();
+
+    initialized = true;
+    resolveInitialization?.();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(mocks.destroyTerminal).toHaveBeenCalledWith(mocks.createPanel.mock.calls[0]?.[0].id);
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('keeps a cleanup probe failure inside the memoised failed result', async () => {
+    mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
+    mocks.isTerminalInitialized.mockReturnValue(false);
+    mocks.getPanel.mockImplementation(() => { throw new Error('database read failed'); });
+    const { services, id } = createServices();
+
+    const first = await launchDefaultAgentOnce(services, id);
+    const replay = await launchDefaultAgentOnce(services, id);
+
+    expect(first).toMatchObject({ status: 'failed', reason: 'launch-error' });
+    expect(replay).toBe(first);
   });
 
   it('cleans up when the receipt write fails after readiness', async () => {

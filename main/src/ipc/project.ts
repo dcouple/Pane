@@ -229,7 +229,9 @@ export function registerProjectHandlers(
       let defaultAgentLaunch: DefaultAgentLaunchResult | undefined;
       if (projectData.launchDefaultAgent === true && project) {
         try {
-          defaultAgentLaunch = await launchDefaultAgentOnce(services, project.id);
+          defaultAgentLaunch = await launchDefaultAgentOnce(services, project.id, {
+            disclosedAgent: projectData.disclosedAgent,
+          });
         } catch (launchError) {
           const preset = resolveConfiguredLaunchPreset(configManager.getConfig());
           defaultAgentLaunch = preset

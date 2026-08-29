@@ -62,7 +62,7 @@ export function AddProjectDialog({ isOpen, onClose }: AddProjectDialogProps) {
     setCreateError(undefined);
     try {
       const projectToCreate: CreateProjectRequest = launchPreset
-        ? { ...newProject, launchDefaultAgent: true }
+        ? { ...newProject, launchDefaultAgent: true, disclosedAgent: launchPreset.id }
         : { ...newProject };
 
       const response = await API.projects.create(projectToCreate);

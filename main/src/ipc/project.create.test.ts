@@ -65,8 +65,12 @@ describe('projects:create default agent boundary', () => {
 
   it('honours the true flag through the daemon registry and returns the result', async () => {
     const { registry } = createRegistry();
-    const result = await registry.invoke('projects:create', [{ ...request, launchDefaultAgent: true }]);
-    expect(mocks.launchDefaultAgentOnce).toHaveBeenCalledOnce();
+    const result = await registry.invoke('projects:create', [{
+      ...request,
+      launchDefaultAgent: true,
+      disclosedAgent: 'codex',
+    }]);
+    expect(mocks.launchDefaultAgentOnce).toHaveBeenCalledWith(expect.anything(), 1, { disclosedAgent: 'codex' });
     expect(result).toMatchObject({ success: true, data: { defaultAgentLaunch: { status: 'launched' } } });
   });
 

@@ -20,6 +20,10 @@ type AnalyticsMainEvent = {
   properties?: JsonObject;
 };
 
+type ProjectCreateCall = JsonObject & {
+  disclosedAgent?: PaneChatAgent;
+};
+
 type ElectronApiMockOptions = {
   analyticsConsentShown?: boolean;
   analyticsIdentity?: JsonObject;
@@ -246,7 +250,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
     const sessionRenameCalls: Array<[string, string]> = [];
-    const projectCreateCalls: JsonObject[] = [];
+    const projectCreateCalls: ProjectCreateCall[] = [];
     const panelCreateCalls: JsonObject[] = [];
     let sessionsGetCount = 0;
 

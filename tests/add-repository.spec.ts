@@ -36,8 +36,11 @@ test.describe('add repository default agent', () => {
     await expect(page.getByText('Add New Repository')).toBeHidden({ timeout: 5_000 });
     await expect.poll(() => page.evaluate(() => (
       // SAFETY: installElectronApiMock installs this test-only bridge before navigation.
-      window as typeof window & { __paneTestElectronMock: { getProjectCreateCalls: () => Array<{ launchDefaultAgent?: boolean }> } }
-    ).__paneTestElectronMock.getProjectCreateCalls()[0]?.launchDefaultAgent)).toBe(true);
+      window as typeof window & { __paneTestElectronMock: { getProjectCreateCalls: () => Array<{ launchDefaultAgent?: boolean; disclosedAgent?: string }> } }
+    ).__paneTestElectronMock.getProjectCreateCalls()[0])).toMatchObject({
+      launchDefaultAgent: true,
+      disclosedAgent: 'codex',
+    });
     await expect(page.getByTestId('workspace-entry-launch-notice')).toHaveCount(0);
   });
 

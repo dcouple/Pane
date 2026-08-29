@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { AGENT_LAUNCH_PRESETS, type AgentLaunchPreset } from '../../../shared/constants/agentLaunchPresets';
+import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { DefaultAgentLaunchResult } from '../../../shared/types/workspaceEntry';
 import type { AppConfig } from '../types/config';
 import type { AppServices } from '../ipc/types';
@@ -26,6 +27,7 @@ export function resolveConfiguredLaunchPreset(
 export function launchDefaultAgentOnce(
   services: AppServices,
   projectId: number,
+  options?: { disclosedAgent?: PaneChatAgent },
 ): Promise<DefaultAgentLaunchResult> {
   const prior = attempted.get(projectId);
   if (prior) return Promise.resolve(prior);
@@ -37,6 +39,7 @@ export function launchDefaultAgentOnce(
     let preset: AgentLaunchPreset | null = null;
     let panelId: string | undefined;
     let sessionId: string | undefined;
+    let initializationPromise: Promise<void> | undefined;
     try {
       const project = services.databaseService.getProject(projectId);
       if (!project) throw new Error(`Project with ID ${projectId} not found`);
@@ -51,6 +54,10 @@ export function launchDefaultAgentOnce(
         return result;
       }
       const launchPreset = preset;
+      if (options?.disclosedAgent && options.disclosedAgent !== launchPreset.id) {
+        result = { status: 'skipped', reason: 'disclosure-mismatch' };
+        return result;
+      }
 
       const session = await services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
         autoCreateTerminal: false,
@@ -85,13 +92,15 @@ export function launchDefaultAgentOnce(
         }, LAUNCH_DEADLINE_MS);
       });
       try {
+        const currentInitialization = terminalPanelManager.initializeTerminal(
+          panel,
+          session.worktreePath,
+          context?.commandRunner.wslContext ?? null,
+        );
+        initializationPromise = currentInitialization;
         await Promise.race([
           (async () => {
-            await terminalPanelManager.initializeTerminal(
-              panel,
-              session.worktreePath,
-              context?.commandRunner.wslContext ?? null,
-            );
+            await currentInitialization;
             if (launchDeadlineReached) return;
 
             const readinessStartedAt = Date.now();
@@ -131,30 +140,51 @@ export function launchDefaultAgentOnce(
     } catch (error) {
       let stalePanelMessage: string | undefined;
       if (panelId && sessionId) {
+        const provisionalPanelId = panelId;
+        if (initializationPromise) {
+          void initializationPromise.then(() => {
+            try {
+              if (terminalPanelManager.isTerminalInitialized(provisionalPanelId)) {
+                terminalPanelManager.destroyTerminal(provisionalPanelId);
+              }
+            } catch (cleanupError) {
+              console.error('[WorkspaceEntry] Failed to destroy late provisional terminal:', cleanupError);
+            }
+          }, () => {});
+        }
         try {
-          if (terminalPanelManager.isTerminalInitialized(panelId)) {
-            terminalPanelManager.destroyTerminal(panelId);
+          if (terminalPanelManager.isTerminalInitialized(provisionalPanelId)) {
+            terminalPanelManager.destroyTerminal(provisionalPanelId);
           }
         } catch (cleanupError) {
           console.error('[WorkspaceEntry] Failed to destroy provisional terminal:', cleanupError);
         }
-        for (let deleteAttempt = 0; deleteAttempt < 2 && panelManager.getPanel(panelId); deleteAttempt += 1) {
+
+        const provisionalPanelExists = (): boolean => {
           try {
-            await panelManager.deletePanel(panelId);
+            return Boolean(panelManager.getPanel(provisionalPanelId));
+          } catch (cleanupError) {
+            console.error('[WorkspaceEntry] Failed to verify provisional panel cleanup:', cleanupError);
+            return true;
+          }
+        };
+        for (let deleteAttempt = 0; deleteAttempt < 2 && provisionalPanelExists(); deleteAttempt += 1) {
+          try {
+            await panelManager.deletePanel(provisionalPanelId);
           } catch (cleanupError) {
             console.error('[WorkspaceEntry] Failed to delete provisional panel:', cleanupError);
           }
         }
-        if (panelManager.getPanel(panelId)) {
+        if (provisionalPanelExists()) {
           try {
-            services.databaseService.deletePanel(panelId);
-            panelManager.removePanelFromMemory(panelId);
+            services.databaseService.deletePanel(provisionalPanelId);
+            panelManager.removePanelFromMemory(provisionalPanelId);
           } catch (cleanupError) {
             console.error('[WorkspaceEntry] Failed to force-delete provisional panel:', cleanupError);
           }
         }
-        if (panelManager.getPanel(panelId)) {
-          stalePanelMessage = `A stale panel remained after cleanup (${panelId}).`;
+        if (provisionalPanelExists()) {
+          stalePanelMessage = `A stale panel remained after cleanup (${provisionalPanelId}).`;
         }
       }
       if (sessionId) {

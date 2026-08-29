@@ -9,7 +9,7 @@ export type DefaultAgentLaunchResult =
     sessionId: string;
     panelId: string;
   }
-  | { status: 'skipped'; reason: 'no-default' | 'already-launched' }
+  | { status: 'skipped'; reason: 'no-default' | 'already-launched' | 'disclosure-mismatch' }
   | {
     status: 'failed';
     agentType: PaneChatAgent;

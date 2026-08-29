@@ -1,4 +1,5 @@
 import type { ProjectEnvironment } from '../../../shared/types/panels';
+import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { DefaultAgentLaunchResult } from '../../../shared/types/workspaceEntry';
 
 export interface Project {
@@ -38,6 +39,7 @@ export interface CreateProjectRequest {
   wsl_enabled?: boolean;
   wsl_distribution?: string | null;
   launchDefaultAgent?: boolean;
+  disclosedAgent?: PaneChatAgent;
 }
 
 export interface UpdateProjectRequest {
