@@ -48,6 +48,8 @@ type ElectronApiMockOptions = {
   /** Seeded split layout for the session under test (panels:get-layout). */
   initialLayout?: JsonObject | null;
   initialTerminalStates?: Record<string, JsonObject>;
+  /** Value returned by `git:get-github-remote` (enables git SHA/issue links). */
+  githubRemoteUrl?: string | null;
   initialAgentUsage?: JsonObject;
   initialUsageReport?: JsonObject;
   initialLeaderboardStatus?: JsonObject;
@@ -77,6 +79,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const pendingPermissions: PanePermissionRequest[] = [];
     const feedbackSubmissions: SubmitFeedbackRequest[] = [];
     const openedExternalUrls: string[] = [];
+    const panelCreates: JsonObject[] = [];
+    const panelUpdates: Array<{ panelId: string; updates: JsonObject }> = [];
+    const panelActivations: Array<{ sessionId: string; panelId: string }> = [];
     const clone = <T>(value: T): T => structuredClone(value);
     interface MockPreferences {
       [key: string]: string;
@@ -303,13 +308,32 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onSessionUpdated') {
           return (callback: MockEventCallback) => subscribe('session:updated', callback);
         }
+        if (prop === 'onConfigUpdated') {
+          return (callback: MockEventCallback) => subscribe('config:updated', callback);
+        }
+        if (prop === 'onPanelCreated') {
+          return (callback: MockEventCallback) => subscribe('panel:created', callback);
+        }
         return () => unsubscribe;
       },
     });
 
-    const invoke = (channel: string, key?: string, value?: string) => {
+    const invoke = (channel: string, key?: string, value?: string | JsonObject) => {
       if (channel === 'panels:get-layout') {
         return success(clone(mockOptions.initialLayout ?? null));
+      }
+      if (channel === 'panels:update') {
+        // This body runs inside the page (addInitScript), so no imported helpers are available.
+        const updates = value instanceof Object && !Array.isArray(value) ? value : undefined;
+        if (key && updates) {
+          panelUpdates.push({ panelId: key, updates: clone(updates) });
+          const panel = mockPanels.find((candidate) => candidate.id === key);
+          if (panel) Object.assign(panel, clone(updates));
+        }
+        return success();
+      }
+      if (channel === 'git:get-github-remote') {
+        return success(mockOptions.githubRemoteUrl ?? null);
       }
       if (channel === 'panels:shouldAutoCreate') {
         // Fixtures seed their own panels; the app must not grow a terminal.
@@ -332,8 +356,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           return Promise.resolve({ success: false, error });
         }
         if (key) {
-          preferences[key] = value ?? '';
-          preferenceWrites.push({ key, value: value ?? '' });
+          const stored = value instanceof Object ? '' : (value ?? '');
+          preferences[key] = stored;
+          preferenceWrites.push({ key, value: stored });
         }
         return success();
       }
@@ -625,7 +650,15 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
             metadata: { createdAt: now, lastActiveAt: now, position: mockPanels.length },
           };
           mockPanels.push(panel);
+          panelCreates.push(clone(panel));
+          // The main process broadcasts every created panel; SessionView relies on it
+          // to place panels created outside its own create path into the layout.
+          setTimeout(() => emit('panel:created', clone(panel)), 0);
           return success(clone(panel));
+        },
+        setActivePanel: (sessionId: string, panelId: string) => {
+          panelActivations.push({ sessionId, panelId });
+          return success();
         },
         shouldAutoCreate: () => success(false),
       }),
@@ -947,6 +980,18 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getOpenedExternalUrls() {
           return clone(openedExternalUrls);
+        },
+        getPanelCreates() {
+          return clone(panelCreates);
+        },
+        getPanelUpdates() {
+          return clone(panelUpdates);
+        },
+        getPanelActivations() {
+          return clone(panelActivations);
+        },
+        getPanels() {
+          return clone(mockPanels);
         },
         getPreferenceWrites() {
           return clone(preferenceWrites);

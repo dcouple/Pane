@@ -4,6 +4,7 @@ import type { RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import type { PaneChatAgent } from '../../../shared/types/paneChat';
 import type { VoiceTranscriptionMode } from '../../../shared/types/voiceTranscription';
 import type { WorktreeFileSyncEntry } from '../../../shared/types/worktreeFileSync';
+import type { KeyboardShortcutOverrides } from '../../../shared/utils/keyboardBindings';
 
 interface TerminalShortcut {
   id: string;
@@ -132,6 +133,8 @@ export interface AppConfig {
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
   terminalShortcuts?: TerminalShortcut[];
+  // Missing follows defaults; null unassigns; an empty update resets all.
+  keyboardShortcutOverrides?: KeyboardShortcutOverrides;
   // Whether Pane intercepts application keyboard shortcuts
   keyboardShortcutsEnabled?: boolean;
   // Whether the Command Palette shortcut remains active when other shortcuts are disabled
@@ -210,6 +213,8 @@ export interface UpdateConfigRequest {
   customCommands?: CustomCommand[];
   // Terminal shortcuts — hotkey-triggered clipboard paste snippets
   terminalShortcuts?: TerminalShortcut[];
+  // Replaces the sparse override map wholesale; {} deletes it.
+  keyboardShortcutOverrides?: KeyboardShortcutOverrides;
   // Whether Pane intercepts application keyboard shortcuts
   keyboardShortcutsEnabled?: boolean;
   // Whether the Command Palette shortcut remains active when other shortcuts are disabled
