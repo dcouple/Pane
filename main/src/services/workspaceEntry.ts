@@ -54,7 +54,7 @@ export function launchDefaultAgentOnce(
         return result;
       }
       const launchPreset = preset;
-      if (options?.disclosedAgent && options.disclosedAgent !== launchPreset.id) {
+      if (!options?.disclosedAgent || options.disclosedAgent !== launchPreset.id) {
         result = { status: 'skipped', reason: 'disclosure-mismatch' };
         return result;
       }

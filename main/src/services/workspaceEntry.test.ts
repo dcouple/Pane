@@ -84,6 +84,10 @@ function createServices(options: {
   return { services, id: projectId, updateProject, getSession, deletePanel };
 }
 
+function launchDisclosedCodex(services: AppServices, id: number) {
+  return launchDefaultAgentOnce(services, id, { disclosedAgent: 'codex' });
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   panelRecords.clear();
@@ -118,7 +122,7 @@ describe('launchDefaultAgentOnce', () => {
   ] as const)('launches the %s preset with only trusted initial state', async (agent, command) => {
     const { services, id } = createServices({ agent });
 
-    const result = await launchDefaultAgentOnce(services, id);
+    const result = await launchDefaultAgentOnce(services, id, { disclosedAgent: agent });
 
     expect(result).toMatchObject({ status: 'launched', agentType: agent, initialCommand: command });
     expect(mocks.createPanel).toHaveBeenCalledWith({
@@ -159,6 +163,19 @@ describe('launchDefaultAgentOnce', () => {
     expect(updateProject).not.toHaveBeenCalled();
   });
 
+  it('skips a requested automatic launch when the disclosed agent is absent', async () => {
+    const { services, id, updateProject, getSession } = createServices({ agent: 'codex' });
+
+    await expect(launchDefaultAgentOnce(services, id)).resolves.toEqual({
+      status: 'skipped',
+      reason: 'disclosure-mismatch',
+    });
+
+    expect(getSession).not.toHaveBeenCalled();
+    expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
   it('launches when the disclosed agent matches the resolved launch preset', async () => {
     const { services, id } = createServices({ agent: 'codex' });
 
@@ -190,7 +207,7 @@ describe('launchDefaultAgentOnce', () => {
   it.each(['platform', 'repo-context', 'executable'])('returns validation failure for %s', async check => {
     mocks.runAgentDoctor.mockResolvedValue({ available: false, checks: [{ name: check, ok: false, message: `${check} failed` }] });
     const { services, id, updateProject, getSession } = createServices();
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({
       status: 'failed', reason: 'validation-failed', message: `${check} failed`,
     });
     expect(getSession).toHaveBeenCalledWith(id, { autoCreateTerminal: false });
@@ -209,7 +226,7 @@ describe('launchDefaultAgentOnce', () => {
     });
     const { services, id, updateProject } = createServices();
 
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({
       status: 'failed',
       message: 'event sink failed after insert',
     });
@@ -224,7 +241,7 @@ describe('launchDefaultAgentOnce', () => {
   it('cleans up a panel when terminal initialization throws', async () => {
     mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
     const { services, id, updateProject } = createServices();
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed', message: 'spawn failed' });
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({ status: 'failed', message: 'spawn failed' });
     expect(mocks.destroyTerminal).toHaveBeenCalledOnce();
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
     expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
@@ -235,7 +252,7 @@ describe('launchDefaultAgentOnce', () => {
     mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
     mocks.isTerminalInitialized.mockReturnValue(false);
     const { services, id } = createServices();
-    await launchDefaultAgentOnce(services, id);
+    await launchDisclosedCodex(services, id);
     expect(mocks.destroyTerminal).not.toHaveBeenCalled();
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
   });
@@ -247,7 +264,7 @@ describe('launchDefaultAgentOnce', () => {
       .mockImplementationOnce(async panelId => { panelRecords.delete(panelId); });
     const { services, id } = createServices();
 
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed' });
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({ status: 'failed' });
 
     expect(mocks.deletePanel).toHaveBeenCalledTimes(2);
     const allocatedPanelId = mocks.createPanel.mock.calls[0]?.[0].id;
@@ -260,7 +277,7 @@ describe('launchDefaultAgentOnce', () => {
     mocks.removePanelFromMemory.mockImplementation(() => undefined);
     const { services, id, deletePanel } = createServices();
 
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({
       status: 'failed',
       message: expect.stringContaining('stale panel remained'),
     });
@@ -273,7 +290,7 @@ describe('launchDefaultAgentOnce', () => {
   it('cleans up when the PTY exits before readiness', async () => {
     mocks.getTerminalSnapshot.mockReturnValue(null);
     const { services, id, updateProject } = createServices();
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('exited') });
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('exited') });
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
     expect(updateProject).not.toHaveBeenCalled();
   });
@@ -282,7 +299,7 @@ describe('launchDefaultAgentOnce', () => {
     vi.useFakeTimers();
     mocks.getTerminalSnapshot.mockReturnValue({ isCliReady: false });
     const { services, id, updateProject } = createServices();
-    const promise = launchDefaultAgentOnce(services, id);
+    const promise = launchDisclosedCodex(services, id);
     await vi.advanceTimersByTimeAsync(31_000);
     await expect(promise).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('ready in time') });
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
@@ -294,7 +311,7 @@ describe('launchDefaultAgentOnce', () => {
     mocks.initializeTerminal.mockReturnValue(new Promise<void>(() => undefined));
     mocks.isTerminalInitialized.mockReturnValue(false);
     const { services, id, updateProject } = createServices();
-    const promise = launchDefaultAgentOnce(services, id);
+    const promise = launchDisclosedCodex(services, id);
     await vi.advanceTimersByTimeAsync(0);
     expect(mocks.initializeTerminal).toHaveBeenCalledOnce();
 
@@ -318,7 +335,7 @@ describe('launchDefaultAgentOnce', () => {
     mocks.initializeTerminal.mockReturnValue(new Promise<void>(resolve => { resolveInitialization = resolve; }));
     mocks.isTerminalInitialized.mockImplementation(() => initialized);
     const { services, id, updateProject } = createServices();
-    const promise = launchDefaultAgentOnce(services, id);
+    const promise = launchDisclosedCodex(services, id);
     await vi.advanceTimersByTimeAsync(0);
 
     await vi.advanceTimersByTimeAsync(45_000);
@@ -340,8 +357,8 @@ describe('launchDefaultAgentOnce', () => {
     mocks.getPanel.mockImplementation(() => { throw new Error('database read failed'); });
     const { services, id } = createServices();
 
-    const first = await launchDefaultAgentOnce(services, id);
-    const replay = await launchDefaultAgentOnce(services, id);
+    const first = await launchDisclosedCodex(services, id);
+    const replay = await launchDisclosedCodex(services, id);
 
     expect(first).toMatchObject({ status: 'failed', reason: 'launch-error' });
     expect(replay).toBe(first);
@@ -350,7 +367,7 @@ describe('launchDefaultAgentOnce', () => {
   it('cleans up when the receipt write fails after readiness', async () => {
     const updateProject = vi.fn(() => { throw new Error('receipt failed'); });
     const { services, id } = createServices({ updateProject });
-    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed', message: 'receipt failed' });
+    await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({ status: 'failed', message: 'receipt failed' });
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
   });
 
@@ -358,7 +375,7 @@ describe('launchDefaultAgentOnce', () => {
     const fixture = createServices();
     if (source === 'doctor') mocks.runAgentDoctor.mockRejectedValue(new Error('doctor failed'));
     else fixture.getSession.mockRejectedValue(new Error('session failed'));
-    await expect(launchDefaultAgentOnce(fixture.services, fixture.id)).resolves.toMatchObject({ status: 'failed' });
+    await expect(launchDisclosedCodex(fixture.services, fixture.id)).resolves.toMatchObject({ status: 'failed' });
     expect(mocks.createPanel).not.toHaveBeenCalled();
   });
 
@@ -366,8 +383,8 @@ describe('launchDefaultAgentOnce', () => {
     let release: (() => void) | undefined;
     mocks.initializeTerminal.mockImplementation(() => new Promise<void>(resolve => { release = resolve; }));
     const { services, id, updateProject } = createServices();
-    const first = launchDefaultAgentOnce(services, id);
-    const second = launchDefaultAgentOnce(services, id);
+    const first = launchDisclosedCodex(services, id);
+    const second = launchDisclosedCodex(services, id);
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release?.();
     const [firstResult, secondResult] = await Promise.all([first, second]);
@@ -381,12 +398,12 @@ describe('launchDefaultAgentOnce', () => {
     let release: (() => void) | undefined;
     mocks.initializeTerminal.mockImplementation(() => new Promise<void>((_resolve, reject) => { release = () => reject(new Error('failed')); }));
     const { services, id } = createServices();
-    const first = launchDefaultAgentOnce(services, id);
-    const second = launchDefaultAgentOnce(services, id);
+    const first = launchDisclosedCodex(services, id);
+    const second = launchDisclosedCodex(services, id);
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     release?.();
     const [firstResult, secondResult] = await Promise.all([first, second]);
-    const replay = await launchDefaultAgentOnce(services, id);
+    const replay = await launchDisclosedCodex(services, id);
     expect(firstResult).toBe(secondResult);
     expect(replay).toBe(firstResult);
     expect(mocks.createPanel).toHaveBeenCalledOnce();

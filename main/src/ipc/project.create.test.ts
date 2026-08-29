@@ -21,11 +21,20 @@ import { registerProjectHandlers } from './project';
 
 function createRegistry() {
   let nextId = 1;
+  const getSession = vi.fn();
   const databaseService = {
     createProject: vi.fn((name: string, repoPath: string) => ({
       id: nextId++,
       name,
       path: repoPath,
+      active: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    })),
+    getProject: vi.fn((id: number) => ({
+      id,
+      name: 'Created repo',
+      path: process.cwd(),
       active: false,
       created_at: '2026-01-01T00:00:00.000Z',
       updated_at: '2026-01-01T00:00:00.000Z',
@@ -36,7 +45,7 @@ function createRegistry() {
   // SAFETY: This fixture supplies every AppServices member exercised by projects:create.
   const services = {
     databaseService,
-    sessionManager: {},
+    sessionManager: { getOrCreateMainRepoSessionAnnounced: getSession },
     worktreeManager: { getProjectMainBranch: vi.fn(async () => 'main') },
     configManager: { getConfig: vi.fn(() => ({ defaultOrchestratorAgent: 'codex', agentContext: { managedAgentsMd: false } })) },
     analyticsManager: { track: vi.fn() },
@@ -44,7 +53,7 @@ function createRegistry() {
   const registry = new PaneCommandRegistry();
   // SAFETY: registerProjectHandlers only calls the IpcMain.handle surface in this test.
   registerProjectHandlers({ handle: vi.fn() } as never, services, registry);
-  return { registry, services };
+  return { registry, services, getSession };
 }
 
 const request = { name: 'Created repo', path: process.cwd() };
@@ -85,10 +94,28 @@ describe('projects:create default agent boundary', () => {
     expect((result as { data: { defaultAgentLaunch?: unknown } }).data).not.toHaveProperty('defaultAgentLaunch');
   });
 
+  it('uses the real launch service to reject a flag without a disclosed agent', async () => {
+    const workspaceEntry = await vi.importActual<typeof import('../services/workspaceEntry')>('../services/workspaceEntry');
+    mocks.launchDefaultAgentOnce.mockImplementationOnce(workspaceEntry.launchDefaultAgentOnce);
+    const { registry, getSession } = createRegistry();
+
+    const result = await registry.invoke('projects:create', [{ ...request, launchDefaultAgent: true }]);
+
+    expect(result).toMatchObject({
+      success: true,
+      data: { defaultAgentLaunch: { status: 'skipped', reason: 'disclosure-mismatch' } },
+    });
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
   it('keeps the project when launch throws and returns a failed launch result', async () => {
     mocks.launchDefaultAgentOnce.mockRejectedValue(new Error('launch exploded'));
     const { registry } = createRegistry();
-    const result = await registry.invoke('projects:create', [{ ...request, launchDefaultAgent: true }]);
+    const result = await registry.invoke('projects:create', [{
+      ...request,
+      launchDefaultAgent: true,
+      disclosedAgent: 'codex',
+    }]);
     expect(result).toMatchObject({
       success: true,
       data: { defaultAgentLaunch: { status: 'failed', reason: 'launch-error', message: 'launch exploded' } },
