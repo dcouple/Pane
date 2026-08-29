@@ -395,6 +395,7 @@ export function registerProjectHandlers(
   commandRegistry.register('projects:delete', async (projectId: string) => {
     try {
       const projectIdNum = parseInt(projectId);
+      forgetProjectLaunchState(projectIdNum);
       
       // Get the project to access its path
       const project = databaseService.getProject(projectIdNum);
@@ -479,7 +480,7 @@ export function registerProjectHandlers(
 
       // Now safe to delete the project
       const success = databaseService.deleteProject(projectIdNum);
-      if (success) forgetProjectLaunchState(projectIdNum);
+      forgetProjectLaunchState(projectIdNum);
       return { success: true, data: success };
     } catch (error) {
       console.error('Failed to delete project:', error);

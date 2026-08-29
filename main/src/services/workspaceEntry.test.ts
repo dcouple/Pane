@@ -218,6 +218,29 @@ describe('launchDefaultAgentOnce', () => {
     expect(updateProject).not.toHaveBeenCalled();
   });
 
+  it('cancels during doctor validation after announcing the shell-suppressed session', async () => {
+    let resolveDoctor: (() => void) | undefined;
+    mocks.runAgentDoctor.mockImplementationOnce(() => new Promise(resolve => {
+      resolveDoctor = () => resolve({ available: true, checks: [] });
+    }));
+    const { services, id, getSession, updateProject } = createServices();
+    const launch = launchDisclosedCodex(services, id);
+    await vi.waitFor(() => expect(resolveDoctor).toBeTypeOf('function'));
+
+    forgetProjectLaunchState(id);
+
+    await expect(launch).resolves.toMatchObject({
+      status: 'failed',
+      reason: 'launch-error',
+      message: 'Project was deleted before Codex started.',
+    });
+    expect(getSession).toHaveBeenCalledWith(id, { autoCreateTerminal: false });
+    expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
+    expect(updateProject).not.toHaveBeenCalled();
+    resolveDoctor?.();
+  });
+
   it('cleans up a preallocated panel when create persists and then rejects', async () => {
     mocks.isTerminalInitialized.mockReturnValue(false);
     mocks.createPanel.mockImplementationOnce(async request => {
@@ -365,6 +388,28 @@ describe('launchDefaultAgentOnce', () => {
     expect(replay).toBe(first);
   });
 
+  it('memoises a synthesized failure when the attempt catch path rejects', async () => {
+    mocks.initializeTerminal.mockRejectedValue(new Error('spawn failed'));
+    mocks.isTerminalInitialized.mockImplementation(() => { throw new Error('cleanup probe failed'); });
+    const consoleError = vi.spyOn(console, 'error')
+      .mockImplementationOnce(() => { throw new Error('cleanup handler failed'); });
+    const { services, id } = createServices();
+    try {
+      const first = await launchDisclosedCodex(services, id);
+      const replay = await launchDisclosedCodex(services, id);
+
+      expect(first).toMatchObject({
+        status: 'failed',
+        reason: 'launch-error',
+        message: 'cleanup handler failed',
+      });
+      expect(replay).toBe(first);
+      expect(mocks.createPanel).toHaveBeenCalledOnce();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it('cleans up when the receipt write fails after readiness', async () => {
     const updateProject = vi.fn(() => { throw new Error('receipt failed'); });
     const { services, id } = createServices({ updateProject });
@@ -410,29 +455,38 @@ describe('launchDefaultAgentOnce', () => {
     expect(mocks.createPanel).toHaveBeenCalledOnce();
   });
 
-  it('runs a fresh attempt after forgetting in-flight project launch state', async () => {
-    const { services, id, getSession, updateProject } = createServices();
-    let releaseFirstSession: (() => void) | undefined;
-    getSession.mockImplementationOnce(() => new Promise(resolve => {
-      releaseFirstSession = () => resolve({ id: `session-${id}`, worktreePath: `/repo/${id}` });
+  it('cancels initialization and permits a fresh attempt after forgetting launch state', async () => {
+    let resolveInitialization: (() => void) | undefined;
+    mocks.initializeTerminal.mockImplementationOnce(() => new Promise(resolve => {
+      resolveInitialization = resolve;
     }));
+    mocks.isTerminalInitialized.mockReturnValue(false);
+    const { services, id, updateProject } = createServices();
 
     const first = launchDisclosedCodex(services, id);
-    await vi.waitFor(() => expect(releaseFirstSession).toBeTypeOf('function'));
+    await vi.waitFor(() => expect(resolveInitialization).toBeTypeOf('function'));
     forgetProjectLaunchState(id);
+
+    const firstResult = await first;
+    expect(firstResult).toMatchObject({
+      status: 'failed',
+      reason: 'launch-error',
+      message: 'Project was deleted before Codex started.',
+    });
+    expect(mocks.deletePanel).toHaveBeenCalledOnce();
+    expect(updateProject).not.toHaveBeenCalled();
+
     const second = launchDisclosedCodex(services, id);
     const secondResult = await second;
-    releaseFirstSession?.();
-    const firstResult = await first;
+    resolveInitialization?.();
+    await Promise.resolve();
     const replay = await launchDisclosedCodex(services, id);
 
     expect(first).not.toBe(second);
-    expect(firstResult).toMatchObject({ status: 'launched' });
     expect(secondResult).toMatchObject({ status: 'launched' });
     expect(replay).toBe(secondResult);
-    expect(getSession).toHaveBeenCalledTimes(2);
     expect(mocks.createPanel).toHaveBeenCalledTimes(2);
-    expect(updateProject).toHaveBeenCalledTimes(2);
+    expect(updateProject).toHaveBeenCalledOnce();
   });
 
   it('is imported by project IPC only', () => {

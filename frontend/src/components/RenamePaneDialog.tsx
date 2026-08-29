@@ -20,6 +20,7 @@ function RenamePaneDialogBody({ session, onClose }: { session: Session; onClose:
   const [error, setError] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const didSelectInitialName = useRef(false);
   const trimmedName = name.trim();
 
   const submit = async () => {
@@ -53,7 +54,11 @@ function RenamePaneDialogBody({ session, onClose }: { session: Session; onClose:
       <ModalBody>
         <EnhancedInput
           ref={inputRef}
-          onFocus={(event) => event.currentTarget.select()}
+          onFocus={(event) => {
+            if (didSelectInitialName.current) return;
+            didSelectInitialName.current = true;
+            event.currentTarget.select();
+          }}
           label="Pane name"
           value={name}
           error={error ?? (!trimmedName ? 'Pane name cannot be blank' : undefined)}

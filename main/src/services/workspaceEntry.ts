@@ -11,12 +11,24 @@ import { runAgentDoctor } from './agents/agentDoctor';
 const READINESS_TIMEOUT_MS = 30_000;
 const READINESS_INTERVAL_MS = 500;
 const LAUNCH_DEADLINE_MS = 45_000;
-const inFlight = new Map<number, Promise<DefaultAgentLaunchResult>>();
+interface InFlightLaunch {
+  controller: AbortController;
+  promise: Promise<DefaultAgentLaunchResult>;
+}
+
+const inFlight = new Map<number, InFlightLaunch>();
 const attempted = new Map<number, DefaultAgentLaunchResult>();
-const forgottenAttempts = new WeakSet<Promise<DefaultAgentLaunchResult>>();
 
 class AgentValidationError extends Error {
   override name = 'AgentValidationError';
+}
+
+class LaunchCancelledError extends Error {
+  override name = 'LaunchCancelledError';
+
+  constructor(agentTitle: string) {
+    super(`Project was deleted before ${agentTitle} started.`);
+  }
 }
 
 export function resolveConfiguredLaunchPreset(
@@ -28,17 +40,57 @@ export function resolveConfiguredLaunchPreset(
 async function waitForCliReady(
   panelId: string,
   deadlineSignal: AbortSignal,
+  attemptSignal: AbortSignal,
   agentTitle: string,
 ): Promise<void> {
   const readinessStartedAt = Date.now();
-  while (!deadlineSignal.aborted && Date.now() - readinessStartedAt <= READINESS_TIMEOUT_MS) {
+  while (
+    !deadlineSignal.aborted
+    && !attemptSignal.aborted
+    && Date.now() - readinessStartedAt <= READINESS_TIMEOUT_MS
+  ) {
     const snapshot = terminalPanelManager.getTerminalSnapshot(panelId);
     if (!snapshot) throw new Error(`${agentTitle} exited before it was ready.`);
     if (snapshot.isCliReady) return;
     await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS));
   }
-  if (!deadlineSignal.aborted) {
+  if (!deadlineSignal.aborted && !attemptSignal.aborted) {
     throw new Error(`${agentTitle} did not become ready in time.`);
+  }
+}
+
+function assertLaunchActive(
+  services: AppServices,
+  projectId: number,
+  signal: AbortSignal,
+  agentTitle: string,
+): void {
+  if (signal.aborted || !services.databaseService.getProject(projectId)) {
+    throw new LaunchCancelledError(agentTitle);
+  }
+}
+
+async function runCancellableStage<T>(
+  services: AppServices,
+  projectId: number,
+  signal: AbortSignal,
+  agentTitle: string,
+  stage: () => Promise<T>,
+): Promise<T> {
+  assertLaunchActive(services, projectId, signal, agentTitle);
+  let rejectCancellation: ((error: LaunchCancelledError) => void) | undefined;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
+  const cancel = () => rejectCancellation?.(new LaunchCancelledError(agentTitle));
+  signal.addEventListener('abort', cancel, { once: true });
+  if (signal.aborted) cancel();
+  try {
+    const result = await Promise.race([stage(), cancellation]);
+    assertLaunchActive(services, projectId, signal, agentTitle);
+    return result;
+  } finally {
+    signal.removeEventListener('abort', cancel);
   }
 }
 
@@ -111,6 +163,7 @@ async function cleanupProvisionalPanel(
 async function runAttempt(
   services: AppServices,
   projectId: number,
+  signal: AbortSignal,
   options?: { disclosedAgent?: PaneChatAgent },
 ): Promise<DefaultAgentLaunchResult> {
   let preset: AgentLaunchPreset | null = null;
@@ -133,29 +186,48 @@ async function runAttempt(
       return { status: 'skipped', reason: 'disclosure-mismatch' };
     }
 
-    const session = await services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
-      autoCreateTerminal: false,
-    });
+    const session = await runCancellableStage(
+      services,
+      projectId,
+      signal,
+      launchPreset.title,
+      () => services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
+        autoCreateTerminal: false,
+      }),
+    );
     sessionId = session.id;
 
-    const doctor = await runAgentDoctor(services, project, launchPreset.id);
+    const doctor = await runCancellableStage(
+      services,
+      projectId,
+      signal,
+      launchPreset.title,
+      () => runAgentDoctor(services, project, launchPreset.id),
+    );
     if (!doctor.available) {
       const failedCheck = doctor.checks.find(check => !check.ok);
       throw new AgentValidationError(failedCheck?.message ?? `${launchPreset.title} is unavailable.`);
     }
 
     panelId = randomUUID();
-    const panel = await panelManager.createPanel({
-      id: panelId,
-      sessionId,
-      type: 'terminal',
-      title: launchPreset.title,
-      initialState: {
-        initialCommand: launchPreset.command,
-        agentType: launchPreset.id,
-        isCliPanel: true,
-      },
-    });
+    const provisionalPanelId = panelId;
+    const panel = await runCancellableStage(
+      services,
+      projectId,
+      signal,
+      launchPreset.title,
+      () => panelManager.createPanel({
+        id: provisionalPanelId,
+        sessionId: session.id,
+        type: 'terminal',
+        title: launchPreset.title,
+        initialState: {
+          initialCommand: launchPreset.command,
+          agentType: launchPreset.id,
+          isCliPanel: true,
+        },
+      }),
+    );
     const context = services.sessionManager.getProjectContext(session.id);
     const deadlineController = new AbortController();
     let launchDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
@@ -166,24 +238,34 @@ async function runAttempt(
       }, LAUNCH_DEADLINE_MS);
     });
     try {
-      const currentInitialization = terminalPanelManager.initializeTerminal(
-        panel,
-        session.worktreePath,
-        context?.commandRunner.wslContext ?? null,
+      await runCancellableStage(
+        services,
+        projectId,
+        signal,
+        launchPreset.title,
+        async () => {
+          const currentInitialization = terminalPanelManager.initializeTerminal(
+            panel,
+            session.worktreePath,
+            context?.commandRunner.wslContext ?? null,
+          );
+          initializationPromise = currentInitialization;
+          await Promise.race([
+            currentInitialization.then(() => waitForCliReady(
+              panel.id,
+              deadlineController.signal,
+              signal,
+              launchPreset.title,
+            )),
+            launchDeadline,
+          ]);
+        },
       );
-      initializationPromise = currentInitialization;
-      await Promise.race([
-        currentInitialization.then(() => waitForCliReady(
-          panel.id,
-          deadlineController.signal,
-          launchPreset.title,
-        )),
-        launchDeadline,
-      ]);
     } finally {
       if (launchDeadlineTimer) clearTimeout(launchDeadlineTimer);
     }
 
+    assertLaunchActive(services, projectId, signal, launchPreset.title);
     const updatedProject = services.databaseService.updateProject(projectId, {
       default_agent_launched_at: new Date().toISOString(),
     });
@@ -227,9 +309,31 @@ async function runAttempt(
   }
 }
 
+function synthesizeAttemptFailure(
+  services: AppServices,
+  error: Error,
+  disclosedAgent: PaneChatAgent | undefined,
+): DefaultAgentLaunchResult {
+  let preset = AGENT_LAUNCH_PRESETS.find(candidate => candidate.id === disclosedAgent) ?? null;
+  try {
+    preset = resolveConfiguredLaunchPreset(services.configManager.getConfig()) ?? preset;
+  } catch {
+    // The disclosed preset still provides safe, static failure metadata.
+  }
+  if (!preset) return { status: 'skipped', reason: 'no-default' };
+  return {
+    status: 'failed',
+    agentType: preset.id,
+    agentTitle: preset.title,
+    initialCommand: preset.command,
+    reason: 'launch-error',
+    message: error.message,
+  };
+}
+
 export function forgetProjectLaunchState(projectId: number): void {
   const pending = inFlight.get(projectId);
-  if (pending) forgottenAttempts.add(pending);
+  pending?.controller.abort();
   inFlight.delete(projectId);
   attempted.delete(projectId);
 }
@@ -242,18 +346,25 @@ export function launchDefaultAgentOnce(
   const prior = attempted.get(projectId);
   if (prior) return Promise.resolve(prior);
   const pending = inFlight.get(projectId);
-  if (pending) return pending;
+  if (pending) return pending.promise;
 
+  const controller = new AbortController();
   const attempt: Promise<DefaultAgentLaunchResult> = Promise.resolve()
-    .then(() => runAttempt(services, projectId, options))
+    .then(() => runAttempt(services, projectId, controller.signal, options))
+    .catch(error => synthesizeAttemptFailure(
+      services,
+      error instanceof Error ? error : new Error('Failed to start the default agent.'),
+      options?.disclosedAgent,
+    ))
     .then(result => {
-      if (!forgottenAttempts.has(attempt)) attempted.set(projectId, result);
+      if (!controller.signal.aborted && inFlight.get(projectId)?.promise === attempt) {
+        attempted.set(projectId, result);
+      }
       return result;
     })
     .finally(() => {
-      forgottenAttempts.delete(attempt);
-      if (inFlight.get(projectId) === attempt) inFlight.delete(projectId);
+      if (inFlight.get(projectId)?.promise === attempt) inFlight.delete(projectId);
     });
-  inFlight.set(projectId, attempt);
+  inFlight.set(projectId, { controller, promise: attempt });
   return attempt;
 }
