@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle, Clipboard, Download, ExternalLink, Loader2, Terminal } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle, Clipboard, Download, ExternalLink, Loader2, Power, Terminal } from 'lucide-react';
 import { Modal, ModalHeader, ModalBody, ModalFooter } from './ui/Modal';
 import { Button } from './ui/Button';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { isMac } from '../utils/platformUtils';
 import { LiveRegion } from './ui/LiveRegion';
+import { shouldOfferQuitForManualInstall } from './updateDialogQuit';
 
 interface UpdateDialogProps {
   isOpen: boolean;
@@ -35,6 +36,8 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPackaged, setIsPackaged] = useState(false);
+  const [quitRequested, setQuitRequested] = useState(false);
+  const quitHintId = useId();
   const userStartedUpdateRef = useRef(false);
   const downloadStartedRef = useRef(false);
   const installStartedRef = useRef(false);
@@ -55,6 +58,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       setDownloadProgress(null);
       setError(null);
       setMessage(null);
+      setQuitRequested(false);
       userStartedUpdateRef.current = false;
       downloadStartedRef.current = false;
       installStartedRef.current = false;
@@ -72,6 +76,18 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       });
     }
   }, []);
+
+  const offerQuit = shouldOfferQuitForManualInstall({
+    isPackaged,
+    isMacPlatform: isMac(),
+    hasUpdate: versionInfo?.hasUpdate === true,
+  });
+  const manualInstallQuitInstruction = offerQuit
+    ? 'use Quit Pane below before dragging Pane.app into Applications'
+    : 'quit Pane before dragging Pane.app into Applications';
+  const manualInstallSteps = offerQuit
+    ? 'use Quit Pane below, then drag Pane.app into Applications and choose Replace'
+    : 'quit Pane, drag Pane.app into Applications, and choose Replace';
 
   const startDownloadUpdate = useCallback(async () => {
     if (!window.electronAPI?.updater) {
@@ -193,6 +209,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   }, [clearInstallTimeout, installDownloadedUpdate, isOpen, startDownloadUpdate]);
 
   const handleStartUpdate = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -213,7 +230,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
         userStartedUpdateRef.current = false;
         if (response.success) {
           setUpdateState('idle');
-          setMessage('Terminal opened and the update command was copied. Paste it and press Return to open the latest installer.');
+          setMessage(`Terminal opened and the update command was copied. Paste it and press Return to open the latest installer. Once the installer opens, ${manualInstallQuitInstruction}.`);
         } else {
           setError(response.error || 'Failed to open Terminal');
           setUpdateState('error');
@@ -234,6 +251,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
 
   const handleCopyUpdateCommand = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -257,6 +275,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   };
 
   const handleOpenTerminalWithCommand = async () => {
+    setQuitRequested(false);
     if (!window.electronAPI?.updater) {
       setError('Update functionality not available');
       return;
@@ -266,7 +285,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       const response = await window.electronAPI.updater.openTerminalWithCommand();
       if (response.success) {
         setError(null);
-        setMessage('Terminal opened and the update command was copied. Paste it and press Return.');
+        setMessage(`Terminal opened and the update command was copied. Paste it and press Return. Once the installer opens, ${manualInstallQuitInstruction}.`);
       } else {
         setMessage(null);
         setError(response.error || 'Failed to open Terminal');
@@ -279,7 +298,44 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     }
   };
 
+  const handleQuitForManualInstall = async () => {
+    if (!window.electronAPI?.updater) {
+      setMessage(null);
+      setError('Update functionality not available');
+      setUpdateState('error');
+      return;
+    }
+
+    // Arm on the first press. Quitting interrupts every running agent, and this
+    // button sits next to Close.
+    if (!quitRequested) {
+      setQuitRequested(true);
+      return;
+    }
+
+    try {
+      const response = await window.electronAPI.updater.quitForManualInstall();
+      if (!response.success) {
+        setQuitRequested(false);
+        setMessage(null);
+        setError(response.error || 'Failed to quit Pane');
+        setUpdateState('error');
+      }
+      // A successful reply means the quit was requested, not that Pane is gone:
+      // the shutdown asks about in-flight archive tasks and is abandoned if the
+      // user chooses to wait. So nothing here disables the dialog or latches a
+      // "quitting" state — a user who waits keeps a working dialog and can press
+      // Quit again.
+    } catch (err: unknown) {
+      setQuitRequested(false);
+      setMessage(null);
+      setError(err instanceof Error ? err.message : 'Failed to quit Pane');
+      setUpdateState('error');
+    }
+  };
+
   const openDmgDownload = () => {
+    setQuitRequested(false);
     if (versionInfo?.downloadUrl) {
       window.electronAPI.openExternal(versionInfo.downloadUrl);
     }
@@ -340,7 +396,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           </Button>
           {versionInfo?.releaseUrl && (
             <Button
-              onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+              onClick={() => {
+                setQuitRequested(false);
+                window.electronAPI.openExternal(versionInfo.releaseUrl!);
+              }}
               variant="secondary"
               size="sm"
               icon={<ExternalLink className="w-4 h-4" />}
@@ -357,8 +416,8 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
           Paste it, press Return, and the latest Pane installer will download and open.
         </p>
         <p className="text-text-secondary">
-          After the DMG opens: close Pane, drag Pane.app into Applications, and choose Replace.
-          Your settings and sessions are preserved.
+          After the DMG opens: {manualInstallSteps}.
+          {' '}Your settings and sessions are preserved.
         </p>
         <code className="block bg-surface-primary border border-border-primary rounded px-3 py-2 text-xs text-text-primary font-mono break-all">
           curl -fsSL https://runpane.com/install.sh | sh
@@ -430,7 +489,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                   </Button>
                 ) : (
                   <Button
-                    onClick={() => versionInfo.releaseUrl && window.electronAPI.openExternal(versionInfo.releaseUrl)}
+                    onClick={() => {
+                      setQuitRequested(false);
+                      if (versionInfo.releaseUrl) window.electronAPI.openExternal(versionInfo.releaseUrl);
+                    }}
                     variant="primary"
                   >
                     View Release
@@ -567,8 +629,8 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                       <div className="space-y-3">
                         {isMac() ? (
                           <p className="text-sm text-text-secondary">
-                            Use the update command above, or download the DMG directly. After the DMG opens,
-                            close Pane, drag Pane.app into Applications, and choose Replace.
+                            Use the update command above, or download the DMG directly. After the DMG opens,{' '}
+                            {manualInstallSteps}.
                           </p>
                         ) : (
                           <>
@@ -596,7 +658,10 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                       </div>
                       {versionInfo?.releaseUrl && (
                         <button
-                          onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+                          onClick={() => {
+                            setQuitRequested(false);
+                            window.electronAPI.openExternal(versionInfo.releaseUrl!);
+                          }}
                           className="mt-3 text-sm text-interactive hover:text-interactive-hover underline"
                         >
                           View Release on GitHub
@@ -645,7 +710,13 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                         </blockquote>
                       ),
                       a: ({ href, children }) => (
-                        <a href={href} className="text-interactive hover:text-interactive-hover underline" target="_blank" rel="noopener noreferrer">
+                        <a
+                          href={href}
+                          className="text-interactive hover:text-interactive-hover underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => setQuitRequested(false)}
+                        >
                           {children}
                         </a>
                       ),
@@ -666,24 +737,49 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       </ModalBody>
 
       <ModalFooter>
-        <div className="flex justify-between items-center w-full">
+        <div className="flex justify-between items-center w-full gap-4">
           <div className="text-sm text-text-tertiary">
             {versionInfo?.releaseUrl && (
               <button
-                onClick={() => window.electronAPI.openExternal(versionInfo.releaseUrl!)}
+                onClick={() => {
+                  setQuitRequested(false);
+                  window.electronAPI.openExternal(versionInfo.releaseUrl!);
+                }}
                 className="hover:text-text-secondary underline transition-colors"
               >
                 View on GitHub
               </button>
             )}
           </div>
-          <Button
-            onClick={onClose}
-            variant="secondary"
-            disabled={isUpdateBusy}
-          >
-            Close
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* In the footer, not renderMacUpdateActions(): that panel only renders in
+                the downloaded and error states, so the ordinary macOS path — which
+                returns to 'idle' with a message — would otherwise offer no way out. */}
+            {offerQuit && quitRequested && (
+              <span id={quitHintId} role="alert" className="text-sm text-text-secondary">
+                Quitting stops running agents.
+                <span className="sr-only"> Choose Quit now to confirm.</span>
+              </span>
+            )}
+            {offerQuit && (
+              <Button
+                onClick={handleQuitForManualInstall}
+                variant={quitRequested ? 'danger' : 'secondary'}
+                disabled={isUpdateBusy}
+                aria-describedby={quitRequested ? quitHintId : undefined}
+                icon={<Power className="w-4 h-4" />}
+              >
+                {quitRequested ? 'Quit now' : 'Quit Pane'}
+              </Button>
+            )}
+            <Button
+              onClick={onClose}
+              variant="secondary"
+              disabled={isUpdateBusy}
+            >
+              Close
+            </Button>
+          </div>
         </div>
       </ModalFooter>
     </Modal>

@@ -5,8 +5,16 @@ const devServerPort = getPlaywrightPort();
 
 export default defineConfig({
   testDir: './tests',
-  // Keep the fast startup checks and the maintained accessibility journeys in CI.
-  testMatch: ['smoke.spec.ts', 'health-check.spec.ts', 'accessibility.spec.ts'],
+  // Keep the fast startup checks and the maintained accessibility journeys in CI,
+  // plus the update-dialog quit spec: it is the only check that fails if the macOS
+  // manual-install quit affordance is removed, and it pins navigator.platform itself
+  // so it asserts the same thing on CI's Linux host as it does on a Mac.
+  testMatch: [
+    'smoke.spec.ts',
+    'health-check.spec.ts',
+    'accessibility.spec.ts',
+    'update-dialog-quit.spec.ts',
+  ],
   // Allow enough time for cold CI startup while keeping failures bounded.
   timeout: 30 * 1000,
   expect: {
