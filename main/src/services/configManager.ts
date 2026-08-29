@@ -12,7 +12,17 @@ import os from 'os';
 import { randomUUID } from 'crypto';
 import { getAppDirectory } from '../utils/appDirectory';
 import { clearShellPathCache } from '../utils/shellPath';
-import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import {
+  boundary,
+  decodeBoundary,
+  decodeOptionalBoundary,
+  type JsonValue,
+} from '../../../shared/validation/boundaryDecoder';
+import {
+  collectActiveBindings,
+  findChordConflicts,
+  normalizeKeyboardShortcutOverrides,
+} from '../../../shared/utils/keyboardBindings';
 
 const DEFAULT_POSTHOG_API_KEY = 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1';
 const LEGACY_POSTHOG_HOST = 'https://us.i.posthog.com';
@@ -32,6 +42,7 @@ export class ConfigManager extends EventEmitter {
   private configDir: string;
   private fileWatcher: FSWatcher | null = null;
   private lastConfigJson: string = '';
+  private lastLoggedShortcutDiagnostics: string = '';
   private saveConfigQueue: Promise<void> = Promise.resolve();
 
   constructor(defaultGitPath?: string) {
@@ -184,6 +195,15 @@ export class ConfigManager extends EventEmitter {
           : DEFAULT_WORKTREE_FILE_SYNC_ENTRIES
       };
 
+      const rawShortcutOverrides: JsonValue | undefined = loadedConfig.keyboardShortcutOverrides;
+      const decodedShortcutOverrides = rawShortcutOverrides === undefined
+        ? undefined
+        : decodeOptionalBoundary(rawShortcutOverrides, boundary.jsonObject);
+      if (decodedShortcutOverrides === undefined) {
+        delete this.config.keyboardShortcutOverrides;
+      }
+      this.logKeyboardShortcutDiagnostics(rawShortcutOverrides);
+
       if (this.config.analytics?.posthogHost === LEGACY_POSTHOG_HOST) {
         this.config.analytics.posthogHost = DEFAULT_POSTHOG_HOST;
         await this.saveConfig();
@@ -313,6 +333,10 @@ export class ConfigManager extends EventEmitter {
   }
 
   async updateConfig(updates: Partial<AppConfig>): Promise<AppConfig> {
+    const rawShortcutOverrides: JsonValue | undefined = updates.keyboardShortcutOverrides;
+    const decodedShortcutOverrides = rawShortcutOverrides === undefined
+      ? undefined
+      : decodeOptionalBoundary(rawShortcutOverrides, boundary.jsonObject);
     const analytics =
       updates.analytics !== undefined
         ? {
@@ -344,6 +368,16 @@ export class ConfigManager extends EventEmitter {
         ? normalizeRemoteDaemonConfig(updates.remoteDaemon)
         : this.config.remoteDaemon,
     };
+    if ('keyboardShortcutOverrides' in updates) {
+      if (!decodedShortcutOverrides || Object.keys(decodedShortcutOverrides).length === 0) {
+        delete this.config.keyboardShortcutOverrides;
+      }
+    }
+    this.logKeyboardShortcutDiagnostics(
+      'keyboardShortcutOverrides' in updates
+        ? rawShortcutOverrides
+        : this.config.keyboardShortcutOverrides,
+    );
     await this.saveConfig();
 
     // Clear PATH cache if additional paths were updated
@@ -354,6 +388,28 @@ export class ConfigManager extends EventEmitter {
     
     this.emit('config-updated', this.config);
     return this.getConfig();
+  }
+
+  private logKeyboardShortcutDiagnostics(rawOverrides: JsonValue | undefined): void {
+    const normalized = normalizeKeyboardShortcutOverrides(rawOverrides);
+    const messages = normalized.diagnostics.map(message =>
+      `[ConfigManager] keyboardShortcutOverrides: ${message}`
+    );
+    const conflicts = findChordConflicts(collectActiveBindings({
+      overrides: rawOverrides,
+      terminalShortcuts: this.config.terminalShortcuts,
+      customCommands: this.config.customCommands,
+      platform: process.platform,
+    }));
+    for (const conflict of conflicts) {
+      messages.push(
+        `[ConfigManager] keyboardShortcutOverrides conflict: ${conflict.chord} is bound to ${conflict.ids.join(' and ')}`
+      );
+    }
+    const diagnosticKey = messages.join('\n');
+    if (diagnosticKey === this.lastLoggedShortcutDiagnostics) return;
+    this.lastLoggedShortcutDiagnostics = diagnosticKey;
+    for (const message of messages) console.warn(message);
   }
 
   getGitRepoPath(): string {

@@ -303,6 +303,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onSessionUpdated') {
           return (callback: MockEventCallback) => subscribe('session:updated', callback);
         }
+        if (prop === 'onConfigUpdated') {
+          return (callback: MockEventCallback) => subscribe('config:updated', callback);
+        }
         return () => unsubscribe;
       },
     });

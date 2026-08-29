@@ -1035,6 +1035,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('config:terminal-font-updated', wrappedCallback);
       return () => ipcRenderer.removeListener('config:terminal-font-updated', wrappedCallback);
     },
+    onConfigUpdated: (callback: (config: AppConfig) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, config: AppConfig) => callback(config);
+      ipcRenderer.on('config:updated', wrappedCallback);
+      return () => ipcRenderer.removeListener('config:updated', wrappedCallback);
+    },
 
     // Process management events
     onZombieProcessesDetected: (callback: (data: { count: number; processes: string[] }) => void) => {
