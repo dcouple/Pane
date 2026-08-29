@@ -49,6 +49,14 @@ test.describe('sidebar pane actions', () => {
 
   test('renames from expanded and compact context menus and restores focus', async ({ page }) => {
     await setup(page);
+    const pinnedRow = page.getByRole('button', { name: 'Alpha/Regular work', exact: true });
+    await pinnedRow.click({ button: 'right' });
+    const pinnedMenu = page.getByRole('menu', { name: 'Pane actions for Regular work' });
+    await expect(pinnedMenu).toBeVisible();
+    await expect(pinnedMenu.getByRole('menuitem').first()).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(pinnedMenu).toBeHidden();
+
     const row = page.getByRole('button', { name: 'Regular work', exact: true }).last();
     await row.click();
     await row.click({ button: 'right' });

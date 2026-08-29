@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { AGENT_LAUNCH_PRESETS, type AgentLaunchPreset } from '../../../shared/constants/agentLaunchPresets';
 import type { DefaultAgentLaunchResult } from '../../../shared/types/workspaceEntry';
 import type { AppConfig } from '../types/config';
@@ -8,6 +9,7 @@ import { runAgentDoctor } from './agents/agentDoctor';
 
 const READINESS_TIMEOUT_MS = 30_000;
 const READINESS_INTERVAL_MS = 500;
+const LAUNCH_DEADLINE_MS = 45_000;
 const inFlight = new Map<number, Promise<DefaultAgentLaunchResult>>();
 const attempted = new Map<number, DefaultAgentLaunchResult>();
 
@@ -48,47 +50,70 @@ export function launchDefaultAgentOnce(
         result = { status: 'skipped', reason: 'no-default' };
         return result;
       }
-
-      const doctor = await runAgentDoctor(services, project, preset.id);
-      if (!doctor.available) {
-        const failedCheck = doctor.checks.find(check => !check.ok);
-        throw new AgentValidationError(failedCheck?.message ?? `${preset.title} is unavailable.`);
-      }
+      const launchPreset = preset;
 
       const session = await services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
         autoCreateTerminal: false,
       });
       sessionId = session.id;
+
+      const doctor = await runAgentDoctor(services, project, launchPreset.id);
+      if (!doctor.available) {
+        const failedCheck = doctor.checks.find(check => !check.ok);
+        throw new AgentValidationError(failedCheck?.message ?? `${launchPreset.title} is unavailable.`);
+      }
+
+      panelId = randomUUID();
       const panel = await panelManager.createPanel({
+        id: panelId,
         sessionId,
         type: 'terminal',
-        title: preset.title,
+        title: launchPreset.title,
         initialState: {
-          initialCommand: preset.command,
-          agentType: preset.id,
+          initialCommand: launchPreset.command,
+          agentType: launchPreset.id,
           isCliPanel: true,
         },
       });
-      panelId = panel.id;
       const context = services.sessionManager.getProjectContext(session.id);
-      await terminalPanelManager.initializeTerminal(
-        panel,
-        session.worktreePath,
-        context?.commandRunner.wslContext ?? null,
-      );
+      let launchDeadlineReached = false;
+      let launchDeadlineTimer: ReturnType<typeof setTimeout> | undefined;
+      const launchDeadline = new Promise<never>((_resolve, reject) => {
+        launchDeadlineTimer = setTimeout(() => {
+          launchDeadlineReached = true;
+          reject(new Error(`${launchPreset.title} did not start within ${LAUNCH_DEADLINE_MS / 1000} s.`));
+        }, LAUNCH_DEADLINE_MS);
+      });
+      try {
+        await Promise.race([
+          (async () => {
+            await terminalPanelManager.initializeTerminal(
+              panel,
+              session.worktreePath,
+              context?.commandRunner.wslContext ?? null,
+            );
+            if (launchDeadlineReached) return;
 
-      const startedAt = Date.now();
-      let isReady = false;
-      while (Date.now() - startedAt <= READINESS_TIMEOUT_MS) {
-        const snapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
-        if (!snapshot) throw new Error(`${preset.title} exited before it was ready.`);
-        if (snapshot.isCliReady) {
-          isReady = true;
-          break;
-        }
-        await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS));
+            const readinessStartedAt = Date.now();
+            let isReady = false;
+            while (!launchDeadlineReached && Date.now() - readinessStartedAt <= READINESS_TIMEOUT_MS) {
+              const snapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
+              if (!snapshot) throw new Error(`${launchPreset.title} exited before it was ready.`);
+              if (snapshot.isCliReady) {
+                isReady = true;
+                break;
+              }
+              await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS));
+            }
+            if (!isReady && !launchDeadlineReached) {
+              throw new Error(`${launchPreset.title} did not become ready in time.`);
+            }
+          })(),
+          launchDeadline,
+        ]);
+      } finally {
+        if (launchDeadlineTimer) clearTimeout(launchDeadlineTimer);
       }
-      if (!isReady) throw new Error(`${preset.title} did not become ready in time.`);
 
       const updatedProject = services.databaseService.updateProject(projectId, {
         default_agent_launched_at: new Date().toISOString(),
@@ -96,9 +121,9 @@ export function launchDefaultAgentOnce(
       if (!updatedProject) throw new Error(`Failed to persist the default agent launch receipt for project ${projectId}.`);
       result = {
         status: 'launched',
-        agentType: preset.id,
-        agentTitle: preset.title,
-        initialCommand: preset.command,
+        agentType: launchPreset.id,
+        agentTitle: launchPreset.title,
+        initialCommand: launchPreset.command,
         sessionId,
         panelId,
       };
@@ -131,6 +156,8 @@ export function launchDefaultAgentOnce(
         if (panelManager.getPanel(panelId)) {
           stalePanelMessage = `A stale panel remained after cleanup (${panelId}).`;
         }
+      }
+      if (sessionId) {
         try {
           const explorer = panelManager.getPanelsForSession(sessionId).find(panel => panel.type === 'explorer');
           if (explorer) await panelManager.setActivePanel(sessionId, explorer.id);

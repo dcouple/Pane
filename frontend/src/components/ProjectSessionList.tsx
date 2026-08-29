@@ -215,8 +215,8 @@ export function ProjectSessionList({
   const openPaneMenu = (event: React.MouseEvent<HTMLDivElement>, session: Session) => {
     event.preventDefault();
     event.stopPropagation();
-    const opener = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-label]');
-    if (!opener) return;
+    const opener = event.currentTarget.querySelector<HTMLButtonElement>('button[aria-label]')
+      ?? event.currentTarget;
     menuOpenerRef.current = opener;
     setPaneMenu({ session, opener, x: event.clientX, y: event.clientY });
   };

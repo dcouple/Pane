@@ -89,8 +89,9 @@ beforeEach(() => {
   panelRecords.clear();
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.createPanel.mockImplementation(async request => {
+    const panelId = request.id ?? `panel-${request.sessionId}`;
     const panel = {
-      id: `panel-${request.sessionId}`,
+      id: panelId,
       sessionId: request.sessionId,
       type: 'terminal',
       title: request.title,
@@ -121,6 +122,7 @@ describe('launchDefaultAgentOnce', () => {
 
     expect(result).toMatchObject({ status: 'launched', agentType: agent, initialCommand: command });
     expect(mocks.createPanel).toHaveBeenCalledWith({
+      id: expect.any(String),
       sessionId: `session-${id}`,
       type: 'terminal',
       title: expect.any(String),
@@ -129,6 +131,8 @@ describe('launchDefaultAgentOnce', () => {
     expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced).toHaveBeenCalledWith(id, {
       autoCreateTerminal: false,
     });
+    expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.runAgentDoctor.mock.invocationCallOrder[0]);
   });
 
   it.each([undefined, 'invalid'] as const)('skips an absent or invalid default', async agent => {
@@ -160,11 +164,35 @@ describe('launchDefaultAgentOnce', () => {
 
   it.each(['platform', 'repo-context', 'executable'])('returns validation failure for %s', async check => {
     mocks.runAgentDoctor.mockResolvedValue({ available: false, checks: [{ name: check, ok: false, message: `${check} failed` }] });
-    const { services, id, updateProject } = createServices();
+    const { services, id, updateProject, getSession } = createServices();
     await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
       status: 'failed', reason: 'validation-failed', message: `${check} failed`,
     });
+    expect(getSession).toHaveBeenCalledWith(id, { autoCreateTerminal: false });
+    expect(getSession.mock.invocationCallOrder[0]).toBeLessThan(mocks.runAgentDoctor.mock.invocationCallOrder[0]);
     expect(mocks.createPanel).not.toHaveBeenCalled();
+    expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('cleans up a preallocated panel when create persists and then rejects', async () => {
+    mocks.isTerminalInitialized.mockReturnValue(false);
+    mocks.createPanel.mockImplementationOnce(async request => {
+      if (!request.id) throw new Error('missing preallocated panel id');
+      panelRecords.set(request.id, { id: request.id });
+      throw new Error('event sink failed after insert');
+    });
+    const { services, id, updateProject } = createServices();
+
+    await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({
+      status: 'failed',
+      message: 'event sink failed after insert',
+    });
+
+    const allocatedPanelId = mocks.createPanel.mock.calls[0]?.[0].id;
+    expect(allocatedPanelId).toEqual(expect.any(String));
+    expect(mocks.deletePanel).toHaveBeenCalledWith(allocatedPanelId);
+    expect(mocks.getPanel(allocatedPanelId)).toBeUndefined();
     expect(updateProject).not.toHaveBeenCalled();
   });
 
@@ -197,7 +225,8 @@ describe('launchDefaultAgentOnce', () => {
     await expect(launchDefaultAgentOnce(services, id)).resolves.toMatchObject({ status: 'failed' });
 
     expect(mocks.deletePanel).toHaveBeenCalledTimes(2);
-    expect(mocks.getPanel(`panel-session-${id}`)).toBeUndefined();
+    const allocatedPanelId = mocks.createPanel.mock.calls[0]?.[0].id;
+    expect(mocks.getPanel(allocatedPanelId)).toBeUndefined();
   });
 
   it('reports a stale panel when every cleanup layer leaves it behind', async () => {
@@ -212,7 +241,8 @@ describe('launchDefaultAgentOnce', () => {
     });
 
     expect(mocks.deletePanel).toHaveBeenCalledTimes(2);
-    expect(deletePanel).toHaveBeenCalledWith(`panel-session-${id}`);
+    const allocatedPanelId = mocks.createPanel.mock.calls[0]?.[0].id;
+    expect(deletePanel).toHaveBeenCalledWith(allocatedPanelId);
   });
 
   it('cleans up when the PTY exits before readiness', async () => {
@@ -232,6 +262,27 @@ describe('launchDefaultAgentOnce', () => {
     await expect(promise).resolves.toMatchObject({ status: 'failed', message: expect.stringContaining('ready in time') });
     expect(mocks.deletePanel).toHaveBeenCalledOnce();
     expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('bounds terminal initialization with the overall launch deadline', async () => {
+    vi.useFakeTimers();
+    mocks.initializeTerminal.mockReturnValue(new Promise<void>(() => undefined));
+    const { services, id, updateProject } = createServices();
+    const promise = launchDefaultAgentOnce(services, id);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mocks.initializeTerminal).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    await expect(promise).resolves.toMatchObject({
+      status: 'failed',
+      message: 'Codex did not start within 45 s.',
+    });
+    expect(mocks.destroyTerminal).toHaveBeenCalledOnce();
+    expect(mocks.deletePanel).toHaveBeenCalledOnce();
+    expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
+    expect(updateProject).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('cleans up when the receipt write fails after readiness', async () => {

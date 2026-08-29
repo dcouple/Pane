@@ -85,7 +85,7 @@ test.describe('add repository default agent', () => {
     ).__paneTestElectronMock.getPanelCreateCalls())).toEqual([]);
   });
 
-  test('keeps a no-default repository blank and omits the launch flag', async ({ page }) => {
+  test('approximates a no-default skip with an empty mocked stage and omits the launch flag', async ({ page }) => {
     await installElectronApiMock(page, {
       omitDefaultOrchestratorAgent: true,
       projectCreateLaunchResult: { status: 'skipped', reason: 'no-default' },
@@ -94,6 +94,8 @@ test.describe('add repository default agent', () => {
     await expect(page.getByText(/Creating this repository will start/)).toHaveCount(0);
     await fillRepository(page);
     await page.getByRole('button', { name: 'Create' }).click();
+    // The renderer mock has no main-process session-created listener, so this empty-stage
+    // assertion approximates "no agent launch" rather than the real app's pre-existing shell.
     await expect(page.getByRole('button', { name: 'Open a terminal' })).toBeVisible();
     const calls = await page.evaluate(() => (
       // SAFETY: installElectronApiMock installs this test-only bridge before navigation.
