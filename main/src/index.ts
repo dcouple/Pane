@@ -1541,3 +1541,5 @@ if (launchRemoteSetup) {
 export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
+
+// ci probe
