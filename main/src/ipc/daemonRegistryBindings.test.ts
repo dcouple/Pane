@@ -202,6 +202,7 @@ const GIT_MUTATION_CHANNELS = [
   'sessions:rebase-to-main',
   'sessions:git-pull',
   'sessions:git-push',
+  'sessions:create-pr',
   'sessions:git-soft-reset',
   'sessions:git-fetch',
   'sessions:git-stash',

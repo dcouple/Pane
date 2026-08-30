@@ -237,6 +237,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const preferenceWrites: Array<{ key: string; value: string }> = [];
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
+    const sessionCreatePrCalls: string[] = [];
     let sessionsGetCount = 0;
 
     const subscribe = (channel: string, callback: MockEventCallback) => {
@@ -683,6 +684,13 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         stopActive: () => success(),
       }),
       sessions: namespace({
+        createPr: (sessionId: string) => {
+          sessionCreatePrCalls.push(sessionId);
+          return success({
+            output: 'https://github.com/dcouple/Pane/pull/392\n',
+            url: 'https://github.com/dcouple/Pane/pull/392',
+          });
+        },
         getOrCreateMainRepoSession: async (projectId: number) => {
           const delayMs = mockOptions.mainRepoSessionDelayByProjectId?.[projectId] ?? 0;
           if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -1010,6 +1018,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getSessionFavoriteToggleCalls() {
           return clone(sessionFavoriteToggleCalls);
+        },
+        getSessionCreatePrCalls() {
+          return clone(sessionCreatePrCalls);
         },
       },
     });
