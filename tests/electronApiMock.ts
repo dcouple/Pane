@@ -237,6 +237,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const preferenceWrites: Array<{ key: string; value: string }> = [];
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
+    const gitStageAndCommitCalls: Array<{ sessionId: string; message: string }> = [];
     let sessionsGetCount = 0;
 
     const subscribe = (channel: string, callback: MockEventCallback) => {
@@ -711,6 +712,10 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getResumable: () => success([]),
         getExecutions: () => success(clone(mockOptions.initialExecutions ?? [])),
         getCombinedDiff: () => success(clone(mockOptions.initialCombinedDiff ?? null)),
+        gitStageAndCommit: (sessionId: string, message: string) => {
+          gitStageAndCommitCalls.push({ sessionId, message });
+          return success();
+        },
       }),
       remoteDaemon: namespace({
         getConfig: () => success(clone(remoteDaemonConfig)),
@@ -1010,6 +1015,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getSessionFavoriteToggleCalls() {
           return clone(sessionFavoriteToggleCalls);
+        },
+        getGitStageAndCommitCalls() {
+          return clone(gitStageAndCommitCalls);
         },
       },
     });
