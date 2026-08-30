@@ -30,6 +30,7 @@ export interface Project {
   lastUsedModel?: string;
   wsl_enabled?: boolean;
   wsl_distribution?: string | null;
+  default_agent_launched_at?: string | null;
 }
 
 export interface ProjectRunCommand {
@@ -80,6 +81,7 @@ export interface Session {
   base_branch?: string;
   skip_continue_next?: boolean;
   pr_renamed?: boolean;
+  name_manually_set?: boolean;
   is_hidden?: boolean;
 }
 
@@ -133,6 +135,7 @@ export interface UpdateSessionData {
   favorite_pinned_at?: string | null;
   skip_continue_next?: boolean;
   pr_renamed?: boolean;
+  name_manually_set?: boolean;
 }
 
 export interface PromptMarker {
