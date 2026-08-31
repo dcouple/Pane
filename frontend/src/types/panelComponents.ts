@@ -5,6 +5,7 @@ type PanelContext = 'project' | 'worktree';
 export interface PanelCreateOptions {
   initialCommand?: string;  // Command to run on terminal init
   title?: string;           // Custom panel title
+  initialState?: { customState?: unknown };
 }
 
 interface PanelTabPresentation {

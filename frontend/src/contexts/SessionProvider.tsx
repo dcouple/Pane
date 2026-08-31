@@ -21,12 +21,13 @@ export const SessionProvider: React.FC<{
   isMerging?: boolean;
   gitCommands?: GitCommands | null;
   onOpenIDEWithCommand?: (command?: string) => void;
+  onOpenUrlInBrowser?: (url: string, title: string) => Promise<void>;
   onConfigureIDE?: () => void;
   onSetTracking?: () => void;
   trackingBranch?: string | null;
   configuredIDECommand?: string | null;
   isRemoteMode?: boolean;
-}> = ({ children, session, projectName, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onConfigureIDE, onSetTracking, trackingBranch, configuredIDECommand, isRemoteMode }) => {
+}> = ({ children, session, projectName, gitBranchActions, isMerging, gitCommands, onOpenIDEWithCommand, onOpenUrlInBrowser, onConfigureIDE, onSetTracking, trackingBranch, configuredIDECommand, isRemoteMode }) => {
   // FIX: Don't render children without a valid session
   // This prevents components that require session from rendering
   if (!session) {
@@ -47,6 +48,7 @@ export const SessionProvider: React.FC<{
     isMerging,
     gitCommands: gitCommands ?? undefined,
     onOpenIDEWithCommand,
+    onOpenUrlInBrowser,
     onConfigureIDE,
     onSetTracking,
     trackingBranch,

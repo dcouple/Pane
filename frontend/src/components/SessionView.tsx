@@ -26,7 +26,6 @@ import { usePanelStore } from '../stores/panelStore';
 import { useProjectViewActionsStore } from '../stores/projectViewActionsStore';
 import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/pendingViewCommit';
-import { requestLocalReviewMode } from './panels/diff/reviewModePreference';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';
 import { SplitLayout } from './panels/SplitLayout';
@@ -633,7 +632,6 @@ export const SessionView = memo(() => {
       // currently active, CombinedDiffView is unmounted and will read this
       // module-level variable when it mounts after the panel switch.
       setPendingViewCommit(activeSession.id, commitHash);
-      requestLocalReviewMode(activeSession.id);
       openInspector('changes');
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('diff:view-commit', {
@@ -972,7 +970,7 @@ export const SessionView = memo(() => {
       const sid = activeSession.id;
 
       // For terminal panels with initialCommand (e.g., Terminal (Claude))
-      let initialState: { customState?: unknown } | undefined = undefined;
+      let initialState = options?.initialState;
       if (type === 'terminal' && options?.initialCommand) {
         initialState = {
           customState: {
@@ -999,7 +997,7 @@ export const SessionView = memo(() => {
       setActivePanelInStore(sid, newPanel.id);
 
       const becomesPinnedTerminal = type === 'terminal' && !hadTerminalBefore;
-      if (becomesPinnedTerminal) return;
+      if (becomesPinnedTerminal) return newPanel;
 
       // Add to layout (into the focused group, falling back to the primary
       // group if focus is stale). addPanelToGroup is idempotent, so racing
@@ -1014,9 +1012,34 @@ export const SessionView = memo(() => {
           applyLayout(sid, { ...currentLayout, root: nextRoot });
         }
       }
+      return newPanel;
     },
     [activeSession, addPanel, setActivePanelInStore, applyLayout]
   );
+
+  const handleOpenUrlInBrowser = useCallback(async (url: string, title: string) => {
+    if (!activeSession) return;
+    const existingPanel = sessionPanels.find((candidate) => candidate.type === 'browser');
+    if (existingPanel) {
+      const updatedPanel = {
+        ...existingPanel,
+        title,
+        state: { ...existingPanel.state, customState: { ...existingPanel.state.customState, currentUrl: url } },
+      };
+      await panelApi.updatePanel(existingPanel.id, { title, state: updatedPanel.state });
+      updatePanelState(updatedPanel);
+      await handlePanelSelect(updatedPanel);
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url, sessionId: activeSession.id },
+      }));
+      return;
+    }
+
+    await handlePanelCreate('browser', {
+      title,
+      initialState: { customState: { currentUrl: url } },
+    });
+  }, [activeSession, handlePanelCreate, handlePanelSelect, sessionPanels, updatePanelState]);
 
   const handleShowExplorer = useCallback(async () => {
     if (!filesPanel) await handlePanelCreate('explorer');
@@ -1792,7 +1815,7 @@ export const SessionView = memo(() => {
         {sessionStatusAnnouncement}
       </LiveRegion>
       {/* SINGLE SessionProvider wraps everything */}
-      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command} isRemoteMode={isRemoteMode}>
+      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onOpenUrlInBrowser={handleOpenUrlInBrowser} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command} isRemoteMode={isRemoteMode}>
 
         {/* Tab bar at top */}
         <PanelTabBar

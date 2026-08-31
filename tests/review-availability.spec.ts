@@ -275,12 +275,9 @@ test('Review stays local until a newly discovered pull request is explicitly ope
   await expect(reviewTab).toBeEnabled();
   await reviewTab.click();
 
-  const githubMode = page.getByRole('button', { name: 'GitHub', exact: true });
-  const localMode = page.getByRole('button', { name: 'Local', exact: true });
-  await expect(githubMode).toBeDisabled();
-  await expect(githubMode).toHaveAttribute('title', 'No pull request yet');
-  await expect(localMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(localMode).toHaveClass(/bg-interactive/);
+  const openPullRequest = page.getByRole('button', { name: 'Open PR', exact: true });
+  await expect(openPullRequest).toBeDisabled();
+  await expect(openPullRequest).toHaveAttribute('title', 'No pull request yet');
   await expect(page.getByText('Local changes', { exact: true })).toBeVisible();
   const diffSummary = page.locator('.combined-diff-view').getByText(/^All changes/).locator('..');
   await expect(diffSummary.getByText('+8', { exact: true })).toBeVisible();
@@ -318,21 +315,21 @@ test('Review stays local until a newly discovered pull request is explicitly ope
     prUrl: 'https://github.com/dcouple/Pane/pull/374',
   });
 
-  await expect(githubMode).toBeEnabled();
-  await expect(localMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(localMode).toHaveClass(/bg-interactive/);
+  await expect(openPullRequest).toBeEnabled();
   await expect(page.locator('.diff-panel').getByText('#374', { exact: true })).toBeVisible();
   await capture(page, testInfo, '02-pr-discovered-local-preserved.png');
 
-  await githubMode.click();
-  await expect(githubMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(githubMode).toHaveClass(/bg-interactive/);
-  await expect(localMode).not.toHaveClass(/bg-interactive/);
-  await expect(page.getByText('https://github.com/dcouple/Pane/pull/374/files', { exact: true })).toBeVisible();
-  await capture(page, testInfo, '03-github-review-selected.png');
+  await openPullRequest.click();
+  const browserTab = page.getByRole('tab', { name: 'PR #374', exact: true });
+  await expect(browserTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByPlaceholder('Enter a URL (e.g. localhost:3000)')).toHaveValue(
+    'https://github.com/dcouple/Pane/pull/374/files',
+  );
+  await capture(page, testInfo, '03-pull-request-browser-tab.png');
 
-  await localMode.click();
-  await expect(reviewFile).toHaveAttribute('aria-current', 'true');
+  await reviewTab.click();
+  await expect(reviewFile).toBeVisible();
+  await diffTab.click();
   await expect(diffTab).toHaveAttribute('aria-selected', 'true');
   await expect(splitMode).toHaveAttribute('aria-pressed', 'true');
 });
@@ -341,11 +338,11 @@ test('Review shows a clean local empty state before a pull request exists', asyn
   await openSession(page, baseGitStatus, { withLocalChanges: false });
 
   await page.getByRole('tab', { name: 'Changes', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Local', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeDisabled();
   await expect(page.getByText('No changes to review', { exact: true })).toBeVisible();
 });
 
-test('Review defaults to GitHub when the worktree already has a pull request', async ({ page }) => {
+test('Review stays local when the worktree already has a pull request', async ({ page }) => {
   await openSession(page, {
     ...baseGitStatus,
     prNumber: 374,
@@ -354,12 +351,14 @@ test('Review defaults to GitHub when the worktree already has a pull request', a
   });
 
   await page.getByRole('tab', { name: 'Changes', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'GitHub', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('button', { name: 'Local', exact: true })).toBeEnabled();
-  await expect(page.getByText('https://github.com/dcouple/Pane/pull/374/files', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open PR', exact: true })).toBeEnabled();
+  await expect(page.getByRole('treeitem', {
+    name: 'Open diff for src/review.ts, Modified, +8 −3',
+    exact: true,
+  })).toBeVisible();
 });
 
-test('Persisted GitHub review mode can switch back to local in the inspector', async ({ page }) => {
+test('Legacy GitHub review preference stays local and opens the PR in Browser', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('pane-review-default-mode', 'github');
   });
@@ -372,27 +371,26 @@ test('Persisted GitHub review mode can switch back to local in the inspector', a
 
   await page.getByRole('tab', { name: 'Changes', exact: true }).click();
   const inspector = page.locator('.pane-detail-panel-vertical');
-  const githubMode = page.getByRole('button', { name: 'GitHub', exact: true });
-  const localMode = page.getByRole('button', { name: 'Local', exact: true });
+  const openPullRequest = page.getByRole('button', { name: 'Open PR', exact: true });
 
-  await expect(githubMode).toHaveAttribute('aria-pressed', 'true');
-  await expect(githubMode).toBeInViewport();
-  await expect(localMode).toBeInViewport();
-  const [inspectorBounds, localModeBounds] = await Promise.all([
-    inspector.boundingBox(),
-    localMode.boundingBox(),
-  ]);
-  expect(inspectorBounds).not.toBeNull();
-  expect(localModeBounds).not.toBeNull();
-  expect(localModeBounds!.x + localModeBounds!.width).toBeLessThanOrEqual(
-    inspectorBounds!.x + inspectorBounds!.width,
-  );
-
-  await localMode.click();
-  await expect(localMode).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('treeitem', {
     name: 'Open diff for src/review.ts, Modified, +8 −3',
     exact: true,
   })).toBeVisible();
-  await expect(page.evaluate(() => localStorage.getItem('pane-review-default-mode'))).resolves.toBe('local');
+  await expect(openPullRequest).toBeInViewport();
+  const [inspectorBounds, openPullRequestBounds] = await Promise.all([
+    inspector.boundingBox(),
+    openPullRequest.boundingBox(),
+  ]);
+  expect(inspectorBounds).not.toBeNull();
+  expect(openPullRequestBounds).not.toBeNull();
+  expect(openPullRequestBounds!.x + openPullRequestBounds!.width).toBeLessThanOrEqual(
+    inspectorBounds!.x + inspectorBounds!.width,
+  );
+
+  await openPullRequest.click();
+  await expect(page.getByRole('tab', { name: 'PR #571', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByPlaceholder('Enter a URL (e.g. localhost:3000)')).toHaveValue(
+    'https://github.com/dcouple/Pane/pull/571/files',
+  );
 });

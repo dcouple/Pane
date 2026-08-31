@@ -61,7 +61,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     setPanels,
     setActivePanel: setActivePanelInStore,
     addPanel,
-    removePanel
+    removePanel,
+    updatePanelState,
   } = usePanelStore();
 
   // Detail panel state
@@ -222,7 +223,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       if (!mainRepoSessionId) return;
 
       // For terminal panels with initialCommand (e.g., Terminal (Claude))
-      let initialState: { customState?: unknown } | undefined = undefined;
+      let initialState = options?.initialState;
       if (type === 'terminal' && options?.initialCommand) {
         initialState = {
           customState: {
@@ -242,9 +243,34 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // The panel:created event will also fire, but addPanel checks for duplicates
       addPanel(newPanel);
       setActivePanelInStore(mainRepoSessionId, newPanel.id);
+      return newPanel;
     },
     [mainRepoSessionId, addPanel, setActivePanelInStore]
   );
+
+  const handleOpenUrlInBrowser = useCallback(async (url: string, title: string) => {
+    if (!mainRepoSessionId) return;
+    const existingPanel = workingPanels.find((candidate) => candidate.type === 'browser');
+    if (existingPanel) {
+      const updatedPanel = {
+        ...existingPanel,
+        title,
+        state: { ...existingPanel.state, customState: { ...existingPanel.state.customState, currentUrl: url } },
+      };
+      await panelApi.updatePanel(existingPanel.id, { title, state: updatedPanel.state });
+      updatePanelState(updatedPanel);
+      await handlePanelSelect(updatedPanel);
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url, sessionId: mainRepoSessionId },
+      }));
+      return;
+    }
+
+    await handlePanelCreate('browser', {
+      title,
+      initialState: { customState: { currentUrl: url } },
+    });
+  }, [handlePanelCreate, handlePanelSelect, mainRepoSessionId, updatePanelState, workingPanels]);
 
   const handleShowExplorer = useCallback(async () => {
     if (!filesPanel) await handlePanelCreate('explorer');
@@ -374,6 +400,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           isMerging={mainRepoGit.actionsBusy}
           gitCommands={mainRepoGit.gitCommands}
           onOpenIDEWithCommand={mainRepoGit.handleOpenIDE}
+          onOpenUrlInBrowser={handleOpenUrlInBrowser}
           onConfigureIDE={onConfigureIDE}
           onSetTracking={mainRepoGit.handleOpenSetTracking}
           trackingBranch={mainRepoGit.currentUpstream}
