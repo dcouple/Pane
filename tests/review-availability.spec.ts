@@ -358,3 +358,41 @@ test('Review defaults to GitHub when the worktree already has a pull request', a
   await expect(page.getByRole('button', { name: 'Local', exact: true })).toBeEnabled();
   await expect(page.getByText('https://github.com/dcouple/Pane/pull/374/files', { exact: true })).toBeVisible();
 });
+
+test('Persisted GitHub review mode can switch back to local in the inspector', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('pane-review-default-mode', 'github');
+  });
+  await openSession(page, {
+    ...baseGitStatus,
+    prNumber: 571,
+    prTitle: 'feat(provider-network): registry enrichment for every supported domain identity version',
+    prUrl: 'https://github.com/dcouple/Pane/pull/571',
+  });
+
+  await page.getByRole('tab', { name: 'Changes', exact: true }).click();
+  const inspector = page.locator('.pane-detail-panel-vertical');
+  const githubMode = page.getByRole('button', { name: 'GitHub', exact: true });
+  const localMode = page.getByRole('button', { name: 'Local', exact: true });
+
+  await expect(githubMode).toHaveAttribute('aria-pressed', 'true');
+  await expect(githubMode).toBeInViewport();
+  await expect(localMode).toBeInViewport();
+  const [inspectorBounds, localModeBounds] = await Promise.all([
+    inspector.boundingBox(),
+    localMode.boundingBox(),
+  ]);
+  expect(inspectorBounds).not.toBeNull();
+  expect(localModeBounds).not.toBeNull();
+  expect(localModeBounds!.x + localModeBounds!.width).toBeLessThanOrEqual(
+    inspectorBounds!.x + inspectorBounds!.width,
+  );
+
+  await localMode.click();
+  await expect(localMode).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('treeitem', {
+    name: 'Open diff for src/review.ts, Modified, +8 −3',
+    exact: true,
+  })).toBeVisible();
+  await expect(page.evaluate(() => localStorage.getItem('pane-review-default-mode'))).resolves.toBe('local');
+});

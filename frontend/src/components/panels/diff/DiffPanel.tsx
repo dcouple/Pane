@@ -223,7 +223,7 @@ const DiffPanel: React.FC<DiffPanelProps> = ({
   return (
     <div className="diff-panel h-full flex flex-col bg-bg-primary">
       <div className="flex items-center justify-between gap-3 px-3 py-1.5 border-b border-border-primary bg-surface-secondary flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex flex-1 items-center gap-2 min-w-0 overflow-hidden">
           <GitBranch className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
           <span className="text-xs font-medium text-text-secondary truncate">Review</span>
           <span className="text-xs text-text-muted truncate">{prLabel}</span>
