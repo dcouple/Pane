@@ -52,6 +52,17 @@ test('leaderboard tab shows join banner and table before opt-in', async ({ page 
   await expect(page.getByText('quiet-heron-91c0')).toBeVisible();
   await expect(page.getByText('$1204.10')).toBeVisible();
 
+  await page.getByRole('button', { name: '@jdoe', exact: true }).click();
+  await expect.poll(async () => page.evaluate(() => (
+    // SAFETY: The Electron API mock installs this test-only accessor before navigation.
+    window as typeof window & {
+      __paneTestElectronMock: { getOpenedExternalUrls: () => string[] };
+    }
+  ).__paneTestElectronMock.getOpenedExternalUrls())).toContain('https://github.com/jdoe');
+
+  await expect(page.getByRole('button', { name: 'Follow @jdoe on GitHub' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Follow quiet-heron-91c0 on GitHub' })).toBeHidden();
+
   // Provider/range toggles are hidden on leaderboard tab
   await expect(page.getByRole('group', { name: 'Provider' })).toBeHidden();
   await expect(page.getByRole('group', { name: 'Time range' })).toBeHidden();

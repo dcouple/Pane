@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ExternalLink, Loader2, RefreshCw, Send, Trophy, UserMinus } from 'lucide-react';
+import { ExternalLink, Loader2, RefreshCw, Send, Trophy, UserMinus, UserPlus } from 'lucide-react';
 import { API } from '../../utils/api';
 import type {
   LeaderboardEntry,
@@ -166,6 +166,9 @@ function LeaderboardTable({
           <tbody>
             {entries.map(entry => {
               const isMe = currentDisplayName != null && entry.displayName === currentDisplayName;
+              const githubUrl = entry.verified && entry.displayName.startsWith('@')
+                ? `https://github.com/${encodeURIComponent(entry.displayName.slice(1))}`
+                : null;
               return (
                 <tr
                   key={`${entry.rank}-${entry.displayName}`}
@@ -175,14 +178,37 @@ function LeaderboardTable({
                 >
                   <td className="px-2 py-2 tabular-nums text-text-muted">{entry.rank}</td>
                   <td className="px-2 py-2">
-                    <span className={`font-medium ${isMe ? 'text-interactive' : 'text-text-primary'}`}>
-                      {entry.displayName}
-                    </span>
+                    {githubUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => { void window.electronAPI.openExternal(githubUrl); }}
+                        className={`font-medium hover:underline ${isMe ? 'text-interactive' : 'text-text-primary'}`}
+                        title={`Open ${entry.displayName} on GitHub`}
+                      >
+                        {entry.displayName}
+                      </button>
+                    ) : (
+                      <span className={`font-medium ${isMe ? 'text-interactive' : 'text-text-primary'}`}>
+                        {entry.displayName}
+                      </span>
+                    )}
                     {entry.verified && (
                       <span className="ml-1 text-[10px] text-status-success" title="GitHub verified">✓</span>
                     )}
                     {isMe && (
                       <span className="ml-1.5 text-[10px] text-text-muted">you</span>
+                    )}
+                    {githubUrl && !isMe && (
+                      <button
+                        type="button"
+                        onClick={() => { void window.electronAPI.openExternal(githubUrl); }}
+                        className="ml-2 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+                        aria-label={`Follow ${entry.displayName} on GitHub`}
+                        title="Open GitHub profile to follow"
+                      >
+                        <UserPlus className="h-2.5 w-2.5" aria-hidden="true" />
+                        Follow
+                      </button>
                     )}
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums text-text-secondary">
