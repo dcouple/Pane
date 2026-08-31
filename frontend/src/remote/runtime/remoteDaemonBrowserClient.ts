@@ -1,6 +1,7 @@
 import {
   decodeRemoteDaemonEventEnvelope,
   decodeRemoteHeartbeatPayload,
+  decodeRemoteInvokeResponsePayload,
   type RemoteDaemonEventEnvelope,
   type RemoteDaemonHeartbeatPayload,
   type RemotePaneConnectionProfile,
@@ -19,19 +20,6 @@ export interface RemoteBrowserConnectionState {
   status: RemotePaneConnectionStatus;
   lastError: string | null;
   lastSeenAt: string | null;
-}
-
-interface InvokeSuccessPayload<T> {
-  ok: true;
-  result: T;
-}
-
-interface InvokeErrorPayload {
-  ok: false;
-  error?: {
-    message?: string;
-    code?: string;
-  };
 }
 
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
@@ -119,27 +107,27 @@ export class RemoteDaemonBrowserClient {
           request.signal = signal;
         }
 
-        const response = await fetch(this.endpoint('invoke'), {
-          ...request,
-        });
+        const response = await fetch(this.endpoint('invoke'), request);
 
-        // SAFETY: The named IPC/API channel contract establishes this response payload type.
-        const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
-        if (response.ok && payload.ok) {
-          return payload.result;
+        if (response.ok) {
+          const payload = decodeRemoteInvokeResponsePayload(await response.json());
+          if (!payload.ok) {
+            throw new NonRetryableRemoteError(payload.error.message);
+          }
+          // SAFETY: The channel-specific adapter method establishes the decoded JSON result type.
+          return payload.result as T;
         }
 
-        const message = payload.ok
-          ? `Remote request failed with ${response.status}`
-          : payload.error?.message ?? 'Remote request failed';
-        const error = new Error(message);
-        if (isAuthFailureResponse(response.status)) {
+        const isAuthFailure = isAuthFailureResponse(response.status);
+        const isRetryable = isRetryableResponse(response.status);
+        const message = await readInvokeErrorMessage(response) ?? 'Remote request failed';
+        if (isAuthFailure) {
           throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
         }
-        if (!isRetryableResponse(response.status)) {
+        if (!isRetryable) {
           throw new NonRetryableRemoteError(message);
         }
-        lastError = error instanceof Error ? error : new Error('Remote request failed');
+        lastError = new Error(message);
       } catch (error) {
         if (error instanceof RemoteAuthInvalidError || error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
@@ -536,6 +524,15 @@ function isRetryableResponse(status: number): boolean {
 
 function isAuthFailureResponse(status: number): boolean {
   return status === 401 || status === 403;
+}
+
+async function readInvokeErrorMessage(response: Response): Promise<string | undefined> {
+  try {
+    const payload = decodeRemoteInvokeResponsePayload(await response.json());
+    return payload.ok ? undefined : payload.error.message;
+  } catch {
+    return undefined;
+  }
 }
 
 function getRemoteAuthFailureMessage(serverMessage?: string): string {

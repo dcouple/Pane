@@ -19,7 +19,9 @@ import {
   type RemoteDaemonConfig,
   type RemoteDaemonEventEnvelope,
   type RemoteDaemonHeartbeatPayload,
+  type RemoteInvokeErrorPayload,
   type RemoteInvokeRequest,
+  type RemoteInvokeSuccessPayload,
 } from '../../../shared/types/remoteDaemon';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
 import { getRemotePwaAssetResponse } from './pwaStaticAssets';
@@ -52,19 +54,6 @@ interface ConnectedRemoteEventClient {
   connectedAt: string;
   lastSeenAt: string;
   heartbeatTimer: NodeJS.Timeout;
-}
-
-interface RemoteInvokeSuccessPayload {
-  ok: true;
-  result: unknown;
-}
-
-interface RemoteInvokeErrorPayload {
-  ok: false;
-  error: {
-    message: string;
-    code: string;
-  };
 }
 
 interface RemoteReadyEventPayload {
@@ -531,7 +520,7 @@ export class PaneRemoteHttpApiServer {
       this.writeJson(response, 200, {
         ok: true,
         result,
-      } satisfies RemoteInvokeSuccessPayload);
+      } satisfies RemoteInvokeSuccessPayload<unknown>);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const code = message.includes('No Pane daemon command registered')

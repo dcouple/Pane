@@ -78,7 +78,7 @@ export const DiscordPopup: React.FC<DiscordPopupProps> = ({ isOpen, onClose }) =
       window.electronAPI.openExternal('https://discord.gg/BdMyubeAZn');
     } else {
       // Fallback for web/development mode
-      window.open('https://discord.gg/BdMyubeAZn', '_blank');
+      window.open('https://discord.gg/BdMyubeAZn', '_blank', 'noopener,noreferrer');
     }
     if (dontShowAgain && window.electron?.invoke) {
       try {
