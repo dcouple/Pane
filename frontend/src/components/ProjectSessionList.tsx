@@ -592,6 +592,38 @@ export function ProjectSessionList({
 
 // --- Session row button content ---
 
+// Row actions are revealed by hovering or keyboard-focusing the row. They
+// collapse to zero width rather than fading, so a row that is not being pointed
+// at spends its width on the pane name and its git stats.
+const ROW_ACTION_BUTTON =
+  'pointer-events-auto inline-flex h-6 flex-shrink-0 items-center justify-center overflow-hidden rounded text-text-muted transition-all hover:bg-surface-hover';
+const ROW_ACTION_REVEAL =
+  'w-0 opacity-0 group-hover/session:w-6 group-hover/session:opacity-100 group-focus-within/session:w-6 group-focus-within/session:opacity-100';
+
+// Git stats for the single-line row. Rendered by the row itself rather than by
+// SessionRowContent so it can sit at the row's right edge, after the hover
+// actions — the actions collapse to nothing at rest, so an idle sidebar spends
+// its width on pane names instead of reserved button slots.
+function SessionRowMetadata({ prNumber, hasDiff, adds, dels }: {
+  prNumber: number | undefined;
+  hasDiff: boolean;
+  adds: number;
+  dels: number;
+}) {
+  if (!prNumber && !hasDiff) return null;
+  return (
+    <span className="flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums">
+      {hasDiff && (
+        <span className="flex items-center gap-1">
+          <span className="font-semibold text-status-success">+{adds}</span>
+          <span className="font-semibold text-status-error">-{dels}</span>
+        </span>
+      )}
+      {prNumber && <span className="text-navigation-muted">#{prNumber}</span>}
+    </span>
+  );
+}
+
 function SessionRowContent({
   session,
   gs,
@@ -631,17 +663,6 @@ function SessionRowContent({
         )}>
           {title}
         </span>
-        {showMetadata && (
-          <span className="flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums">
-            {hasDiff && (
-              <span className="flex items-center gap-1">
-                <span className="font-semibold text-status-success">+{adds}</span>
-                <span className="font-semibold text-status-error">-{dels}</span>
-              </span>
-            )}
-            {prNumber && <span className="text-navigation-muted">#{prNumber}</span>}
-          </span>
-        )}
       </div>
     );
   }
@@ -804,12 +825,11 @@ function SessionRow({
           rowLayout={rowLayout}
         />
 
-        <div className="relative z-10 pointer-events-auto flex flex-shrink-0 items-center gap-0.5">
-          <SessionStatusBadge sessionId={session.id} size="sm" />
+        <div className="relative z-10 flex flex-shrink-0 items-center gap-0.5">
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onArchive(); }}
-            className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/session:opacity-100"
+            className={cn(ROW_ACTION_BUTTON, ROW_ACTION_REVEAL, 'hover:text-status-error')}
             title="Archive"
             aria-label={`Archive ${accessibleName}`}
           >
@@ -819,16 +839,23 @@ function SessionRow({
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onTogglePinned(); }}
-            className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-all ${
-              session.isFavorite
-                ? 'text-text-muted hover:text-navigation-muted hover:bg-surface-hover opacity-100'
-                : 'text-text-muted hover:text-navigation-muted hover:bg-surface-hover opacity-0 group-hover/session:opacity-100'
-            }`}
+            className={cn(
+              ROW_ACTION_BUTTON,
+              'hover:text-navigation-muted',
+              // A pinned pane keeps its pin on show — it is the only affordance
+              // that says why the pane sits in the pinned section.
+              session.isFavorite ? 'w-6 opacity-100' : ROW_ACTION_REVEAL,
+            )}
             title={session.isFavorite ? 'Unpin' : 'Pin'}
             aria-label={`${session.isFavorite ? 'Unpin' : 'Pin'} ${accessibleName}`}
           >
             <Pin className="w-3.5 h-3.5 rotate-45" />
           </button>
+
+          {rowLayout === 'single' && (
+            <SessionRowMetadata prNumber={gs?.prNumber} hasDiff={hasDiff} adds={adds} dels={dels} />
+          )}
+          <SessionStatusBadge sessionId={session.id} size="sm" />
         </div>
       </div>
     </div>
