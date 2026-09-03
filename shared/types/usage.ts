@@ -1,24 +1,45 @@
 /**
  * Token usage, cost and rate-limit types.
  *
- * Pane runs Claude and Codex as PTY terminals, so no structured usage flows
- * through the app itself. The authoritative record is each CLI's own transcript
- * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`), which
- * Pane reads read-only and indexes incrementally.
+ * Pane runs Claude, Codex and Cursor as PTY terminals, so no structured usage
+ * flows through the app itself. The authoritative record is each CLI's own
+ * transcript under `~/.claude/projects`, `~/.codex/sessions`, and
+ * `~/.cursor/projects` agent-transcript trees, which Pane reads read-only and
+ * indexes incrementally.
  */
 
-export type UsageProvider = 'claude' | 'codex';
+export const USAGE_PROVIDERS = ['claude', 'codex', 'cursor'] as const;
+export type UsageProvider = (typeof USAGE_PROVIDERS)[number];
 
-/** One assistant message's token accounting, normalised across providers. */
+/** Closed set. The read paths decode against this list; nothing else remaps. */
+export function decodeUsageProvider(raw: string): UsageProvider | null {
+  for (const provider of USAGE_PROVIDERS) {
+    if (provider === raw) return provider;
+  }
+  return null;
+}
+
+export interface TokenCounts {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+}
+
+/**
+ * One recorded assistant message or turn.
+ *
+ * `tokens === null` means the source recorded the message but not its token
+ * accounting (Cursor's interactive transcripts). It is the absence of a
+ * measurement, not a zero: nothing downstream may price it or sum it as 0
+ * without also counting it as unmetered.
+ */
 export interface UsageEvent {
   provider: UsageProvider;
   /** Epoch milliseconds — the indexed column. */
   timestampMs: number;
   model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
+  tokens: TokenCounts | null;
   /** Provider session id from the transcript, when present. */
   agentSessionId: string | null;
   /** Message id — the primary dedupe key across re-scans. */
@@ -42,9 +63,18 @@ export interface UsageTotals {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   totalTokens: number;
+  /** Every recorded message in the slice, metered or not. */
   messageCount: number;
+  /** Messages with no token accounting. Subset of messageCount. */
+  unmeteredMessageCount: number;
+  /** Cost of the metered, priced part only. */
   estimatedCostUsd: number;
-  /** True when at least one model in the range had no price entry. */
+  /**
+   * True when estimatedCostUsd is not the whole story: a model had no price
+   * entry OR the slice contains unmetered messages. Consumers that render a
+   * dollar figure must gate on this; the reason is in unmeteredMessageCount
+   * (coverage) vs byModel[].costIncomplete on a metered row (pricing).
+   */
   costIncomplete: boolean;
   /**
    * What the cached input would have cost at the full input rate, minus what
@@ -187,8 +217,11 @@ export interface UsageReport {
  *     session and no cwd, so those rows have to be read again.
  * v4: Codex rate-limit fields that the provider reports but v3 dropped:
  *     credits, rate_limit_reached_type, spend_control_reached, limit_name.
+ * v5: UsageEvent.tokens nullable; `metered` column; Cursor provider; parse
+ *     context tagged by provider. Stored contexts without a tag are v4 and are
+ *     discarded by the version-mismatch full re-read, so no decoder shim.
  */
-export const USAGE_PARSER_VERSION = 4;
+export const USAGE_PARSER_VERSION = 5;
 export const DEFAULT_USAGE_RANGE_DAYS = 30;
 /** Events older than this are swept at startup to bound the table. */
 export const USAGE_RETENTION_DAYS = 180;

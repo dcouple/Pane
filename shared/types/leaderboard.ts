@@ -10,6 +10,7 @@ export interface LeaderboardSubmission {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   messageCount: number;
+  unmeteredMessageCount: number;
   estimatedCostUsd: number;
   costIncomplete: boolean;
   cacheSavingsUsd: number;
