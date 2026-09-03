@@ -3,6 +3,10 @@ import { parseUsageLine, parseClaudeLine, parseCodexLine, usageEventId, createCo
 import type { JsonObject } from '../../../../shared/validation/boundaryDecoder';
 
 const FALLBACK_MS = 1_700_000_000_000;
+const CURSOR_CONTEXT = {
+  sessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+  cwd: '/repo',
+};
 
 function claudeLine(overrides: JsonObject = {}, usage: JsonObject = {}) {
   return JSON.stringify({
@@ -32,10 +36,12 @@ describe('parseClaudeLine', () => {
     expect(event).toMatchObject({
       provider: 'claude',
       model: 'claude-sonnet-5-20260101',
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 20,
-      cacheCreationTokens: 10,
+      tokens: {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 10,
+      },
       messageId: 'msg_123',
       agentSessionId: 'sess-1',
       cwd: '/repo',
@@ -49,7 +55,7 @@ describe('parseClaudeLine', () => {
       cache_creation: { ephemeral_5m_input_tokens: 300, ephemeral_1h_input_tokens: 200 },
     });
 
-    expect(parseUsageLine('claude', line, FALLBACK_MS)?.cacheCreationTokens).toBe(500);
+    expect(parseUsageLine('claude', line, FALLBACK_MS)?.tokens?.cacheCreationTokens).toBe(500);
   });
 
   it('prefers the flat cache_creation_input_tokens when it is non-zero', () => {
@@ -58,7 +64,7 @@ describe('parseClaudeLine', () => {
       cache_creation: { ephemeral_5m_input_tokens: 999 },
     });
 
-    expect(parseUsageLine('claude', line, FALLBACK_MS)?.cacheCreationTokens).toBe(42);
+    expect(parseUsageLine('claude', line, FALLBACK_MS)?.tokens?.cacheCreationTokens).toBe(42);
   });
 
   it('falls back to the file mtime when the line has no timestamp', () => {
@@ -143,11 +149,12 @@ describe('parseCodexLine', () => {
 
     expect(parseUsageLine('codex', line, FALLBACK_MS)).toMatchObject({
       provider: 'codex',
-      // input_tokens includes the cached part; they are priced separately.
-      inputTokens: 18179 - 4096,
-      cacheReadTokens: 4096,
-      cacheCreationTokens: 100,
-      outputTokens: 52,
+      tokens: {
+        inputTokens: 18179 - 4096,
+        cacheReadTokens: 4096,
+        cacheCreationTokens: 100,
+        outputTokens: 52,
+      },
     });
   });
 
@@ -171,7 +178,6 @@ describe('parseCodexLine', () => {
   });
 
   it('never accumulates the cumulative total_token_usage', () => {
-    // Three turns of a session: totals grow, deltas do not.
     const context = createCodexContext();
     const lines = [
       tokenCountLine({ input_tokens: 100, output_tokens: 10 }, { input_tokens: 100, output_tokens: 10 }),
@@ -181,9 +187,8 @@ describe('parseCodexLine', () => {
 
     const total = lines
       .map(line => parseUsageLine('codex', line, FALLBACK_MS, context))
-      .reduce((sum, event) => sum + (event?.inputTokens ?? 0), 0);
+      .reduce((sum, event) => sum + (event?.tokens?.inputTokens ?? 0), 0);
 
-    // Sum of the deltas, not of the running totals (which would be 670).
     expect(total).toBe(350);
   });
 
@@ -215,7 +220,6 @@ describe('parseCodexLine', () => {
       usedPercent: 59,
       windowMinutes: 10080,
       planType: 'plus',
-      // resets_at is epoch seconds and must be promoted to milliseconds.
       resetsAtMs: 1785497199 * 1000,
     });
   });
@@ -354,6 +358,42 @@ describe('parseCodexLine', () => {
   it('ignores other event types and zero-token turns', () => {
     expect(parseUsageLine('codex', JSON.stringify({ type: 'response_item', payload: {} }), FALLBACK_MS)).toBeNull();
     expect(parseUsageLine('codex', tokenCountLine({ input_tokens: 0, output_tokens: 0 }), FALLBACK_MS)).toBeNull();
+  });
+});
+
+describe('parseCursorLine', () => {
+  it('counts one unmetered event per assistant role line', () => {
+    const line = JSON.stringify({
+      role: 'assistant',
+      message: { content: [{ type: 'text', text: 'x' }] },
+    });
+    expect(parseUsageLine('cursor', line, FALLBACK_MS, CURSOR_CONTEXT)).toEqual({
+      provider: 'cursor',
+      timestampMs: FALLBACK_MS,
+      model: 'cursor',
+      tokens: null,
+      agentSessionId: CURSOR_CONTEXT.sessionId,
+      messageId: null,
+      cwd: '/repo',
+    });
+  });
+
+  it('ignores user lines and turn_ended lines', () => {
+    expect(parseUsageLine('cursor', '{"role":"user","message":{"content":[]}}', FALLBACK_MS, CURSOR_CONTEXT)).toBeNull();
+    expect(parseUsageLine('cursor', '{"type":"turn_ended","status":"success"}', FALLBACK_MS, CURSOR_CONTEXT)).toBeNull();
+  });
+
+  it('ignores token-shaped keys on an assistant line', () => {
+    const line = JSON.stringify({
+      role: 'assistant',
+      message: { content: [{ type: 'text', text: 'x' }] },
+      input_tokens: 12,
+      output_tokens: 4,
+      usage: { input_tokens: 99, output_tokens: 7 },
+    });
+    const event = parseUsageLine('cursor', line, FALLBACK_MS, CURSOR_CONTEXT);
+    expect(event?.tokens).toBeNull();
+    expect(event).not.toHaveProperty('inputTokens');
   });
 });
 

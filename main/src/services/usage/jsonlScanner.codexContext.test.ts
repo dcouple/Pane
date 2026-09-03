@@ -58,7 +58,7 @@ describe('scanJsonlFile carries Codex attribution across passes', () => {
     model: event.model,
     agentSessionId: event.agentSessionId,
     cwd: event.cwd,
-    inputTokens: event.inputTokens,
+    inputTokens: event.tokens?.inputTokens,
   }));
 
   beforeEach(async () => {
@@ -120,6 +120,7 @@ describe('scanJsonlFile carries Codex attribution across passes', () => {
     const first = await scanJsonlFile(file, 'codex', 0, FALLBACK_MS);
 
     expect(first.context).toEqual({
+      provider: 'codex',
       model: 'gpt-5.1-codex',
       sessionId: 'sess-1',
       cwd: '/repo/alpha',
@@ -146,6 +147,7 @@ describe('scanJsonlFile carries Codex attribution across passes', () => {
     ]);
     // The session id, which only session_meta ever states, is still carried.
     expect(second.context).toEqual({
+      provider: 'codex',
       model: 'gpt-5.3-codex',
       sessionId: 'sess-1',
       cwd: '/repo/beta',

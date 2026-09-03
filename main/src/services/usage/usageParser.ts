@@ -1,4 +1,5 @@
 import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
+import { decodeUsageProvider } from '../../../../shared/types/usage';
 import {
   boundary,
   decodeBoundary,
@@ -6,6 +7,8 @@ import {
   type JsonObject,
   type JsonValue,
 } from '../../../../shared/validation/boundaryDecoder';
+
+export { decodeUsageProvider };
 
 /**
  * Transcript line -> {@link UsageEvent}. Pure: no filesystem, no clock.
@@ -74,10 +77,12 @@ function buildEvent(
     provider,
     timestampMs: meta.timestampMs,
     model: meta.model,
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheCreationTokens,
+    tokens: {
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+    },
     agentSessionId: meta.agentSessionId,
     messageId: meta.messageId,
     cwd: meta.cwd,
@@ -155,6 +160,104 @@ export function createCodexContext(seed?: CodexContextSnapshot | null): CodexPar
 /** What a later pass needs to attribute usage the same way this one did. */
 export function snapshotCodexContext(context: CodexParseContext): CodexContextSnapshot {
   return { model: context.model, sessionId: context.sessionId, cwd: context.cwd };
+}
+
+/**
+ * Cursor's transcript lines carry no id, timestamp, tokens or cwd. Identity is
+ * fixed for the whole file and comes from outside the lines: the session id is
+ * the file's basename, the cwd is the chats sidecar. Both are seeded before
+ * the first line is read and never change within a file.
+ */
+export interface CursorParseContext {
+  sessionId: string;
+  cwd: string | null;
+}
+
+export type CursorContextSnapshot = CursorParseContext;
+
+export const CURSOR_UNKNOWN_MODEL = 'cursor';
+
+/**
+ * One event per `{role:"assistant"}` line. `{type:"turn_ended"}` and user
+ * lines yield null. Token-shaped keys on the line are ignored: interactive
+ * Cursor transcripts do not record measurements.
+ */
+export function parseCursorLine(
+  value: JsonValue,
+  fallbackTimestampMs: number,
+  context: CursorParseContext
+): UsageEvent | null {
+  const record = asObject(value);
+  if (!record) return null;
+  if (record.role !== 'assistant') return null;
+
+  return {
+    provider: 'cursor',
+    timestampMs: fallbackTimestampMs,
+    model: CURSOR_UNKNOWN_MODEL,
+    tokens: null,
+    agentSessionId: context.sessionId.length > 0 ? context.sessionId : null,
+    messageId: null,
+    cwd: context.cwd,
+  };
+}
+
+export type ParseContext =
+  | { provider: 'claude' }
+  | ({ provider: 'codex' } & CodexParseContext)
+  | ({ provider: 'cursor' } & CursorParseContext);
+
+export type ParseContextSnapshot =
+  | ({ provider: 'codex' } & CodexContextSnapshot)
+  | ({ provider: 'cursor' } & CursorContextSnapshot);
+
+function isTaggedSnapshot(seed: ParseContextSnapshot | CodexContextSnapshot): seed is ParseContextSnapshot {
+  return 'provider' in seed;
+}
+
+function codexSeedFrom(seed: ParseContextSnapshot | CodexContextSnapshot | null): CodexContextSnapshot | null {
+  if (!seed) return null;
+  if (isTaggedSnapshot(seed)) {
+    return seed.provider === 'codex' ? seed : null;
+  }
+  return seed;
+}
+
+function cursorSeedFrom(seed: ParseContextSnapshot | CodexContextSnapshot | null): CursorContextSnapshot | null {
+  if (!seed || !isTaggedSnapshot(seed)) return null;
+  return seed.provider === 'cursor' ? seed : null;
+}
+
+/** Claude needs nothing. Codex seeds from a prior pass or empty. Cursor MUST be seeded (sessionId is required). */
+export function createParseContext(
+  provider: UsageProvider,
+  seed: ParseContextSnapshot | CodexContextSnapshot | null
+): ParseContext {
+  if (provider === 'claude') return { provider: 'claude' };
+  if (provider === 'cursor') {
+    const cursorSeed = cursorSeedFrom(seed);
+    return {
+      provider: 'cursor',
+      sessionId: cursorSeed?.sessionId ?? '',
+      cwd: cursorSeed?.cwd ?? null,
+    };
+  }
+  return { provider: 'codex', ...createCodexContext(codexSeedFrom(seed)) };
+}
+
+/** Null for Claude; Codex drops rateLimits; Cursor is already a snapshot. */
+export function snapshotParseContext(context: ParseContext): ParseContextSnapshot | null {
+  if (context.provider === 'claude') return null;
+  if (context.provider === 'codex') {
+    return { provider: 'codex', ...snapshotCodexContext(context) };
+  }
+  return { provider: 'cursor', sessionId: context.sessionId, cwd: context.cwd };
+}
+
+/** Codex rate limits collected in this pass; [] otherwise. */
+export function collectedRateLimits(context: ParseContext): UsageRateLimitSample[] {
+  if (context.provider !== 'codex') return [];
+  return [...context.rateLimits.values()];
 }
 
 /**
@@ -291,6 +394,23 @@ export function parseCodexLine(
   });
 }
 
+function asCodexParseContext(
+  context: ParseContext | CodexParseContext | CursorParseContext | undefined
+): CodexParseContext | undefined {
+  if (!context) return undefined;
+  if ('rateLimits' in context) return context;
+  return undefined;
+}
+
+function asCursorParseContext(
+  context: ParseContext | CodexParseContext | CursorParseContext | undefined
+): CursorParseContext {
+  if (context && 'sessionId' in context && typeof context.sessionId === 'string') {
+    return { sessionId: context.sessionId, cwd: context.cwd ?? null };
+  }
+  return { sessionId: '', cwd: null };
+}
+
 /**
  * Parse one raw JSONL line for a provider. Returns `null` for blank lines,
  * malformed JSON, and lines that carry no token accounting.
@@ -299,7 +419,7 @@ export function parseUsageLine(
   provider: UsageProvider,
   line: string,
   fallbackTimestampMs: number,
-  context?: CodexParseContext
+  context?: ParseContext | CodexParseContext | CursorParseContext
 ): UsageEvent | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed[0] !== '{') return null;
@@ -311,9 +431,9 @@ export function parseUsageLine(
     return null;
   }
 
-  return provider === 'claude'
-    ? parseClaudeLine(value, fallbackTimestampMs)
-    : parseCodexLine(value, fallbackTimestampMs, context);
+  if (provider === 'claude') return parseClaudeLine(value, fallbackTimestampMs);
+  if (provider === 'cursor') return parseCursorLine(value, fallbackTimestampMs, asCursorParseContext(context));
+  return parseCodexLine(value, fallbackTimestampMs, asCodexParseContext(context));
 }
 
 /**

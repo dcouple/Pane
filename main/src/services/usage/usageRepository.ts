@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3-multiple-ciphers';
-import type { UsageEvent, UsageProvider, UsageRateLimitSample } from '../../../../shared/types/usage';
-import { usageEventId, type CodexContextSnapshot } from './usageParser';
+import { decodeUsageProvider, type UsageEvent, type UsageProvider, type UsageRateLimitSample } from '../../../../shared/types/usage';
+import { usageEventId, type ParseContextSnapshot } from './usageParser';
 import { boundary, decodeOptionalBoundary } from '../../../../shared/validation/boundaryDecoder';
 
 export interface UsageFileCursor {
@@ -13,11 +13,11 @@ export interface UsageFileCursor {
   /** Parser that produced this file's events; see USAGE_PARSER_VERSION. */
   parserVersion: number;
   /**
-   * Codex attribution as of `offsetBytes`. Stored with the cursor because it
+   * Attribution as of `offsetBytes`. Stored with the cursor because it
    * describes the same point in the file, and a resumed scan is past the lines
-   * that state it. Null for Claude and for files never scanned as Codex.
+   * that state it. Null for Claude and for files never scanned with a tagged context.
    */
-  parseContext: CodexContextSnapshot | null;
+  parseContext: ParseContextSnapshot | null;
 }
 
 interface UsageFileRow {
@@ -31,17 +31,25 @@ interface UsageFileRow {
   parse_context: string | null;
 }
 
-const codexContextSchema = boundary.object({
-  model: boundary.nullable(boundary.string),
-  sessionId: boundary.nullable(boundary.string),
-  cwd: boundary.nullable(boundary.string),
-});
+const parseContextSchema = boundary.union(
+  boundary.object({
+    provider: boundary.literal('codex'),
+    model: boundary.nullable(boundary.string),
+    sessionId: boundary.nullable(boundary.string),
+    cwd: boundary.nullable(boundary.string),
+  }),
+  boundary.object({
+    provider: boundary.literal('cursor'),
+    sessionId: boundary.string,
+    cwd: boundary.nullable(boundary.string),
+  }),
+);
 
 /** A stored context, or null if the column is empty or no longer parses. */
-function readParseContext(raw: string | null | undefined): CodexContextSnapshot | null {
+function readParseContext(raw: string | null | undefined): ParseContextSnapshot | null {
   if (!raw) return null;
   try {
-    return decodeOptionalBoundary(JSON.parse(raw), codexContextSchema) ?? null;
+    return decodeOptionalBoundary(JSON.parse(raw), parseContextSchema) ?? null;
   } catch {
     return null;
   }
@@ -64,9 +72,15 @@ export class UsageRepository {
       .get(path) as UsageFileRow | undefined;
     if (!row) return null;
 
+    const provider = decodeUsageProvider(row.provider);
+    if (!provider) {
+      this.forgetFile(path);
+      return null;
+    }
+
     return {
       path: row.path,
-      provider: row.provider === 'codex' ? 'codex' : 'claude',
+      provider,
       sizeBytes: row.size_bytes,
       mtimeMs: row.mtime_ms,
       offsetBytes: row.offset_bytes,
@@ -89,8 +103,8 @@ export class UsageRepository {
       INSERT OR IGNORE INTO usage_events (
         id, provider, timestamp_ms, model,
         input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
-        agent_session_id, cwd, source_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        agent_session_id, cwd, source_path, metered
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const upsertFile = this.db.prepare(`
@@ -112,18 +126,20 @@ export class UsageRepository {
     const run = this.db.transaction(() => {
       let inserted = 0;
       for (const { event, byteOffset } of events) {
+        const tokens = event.tokens;
         const result = insert.run(
           usageEventId(event, cursor.path, byteOffset),
           event.provider,
           event.timestampMs,
           event.model,
-          event.inputTokens,
-          event.outputTokens,
-          event.cacheReadTokens,
-          event.cacheCreationTokens,
+          tokens?.inputTokens ?? 0,
+          tokens?.outputTokens ?? 0,
+          tokens?.cacheReadTokens ?? 0,
+          tokens?.cacheCreationTokens ?? 0,
           event.agentSessionId,
           event.cwd,
-          cursor.path
+          cursor.path,
+          tokens === null ? 0 : 1
         );
         inserted += result.changes;
       }
@@ -236,6 +252,9 @@ export class UsageRepository {
     const newestPerWindow = new Map<string, UsageRateLimitSample>();
 
     for (const row of rows) {
+      const provider = decodeUsageProvider(row.provider);
+      if (!provider) continue;
+
       // Expired by its own reset time, or — when the provider named no reset —
       // older than the window it describes.
       const windowMs = (row.window_minutes ?? 0) * 60_000;
@@ -245,7 +264,7 @@ export class UsageRepository {
       if (expired) continue;
 
       const sample: UsageRateLimitSample = {
-        provider: row.provider === 'codex' ? 'codex' : 'claude',
+        provider,
         limitId: row.limit_id,
         scope: row.scope === 'secondary' ? 'secondary' : 'primary',
         usedPercent: row.used_percent,

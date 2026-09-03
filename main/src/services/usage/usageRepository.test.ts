@@ -45,6 +45,7 @@ function createDb() {
       output_tokens INTEGER NOT NULL DEFAULT 0,
       cache_read_tokens INTEGER NOT NULL DEFAULT 0,
       cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      metered INTEGER NOT NULL DEFAULT 1,
       agent_session_id TEXT,
       cwd TEXT,
       source_path TEXT NOT NULL
@@ -186,5 +187,60 @@ describe('UsageRepository.getRateLimits', () => {
 
     const limits = repo.getRateLimits(NOW);
     expect(limits).toHaveLength(2);
+  });
+});
+
+describe('UsageRepository.commitFile', () => {
+  it('writes metered 0 for unmetered events and round-trips tagged parse context', () => {
+    const inserted = repo.commitFile(
+      {
+        path: '/cursor.jsonl',
+        provider: 'cursor',
+        sizeBytes: 10,
+        mtimeMs: NOW,
+        offsetBytes: 10,
+        lastScannedMs: NOW,
+        parserVersion: 5,
+        parseContext: { provider: 'cursor', sessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4', cwd: '/repo' },
+      },
+      [{
+        event: {
+          provider: 'cursor',
+          timestampMs: NOW,
+          model: 'cursor',
+          tokens: null,
+          agentSessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+          messageId: null,
+          cwd: '/repo',
+        },
+        byteOffset: 0,
+      }],
+      NOW,
+    );
+    expect(inserted).toBe(1);
+
+    const row = db.prepare('SELECT metered, input_tokens, provider FROM usage_events').get() as {
+      metered: number;
+      input_tokens: number;
+      provider: string;
+    };
+    expect(row).toEqual({ metered: 0, input_tokens: 0, provider: 'cursor' });
+
+    const cursor = repo.getFileCursor('/cursor.jsonl');
+    expect(cursor?.provider).toBe('cursor');
+    expect(cursor?.parseContext).toEqual({
+      provider: 'cursor',
+      sessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+      cwd: '/repo',
+    });
+  });
+
+  it('drops an unknown stored provider instead of remapping it to Claude', () => {
+    db.prepare(`
+      INSERT INTO usage_files (path, provider, size_bytes, mtime_ms, offset_bytes, last_scanned_ms, parser_version)
+      VALUES ('/x.jsonl', 'mystery', 1, 1, 0, 1, 5)
+    `).run();
+    expect(repo.getFileCursor('/x.jsonl')).toBeNull();
+    expect(repo.countFiles()).toBe(0);
   });
 });
