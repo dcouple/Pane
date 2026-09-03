@@ -145,6 +145,7 @@ interface UsageTotalsResult {
   cacheCreationTokens: number;
   totalTokens: number;
   messageCount: number;
+  unmeteredMessageCount: number;
   estimatedCostUsd: number;
   costIncomplete: boolean;
   cacheSavingsUsd: number;
@@ -152,7 +153,7 @@ interface UsageTotalsResult {
 
 interface UsageByModelResult extends UsageTotalsResult {
   model: string;
-  provider: 'claude' | 'codex';
+  provider: 'claude' | 'codex' | 'cursor';
 }
 
 interface PaneCostSliceResult extends UsageTotalsResult {
@@ -657,19 +658,21 @@ const usageTotalsResultSchema: BoundarySchema<UsageTotalsResult> = boundary.obje
   cacheCreationTokens: boundary.number,
   totalTokens: boundary.number,
   messageCount: boundary.number,
+  unmeteredMessageCount: boundary.number,
   estimatedCostUsd: boundary.number,
   costIncomplete: boundary.boolean,
   cacheSavingsUsd: boundary.number,
 });
 const usageByModelResultSchema: BoundarySchema<UsageByModelResult> = boundary.object({
   model: boundary.string,
-  provider: boundary.enumeration('claude', 'codex'),
+  provider: boundary.enumeration('claude', 'codex', 'cursor'),
   inputTokens: boundary.number,
   outputTokens: boundary.number,
   cacheReadTokens: boundary.number,
   cacheCreationTokens: boundary.number,
   totalTokens: boundary.number,
   messageCount: boundary.number,
+  unmeteredMessageCount: boundary.number,
   estimatedCostUsd: boundary.number,
   costIncomplete: boundary.boolean,
   cacheSavingsUsd: boundary.number,
@@ -681,6 +684,7 @@ const paneCostSliceResultSchema: BoundarySchema<PaneCostSliceResult> = boundary.
   cacheCreationTokens: boundary.number,
   totalTokens: boundary.number,
   messageCount: boundary.number,
+  unmeteredMessageCount: boundary.number,
   estimatedCostUsd: boundary.number,
   costIncomplete: boundary.boolean,
   cacheSavingsUsd: boundary.number,
@@ -702,6 +706,7 @@ const paneCostEntryResultSchema: BoundarySchema<PaneCostEntryResult> = boundary.
   cacheCreationTokens: boundary.number,
   totalTokens: boundary.number,
   messageCount: boundary.number,
+  unmeteredMessageCount: boundary.number,
   estimatedCostUsd: boundary.number,
   costIncomplete: boundary.boolean,
   cacheSavingsUsd: boundary.number,
@@ -1975,26 +1980,42 @@ function printPaneListResult(result: PaneListResult): void {
 
 function printPaneCostResult(result: PaneCostResult): void {
   for (const pane of result.panes) {
-    console.log(`${pane.paneId}\t${pane.paneName}\t${formatPaneCost(pane.uncachedCostUsd, pane.costIncomplete)} uncached\t${formatPaneCost(pane.estimatedCostUsd, pane.costIncomplete)} total\t${Math.round(pane.cacheHitRate * 100)}% hit`);
+    console.log(`${pane.paneId}\t${pane.paneName}\t${formatPaneCost(pane, pane.uncachedCostUsd)} uncached\t${formatPaneCostLine(pane, pane.estimatedCostUsd)}\t${Math.round(pane.cacheHitRate * 100)}% hit`);
     printPaneCostModels(pane.byModel);
   }
   if (result.unattributed) {
-    console.log(`Unattributed\t${formatPaneCost(result.unattributed.uncachedCostUsd, result.unattributed.costIncomplete)} uncached\t${formatPaneCost(result.unattributed.estimatedCostUsd, result.unattributed.costIncomplete)} total\t${Math.round(result.unattributed.cacheHitRate * 100)}% hit`);
+    console.log(`Unattributed\t${formatPaneCost(result.unattributed, result.unattributed.uncachedCostUsd)} uncached\t${formatPaneCostLine(result.unattributed, result.unattributed.estimatedCostUsd)}\t${Math.round(result.unattributed.cacheHitRate * 100)}% hit`);
     printPaneCostModels(result.unattributed.byModel);
   }
   if (result.totals) {
-    console.log(`Total\t${formatPaneCost(result.totals.estimatedCostUsd, result.totals.costIncomplete)}\t${result.totals.totalTokens} tokens`);
+    console.log(`Total\t${formatPaneCostLine(result.totals, result.totals.estimatedCostUsd)}\t${result.totals.totalTokens} tokens`);
   }
 }
 
-function formatPaneCost(costUsd: number, costIncomplete: boolean): string {
-  return costIncomplete ? 'n/a' : `$${costUsd.toFixed(4)}`;
+function formatPaneCost(slice: Pick<UsageTotalsResult, 'messageCount' | 'unmeteredMessageCount' | 'costIncomplete'>, costUsd: number): string {
+  const unmetered = slice.unmeteredMessageCount;
+  if (unmetered > 0 && slice.messageCount > unmetered) {
+    return `$${costUsd.toFixed(4)}`;
+  }
+  return slice.costIncomplete ? 'n/a' : `$${costUsd.toFixed(4)}`;
 }
+
+function formatPaneCostLine(slice: Pick<UsageTotalsResult, 'messageCount' | 'unmeteredMessageCount' | 'costIncomplete'>, costUsd: number): string {
+  const unmetered = slice.unmeteredMessageCount;
+  const cost = formatPaneCost(slice, costUsd);
+  if (unmetered > 0 && slice.messageCount > unmetered) {
+    return `${cost} total  +${unmetered} unmetered`;
+  }
+  if (unmetered > 0) {
+    return `${cost} total  (${slice.messageCount} msgs, ${unmetered} unmetered)`;
+  }
+  return `${cost} total`;
+}
+
 
 function printPaneCostModels(models: UsageByModelResult[]): void {
   for (const model of models) {
-    const cost = model.costIncomplete ? 'n/a' : `$${model.estimatedCostUsd.toFixed(4)}`;
-    console.log(`  ${model.model}\t${model.totalTokens} tokens\t${cost}`);
+    console.log(`  ${model.model}\t${model.totalTokens} tokens\t${formatPaneCost(model, model.estimatedCostUsd)}`);
   }
 }
 

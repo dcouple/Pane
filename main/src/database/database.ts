@@ -2408,6 +2408,30 @@ export class DatabaseService {
       console.log("[Database] Added parse_context column to usage_files table");
     }
 
+    // SAFETY: SQLite PRAGMA table_info returns the SqliteTableInfo projection.
+    const usageEventsInfo = this.db
+      .prepare("PRAGMA table_info(usage_events)")
+      .all() as SqliteTableInfo[];
+    const usageEventsExists = usageEventsInfo.length > 0;
+    const hasMetered = usageEventsInfo.some(
+      (col: SqliteTableInfo) => col.name === "metered",
+    );
+
+    if (usageEventsExists && !hasMetered) {
+      this.db
+        .prepare(
+          "ALTER TABLE usage_events ADD COLUMN metered INTEGER NOT NULL DEFAULT 1",
+        )
+        .run();
+      console.log("[Database] Added metered column to usage_events table");
+    }
+
+    if (usageEventsExists) {
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_usage_events_agent_session_id ON usage_events(agent_session_id)",
+      );
+    }
+
     // Codex rate-limit fields that v3 dropped: credits, blocked state, spend
     // controls, and the provider's own window name.
     // SAFETY: SQLite PRAGMA table_info returns the SqliteTableInfo projection.

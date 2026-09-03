@@ -61,8 +61,9 @@ CREATE TABLE IF NOT EXISTS session_git_status_cache (
 
 -- Incremental scan cursor for agent CLI transcript files. Pane reads these
 -- read-only. offset_bytes lets a re-scan resume instead of re-reading the file.
--- parse_context carries the Codex model, session and cwd that the top of the
--- transcript stated, since a resumed scan starts past those lines.
+-- parse_context carries provider-tagged attribution (Codex model/session/cwd,
+-- Cursor session/cwd) that the top of the transcript or sidecar stated, since
+-- a resumed scan starts past those lines.
 -- NOTE this file is split on the statement separator at startup, so a comment
 -- must never contain one.
 CREATE TABLE IF NOT EXISTS usage_files (
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   output_tokens INTEGER NOT NULL DEFAULT 0,
   cache_read_tokens INTEGER NOT NULL DEFAULT 0,
   cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  metered INTEGER NOT NULL DEFAULT 1,
   agent_session_id TEXT,
   cwd TEXT,
   source_path TEXT NOT NULL
@@ -116,6 +118,7 @@ CREATE TABLE IF NOT EXISTS usage_rate_limits (
 CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(timestamp_ms);
 CREATE INDEX IF NOT EXISTS idx_usage_events_model_ts ON usage_events(model, timestamp_ms);
 CREATE INDEX IF NOT EXISTS idx_usage_events_source ON usage_events(source_path);
+CREATE INDEX IF NOT EXISTS idx_usage_events_agent_session_id ON usage_events(agent_session_id);
 CREATE INDEX IF NOT EXISTS idx_session_outputs_session_id ON session_outputs(session_id);
 CREATE INDEX IF NOT EXISTS idx_session_outputs_timestamp ON session_outputs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_conversation_messages_session_id ON conversation_messages(session_id);

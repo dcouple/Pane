@@ -1,11 +1,13 @@
 import { basename } from 'path';
 import type { Database } from 'better-sqlite3-multiple-ciphers';
 import {
+  decodeUsageProvider,
   type UsageBucket,
   type UsageByPane,
   type UsageByPaneReport,
   type UsageByModel,
   type UsageByProject,
+  type UsagePaneCostSlice,
   type UsageProvider,
   type UsageReportRequest,
   type UsageTotals,
@@ -23,6 +25,7 @@ interface TokenRow {
   cache_read_tokens: number;
   cache_creation_tokens: number;
   message_count: number;
+  unmetered_count: number;
 }
 
 interface BucketRow extends TokenRow {
@@ -66,10 +69,27 @@ function emptyTotals(): UsageTotals {
     cacheCreationTokens: 0,
     totalTokens: 0,
     messageCount: 0,
+    unmeteredMessageCount: 0,
     estimatedCostUsd: 0,
     costIncomplete: false,
     cacheSavingsUsd: 0,
   };
+}
+
+export function emptyPaneCostSlice(options?: { hasCursorPanel?: boolean }): UsagePaneCostSlice {
+  const slice: UsagePaneCostSlice = {
+    ...emptyTotals(),
+    uncachedCostUsd: 0,
+    uncachedInputTokens: 0,
+    cacheHitRate: 0,
+    byModel: [],
+  };
+  if (options?.hasCursorPanel) slice.costIncomplete = true;
+  return slice;
+}
+
+function idleCursorPaneSlice(): UsagePaneCostSlice {
+  return emptyPaneCostSlice({ hasCursorPanel: true });
 }
 
 /**
@@ -81,23 +101,31 @@ function foldCostSummary(rows: TokenRow[]): FoldedCostSummary {
   let cacheReadCostUsd = 0;
 
   for (const row of rows) {
+    if (!decodeUsageProvider(row.provider)) continue;
+
+    const unmetered = row.unmetered_count ?? 0;
     totals.inputTokens += row.input_tokens;
     totals.outputTokens += row.output_tokens;
     totals.cacheReadTokens += row.cache_read_tokens;
     totals.cacheCreationTokens += row.cache_creation_tokens;
     totals.messageCount += row.message_count;
+    totals.unmeteredMessageCount += unmetered;
 
-    const estimate = estimateCostUsd({
-      model: row.model,
-      inputTokens: row.input_tokens,
-      outputTokens: row.output_tokens,
-      cacheReadTokens: row.cache_read_tokens,
-      cacheCreationTokens: row.cache_creation_tokens,
-    });
-    totals.estimatedCostUsd += estimate.costUsd;
-    totals.cacheSavingsUsd += estimate.cacheSavingsUsd;
-    cacheReadCostUsd += estimate.cacheReadCostUsd;
-    if (!estimate.complete) totals.costIncomplete = true;
+    if (row.message_count > unmetered) {
+      const estimate = estimateCostUsd({
+        model: row.model,
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        cacheReadTokens: row.cache_read_tokens,
+        cacheCreationTokens: row.cache_creation_tokens,
+      });
+      totals.estimatedCostUsd += estimate.costUsd;
+      totals.cacheSavingsUsd += estimate.cacheSavingsUsd;
+      cacheReadCostUsd += estimate.cacheReadCostUsd;
+      if (!estimate.complete) totals.costIncomplete = true;
+    }
+
+    if (unmetered > 0) totals.costIncomplete = true;
   }
 
   totals.totalTokens =
@@ -109,16 +137,18 @@ function foldTotals(rows: TokenRow[]): UsageTotals {
   return foldCostSummary(rows).totals;
 }
 
-function foldPaneSlice(rows: TokenRow[]) {
+function foldPaneSlice(rows: TokenRow[]): UsagePaneCostSlice {
   const { totals, cacheReadCostUsd } = foldCostSummary(rows);
   const denominator = totals.inputTokens + totals.cacheReadTokens;
-  const byModel = rows
-    .map(row => ({
+  const byModel = rows.flatMap(row => {
+    const provider = decodeUsageProvider(row.provider);
+    if (!provider) return [];
+    return [{
       model: row.model,
-      provider: row.provider === 'codex' ? 'codex' as const : 'claude' as const,
+      provider,
       ...foldTotals([row]),
-    }))
-    .sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd);
+    }];
+  }).sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd);
   return {
     ...totals,
     uncachedCostUsd: totals.estimatedCostUsd - cacheReadCostUsd,
@@ -135,7 +165,8 @@ const AGGREGATE_COLUMNS = `
   SUM(output_tokens)         AS output_tokens,
   SUM(cache_read_tokens)     AS cache_read_tokens,
   SUM(cache_creation_tokens) AS cache_creation_tokens,
-  COUNT(*)                   AS message_count
+  COUNT(*)                   AS message_count,
+  SUM(CASE WHEN metered = 0 THEN 1 ELSE 0 END) AS unmetered_count
 `;
 
 export class UsageAggregator {
@@ -156,11 +187,15 @@ export class UsageAggregator {
       ORDER BY SUM(input_tokens + output_tokens) DESC
     `).all(fromMs, toMs, ...params) as TokenRow[];
 
-    return rows.map(row => ({
-      model: row.model,
-      provider: row.provider === 'codex' ? 'codex' : 'claude',
-      ...foldTotals([row]),
-    }));
+    return rows.flatMap(row => {
+      const provider = decodeUsageProvider(row.provider);
+      if (!provider) return [];
+      return [{
+        model: row.model,
+        provider,
+        ...foldTotals([row]),
+      }];
+    });
   }
 
   /**
@@ -211,17 +246,26 @@ export class UsageAggregator {
           e.output_tokens,
           e.cache_read_tokens,
           e.cache_creation_tokens,
-          (
-            SELECT s.id
-            FROM sessions s
-            WHERE s.worktree_path = e.cwd
-              AND e.timestamp_ms >= CAST(strftime('%s', s.created_at) AS INTEGER) * 1000
-              AND (
-                s.archived IS NULL OR s.archived = 0
-                OR e.timestamp_ms <= CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000 + 999
-              )
-            ORDER BY CAST(strftime('%s', s.created_at) AS INTEGER) DESC, s.id
-            LIMIT 1
+          e.metered,
+          COALESCE(
+            (
+              SELECT p.session_id FROM tool_panels p
+              WHERE json_extract(p.state, '$.customState.agentSessionId') = e.agent_session_id
+                AND json_extract(p.state, '$.customState.agentType') = 'cursor'
+              LIMIT 1
+            ),
+            (
+              SELECT s.id
+              FROM sessions s
+              WHERE s.worktree_path = e.cwd
+                AND e.timestamp_ms >= CAST(strftime('%s', s.created_at) AS INTEGER) * 1000
+                AND (
+                  s.archived IS NULL OR s.archived = 0
+                  OR e.timestamp_ms <= CAST(strftime('%s', s.updated_at) AS INTEGER) * 1000 + 999
+                )
+              ORDER BY CAST(strftime('%s', s.created_at) AS INTEGER) DESC, s.id
+              LIMIT 1
+            )
           ) AS pane_id
         FROM usage_events e
         WHERE e.timestamp_ms >= ? AND e.timestamp_ms <= ? ${clause}
@@ -276,16 +320,22 @@ export class UsageAggregator {
       if (pane) rosterById.set(pane.id, pane);
     }
 
+    const cursorPaneIds = this.cursorPaneIds();
     const panes: UsageByPane[] = [...rosterById.values()]
-      .map(pane => ({
-        paneId: pane.id,
-        paneName: pane.name,
-        worktreePath: pane.worktree_path,
-        repoId: pane.project_id,
-        archived: pane.archived === 1,
-        createdAtMs: pane.created_at_ms,
-        ...foldPaneSlice(rowsByPane.get(pane.id) ?? []),
-      }))
+      .map(pane => {
+        const paneRows = rowsByPane.get(pane.id);
+        return {
+          paneId: pane.id,
+          paneName: pane.name,
+          worktreePath: pane.worktree_path,
+          repoId: pane.project_id,
+          archived: pane.archived === 1,
+          createdAtMs: pane.created_at_ms,
+          ...(paneRows
+            ? foldPaneSlice(paneRows)
+            : cursorPaneIds.has(pane.id) ? idleCursorPaneSlice() : emptyPaneCostSlice()),
+        };
+      })
       .sort((a, b) => b.uncachedCostUsd - a.uncachedCostUsd || a.paneName.localeCompare(b.paneName));
 
     return { panes, unattributed: foldPaneSlice(unattributedRows) };
@@ -338,6 +388,19 @@ export class UsageAggregator {
     return [...byBucket.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([bucketStartMs, bucketRows]) => ({ bucketStartMs, ...foldTotals(bucketRows) }));
+  }
+
+  private cursorPaneIds(): Set<string> {
+    try {
+      const rows = this.db.prepare(`
+        SELECT DISTINCT session_id AS pane_id
+        FROM tool_panels
+        WHERE json_extract(state, '$.customState.agentType') = 'cursor'
+      `).all() as Array<{ pane_id: string }>;
+      return new Set(rows.map(row => row.pane_id));
+    } catch {
+      return new Set();
+    }
   }
 
   private providerFilter(providers?: UsageProvider[]): ProviderFilter {

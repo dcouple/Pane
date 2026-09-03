@@ -14,8 +14,9 @@ describe('createTranscriptWatchers', () => {
 
     createTranscriptWatchers(
       [
-        { provider: 'claude', path: '/missing/.claude/projects' },
-        { provider: 'codex', path: '/missing/.codex/sessions' },
+        { provider: 'claude', path: '/missing/.claude/projects', glob: '**/*.jsonl' },
+        { provider: 'codex', path: '/missing/.codex/sessions', glob: '**/*.jsonl' },
+        { provider: 'cursor', path: '/missing/.cursor/projects', glob: '**/agent-transcripts/**/*.jsonl' },
       ],
       path => {
         createdPaths.push(path);
@@ -29,12 +30,19 @@ describe('createTranscriptWatchers', () => {
     expect(createdPaths).toEqual([
       '/missing/.claude/projects',
       '/missing/.codex/sessions',
+      '/missing/.cursor/projects',
     ]);
 
     watchers[0].emit('add', '/missing/.claude/projects/session.jsonl');
     watchers[1].emit('change', '/missing/.codex/sessions/readme.txt');
+    watchers[2].emit('add', '/missing/.cursor/projects/repo/other.jsonl');
+    watchers[2].emit('add', '/missing/.cursor/projects/repo/agent-transcripts/78c0d50d-8589-46d8-b787-c38fc6f5c6a4/78c0d50d-8589-46d8-b787-c38fc6f5c6a4.jsonl');
 
-    expect(queueFile).toHaveBeenCalledOnce();
+    expect(queueFile).toHaveBeenCalledTimes(2);
     expect(queueFile).toHaveBeenCalledWith('/missing/.claude/projects/session.jsonl', 'claude');
+    expect(queueFile).toHaveBeenCalledWith(
+      '/missing/.cursor/projects/repo/agent-transcripts/78c0d50d-8589-46d8-b787-c38fc6f5c6a4/78c0d50d-8589-46d8-b787-c38fc6f5c6a4.jsonl',
+      'cursor',
+    );
   });
 });

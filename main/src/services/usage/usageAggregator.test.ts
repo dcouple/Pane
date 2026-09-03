@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3-multiple-ciphers';
-import { UsageAggregator, resolveReportRange } from './usageAggregator';
+import { UsageAggregator, emptyPaneCostSlice, resolveReportRange } from './usageAggregator';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -20,7 +20,15 @@ function createDb() {
       cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
       agent_session_id TEXT,
       cwd TEXT,
-      source_path TEXT NOT NULL
+      source_path TEXT NOT NULL,
+      metered INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE tool_panels (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      state TEXT
     );
     CREATE TABLE sessions (
       id TEXT PRIMARY KEY,
@@ -48,11 +56,13 @@ function seed(options: {
   cacheRead?: number;
   cacheWrite?: number;
   cwd?: string | null;
+  agentSessionId?: string | null;
+  metered?: boolean;
 }) {
   seq += 1;
   db.prepare(`
-    INSERT INTO usage_events (id, provider, timestamp_ms, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cwd, source_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO usage_events (id, provider, timestamp_ms, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cwd, source_path, agent_session_id, metered)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     `e${seq}`,
     options.provider ?? 'claude',
@@ -63,7 +73,20 @@ function seed(options: {
     options.cacheRead ?? 0,
     options.cacheWrite ?? 0,
     options.cwd ?? null,
-    '/t.jsonl'
+    '/t.jsonl',
+    options.agentSessionId ?? null,
+    options.metered === false ? 0 : 1
+  );
+}
+
+function seedCursorPanel(sessionId: string, agentSessionId: string): void {
+  db.prepare(`
+    INSERT INTO tool_panels (id, session_id, type, title, state)
+    VALUES (?, ?, 'terminal', 'Cursor', ?)
+  `).run(
+    `panel-${sessionId}-${agentSessionId}`,
+    sessionId,
+    JSON.stringify({ customState: { agentType: 'cursor', agentSessionId } })
   );
 }
 
@@ -106,6 +129,7 @@ describe('UsageAggregator.getTotals', () => {
     const totals = aggregator.getTotals(0, NOW);
     expect(totals.totalTokens).toBe(0);
     expect(totals.messageCount).toBe(0);
+    expect(totals.unmeteredMessageCount).toBe(0);
     expect(totals.estimatedCostUsd).toBe(0);
     expect(totals.costIncomplete).toBe(false);
   });
@@ -122,6 +146,7 @@ describe('UsageAggregator.getTotals', () => {
     expect(totals.cacheCreationTokens).toBe(10);
     expect(totals.totalTokens).toBe(440);
     expect(totals.messageCount).toBe(2);
+    expect(totals.unmeteredMessageCount).toBe(0);
   });
 
   it('excludes events outside the requested range', () => {
@@ -350,6 +375,150 @@ describe('UsageAggregator.getSeries', () => {
   });
 });
 
+
+describe('UsageAggregator Cursor grafts', () => {
+  it('counts Cursor-only unmetered messages without inventing tokens or flipping pricing', () => {
+    seedSession({ id: 'cursor-pane', path: '/cursor', createdAtMs: NOW - DAY_MS });
+    seedCursorPanel('cursor-pane', '78c0d50d-8589-46d8-b787-c38fc6f5c6a4');
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+      agentSessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+    });
+
+    const totals = aggregator.getTotals(NOW - DAY_MS, NOW);
+    expect(totals.messageCount).toBe(1);
+    expect(totals.unmeteredMessageCount).toBe(1);
+    expect(totals.totalTokens).toBe(0);
+    expect(totals.estimatedCostUsd).toBe(0);
+    expect(totals.costIncomplete).toBe(true);
+  });
+
+  it('keeps Claude dollars on a mixed pane and reports partial coverage', () => {
+    seedSession({ id: 'mixed', path: '/mixed', createdAtMs: NOW - DAY_MS });
+    seedCursorPanel('mixed', '78c0d50d-8589-46d8-b787-c38fc6f5c6a4');
+    seed({ timestampMs: NOW - HOUR_MS, cwd: '/mixed', model: 'claude-sonnet-5', input: 1_000_000 });
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+      agentSessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+    });
+
+    const pane = aggregator.getByPane(NOW - DAY_MS, NOW).panes[0];
+    expect(pane.messageCount).toBe(2);
+    expect(pane.unmeteredMessageCount).toBe(1);
+    expect(pane.estimatedCostUsd).toBeCloseTo(3, 6);
+    expect(pane.costIncomplete).toBe(true);
+      });
+
+  it('joins Cursor events by session id before cwd', () => {
+    seedSession({ id: 'identity', path: '/identity', createdAtMs: NOW - DAY_MS });
+    seedSession({ id: 'cwd-only', path: '/other', createdAtMs: NOW - DAY_MS });
+    seedCursorPanel('identity', '78c0d50d-8589-46d8-b787-c38fc6f5c6a4');
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+      cwd: '/other',
+      agentSessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+    });
+
+    const report = aggregator.getByPane(NOW - DAY_MS, NOW);
+    expect(report.panes.find(pane => pane.paneId === 'identity')?.messageCount).toBe(1);
+    expect(report.panes.find(pane => pane.paneId === 'cwd-only')?.messageCount).toBe(0);
+  });
+
+  it('falls back to cwd when no Cursor panel owns the session id', () => {
+    seedSession({ id: 'cwd-pane', path: '/cwd-pane', createdAtMs: NOW - DAY_MS });
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+      cwd: '/cwd-pane',
+      agentSessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    });
+
+    const report = aggregator.getByPane(NOW - DAY_MS, NOW);
+    expect(report.panes.find(pane => pane.paneId === 'cwd-pane')?.messageCount).toBe(1);
+  });
+
+  it('marks an idle Cursor pane incomplete instead of a complete zero dollar', () => {
+    seedSession({ id: 'idle-cursor', path: '/idle-cursor', createdAtMs: NOW - HOUR_MS });
+    seedCursorPanel('idle-cursor', '78c0d50d-8589-46d8-b787-c38fc6f5c6a4');
+
+    const pane = aggregator.getByPane(NOW - DAY_MS, NOW).panes[0];
+    expect(pane.paneId).toBe('idle-cursor');
+    expect(pane.messageCount).toBe(0);
+    expect(pane.estimatedCostUsd).toBe(0);
+    expect(pane.costIncomplete).toBe(true);
+    expect(pane.unmeteredMessageCount).toBe(0);
+  });
+
+  it('does not mark an idle Claude pane incomplete', () => {
+    seedSession({ id: 'idle', name: 'Idle', path: '/idle-claude', createdAtMs: NOW - HOUR_MS });
+    const pane = aggregator.getByPane(NOW - DAY_MS, NOW).panes[0];
+    expect(pane).toMatchObject({ paneId: 'idle', costIncomplete: false, unmeteredMessageCount: 0 });
+    expect(emptyPaneCostSlice().costIncomplete).toBe(false);
+    expect(emptyPaneCostSlice().unmeteredMessageCount).toBe(0);
+  });
+
+  it('filters providers and leaves Claude plus Codex totals unchanged when Cursor is excluded', () => {
+    seed({ timestampMs: NOW - HOUR_MS, provider: 'claude', input: 10 });
+    seed({ timestampMs: NOW - HOUR_MS, provider: 'codex', model: 'gpt-5-codex', input: 90 });
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+      agentSessionId: '78c0d50d-8589-46d8-b787-c38fc6f5c6a4',
+    });
+
+    const metered = aggregator.getTotals(NOW - DAY_MS, NOW, ['claude', 'codex']);
+    const all = aggregator.getTotals(NOW - DAY_MS, NOW);
+    expect(metered.inputTokens).toBe(100);
+    expect(metered.messageCount).toBe(2);
+    expect(metered.unmeteredMessageCount).toBe(0);
+    expect(metered.costIncomplete).toBe(false);
+    expect(all.messageCount).toBe(3);
+    expect(all.unmeteredMessageCount).toBe(1);
+    expect(all.costIncomplete).toBe(true);
+    expect(metered.estimatedCostUsd).toBe(all.estimatedCostUsd);
+  });
+
+  it('matches leaderboard submission fields to the report totals', () => {
+    seed({ timestampMs: NOW - HOUR_MS, provider: 'claude', input: 10 });
+    seed({
+      timestampMs: NOW - HOUR_MS,
+      provider: 'cursor',
+      model: 'cursor',
+      metered: false,
+    });
+
+    const totals = aggregator.getTotals(NOW - DAY_MS, NOW);
+    const byModel = aggregator.getByModel(NOW - DAY_MS, NOW);
+    expect({
+      messageCount: totals.messageCount,
+      unmeteredMessageCount: totals.unmeteredMessageCount,
+      inputTokens: totals.inputTokens,
+      estimatedCostUsd: totals.estimatedCostUsd,
+      costIncomplete: totals.costIncomplete,
+      byModelProviders: byModel.map(entry => entry.provider),
+    }).toEqual({
+      messageCount: 2,
+      unmeteredMessageCount: 1,
+      inputTokens: 10,
+      estimatedCostUsd: totals.estimatedCostUsd,
+      costIncomplete: true,
+      byModelProviders: ['claude', 'cursor'],
+    });
+  });
+});
 
 describe('resolveReportRange', () => {
   it('defaults to the trailing window ending now', () => {

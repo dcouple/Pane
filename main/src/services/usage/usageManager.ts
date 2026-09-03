@@ -5,15 +5,18 @@ import { join } from 'path';
 import { glob } from 'glob';
 import chokidar from 'chokidar';
 import { databaseService } from '../database';
-import { UsageRepository } from './usageRepository';
+import { UsageRepository, type UsageFileCursor } from './usageRepository';
 import { UsageAggregator, resolveReportRange } from './usageAggregator';
 import { isFileUnchanged, resolveStartOffset, scanJsonlFile } from './jsonlScanner';
+import { CursorSessionRegistry, cursorSessionIdFromPath } from './cursorSessions';
+import type { ParseContextSnapshot } from './usageParser';
 import { getPricingSource } from './modelPricing';
 import { OpenRouterPriceProvider } from './openRouterPriceProvider';
 import { getAppDirectory } from '../../utils/appDirectory';
 import {
   DEFAULT_USAGE_RANGE_DAYS,
   USAGE_PARSER_VERSION,
+  USAGE_PROVIDERS,
   USAGE_RETENTION_DAYS,
   type UsageIndexStatus,
   type UsageByPaneReport,
@@ -24,9 +27,21 @@ import {
   type UsageTotals,
 } from '../../../../shared/types/usage';
 
+export interface TranscriptRootSpec {
+  relativePath: readonly string[];
+  glob: string;
+}
+
+export const TRANSCRIPT_ROOTS: Record<UsageProvider, TranscriptRootSpec> = {
+  claude: { relativePath: ['.claude', 'projects'], glob: '**/*.jsonl' },
+  codex: { relativePath: ['.codex', 'sessions'], glob: '**/*.jsonl' },
+  cursor: { relativePath: ['.cursor', 'projects'], glob: '**/agent-transcripts/**/*.jsonl' },
+};
+
 interface TranscriptRoot {
   provider: UsageProvider;
   path: string;
+  glob: string;
 }
 
 interface UsageWatcher {
@@ -63,7 +78,7 @@ export function createTranscriptWatchers(
     });
 
     const queue = (path: string) => {
-      if (path.endsWith('.jsonl')) queueFile(path, root.provider);
+      if (matchesTranscriptGlob(path, root.glob)) queueFile(path, root.provider);
     };
     watcher.on('add', queue);
     watcher.on('change', queue);
@@ -80,20 +95,32 @@ const YIELD_EVERY_FILES = 25;
 const WATCH_DEBOUNCE_MS = 3000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+function matchesTranscriptGlob(filePath: string, globPattern: string): boolean {
+  if (!filePath.endsWith('.jsonl')) return false;
+  if (globPattern.includes('agent-transcripts')) {
+    return /(?:^|[/\\])agent-transcripts[/\\].+\.jsonl$/i.test(filePath);
+  }
+  return true;
+}
+
 function transcriptRoots(): TranscriptRoot[] {
   const home = homedir();
-  return [
-    { provider: 'claude', path: join(home, '.claude', 'projects') },
-    { provider: 'codex', path: join(home, '.codex', 'sessions') },
-  ];
+  return USAGE_PROVIDERS.map(provider => {
+    const spec = TRANSCRIPT_ROOTS[provider];
+    return {
+      provider,
+      path: join(home, ...spec.relativePath),
+      glob: spec.glob,
+    };
+  });
 }
 
 /**
- * Indexes agent CLI transcripts so the usage page can report tokens, cost and
- * rolling-window utilisation.
+ * Indexes agent CLI transcripts for tokens, unmetered message counts, cost,
+ * and rolling-window utilisation.
  *
  * Read-only by construction: it never writes to, creates or deletes anything
- * under `~/.claude` or `~/.codex`.
+ * under `~/.claude`, `~/.codex` or `~/.cursor`.
  *
  * Known limitation: only the Electron host's home directory is scanned. On
  * Windows with WSL-based projects the agents write inside the distro's home,
@@ -105,6 +132,7 @@ class UsageManager {
   private repositoryRef: UsageRepository | null = null;
   private aggregatorRef: UsageAggregator | null = null;
   private priceProvider: OpenRouterPriceProvider | null = null;
+  private cursorSessions: CursorSessionRegistry | null = null;
   private watchers: UsageWatcher[] = [];
   private pendingFiles = new Map<string, UsageProvider>();
   private debounceTimer: NodeJS.Timeout | undefined;
@@ -131,6 +159,13 @@ class UsageManager {
   private get aggregator(): UsageAggregator {
     if (!this.aggregatorRef) this.aggregatorRef = new UsageAggregator(databaseService.getDb());
     return this.aggregatorRef;
+  }
+
+  private getCursorSessions(): CursorSessionRegistry {
+    if (!this.cursorSessions) {
+      this.cursorSessions = new CursorSessionRegistry(join(homedir(), '.cursor', 'chats'));
+    }
+    return this.cursorSessions;
   }
 
   /** Call after `app.whenReady()` — never at module load. */
@@ -234,7 +269,7 @@ class UsageManager {
       const files: Array<{ path: string; provider: UsageProvider }> = [];
       for (const root of roots) {
         if (!existsSync(root.path)) continue;
-        const matches = await glob('**/*.jsonl', { cwd: root.path, absolute: true, nodir: true });
+        const matches = await glob(root.glob, { cwd: root.path, absolute: true, nodir: true });
         for (const path of matches) files.push({ path, provider: root.provider });
       }
 
@@ -278,10 +313,7 @@ class UsageManager {
       if (isFileUnchanged(recorded, stats)) return;
 
       const startOffset = resolveStartOffset(recorded, stats.size);
-      // A file being re-read from the top states its own attribution again, and
-      // a stored context would describe bytes that are no longer there — this is
-      // the rotation and truncation case.
-      const seedContext = startOffset > 0 ? recorded?.parseContext ?? null : null;
+      const seedContext = await this.seedContext(path, provider, recorded, startOffset);
       const scanned = await scanJsonlFile(path, provider, startOffset, stats.mtimeMs, seedContext);
 
       this.repository.commitFile(
@@ -310,6 +342,32 @@ class UsageManager {
       }
       console.warn(`[Usage] Skipped ${path}:`, error instanceof Error ? error.message : error);
     }
+  }
+
+  /** Claude: null. Codex: resume snapshot when mid-file. Cursor: basename + chats sidecar, retrying cwd if still missing. */
+  private async seedContext(
+    path: string,
+    provider: UsageProvider,
+    recorded: UsageFileCursor | null,
+    startOffset: number
+  ): Promise<ParseContextSnapshot | null> {
+    if (provider === 'claude') return null;
+    if (provider === 'codex') {
+      return startOffset > 0 ? recorded?.parseContext ?? null : null;
+    }
+
+    const sessionId = cursorSessionIdFromPath(path) ?? '';
+    const stored = recorded?.parseContext?.provider === 'cursor' ? recorded.parseContext : null;
+    if (startOffset > 0 && stored && stored.cwd !== null) {
+      return stored;
+    }
+
+    const meta = sessionId.length > 0 ? await this.getCursorSessions().resolve(sessionId) : null;
+    return {
+      provider: 'cursor',
+      sessionId: stored?.sessionId || sessionId,
+      cwd: meta?.cwd ?? stored?.cwd ?? null,
+    };
   }
 
   private startWatching(): void {

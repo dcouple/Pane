@@ -63,7 +63,7 @@ describe('scanJsonlFile', () => {
     const result = await scanJsonlFile(file, 'claude', 0, FALLBACK_MS);
 
     expect(result.linesRead).toBe(2);
-    expect(result.events.map(e => e.event.inputTokens)).toEqual([10, 20]);
+    expect(result.events.map(e => e.event.tokens?.inputTokens)).toEqual([10, 20]);
   });
 
   it('reads only the appended delta on a second pass', async () => {
@@ -74,7 +74,7 @@ describe('scanJsonlFile', () => {
     const second = await scanJsonlFile(file, 'claude', first.nextOffsetBytes, FALLBACK_MS);
 
     expect(second.events).toHaveLength(1);
-    expect(second.events[0].event.inputTokens).toBe(20);
+    expect(second.events[0].event.tokens?.inputTokens).toBe(20);
   });
 
   it('keeps byte offsets aligned across multi-byte characters', async () => {

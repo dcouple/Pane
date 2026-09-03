@@ -3348,7 +3348,7 @@
           "type": "object",
           "required": [
             "inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens",
-            "totalTokens", "messageCount", "estimatedCostUsd", "costIncomplete", "cacheSavingsUsd"
+            "totalTokens", "messageCount", "unmeteredMessageCount", "estimatedCostUsd", "costIncomplete", "cacheSavingsUsd"
           ],
           "properties": {
             "inputTokens": { "type": "number" },
@@ -3357,6 +3357,7 @@
             "cacheCreationTokens": { "type": "number" },
             "totalTokens": { "type": "number" },
             "messageCount": { "type": "number" },
+            "unmeteredMessageCount": { "type": "number" },
             "estimatedCostUsd": { "type": "number" },
             "costIncomplete": { "type": "boolean" },
             "cacheSavingsUsd": { "type": "number" }
@@ -3367,18 +3368,19 @@
           "type": "object",
           "required": [
             "model", "provider", "inputTokens", "outputTokens", "cacheReadTokens",
-            "cacheCreationTokens", "totalTokens", "messageCount", "estimatedCostUsd",
+            "cacheCreationTokens", "totalTokens", "messageCount", "unmeteredMessageCount", "estimatedCostUsd",
             "costIncomplete", "cacheSavingsUsd"
           ],
           "properties": {
             "model": { "type": "string" },
-            "provider": { "enum": ["claude", "codex"] },
+            "provider": { "enum": ["claude", "codex", "cursor"] },
             "inputTokens": { "type": "number" },
             "outputTokens": { "type": "number" },
             "cacheReadTokens": { "type": "number" },
             "cacheCreationTokens": { "type": "number" },
             "totalTokens": { "type": "number" },
             "messageCount": { "type": "number" },
+            "unmeteredMessageCount": { "type": "number" },
             "estimatedCostUsd": { "type": "number" },
             "costIncomplete": { "type": "boolean" },
             "cacheSavingsUsd": { "type": "number" }
@@ -3389,7 +3391,7 @@
           "type": "object",
           "required": [
             "inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens",
-            "totalTokens", "messageCount", "estimatedCostUsd", "costIncomplete",
+            "totalTokens", "messageCount", "unmeteredMessageCount", "estimatedCostUsd", "costIncomplete",
             "cacheSavingsUsd", "uncachedCostUsd", "uncachedInputTokens", "cacheHitRate", "byModel"
           ],
           "properties": {
@@ -3399,6 +3401,7 @@
             "cacheCreationTokens": { "type": "number" },
             "totalTokens": { "type": "number" },
             "messageCount": { "type": "number" },
+            "unmeteredMessageCount": { "type": "number" },
             "estimatedCostUsd": { "type": "number" },
             "costIncomplete": { "type": "boolean" },
             "cacheSavingsUsd": { "type": "number" },
@@ -3417,7 +3420,7 @@
           "required": [
             "paneId", "paneName", "worktreePath", "repoId", "archived", "createdAtMs",
             "inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens",
-            "totalTokens", "messageCount", "estimatedCostUsd", "costIncomplete",
+            "totalTokens", "messageCount", "unmeteredMessageCount", "estimatedCostUsd", "costIncomplete",
             "cacheSavingsUsd", "uncachedCostUsd", "uncachedInputTokens", "cacheHitRate", "byModel"
           ],
           "properties": {
@@ -3433,6 +3436,7 @@
             "cacheCreationTokens": { "type": "number" },
             "totalTokens": { "type": "number" },
             "messageCount": { "type": "number" },
+            "unmeteredMessageCount": { "type": "number" },
             "estimatedCostUsd": { "type": "number" },
             "costIncomplete": { "type": "boolean" },
             "cacheSavingsUsd": { "type": "number" },
