@@ -4,7 +4,7 @@ import path from 'path';
 import type { IpcMain } from 'electron';
 import type { AppServices } from './types';
 import type { PaneCommandRegistry, PaneCommandValue } from '../daemon/commandRegistry';
-import { PathResolver, ProjectEnvironment } from '../utils/pathResolver';
+import { PathResolver, ProjectEnvironment, expandUserRepoPath } from '../utils/pathResolver';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { escapeShellArg } from '../utils/shellEscape';
 import { panelManager } from '../services/panelManager';
@@ -2622,7 +2622,7 @@ function parseRepoAddRequest(value: PaneCommandValue): Required<Pick<RunpaneRepo
     throw new Error('Repo add request must include a path');
   }
 
-  const repoPath = path.resolve(requestedPath);
+  const repoPath = expandUserRepoPath(requestedPath);
   const providedName = optionalString(value.name)?.trim();
   const defaultName = path.basename(repoPath) || repoPath;
 
@@ -2908,20 +2908,21 @@ function parsePaneCreateItem(value: PaneCommandValue, index: number): RunpanePan
 }
 
 function validateRepositoryPath(repoPath: string): void {
+  const resolvedPath = expandUserRepoPath(repoPath);
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(repoPath);
+    stat = fs.statSync(resolvedPath);
   } catch {
-    throw new Error(`Repo path does not exist: ${repoPath}`);
+    throw new Error(`Repo path does not exist: ${resolvedPath}`);
   }
 
   if (!stat.isDirectory()) {
-    throw new Error(`Repo path must be a directory: ${repoPath}`);
+    throw new Error(`Repo path must be a directory: ${resolvedPath}`);
   }
 
   try {
     const output = execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
-      cwd: repoPath,
+      cwd: resolvedPath,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
@@ -2930,7 +2931,7 @@ function validateRepositoryPath(repoPath: string): void {
       throw new Error('not inside work tree');
     }
   } catch {
-    throw new Error(`Repo path must be an existing git repository: ${repoPath}`);
+    throw new Error(`Repo path must be an existing git repository: ${resolvedPath}`);
   }
 }
 

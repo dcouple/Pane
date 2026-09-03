@@ -1,8 +1,51 @@
 import path from 'path';
+import os from 'os';
+import { realpathSync } from 'fs';
 import fs from 'fs/promises';
-import { linuxToUNCPath, posixJoin } from './wslUtils';
+import { linuxToUNCPath, parseWSLPath, posixJoin } from './wslUtils';
 
 export type ProjectEnvironment = 'wsl' | 'windows' | 'linux' | 'macos';
+
+interface ExpandUserRepoPathOptions {
+  homeDir?: string;
+}
+
+/**
+ * Expand `~` / `~/…` to the user home directory, then make the path absolute.
+ *
+ * Relative paths resolve against home rather than Electron's cwd (often `/` or
+ * the app directory). WSL UNC paths are returned unchanged so parseWSLPath
+ * still works. If the resolved path exists, return its realpath.
+ */
+export function expandUserRepoPath(input: string, options: ExpandUserRepoPathOptions = {}): string {
+  const trimmed = input.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (parseWSLPath(trimmed)) {
+    return trimmed;
+  }
+
+  const homeDir = options.homeDir ?? os.homedir();
+  let expanded = trimmed;
+  if (trimmed === '~') {
+    expanded = homeDir;
+  } else if (trimmed.startsWith('~') && (trimmed[1] === '/' || trimmed[1] === '\\')) {
+    const rest = trimmed.slice(2).split(/[\\/]+/).filter(Boolean);
+    expanded = rest.length > 0 ? path.join(homeDir, ...rest) : homeDir;
+  }
+
+  const resolved = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(homeDir, expanded);
+
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
 
 export class PathResolver {
   readonly environment: ProjectEnvironment;
