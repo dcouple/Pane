@@ -116,8 +116,8 @@ function transcriptRoots(): TranscriptRoot[] {
 }
 
 /**
- * Indexes agent CLI transcripts so the usage page can report tokens, cost and
- * rolling-window utilisation.
+ * Indexes agent CLI transcripts for tokens, unmetered message counts, cost,
+ * and rolling-window utilisation.
  *
  * Read-only by construction: it never writes to, creates or deletes anything
  * under `~/.claude`, `~/.codex` or `~/.cursor`.
@@ -344,11 +344,7 @@ class UsageManager {
     }
   }
 
-  /**
-   * Cursor identity lives outside the lines. Session id is the file basename;
-   * cwd comes from the chats sidecar. A stored snapshot is reused on resume,
-   * but a missing cwd is retried so a late sidecar still binds.
-   */
+  /** Claude: null. Codex: resume snapshot when mid-file. Cursor: basename + chats sidecar, retrying cwd if still missing. */
   private async seedContext(
     path: string,
     provider: UsageProvider,

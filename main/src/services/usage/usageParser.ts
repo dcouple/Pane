@@ -228,7 +228,7 @@ function cursorSeedFrom(seed: ParseContextSnapshot | CodexContextSnapshot | null
   return seed.provider === 'cursor' ? seed : null;
 }
 
-/** Claude needs nothing. Codex seeds from a prior pass or empty. Cursor MUST be seeded (sessionId is required). */
+/** Claude needs nothing. Codex seeds from a prior pass or empty. Cursor uses seed when present, else empty sessionId and null cwd. */
 export function createParseContext(
   provider: UsageProvider,
   seed: ParseContextSnapshot | CodexContextSnapshot | null
@@ -413,7 +413,8 @@ function asCursorParseContext(
 
 /**
  * Parse one raw JSONL line for a provider. Returns `null` for blank lines,
- * malformed JSON, and lines that carry no token accounting.
+ * malformed JSON, and Claude/Codex lines with no token accounting. Cursor
+ * `{role:"assistant"}` lines return an event with `tokens: null`.
  */
 export function parseUsageLine(
   provider: UsageProvider,

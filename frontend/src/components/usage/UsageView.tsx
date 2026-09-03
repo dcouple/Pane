@@ -392,7 +392,7 @@ export function UsageView() {
     }));
   }, []);
 
-  /** Anthropic vs OpenAI roll-up — the split the model list alone doesn't show. */
+  /** Per-provider roll-up — the split the model list alone doesn't show. */
   const providerBars = useMemo(() => {
     const byProvider = new Map<UsageProvider, { tokens: number; cost: number; incomplete: boolean }>();
     for (const entry of report?.byModel ?? []) {

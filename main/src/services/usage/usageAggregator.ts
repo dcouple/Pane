@@ -392,7 +392,6 @@ export class UsageAggregator {
 
   private cursorPaneIds(): Set<string> {
     try {
-      // SAFETY: session_id is the pane id stored on each Cursor terminal panel.
       const rows = this.db.prepare(`
         SELECT DISTINCT session_id AS pane_id
         FROM tool_panels
