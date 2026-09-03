@@ -95,6 +95,7 @@ import { WorkspaceJournal, type WorkspaceJournalFilter } from '../services/works
 import { WorkspaceStateReader } from '../services/workspaceStateReader';
 import { WorkspaceCursorStore } from '../services/workspaceCursorStore';
 import { usageManager } from '../services/usage/usageManager';
+import { emptyPaneCostSlice } from '../services/usage/usageAggregator';
 import {
   dueIdleEntries,
   nextIdleDeadline,
@@ -332,7 +333,7 @@ export function registerRunpaneHandlers(
             repoId: session.project_id ?? null,
             archived: isSessionArchived(session.archived),
             createdAtMs: parseSessionTimestampMs(session.created_at),
-            ...emptyPaneCostSlice(),
+            ...emptyPaneCostSlice({ hasCursorPanel: sessionHasCursorPanel(normalized.paneId) }),
           }];
         }
       }
@@ -2045,22 +2046,16 @@ function parsePaneCostRequest(value: PaneCommandValue): RunpanePaneCostRequest {
   };
 }
 
-function emptyPaneCostSlice() {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    totalTokens: 0,
-    messageCount: 0,
-    estimatedCostUsd: 0,
-    costIncomplete: false,
-    cacheSavingsUsd: 0,
-    uncachedCostUsd: 0,
-    uncachedInputTokens: 0,
-    cacheHitRate: 0,
-    byModel: [],
-  };
+function sessionHasCursorPanel(sessionId: string): boolean {
+  return panelManager.getPanelsForSession(sessionId).some(panel => {
+    const customState = panel.state?.customState;
+    return Boolean(
+      customState
+      && typeof customState === 'object'
+      && 'agentType' in customState
+      && customState.agentType === 'cursor'
+    );
+  });
 }
 
 function parseSessionTimestampMs(value: string): number {

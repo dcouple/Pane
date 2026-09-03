@@ -64,6 +64,7 @@ const zeroUsageTotals = {
   cacheCreationTokens: 0,
   totalTokens: 0,
   messageCount: 0,
+  unmeteredMessageCount: 0,
   estimatedCostUsd: 0,
   costIncomplete: false,
   cacheSavingsUsd: 0,

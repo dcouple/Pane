@@ -56,6 +56,7 @@ function buildSubmission(
     cacheReadTokens: report.totals.cacheReadTokens,
     cacheCreationTokens: report.totals.cacheCreationTokens,
     messageCount: report.totals.messageCount,
+    unmeteredMessageCount: report.totals.unmeteredMessageCount,
     estimatedCostUsd: report.totals.estimatedCostUsd,
     costIncomplete: report.totals.costIncomplete,
     cacheSavingsUsd: report.totals.cacheSavingsUsd,

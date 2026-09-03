@@ -11,6 +11,7 @@ import { LimitBar, LimitStatusBanners, CreditsLine } from './ProviderLimits';
 import { LeaderboardTab } from './LeaderboardTab';
 import {
   DEFAULT_USAGE_RANGE_DAYS,
+  USAGE_PROVIDERS,
   type UsageByPane,
   type UsagePaneCostSlice,
   type UsageProvider,
@@ -32,11 +33,13 @@ const PROVIDER_OPTIONS: Array<{ value: UsageProvider | 'all'; label: string }> =
   { value: 'all', label: 'All' },
   { value: 'claude', label: 'Claude' },
   { value: 'codex', label: 'Codex' },
+  { value: 'cursor', label: 'Cursor' },
 ];
 
 const PROVIDER_META = {
   claude: { label: 'Anthropic', color: '#e0913a' },
   codex: { label: 'OpenAI', color: '#37b877' },
+  cursor: { label: 'Cursor', color: '#c765d6' },
 } satisfies Record<UsageProvider, { label: string; color: string }>;
 
 /** Chart palette, matching the graph view's lane colours. */
@@ -89,11 +92,37 @@ function StatCard({
   );
 }
 
+function isAllUnmetered(slice: Pick<UsagePaneCostSlice, 'messageCount' | 'unmeteredMessageCount'>): boolean {
+  return slice.messageCount > 0 && slice.unmeteredMessageCount === slice.messageCount;
+}
+
+function isMixedUnmetered(slice: Pick<UsagePaneCostSlice, 'messageCount' | 'unmeteredMessageCount'>): boolean {
+  return slice.unmeteredMessageCount > 0 && slice.messageCount > slice.unmeteredMessageCount;
+}
+
+function formatSliceCost(
+  slice: Pick<UsagePaneCostSlice, 'messageCount' | 'unmeteredMessageCount' | 'costIncomplete'>,
+  value: number
+): string {
+  if (isAllUnmetered(slice)) return 'n/a';
+  if (isMixedUnmetered(slice)) return formatUsd(value);
+  return slice.costIncomplete ? 'n/a' : formatUsd(value);
+}
+
+function formatSliceTokens(slice: UsagePaneCostSlice): string {
+  if (isAllUnmetered(slice)) return '—';
+  if (isMixedUnmetered(slice)) {
+    return `${formatTokens(slice.totalTokens)} · ${slice.unmeteredMessageCount} unmetered`;
+  }
+  return formatTokens(slice.totalTokens);
+}
+
 function PaneCostCells({ pane }: { pane: UsagePaneCostSlice }) {
-  const cost = (value: number) => pane.costIncomplete ? 'n/a' : formatUsd(value);
+  const cost = (value: number) => formatSliceCost(pane, value);
+  const tokensLabel = formatSliceTokens(pane);
   return (
     <>
-      <td className="px-2 py-2 tabular-nums text-text-secondary">{formatTokens(pane.totalTokens)}</td>
+      <td className="px-2 py-2 tabular-nums text-text-secondary">{tokensLabel}</td>
       <td className="px-2 py-2 tabular-nums text-text-secondary">{cost(pane.estimatedCostUsd)}</td>
       <td className="px-2 py-2 tabular-nums text-text-primary">{cost(pane.uncachedCostUsd)}</td>
       <td className="px-2 py-2 tabular-nums text-text-secondary">{Math.round(pane.cacheHitRate * 100)}%</td>
@@ -313,9 +342,11 @@ export function UsageView() {
       color: MODEL_COLORS[index % MODEL_COLORS.length],
       tag: PROVIDER_META[entry.provider].label,
       share: total > 0 ? entry.totalTokens / total : 0,
-      detail: entry.costIncomplete ? 'n/a' : formatUsd(entry.estimatedCostUsd),
-      note: entry.costIncomplete ? 'no price' : 'at API rates',
-      detailTitle: entry.costIncomplete
+      detail: isAllUnmetered(entry) ? 'n/a' : formatSliceCost(entry, entry.estimatedCostUsd),
+      note: isAllUnmetered(entry) ? 'unmetered' : entry.costIncomplete && !isMixedUnmetered(entry) ? 'no price' : 'at API rates',
+      detailTitle: isAllUnmetered(entry)
+        ? 'This provider recorded the message but not its token accounting.'
+        : entry.costIncomplete
         ? 'No published price for this id. Codex reports sub-agent profiles (for example codex-auto-review) in the model field, and those are billed under the model they run on.'
         : 'Estimated at published API rates. Not what a flat-rate plan charges.',
     }));
@@ -394,7 +425,7 @@ export function UsageView() {
     ];
   }, [report]);
 
-  const bothRootsMissing = (report?.index.missingRoots.length ?? 0) >= 2;
+  const allRootsMissing = (report?.index.missingRoots.length ?? 0) >= USAGE_PROVIDERS.length;
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-bg-primary">
@@ -538,14 +569,19 @@ export function UsageView() {
           <div className="rounded border border-status-error/30 bg-status-error/10 p-4 text-sm text-status-error">
             {error}
           </div>
-        ) : bothRootsMissing ? (
+        ) : report && allRootsMissing ? (
           <div className="mx-auto max-w-lg rounded border border-border-primary bg-surface-secondary p-6 text-center">
             <h2 className="mb-2 text-sm font-medium text-text-primary">No agent transcripts found</h2>
             <p className="text-xs text-text-secondary">
-              Usage is read from the Claude Code and Codex transcript files in your home directory.
-              Neither <code className="font-mono">~/.claude/projects</code> nor{' '}
-              <code className="font-mono">~/.codex/sessions</code> exists yet — run an agent once and
-              come back.
+              Usage is read from agent transcript files in your home directory.
+              None of these exist yet:{' '}
+              {report.index.missingRoots.map((root, index) => (
+                <span key={root}>
+                  {index > 0 ? ', ' : ''}
+                  <code className="font-mono">{root}</code>
+                </span>
+              ))}
+              . Run an agent once and come back.
             </p>
           </div>
         ) : report ? (
@@ -554,8 +590,10 @@ export function UsageView() {
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <StatCard
                 label="Total tokens"
-                value={formatTokens(report.totals.totalTokens)}
-                detail={`${report.totals.messageCount.toLocaleString()} messages`}
+                value={isAllUnmetered(report.totals) ? '—' : formatTokens(report.totals.totalTokens)}
+                detail={isMixedUnmetered(report.totals)
+                  ? `${report.totals.messageCount.toLocaleString()} messages · ${report.totals.unmeteredMessageCount} unmetered`
+                  : `${report.totals.messageCount.toLocaleString()} messages`}
               />
               <StatCard label="Input" value={formatTokens(report.totals.inputTokens)} />
               <StatCard label="Output" value={formatTokens(report.totals.outputTokens)} />
