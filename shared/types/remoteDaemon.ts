@@ -1,5 +1,5 @@
 import type { VoiceTranscriptionMode } from './voiceTranscription';
-import { boundary, decodeBoundary } from '../validation/boundaryDecoder';
+import { boundary, decodeBoundary, decodeOptionalBoundary } from '../validation/boundaryDecoder';
 import type { BoundarySchema, JsonObject, JsonValue } from '../validation/boundaryDecoder';
 
 export type RemoteDaemonTransport = 'http+sse';
@@ -184,7 +184,43 @@ export interface RemoteDaemonImportResult {
 export interface RemoteDaemonHostSettings {
   config: RemoteDaemonHostConfig;
   clients: RemoteDaemonClientRecord[];
+  mobilePush: RemoteMobilePushSettings;
   access?: RemoteDaemonHostAccess;
+}
+
+export type RemoteMobilePlatform = 'ios' | 'android';
+
+export interface RemoteMobilePushRegistration {
+  id: string;
+  clientId: string;
+  platform: RemoteMobilePlatform;
+  token: string;
+  installationId: string;
+  /** Client-local profile id used only to route a notification tap after launch. */
+  hostProfileId: string;
+  needsInputEnabled: boolean;
+  completedEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+  /** Bounded persistent deduplication window; no notification content is stored. */
+  recentEventIds: string[];
+}
+
+export interface RemoteMobilePushSettings {
+  registrations: RemoteMobilePushRegistration[];
+  /** Monotonic host-owned sequence used to make repeated attention transitions distinct. */
+  attentionSequence: number;
+}
+
+export interface RemoteMobilePushStatus {
+  platform: RemoteMobilePlatform;
+  registration: 'registered' | 'not-registered' | 'revoked';
+  provider: 'ready' | 'missing-config' | 'invalid-config' | 'unavailable';
+  code: string;
+  message: string;
+  needsInputEnabled?: boolean;
+  completedEnabled?: boolean;
 }
 
 export interface RemoteDaemonClientSettings {
@@ -321,9 +357,10 @@ export function getRemoteDaemonHostConfigValidationError(config: RemoteDaemonHos
 
 export function createDefaultRemoteDaemonConfig(): RemoteDaemonConfig {
   return {
-    host: {
+      host: {
       config: { ...DEFAULT_REMOTE_DAEMON_HOST_CONFIG },
-      clients: [],
+        clients: [],
+        mobilePush: { registrations: [], attentionSequence: 0 },
     },
     client: {
       profiles: [],
@@ -494,6 +531,7 @@ export function normalizeRemoteDaemonConfig<Value>(value: Value): RemoteDaemonCo
     }
   });
   const access = normalizeRemoteDaemonHostAccess(host.access);
+  const mobilePush = normalizeRemoteMobilePushSettings(host.mobilePush);
 
   const client = readJsonObject(config.client) ?? {};
   const profiles = readJsonArray(client.profiles).flatMap((profile) => {
@@ -521,6 +559,7 @@ export function normalizeRemoteDaemonConfig<Value>(value: Value): RemoteDaemonCo
       ),
     },
     clients: [...clients],
+    mobilePush,
   };
   if (access) {
     hostSettings.access = access;
@@ -534,6 +573,41 @@ export function normalizeRemoteDaemonConfig<Value>(value: Value): RemoteDaemonCo
       mode: activeProfileId && client.mode === 'remote' ? 'remote' : 'local',
     },
   };
+}
+
+function normalizeRemoteMobilePushSettings(value: JsonValue | undefined): RemoteMobilePushSettings {
+  const settings = readJsonObject(value) ?? {};
+  const registrations = readJsonArray(settings.registrations).flatMap((registration) => {
+    const raw = readJsonObject(registration);
+    if (!raw) return [];
+    const id = readOptionalString(raw.id);
+    const clientId = readOptionalString(raw.clientId);
+    const platform: RemoteMobilePlatform | undefined = raw.platform === 'ios' || raw.platform === 'android' ? raw.platform : undefined;
+    const token = readOptionalString(raw.token);
+    const installationId = readOptionalString(raw.installationId);
+    const hostProfileId = readOptionalString(raw.hostProfileId);
+    if (!id || !clientId || !platform || !token || !installationId || !hostProfileId || id.length > 200 || token.length > 8192) return [];
+    const normalized: RemoteMobilePushRegistration = {
+      id, clientId, platform, token, installationId,
+      hostProfileId,
+      needsInputEnabled: readBoolean(raw.needsInputEnabled, true),
+      completedEnabled: readBoolean(raw.completedEnabled, true),
+      createdAt: readOptionalString(raw.createdAt) ?? new Date(0).toISOString(),
+      updatedAt: readOptionalString(raw.updatedAt) ?? new Date(0).toISOString(),
+      recentEventIds: readJsonArray(raw.recentEventIds).flatMap(value => {
+        const eventId = readOptionalString(value);
+        return eventId ? [eventId] : [];
+      }).slice(-64),
+    };
+    const revokedAt = readOptionalString(raw.revokedAt);
+    if (revokedAt) normalized.revokedAt = revokedAt;
+    return [normalized];
+  });
+  const decodedAttentionSequence = decodeOptionalBoundary(settings.attentionSequence, boundary.number);
+  const attentionSequence = decodedAttentionSequence !== undefined && Number.isSafeInteger(decodedAttentionSequence) && decodedAttentionSequence >= 0
+    ? decodedAttentionSequence
+    : 0;
+  return { registrations, attentionSequence };
 }
 
 function normalizeRemoteDaemonHostAccess(value: JsonValue | undefined): RemoteDaemonHostAccess | undefined {

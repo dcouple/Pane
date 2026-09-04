@@ -32,6 +32,7 @@ import { createDaemonBridgeRouter, registerDaemonBridgeHandlers } from './daemon
 import { registerPermissionHandlers } from './permissions';
 import { registerAgentUsageHandlers } from './agentUsage';
 import { registerFeedbackHandlers } from './feedback';
+import { registerMobilePushHandlers } from './mobilePush';
 import { PaneCommandRegistry } from '../daemon/commandRegistry';
 import { remotePaneClientController } from '../daemon/client/remotePaneClient';
 
@@ -61,6 +62,7 @@ export function registerIpcHandlers(services: AppServices): PaneCommandRegistry 
   registerSessionHandlers(ipcMain, services, commandRegistry);
   registerProjectHandlers(ipcMain, services, commandRegistry);
   registerConfigHandlers(ipcMain, services, commandRegistry);
+  registerMobilePushHandlers(ipcMain, services, commandRegistry);
   registerDialogHandlers(ipcMain, services);
   registerExportHandlers(ipcMain, services);
   registerPermissionHandlers(ipcMain, services, commandRegistry);

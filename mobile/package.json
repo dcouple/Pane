@@ -1,0 +1,32 @@
+{
+  "name": "@pane/mobile",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "sync": "pnpm run build:web && cap sync",
+    "build:ios": "pnpm run sync && xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -configuration Debug -derivedDataPath /tmp/pane-mobile-ios build CODE_SIGNING_ALLOWED=NO",
+    "build:android": "pnpm run sync && cd android && ./gradlew assembleDebug",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint:eslint": "eslint src scripts --ext .ts,.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.1",
+    "@capacitor/app": "8.0.1",
+    "@capacitor/browser": "8.0.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/ios": "8.5.1",
+    "@capacitor/keyboard": "8.0.1",
+    "@capacitor/push-notifications": "8.0.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.31.0",
+    "@capacitor/cli": "8.5.1",
+    "eslint": "9.31.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.37.0",
+    "vitest": "3.2.4"
+  }
+}

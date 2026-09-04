@@ -19,9 +19,11 @@ import { RemoteStatusBar } from './components/RemoteStatusBar';
 import { RemoteTerminalPanel } from './components/RemoteTerminalPanel';
 import { decodeRemoteConnectionCode } from './runtime/remoteProfile';
 import { RemoteRuntimeAdapter, type RemoteProjectWithSessions } from './runtime/remoteRuntimeAdapter';
+import { loadRemoteProfiles, saveRemoteProfiles } from './runtime/remoteProfileStorage';
+import { addNativeAppListener, isNativeMobile } from './runtime/nativeMobile';
+import { consumeNativePushRoute, getNativePushStatus, installNativePushRouting, revokeNativePush, setupNativePush, updateNativePushControls, type NativePushRoute } from './runtime/nativePush';
 import { useRemoteSessionStore } from './stores/remoteSessionStore';
 
-const SAVED_PROFILES_KEY = 'pane.remotePwa.savedProfiles';
 const EMPTY_AFFORDANCES: RemotePwaAffordances = {
   terminalShortcuts: [],
   customCommands: [],
@@ -54,7 +56,11 @@ const EMPTY_AFFORDANCES: RemotePwaAffordances = {
 };
 
 export function RemotePwaApp() {
-  const [savedProfiles, setSavedProfiles] = useState<RemotePaneConnectionProfile[]>(loadSavedProfiles);
+  const [savedProfiles, setSavedProfiles] = useState<RemotePaneConnectionProfile[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(true);
+  const [pendingPushRoute, setPendingPushRoute] = useState<NativePushRoute | null>(null);
+  const [pushStatus, setPushStatus] = useState<{ registration: 'registered' | 'not-registered' | 'revoked'; provider: string; message: string; needsInputEnabled?: boolean; completedEnabled?: boolean } | null>(null);
+  const [pushControls, setPushControls] = useState({ needsInputEnabled: true, completedEnabled: true });
   const [adapter, setAdapter] = useState<RemoteRuntimeAdapter | null>(null);
   const [activeProfile, setActiveProfile] = useState<RemotePaneConnectionProfile | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<RemotePaneConnectionStatus>('local');
@@ -71,10 +77,29 @@ export function RemotePwaApp() {
   const [mountedTerminalPanelIds, setMountedTerminalPanelIds] = useState<string[]>([]);
   const sidebarOpenerRef = useRef<HTMLElement | null>(null);
   const createSessionOpenerRef = useRef<HTMLElement | null>(null);
+  const pushRoutePanelRef = useRef<{ sessionId: string; panelId: string } | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(SAVED_PROFILES_KEY, JSON.stringify(savedProfiles));
-  }, [savedProfiles]);
+    void loadRemoteProfiles()
+      .then(setSavedProfiles)
+      .catch(error => setLastError(error instanceof Error ? error.message : 'Could not load saved remote connections.'))
+      .finally(() => setProfilesLoading(false));
+  }, []);
+  useEffect(() => {
+    let mounted = true;
+    void installNativePushRouting()
+      .then(consumeNativePushRoute)
+      .then(route => { if (mounted && route) setPendingPushRoute(route); })
+      .catch(error => { if (mounted) setLastError(error instanceof Error ? error.message : 'Native notification setup failed.'); });
+    return () => { mounted = false; };
+  }, []);
+  useEffect(() => {
+    if (!profilesLoading) {
+      void saveRemoteProfiles(savedProfiles).catch(error => {
+        setLastError(error instanceof Error ? error.message : 'Could not save remote connections.');
+      });
+    }
+  }, [profilesLoading, savedProfiles]);
 
   const openSidebar = useCallback(() => {
     sidebarOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -96,6 +121,51 @@ export function RemotePwaApp() {
   const setSelectedPanel = useRemoteSessionStore(state => state.setSelectedPanel);
   const upsertPanel = useRemoteSessionStore(state => state.upsertPanel);
   const removePanel = useRemoteSessionStore(state => state.removePanel);
+
+  useEffect(() => {
+    let listener: { remove(): Promise<void> } | null = null;
+    let cancelled = false;
+    void addNativeAppListener('backButton', () => {
+      if (sidebarOpen) {
+        setSidebarOpen(false);
+        return;
+      }
+      if (selectedPanelId) {
+        setSelectedPanel(null);
+        return;
+      }
+      if (selectedSessionId) selectSession(null);
+    }).then(result => {
+      if (cancelled) void result?.remove();
+      else listener = result;
+    }).catch(() => {});
+    return () => { cancelled = true; void listener?.remove(); };
+  }, [selectedPanelId, selectedSessionId, selectSession, setSelectedPanel, sidebarOpen]);
+
+  useEffect(() => {
+    const route = (event: Event) => {
+      // SAFETY: Native push emits this exact CustomEvent after schema validation.
+      const detail = (event as CustomEvent<NativePushRoute>).detail;
+      if (detail?.hostProfileId) setPendingPushRoute(detail);
+    };
+    window.addEventListener('pane-native-push-route', route);
+    return () => window.removeEventListener('pane-native-push-route', route);
+  }, []);
+
+  useEffect(() => {
+    if (!adapter || !isNativeMobile()) return;
+    let listener: { remove(): Promise<void> } | null = null;
+    let active = true;
+    void addNativeAppListener('appStateChange', (event) => {
+      const isActive = event.isActive === true;
+      if (!isActive) adapter.disconnect();
+      if (isActive && active) void adapter.connect().catch(() => {});
+    }).then(result => {
+      if (!active) void result?.remove();
+      else listener = result;
+    });
+    return () => { active = false; void listener?.remove(); };
+  }, [adapter]);
 
   const selectedSession = useMemo(() => {
     if (!selectedSessionId) return null;
@@ -158,8 +228,15 @@ export function RemotePwaApp() {
         runtime.getActivePanel(sessionId).catch(() => null),
       ]);
       setPanels(sessionId, panels);
-      setSelectedPanel(activePanel?.id ?? panels[0]?.id ?? null);
-      setLastError(null);
+      const routedPanel = pushRoutePanelRef.current;
+      const routeMatches = routedPanel?.sessionId === sessionId && panels.some(panel => panel.id === routedPanel.panelId);
+      if (routedPanel?.sessionId === sessionId) pushRoutePanelRef.current = null;
+      setSelectedPanel(routeMatches ? routedPanel.panelId : activePanel?.id ?? panels[0]?.id ?? null);
+      if (routedPanel?.sessionId === sessionId && !routeMatches) {
+        setLastError('The notified panel is no longer available on this Pane host.');
+      } else {
+        setLastError(null);
+      }
     } catch (error) {
       setLastError(error instanceof Error ? error.message : 'Failed to load remote panels');
     }
@@ -190,6 +267,10 @@ export function RemotePwaApp() {
       saveProfile(profile, setSavedProfiles);
       await refreshProjects(runtime);
       await loadAffordances(runtime);
+      if (isNativeMobile()) {
+        const pushError = await setupNativePush(profile, runtime);
+        if (pushError) setLastError(pushError);
+      }
     } catch (error) {
       runtime.disconnect();
       setAdapter(null);
@@ -200,6 +281,32 @@ export function RemotePwaApp() {
       throw error;
     }
   }, [loadAffordances, refreshProjects]);
+
+  useEffect(() => {
+    if (!pendingPushRoute || profilesLoading) return;
+    const profile = savedProfiles.find(candidate => candidate.id === pendingPushRoute.hostProfileId);
+    if (!profile) {
+      setLastError('The notification belongs to a connection that is no longer saved.');
+      setPendingPushRoute(null);
+      return;
+    }
+    const applyRoute = () => {
+      if (pendingPushRoute.paneId) {
+        if (pendingPushRoute.panelId) {
+          pushRoutePanelRef.current = { sessionId: pendingPushRoute.paneId, panelId: pendingPushRoute.panelId };
+        }
+        selectSession(pendingPushRoute.paneId);
+      } else if (pendingPushRoute.panelId) {
+        setSelectedPanel(pendingPushRoute.panelId);
+      }
+      setPendingPushRoute(null);
+    };
+    if (activeProfile?.id === profile.id) {
+      applyRoute();
+      return;
+    }
+    void connectProfile(profile).then(applyRoute).catch(() => setPendingPushRoute(null));
+  }, [activeProfile?.id, connectProfile, pendingPushRoute, profilesLoading, savedProfiles, selectSession, setSelectedPanel]);
 
   const connectCode = useCallback(async (code: string) => {
     setLastError(null);
@@ -232,8 +339,22 @@ export function RemotePwaApp() {
   }, [adapter, selectSession, setProjects]);
 
   const forgetProfile = useCallback((profileId: string) => {
-    setSavedProfiles(previous => previous.filter(profile => profile.id !== profileId));
-  }, []);
+    const profile = savedProfiles.find(candidate => candidate.id === profileId);
+    if (!profile) return;
+    void (async () => {
+      const runtime = activeProfile?.id === profile.id && adapter ? adapter : new RemoteRuntimeAdapter(profile);
+      const ownsRuntime = runtime !== adapter;
+      try {
+        if (ownsRuntime) await runtime.connect();
+        await revokeNativePush(profile, runtime);
+      } catch {
+        // Forget still removes the local bearer token; the host can revoke by pairing rotation.
+      } finally {
+        if (ownsRuntime) runtime.disconnect();
+        setSavedProfiles(previous => previous.filter(candidate => candidate.id !== profileId));
+      }
+    })();
+  }, [activeProfile?.id, adapter, savedProfiles]);
 
   const createTerminal = useCallback(async (options?: RemoteTerminalCreateOptions) => {
     if (!adapter || !selectedSessionId) return;
@@ -326,6 +447,30 @@ export function RemotePwaApp() {
   }, [adapter]);
 
   useEffect(() => {
+    if (!adapter || !isNativeMobile()) return;
+    void getNativePushStatus(adapter).then(status => {
+      if (!status) return;
+      setPushStatus(status);
+      setPushControls({ needsInputEnabled: status.needsInputEnabled ?? true, completedEnabled: status.completedEnabled ?? true });
+    }).catch(error => setLastError(error instanceof Error ? error.message : 'Could not read notification status.'));
+  }, [adapter]);
+
+  const changePushControl = useCallback((key: 'needsInputEnabled' | 'completedEnabled', value: boolean) => {
+    if (!adapter) return;
+    const next = { ...pushControls, [key]: value };
+    setPushControls(next);
+    void updateNativePushControls(adapter, { [key]: value }).then(status => {
+      if (status) {
+        setPushStatus(status);
+        setPushControls({ needsInputEnabled: status.needsInputEnabled ?? next.needsInputEnabled, completedEnabled: status.completedEnabled ?? next.completedEnabled });
+      }
+    }).catch(error => {
+      setPushControls(pushControls);
+      setLastError(error instanceof Error ? error.message : 'Could not update notification settings.');
+    });
+  }, [adapter, pushControls]);
+
+  useEffect(() => {
     if (!adapter) return;
     return adapter.onEvent(event => {
       if (event.channel === 'panel:created' || event.channel === 'panel:updated') {
@@ -366,6 +511,7 @@ export function RemotePwaApp() {
     void loadPanels(selectedSessionId, adapter);
   }, [adapter, loadPanels, selectedSessionId]);
 
+  if (profilesLoading) return <main className="flex min-h-dvh items-center justify-center bg-bg-primary text-text-secondary">Loading saved connections…</main>;
   if (!adapter || !activeProfile) {
     return (
       <RemoteConnectionScreen
@@ -437,6 +583,21 @@ export function RemotePwaApp() {
           onDisconnect={disconnect}
           onOpenSidebar={openSidebar}
         />
+
+        {isNativeMobile() && (
+          <details className="border-b border-border-primary bg-surface-secondary px-3 py-2 text-sm">
+            <summary className="cursor-pointer font-medium text-text-secondary">Notifications {pushStatus?.registration === 'registered' ? 'enabled' : 'setup'}</summary>
+            <p className="mt-2 text-text-tertiary">{pushStatus?.message ?? 'Allow notifications to receive host attention alerts.'}</p>
+            <label className="mt-2 flex items-center gap-2 text-text-secondary">
+              <input type="checkbox" checked={pushControls.needsInputEnabled} onChange={event => changePushControl('needsInputEnabled', event.target.checked)} />
+              Alert when a Pane needs input
+            </label>
+            <label className="mt-2 flex items-center gap-2 text-text-secondary">
+              <input type="checkbox" checked={pushControls.completedEnabled} onChange={event => changePushControl('completedEnabled', event.target.checked)} />
+              Alert when a turn completes
+            </label>
+          </details>
+        )}
 
         <RemotePanelTabs
           panels={selectedPanels}
@@ -549,17 +710,6 @@ function findSessionIdByName(projects: Array<{ id?: number; sessions?: Session[]
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function loadSavedProfiles(): RemotePaneConnectionProfile[] {
-  try {
-    const raw = window.localStorage.getItem(SAVED_PROFILES_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 function saveProfile(

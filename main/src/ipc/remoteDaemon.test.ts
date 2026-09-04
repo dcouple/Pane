@@ -230,6 +230,7 @@ describe('remote daemon IPC', () => {
         host: {
           config: createDefaultRemoteDaemonConfig().host.config,
           clients: [],
+          mobilePush: { registrations: [], attentionSequence: 0 },
         },
         client: {
           profiles: [{
@@ -1063,6 +1064,7 @@ describe('remote daemon IPC', () => {
         host: {
           config: createDefaultRemoteDaemonConfig().host.config,
           clients: [],
+          mobilePush: { registrations: [], attentionSequence: 0 },
         },
         client: {
           profiles: [{
@@ -1161,6 +1163,7 @@ describe('remote daemon IPC', () => {
       data: {
         config: initialConfig.host.config,
         clients: [],
+        mobilePush: { registrations: [], attentionSequence: 0 },
       },
     });
     expect(configManager.getConfig().remoteDaemon?.host.access).toBeUndefined();

@@ -1703,6 +1703,7 @@ export class TerminalPanelManager {
       reason,
     };
     this.sendRendererEvent('panel:agentStatus', payload);
+    this.sendDaemonEvent('panel:agentStatus', payload);
     this.emitActivityStatus(terminal);
   }
 

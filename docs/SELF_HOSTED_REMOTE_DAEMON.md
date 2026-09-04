@@ -287,3 +287,6 @@ Some actions operate on the local desktop client machine rather than the remote 
 - No hosted relay, NAT traversal, or account-based multi-tenant auth
 - No direct non-loopback listener support
 - No full live remote end-to-end CI harness yet
+# Mobile push notifications
+
+The native companion may register an APNs/FCM token through its existing paired bearer token. Registrations are scoped to that paired client and revalidated before every send. The daemon sends generic attention alerts for `blocked` and settled `working → idle` transitions; controls can disable either category per device. See [Native mobile](NATIVE_MOBILE.md) for the operator-only credentials and signing setup.

@@ -533,6 +533,13 @@ export class PaneRemoteHttpApiServer {
         result,
       } satisfies RemoteInvokeSuccessPayload);
     } catch (error) {
+      if (error instanceof RemoteDaemonBadRequestError) {
+        this.writeJson(response, error.statusCode, {
+          ok: false,
+          error: { message: error.message, code: error.code },
+        } satisfies RemoteInvokeErrorPayload);
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       const code = message.includes('No Pane daemon command registered')
         ? 'ERR_UNKNOWN_CHANNEL'
@@ -782,6 +789,17 @@ export class PaneRemoteHttpApiServer {
     request: IncomingMessage,
   ): JsonValue[] {
     const args = [...invokeRequest.args];
+    if (invokeRequest.channel.startsWith('mobile:push-')) {
+      if (!auth.client) {
+        throw new RemoteDaemonBadRequestError(
+          'ERR_MOBILE_PUSH_PAIRING_REQUIRED',
+          'Mobile notifications require an authenticated paired host.',
+          403,
+        );
+      }
+      args.push({ clientId: auth.client.id });
+      return args;
+    }
     if (invokeRequest.channel !== 'terminal:setVisibility') {
       return args;
     }

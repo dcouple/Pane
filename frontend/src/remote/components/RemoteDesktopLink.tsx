@@ -1,4 +1,5 @@
 import { ExternalLink, Monitor } from 'lucide-react';
+import { isNativeMobile, openNativeExternalUrl } from '../runtime/nativeMobile';
 
 const REMOTE_DESKTOP_URL = 'https://remotedesktop.google.com/access';
 
@@ -8,6 +9,11 @@ export function RemoteDesktopLink() {
       href={REMOTE_DESKTOP_URL}
       target="_blank"
       rel="noreferrer"
+      onClick={event => {
+        if (!isNativeMobile()) return;
+        event.preventDefault();
+        void openNativeExternalUrl(REMOTE_DESKTOP_URL);
+      }}
       className="flex items-center gap-2 rounded-md border border-border-primary bg-surface-secondary px-3 py-2 text-sm font-medium text-text-secondary hover:bg-surface-hover hover:text-text-primary"
       title="Use Remote Desktop to access the host device for browser, Electron, and native app testing."
     >

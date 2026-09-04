@@ -96,6 +96,16 @@
       "project": ["src/**/*.ts", "scripts/**/*.js"],
       "ignoreBinaries": ["ditto"]
     },
+    "mobile": {
+      "entry": ["capacitor.config.ts", "src/**/*.test.ts", "scripts/**/*.mjs"],
+      "project": ["src/**/*.ts", "scripts/**/*.mjs", "capacitor.config.ts"],
+      "ignoreDependencies": [
+        "@capacitor/app",
+        "@capacitor/browser",
+        "@capacitor/keyboard",
+        "@capacitor/push-notifications"
+      ]
+    },
     "shared": {
       "entry": ["types/*.ts"],
       "project": ["types/*.ts"]

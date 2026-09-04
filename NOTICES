@@ -55,6 +55,14 @@ The following packages are licensed under the MIT license:
   - @babel/types (7.29.8) - The Babel Team (https://babel.dev/team)
   - @bcoe/v8-coverage (0.2.3) - Charles Samborski <demurgos@demurgos.net> (https://demurgos.net)
   - @braintree/sanitize-url (7.1.1)
+  - @capacitor/android (8.5.1) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @capacitor/app (8.0.1) - Ionic <hi@ionicframework.com>
+  - @capacitor/browser (8.0.1) - Ionic <hi@ionicframework.com>
+  - @capacitor/cli (8.5.1) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @capacitor/core (8.5.1) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @capacitor/ios (8.5.1) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @capacitor/keyboard (8.0.1) - Ionic <hi@ionicframework.com>
+  - @capacitor/push-notifications (8.0.1) - Ionic <hi@ionicframework.com>
   - @develar/schema-utils (2.6.5) - webpack Contrib (https://github.com/webpack-contrib)
   - @electron/asar (3.4.1)
   - @electron/fuses (1.8.0) - Electron Community
@@ -88,6 +96,14 @@ The following packages are licensed under the MIT license:
   - @iconify/types (2.0.0) - Vjacheslav Trushkin
   - @iconify/utils (3.0.2) - Vjacheslav Trushkin
   - @img/colour (1.0.0)
+  - @ionic/cli-framework-output (2.2.8) - Ionic Team <hi@ionic.io> (https://ionicframework.com)
+  - @ionic/utils-array (2.1.6) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-fs (3.1.7) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-object (2.1.6) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-process (2.1.12) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-stream (3.1.7) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-subprocess (3.0.1) - Ionic Team <hi@ionic.io> (https://ionic.io)
+  - @ionic/utils-terminal (2.3.5) - Ionic Team <hi@ionic.io> (https://ionic.io)
   - @ioredis/commands (1.2.0) - Zihua Li <i@zihua.li> (http://zihua.li)
   - @isaacs/balanced-match (4.0.1)
   - @isaacs/brace-expansion (5.0.0)
@@ -281,12 +297,16 @@ The following packages are licensed under the MIT license:
   - bmp-js (0.1.0) - shaozilee
   - body-parser (2.2.0)
   - boolean (3.2.0)
+  - bplist-creator (0.1.0) - Joe Ferner
+  - bplist-parser (0.3.1) - Joe Ferner <joe.ferner@nearinfinity.com>
+  - bplist-parser (0.3.2) - Joe Ferner <joe.ferner@nearinfinity.com>
   - brace-expansion (1.1.12) - Julian Gruber
   - brace-expansion (2.0.2) - Julian Gruber
   - brace-expansion (5.0.9)
   - braces (3.0.3) - Jon Schlinkert (https://github.com/jonschlinkert)
   - browserslist (4.25.1) - Andrey Sitnik <andrey@sitnik.ru>
   - buffer (5.7.1) - Feross Aboukhadijeh
+  - buffer-crc32 (0.2.13) - Brian J. Brennan <brianloveswords@gmail.com>
   - buffer-equal (0.0.1) - James Halliday
   - buffer-from (1.1.2)
   - builder-util (26.4.1) - Vladimir Krivosheev
@@ -329,6 +349,7 @@ The following packages are licensed under the MIT license:
   - color-name (1.1.4) - DY <dfcreative@gmail.com>
   - combined-stream (1.0.8) - Felix Geisendörfer <felix@debuggable.com> (http://debuggable.com/)
   - comma-separated-tokens (2.0.3) - Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
+  - commander (12.1.0) - TJ Holowaychuk <tj@vision-media.ca>
   - commander (14.0.3) - TJ Holowaychuk <tj@vision-media.ca>
   - commander (4.1.1) - TJ Holowaychuk <tj@vision-media.ca>
   - commander (5.1.0) - TJ Holowaychuk <tj@vision-media.ca>
@@ -374,6 +395,7 @@ The following packages are licensed under the MIT license:
   - deep-is (0.1.4) - Thorsten Lorenz
   - defer-to-connect (2.0.1) - Szymon Marczak
   - define-data-property (1.1.4) - Jordan Harband <ljharb@gmail.com>
+  - define-lazy-prop (2.0.0) - Sindre Sorhus
   - define-properties (1.2.1) - Jordan Harband <ljharb@gmail.com>
   - delayed-stream (1.0.0) - Felix Geisendörfer <felix@debuggable.com> (http://debuggable.com/)
   - depd (2.0.0) - Douglas Christopher Wilson <doug@somethingdoug.com>
@@ -436,6 +458,7 @@ The following packages are licensed under the MIT license:
   - fast-json-stable-stringify (2.1.0) - James Halliday
   - fast-levenshtein (2.0.6) - Ramesh Nair <ram@hiddentao.com> (http://www.hiddentao.com/)
   - fd-package-json (2.0.0) - James Garbutt (https://github.com/43081j)
+  - fd-slicer (1.1.0) - Andrew Kelley <superjoe30@gmail.com>
   - fdir (6.4.6) - thecodrr <thecodrr@protonmail.com>
   - fdir (6.5.0) - thecodrr <thecodrr@protonmail.com>
   - fflate (0.4.8) - Arjun Barrett
@@ -498,6 +521,7 @@ The following packages are licensed under the MIT license:
   - hermes-estree (0.25.1)
   - hermes-parser (0.25.1)
   - html-escaper (2.0.2) - Andrea Giammarchi
+  - html-to-image (1.11.13) - bubkooo
   - html-url-attributes (3.0.1) - Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
   - html-void-elements (3.0.0) - Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
   - http-errors (2.0.0) - Jonathan Ong <me@jongleberry.com> (http://jongleberry.com)
@@ -529,6 +553,7 @@ The following packages are licensed under the MIT license:
   - is-data-view (1.0.2) - Jordan Harband <ljharb@gmail.com>
   - is-date-object (1.1.0) - Jordan Harband
   - is-decimal (2.0.1) - Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
+  - is-docker (2.2.1) - Sindre Sorhus
   - is-document.all (1.0.0) - Jordan Harband <ljharb@gmail.com>
   - is-extglob (2.1.1) - Jon Schlinkert (https://github.com/jonschlinkert)
   - is-finalizationregistry (1.1.1) - Jordan Harband <ljharb@gmail.com>
@@ -555,6 +580,7 @@ The following packages are licensed under the MIT license:
   - is-weakmap (2.0.2) - Jordan Harband <ljharb@gmail.com>
   - is-weakref (1.1.1) - Jordan Harband <ljharb@gmail.com>
   - is-weakset (2.0.4) - Jordan Harband <ljharb@gmail.com>
+  - is-wsl (2.2.0) - Sindre Sorhus
   - isarray (2.0.5) - Julian Gruber
   - isbinaryfile (4.0.10)
   - isbinaryfile (5.0.4)
@@ -562,6 +588,7 @@ The following packages are licensed under the MIT license:
   - jiti (1.21.7)
   - jiti (2.7.0)
   - js-tokens (4.0.0) - Simon Lydell
+  - js-tokens (9.0.1) - Simon Lydell
   - js-yaml (4.1.1) - Vladimir Zapparov <dervus.grim@gmail.com>
   - jsesc (3.1.0) - Mathias Bynens
   - json-buffer (3.0.1) - Dominic Tarr <dominic.tarr@gmail.com> (http://dominictarr.com)
@@ -576,6 +603,7 @@ The following packages are licensed under the MIT license:
   - katex (0.16.22)
   - keyv (4.5.4) - Jared Wray <me@jaredwray.com> (http://jaredwray.com)
   - kleur (3.0.3) - Luke Edwards
+  - kleur (4.1.5) - Luke Edwards
   - kolorist (1.8.0) - Marvin Hagemeister <hello@marvinh.dev>
   - langium (3.3.1) - TypeFox
   - language-tags (1.0.9) - Matthew Caruana Galizia <mattcg@gmail.com>
@@ -681,6 +709,7 @@ The following packages are licensed under the MIT license:
   - mz (2.7.0) - Jonathan Ong
   - nanoid (3.3.11) - Andrey Sitnik <andrey@sitnik.ru>
   - napi-build-utils (2.0.0) - Jim Schlight
+  - native-run (2.0.3) - Ionic Team <hi@ionicframework.com> (https://ionicframework.com)
   - natural-compare (1.4.0) - Lauri Rooden (https://github.com/litejs/natural-compare-lite)
   - negotiator (1.0.0)
   - nice-try (1.0.5)
@@ -706,6 +735,7 @@ The following packages are licensed under the MIT license:
   - onetime (7.0.0) - Sindre Sorhus
   - oniguruma-parser (0.12.1) - Steven Levithan
   - oniguruma-to-es (4.3.4) - Steven Levithan
+  - open (8.4.2) - Sindre Sorhus
   - optionator (0.9.4) - George Zahariev <z@georgezahariev.com>
   - ora (9.4.1) - Sindre Sorhus
   - own-keys (1.0.1) - Jordan Harband <ljharb@gmail.com>
@@ -733,6 +763,7 @@ The following packages are licensed under the MIT license:
   - pathe (2.0.3)
   - pathval (2.0.1) - Veselin Todorov <hi@vesln.com>
   - pe-library (0.4.1) - jet
+  - pend (1.2.0) - Andrew Kelley <superjoe30@gmail.com>
   - phin (2.9.3) - Ethan Davis
   - phin (3.7.1) - Ethan Davis
   - picomatch (2.3.1) - Jon Schlinkert (https://github.com/jonschlinkert)
@@ -775,7 +806,7 @@ The following packages are licensed under the MIT license:
   - react (19.1.0)
   - react-dom (19.1.0)
   - react-error-boundary (6.0.0) - Brian Vaughn <brian.david.vaughn@gmail.com>
-  - react-grab (0.1.50) - Aiden Bai
+  - react-grab (0.2.0) - Aiden Bai
   - react-markdown (10.1.0) - Espen Hovlandsdal <espen@hovlandsdal.com>
   - react-refresh (0.17.0)
   - react-remove-scroll (2.7.1) - Anton Korzunov <thekashey@gmail.com>
@@ -841,9 +872,11 @@ The following packages are licensed under the MIT license:
   - side-channel-weakmap (1.0.2) - Jordan Harband <ljharb@gmail.com>
   - simple-concat (1.0.1) - Feross Aboukhadijeh
   - simple-get (4.0.1) - Feross Aboukhadijeh
+  - simple-plist (1.3.1) - Joe Wollard
   - simple-update-notifier (2.0.0) - alexbrazier
   - sisteransi (1.0.5) - Terkel Gjervig
   - slice-ansi (3.0.0)
+  - slice-ansi (4.0.0)
   - smart-buffer (4.2.0) - Josh Glazebrook
   - source-map-support (0.5.21)
   - space-separated-tokens (2.0.2) - Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
@@ -871,6 +904,7 @@ The following packages are licensed under the MIT license:
   - strip-json-comments (2.0.1) - Sindre Sorhus
   - strip-json-comments (3.1.1) - Sindre Sorhus
   - strip-json-comments (5.0.3) - Sindre Sorhus
+  - strip-literal (3.1.0) - Anthony Fu <anthonyfu117@hotmail.com>
   - style-to-js (1.1.17) - Mark <mark@remarkablemark.org>
   - style-to-object (1.0.9) - Mark <mark@remarkablemark.org>
   - stylis (4.3.6) - Sultan Tarimo <sultantarimo@me.com>
@@ -886,6 +920,7 @@ The following packages are licensed under the MIT license:
   - temp-file (3.4.0) - Vladimir Krivosheev
   - thenify (3.3.1) - Jonathan Ong <me@jongleberry.com> (http://jongleberry.com)
   - thenify-all (1.6.0) - Jonathan Ong <me@jongleberry.com> (http://jongleberry.com)
+  - through2 (4.0.2) - Rod Vagg <r@va.gg> (https://github.com/rvagg)
   - timm (1.7.1) - Guillermo Grau Panea
   - tiny-async-pool (1.3.0) - Rafael Xavier de Souza
   - tiny-typed-emitter (2.1.0) - Zurab Benashvili <zura.benashvili@gmail.com>
@@ -897,7 +932,9 @@ The following packages are licensed under the MIT license:
   - tinyglobby (0.2.17) - Superchupu
   - tinypool (1.1.1)
   - tinyrainbow (1.2.0)
+  - tinyrainbow (2.0.0)
   - tinyspy (3.0.2)
+  - tinyspy (4.0.4)
   - tmp (0.2.3) - KARASZI István <github@spam.raszi.hu> (http://raszi.hu/)
   - tmp-promise (3.0.3) - Benjamin Gruenbaum and Collaborators.
   - to-regex-range (5.0.1) - Jon Schlinkert (https://github.com/jonschlinkert)
@@ -929,6 +966,7 @@ The following packages are licensed under the MIT license:
   - universalify (0.1.2) - Ryan Zimmerman <opensrc@ryanzim.com>
   - universalify (2.0.1) - Ryan Zimmerman <opensrc@ryanzim.com>
   - unpipe (1.0.0) - Douglas Christopher Wilson <doug@somethingdoug.com>
+  - untildify (4.0.0) - Sindre Sorhus
   - update-browserslist-db (1.1.3) - Andrey Sitnik <andrey@sitnik.ru>
   - use-callback-ref (1.3.3) - theKashey <thekashey@gmail.com>
   - use-sidecar (1.1.3) - theKashey <thekashey@gmail.com>
@@ -938,6 +976,7 @@ The following packages are licensed under the MIT license:
   - util-deprecate (1.0.2) - Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)
   - uuid (11.1.0)
   - uuid (13.0.2)
+  - uuid (7.0.3)
   - uuid (8.3.2)
   - vary (1.1.2) - Douglas Christopher Wilson <doug@somethingdoug.com>
   - verror (1.10.1)
@@ -965,10 +1004,12 @@ The following packages are licensed under the MIT license:
   - xhr (2.6.0) - Raynos <raynos2@gmail.com>
   - xml-parse-from-string (1.0.1) - Matt DesLauriers
   - xml2js (0.5.0) - Marek Kubica <marek@xivilization.net> (https://xivilization.net)
+  - xml2js (0.6.2) - Marek Kubica <marek@xivilization.net> (https://xivilization.net)
   - xmlbuilder (11.0.1) - Ozgur Ozcitak <oozcitak@gmail.com>
   - xmlbuilder (15.1.1) - Ozgur Ozcitak <oozcitak@gmail.com>
   - xtend (4.0.2) - Raynos <raynos2@gmail.com>
   - yargs (17.7.2)
+  - yauzl (2.10.0) - Josh Wolfe <thejoshwolfe@gmail.com>
   - yocto-queue (0.1.0) - Sindre Sorhus
   - yoctocolors (2.2.0) - Sindre Sorhus
   - yoga-layout (3.2.1) - Meta Open Source
@@ -1051,6 +1092,7 @@ The following packages are licensed under the ISC license:
   - inflight (1.0.6) - Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)
   - inherits (2.0.4)
   - ini (1.3.8) - Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)
+  - ini (4.1.3) - GitHub Inc.
   - internmap (1.0.1) - Mike Bostock
   - internmap (2.0.3) - Mike Bostock
   - isexe (2.0.0) - Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)
@@ -1072,6 +1114,7 @@ The following packages are licensed under the ISC license:
   - picocolors (1.1.1) - Alexey Raspopov
   - pixelmatch (4.0.2) - Vladimir Agafonkin
   - proc-log (6.1.0) - GitHub Inc.
+  - sax (1.1.4) - Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)
   - sax (1.4.1) - Isaac Z. Schlueter <i@izs.me> (http://blog.izs.me/)
   - semver (5.7.2) - GitHub Inc.
   - semver (6.3.1) - GitHub Inc.
@@ -1081,6 +1124,7 @@ The following packages are licensed under the ISC license:
   - siginfo (2.0.0) - Emil Bay <github@tixz.dk>
   - signal-exit (3.0.7) - Ben Coe <ben@npmjs.com>
   - signal-exit (4.1.0) - Ben Coe <ben@npmjs.com>
+  - split2 (4.2.0) - Matteo Collina <hello@matteocollina.com>
   - test-exclude (7.0.1) - Ben Coe <ben@npmjs.com>
   - unbash (4.0.10) - Lars Kappert
   - walk-up-path (4.0.0) - Isaac Z. Schlueter <i@izs.me> (https://izs.me)
@@ -1166,6 +1210,7 @@ The following packages are licensed under the Apache-2.0 license:
   - detect-libc (2.1.2) - Lovell Fuller <npm@lovell.info>
   - didyoumean (1.2.2) - Dave Porter
   - ejs (3.1.10) - Matthew Eernisse <mde@fleegix.org> (http://fleegix.org)
+  - elementtree (0.1.7) - Rackspace US, Inc.
   - expect-type (1.2.2)
   - exponential-backoff (3.1.3) - Sami Sayegh
   - fast-diff (1.3.0) - Jason Chen <jhchen7@gmail.com>
@@ -1180,6 +1225,7 @@ The following packages are licensed under the Apache-2.0 license:
   - ts-interface-checker (0.1.13) - Dmitry S, Grist Labs
   - tunnel-agent (0.6.0) - Mikeal Rogers <mikeal.rogers@gmail.com> (http://www.futurealoof.com)
   - web-vitals (5.1.0) - Philip Walton
+  - xcode (3.0.1) - Apache Software Foundation
 
 Apache License
                            Version 2.0, January 2004
@@ -7603,7 +7649,7 @@ defined by the Mozilla Public License, v. 2.0.
 ================================================================================
 
 Package: @react-grab/cli
-Version: 0.1.50
+Version: 0.2.0
 Repository: git+https://github.com/aidenybai/react-grab.git
 
 MIT License
@@ -8252,6 +8298,83 @@ founders@million.dev.
 2. Selling the Software, or offering it to third parties as a paid, hosted, or
    managed product or service (including any commercial API or SaaS offering)
    whose value derives entirely or substantially from the Software.
+
+--------------------------------------------------------------------------------
+
+================================================================================
+## Unlicense LICENSE
+================================================================================
+
+Package: big-integer
+Version: 1.6.52
+Author: Peter Olson <peter.e.c.olson+npm@gmail.com>
+Repository: git@github.com:peterolson/BigInteger.js.git
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
+
+--------------------------------------------------------------------------------
+
+Package: robust-predicates
+Version: 3.0.2
+Author: Vladimir Agafonkin
+Repository: https://github.com/mourner/robust-predicates.git
+
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org>
+
+--------------------------------------------------------------------------------
+
+Package: stream-buffers
+Version: 2.2.0
+Author: Sam Day <me@samcday.com.au>
+Repository: https://github.com/samcday/node-stream-buffer.git
+
+License: Unlicense
 
 --------------------------------------------------------------------------------
 
@@ -10903,47 +11026,11 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 --------------------------------------------------------------------------------
 
 ================================================================================
-## Unlicense LICENSE
-================================================================================
-
-Package: robust-predicates
-Version: 3.0.2
-Author: Vladimir Agafonkin
-Repository: https://github.com/mourner/robust-predicates.git
-
-This is free and unencumbered software released into the public domain.
-
-Anyone is free to copy, modify, publish, use, compile, sell, or
-distribute this software, either in source code form or as a compiled
-binary, for any purpose, commercial or non-commercial, and by any
-means.
-
-In jurisdictions that recognize copyright laws, the author or authors
-of this software dedicate any and all copyright interest in the
-software to the public domain. We make this dedication for the benefit
-of the public at large and to the detriment of our heirs and
-successors. We intend this dedication to be an overt act of
-relinquishment in perpetuity of all present and future rights to this
-software under copyright law.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
-
-For more information, please refer to <http://unlicense.org>
-
---------------------------------------------------------------------------------
-
-================================================================================
 ## PANE LICENSE
 ================================================================================
 
 Package: Pane
-Version: 2.4.78
+Version: 2.4.96
 Author: [object Object]
 License: AGPL-3.0
 

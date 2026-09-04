@@ -1,0 +1,15 @@
+{
+  "project_info": {
+    "project_number": "REPLACE_WITH_FIREBASE_PROJECT_NUMBER",
+    "project_id": "REPLACE_WITH_FIREBASE_PROJECT_ID",
+    "storage_bucket": "REPLACE_WITH_FIREBASE_PROJECT_ID.appspot.com"
+  },
+  "client": [{
+    "client_info": {
+      "mobilesdk_app_id": "REPLACE_WITH_FIREBASE_ANDROID_APP_ID",
+      "android_client_info": { "package_name": "com.dcouple.pane.mobile" }
+    },
+    "api_key": [{ "current_key": "REPLACE_WITH_RESTRICTED_ANDROID_KEY"}]
+  }],
+  "configuration_version": "1"
+}
