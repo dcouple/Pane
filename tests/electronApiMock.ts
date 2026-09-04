@@ -267,6 +267,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const preferenceWrites: Array<{ key: string; value: string }> = [];
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
+    const sessionRenameCalls: Array<{ sessionId: string; name: string }> = [];
     const invokeCalls = new Map<string, Array<{ channel: string; args: unknown[] }>>();
     let sessionsGetCount = 0;
 
@@ -783,6 +784,14 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           sessionFavoriteToggleCalls.push(sessionId);
           return success();
         },
+        rename: (sessionId: string, name: string) => {
+          sessionRenameCalls.push({ sessionId, name });
+          const renamed = mockSessions.find((session) => session.id === sessionId);
+          if (!renamed) return Promise.resolve({ success: false as const, error: 'Session not found' });
+          renamed.name = name;
+          emit('session:updated', clone(renamed));
+          return success(clone(renamed));
+        },
         getAll: () => {
           sessionsGetCount += 1;
           return success(clone(mockSessions));
@@ -1144,6 +1153,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getSessionFavoriteToggleCalls() {
           return clone(sessionFavoriteToggleCalls);
+        },
+        getSessionRenameCalls() {
+          return clone(sessionRenameCalls);
         },
         getDiffManifestCalls() {
           return clone(diffManifestCalls);

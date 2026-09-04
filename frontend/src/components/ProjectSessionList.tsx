@@ -698,6 +698,13 @@ function SessionRow({
 }: SessionRowProps) {
   const [localGitStatus, setLocalGitStatus] = useState<GitStatus | undefined>(session.gitStatus);
   const initialGitStatusRequestRef = useRef<string | null>(null);
+  // `null` means "not renaming"; any string (including '') is the in-progress draft.
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const isRenaming = renameDraft !== null;
+  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  // Double-clicking the row also activates the pane, and activation pulls focus
+  // to the terminal. Reclaim it once so the rename input keeps the keystrokes.
+  const reclaimedRenameFocusRef = useRef(false);
 
   const hasUnviewedCompletedActivity = usePanelStore(s => Boolean(s.unviewedCompletedActivity[session.id]));
   const agentDisplayStatus = useSessionAgentDisplayStatus(session.id);
@@ -763,6 +770,71 @@ function SessionRow({
   const showActivity = agentDisplayStatus === 'working';
   const accessibleName = displayName || gs?.prTitle || session.name || 'Untitled';
 
+  // --- Inline rename (double-click the row) ---
+  // The draft seeds from the stored pane name, not the row label, so a pane
+  // showing a PR title is still edited against its own name.
+  const startRename = useCallback(() => {
+    reclaimedRenameFocusRef.current = false;
+    setRenameDraft(session.name ?? '');
+  }, [session.name]);
+  const cancelRename = useCallback(() => setRenameDraft(null), []);
+
+  const submitRename = useCallback(async () => {
+    const nextName = renameDraft?.trim() ?? '';
+    setRenameDraft(null);
+    if (!nextName || nextName === session.name) return;
+    try {
+      const response = await API.sessions.rename(session.id, nextName);
+      if (!response.success) {
+        console.error('Failed to rename pane:', response.error);
+      }
+    } catch (error) {
+      console.error('Failed to rename pane:', error);
+    }
+  }, [renameDraft, session.id, session.name]);
+
+  const handleRenameKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void submitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelRename();
+    }
+  }, [submitRename, cancelRename]);
+
+  const focusRenameInput = useCallback((el: HTMLInputElement | null) => {
+    renameInputRef.current = el;
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  }, []);
+
+  // Commit on a click outside rather than on blur, so the commit is driven by
+  // the user's pointer instead of whichever element grabs focus next.
+  useEffect(() => {
+    if (!isRenaming) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const input = renameInputRef.current;
+      if (input && event.target instanceof Node && !input.contains(event.target)) {
+        void submitRename();
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [isRenaming, submitRename]);
+
+  const handleRenameBlur = useCallback(() => {
+    if (!reclaimedRenameFocusRef.current) {
+      reclaimedRenameFocusRef.current = true;
+      renameInputRef.current?.focus();
+      return;
+    }
+    void submitRename();
+  }, [submitRename]);
+
   return (
     <div
       className={cn(
@@ -773,59 +845,79 @@ function SessionRow({
     >
       {/* Always-present left accent bar reflecting the agent status. */}
       <StatusAccentBar status={agentDisplayStatus} />
-      <Tooltip
-        content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName showDiffStats={false} globalIndex={globalIndex} />}
-        side="right"
-        interactive
-      >
-        <button
-          type="button"
-          onClick={onClick}
-          aria-current={isActive ? 'page' : undefined}
-          aria-label={accessibleName}
-          className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+      {isRenaming ? (
+        <input
+          ref={focusRenameInput}
+          type="text"
+          data-testid={`session-rename-input-${session.id}`}
+          aria-label={`Rename pane ${accessibleName}`}
+          value={renameDraft}
+          onChange={(e) => setRenameDraft(e.target.value)}
+          onKeyDown={handleRenameKeyDown}
+          onBlur={handleRenameBlur}
+          className={cn(
+            'relative z-10 min-w-0 flex-1 rounded border border-border-primary bg-bg-primary px-1 text-sm font-medium text-text-primary outline-none',
+            'focus:border-border-focus focus:ring-1 focus:ring-border-focus',
+          )}
         />
-      </Tooltip>
-      <div className="pointer-events-none contents">
-        <SessionRowContent
-          session={session}
-          gs={gs}
-          iconColor={iconColor}
-          hasDiff={hasDiff}
-          adds={adds}
-          dels={dels}
-          displayName={accessibleName}
-          showActivity={showActivity}
-          showUnviewedCompleted={hasUnviewedCompletedActivity && !isActive && !showActivity}
-          rowLayout={rowLayout}
-        />
-
-        <div className="relative z-10 pointer-events-auto flex flex-shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onArchive(); }}
-            className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/session:opacity-100"
-            title="Archive"
-            aria-label={`Archive ${accessibleName}`}
+      ) : (
+        <>
+          <Tooltip
+            content={<SessionDetailTooltip session={session} gitStatus={localGitStatus} showName showDiffStats={false} globalIndex={globalIndex} />}
+            side="right"
+            interactive
           >
-            <Archive className="w-3.5 h-3.5" />
-          </button>
+            <button
+              type="button"
+              onClick={onClick}
+              onDoubleClick={startRename}
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={accessibleName}
+              className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+            />
+          </Tooltip>
+          <div className="pointer-events-none contents">
+            <SessionRowContent
+              session={session}
+              gs={gs}
+              iconColor={iconColor}
+              hasDiff={hasDiff}
+              adds={adds}
+              dels={dels}
+              displayName={accessibleName}
+              showActivity={showActivity}
+              showUnviewedCompleted={hasUnviewedCompletedActivity && !isActive && !showActivity}
+              rowLayout={rowLayout}
+            />
 
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onTogglePinned(); }}
-            className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-all ${
-              session.isFavorite
-                ? 'text-text-muted hover:text-text-tertiary hover:bg-surface-hover opacity-100'
-                : 'text-text-muted hover:text-text-tertiary hover:bg-surface-hover opacity-0 group-hover/session:opacity-100'
-            }`}
-            title={session.isFavorite ? 'Unpin' : 'Pin'}
-            aria-label={`${session.isFavorite ? 'Unpin' : 'Pin'} ${accessibleName}`}
-          >
-            <Pin className="w-3.5 h-3.5 rotate-45" />
-          </button>
-        </div>
-      </div>
+            <div className="relative z-10 pointer-events-auto flex flex-shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onArchive(); }}
+                className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/session:opacity-100"
+                title="Archive"
+                aria-label={`Archive ${accessibleName}`}
+              >
+                <Archive className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onTogglePinned(); }}
+                className={`inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded transition-all ${
+                  session.isFavorite
+                    ? 'text-text-muted hover:text-text-tertiary hover:bg-surface-hover opacity-100'
+                    : 'text-text-muted hover:text-text-tertiary hover:bg-surface-hover opacity-0 group-hover/session:opacity-100'
+                }`}
+                title={session.isFavorite ? 'Unpin' : 'Pin'}
+                aria-label={`${session.isFavorite ? 'Unpin' : 'Pin'} ${accessibleName}`}
+              >
+                <Pin className="w-3.5 h-3.5 rotate-45" />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
