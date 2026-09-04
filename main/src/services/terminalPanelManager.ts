@@ -24,6 +24,8 @@ import { detectAgentState } from './agentStatus/manifestEngine';
 import { getManifestForAgent } from './agentStatus/manifests';
 import type { AgentState, PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
 import type { PaneEventArgument } from '../core/eventSink';
+import { stripInheritedAgentSession } from '../utils/agentSessionEnv';
+import { injectionSequence, INJECTION_PRIMER_DELAY_MS } from './panels/terminalInjection';
 
 const OUTPUT_BATCH_INTERVAL = 32; // ms (~30fps) — wider window reduces TUI flicker
 const OUTPUT_BATCH_INTERVAL_HIDDEN = 250; // ms — background / hidden cadence to cut IPC wake-up cost
@@ -969,12 +971,9 @@ export class TerminalPanelManager {
     // `process.env` is `NodeJS.ProcessEnv` which allows `undefined` values; the
     // ptyHost RPC DTO requires `Record<string, string>`. Drop undefined keys so
     // both the legacy `pty.spawn` path and the ptyHost path see the same shape.
-    const baseEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) {
-        baseEnv[key] = value;
-      }
-    }
+    // Drops the launching agent's session markers — inheriting them makes
+    // Claude Code disable transcript persistence, which silently breaks resume.
+    const baseEnv = stripInheritedAgentSession(process.env);
     const spawnEnv = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
@@ -1094,10 +1093,9 @@ export class TerminalPanelManager {
 
     // If we have an initial command, set up the prompt detection listener BEFORE
     // setupTerminalHandlers so we don't miss early shell output.
-    let commandToRun: string | undefined;
     if (initialCommand) {
       const launchResolution = this.resolveCliLaunchCommand(panel.id, initialCommand, existingState || {}, shellType);
-      commandToRun = launchResolution.commandToRun;
+      const commandToRun = launchResolution.commandToRun;
       const isCliCommand = launchResolution.isCliCommand;
 
       if (isCliCommand) {
@@ -1114,7 +1112,12 @@ export class TerminalPanelManager {
       // so banner lines ending with % or > don't trigger a false positive.
       const panelId = panel.id;
       const injectCommand = () => {
-        this.writeToTerminal(panelId, commandToRun! + '\r');
+        const [primer, line] = injectionSequence(commandToRun);
+
+        // The primer absorbs a byte the shell may swallow right after its
+        // prompt; the command follows once that window has passed.
+        this.writeToTerminal(panelId, primer);
+        setTimeout(() => this.writeToTerminal(panelId, line), INJECTION_PRIMER_DELAY_MS);
 
         // For CLI tool terminals, signal the frontend when the CLI responds
         if (isCliCommand) {

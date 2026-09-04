@@ -410,6 +410,13 @@ describe('GitStatusManager', () => {
   });
 
   describe('PR enrichment', () => {
+    /**
+     * Only the lookups, not the one-off `gh --version` probe that decides
+     * whether the GitHub CLI exists at all.
+     */
+    const prListCalls = (runner: { execAsync: Mock }) =>
+      runner.execAsync.mock.calls.filter(([command]) => String(command).includes('gh pr list'));
+
     it('caches PR misses for 20 seconds', async () => {
       const privates = managerPrivates(gitStatusManager);
       const commandRunner = mockProjectContext.commandRunner;
@@ -418,13 +425,13 @@ describe('GitStatusManager', () => {
       await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
       await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
 
-      expect(commandRunner.execAsync).toHaveBeenCalledTimes(1);
+      expect(prListCalls(commandRunner)).toHaveLength(1);
 
       privates.prCache.set(`${mockProject.path}:feature-branch`, { fetchedAt: Date.now() - 20_001 });
 
       await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
 
-      expect(commandRunner.execAsync).toHaveBeenCalledTimes(2);
+      expect(prListCalls(commandRunner)).toHaveLength(2);
     });
 
     it('keeps PR hits cached longer than misses', async () => {
@@ -452,7 +459,7 @@ describe('GitStatusManager', () => {
 
       const result = await privates.fetchPrForSession('feature-branch', mockProject.path, commandRunner);
 
-      expect(commandRunner.execAsync).toHaveBeenCalledTimes(1);
+      expect(prListCalls(commandRunner)).toHaveLength(1);
       expect(result.prNumber).toBe(12);
     });
 
@@ -507,9 +514,9 @@ describe('GitStatusManager', () => {
       expect(mockProjectContext.commandRunner.execAsync).toHaveBeenCalledWith(
         expect.stringContaining('real-feature-branch'),
         mockProject.path,
-        { timeout: 5000 }
+        { timeout: 5000, silent: true }
       );
-      expect(vi.mocked(mockProjectContext.commandRunner.execAsync).mock.calls[0][0]).not.toContain('not-the-branch');
+      expect(prListCalls(mockProjectContext.commandRunner)[0][0]).not.toContain('not-the-branch');
       expect(status.prNumber).toBe(12);
       expect(status.prUrl).toBe('https://github.com/example/repo/pull/12');
     });
