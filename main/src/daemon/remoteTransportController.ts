@@ -12,7 +12,7 @@ import type { RemoteDaemonHostConfig } from '../../../shared/types/remoteDaemon'
 import type { PaneCommandRegistry } from './commandRegistry';
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
-import { MobilePushSender } from './mobilePushSender';
+import { getMobilePushSender, type MobilePushSender } from './mobilePushSender';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 
 let activeRemoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
@@ -61,7 +61,7 @@ export class PaneRemoteTransportController {
     private readonly configManager: RemoteTransportConfigProvider,
     private readonly analyticsManager?: Pick<AnalyticsManager, 'track'>,
   ) {
-    this.mobilePushSender = new MobilePushSender(configManager);
+    this.mobilePushSender = getMobilePushSender(configManager);
   }
 
   getEventSink(): PaneEventSink {

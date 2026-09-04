@@ -38,14 +38,14 @@ class ProviderDeliveryError extends Error {
 }
 
 const MAX_RECENT_EVENTS = 64;
+const senderByConfigManager = new WeakMap<MobilePushConfigManager, MobilePushSender>();
 
 /**
  * Host-owned sender. Its credentials are read only from operator environment
  * variables, never from a pairing payload, remote config, or the mobile app.
  */
 export class MobilePushSender {
-  private readonly previousStates = new Map<string, PanelAgentStatusEvent['state']>();
-  private observeQueue: Promise<void> = Promise.resolve();
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly configManager: MobilePushConfigManager, private readonly transport: MobilePushTransport = createProviderTransport()) {}
 
@@ -62,6 +62,9 @@ export class MobilePushSender {
   }
 
   async register(clientId: string, request: MobilePushRegistrationRequest): Promise<RemoteMobilePushStatus> {
+    return this.mutate(() => this.registerUnsafe(clientId, request));
+  }
+  private async registerUnsafe(clientId: string, request: MobilePushRegistrationRequest): Promise<RemoteMobilePushStatus> {
     if (!isSafeIdentifier(request.installationId) || !isSafeIdentifier(request.hostProfileId) || !isSafeToken(request.token)) {
       throw new Error('Invalid mobile notification registration');
     }
@@ -89,6 +92,12 @@ export class MobilePushSender {
     installationId: string,
     controls: { needsInputEnabled?: boolean; completedEnabled?: boolean },
   ): Promise<RemoteMobilePushStatus> {
+    return this.mutate(() => this.updateControlsUnsafe(clientId, platform, installationId, controls));
+  }
+  private async updateControlsUnsafe(
+    clientId: string, platform: RemoteMobilePlatform, installationId: string,
+    controls: { needsInputEnabled?: boolean; completedEnabled?: boolean },
+  ): Promise<RemoteMobilePushStatus> {
     const config = this.config();
     const now = new Date().toISOString();
     const registrations = config.host.mobilePush.registrations.map(registration => {
@@ -103,6 +112,9 @@ export class MobilePushSender {
   }
 
   async revoke(clientId: string, platform: RemoteMobilePlatform, installationId: string): Promise<void> {
+    await this.mutate(() => this.revokeUnsafe(clientId, platform, installationId));
+  }
+  private async revokeUnsafe(clientId: string, platform: RemoteMobilePlatform, installationId: string): Promise<void> {
     const config = this.config();
     const now = new Date().toISOString();
     const registrations = config.host.mobilePush.registrations.map(registration => (
@@ -114,25 +126,37 @@ export class MobilePushSender {
   }
 
   observeStatus(event: PanelAgentStatusEvent): Promise<void> {
-    this.observeQueue = this.observeQueue.then(() => this.processStatus(event));
-    return this.observeQueue;
+    return this.mutate(() => this.processStatus(event));
   }
 
   private async processStatus(event: PanelAgentStatusEvent): Promise<void> {
-    const previous = this.previousStates.get(event.panelId);
-    this.previousStates.set(event.panelId, event.state);
+    const config = this.config();
+    const previous = config.host.mobilePush.panelStates[event.panelId];
     const kind = event.state === 'blocked' && previous !== 'blocked'
       ? 'needs-input'
       : previous === 'working' && event.state === 'idle'
         ? 'completed'
         : null;
-    if (!kind) return;
-    const config = this.config();
+    if (!kind) {
+      if (previous !== event.state) {
+        await this.save({
+          ...config,
+          host: {
+            ...config.host,
+            mobilePush: {
+              ...config.host.mobilePush,
+              panelStates: { ...config.host.mobilePush.panelStates, [event.panelId]: event.state },
+            },
+          },
+        });
+      }
+      return;
+    }
     const sequence = config.host.mobilePush.attentionSequence + 1;
     const eventId = `pane:${event.sessionId}:${event.panelId}:${kind}:${sequence}`;
     const updatedConfig: RemoteDaemonConfig = {
       ...config,
-      host: { ...config.host, mobilePush: { ...config.host.mobilePush, attentionSequence: sequence } },
+      host: { ...config.host, mobilePush: { ...config.host.mobilePush, attentionSequence: sequence, panelStates: { ...config.host.mobilePush.panelStates, [event.panelId]: event.state } } },
     };
     await this.save(updatedConfig);
     for (const registration of updatedConfig.host.mobilePush.registrations) {
@@ -197,6 +221,20 @@ export class MobilePushSender {
   private async save(config: RemoteDaemonConfig): Promise<void> {
     await this.configManager.updateConfig({ remoteDaemon: config });
   }
+  private async mutate<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation, operation);
+    this.mutationQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+}
+
+/** One host config has one serial mutation stream across IPC and SSE delivery. */
+export function getMobilePushSender(configManager: MobilePushConfigManager): MobilePushSender {
+  const existing = senderByConfigManager.get(configManager);
+  if (existing) return existing;
+  const sender = new MobilePushSender(configManager);
+  senderByConfigManager.set(configManager, sender);
+  return sender;
 }
 
 function providerReadiness(platform: RemoteMobilePlatform): Pick<RemoteMobilePushStatus, 'provider' | 'code' | 'message'> {
@@ -218,7 +256,7 @@ function isSuccess(status: number): boolean { return status >= 200 && status < 3
 function isSafeIdentifier(value: string): boolean { return value.length > 0 && value.length <= 200 && /^[a-zA-Z0-9._:-]+$/.test(value); }
 function isSafeToken(value: string): boolean { return value.length > 0 && value.length <= 8192; }
 function isInvalidTokenResponse(error: ProviderDeliveryError): boolean {
-  return error.status === 410 || (error.status === 400 && /BadDeviceToken|Unregistered|registration-token-not-registered/i.test(error.body));
+  return error.status === 410 || ((error.status === 400 || error.status === 404) && /BadDeviceToken|Unregistered|registration-token-not-registered/i.test(error.body));
 }
 function readApnsCredentials(): ApnsCredentials | null {
   const { PANE_APNS_TEAM_ID: teamId, PANE_APNS_KEY_ID: keyId, PANE_APNS_KEY_PATH: keyPath, PANE_APNS_TOPIC: topic, PANE_APNS_ENVIRONMENT: environment } = process.env;

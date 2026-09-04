@@ -2,7 +2,7 @@ import { generateKeyPairSync } from 'crypto';
 import { mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { MobilePushSender, type MobilePushTransport } from './mobilePushSender';
 
@@ -12,11 +12,13 @@ const originalEnvironment = {
   keyPath: process.env.PANE_APNS_KEY_PATH,
   topic: process.env.PANE_APNS_TOPIC,
   environment: process.env.PANE_APNS_ENVIRONMENT,
+  fcmPath: process.env.PANE_FCM_SERVICE_ACCOUNT_PATH,
 };
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   setEnvironment(originalEnvironment);
+  vi.unstubAllGlobals();
   await Promise.all(temporaryDirectories.splice(0).map(directory => rm(directory, { recursive: true, force: true })));
 });
 
@@ -50,6 +52,43 @@ describe('MobilePushSender', () => {
     expect(Buffer.from(requests[0]?.jwt.split('.')[2] ?? '', 'base64url')).toHaveLength(64);
     expect(manager.config.host.mobilePush.registrations[0]?.recentEventIds).toHaveLength(2);
   });
+
+  it('does not replay an unchanged blocked state after a sender restart', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'pane-mobile-push-'));
+    temporaryDirectories.push(directory);
+    const keyPath = path.join(directory, 'AuthKey.p8');
+    const keyPair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    await writeFile(keyPath, keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+    setEnvironment({ team: 'TEAM', key: 'KEY', keyPath, topic: 'com.dcouple.pane.mobile', environment: 'sandbox' });
+    const config = createDefaultRemoteDaemonConfig();
+    config.host.clients = [{ id: 'client-1', label: 'Phone', tokenHash: 'hash', createdAt: '2026-09-04T00:00:00.000Z' }];
+    const manager = new ConfigManagerStub(config);
+    const requests: unknown[] = [];
+    const transport: MobilePushTransport = { apns: async request => { requests.push(request); return { status: 200, body: '' }; }, fcm: async () => ({ status: 200, body: '' }) };
+    const first = new MobilePushSender(manager, transport);
+    await first.register('client-1', { platform: 'ios', token: 'token', installationId: 'install-1', hostProfileId: 'profile-1' });
+    await first.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
+    await new MobilePushSender(manager, transport).observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('revokes an Android token when FCM reports UNREGISTERED', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'pane-mobile-push-'));
+    temporaryDirectories.push(directory);
+    const serviceAccountPath = path.join(directory, 'service-account.json');
+    const keyPair = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    await writeFile(serviceAccountPath, JSON.stringify({ project_id: 'project', client_email: 'sender@example.test', private_key: keyPair.privateKey.export({ type: 'pkcs8', format: 'pem' }) }));
+    setEnvironment({ fcmPath: serviceAccountPath });
+    const config = createDefaultRemoteDaemonConfig();
+    config.host.clients = [{ id: 'client-1', label: 'Phone', tokenHash: 'hash', createdAt: '2026-09-04T00:00:00.000Z' }];
+    const manager = new ConfigManagerStub(config);
+    const transport: MobilePushTransport = { apns: async () => ({ status: 200, body: '' }), fcm: async () => ({ status: 404, body: '{"error":{"status":"UNREGISTERED"}}' }) };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ access_token: 'access-token' }), { status: 200 })));
+    const sender = new MobilePushSender(manager, transport);
+    await sender.register('client-1', { platform: 'android', token: 'token', installationId: 'install-1', hostProfileId: 'profile-1' });
+    await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
+    expect(manager.config.host.mobilePush.registrations[0]?.revokedAt).toBeTruthy();
+  });
 });
 
 class ConfigManagerStub {
@@ -62,12 +101,13 @@ class ConfigManagerStub {
   }
 }
 
-function setEnvironment(values: { team?: string; key?: string; keyPath?: string; topic?: string; environment?: string }): void {
+function setEnvironment(values: { team?: string; key?: string; keyPath?: string; topic?: string; environment?: string; fcmPath?: string }): void {
   setEnvironmentValue('PANE_APNS_TEAM_ID', values.team);
   setEnvironmentValue('PANE_APNS_KEY_ID', values.key);
   setEnvironmentValue('PANE_APNS_KEY_PATH', values.keyPath);
   setEnvironmentValue('PANE_APNS_TOPIC', values.topic);
   setEnvironmentValue('PANE_APNS_ENVIRONMENT', values.environment);
+  setEnvironmentValue('PANE_FCM_SERVICE_ACCOUNT_PATH', values.fcmPath);
 }
 function setEnvironmentValue(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name];

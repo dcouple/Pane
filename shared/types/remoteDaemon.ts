@@ -211,6 +211,8 @@ export interface RemoteMobilePushSettings {
   registrations: RemoteMobilePushRegistration[];
   /** Monotonic host-owned sequence used to make repeated attention transitions distinct. */
   attentionSequence: number;
+  /** Last observed agent state per panel, retained across daemon restarts. */
+  panelStates: Record<string, 'blocked' | 'working' | 'idle' | 'unknown'>;
 }
 
 export interface RemoteMobilePushStatus {
@@ -360,7 +362,7 @@ export function createDefaultRemoteDaemonConfig(): RemoteDaemonConfig {
       host: {
       config: { ...DEFAULT_REMOTE_DAEMON_HOST_CONFIG },
         clients: [],
-        mobilePush: { registrations: [], attentionSequence: 0 },
+        mobilePush: { registrations: [], attentionSequence: 0, panelStates: {} },
     },
     client: {
       profiles: [],
@@ -607,7 +609,11 @@ function normalizeRemoteMobilePushSettings(value: JsonValue | undefined): Remote
   const attentionSequence = decodedAttentionSequence !== undefined && Number.isSafeInteger(decodedAttentionSequence) && decodedAttentionSequence >= 0
     ? decodedAttentionSequence
     : 0;
-  return { registrations, attentionSequence };
+  const panelStates = Object.fromEntries(Object.entries(readJsonObject(settings.panelStates) ?? {}).flatMap(([panelId, state]) => {
+    const decoded = decodeOptionalBoundary(state, boundary.enumeration('blocked', 'working', 'idle', 'unknown'));
+    return decoded ? [[panelId, decoded]] : [];
+  }));
+  return { registrations, attentionSequence, panelStates };
 }
 
 function normalizeRemoteDaemonHostAccess(value: JsonValue | undefined): RemoteDaemonHostAccess | undefined {

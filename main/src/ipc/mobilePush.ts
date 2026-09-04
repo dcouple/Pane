@@ -1,7 +1,7 @@
 import type { IpcMain } from 'electron';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import type { PaneCommandValue, PaneCommandRegistry } from '../daemon/commandRegistry';
-import { MobilePushSender, type MobilePushRegistrationRequest } from '../daemon/mobilePushSender';
+import { getMobilePushSender, type MobilePushRegistrationRequest } from '../daemon/mobilePushSender';
 import type { AppServices } from './types';
 
 const platformSchema = boundary.enumeration('ios', 'android');
@@ -15,7 +15,7 @@ const controlsSchema = boundary.object({ platform: platformSchema, installationI
 
 /** HTTP appends TrustedMobileRequest only after it has authenticated a paired client. */
 export function registerMobilePushHandlers(ipcMain: IpcMain, services: AppServices, commandRegistry: PaneCommandRegistry): void {
-  const sender = new MobilePushSender(services.configManager);
+  const sender = getMobilePushSender(services.configManager);
   commandRegistry.register('mobile:push-status', (input: PaneCommandValue, trusted: PaneCommandValue) => {
     const request = decodeBoundary(input, installationSchema);
     return sender.getStatus(clientIdFrom(trusted), request.platform, request.installationId);
