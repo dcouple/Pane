@@ -33,6 +33,15 @@ const MAX_CONCURRENT_SPAWNS = 3;
 const AGENT_STATUS_POLL_MS = 500; // cadence for re-deriving blocked/working/done from the live screen
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
+// The command scrape reads echoed PTY output, so it sees every byte a program
+// prints — not just what the user typed — and only resets on CR/LF. Kitty graphics
+// frames carry neither (base64 inside APC sequences), so a tool streaming them
+// grew this past V8's max string length until `+=` threw `RangeError: Invalid
+// string length` and took down the main process.
+const MAX_CURRENT_COMMAND_SIZE = 8192; // 8KB — a typed command line, not a data stream
+// Matches the slice(-100) already applied on save, so a long-lived panel stops
+// growing an array that `getTerminalState` returns in full.
+const MAX_COMMAND_HISTORY = 100;
 const MIN_PTY_COLS = 20;
 const MIN_PTY_ROWS = 5;
 const FORCED_REDRAW_TRANSITION_MS = 50;
@@ -53,6 +62,10 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 function isValidUuid(value: string | undefined): value is string {
   return value !== undefined && UUID_PATTERN.test(value);
+}
+
+function boundedCommandHistory(history: string[] | undefined): string[] {
+  return history?.slice(-MAX_COMMAND_HISTORY) ?? [];
 }
 
 function terminalCustomState(state: ToolPanel['state']): TerminalPanelState {
@@ -1239,6 +1252,10 @@ export class TerminalPanelManager {
       if (data.includes('\r') || data.includes('\n')) {
         if (terminal.currentCommand.trim()) {
           terminal.commandHistory.push(terminal.currentCommand);
+          terminal.commandHistory.splice(
+            0,
+            Math.max(0, terminal.commandHistory.length - MAX_COMMAND_HISTORY),
+          );
 
           // Emit command executed event
           panelManager.emitPanelEvent(
@@ -1265,8 +1282,9 @@ export class TerminalPanelManager {
           terminal.currentCommand = '';
         }
       } else {
-        // Accumulate command input
-        terminal.currentCommand += data;
+        // Accumulate command input, keeping only the tail: what the user typed is
+        // always the newest bytes before Enter, so trimming the front preserves it.
+        terminal.currentCommand = (terminal.currentCommand + data).slice(-MAX_CURRENT_COMMAND_SIZE);
       }
 
       // Buffer output for batching instead of sending immediately
@@ -1497,7 +1515,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen: savedIsAlternateScreen,
-      commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
+      commandHistory: boundedCommandHistory(terminal.commandHistory),
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
       serializedBuffer: terminal.screenEmulator?.isAlternateScreen
@@ -1547,7 +1565,7 @@ export class TerminalPanelManager {
       terminal.scrollbackBuffer = state.scrollbackBuffer;
     }
     terminal.alternateScreenBuffer = state.alternateScreenBuffer || '';
-    terminal.commandHistory = state.commandHistory || [];
+    terminal.commandHistory = boundedCommandHistory(state.commandHistory);
     
     // Send restoration indicator to terminal
     const restorationMsg = `\r\n[Session Restored from ${state.lastActivityTime || 'previous session'}]\r\n`;
@@ -1596,7 +1614,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: cappedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen,
-      commandHistory: terminal.commandHistory,
+      commandHistory: boundedCommandHistory(terminal.commandHistory),
       lastActivityTime: terminal.lastActivity.toISOString(),
       lastActiveCommand: terminal.currentCommand,
       // An active alternate screen cannot be reconstructed from normal shell
