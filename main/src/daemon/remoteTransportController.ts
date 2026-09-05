@@ -25,7 +25,7 @@ interface RemoteTransportConfigProvider {
   getConfig(): Pick<ReturnType<ConfigManager['getConfig']>, 'deepgramApiKey' | 'remoteDaemon'>;
   on(event: 'config-updated', listener: () => void): object;
   off(event: 'config-updated', listener: () => void): object;
-  updateConfig(update: { remoteDaemon: import('../../../shared/types/remoteDaemon').RemoteDaemonConfig }): Promise<{ remoteDaemon?: import('../../../shared/types/remoteDaemon').RemoteDaemonConfig }>;
+  updateConfigWith: ConfigManager['updateConfigWith'];
 }
 
 export class PaneRemoteTransportController {
@@ -51,7 +51,9 @@ export class PaneRemoteTransportController {
           state: boundary.enumeration('blocked', 'working', 'idle', 'unknown'),
           reason: boundary.nullable(boundary.string),
         }));
-        if (event) void this.mobilePushSender.observeStatus(event);
+        if (event) void this.mobilePushSender.observeStatus(event).catch(() => {
+          console.warn('[Pane mobile push] Could not persist attention state');
+        });
       }
     },
   };

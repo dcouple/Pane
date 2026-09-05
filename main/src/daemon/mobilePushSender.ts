@@ -14,7 +14,7 @@ import {
 
 interface MobilePushConfigManager {
   getConfig(): { remoteDaemon?: RemoteDaemonConfig };
-  updateConfig(update: { remoteDaemon: RemoteDaemonConfig }): Promise<{ remoteDaemon?: RemoteDaemonConfig }>;
+  updateConfigWith(update: (current: { remoteDaemon?: RemoteDaemonConfig }) => { remoteDaemon: RemoteDaemonConfig }): Promise<{ remoteDaemon?: RemoteDaemonConfig }>;
 }
 
 export interface MobilePushRegistrationRequest {
@@ -38,6 +38,7 @@ class ProviderDeliveryError extends Error {
 }
 
 const MAX_RECENT_EVENTS = 64;
+const PROVIDER_TIMEOUT_MS = 15_000;
 const senderByConfigManager = new WeakMap<MobilePushConfigManager, MobilePushSender>();
 
 /**
@@ -65,25 +66,28 @@ export class MobilePushSender {
     return this.mutate(() => this.registerUnsafe(clientId, request));
   }
   private async registerUnsafe(clientId: string, request: MobilePushRegistrationRequest): Promise<RemoteMobilePushStatus> {
-    if (!isSafeIdentifier(request.installationId) || !isSafeIdentifier(request.hostProfileId) || !isSafeToken(request.token)) {
+    if (!isSafeIdentifier(request.installationId) || !isSafeProfileId(request.hostProfileId) || !isSafeToken(request.token)) {
       throw new Error('Invalid mobile notification registration');
     }
     const readiness = providerReadiness(request.platform);
     if (readiness.provider !== 'ready') return { platform: request.platform, registration: 'not-registered', ...readiness };
     const config = this.config();
     const now = new Date().toISOString();
-    const registrations = config.host.mobilePush.registrations.map(existing => (
+    const matchesInstallation = (existing: RemoteMobilePushRegistration) => (
       existing.clientId === clientId && existing.platform === request.platform && existing.installationId === request.installationId
-        ? { ...existing, revokedAt: now, updatedAt: now }
-        : existing
+    );
+    const previous = config.host.mobilePush.registrations.find(existing => matchesInstallation(existing) && !existing.revokedAt);
+    const registrations = config.host.mobilePush.registrations.filter(existing => (
+      !matchesInstallation(existing)
     ));
     registrations.push({
-      id: randomUUID(), clientId, platform: request.platform, token: request.token, installationId: request.installationId,
-      hostProfileId: request.hostProfileId, needsInputEnabled: request.needsInputEnabled ?? true,
-      completedEnabled: request.completedEnabled ?? true, createdAt: now, updatedAt: now, recentEventIds: [],
+      id: previous?.id ?? randomUUID(), clientId, platform: request.platform, token: request.token, installationId: request.installationId,
+      hostProfileId: request.hostProfileId, needsInputEnabled: request.needsInputEnabled ?? previous?.needsInputEnabled ?? true,
+      completedEnabled: request.completedEnabled ?? previous?.completedEnabled ?? true,
+      createdAt: previous?.createdAt ?? now, updatedAt: now, recentEventIds: previous?.recentEventIds ?? [],
     });
     await this.save(configWithRegistrations(config, registrations));
-    return { platform: request.platform, registration: 'registered', ...readiness };
+    return this.getStatus(clientId, request.platform, request.installationId);
   }
 
   async updateControls(
@@ -131,6 +135,7 @@ export class MobilePushSender {
 
   private async processStatus(event: PanelAgentStatusEvent): Promise<void> {
     const config = this.config();
+    if (!config.host.mobilePush.registrations.some(item => !item.revokedAt && config.host.clients.some(client => client.id === item.clientId))) return;
     const previous = config.host.mobilePush.panelStates[event.panelId];
     const kind = event.state === 'blocked' && previous !== 'blocked'
       ? 'needs-input'
@@ -161,7 +166,7 @@ export class MobilePushSender {
     await this.save(updatedConfig);
     for (const registration of updatedConfig.host.mobilePush.registrations) {
       if (registration.revokedAt || !isEnabled(registration, kind)) continue;
-      if (!updatedConfig.host.clients.some(client => client.id === registration.clientId)) continue;
+      if (!this.config().host.clients.some(client => client.id === registration.clientId)) continue;
       if (registration.recentEventIds.includes(eventId)) continue;
       try {
         await this.deliver(registration, eventId, event, kind);
@@ -219,7 +224,16 @@ export class MobilePushSender {
     return normalizeRemoteDaemonConfig(this.configManager.getConfig().remoteDaemon ?? createDefaultRemoteDaemonConfig());
   }
   private async save(config: RemoteDaemonConfig): Promise<void> {
-    await this.configManager.updateConfig({ remoteDaemon: config });
+    // Resolve the host at write time: an earlier queued access revocation must
+    // never be overwritten by this sender's older configuration snapshot.
+    await this.configManager.updateConfigWith(current => {
+      const latest = normalizeRemoteDaemonConfig(current.remoteDaemon ?? createDefaultRemoteDaemonConfig());
+      const mobilePush = {
+        ...config.host.mobilePush,
+        registrations: config.host.mobilePush.registrations.filter(item => latest.host.clients.some(client => client.id === item.clientId)),
+      };
+      return { remoteDaemon: { ...latest, host: { ...latest.host, mobilePush } } };
+    });
   }
   private async mutate<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.mutationQueue.then(operation, operation);
@@ -254,6 +268,8 @@ function isEnabled(registration: RemoteMobilePushRegistration, kind: 'needs-inpu
 }
 function isSuccess(status: number): boolean { return status >= 200 && status < 300; }
 function isSafeIdentifier(value: string): boolean { return value.length > 0 && value.length <= 200 && /^[a-zA-Z0-9._:-]+$/.test(value); }
+// Imported IDs include a user label and a normalized URL, including spaces and slashes.
+function isSafeProfileId(value: string): boolean { return value.length > 0 && Buffer.byteLength(value, 'utf8') <= 1024 && !/\p{Cc}/u.test(value); }
 function isSafeToken(value: string): boolean { return value.length > 0 && value.length <= 8192; }
 function isInvalidTokenResponse(error: ProviderDeliveryError): boolean {
   return error.status === 410 || ((error.status === 400 || error.status === 404) && /BadDeviceToken|Unregistered|registration-token-not-registered/i.test(error.body));
@@ -284,7 +300,7 @@ async function createFcmAccessToken(credentials: FcmCredentials): Promise<string
   const claims = base64url(JSON.stringify({ iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging', aud: tokenUri, iat: now, exp: now + 3600 }));
   const signer = createSign('RSA-SHA256'); signer.update(`${header}.${claims}`); signer.end();
   const assertion = `${header}.${claims}.${signer.sign(credentials.private_key).toString('base64url')}`;
-  const response = await fetch(tokenUri, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) });
+  const response = await fetch(tokenUri, { method: 'POST', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) });
   const payload = decodeOptionalBoundary(await response.json(), boundary.object({ access_token: boundary.optional(boundary.nonEmptyString) }));
   if (!response.ok || !payload?.access_token) throw new ProviderDeliveryError(response.status, '', 'FCM OAuth exchange failed');
   return payload.access_token;
@@ -298,10 +314,14 @@ function createProviderTransport(): MobilePushTransport {
       const finish = (response: ProviderResponse | Error) => {
         if (settled) return;
         settled = true;
-        client.close();
+        clearTimeout(timeout);
+        client.destroy();
         if (response instanceof Error) reject(response);
         else resolve(response);
       };
+      const timeout = setTimeout(() => finish(new Error('APNs delivery timed out')), PROVIDER_TIMEOUT_MS);
+      client.on('error', finish);
+      client.on('close', () => finish(new Error('APNs connection closed before delivery completed')));
       // APNs restricts collapse identifiers to 64 bytes. The opaque event ID
       // can contain UUIDs, so derive a fixed-size, non-sensitive identifier.
       const collapseId = createHash('sha256').update(String(payload.eventId)).digest('hex');
@@ -313,11 +333,10 @@ function createProviderTransport(): MobilePushTransport {
         request.on('end', () => finish({ status: Number(headers[':status'] ?? 500), body }));
       });
       request.on('error', finish);
-      client.on('error', finish);
       request.end(JSON.stringify(payload));
     }),
     fcm: async ({ accessToken, projectId, payload }) => {
-      const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const response = await fetch(`https://fcm.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/messages:send`, { method: 'POST', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS), headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       return { status: response.status, body: await response.text() };
     },
   };

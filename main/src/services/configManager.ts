@@ -342,7 +342,12 @@ export class ConfigManager extends EventEmitter {
   }
 
   async updateConfig(updates: Partial<AppConfig>): Promise<AppConfig> {
+    return this.updateConfigWith(() => updates);
+  }
+
+  async updateConfigWith(update: (current: AppConfig) => Partial<AppConfig>): Promise<AppConfig> {
     return this.enqueueConfigWrite(async () => {
+      const updates = update(this.getConfig());
       const analytics = updates.analytics !== undefined
         ? { ...defaultAnalyticsConfig(), ...this.config.analytics, ...updates.analytics }
         : this.config.analytics;

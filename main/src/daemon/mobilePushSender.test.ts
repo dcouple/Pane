@@ -5,6 +5,9 @@ import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultRemoteDaemonConfig, type RemoteDaemonConfig } from '../../../shared/types/remoteDaemon';
 import { MobilePushSender, type MobilePushTransport } from './mobilePushSender';
+import { decodeRemoteConnectionCode } from '../../../frontend/src/remote/runtime/remoteProfile';
+import { encodePaneRemoteConnection } from '../../../shared/types/remoteDaemon';
+import { ConfigManager } from '../services/configManager';
 
 const originalEnvironment = {
   team: process.env.PANE_APNS_TEAM_ID,
@@ -19,10 +22,33 @@ const temporaryDirectories: string[] = [];
 afterEach(async () => {
   setEnvironment(originalEnvironment);
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   await Promise.all(temporaryDirectories.splice(0).map(directory => rm(directory, { recursive: true, force: true })));
 });
 
 describe('MobilePushSender', () => {
+  it('preserves a host-access revocation queued before a push-state write', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'pane-mobile-revoke-'));
+    temporaryDirectories.push(directory);
+    vi.stubEnv('PANE_DIR', directory);
+    const manager = new ConfigManager();
+    await manager.initialize();
+    const config = createDefaultRemoteDaemonConfig();
+    config.host.clients = [{ id: 'client-1', label: 'Phone', tokenHash: 'hash', createdAt: '2026-09-04T00:00:00.000Z' }];
+    config.host.mobilePush.registrations = [{
+      id: 'registration', clientId: 'client-1', installationId: 'install', platform: 'ios', token: 'token', hostProfileId: 'profile',
+      needsInputEnabled: true, completedEnabled: true, recentEventIds: [], createdAt: '2026-09-04T00:00:00.000Z', updatedAt: '2026-09-04T00:00:00.000Z',
+    }];
+    await manager.updateConfig({ remoteDaemon: config });
+    const sender = new MobilePushSender(manager);
+    await Promise.all([
+      manager.updateConfig({ remoteDaemon: { ...config, host: { ...config.host, clients: [] } } }),
+      sender.observeStatus({ sessionId: 'pane', panelId: 'panel', state: 'working', reason: null }),
+    ]);
+    expect(manager.getConfig().remoteDaemon?.host.clients).toEqual([]);
+    expect(manager.getConfig().remoteDaemon?.host.mobilePush.registrations).toEqual([]);
+  });
+
   it('delivers blocked and completed transitions once with a host-profile tap route', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'pane-mobile-push-'));
     temporaryDirectories.push(directory);
@@ -41,16 +67,43 @@ describe('MobilePushSender', () => {
     };
     const sender = new MobilePushSender(manager, transport);
 
-    await sender.register('client-1', { platform: 'ios', token: 'token', installationId: 'install-1', hostProfileId: 'profile-1' });
+    const profile = decodeRemoteConnectionCode(encodePaneRemoteConnection({
+      v: 1, label: 'My Mac 💻', baseUrl: 'https://host.example.test/remote/browser', token: 'secret-token-12345678', transport: 'http+sse',
+    }));
+    const registration = { platform: 'ios' as const, token: 'token', installationId: 'install-1', hostProfileId: profile.id };
+    await sender.register('client-1', registration);
     await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
     await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
     await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'working', reason: 'working' });
     await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'idle', reason: 'done' });
 
     expect(requests).toHaveLength(2);
-    expect(requests[0]?.payload).toMatchObject({ hostProfileId: 'profile-1', paneId: 'pane-1', panelId: 'panel-1' });
+    expect(requests[0]?.payload).toMatchObject({ hostProfileId: profile.id, paneId: 'pane-1', panelId: 'panel-1' });
     expect(Buffer.from(requests[0]?.jwt.split('.')[2] ?? '', 'base64url')).toHaveLength(64);
     expect(manager.config.host.mobilePush.registrations[0]?.recentEventIds).toHaveLength(2);
+
+    await sender.updateControls('client-1', 'ios', 'install-1', { completedEnabled: false, needsInputEnabled: false });
+    await expect(sender.register('client-1', { ...registration, token: 'rotated-token' })).resolves.toMatchObject({
+      registration: 'registered', completedEnabled: false, needsInputEnabled: false,
+    });
+    expect(manager.config.host.mobilePush.registrations).toHaveLength(1);
+    expect(manager.config.host.mobilePush.registrations[0]).toMatchObject({ token: 'rotated-token' });
+    expect(manager.config.host.mobilePush.registrations[0]?.recentEventIds).toHaveLength(2);
+    await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'working', reason: 'working' });
+    await sender.observeStatus({ sessionId: 'pane-1', panelId: 'panel-1', state: 'blocked', reason: 'prompt' });
+    expect(requests).toHaveLength(2);
+  });
+
+  it('does not write mobile state for hosts without a registered mobile client', async () => {
+    const manager = new ConfigManagerStub(createDefaultRemoteDaemonConfig());
+    const save = vi.spyOn(manager, 'updateConfigWith');
+    await new MobilePushSender(manager).observeStatus({ sessionId: 'pane', panelId: 'panel', state: 'working', reason: null });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'bad\nprofile', 'x'.repeat(1025)])('rejects an invalid routing identifier', async hostProfileId => {
+    const sender = new MobilePushSender(new ConfigManagerStub(createDefaultRemoteDaemonConfig()));
+    await expect(sender.register('client-1', { platform: 'ios', token: 'token', installationId: 'install', hostProfileId })).rejects.toThrow('Invalid mobile notification registration');
   });
 
   it('does not replay an unchanged blocked state after a sender restart', async () => {
@@ -95,8 +148,8 @@ class ConfigManagerStub {
   config: RemoteDaemonConfig;
   constructor(config: RemoteDaemonConfig) { this.config = config; }
   getConfig() { return { remoteDaemon: this.config }; }
-  async updateConfig(update: { remoteDaemon: RemoteDaemonConfig }): Promise<{ remoteDaemon: RemoteDaemonConfig }> {
-    this.config = update.remoteDaemon;
+  async updateConfigWith(update: (current: { remoteDaemon?: RemoteDaemonConfig }) => { remoteDaemon: RemoteDaemonConfig }): Promise<{ remoteDaemon: RemoteDaemonConfig }> {
+    this.config = update(this.getConfig()).remoteDaemon;
     return { remoteDaemon: this.config };
   }
 }

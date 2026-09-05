@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import type { ToolPanel } from '../../../shared/types/panels';
 import type { RemotePaneConnectionProfile, RemotePaneConnectionStatus, RemotePwaAffordances } from '../../../shared/types/remoteDaemon';
@@ -55,18 +55,30 @@ const EMPTY_AFFORDANCES: RemotePwaAffordances = {
   },
 };
 
+interface ConnectionState {
+  adapter: RemoteRuntimeAdapter | null;
+  activeProfile: RemotePaneConnectionProfile | null;
+  connectionStatus: RemotePaneConnectionStatus;
+  lastError: string | null;
+  connectionErrorKind: RemoteConnectionErrorKind | null;
+  lastSeenAt: string | null;
+}
+const INITIAL_CONNECTION: ConnectionState = {
+  adapter: null, activeProfile: null, connectionStatus: 'local', lastError: null,
+  connectionErrorKind: null, lastSeenAt: null,
+};
+function connectionReducer(state: ConnectionState, update: Partial<ConnectionState>): ConnectionState {
+  return { ...state, ...update };
+}
+
 export function RemotePwaApp() {
   const [savedProfiles, setSavedProfiles] = useState<RemotePaneConnectionProfile[]>([]);
   const [profilesLoading, setProfilesLoading] = useState(true);
   const [pendingPushRoute, setPendingPushRoute] = useState<NativePushRoute | null>(null);
   const [pushStatus, setPushStatus] = useState<{ registration: 'registered' | 'not-registered' | 'revoked'; provider: string; message: string; needsInputEnabled?: boolean; completedEnabled?: boolean } | null>(null);
   const [pushControls, setPushControls] = useState({ needsInputEnabled: true, completedEnabled: true });
-  const [adapter, setAdapter] = useState<RemoteRuntimeAdapter | null>(null);
-  const [activeProfile, setActiveProfile] = useState<RemotePaneConnectionProfile | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<RemotePaneConnectionStatus>('local');
-  const [lastError, setLastError] = useState<string | null>(null);
-  const [connectionErrorKind, setConnectionErrorKind] = useState<RemoteConnectionErrorKind | null>(null);
-  const [lastSeenAt, setLastSeenAt] = useState<string | null>(null);
+  const [{ adapter, activeProfile, connectionStatus, lastError, connectionErrorKind, lastSeenAt }, updateConnection] = useReducer(connectionReducer, INITIAL_CONNECTION);
+  const setLastError = useCallback((error: string | null) => updateConnection({ lastError: error }), []);
   const [loading, setLoading] = useState(false);
   const [creatingTerminal, setCreatingTerminal] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -75,16 +87,19 @@ export function RemotePwaApp() {
   const [sidebarActionSessionId, setSidebarActionSessionId] = useState<string | null>(null);
   const [createSessionProject, setCreateSessionProject] = useState<RemoteProjectWithSessions | null>(null);
   const [mountedTerminalPanelIds, setMountedTerminalPanelIds] = useState<string[]>([]);
+  const profilesLoadedRef = useRef(false);
+  const activeRuntimeRef = useRef<RemoteRuntimeAdapter | null>(null);
+  const panelLoadRequestRef = useRef(0);
   const sidebarOpenerRef = useRef<HTMLElement | null>(null);
   const createSessionOpenerRef = useRef<HTMLElement | null>(null);
   const pushRoutePanelRef = useRef<{ sessionId: string; panelId: string } | null>(null);
 
   useEffect(() => {
     void loadRemoteProfiles()
-      .then(setSavedProfiles)
+      .then(profiles => { profilesLoadedRef.current = true; setSavedProfiles(profiles); })
       .catch(error => setLastError(error instanceof Error ? error.message : 'Could not load saved remote connections.'))
       .finally(() => setProfilesLoading(false));
-  }, []);
+  }, [setLastError]);
   useEffect(() => {
     let mounted = true;
     void installNativePushRouting()
@@ -92,14 +107,14 @@ export function RemotePwaApp() {
       .then(route => { if (mounted && route) setPendingPushRoute(route); })
       .catch(error => { if (mounted) setLastError(error instanceof Error ? error.message : 'Native notification setup failed.'); });
     return () => { mounted = false; };
-  }, []);
+  }, [setLastError]);
   useEffect(() => {
-    if (!profilesLoading) {
+    if (!profilesLoading && profilesLoadedRef.current) {
       void saveRemoteProfiles(savedProfiles).catch(error => {
         setLastError(error instanceof Error ? error.message : 'Could not save remote connections.');
       });
     }
-  }, [profilesLoading, savedProfiles]);
+  }, [profilesLoading, savedProfiles, setLastError]);
 
   const openSidebar = useCallback(() => {
     sidebarOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -143,14 +158,14 @@ export function RemotePwaApp() {
   }, [selectedPanelId, selectedSessionId, selectSession, setSelectedPanel, sidebarOpen]);
 
   useEffect(() => {
-    const route = (event: Event) => {
-      // SAFETY: Native push emits this exact CustomEvent after schema validation.
-      const detail = (event as CustomEvent<NativePushRoute>).detail;
-      if (detail?.hostProfileId) setPendingPushRoute(detail);
+    const route = () => {
+      void consumeNativePushRoute().then(detail => {
+        if (detail) setPendingPushRoute(detail);
+      }).catch(() => setLastError('Could not open the notification.'));
     };
     window.addEventListener('pane-native-push-route', route);
     return () => window.removeEventListener('pane-native-push-route', route);
-  }, []);
+  }, [setLastError]);
 
   useEffect(() => {
     if (!adapter || !isNativeMobile()) return;
@@ -163,9 +178,9 @@ export function RemotePwaApp() {
     }).then(result => {
       if (!active) void result?.remove();
       else listener = result;
-    });
+    }).catch(() => setLastError('Could not monitor app activity.'));
     return () => { active = false; void listener?.remove(); };
-  }, [adapter]);
+  }, [adapter, setLastError]);
 
   const selectedSession = useMemo(() => {
     if (!selectedSessionId) return null;
@@ -203,9 +218,11 @@ export function RemotePwaApp() {
     setLoading(true);
     try {
       const nextProjects = await runtime.getProjectsWithSessions();
+      if (runtime !== activeRuntimeRef.current) return null;
       setProjects(nextProjects);
-      const hasSelectedSession = Boolean(selectedSessionId && nextProjects.some(project =>
-        project.sessions?.some(session => session.id === selectedSessionId),
+      const currentSessionId = useRemoteSessionStore.getState().selectedSessionId;
+      const hasSelectedSession = Boolean(currentSessionId && nextProjects.some(project =>
+        project.sessions?.some(session => session.id === currentSessionId),
       ));
       if (!hasSelectedSession) {
         selectSession(findFirstSessionId(nextProjects));
@@ -213,20 +230,22 @@ export function RemotePwaApp() {
       setLastError(null);
       return nextProjects;
     } catch (error) {
-      setLastError(error instanceof Error ? error.message : 'Failed to load remote panes');
+      if (runtime === activeRuntimeRef.current) setLastError(error instanceof Error ? error.message : 'Failed to load remote panes');
       return null;
     } finally {
-      setLoading(false);
+      if (runtime === activeRuntimeRef.current) setLoading(false);
     }
-  }, [adapter, selectSession, selectedSessionId, setProjects]);
+  }, [adapter, selectSession, setProjects, setLastError]);
 
   const loadPanels = useCallback(async (sessionId: string, runtime: RemoteRuntimeAdapter | null = adapter) => {
     if (!runtime) return;
+    const request = ++panelLoadRequestRef.current;
     try {
       const [panels, activePanel] = await Promise.all([
         runtime.getPanels(sessionId),
         runtime.getActivePanel(sessionId).catch(() => null),
       ]);
+      if (runtime !== activeRuntimeRef.current || request !== panelLoadRequestRef.current || useRemoteSessionStore.getState().selectedSessionId !== sessionId) return;
       setPanels(sessionId, panels);
       const routedPanel = pushRoutePanelRef.current;
       const routeMatches = routedPanel?.sessionId === sessionId && panels.some(panel => panel.id === routedPanel.panelId);
@@ -238,105 +257,112 @@ export function RemotePwaApp() {
         setLastError(null);
       }
     } catch (error) {
-      setLastError(error instanceof Error ? error.message : 'Failed to load remote panels');
+      if (runtime === activeRuntimeRef.current && request === panelLoadRequestRef.current) setLastError(error instanceof Error ? error.message : 'Failed to load remote panels');
     }
-  }, [adapter, setPanels, setSelectedPanel]);
+  }, [adapter, setPanels, setSelectedPanel, setLastError]);
 
   const loadAffordances = useCallback(async (runtime: RemoteRuntimeAdapter | null = adapter) => {
     if (!runtime) return;
     setAffordancesLoading(true);
     try {
-      setAffordances(await runtime.getPwaAffordances());
+      const nextAffordances = await runtime.getPwaAffordances();
+      if (runtime === activeRuntimeRef.current) setAffordances(nextAffordances);
     } catch {
-      setAffordances(EMPTY_AFFORDANCES);
+      if (runtime === activeRuntimeRef.current) setAffordances(EMPTY_AFFORDANCES);
     } finally {
-      setAffordancesLoading(false);
+      if (runtime === activeRuntimeRef.current) setAffordancesLoading(false);
     }
   }, [adapter]);
 
   const connectProfile = useCallback(async (profile: RemotePaneConnectionProfile) => {
     const runtime = new RemoteRuntimeAdapter(profile);
-    setConnectionStatus('connecting');
-    setLastError(null);
-    setConnectionErrorKind(null);
+    activeRuntimeRef.current?.disconnect();
+    activeRuntimeRef.current = runtime;
+    pushRoutePanelRef.current = null;
+    updateConnection({ ...INITIAL_CONNECTION, connectionStatus: 'connecting' });
+    setPushStatus(null);
+    setProjects([]);
+    selectSession(null);
 
     try {
       await runtime.connect();
-      setAdapter(runtime);
-      setActiveProfile(profile);
+      if (activeRuntimeRef.current !== runtime) return null;
+      updateConnection({ adapter: runtime, activeProfile: profile });
       saveProfile(profile, setSavedProfiles);
       await refreshProjects(runtime);
       await loadAffordances(runtime);
-      if (isNativeMobile()) {
-        const pushError = await setupNativePush(profile, runtime);
-        if (pushError) setLastError(pushError);
-      }
+      return activeRuntimeRef.current === runtime ? runtime : null;
     } catch (error) {
       runtime.disconnect();
-      setAdapter(null);
-      setActiveProfile(null);
-      setConnectionStatus('local');
-      setLastError(error instanceof Error ? error.message : 'Failed to connect to remote Pane');
-      setConnectionErrorKind('connection');
+      if (activeRuntimeRef.current !== runtime) return null;
+      activeRuntimeRef.current = null;
+      updateConnection({
+        ...INITIAL_CONNECTION,
+        lastError: error instanceof Error ? error.message : 'Failed to connect to remote Pane',
+        connectionErrorKind: 'connection',
+      });
       throw error;
     }
-  }, [loadAffordances, refreshProjects]);
+  }, [loadAffordances, refreshProjects, selectSession, setProjects]);
 
   useEffect(() => {
     if (!pendingPushRoute || profilesLoading) return;
-    const profile = savedProfiles.find(candidate => candidate.id === pendingPushRoute.hostProfileId);
+    // Claim this route before connecting: profile/store updates must not start it again.
+    const route = pendingPushRoute;
+    setPendingPushRoute(null);
+    const profile = savedProfiles.find(candidate => candidate.id === route.hostProfileId);
     if (!profile) {
       setLastError('The notification belongs to a connection that is no longer saved.');
-      setPendingPushRoute(null);
       return;
     }
-    const applyRoute = () => {
-      if (pendingPushRoute.paneId) {
-        if (pendingPushRoute.panelId) {
-          pushRoutePanelRef.current = { sessionId: pendingPushRoute.paneId, panelId: pendingPushRoute.panelId };
+    const applyRoute = (runtime: RemoteRuntimeAdapter | null) => {
+      if (!runtime || runtime !== activeRuntimeRef.current) return;
+      if (route.paneId) {
+        const state = useRemoteSessionStore.getState();
+        if (!state.projects.some(project => project.sessions?.some(session => session.id === route.paneId))) {
+          setLastError('The notified pane is no longer available on this Pane host.');
+          return;
         }
-        selectSession(pendingPushRoute.paneId);
-      } else if (pendingPushRoute.panelId) {
-        setSelectedPanel(pendingPushRoute.panelId);
+        pushRoutePanelRef.current = route.panelId ? { sessionId: route.paneId, panelId: route.panelId } : null;
+        selectSession(route.paneId);
+        // Selecting the same pane does not rerun the panel-loading effect.
+        if (state.selectedSessionId === route.paneId) void loadPanels(route.paneId, runtime);
       }
-      setPendingPushRoute(null);
     };
     if (activeProfile?.id === profile.id) {
-      applyRoute();
+      applyRoute(adapter);
       return;
     }
-    void connectProfile(profile).then(applyRoute).catch(() => setPendingPushRoute(null));
-  }, [activeProfile?.id, connectProfile, pendingPushRoute, profilesLoading, savedProfiles, selectSession, setSelectedPanel]);
+    void connectProfile(profile).then(applyRoute).catch(() => {});
+  }, [activeProfile?.id, adapter, connectProfile, loadPanels, pendingPushRoute, profilesLoading, savedProfiles, selectSession, setLastError]);
 
   const connectCode = useCallback(async (code: string) => {
     setLastError(null);
-    setConnectionErrorKind(null);
+    updateConnection({ connectionErrorKind: null });
     let profile: RemotePaneConnectionProfile;
     try {
       profile = decodeRemoteConnectionCode(code);
     } catch (error) {
       setLastError(error instanceof Error ? error.message : 'Invalid remote Pane connection code');
-      setConnectionErrorKind('connection-code');
+      updateConnection({ connectionErrorKind: 'connection-code' });
       throw error;
     }
 
     forgetProfilesForBaseUrl(profile.baseUrl, setSavedProfiles);
     await connectProfile(profile);
-  }, [connectProfile]);
+  }, [connectProfile, setLastError]);
 
   const disconnect = useCallback(() => {
-    adapter?.disconnect();
-    setAdapter(null);
-    setActiveProfile(null);
-    setConnectionStatus('local');
-    setLastError(null);
-    setConnectionErrorKind(null);
-    setLastSeenAt(null);
+    activeRuntimeRef.current?.disconnect();
+    activeRuntimeRef.current = null;
+    pushRoutePanelRef.current = null;
+    updateConnection(INITIAL_CONNECTION);
+    setPushStatus(null);
     setAffordances(EMPTY_AFFORDANCES);
     setAffordancesLoading(false);
     setProjects([]);
     selectSession(null);
-  }, [adapter, selectSession, setProjects]);
+  }, [selectSession, setProjects]);
 
   const forgetProfile = useCallback((profileId: string) => {
     const profile = savedProfiles.find(candidate => candidate.id === profileId);
@@ -369,7 +395,7 @@ export function RemotePwaApp() {
     } finally {
       setCreatingTerminal(false);
     }
-  }, [adapter, selectedSessionId, setSelectedPanel, upsertPanel]);
+  }, [adapter, selectedSessionId, setSelectedPanel, upsertPanel, setLastError]);
 
   const selectRemoteSession = useCallback((sessionId: string) => {
     selectSession(sessionId);
@@ -388,7 +414,7 @@ export function RemotePwaApp() {
     } finally {
       setSidebarActionSessionId(null);
     }
-  }, [adapter, refreshProjects, sidebarActionSessionId]);
+  }, [adapter, refreshProjects, sidebarActionSessionId, setLastError]);
 
   const archiveRemoteSession = useCallback(async (sessionId: string) => {
     if (!adapter || sidebarActionSessionId) return;
@@ -410,7 +436,7 @@ export function RemotePwaApp() {
     } finally {
       setSidebarActionSessionId(null);
     }
-  }, [adapter, projects, refreshProjects, selectSession, selectedSessionId, sidebarActionSessionId]);
+  }, [adapter, projects, refreshProjects, selectSession, selectedSessionId, sidebarActionSessionId, setLastError]);
 
   const handleRemoteSessionCreated = useCallback(async (projectId: number, sessionName: string) => {
     if (!adapter) return;
@@ -435,40 +461,47 @@ export function RemotePwaApp() {
     void adapter.setActivePanel(selectedSessionId, panelId).catch(error => {
       setLastError(error instanceof Error ? error.message : 'Failed to set active panel');
     });
-  }, [adapter, selectedSessionId, setSelectedPanel]);
+  }, [adapter, selectedSessionId, setSelectedPanel, setLastError]);
 
   useEffect(() => {
     if (!adapter) return;
     return adapter.onStatus(state => {
-      setConnectionStatus(state.status);
-      setLastError(state.lastError);
-      setLastSeenAt(state.lastSeenAt);
+      updateConnection({ connectionStatus: state.status, lastError: state.lastError, lastSeenAt: state.lastSeenAt });
     });
   }, [adapter]);
 
   useEffect(() => {
-    if (!adapter || !isNativeMobile()) return;
-    void getNativePushStatus(adapter).then(status => {
-      if (!status) return;
+    if (!adapter || !activeProfile || !isNativeMobile()) return;
+    let cancelled = false;
+    void (async () => {
+      const pushError = await setupNativePush(activeProfile, adapter);
+      const status = await getNativePushStatus(adapter);
+      if (cancelled) return;
       setPushStatus(status);
-      setPushControls({ needsInputEnabled: status.needsInputEnabled ?? true, completedEnabled: status.completedEnabled ?? true });
-    }).catch(error => setLastError(error instanceof Error ? error.message : 'Could not read notification status.'));
-  }, [adapter]);
+      setPushControls({ needsInputEnabled: status?.needsInputEnabled ?? true, completedEnabled: status?.completedEnabled ?? true });
+      if (pushError) setLastError(pushError);
+    })().catch(error => {
+      if (!cancelled) setLastError(error instanceof Error ? error.message : 'Could not set up notifications.');
+    });
+    return () => { cancelled = true; };
+  }, [adapter, activeProfile, setLastError]);
 
   const changePushControl = useCallback((key: 'needsInputEnabled' | 'completedEnabled', value: boolean) => {
     if (!adapter) return;
     const next = { ...pushControls, [key]: value };
     setPushControls(next);
     void updateNativePushControls(adapter, { [key]: value }).then(status => {
+      if (adapter !== activeRuntimeRef.current) return;
       if (status) {
         setPushStatus(status);
         setPushControls({ needsInputEnabled: status.needsInputEnabled ?? next.needsInputEnabled, completedEnabled: status.completedEnabled ?? next.completedEnabled });
       }
     }).catch(error => {
+      if (adapter !== activeRuntimeRef.current) return;
       setPushControls(pushControls);
       setLastError(error instanceof Error ? error.message : 'Could not update notification settings.');
     });
-  }, [adapter, pushControls]);
+  }, [adapter, pushControls, setLastError]);
 
   useEffect(() => {
     if (!adapter) return;
@@ -519,7 +552,7 @@ export function RemotePwaApp() {
         error={lastError}
         errorKind={connectionErrorKind}
         onConnectCode={connectCode}
-        onConnectProfile={connectProfile}
+        onConnectProfile={async profile => { await connectProfile(profile); }}
         onForgetProfile={forgetProfile}
       />
     );
@@ -589,11 +622,11 @@ export function RemotePwaApp() {
             <summary className="cursor-pointer font-medium text-text-secondary">Notifications {pushStatus?.registration === 'registered' ? 'enabled' : 'setup'}</summary>
             <p className="mt-2 text-text-tertiary">{pushStatus?.message ?? 'Allow notifications to receive host attention alerts.'}</p>
             <label className="mt-2 flex items-center gap-2 text-text-secondary">
-              <input type="checkbox" checked={pushControls.needsInputEnabled} onChange={event => changePushControl('needsInputEnabled', event.target.checked)} />
+              <input type="checkbox" disabled={pushStatus?.registration !== 'registered'} checked={pushControls.needsInputEnabled} onChange={event => changePushControl('needsInputEnabled', event.target.checked)} />
               Alert when a Pane needs input
             </label>
             <label className="mt-2 flex items-center gap-2 text-text-secondary">
-              <input type="checkbox" checked={pushControls.completedEnabled} onChange={event => changePushControl('completedEnabled', event.target.checked)} />
+              <input type="checkbox" disabled={pushStatus?.registration !== 'registered'} checked={pushControls.completedEnabled} onChange={event => changePushControl('completedEnabled', event.target.checked)} />
               Alert when a turn completes
             </label>
           </details>

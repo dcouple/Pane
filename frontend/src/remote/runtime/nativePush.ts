@@ -13,20 +13,25 @@ interface NativePushControlsRequest {
 }
 const INSTALLATION_KEY = 'pane.mobile.installationId';
 const PENDING_ROUTE_KEY = 'pane.mobile.pendingPushRoute';
-const registrationByProfile = new Map<string, Promise<string | null>>();
-let actionListener: NativeListener | null = null;
+const registrationByRuntime = new WeakMap<RemoteRuntimeAdapter, Promise<string | null>>();
+let routingSetup: Promise<void> | null = null;
+let installationSetup: Promise<string> | null = null;
 const routeSchema = boundary.object({ eventId: boundary.nonEmptyString, hostProfileId: boundary.nonEmptyString, paneId: boundary.optional(boundary.nonEmptyString), panelId: boundary.optional(boundary.nonEmptyString) });
 
 /** Install this at app boot, before the user connects to any host. */
 export async function installNativePushRouting(): Promise<void> {
-  if (!isNativeMobile() || actionListener) return;
+  if (!isNativeMobile()) return;
+  if (routingSetup) return routingSetup;
   const plugin = nativePushNotifications();
   if (!plugin) throw new Error('This native build does not include the push notification plugin.');
-  actionListener = await plugin.addListener('pushNotificationActionPerformed', action => {
+  routingSetup = plugin.addListener('pushNotificationActionPerformed', action => {
     const route = parseActionRoute(action.notification?.data);
     if (!route) return;
-    void persistRoute(route).then(() => window.dispatchEvent(new CustomEvent<NativePushRoute>('pane-native-push-route', { detail: route })));
-  });
+    void persistRoute(route)
+      .then(() => window.dispatchEvent(new Event('pane-native-push-route')))
+      .catch(() => {});
+  }).then(() => undefined).catch(error => { routingSetup = null; throw error; });
+  return routingSetup;
 }
 
 export async function consumeNativePushRoute(): Promise<NativePushRoute | null> {
@@ -40,23 +45,23 @@ export async function consumeNativePushRoute(): Promise<NativePushRoute | null> 
 
 export async function setupNativePush(profile: RemotePaneConnectionProfile, adapter: RemoteRuntimeAdapter): Promise<string | null> {
   if (!isNativeMobile()) return null;
-  const pending = registrationByProfile.get(profile.id);
+  const pending = registrationByRuntime.get(adapter);
   if (pending) return pending;
   const attempt = registerProfile(profile, adapter);
-  registrationByProfile.set(profile.id, attempt);
+  registrationByRuntime.set(adapter, attempt);
   try {
     return await attempt;
   } finally {
     // Keep only concurrent work cached. On a later reconnect ask the platform
     // again so an APNs/FCM token rotation is upserted on the paired host.
-    registrationByProfile.delete(profile.id);
+    registrationByRuntime.delete(adapter);
   }
 }
 
 export async function revokeNativePush(profile: RemotePaneConnectionProfile, adapter: RemoteRuntimeAdapter): Promise<void> {
   if (!isNativeMobile()) return;
   await adapter.invoke<void>('mobile:push-revoke', [{ platform: nativePlatform(), installationId: await getInstallationId(), hostProfileId: profile.id }]);
-  registrationByProfile.delete(profile.id);
+  registrationByRuntime.delete(adapter);
 }
 
 export async function getNativePushStatus(adapter: RemoteRuntimeAdapter): Promise<RemoteMobilePushStatus | null> {
@@ -103,15 +108,31 @@ async function registerProfile(profile: RemotePaneConnectionProfile, adapter: Re
 async function registerForToken(plugin: NonNullable<ReturnType<typeof nativePushNotifications>>): Promise<string | null> {
   return new Promise(resolve => {
     const listeners: NativeListener[] = [];
-    const finish = (token: string | null) => { for (const listener of listeners) void listener.remove(); resolve(token); };
+    let settled = false;
+    const finish = (token: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      for (const listener of listeners) void listener.remove().catch(() => {});
+      resolve(token);
+    };
+    const timeout = setTimeout(() => finish(null), 15_000);
+    const retain = (listener: NativeListener) => {
+      if (settled) void listener.remove().catch(() => {});
+      else listeners.push(listener);
+    };
     void Promise.all([
-      plugin.addListener('registration', value => finish(value.value ?? null)).then(listener => { listeners.push(listener); }),
-      plugin.addListener('registrationError', () => finish(null)).then(listener => { listeners.push(listener); }),
-    ]).then(() => plugin.register()).catch(() => finish(null));
+      plugin.addListener('registration', value => finish(value.value ?? null)).then(retain),
+      plugin.addListener('registrationError', () => finish(null)).then(retain),
+    ]).then(() => { if (!settled) return plugin.register(); }).catch(() => finish(null));
   });
 }
 function nativePlatform(): 'ios' | 'android' { return /android/i.test(navigator.userAgent) ? 'android' : 'ios'; }
 async function getInstallationId(): Promise<string> {
+  if (!installationSetup) installationSetup = loadInstallationId().catch(error => { installationSetup = null; throw error; });
+  return installationSetup;
+}
+async function loadInstallationId(): Promise<string> {
   const result = await nativeSecureStoreCall('get', { key: INSTALLATION_KEY });
   const existing = decodeOptionalBoundary(result.value, boundary.nonEmptyString);
   if (existing) return existing;

@@ -103,6 +103,9 @@ export function RemoteConnectionScreen({
           </div>
         </div>
 
+        {showFirstRunMenu && error && (
+          <p role="alert" className="mb-4 rounded-md border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error">{error}</p>
+        )}
         {showFirstRunMenu ? (
           <div className="space-y-4">
             {mobileInstallPlatform && !isNativeMobile() && (
