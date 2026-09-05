@@ -13,11 +13,20 @@ cat >"${temp_dir}/bin/gh" <<'EOF'
 set -euo pipefail
 
 printf '%s\n' "$*" >>"${GH_LOG}"
+if [[ "$1" == "release" && "$2" == "view" && "$3" == "v9.9.9" ]]; then
+  if [[ "${GH_LOOKUP_FAIL:-false}" == "true" ]]; then
+    echo 'release not found' >&2
+    exit 1
+  fi
+  printf '%s\n' "${GH_RELEASE_JSON}"
+  exit 0
+fi
 endpoint="${2:?missing endpoint}"
 
 case "${endpoint}" in
   repos/dcouple/Pane/releases/tags/v9.9.9)
-    printf '%s\n' "${GH_RELEASE_JSON}"
+    echo 'Not Found (HTTP 404): drafts are not available by tag' >&2
+    exit 1
     ;;
   repos/dcouple/Pane/releases/generate-notes)
     printf '%s\n' "${GH_GENERATED_NOTES_JSON}"
@@ -84,5 +93,14 @@ if grep -Fq 'releases/generate-notes' "${temp_dir}/published-empty/gh.log"; then
   exit 1
 fi
 jq -e '((has("body") | not) and .draft == false and .make_latest == true)' "${temp_dir}/published-empty/update.json" >/dev/null
+
+if GH_LOOKUP_FAIL=true run_case missing-release '{}' '{}'; then
+  echo 'missing release was unexpectedly published' >&2
+  exit 1
+fi
+if [[ -e "${temp_dir}/missing-release/update.json" ]]; then
+  echo 'failed lookup must not mutate a release' >&2
+  exit 1
+fi
 
 echo 'publish GitHub release tests passed'

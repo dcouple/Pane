@@ -6,7 +6,10 @@ set -euo pipefail
 repo="${1:?usage: publish-github-release.sh OWNER/REPO TAG}"
 tag="${2:?usage: publish-github-release.sh OWNER/REPO TAG}"
 
-release="$(gh api "repos/${repo}/releases/tags/${tag}")"
+# The REST tag endpoint only finds published releases. `release view` also
+# resolves drafts, including the draft populated by the platform build jobs.
+release="$(gh release view "${tag}" --repo "${repo}" \
+  --json databaseId,isDraft,body --jq '{id: .databaseId, draft: .isDraft, body}')"
 release_id="$(jq -er '.id' <<<"${release}")"
 release_is_draft="$(jq -r '.draft == true' <<<"${release}")"
 
