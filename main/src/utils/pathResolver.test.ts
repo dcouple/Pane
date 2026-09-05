@@ -52,13 +52,13 @@ describe('expandUserRepoPath', () => {
     expect(expandUserRepoPath('   ', { homeDir })).toBe('');
   });
 
-  it('returns the realpath of an existing directory', () => {
+  it('preserves the spelling of an existing directory', () => {
     const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-expand-real-'));
     tempDirs.push(realDir);
-    expect(expandUserRepoPath(realDir, { homeDir })).toBe(fs.realpathSync(realDir));
+    expect(expandUserRepoPath(realDir, { homeDir })).toBe(path.resolve(realDir));
   });
 
-  it.skipIf(process.platform === 'win32')('resolves symlinks when the path exists', () => {
+  it.skipIf(process.platform === 'win32')('preserves an existing symlink spelling', () => {
     const realDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-expand-real-'));
     tempDirs.push(realDir);
     const linkParent = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-expand-link-'));
@@ -66,6 +66,6 @@ describe('expandUserRepoPath', () => {
     const linkPath = path.join(linkParent, 'alias');
     fs.symlinkSync(realDir, linkPath);
 
-    expect(expandUserRepoPath(linkPath, { homeDir })).toBe(fs.realpathSync(realDir));
+    expect(expandUserRepoPath(linkPath, { homeDir })).toBe(path.resolve(linkPath));
   });
 });

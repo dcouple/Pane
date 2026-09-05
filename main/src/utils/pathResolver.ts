@@ -1,6 +1,5 @@
 import path from 'path';
 import os from 'os';
-import { realpathSync } from 'fs';
 import fs from 'fs/promises';
 import { linuxToUNCPath, parseWSLPath, posixJoin } from './wslUtils';
 
@@ -15,7 +14,8 @@ interface ExpandUserRepoPathOptions {
  *
  * Relative paths resolve against home rather than Electron's cwd (often `/` or
  * the app directory). WSL UNC paths are returned unchanged so parseWSLPath
- * still works. If the resolved path exists, return its realpath.
+ * still works. Existing paths retain the spelling supplied by the user, which
+ * keeps stored project-path identity stable on platforms with aliases.
  */
 export function expandUserRepoPath(input: string, options: ExpandUserRepoPathOptions = {}): string {
   const trimmed = input.trim();
@@ -40,11 +40,7 @@ export function expandUserRepoPath(input: string, options: ExpandUserRepoPathOpt
     ? path.resolve(expanded)
     : path.resolve(homeDir, expanded);
 
-  try {
-    return realpathSync(resolved);
-  } catch {
-    return resolved;
-  }
+  return resolved;
 }
 
 export class PathResolver {
