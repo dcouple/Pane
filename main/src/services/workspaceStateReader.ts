@@ -63,7 +63,7 @@ export class WorkspaceStateReader {
 
       const panelSummaries: RunpaneWorkspacePanelSummary[] = [];
 
-      for (const panel of panelManager.getPanelsForSession(session.id)) {
+      for (const panel of panelManager.getPanelsForSession(session.id, false)) {
         if (panel.type !== 'terminal') continue;
         const customState = decodeBoundary(panel.state.customState ?? {}, boundary.object({
           isCliPanel: boundary.optional(boundary.boolean),
@@ -105,7 +105,7 @@ export class WorkspaceStateReader {
     for (const session of sessions) {
       if (session.archived || session.isHidden) continue;
       const project = this.sessionManager.getProjectForSession(session.id);
-      for (const panel of panelManager.getPanelsForSession(session.id)) {
+      for (const panel of panelManager.getPanelsForSession(session.id, false)) {
         if (panel.type !== 'terminal') continue;
         const customState = decodeBoundary(panel.state.customState ?? {}, boundary.object({
           isCliPanel: boundary.optional(boundary.boolean),

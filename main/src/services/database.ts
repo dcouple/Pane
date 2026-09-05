@@ -11,7 +11,7 @@ export const databaseService = new DatabaseService(dbPath);
 databaseService.initialize();
 
 // Scrollback retention sweep: runs synchronously at module load, which happens
-// before panelManager's constructor caches any panels into RAM. Deferring this
+// before panelManager restores panels on demand. Deferring this
 // (e.g. via a setTimeout in app.whenReady) would let the in-memory panel cache
 // keep the stale scrollback for the whole first launch even after the DB is
 // trimmed. Result is captured here and logged later once Logger is initialized.

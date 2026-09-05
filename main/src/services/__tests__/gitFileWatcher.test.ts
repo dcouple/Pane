@@ -1,3 +1,4 @@
+import os from 'os';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { GitFileWatcher } from '../gitFileWatcher';
 import type { CommandRunner } from '../../utils/commandRunner';
@@ -60,6 +61,15 @@ describe('GitFileWatcher pure logic', () => {
     watcher = new GitFileWatcher(logger, makeCommandRunner(exec));
     internals = watcherInternals(watcher);
   }
+
+  it('does not start a watcher or invoke Git for the home directory', () => {
+    const exec = vi.fn(() => '');
+    build(exec);
+    watcher.startWatching('home', os.homedir());
+    expect(internals.watchedSessions.size).toBe(0);
+    expect(exec).not.toHaveBeenCalled();
+    expect(logger.warns[0]).toContain('home directory');
+  });
 
   describe('isIgnoredEventPath', () => {
     const none = new Set<string>();

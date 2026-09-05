@@ -8,8 +8,8 @@ import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktr
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
 import path from 'path';
-import os from 'os';
 import { randomUUID } from 'crypto';
+import { HOME_GIT_SCAN_WARNING, isHomeDirectory } from '../utils/gitScanSafety';
 import { getAppDirectory } from '../utils/appDirectory';
 import { clearShellPathCache } from '../utils/shellPath';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
@@ -47,7 +47,8 @@ export class ConfigManager extends EventEmitter {
     this.configDir = getAppDirectory();
     this.configPath = path.join(this.configDir, 'config.json');
     this.config = {
-      gitRepoPath: defaultGitPath || os.homedir(),
+      gitRepoPath: defaultGitPath || '',
+      usePtyHost: process.platform === 'win32',
       verbose: false,
       anthropicApiKey: undefined,
       falApiKey: undefined,
@@ -411,7 +412,12 @@ export class ConfigManager extends EventEmitter {
   }
 
   getGitRepoPath(): string {
-    return this.config.gitRepoPath || '';
+    const repoPath = this.config.gitRepoPath || '';
+    if (isHomeDirectory(repoPath)) {
+      console.warn(`[ConfigManager] ${HOME_GIT_SCAN_WARNING}`);
+      return '';
+    }
+    return repoPath;
   }
 
   isVerbose(): boolean {
@@ -420,7 +426,7 @@ export class ConfigManager extends EventEmitter {
 
   /**
    * Whether PTY spawns should be routed through the isolated ptyHost
-   * `UtilityProcess`. Off by default. The `PANE_USE_PTY_HOST=1` env var is
+   * `UtilityProcess`. On by default on Windows. The `PANE_USE_PTY_HOST=1` env var is
    * honored as a dev override so testing doesn't require flipping the config.
    */
   getUsePtyHost(): boolean {

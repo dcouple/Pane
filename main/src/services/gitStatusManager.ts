@@ -1,3 +1,4 @@
+import { HOME_GIT_SCAN_WARNING, isHomeDirectory } from '../utils/gitScanSafety';
 import { EventEmitter } from 'events';
 import type { Logger } from '../utils/logger';
 import type { GitStatus } from '../types/session';
@@ -332,7 +333,7 @@ export class GitStatusManager extends EventEmitter {
         } else {
           // Other sessions may now be behind main
           const cached = this.cache[session.id];
-          if (cached && session.worktreePath) {
+          if (cached && session.worktreePath && !isHomeDirectory(session.worktreePath)) {
             try {
               // Quick check for new ahead/behind status
               const ctx = this.sessionManager.getProjectContext(session.id);
@@ -382,7 +383,7 @@ export class GitStatusManager extends EventEmitter {
       }
 
       const session = await this.sessionManager.getSession(sessionId);
-      if (!session || !session.worktreePath) {
+      if (!session || !session.worktreePath || isHomeDirectory(session.worktreePath)) {
         return;
       }
 
@@ -847,6 +848,7 @@ export class GitStatusManager extends EventEmitter {
    * Returns true if status is different from cached, false if unchanged
    */
   private async hasGitStatusChanged(sessionId: string, worktreePath: string): Promise<boolean> {
+    if (isHomeDirectory(worktreePath)) return true;
     const cached = this.cache[sessionId];
     if (!cached) return true;
     
@@ -902,6 +904,12 @@ export class GitStatusManager extends EventEmitter {
         return null;
       }
       
+      if (isHomeDirectory(session.worktreePath)) {
+        this.logger?.warn(`[GitStatus] ${HOME_GIT_SCAN_WARNING}`);
+        this.abortControllers.delete(sessionId);
+        return { state: 'unknown', lastChecked: new Date().toISOString() };
+      }
+
       // Check if operation was cancelled
       if (abortController.signal.aborted) {
         this.abortControllers.delete(sessionId);

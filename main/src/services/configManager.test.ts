@@ -112,3 +112,47 @@ describe('ConfigManager appearance persistence', () => {
     rename.mockRestore();
   });
 });
+
+
+describe('ConfigManager freeze prevention defaults', () => {
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+  let paneDir: string;
+
+  beforeEach(async () => {
+    paneDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-freeze-config-'));
+    vi.stubEnv('PANE_DIR', paneDir);
+    vi.stubEnv('PANE_USE_PTY_HOST', '');
+  });
+
+  afterEach(async () => {
+    Object.defineProperty(process, 'platform', originalPlatform);
+    vi.unstubAllEnvs();
+    await fs.rm(paneDir, { recursive: true, force: true });
+  });
+
+  it.each(['win32', 'darwin', 'linux'])('defaults the isolated PTY host appropriately on %s', async (platform) => {
+    Object.defineProperty(process, 'platform', { value: platform });
+    await fs.writeFile(path.join(paneDir, 'config.json'), JSON.stringify({ verbose: false }));
+    const manager = new ConfigManager();
+    await manager.initialize();
+    expect(manager.getUsePtyHost()).toBe(platform === 'win32');
+    expect(manager.getConfig().usePtyHost).toBe(platform === 'win32');
+    expect(manager.getGitRepoPath()).toBe('');
+  });
+
+  it('preserves an explicit Windows opt-out and honors the development override', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    await fs.writeFile(path.join(paneDir, 'config.json'), JSON.stringify({ usePtyHost: false }));
+    const manager = new ConfigManager();
+    await manager.initialize();
+    expect(manager.getUsePtyHost()).toBe(false);
+    vi.stubEnv('PANE_USE_PTY_HOST', '1');
+    expect(manager.getUsePtyHost()).toBe(true);
+  });
+
+  it('rejects a legacy home-directory Git root but preserves a project path', () => {
+    expect(new ConfigManager(os.homedir()).getGitRepoPath()).toBe('');
+    const repoPath = path.join(os.homedir(), 'project');
+    expect(new ConfigManager(repoPath).getGitRepoPath()).toBe(repoPath);
+  });
+});

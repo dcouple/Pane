@@ -1,3 +1,4 @@
+import os from 'os';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
 import { GitStatusManager } from '../gitStatusManager';
 import type { fastCheckWorkingDirectory as fastCheckWorkingDirectoryImpl, fastGetAheadBehind as fastGetAheadBehindImpl, fastGetDiffStats as fastGetDiffStatsImpl } from '../gitPlumbingCommands';
@@ -5,7 +6,7 @@ import type { SessionManager } from '../sessionManager';
 import type { WorktreeManager } from '../worktreeManager';
 import type { GitDiffManager } from '../gitDiffManager';
 import type { Logger } from '../../utils/logger';
-import type { GitStatus } from '../../types/session';
+import type { GitStatus, Session } from '../../types/session';
 import type { GitIndexStatus } from '../gitPlumbingCommands';
 import type { CommandRunner } from '../../utils/commandRunner';
 import type { DatabaseService } from '../../database/database';
@@ -146,6 +147,20 @@ describe('GitStatusManager', () => {
   });
 
   describe('fetchGitStatus via getGitStatus (cache miss scenarios)', () => {
+    it('skips home-directory scans on initial load and focus refresh', async () => {
+      vi.mocked(mockSessionManager.getSession).mockResolvedValue(partialMock<Session>({
+        ...mockSession, worktreePath: os.homedir(),
+      }));
+      const initial = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
+      expect(initial?.state).toBe('unknown');
+      managerPrivates(gitStatusManager).updateCache('test-session', { state: 'clean' });
+      const refreshed = await gitStatusManager.refreshSessionGitStatus('test-session');
+      expect(refreshed?.state).toBe('unknown');
+      expect(fastCheckWorkingDirectory).not.toHaveBeenCalled();
+      expect(mockProjectContext.commandRunner.exec).not.toHaveBeenCalled();
+      gitStatusManager.stopPolling();
+    });
+
     it('returns clean state when no changes, no ahead/behind, no untracked', async () => {
       vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
       vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });

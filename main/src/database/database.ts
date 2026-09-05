@@ -4592,11 +4592,18 @@ export class DatabaseService {
     };
   }
 
-  getPanelsForSession(sessionId: string): ToolPanel[] {
+  getPanelsForSession(sessionId: string, includeScrollback = true): ToolPanel[] {
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const rows = this.db
       .prepare(
-        "SELECT * FROM tool_panels WHERE session_id = ? ORDER BY created_at",
+        includeScrollback
+          ? "SELECT * FROM tool_panels WHERE session_id = ? ORDER BY created_at"
+          : `SELECT id, session_id, type, title, metadata, created_at,
+              json_remove(
+                CASE WHEN json_type(state) = 'text' THEN json_extract(state, '$') ELSE state END,
+                '$.customState.scrollbackBuffer', '$.customState.serializedBuffer'
+              ) AS state
+             FROM tool_panels WHERE session_id = ? ORDER BY created_at`,
       )
       .all(sessionId) as ToolPanelRow[];
 
@@ -4636,10 +4643,12 @@ export class DatabaseService {
     });
   }
 
-  getAllPanels(): ToolPanel[] {
+  // Only these panel types need restart cleanup. Terminal history stays on disk
+  // until its session is opened, including stopped and archived sessions.
+  getPanelsForStartup(): ToolPanel[] {
     // SAFETY: This fixed SQLite query projection matches the declared row type at this database boundary.
     const rows = this.db
-      .prepare("SELECT * FROM tool_panels ORDER BY created_at")
+      .prepare("SELECT * FROM tool_panels WHERE type IN ('logs', 'browser') ORDER BY created_at")
       .all() as ToolPanelRow[];
 
     // SAFETY: Panel state and metadata JSON are written by the matching typed panel serializers.

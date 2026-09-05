@@ -1,3 +1,4 @@
+import { HOME_GIT_SCAN_WARNING, isHomeDirectory } from '../utils/gitScanSafety';
 import { EventEmitter } from 'events';
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar';
 import path from 'path';
@@ -111,6 +112,11 @@ export class GitFileWatcher extends EventEmitter {
   startWatching(sessionId: string, worktreePath: string): void {
     // Stop existing watcher if any
     this.stopWatching(sessionId);
+
+    if (isHomeDirectory(worktreePath)) {
+      this.logger?.warn(`[GitFileWatcher] ${HOME_GIT_SCAN_WARNING}`);
+      return;
+    }
 
     try {
       if (this.commandRunner?.wslContext) {
