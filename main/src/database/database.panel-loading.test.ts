@@ -43,6 +43,36 @@ describe('panel history loading', () => {
       });
       expect(db.getPanelsForSession('session-0', false).find(panel => panel.id === 'legacy')?.state.customState)
         .toEqual({ cwd: tempDir });
+      expect(db.getPanel('legacy')?.state.customState).toEqual({ scrollbackBuffer: [history], cwd: tempDir });
+      expect(db.getPanelsForSession('session-0').find(panel => panel.id === 'legacy')?.state.customState)
+        .toEqual({ scrollbackBuffer: [history], cwd: tempDir });
+    } finally {
+      db.close();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('decodes legacy state and metadata consistently before resolving active panels', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-panel-legacy-'));
+    const db = new DatabaseService(path.join(tempDir, 'sessions.db'));
+    try {
+      db.initialize();
+      db.createSession({ id: 'session', name: 'Session', initial_prompt: '', worktree_name: 'session', worktree_path: tempDir, project_id: null, tool_type: 'none' });
+      const state = { isActive: false, hasBeenViewed: true, customState: { isRunning: false } };
+      const metadata = { createdAt: '2026-09-06T00:00:00.000Z', lastActiveAt: '2026-09-06T00:00:00.000Z', position: 2 };
+      db.createPanel({ id: 'legacy', sessionId: 'session', type: 'logs', title: 'Legacy', state: JSON.stringify(state), metadata: JSON.stringify(metadata) });
+      db.setActivePanel('session', 'legacy');
+
+      for (const panel of [db.getPanel('legacy'), db.getActivePanel('session'), db.getPanelsForSession('session')[0], db.getPanelsForSession('session', false)[0]]) {
+        expect(panel?.state).toEqual({ ...state, isActive: true });
+        expect(panel?.metadata).toEqual(metadata);
+      }
+      for (const panel of [db.getPanelsForStartup()[0], db.getActivePanels()[0]]) {
+        expect(panel.state).toEqual(state);
+        expect(panel.metadata).toEqual(metadata);
+      }
+      db.createPanel({ id: 'malformed', sessionId: 'session', type: 'terminal', title: 'Malformed', state, metadata: 'invalid legacy JSON' });
+      expect(db.getPanel('malformed')?.metadata).toMatchObject({ position: 0 });
     } finally {
       db.close();
       fs.rmSync(tempDir, { recursive: true, force: true });

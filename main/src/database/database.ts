@@ -79,6 +79,23 @@ interface SessionGitStatusCacheRow {
   last_checked_ms: number;
 }
 
+/** Decode panel JSON once, including the string-wrapped format used by legacy callers. */
+function parsePanelJson<T extends ToolPanelState | ToolPanelMetadata>(serialized: string | null, fallback: T): T {
+  if (!serialized) return fallback;
+  if (serialized.trimStart().startsWith('"')) {
+    try {
+      const json = decodeBoundary(JSON.parse(serialized), boundary.string);
+      // SAFETY: Legacy callers supplied the same typed panel JSON wrapped in a string.
+      return JSON.parse(json) as T;
+    } catch {
+      // Preserve the manager's recovery for malformed legacy serialized values.
+      return fallback;
+    }
+  }
+  // SAFETY: These columns are written by the typed panel state and metadata serializers.
+  return JSON.parse(serialized) as T;
+}
+
 const DEBUG_DB_PANEL_STATE = process.env.PANE_DEBUG_DB_PANEL_STATE === "1";
 interface PanelStateLogSummary {
   readonly serializedLength: number;
@@ -3484,6 +3501,14 @@ export class DatabaseService {
       .run(sessionId, type, data);
   }
 
+  getSessionOutputCount(sessionId: string): number {
+    // SAFETY: COUNT always returns one row with a numeric count, including zero for an empty session.
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS count FROM session_outputs WHERE session_id = ?")
+      .get(sessionId) as { count: number };
+    return row.count;
+  }
+
   getSessionOutputs(sessionId: string, limit?: number): SessionOutput[] {
     const effectiveLimit = limit ?? Number.NaN;
     if (Number.isFinite(effectiveLimit) && effectiveLimit > 0) {
@@ -4566,10 +4591,7 @@ export class DatabaseService {
     const isActive = activePanel?.active_panel_id === panelId;
 
     // SAFETY: Panel state JSON is written from ToolPanelState by createPanel/updatePanel.
-    const state = row.state
-      // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-      ? (JSON.parse(row.state) as ToolPanelState)
-      : { isActive: false, hasBeenViewed: false, customState: {} };
+    const state = parsePanelJson<ToolPanelState>(row.state, { isActive: false, hasBeenViewed: false, customState: {} });
     // Update isActive based on whether this panel is the active one
     state.isActive = isActive;
 
@@ -4581,14 +4603,11 @@ export class DatabaseService {
       type: row.type as ToolPanelType,
       title: row.title,
       state,
-      metadata: row.metadata
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.metadata) as ToolPanelMetadata)
-        : {
-            createdAt: row.created_at,
-            lastActiveAt: row.created_at,
-            position: 0,
-          },
+      metadata: parsePanelJson<ToolPanelMetadata>(row.metadata, {
+        createdAt: row.created_at,
+        lastActiveAt: row.created_at,
+        position: 0,
+      }),
     };
   }
 
@@ -4616,10 +4635,7 @@ export class DatabaseService {
 
     return rows.map((row) => {
       // SAFETY: Panel state JSON is written from ToolPanelState by createPanel/updatePanel.
-      const state = row.state
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.state) as ToolPanelState)
-        : { isActive: false, hasBeenViewed: false, customState: {} };
+      const state = parsePanelJson<ToolPanelState>(row.state, { isActive: false, hasBeenViewed: false, customState: {} });
       // Update isActive based on whether this panel is the active one
       state.isActive = row.id === activePanelId;
 
@@ -4631,14 +4647,11 @@ export class DatabaseService {
         type: row.type as ToolPanelType,
         title: row.title,
         state,
-        metadata: row.metadata
-          // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-          ? (JSON.parse(row.metadata) as ToolPanelMetadata)
-          : {
-              createdAt: row.created_at,
-              lastActiveAt: row.created_at,
-              position: 0,
-            },
+        metadata: parsePanelJson<ToolPanelMetadata>(row.metadata, {
+          createdAt: row.created_at,
+          lastActiveAt: row.created_at,
+          position: 0,
+        }),
       };
     });
   }
@@ -4658,18 +4671,12 @@ export class DatabaseService {
       // SAFETY: The panel type column is constrained to values written from ToolPanelType.
       type: row.type as ToolPanelType,
       title: row.title,
-      state: row.state
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.state) as ToolPanelState)
-        : { isActive: false },
-      metadata: row.metadata
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.metadata) as ToolPanelMetadata)
-        : {
-            createdAt: row.created_at,
-            lastActiveAt: row.created_at,
-            position: 0,
-          },
+      state: parsePanelJson<ToolPanelState>(row.state, { isActive: false }),
+      metadata: parsePanelJson<ToolPanelMetadata>(row.metadata, {
+        createdAt: row.created_at,
+        lastActiveAt: row.created_at,
+        position: 0,
+      }),
     }));
   }
 
@@ -4693,18 +4700,12 @@ export class DatabaseService {
       // SAFETY: The panel type column is constrained to values written from ToolPanelType.
       type: row.type as ToolPanelType,
       title: row.title,
-      state: row.state
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.state) as ToolPanelState)
-        : { isActive: false },
-      metadata: row.metadata
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.metadata) as ToolPanelMetadata)
-        : {
-            createdAt: row.created_at,
-            lastActiveAt: row.created_at,
-            position: 0,
-          },
+      state: parsePanelJson<ToolPanelState>(row.state, { isActive: false }),
+      metadata: parsePanelJson<ToolPanelMetadata>(row.metadata, {
+        createdAt: row.created_at,
+        lastActiveAt: row.created_at,
+        position: 0,
+      }),
     }));
   }
 
@@ -4745,10 +4746,7 @@ export class DatabaseService {
     if (!row) return null;
 
     // SAFETY: Panel state JSON is written from ToolPanelState by createPanel/updatePanel.
-    const state = row.state
-      // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-      ? (JSON.parse(row.state) as ToolPanelState)
-      : { isActive: true, hasBeenViewed: false };
+    const state = parsePanelJson<ToolPanelState>(row.state, { isActive: true, hasBeenViewed: false });
     // This panel is the active one by definition (we joined on active_panel_id)
     state.isActive = true;
 
@@ -4760,14 +4758,11 @@ export class DatabaseService {
       type: row.type as ToolPanelType,
       title: row.title,
       state,
-      metadata: row.metadata
-        // SAFETY: Persisted JSON in this column is produced by the matching typed serializer.
-        ? (JSON.parse(row.metadata) as ToolPanelMetadata)
-        : {
-            createdAt: row.created_at,
-            lastActiveAt: row.created_at,
-            position: 0,
-          },
+      metadata: parsePanelJson<ToolPanelMetadata>(row.metadata, {
+        createdAt: row.created_at,
+        lastActiveAt: row.created_at,
+        position: 0,
+      }),
     };
   }
 

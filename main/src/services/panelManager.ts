@@ -8,16 +8,6 @@ import type { AnalyticsManager } from './analyticsManager';
 import type { PaneEventArgument } from '../core/eventSink';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
-type PersistedPanelValue = ToolPanelState | ToolPanelMetadata | string;
-
-function serializedPanelValue(value: PersistedPanelValue): string | null {
-  try {
-    return decodeBoundary(value, boundary.string);
-  } catch {
-    return null;
-  }
-}
-
 function logsPanelState(panel: ToolPanel): LogsPanelState {
   // SAFETY: Callers first discriminate `panel.type === 'logs'`; this state is
   // created and persisted by the logs manager as LogsPanelState.
@@ -366,25 +356,6 @@ class PanelManager {
     // Load from database if not cached
     const panel = databaseService.getPanel(panelId);
     if (panel) {
-      // Fix any panels that have state stored as a string (defensive programming)
-      const serializedState = serializedPanelValue(panel.state);
-      if (serializedState !== null) {
-        try {
-          panel.state = JSON.parse(serializedState);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
-          panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
-        }
-      }
-      const serializedMetadata = serializedPanelValue(panel.metadata);
-      if (serializedMetadata !== null) {
-        try {
-          panel.metadata = JSON.parse(serializedMetadata);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
-          panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
-        }
-      }
       // Skip caching if this panel belongs to a session we've already
       // archived in this process. Prevents a post-archive event from
       // resurrecting the cache entry and undoing L3 cleanup.
@@ -407,31 +378,11 @@ class PanelManager {
     // Summary reads must never replace complete cached state with missing buffers.
     const shouldCache = includeScrollback && !this.archivedSessionIds.has(sessionId);
 
-    // Fix any panels that have state stored as a string (defensive programming)
-    panels.forEach(panel => {
-      const serializedState = serializedPanelValue(panel.state);
-      if (serializedState !== null) {
-        try {
-          panel.state = JSON.parse(serializedState);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
-          panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
-        }
-      }
-      const serializedMetadata = serializedPanelValue(panel.metadata);
-      if (serializedMetadata !== null) {
-        try {
-          panel.metadata = JSON.parse(serializedMetadata);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
-          panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
-        }
-      }
-      // Update cache unless we've archived this session
-      if (shouldCache) {
+    if (shouldCache) {
+      for (const panel of panels) {
         this.panels.set(panel.id, panel);
       }
-    });
+    }
 
     return panels;
   }
