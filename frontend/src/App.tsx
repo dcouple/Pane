@@ -120,7 +120,8 @@ function App() {
     }
   }, [sidebarCollapsed, setSidebarCollapsed]);
   const { currentError, clearError } = useErrorStore();
-  const { sessions, isLoaded } = useSessionStore();
+  const sessions = useSessionStore(state => state.sessions);
+  const isLoaded = useSessionStore(state => state.isLoaded);
   const activeSessionId = useSessionStore(state => state.activeSessionId);
   const { fetchConfig, config: appConfig } = useConfigStore();
   const terminalShortcuts = appConfig?.terminalShortcuts ?? EMPTY_TERMINAL_SHORTCUTS;

@@ -231,7 +231,8 @@ export function HomePage() {
   const { theme, appearance, activeSystemSlot, setTheme } = useTheme();
   const homeThemeOptions = themeOptionsForSlot(appearance.appearanceMode === 'fixed' ? 'any' : activeSystemSlot ?? 'light');
   const { config, updateConfig } = useConfigStore();
-  const { sessions, setActiveSession } = useSessionStore();
+  const sessions = useSessionStore(state => state.sessions);
+  const setActiveSession = useSessionStore(state => state.setActiveSession);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
 
   const [projects, setProjects] = useState<Project[]>([]);

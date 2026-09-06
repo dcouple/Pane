@@ -336,6 +336,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onGitStatusUpdated') {
           return (callback: MockEventCallback) => subscribe('git-status-updated', callback);
         }
+        if (prop === 'onTerminalOutput') {
+          return (callback: MockEventCallback) => subscribe('terminal-output', callback);
+        }
         if (prop === 'onTerminalFontUpdated') {
           return (callback: MockEventCallback) => subscribe('config:terminal-font-updated', callback);
         }
@@ -1132,6 +1135,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         emitGitStatusUpdated(sessionId: string, gitStatus: JsonObject) {
           emit('git-status-updated', { sessionId, gitStatus: clone(gitStatus) });
+        },
+        emitTerminalOutput(sessionId: string, data: string) {
+          emit('terminal-output', { sessionId, type: 'stdout', data });
         },
         emitSessionUpdated(session: JsonObject) {
           emit('session:updated', clone(session));

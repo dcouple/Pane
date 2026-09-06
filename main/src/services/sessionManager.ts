@@ -733,8 +733,8 @@ export class SessionManager extends EventEmitter {
       
       if (promptText) {
         // Get current output count to use as index
-        const outputs = this.db.getSessionOutputs(id);
-        this.db.addPromptMarker(id, promptText, outputs.length - 1);
+        const outputCount = this.db.getSessionOutputCount(id);
+        this.db.addPromptMarker(id, promptText, outputCount - 1);
         // Also add to conversation messages for continuation support
         this.db.addConversationMessage(id, 'user', promptText);
       }
@@ -1104,8 +1104,8 @@ export class SessionManager extends EventEmitter {
       
       // Add a prompt marker for this continued conversation
       // Get current output count to use as index
-      const outputs = this.db.getSessionOutputs(id);
-      this.db.addPromptMarker(id, userMessage, outputs.length);
+      const outputCount = this.db.getSessionOutputCount(id);
+      this.db.addPromptMarker(id, userMessage, outputCount);
       
       // Emit event for the Claude Code manager to handle
       this.emit('conversation-continue', { sessionId: id, message: userMessage });
