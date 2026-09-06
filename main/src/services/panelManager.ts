@@ -44,20 +44,20 @@ class PanelManager {
   }
 
   constructor() {
-    // Load panels from database on startup (but don't initialize processes)
+    // Clean up restart-only state; other panels are loaded on demand
     this.loadPanelsFromDatabase();
   }
   
   private loadPanelsFromDatabase(): void {
     // This will be called on app startup to restore panel state
     // But we don't start any processes - that happens lazily
-    console.log('[PanelManager] Loading panels from database...');
+    console.log('[PanelManager] Loading panels requiring restart cleanup...');
     
-    // Load all panels from database
-    const allPanels = databaseService.getAllPanels();
+    // Load only panels requiring restart cleanup; terminal state is loaded on demand.
+    const startupPanels = databaseService.getPanelsForStartup();
     
     // Clean up any stale running states in logs panels
-    allPanels.forEach(panel => {
+    startupPanels.forEach(panel => {
       if (panel.type === 'logs' && panel.state?.customState) {
         const logsState = logsPanelState(panel);
         if (logsState.isRunning) {
@@ -397,14 +397,15 @@ class PanelManager {
     return undefined;
   }
   
-  getPanelsForSession(sessionId: string): ToolPanel[] {
+  getPanelsForSession(sessionId: string, includeScrollback = true): ToolPanel[] {
     // Always get fresh from database to ensure consistency
-    const panels = databaseService.getPanelsForSession(sessionId);
+    const panels = databaseService.getPanelsForSession(sessionId, includeScrollback);
     // If this session has been archived in this process, we still
     // return the panels (callers like the sessions:delete PTY-destroy
     // loop need them) but we do NOT re-populate this.panels — doing so
     // would undo the L3 cleanup that cleared them moments earlier.
-    const shouldCache = !this.archivedSessionIds.has(sessionId);
+    // Summary reads must never replace complete cached state with missing buffers.
+    const shouldCache = includeScrollback && !this.archivedSessionIds.has(sessionId);
 
     // Fix any panels that have state stored as a string (defensive programming)
     panels.forEach(panel => {

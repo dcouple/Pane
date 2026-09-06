@@ -228,7 +228,7 @@ let paneDaemonHost: PaneDaemonHost | null = null;
 let powerSaveManager: PowerSaveManager | null = null;
 
 // ptyHost supervisor — forked as an Electron UtilityProcess on app ready,
-// but only when the `usePtyHost` setting is enabled (default: off). When
+// but only when the `usePtyHost` setting is enabled (default: on for Windows). When
 // disabled, the supervisor is never forked and every manager transparently
 // falls through to the legacy in-main `pty.spawn` path.
 let ptyHostSupervisor: PtyHostSupervisor | null = null;
@@ -1165,7 +1165,7 @@ if (launchRemoteSetup) {
 
   // Start the ptyHost supervisor before the window opens so the renderer's
   // preload listener for 'ptyHost-port' has a port to receive when the window
-  // finishes loading. Gated on the `usePtyHost` setting: when off (default),
+  // finishes loading. Gated on the `usePtyHost` setting: when off,
   // the supervisor is never forked and every spawn site falls through to the
   // legacy in-main `pty.spawn` path with zero ptyHost code executing.
   if (configManager.getUsePtyHost()) {
