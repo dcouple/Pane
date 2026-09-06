@@ -44,6 +44,81 @@ export function setupEventListeners(services: AppServices): void {
     analyticsManager
   } = services;
 
+  async function appendSessionSummary(sessionId: string, failed: boolean): Promise<void> {
+    try {
+      const session = sessionManager.getSession(sessionId);
+      if (session && session.worktreePath) {
+        const timestamp = new Date().toLocaleTimeString();
+        let commitInfo = `\r\n\x1b[36m[${timestamp}]\x1b[0m \x1b[1m${failed ? '\x1b[41m' : '\x1b[44m'}\x1b[37m 📊 SESSION SUMMARY${failed ? ' (ERROR)' : ''} \x1b[0m\r\n\r\n`;
+
+        // Get project context for this session
+        const summaryCtx = sessionManager.getProjectContext(session.id);
+        if (!summaryCtx) {
+          console.error(`[Events] No project context for session ${session.id}`);
+          return;
+        }
+
+        // Check for uncommitted changes
+        const statusOutput = (await summaryCtx.commandRunner.execAsync('git status --porcelain', session.worktreePath)).stdout.trim();
+
+        if (statusOutput) {
+          const uncommittedFiles = statusOutput.split('\n').length;
+          commitInfo += `\x1b[1m\x1b[33m⚠️  Uncommitted Changes:\x1b[0m ${uncommittedFiles} file${uncommittedFiles > 1 ? 's' : ''}\r\n`;
+
+          // Show first few uncommitted files
+          const filesToShow = statusOutput.split('\n').slice(0, 5);
+          filesToShow.forEach(file => {
+            const [status, ...nameParts] = file.trim().split(/\s+/);
+            const fileName = nameParts.join(' ');
+            commitInfo += `   \x1b[2m${status}\x1b[0m ${fileName}\r\n`;
+          });
+
+          if (uncommittedFiles > 5) {
+            commitInfo += `   \x1b[2m... and ${uncommittedFiles - 5} more\x1b[0m\r\n`;
+          }
+          commitInfo += '\r\n';
+        }
+
+        // Get commit history for this branch
+        const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, summaryCtx);
+
+        let commits: GitCommit[] = [];
+        try {
+          commits = await gitDiffManager.getCommitHistory(session.worktreePath, 10, comparisonBranch, summaryCtx.commandRunner);
+        } catch (error) {
+          console.error(`[Events] Error getting commit history:`, error);
+        }
+
+        if (commits.length > 0) {
+          commitInfo += `\x1b[1m\x1b[32m📝 Commits ${failed ? 'before error' : 'in this session'}:\x1b[0m\r\n`;
+          commits.forEach((commit, index) => {
+            const shortHash = commit.hash.substring(0, 7);
+            const date = commit.date.toLocaleString();
+            const stats = commit.stats;
+            commitInfo += `\r\n  \x1b[1m${index + 1}.\x1b[0m \x1b[33m${shortHash}\x1b[0m - ${commit.message}\r\n`;
+            commitInfo += `     \x1b[2mby ${commit.author} on ${date}\x1b[0m\r\n`;
+            if (stats.filesChanged > 0) {
+              commitInfo += `     \x1b[32m+${stats.additions}\x1b[0m \x1b[31m-${stats.deletions}\x1b[0m (${stats.filesChanged} file${stats.filesChanged > 1 ? 's' : ''})\r\n`;
+            }
+          });
+        } else if (!statusOutput) {
+          commitInfo += `\x1b[2mNo commits were made ${failed ? 'before the error' : 'in this session'}.\x1b[0m\r\n`;
+        }
+
+        commitInfo += `\r\n\x1b[2m─────────────────────────────────────────\x1b[0m\r\n`;
+
+        // Add this summary to the session output
+        sessionManager.addSessionOutput(sessionId, {
+          type: 'stdout',
+          data: commitInfo,
+          timestamp: new Date()
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to generate session summary for ${sessionId}:`, error);
+    }
+  }
+
   // Wire up analytics manager to panel managers
   if (analyticsManager) {
     panelManager.setAnalyticsManager(analyticsManager);
@@ -245,90 +320,7 @@ export function setupEventListeners(services: AppServices): void {
       console.error(`Failed to refresh git status for session ${sessionId} after exit:`, error);
     }
 
-    // Add commit information when session ends
-    try {
-      const session = sessionManager.getSession(sessionId);
-      if (session && session.worktreePath) {
-        const timestamp = new Date().toLocaleTimeString();
-        let commitInfo = `\r\n\x1b[36m[${timestamp}]\x1b[0m \x1b[1m\x1b[44m\x1b[37m 📊 SESSION SUMMARY \x1b[0m\r\n\r\n`;
-
-        // Get project context for this session
-        const summaryCtx = sessionManager.getProjectContext(session.id);
-        if (!summaryCtx) {
-          console.error(`[Events] No project context for session ${session.id}`);
-          return;
-        }
-
-        // Check for uncommitted changes
-        const statusOutput = summaryCtx.commandRunner.exec('git status --porcelain', session.worktreePath).trim();
-
-        if (statusOutput) {
-          const uncommittedFiles = statusOutput.split('\n').length;
-          commitInfo += `\x1b[1m\x1b[33m⚠️  Uncommitted Changes:\x1b[0m ${uncommittedFiles} file${uncommittedFiles > 1 ? 's' : ''}\r\n`;
-
-          // Show first few uncommitted files
-          const filesToShow = statusOutput.split('\n').slice(0, 5);
-          filesToShow.forEach(file => {
-            const [status, ...nameParts] = file.trim().split(/\s+/);
-            const fileName = nameParts.join(' ');
-            commitInfo += `   \x1b[2m${status}\x1b[0m ${fileName}\r\n`;
-          });
-
-          if (uncommittedFiles > 5) {
-            commitInfo += `   \x1b[2m... and ${uncommittedFiles - 5} more\x1b[0m\r\n`;
-          }
-          commitInfo += '\r\n';
-        }
-
-        // Get commit history for this branch
-        const historyCtx = sessionManager.getProjectContext(session.id);
-        if (!historyCtx) {
-          throw new Error('Project context not found for session');
-        }
-        const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, historyCtx);
-
-        let commits: GitCommit[] = [];
-        try {
-          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, comparisonBranch, historyCtx.commandRunner);
-        } catch (error) {
-          console.error(`[Events] Error getting commit history:`, error);
-          // If there's an error, try without specifying main branch (get all commits)
-          try {
-            const fallbackCommand = `git log --format="%H|%s|%ai|%an" --numstat -n 10`;
-            historyCtx.commandRunner.exec(fallbackCommand, session.worktreePath);
-          } catch (fallbackError) {
-            console.error(`[Events] Fallback also failed:`, fallbackError);
-          }
-        }
-
-        if (commits.length > 0) {
-          commitInfo += `\x1b[1m\x1b[32m📝 Commits in this session:\x1b[0m\r\n`;
-          commits.forEach((commit, index) => {
-            const shortHash = commit.hash.substring(0, 7);
-            const date = commit.date.toLocaleString();
-            const stats = commit.stats;
-            commitInfo += `\r\n  \x1b[1m${index + 1}.\x1b[0m \x1b[33m${shortHash}\x1b[0m - ${commit.message}\r\n`;
-            commitInfo += `     \x1b[2mby ${commit.author} on ${date}\x1b[0m\r\n`;
-            if (stats.filesChanged > 0) {
-              commitInfo += `     \x1b[32m+${stats.additions}\x1b[0m \x1b[31m-${stats.deletions}\x1b[0m (${stats.filesChanged} file${stats.filesChanged > 1 ? 's' : ''})\r\n`;
-            }
-          });
-        } else if (!statusOutput) {
-          commitInfo += `\x1b[2mNo commits were made in this session.\x1b[0m\r\n`;
-        }
-
-        commitInfo += `\r\n\x1b[2m─────────────────────────────────────────\x1b[0m\r\n`;
-
-        // Add this summary to the session output
-        sessionManager.addSessionOutput(sessionId, {
-          type: 'stdout',
-          data: commitInfo,
-          timestamp: new Date()
-        });
-      }
-    } catch (error) {
-      console.error(`Failed to generate session summary for ${sessionId}:`, error);
-    }
+    await appendSessionSummary(sessionId, false);
   });
 
   claudeCodeManager.on('error', async ({ panelId, sessionId, error }: { panelId?: string; sessionId: string; error: string }) => {
@@ -361,90 +353,7 @@ export function setupEventListeners(services: AppServices): void {
       console.error(`Failed to cancel execution tracking for session ${sessionId}:`, trackingError);
     }
 
-    // Add commit information when session errors
-    try {
-      const session = sessionManager.getSession(sessionId);
-      if (session && session.worktreePath) {
-        const timestamp = new Date().toLocaleTimeString();
-        let commitInfo = `\r\n\x1b[36m[${timestamp}]\x1b[0m \x1b[1m\x1b[41m\x1b[37m 📊 SESSION SUMMARY (ERROR) \x1b[0m\r\n\r\n`;
-
-        // Get project context for this session
-        const errorCtx = sessionManager.getProjectContext(session.id);
-        if (!errorCtx) {
-          console.error(`[Events] No project context for session ${session.id} in error handler`);
-          return;
-        }
-
-        // Check for uncommitted changes
-        const statusOutput = errorCtx.commandRunner.exec('git status --porcelain', session.worktreePath).trim();
-
-        if (statusOutput) {
-          const uncommittedFiles = statusOutput.split('\n').length;
-          commitInfo += `\x1b[1m\x1b[33m⚠️  Uncommitted Changes:\x1b[0m ${uncommittedFiles} file${uncommittedFiles > 1 ? 's' : ''}\r\n`;
-
-          // Show first few uncommitted files
-          const filesToShow = statusOutput.split('\n').slice(0, 5);
-          filesToShow.forEach(file => {
-            const [status, ...nameParts] = file.trim().split(/\s+/);
-            const fileName = nameParts.join(' ');
-            commitInfo += `   \x1b[2m${status}\x1b[0m ${fileName}\r\n`;
-          });
-
-          if (uncommittedFiles > 5) {
-            commitInfo += `   \x1b[2m... and ${uncommittedFiles - 5} more\x1b[0m\r\n`;
-          }
-          commitInfo += '\r\n';
-        }
-
-        // Get commit history for this branch
-        const errorHistoryCtx = sessionManager.getProjectContext(session.id);
-        if (!errorHistoryCtx) {
-          throw new Error('Project context not found for session');
-        }
-        const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, errorHistoryCtx);
-
-        let commits: GitCommit[] = [];
-        try {
-          commits = gitDiffManager.getCommitHistory(session.worktreePath, 10, comparisonBranch, errorHistoryCtx.commandRunner);
-        } catch (error) {
-          console.error(`[Events] Error getting commit history:`, error);
-          // If there's an error, try without specifying main branch (get all commits)
-          try {
-            const fallbackCommand = `git log --format="%H|%s|%ai|%an" --numstat -n 10`;
-            errorHistoryCtx.commandRunner.exec(fallbackCommand, session.worktreePath);
-          } catch (fallbackError) {
-            console.error(`[Events] Fallback also failed:`, fallbackError);
-          }
-        }
-
-        if (commits.length > 0) {
-          commitInfo += `\x1b[1m\x1b[32m📝 Commits before error:\x1b[0m\r\n`;
-          commits.forEach((commit, index) => {
-            const shortHash = commit.hash.substring(0, 7);
-            const date = commit.date.toLocaleString();
-            const stats = commit.stats;
-            commitInfo += `\r\n  \x1b[1m${index + 1}.\x1b[0m \x1b[33m${shortHash}\x1b[0m - ${commit.message}\r\n`;
-            commitInfo += `     \x1b[2mby ${commit.author} on ${date}\x1b[0m\r\n`;
-            if (stats.filesChanged > 0) {
-              commitInfo += `     \x1b[32m+${stats.additions}\x1b[0m \x1b[31m-${stats.deletions}\x1b[0m (${stats.filesChanged > 1 ? 's' : ''})\r\n`;
-            }
-          });
-        } else if (!statusOutput) {
-          commitInfo += `\x1b[2mNo commits were made before the error.\x1b[0m\r\n`;
-        }
-
-        commitInfo += `\r\n\x1b[2m─────────────────────────────────────────\x1b[0m\r\n`;
-
-        // Add this summary to the session output
-        sessionManager.addSessionOutput(sessionId, {
-          type: 'stdout',
-          data: commitInfo,
-          timestamp: new Date()
-        });
-      }
-    } catch (summaryError) {
-      console.error(`Failed to generate session summary for ${sessionId}:`, summaryError);
-    }
+    await appendSessionSummary(sessionId, true);
   });
 
   // Listen to terminal output events (independent terminal, not run scripts)

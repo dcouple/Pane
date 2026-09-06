@@ -2655,7 +2655,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
     // Deliberately bypass gitStatusManager's cache (up to CACHE_TTL_MS stale)
     // and read git plumbing directly — a safety gate must see the current
     // state, not a snapshot from moments-ago that predates a recent commit.
-    const workingDirectory = fastCheckWorkingDirectory(pane.worktreePath, ctx.commandRunner.wslContext);
+    const workingDirectory = await fastCheckWorkingDirectory(pane.worktreePath, ctx.commandRunner.wslContext);
     const hasUncommittedChanges = workingDirectory.hasModified || workingDirectory.hasStaged || workingDirectory.hasConflicts;
     const hasUntrackedFiles = workingDirectory.hasUntracked;
 
@@ -2667,7 +2667,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
         pane.worktreePath,
         { timeout: 30000 },
       );
-      const unpushedCommitDetails = listCommitsAhead(
+      const unpushedCommitDetails = await listCommitsAhead(
         pane.worktreePath,
         upstream,
         ctx.commandRunner.wslContext,
@@ -2688,7 +2688,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
     // commits ahead of its base/comparison branch are the closest proxy for
     // "unpushed work".
     const comparisonBranch = await services.worktreeManager.getSessionComparisonBranch(pane, ctx);
-    const unpushedCommitDetails = listCommitsAhead(
+    const unpushedCommitDetails = await listCommitsAhead(
       pane.worktreePath,
       comparisonBranch,
       ctx.commandRunner.wslContext,

@@ -64,10 +64,13 @@ const mockProject = {
   path: '/test/project',
 };
 
+const projectGitOutput = vi.fn<(command: string, cwd: string) => string>();
+const projectGithubCommand = vi.fn<CommandRunner['execAsync']>();
+
 const mockProjectContext = {
   project: mockProject,
   pathResolver: {},
-  commandRunner: { execAsync: vi.fn(), exec: vi.fn(), wslContext: null },
+  commandRunner: { execAsync: vi.fn<CommandRunner['execAsync']>(), wslContext: null },
 };
 
 const cleanIndexStatus: GitIndexStatus = {
@@ -138,15 +141,31 @@ describe('GitStatusManager', () => {
     );
 
     // Default: no uncommitted changes, no ahead/behind
-    vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
-    vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
-    vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 0, deletions: 0, filesChanged: 0 });
+    vi.mocked(fastCheckWorkingDirectory).mockResolvedValue(cleanIndexStatus);
+    vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 0 });
+    vi.mocked(fastGetDiffStats).mockResolvedValue({ additions: 0, deletions: 0, filesChanged: 0 });
 
-    // Default commandRunner.exec returns empty string
-    vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('');
+    mockProjectContext.commandRunner.execAsync.mockImplementation(async (command, cwd, options) => {
+      if (command.startsWith('git ')) return { stdout: projectGitOutput(command, cwd), stderr: '' };
+      return projectGithubCommand(command, cwd, options);
+    });
+    // Git and GitHub CLI outputs have independent fixtures.
+    vi.mocked(projectGitOutput).mockReturnValue('');
   });
 
   describe('fetchGitStatus via getGitStatus (cache miss scenarios)', () => {
+    it('discards a status read cancelled while Git is running', async () => {
+      let finish = (_status: GitIndexStatus): void => { throw new Error('Git not started'); };
+      fastCheckWorkingDirectory.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+      const pending = managerPrivates(gitStatusManager).fetchGitStatus('test-session');
+      await new Promise(resolve => setImmediate(resolve));
+      gitStatusManager.cancelSessionGitStatus('test-session');
+      finish(cleanIndexStatus);
+
+      expect(await pending).toBeNull();
+      expect(mockDatabaseService.saveSessionGitStatusCache).not.toHaveBeenCalled();
+    });
+
     it('skips home-directory scans on initial load and focus refresh', async () => {
       vi.mocked(mockSessionManager.getSession).mockResolvedValue(partialMock<Session>({
         ...mockSession, worktreePath: os.homedir(),
@@ -157,13 +176,13 @@ describe('GitStatusManager', () => {
       const refreshed = await gitStatusManager.refreshSessionGitStatus('test-session');
       expect(refreshed?.state).toBe('unknown');
       expect(fastCheckWorkingDirectory).not.toHaveBeenCalled();
-      expect(mockProjectContext.commandRunner.exec).not.toHaveBeenCalled();
+      expect(projectGitOutput).not.toHaveBeenCalled();
       gitStatusManager.stopPolling();
     });
 
     it('returns clean state when no changes, no ahead/behind, no untracked', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 0 });
 
       const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
@@ -176,14 +195,14 @@ describe('GitStatusManager', () => {
     });
 
     it('returns modified state when uncommitted changes exist', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue({
         hasModified: true,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: false,
       });
-      vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 15, deletions: 5, filesChanged: 3 });
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetDiffStats).mockResolvedValue({ additions: 15, deletions: 5, filesChanged: 3 });
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 0 });
 
       const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
@@ -195,9 +214,9 @@ describe('GitStatusManager', () => {
     });
 
     it('returns ahead state when commits ahead of main', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 3, behind: 0 });
-      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 3, behind: 0 });
+      vi.mocked(projectGitOutput).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 5 files changed, 20 insertions(+), 10 deletions(-)';
         }
@@ -219,8 +238,8 @@ describe('GitStatusManager', () => {
     });
 
     it('returns behind state when commits behind main', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 5 });
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 5 });
 
       const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
@@ -230,9 +249,9 @@ describe('GitStatusManager', () => {
     });
 
     it('returns diverged state when both ahead and behind', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue(cleanIndexStatus);
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 2, behind: 3 });
-      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue(cleanIndexStatus);
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 2, behind: 3 });
+      vi.mocked(projectGitOutput).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 4 files changed, 15 insertions(+), 8 deletions(-)';
         }
@@ -250,13 +269,13 @@ describe('GitStatusManager', () => {
     });
 
     it('returns conflict state when merge conflicts exist', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue({
         hasModified: false,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: true,
       });
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 0 });
 
       const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
@@ -264,13 +283,13 @@ describe('GitStatusManager', () => {
     });
 
     it('returns untracked state when only untracked files exist', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue({
         hasModified: false,
         hasStaged: false,
         hasUntracked: true,
         hasConflicts: false,
       });
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 0, behind: 0 });
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 0, behind: 0 });
 
       const status = await managerPrivates(gitStatusManager).fetchGitStatus('test-session');
 
@@ -287,15 +306,15 @@ describe('GitStatusManager', () => {
     });
 
     it('sets modified as primary state and ahead as secondary when uncommitted changes and ahead', async () => {
-      vi.mocked(fastCheckWorkingDirectory).mockReturnValue({
+      vi.mocked(fastCheckWorkingDirectory).mockResolvedValue({
         hasModified: true,
         hasStaged: false,
         hasUntracked: false,
         hasConflicts: false,
       });
-      vi.mocked(fastGetDiffStats).mockReturnValue({ additions: 5, deletions: 2, filesChanged: 2 });
-      vi.mocked(fastGetAheadBehind).mockReturnValue({ ahead: 2, behind: 0 });
-      vi.mocked(mockProjectContext.commandRunner.exec).mockImplementation((cmd: string) => {
+      vi.mocked(fastGetDiffStats).mockResolvedValue({ additions: 5, deletions: 2, filesChanged: 2 });
+      vi.mocked(fastGetAheadBehind).mockResolvedValue({ ahead: 2, behind: 0 });
+      vi.mocked(projectGitOutput).mockImplementation((cmd: string) => {
         if (cmd.includes('diff --shortstat')) {
           return ' 3 files changed, 10 insertions(+), 5 deletions(-)';
         }
@@ -475,7 +494,7 @@ describe('GitStatusManager', () => {
       const privates = managerPrivates(gitStatusManager);
       privates.activeSessionId = 'test-session';
       privates.prCache.set(`${mockProject.path}:feature-branch`, { fetchedAt: Date.now() });
-      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
+      vi.mocked(projectGitOutput).mockReturnValue('feature-branch\n');
       const refreshSpy = vi
         .spyOn(gitStatusManager, 'refreshSessionGitStatus')
         .mockResolvedValue({ state: 'clean', lastChecked: new Date().toISOString() });
@@ -497,8 +516,9 @@ describe('GitStatusManager', () => {
         ...mockSession,
         worktreePath: '/test/worktrees/not-the-branch',
       });
-      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('real-feature-branch\n');
-      vi.mocked(mockProjectContext.commandRunner.execAsync).mockResolvedValue({
+      vi.mocked(projectGitOutput).mockReturnValue('real-feature-branch\n');
+      projectGithubCommand.mockResolvedValue({
+        stderr: '',
         stdout: JSON.stringify([{
           number: 12,
           url: 'https://github.com/example/repo/pull/12',
@@ -514,17 +534,16 @@ describe('GitStatusManager', () => {
       void privates.enrichWithPrData('test-session');
       const status = await updated;
 
-      expect(mockProjectContext.commandRunner.exec).toHaveBeenCalledWith(
+      expect(projectGitOutput).toHaveBeenCalledWith(
         'git branch --show-current',
-        '/test/worktrees/not-the-branch',
-        { silent: true }
+        '/test/worktrees/not-the-branch'
       );
       expect(mockProjectContext.commandRunner.execAsync).toHaveBeenCalledWith(
         expect.stringContaining('real-feature-branch'),
         mockProject.path,
         { timeout: 5000 }
       );
-      expect(vi.mocked(mockProjectContext.commandRunner.execAsync).mock.calls[0][0]).not.toContain('not-the-branch');
+      expect(projectGithubCommand.mock.calls[0][0]).not.toContain('not-the-branch');
       expect(status.prNumber).toBe(12);
       expect(status.prUrl).toBe('https://github.com/example/repo/pull/12');
     });
@@ -543,8 +562,8 @@ describe('GitStatusManager', () => {
         },
         lastChecked: Date.now(),
       };
-      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
-      vi.mocked(mockProjectContext.commandRunner.execAsync).mockResolvedValue({ stdout: '[]' });
+      vi.mocked(projectGitOutput).mockReturnValue('feature-branch\n');
+      projectGithubCommand.mockResolvedValue({ stdout: '[]', stderr: '' });
 
       const updated = new Promise<GitStatus>((resolve) => {
         gitStatusManager.once('git-status-updated', (_sessionId, status) => resolve(status));
@@ -580,8 +599,8 @@ describe('GitStatusManager', () => {
         status: cachedStatus,
         lastChecked: Date.now(),
       };
-      vi.mocked(mockProjectContext.commandRunner.exec).mockReturnValue('feature-branch\n');
-      vi.mocked(mockProjectContext.commandRunner.execAsync).mockRejectedValue(new Error('gh unavailable'));
+      vi.mocked(projectGitOutput).mockReturnValue('feature-branch\n');
+      projectGithubCommand.mockRejectedValue(new Error('gh unavailable'));
 
       await privates.enrichWithPrData('test-session');
 

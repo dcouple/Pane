@@ -1,6 +1,13 @@
 const path = require('path');
 process.env.NODE_ENV = 'production';
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
+// This smoke test runs after build:main and compares both compiled artifacts.
+const daemonContractPath = path.resolve(__dirname, '..', 'main', 'dist', 'shared', 'types', 'daemon.js');
+const {
+  DAEMON_OWNED_CHANNEL_PREFIXES,
+  DAEMON_OWNED_EXACT_CHANNELS,
+  ELECTRON_ADAPTER_ONLY_CHANNELS,
+} = require(daemonContractPath);
 
 const preloadPath = path.resolve(__dirname, '..', 'main', 'dist', 'main', 'src', 'preload.js');
 const defaultAppearance = {
@@ -16,6 +23,16 @@ const timeout = setTimeout(() => {
 }, 15_000);
 
 async function run() {
+  const daemonChannels = [
+    ...DAEMON_OWNED_CHANNEL_PREFIXES.map(prefix => `${prefix}routing-probe`),
+    ...DAEMON_OWNED_EXACT_CHANNELS,
+    'sessions:set-active-session',
+  ];
+  const electronChannels = [...ELECTRON_ADAPTER_ONLY_CHANNELS, 'routing-probe:local'];
+  ipcMain.handle('daemon:invoke', (_event, channel, ...args) => ({ route: 'daemon', channel, args }));
+  for (const channel of electronChannels) {
+    ipcMain.handle(channel, (_event, ...args) => ({ route: 'electron', channel, args }));
+  }
   const window = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -49,7 +66,18 @@ async function run() {
     throw new Error('Sandboxed preload did not decode the appearance snapshot');
   }
 
-  console.log('Sandboxed preload smoke test passed');
+  const cases = [
+    ...daemonChannels.map(channel => ({ route: 'daemon', channel, args: ['probe', null] })),
+    ...electronChannels.map(channel => ({ route: 'electron', channel, args: ['probe', null] })),
+  ];
+  const routed = await window.webContents.executeJavaScript(
+    `Promise.all(${JSON.stringify(cases)}.map(({ channel, args }) => window.electronAPI.invoke(channel, ...args)))`,
+  );
+  if (JSON.stringify(routed) !== JSON.stringify(cases)) {
+    throw new Error('Sandboxed preload changed channel ownership or invoke arguments');
+  }
+
+  console.log(`Sandboxed preload smoke test passed (${cases.length} routing cases)`);
   window.destroy();
 }
 

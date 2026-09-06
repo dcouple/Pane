@@ -1142,7 +1142,7 @@ export function registerFileHandlers(
       }).join(' ')}`;
 
       // Execute git command using CommandRunner
-      const result = commandRunner.exec(command, project.path);
+      const result = (await commandRunner.execAsync(command, project.path)).stdout;
 
       console.log('[git:execute-project] Command successful');
       return { success: true, output: result };
