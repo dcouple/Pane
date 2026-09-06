@@ -18,6 +18,7 @@ export class TerminalStateEmulator {
   private finalIsAlternateScreen = false;
   private finalSerializedBuffer = '';
   private finalScreenText = '';
+  private finalScrollbackText = '';
   private currentTitle = '';
   private currentProgress = '';
 
@@ -110,6 +111,39 @@ export class TerminalStateEmulator {
     return lines.join('\n');
   }
 
+  /**
+   * Return plain text for the buffer's scrollback history plus the current
+   * viewport, optionally limited to the last `maxLines` rows. This model
+   * rendered every PTY byte with cursor motions applied in place, so the text
+   * is free of the overlapping-fragment corruption that plagues an ANSI-stripped
+   * raw append log (spinners, progress bars, TUI status lines that repaint via
+   * cursor moves rather than carriage returns).
+   */
+  getScrollbackText(maxLines?: number): string {
+    if (maxLines !== undefined && (!Number.isSafeInteger(maxLines) || maxLines < 0)) {
+      throw new RangeError('maxLines must be a non-negative safe integer');
+    }
+
+    const lines = this.disposed ? this.finalScrollbackText.split('\n') : [];
+    if (!this.disposed) {
+      const buffer = this.terminal.buffer.active;
+      for (let index = 0; index < buffer.length; index += 1) {
+        lines.push(buffer.getLine(index)?.translateToString(true) ?? '');
+      }
+    }
+
+    // Trim trailing blank rows first so `maxLines` counts real content, not the
+    // empty rows below the cursor.
+    while (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop();
+    }
+
+    const limited = maxLines !== undefined && maxLines >= 0 && maxLines < lines.length
+      ? lines.slice(lines.length - maxLines)
+      : lines;
+    return limited.join('\n');
+  }
+
   /** Latest OSC window/icon title, preserved after dispose. */
   getOscTitle(): string {
     return this.currentTitle;
@@ -132,6 +166,7 @@ export class TerminalStateEmulator {
     // viewport-only capture would silently drop the session's history.
     this.finalSerializedBuffer = this.serializeForRestore(true);
     this.finalScreenText = this.getScreenText();
+    this.finalScrollbackText = this.getScrollbackText();
     this.disposed = true;
     this.terminal.dispose();
     const resolvers = this.idleResolvers;

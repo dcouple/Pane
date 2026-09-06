@@ -721,11 +721,11 @@ export function registerRunpaneHandlers(
   });
 
   commandRegistry.register('runpane:panels:output', async (request: PaneCommandValue): Promise<RunpanePanelOutputResult> => {
-    return withRunpaneAction(services, 'panels:output', {}, () => {
+    return withRunpaneAction(services, 'panels:output', {}, async () => {
       const normalized = parsePanelOutputRequest(request);
       const panel = resolvePanel(normalized.panelId);
       const limit = normalized.limit ?? DEFAULT_PANEL_OUTPUT_LIMIT;
-      const scrollbackResult = panel.type === 'terminal' ? panelScrollbackOutput(panel, limit) : null;
+      const scrollbackResult = panel.type === 'terminal' ? await panelScrollbackOutput(panel, limit) : null;
 
       if (scrollbackResult) {
         return {
@@ -2092,35 +2092,21 @@ function outputToText(output: SessionOutput): string {
   }
 }
 
-function panelScrollbackOutput(panel: ToolPanel, limit: number): { text: string; hasMore: boolean; timestamp: string } | null {
-  const rawScrollback = getPanelScrollback(panel);
-  if (!rawScrollback) {
-    return null;
-  }
-
-  const stripped = sanitizeTerminalOutput(rawScrollback);
-  if (!stripped) {
-    return null;
-  }
-
-  const allLines = stripped.split('\n');
-  const hasMore = allLines.length > limit;
-  const text = allLines.slice(-limit).join('\n');
+async function panelScrollbackOutput(panel: ToolPanel, limit: number): Promise<{ text: string; hasMore: boolean; timestamp: string } | null> {
   const timestamp = toIsoString(panel.metadata.lastActiveAt) ?? new Date().toISOString();
 
-  return { text, hasMore, timestamp };
-}
-
-function getPanelScrollback(panel: ToolPanel): string | null {
-  const liveScrollback = terminalPanelManager.getTerminalScrollback(panel.id);
-  if (liveScrollback !== null) {
-    return liveScrollback;
+  // Ask for one extra rendered line so hasMore reflects emulator truncation.
+  let text = await terminalPanelManager.getCleanTerminalScrollback(panel.id, limit + 1);
+  if (text === null) {
+    const persistedScrollback = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
+    if (!persistedScrollback) return null;
+    text = sanitizeTerminalOutput(persistedScrollback);
   }
+  if (!text) return null;
 
-  const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
-  if (persisted) return persisted;
-
-  return null;
+  const allLines = text.split('\n');
+  const hasMore = allLines.length > limit;
+  return { text: allLines.slice(-limit).join('\n'), hasMore, timestamp };
 }
 
 function panelOutputCommand(panelId: string): string {

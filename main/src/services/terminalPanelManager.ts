@@ -1936,11 +1936,17 @@ export class TerminalPanelManager {
   }
 
   /**
-   * Get scrollback buffer for a specific terminal.
-   * Returns null if terminal not found.
+   * Clean plain-text scrollback from the rendered screen model. Returns null
+   * without a live emulator so callers can use persisted state.
    */
-  getTerminalScrollback(panelId: string): string | null {
-    return this.terminals.get(panelId)?.scrollbackBuffer ?? null;
+  async getCleanTerminalScrollback(panelId: string, maxLines: number): Promise<string | null> {
+    const emulator = this.terminals.get(panelId)?.screenEmulator;
+    if (!emulator) {
+      return null;
+    }
+    await emulator.waitForIdle();
+    const text = emulator.getScrollbackText(maxLines);
+    return text.length > 0 ? text : null;
   }
 
   /**

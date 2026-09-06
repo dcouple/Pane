@@ -121,6 +121,17 @@ function readPersistedScrollback(customState: PersistedCustomState | undefined):
   }
 }
 
+async function readCleanTerminalScrollback(panelId: string, lines: number): Promise<string | null> {
+  const liveScrollback = await terminalPanelManager.getCleanTerminalScrollback(panelId, lines);
+  if (liveScrollback !== null) return liveScrollback;
+
+  const panel = panelManager.getPanel(panelId);
+  const persistedScrollback = readPersistedScrollback(panel?.state?.customState);
+  if (persistedScrollback === null || persistedScrollback === '') return null;
+
+  return sanitizeTerminalOutput(persistedScrollback).split('\n').slice(-lines).join('\n');
+}
+
 /**
  * Save file bytes for a session and return the path to pass to the CLI tool.
  *
@@ -718,28 +729,14 @@ export function registerPanelHandlers(
 
   commandRegistry.register('terminal:getScrollbackClean', async (panelId: string, lines: number) => {
     try {
-      // Try live in-memory scrollback first (active terminals)
-      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
-
-      // Fall back to persisted scrollback for lazy/inactive terminals
-      if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
-      }
-
-      if (rawScrollback === null || rawScrollback === '') {
+      const content = await readCleanTerminalScrollback(panelId, lines);
+      if (content === null) {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
 
-      const stripped = sanitizeTerminalOutput(rawScrollback);
-      const allLines = stripped.split('\n');
-      const lastLines = allLines.slice(-lines);
-      const content = lastLines.join('\n');
-
       const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
-
-      return { success: true, data: { content, lineCount: lastLines.length, panelTitle } };
+      return { success: true, data: { content, lineCount: content.split('\n').length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to get clean scrollback:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -820,22 +817,10 @@ export function registerPanelHandlers(
     lines: number,
   ) => {
     try {
-      // Get scrollback — try live buffer first, fall back to persisted state
-      let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
-
-      if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
-      }
-
-      if (rawScrollback === null || rawScrollback === '') {
+      const content = await readCleanTerminalScrollback(panelId, lines);
+      if (content === null || content === '') {
         return { success: false, error: `No scrollback available for panel ${panelId}` };
       }
-
-      const stripped = sanitizeTerminalOutput(rawScrollback);
-      const allLines = stripped.split('\n');
-      const lastLines = allLines.slice(-lines);
-      const content = lastLines.join('\n');
 
       const panel = panelManager.getPanel(panelId);
       const panelTitle = panel?.title ?? panelId;
@@ -847,7 +832,7 @@ export function registerPanelHandlers(
       // Save to .pane/files/ — routes to WSL-native path for WSL sessions so
       // Claude CLI inside WSL can read the file at a native Linux path.
       const resolvedPath = await saveFileForSession(sessionId, 'files', filename, Buffer.from(content, 'utf-8'));
-      return { success: true, data: { filePath: resolvedPath, lineCount: lastLines.length, panelTitle } };
+      return { success: true, data: { filePath: resolvedPath, lineCount: content.split('\n').length, panelTitle } };
     } catch (error) {
       console.error('[IPC] Failed to save scrollback:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
