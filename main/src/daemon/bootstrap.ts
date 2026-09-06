@@ -342,7 +342,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
 
   if (options.restoreSpotlights !== false) {
     try {
-      spotlightManager.restoreAll();
+      await spotlightManager.restoreAll();
     } catch (error) {
       console.error('[Main] Failed to restore spotlight state:', error);
     }
@@ -359,7 +359,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     permissionIpcServer,
     async shutdown(): Promise<void> {
       resourceMonitorService.stop();
-      spotlightManager.disableAll();
+      await spotlightManager.disableAll();
       await sessionManager.cleanup();
       await runCommandManager.stopAllRunCommands();
       gitStatusManager.stopPolling();

@@ -48,6 +48,8 @@
 - Development runs capture renderer and main-process output in root `frontend-debug.log` and `backend-debug.log`; inspect those logs when reproducing app failures. They are reset when development starts.
 - Update docs alongside code; do not alter build targets without discussion.
 - Use repository scripts (pnpm) and keep formatting consistent with existing files.
+- Route preload invokes with `isDaemonOwnedChannel` from `shared/types/daemon.ts`; the preload bundle inlines it. Keep ownership lists in that shared module, including the distinction between Electron-only actions and daemon active-session hints. Run `pnpm build:main` to verify sandbox compatibility.
+- Use the asynchronous `CommandRunner`/`CommandExecutor` APIs for project commands. Await results through IPC and lifecycle callers, discard results from stopped/replaced watchers, and serialize Spotlight checkouts with restoration.
 - For RunPane local-control debugging on macOS, test against an isolated Pane directory (for example `PANE_DIR=~/.pane_test pnpm dev`) and validate with the local wrapper (`node packages/runpane/dist/cli.js doctor --json --pane-dir ~/.pane_test`, then `repos list`, `repos add --path ... --yes`, and `panes list`). Use Node 22 for repo scripts; if switching between Vitest/plain Node and Electron dev runs, rebuild native modules for the target runtime (`npm rebuild better-sqlite3-multiple-ciphers` for Node, `pnpm electron:rebuild` for Electron).
 
 <!-- pane-agent-context:start -->

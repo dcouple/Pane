@@ -348,10 +348,7 @@ export class SkillCacheManager {
   private buildPaneChatGuide(): string {
     const runtimeContext = this.paneChatRuntimeContextPath;
     const paneOrchestratorSkill = this.paneChatOrchestratorSkillPath;
-    const codexOrchestrator = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'runpane-orchestrator', 'SKILL.md');
     const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
-    const workflowMap = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.png');
-    const skillLegend = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.png');
     const managedBlock = RUNPANE_CONTRACT.agentContext.managedBlock.join('\n');
 
     return `# Pane Chat Orchestrator
@@ -417,8 +414,6 @@ ${managedBlock}
     const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
     const workflowMap = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.png');
     const workflowMapSource = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.excalidraw');
-    const skillLegend = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.png');
-    const skillLegendSource = path.join(this.cacheRoot, 'docs', 'readme-skill-legend.excalidraw');
     const codexProjectSkillsRoot = this.codexProjectSkillsRoot;
     const claudeProjectSkillsRoot = this.claudeProjectSkillsRoot;
 

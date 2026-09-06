@@ -32,7 +32,7 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
     }
   });
 
-  ipcMain.handle('version:get-info', () => {
+  ipcMain.handle('version:get-info', async () => {
     try {
       console.log('🚀 [WORKTREE DEBUG] version:get-info called - NEW BUILD!');
       console.log('🚀 [WORKTREE DEBUG] app.isPackaged:', app.isPackaged);
@@ -68,15 +68,13 @@ export function registerUpdaterHandlers(ipcMain: IpcMain, { app, versionChecker 
       if (!app.isPackaged) {
         console.log('[Version Debug] Development mode detected, getting git info...');
         try {
-          const gitHash = commandExecutor.execSync('git rev-parse --short HEAD', { 
-            encoding: 'utf8',
+          const gitHash = (await commandExecutor.execAsync('git rev-parse --short HEAD', {
             cwd: process.cwd()
-          }).trim();
+          })).stdout.trim();
           
           // Check if the working directory is clean (no uncommitted changes)
           try {
-            commandExecutor.execSync('git diff-index --quiet HEAD --', { 
-              encoding: 'utf8',
+            await commandExecutor.execAsync('git diff-index --quiet HEAD --', {
               cwd: process.cwd(),
               silent: true
             });

@@ -58,6 +58,34 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
+describe('GitDiffManager asynchronous history and execution capture', () => {
+  it('keeps history, graph, commit diffs, and working changes usable through the async runner', async () => {
+    const cwd = repository();
+    const before = head(cwd);
+    write(cwd, 'tracked.txt', 'after\n');
+    const after = commitPaths(cwd, 'feature change', ['tracked.txt']);
+    const { manager, runner } = harness(cwd);
+
+    expect(await manager.getCurrentCommitHash(cwd, runner)).toBe(after);
+    const commits = await manager.getCommitHistory(cwd, 50, 'main', runner);
+    expect(commits.map(commit => commit.hash)).toEqual([after]);
+    expect(commits[0].stats).toEqual({ additions: 1, deletions: 1, filesChanged: 1 });
+    expect((await manager.getGraphCommitHistory(cwd, 'feature', 50, 'main', runner))[0].message).toBe('feature change');
+    expect((await manager.getCommitDiff(cwd, after, runner)).diff).toContain('+after');
+    const range = await manager.captureCommitDiff(cwd, before, after, runner);
+    expect(range.changedFiles).toEqual(['tracked.txt']);
+    expect(range.afterHash).toBe(after);
+    expect(await manager.hasChanges(cwd, runner)).toBe(false);
+
+    write(cwd, 'tracked.txt', 'working\n');
+    expect(await manager.hasChanges(cwd, runner)).toBe(true);
+    const working = await manager.captureWorkingDirectoryDiff(cwd, runner);
+    expect(working.diff).toContain('+working');
+    expect(working.stats).toEqual({ additions: 1, deletions: 1, filesChanged: 1 });
+    expect(working.beforeHash).toBe(after);
+  });
+});
+
 describe('GitDiffManager manifests', () => {
   it('lists the complete net session diff across 60 commits plus staged, unstaged, and untracked work', async () => {
     const cwd = repository();

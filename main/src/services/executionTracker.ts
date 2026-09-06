@@ -39,7 +39,7 @@ export class ExecutionTracker extends EventEmitter {
       if (!ctx) {
         throw new Error(`No project context found for session ${sessionId}`);
       }
-      const beforeCommitHash = this.gitDiffManager.getCurrentCommitHash(worktreePath, ctx.commandRunner);
+      const beforeCommitHash = await this.gitDiffManager.getCurrentCommitHash(worktreePath, ctx.commandRunner);
       console.log(`[ExecutionTracker] Starting from commit: ${beforeCommitHash}, sequence: ${executionSequence}`);
       this.logger?.verbose(`Starting from commit: ${beforeCommitHash}`);
       
@@ -81,7 +81,7 @@ export class ExecutionTracker extends EventEmitter {
       if (!ctx) {
         throw new Error(`No project context found for session ${sessionId}`);
       }
-      const afterCommitHash = this.gitDiffManager.getCurrentCommitHash(context.worktreePath, ctx.commandRunner);
+      const afterCommitHash = await this.gitDiffManager.getCurrentCommitHash(context.worktreePath, ctx.commandRunner);
 
       let executionDiff: GitDiffResult;
 
@@ -103,7 +103,7 @@ export class ExecutionTracker extends EventEmitter {
       let commitMessage = '';
       if (afterCommitHash !== context.beforeCommitHash && afterCommitHash !== 'UNCOMMITTED') {
         try {
-          commitMessage = ctx.commandRunner.exec(`git log -1 --format=%s ${afterCommitHash}`, context.worktreePath).trim();
+          commitMessage = (await ctx.commandRunner.execAsync(`git log -1 --format=%s ${afterCommitHash}`, context.worktreePath)).stdout.trim();
           this.logger?.verbose(`Retrieved commit message: ${commitMessage}`);
         } catch (error) {
           this.logger?.warn(`Failed to get commit message: ${error}`);

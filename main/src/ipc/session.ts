@@ -362,7 +362,7 @@ export function registerSessionHandlers(
       // Disable spotlight if this session is spotlighted
       try {
         if (spotlightManager.isSpotlightActive(sessionId)) {
-          spotlightManager.disable(sessionId);
+          await spotlightManager.disable(sessionId);
           console.log(`[Session IPC] Disabled spotlight for archived session ${sessionId}`);
         }
       } catch (spotlightError) {

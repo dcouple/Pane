@@ -8,7 +8,7 @@ import type { Stats } from 'fs';
 import { watch as fsWatch, type FSWatcher as NodeFsWatcher, type WatchEventType } from 'node:fs';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 import { spawn, type ChildProcess } from 'child_process';
-import { execSync } from '../utils/commandExecutor';
+import { commandExecutor } from '../utils/commandExecutor';
 import type { CommandRunner } from '../utils/commandRunner';
 import type { PathResolver } from '../utils/pathResolver';
 import type { Logger } from '../utils/logger';
@@ -63,6 +63,8 @@ interface WatchedSession {
   nonFatalErrorLogged?: boolean; // rate-limits log-only watcher errors (separate from the degrade warn)
   lastModified: number;
   pendingRefresh: boolean;
+  refreshInFlight?: boolean;
+  pollInFlight?: boolean;
 }
 
 interface GitFileWatcherStats {
@@ -81,6 +83,8 @@ interface GitFileWatcherStats {
  */
 export class GitFileWatcher extends EventEmitter {
   private watchedSessions: Map<string, WatchedSession> = new Map();
+  private pendingStarts = new Map<string, symbol>();
+  private gitignoreRequests = new Map<string, Promise<Set<string>>>();
   private refreshDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private readonly DEBOUNCE_MS = 1500; // 1.5 second debounce for file changes
 
@@ -109,7 +113,7 @@ export class GitFileWatcher extends EventEmitter {
   /**
    * Start watching a session's worktree for changes
    */
-  startWatching(sessionId: string, worktreePath: string): void {
+  async startWatching(sessionId: string, worktreePath: string): Promise<void> {
     // Stop existing watcher if any
     this.stopWatching(sessionId);
 
@@ -118,6 +122,9 @@ export class GitFileWatcher extends EventEmitter {
       return;
     }
 
+    let metadataWatcher: FSWatcher | undefined;
+    const start = Symbol(sessionId);
+    this.pendingStarts.set(sessionId, start);
     try {
       if (this.commandRunner?.wslContext) {
         if (this.startWSLNativeWatcher(sessionId, worktreePath)) {
@@ -136,8 +143,14 @@ export class GitFileWatcher extends EventEmitter {
       const useNative =
         (process.platform === 'darwin' || process.platform === 'win32') &&
         !this.commandRunner?.wslContext;
+      const gitignoredDirs = await this.getGitignoredDirs(watchPath);
+      if (this.pendingStarts.get(sessionId) !== start) return;
+      const gitWatcher = await this.createGitMetadataWatcher(sessionId, watchPath);
+      metadataWatcher = gitWatcher;
+      if (this.pendingStarts.get(sessionId) !== start) {
+        return;
+      }
       if (useNative) {
-        this.getGitignoredDirs(watchPath); // warm the cache before events flow
         let nativeWatcher: NodeFsWatcher;
         try {
           // default (utf8) encoding → Node types filename as string | null (never Buffer)
@@ -145,12 +158,13 @@ export class GitFileWatcher extends EventEmitter {
             watchPath,
             { recursive: true, persistent: true },
             (_eventType: WatchEventType, filename: string | null) => {
+              void this.getGitignoredDirs(watchPath);
               // null filename → conservative: cannot filter, treat as a change.
               // Re-read the (cache-hit) gitignore set each event so the TTL
               // refresh takes effect on long-lived spotlight watchers.
               if (
                 filename !== null &&
-                this.isIgnoredEventPath(filename, this.getGitignoredDirs(watchPath))
+                this.isIgnoredEventPath(filename, gitignoredDirs)
               ) {
                 return;
               }
@@ -171,11 +185,10 @@ export class GitFileWatcher extends EventEmitter {
             );
             return;
           }
-          this.transitionToPolling(sessionId, worktreePath, normalizedError);
+          await this.transitionToPolling(sessionId, worktreePath, normalizedError);
           return;
         }
         nativeWatcher.on('error', (err) => this.handleWatcherFailure(sessionId, err));
-        const gitWatcher = this.createGitMetadataWatcher(sessionId, watchPath);
         this.watchedSessions.set(sessionId, {
           sessionId,
           worktreePath,
@@ -193,7 +206,7 @@ export class GitFileWatcher extends EventEmitter {
         // record the already-dirty snapshot without emitting, leaving status
         // stale until the next real change. (pollStatusSnapshot no-ops if the
         // session was torn down before this runs.)
-        setImmediate(() => this.pollStatusSnapshot(sessionId));
+        setImmediate(() => { void this.pollStatusSnapshot(sessionId); });
 
         // Validation signal — keep in production: confirms watcher count is bounded
         this.logger?.info(
@@ -206,7 +219,6 @@ export class GitFileWatcher extends EventEmitter {
       // gitignore-derived) is threaded into the registration-time `ignored` fn
       // so it both prunes descent (handle budget) AND matches the native
       // event-time filter, keeping behavior uniform across platforms.
-      const gitignoredDirs = this.getGitignoredDirs(watchPath);
       // Function-form ignored: short-circuits descent into heavy directories.
       // stats may be undefined on initial calls — return false (don't ignore)
       // if unknown. Unlike event-time callers, stats IS available here, so
@@ -259,8 +271,6 @@ export class GitFileWatcher extends EventEmitter {
         }
       });
 
-      const gitWatcher = this.createGitMetadataWatcher(sessionId, watchPath);
-
       this.watchedSessions.set(sessionId, {
         sessionId,
         worktreePath,
@@ -275,7 +285,7 @@ export class GitFileWatcher extends EventEmitter {
 
       // Seed the self-heal snapshot baseline off the activation critical path
       // (same rationale as the native branch above).
-      setImmediate(() => this.pollStatusSnapshot(sessionId));
+      setImmediate(() => { void this.pollStatusSnapshot(sessionId); });
 
       // Validation signal — keep in production: confirms watcher count is bounded
       this.logger?.info(
@@ -286,6 +296,11 @@ export class GitFileWatcher extends EventEmitter {
         `[GitFileWatcher] Failed to start watching session ${sessionId}:`,
         error instanceof Error ? error : new Error(String(error))
       );
+    } finally {
+      if (metadataWatcher && this.watchedSessions.get(sessionId)?.gitWatcher !== metadataWatcher) {
+        await metadataWatcher.close().catch(() => {});
+      }
+      if (this.pendingStarts.get(sessionId) === start) this.pendingStarts.delete(sessionId);
     }
   }
 
@@ -390,6 +405,7 @@ export class GitFileWatcher extends EventEmitter {
    * Stop watching a session's worktree
    */
   stopWatching(sessionId: string): void {
+    this.pendingStarts.delete(sessionId);
     const session = this.watchedSessions.get(sessionId);
     if (!session) return;
 
@@ -416,6 +432,7 @@ export class GitFileWatcher extends EventEmitter {
    * Stop all watchers
    */
   stopAll(): void {
+    this.pendingStarts.clear();
     for (const sessionId of this.watchedSessions.keys()) {
       this.stopWatching(sessionId);
     }
@@ -453,7 +470,7 @@ export class GitFileWatcher extends EventEmitter {
     // Set new timer
     const timer = setTimeout(() => {
       this.refreshDebounceTimers.delete(sessionId);
-      this.performRefreshCheck(sessionId);
+      void this.performRefreshCheck(sessionId);
     }, this.DEBOUNCE_MS);
 
     this.refreshDebounceTimers.set(sessionId, timer);
@@ -462,18 +479,20 @@ export class GitFileWatcher extends EventEmitter {
   /**
    * Perform the actual refresh check using git plumbing commands
    */
-  private performRefreshCheck(sessionId: string): void {
+  private async performRefreshCheck(sessionId: string): Promise<void> {
     const session = this.watchedSessions.get(sessionId);
-    if (!session || !session.pendingRefresh) {
+    if (!session || !session.pendingRefresh || session.refreshInFlight) {
       return;
     }
 
     session.pendingRefresh = false;
+    session.refreshInFlight = true;
 
     try {
       // Quick check if the index is dirty using git update-index
       // This is much faster than running full git status
-      const needsRefresh = this.checkIfRefreshNeeded(session.worktreePath);
+      const needsRefresh = await this.checkIfRefreshNeeded(session.worktreePath);
+      if (this.watchedSessions.get(sessionId) !== session) return;
 
       if (needsRefresh) {
         this.logger?.info(`[GitFileWatcher] Session ${sessionId} needs refresh`);
@@ -484,16 +503,21 @@ export class GitFileWatcher extends EventEmitter {
     } catch (error) {
       this.logger?.error(`[GitFileWatcher] Error checking session ${sessionId}:`, error instanceof Error ? error : new Error(String(error)));
       // On error, emit refresh to be safe
-      this.emit('needs-refresh', sessionId);
+      if (this.watchedSessions.get(sessionId) === session) this.emit('needs-refresh', sessionId);
+    } finally {
+      session.refreshInFlight = false;
+      if (this.watchedSessions.get(sessionId) === session && session.pendingRefresh) {
+        this.scheduleRefreshCheck(sessionId);
+      }
     }
   }
 
   /** Run a git command, using CommandRunner when available for WSL support */
-  private execGit(command: string, cwd: string): string {
+  private async execGit(command: string, cwd: string): Promise<string> {
     if (this.commandRunner) {
-      return this.commandRunner.exec(command, cwd, { silent: true });
+      return (await this.commandRunner.execAsync(command, cwd, { silent: true })).stdout;
     }
-    return execSync(command, { cwd, encoding: 'utf8', silent: true });
+    return (await commandExecutor.execAsync(command, { cwd, silent: true })).stdout;
   }
 
   /**
@@ -505,23 +529,33 @@ export class GitFileWatcher extends EventEmitter {
    * only those lines, stripped of the slash. If the path is not yet a repo the
    * scan fails and we cache an empty set (the hardcoded list still applies).
    */
-  private getGitignoredDirs(watchPath: string): Set<string> {
+  private async getGitignoredDirs(watchPath: string): Promise<Set<string>> {
     const cached = this.gitignoreDirCache.get(watchPath);
     if (cached && Date.now() - cached.fetchedAt < GitFileWatcher.GITIGNORE_CACHE_TTL_MS) {
       return cached.dirs;
     }
-    const dirs = new Set<string>();
+    const pending = this.gitignoreRequests.get(watchPath);
+    if (pending) return pending;
+    const request = this.refreshGitignoredDirs(watchPath, cached?.dirs ?? new Set<string>());
+    this.gitignoreRequests.set(watchPath, request);
     try {
-      const out = this.execGit('git ls-files -o -i --directory --exclude-standard', watchPath);
+      return await request;
+    } finally {
+      this.gitignoreRequests.delete(watchPath);
+    }
+  }
+
+  private async refreshGitignoredDirs(watchPath: string, dirs: Set<string>): Promise<Set<string>> {
+    try {
+      const out = await this.execGit('git ls-files -o -i --directory --exclude-standard', watchPath);
+      // Keep the same set so existing native and chokidar callbacks see TTL refreshes.
+      dirs.clear();
       for (const line of out.split('\n')) {
         const trimmed = line.trim();
-        // dirs only — git marks ignored directories with a trailing slash
-        if (trimmed.endsWith('/')) {
-          dirs.add(trimmed.slice(0, -1));
-        }
+        if (trimmed.endsWith('/')) dirs.add(trimmed.slice(0, -1));
       }
     } catch {
-      /* not a repo yet → hardcoded list only */
+      // Not a repo yet: hardcoded ignores still apply.
     }
     this.gitignoreDirCache.set(watchPath, { dirs, fetchedAt: Date.now() });
     return dirs;
@@ -572,30 +606,34 @@ export class GitFileWatcher extends EventEmitter {
    * emits one extra needs-refresh. That single bounded refresh doubles as the
    * safety net for coalesced/dropped events, and refresh is idempotent.
    */
-  private pollStatusSnapshot(sessionId: string): void {
+  private async pollStatusSnapshot(sessionId: string): Promise<void> {
     const session = this.watchedSessions.get(sessionId);
-    if (!session) return;
+    if (!session || session.pollInFlight) return;
+    session.pollInFlight = true;
     try {
       // session.worktreePath (unconverted), matching performRefreshCheck →
       // checkIfRefreshNeeded(session.worktreePath) — execGit/commandRunner
       // expect the runner-domain path, not the toFileSystem-converted one.
-      const snapshot = this.execGit(
+      const snapshot = await this.execGit(
         'git status --porcelain=v1 --branch --untracked-files=normal',
         session.worktreePath,
       );
+      if (this.watchedSessions.get(sessionId) !== session) return;
       if (session.lastStatusSnapshot !== undefined && snapshot !== session.lastStatusSnapshot) {
         this.emit('needs-refresh', sessionId);
       }
       session.lastStatusSnapshot = snapshot;
     } catch {
       /* transient git failure — try again next tick */
+    } finally {
+      session.pollInFlight = false;
     }
   }
 
   /** 60s self-heal tick covering FSEvents coalescing / trailing-debounce starvation */
   private startSelfHeal(sessionId: string): NodeJS.Timeout {
     return setInterval(
-      () => this.pollStatusSnapshot(sessionId),
+      () => { void this.pollStatusSnapshot(sessionId); },
       GitFileWatcher.SELF_HEAL_INTERVAL_MS,
     );
   }
@@ -609,7 +647,7 @@ export class GitFileWatcher extends EventEmitter {
   private handleWatcherFailure(sessionId: string, err: Error): void {
     const session = this.watchedSessions.get(sessionId);
     if (!session || session.mode === 'polling') return; // already degraded (or torn down); swallow the storm
-    this.transitionToPolling(
+    void this.transitionToPolling(
       sessionId,
       session.worktreePath,
       err,
@@ -621,13 +659,13 @@ export class GitFileWatcher extends EventEmitter {
    * session record exists (the native creation-throw path throws before
    * watchedSessions.set), so it builds a COMPLETE WatchedSession record from
    * its own parameters instead of assuming a prior one. Emits exactly one warn
-   * per session lifetime (guarded by watcherErrorLogged), seeds the snapshot
-   * baseline SYNCHRONOUSLY (a change landing in the 0-5s window before the
+   * per session lifetime (guarded by watcherErrorLogged), starts the snapshot
+   * baseline immediately (a change landing in the 0-5s window before the
    * first tick must not be absorbed into a late-seeded baseline and go
    * un-emitted), then emits one immediate needs-refresh so consumers reconcile
    * promptly with the exact state the baseline captured.
    */
-  private transitionToPolling(sessionId: string, worktreePath: string, err: Error): void {
+  private async transitionToPolling(sessionId: string, worktreePath: string, err: Error): Promise<void> {
     const session = this.watchedSessions.get(sessionId);
     // close everything watcher-shaped; keep the debounce map intact
     session?.nativeWatcher?.close(); // sync
@@ -642,7 +680,7 @@ export class GitFileWatcher extends EventEmitter {
       );
     }
     const pollTimer = setInterval(
-      () => this.pollStatusSnapshot(sessionId),
+      () => { void this.pollStatusSnapshot(sessionId); },
       GitFileWatcher.POLL_INTERVAL_MS,
     );
     this.watchedSessions.set(sessionId, {
@@ -659,8 +697,9 @@ export class GitFileWatcher extends EventEmitter {
     // the baseline is undefined) — deferring it to the first 5s tick would
     // silently absorb any change made in that window. Then emit one immediate
     // refresh so consumers reconcile with the state the baseline captured.
-    this.pollStatusSnapshot(sessionId);
-    this.emit('needs-refresh', sessionId);
+    const polling = this.watchedSessions.get(sessionId);
+    await this.pollStatusSnapshot(sessionId);
+    if (this.watchedSessions.get(sessionId) === polling) this.emit('needs-refresh', sessionId);
   }
 
   /**
@@ -679,10 +718,10 @@ export class GitFileWatcher extends EventEmitter {
    * resolution fails (not yet a valid repo) we skip the narrow watcher and rely
    * on the worktree/native watcher alone, exactly as before.
    */
-  private createGitMetadataWatcher(sessionId: string, watchPath: string): FSWatcher | undefined {
+  private async createGitMetadataWatcher(sessionId: string, watchPath: string): Promise<FSWatcher | undefined> {
     try {
       // rev-parse emits one line per flag, in flag order — but guard the shape
-      const lines = this.execGit('git rev-parse --absolute-git-dir --git-common-dir', watchPath)
+      const lines = (await this.execGit('git rev-parse --absolute-git-dir --git-common-dir', watchPath))
         .split('\n')
         .map((l) => l.trim())
         .filter(Boolean);
@@ -735,12 +774,12 @@ export class GitFileWatcher extends EventEmitter {
    * Quick check if git status needs refreshing
    * Returns true if there are changes, false if working tree is clean
    */
-  private checkIfRefreshNeeded(worktreePath: string): boolean {
+  private async checkIfRefreshNeeded(worktreePath: string): Promise<boolean> {
     try {
       // First, refresh the index to ensure it's up to date
       // This is very fast and updates git's internal cache
       try {
-        this.execGit('git update-index --refresh --ignore-submodules', worktreePath);
+        await this.execGit('git update-index --refresh --ignore-submodules', worktreePath);
       } catch (error) {
         // `git update-index --refresh` exits non-zero for dirty/racy paths.
         // That is a refresh signal, not an application error.
@@ -750,7 +789,7 @@ export class GitFileWatcher extends EventEmitter {
 
       // Check for unstaged changes (modified files)
       try {
-        this.execGit('git diff-files --quiet --ignore-submodules', worktreePath);
+        await this.execGit('git diff-files --quiet --ignore-submodules', worktreePath);
       } catch {
         // Non-zero exit means there are unstaged changes
         return true;
@@ -758,14 +797,14 @@ export class GitFileWatcher extends EventEmitter {
 
       // Check for staged changes
       try {
-        this.execGit('git diff-index --cached --quiet HEAD --ignore-submodules', worktreePath);
+        await this.execGit('git diff-index --cached --quiet HEAD --ignore-submodules', worktreePath);
       } catch {
         // Non-zero exit means there are staged changes
         return true;
       }
 
       // Check for untracked files
-      const untrackedOutput = this.execGit('git ls-files --others --exclude-standard', worktreePath).trim();
+      const untrackedOutput = (await this.execGit('git ls-files --others --exclude-standard', worktreePath)).trim();
 
       if (untrackedOutput) {
         return true;

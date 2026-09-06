@@ -187,7 +187,7 @@ export class GitStatusManager extends EventEmitter {
       if (session?.worktreePath) {
         const ctx = this.sessionManager.getProjectContext(sessionId);
         this.fileWatcher.setExecutionContext(ctx?.commandRunner, ctx?.pathResolver);
-        this.fileWatcher.startWatching(sessionId, session.worktreePath);
+        await this.fileWatcher.startWatching(sessionId, session.worktreePath);
         this.logger?.info(`[GitStatus] Started file watching for session ${sessionId}`);
       }
     } catch (error) {
@@ -339,7 +339,7 @@ export class GitStatusManager extends EventEmitter {
               const ctx = this.sessionManager.getProjectContext(session.id);
               if (ctx) {
                 const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
-                const { ahead, behind } = this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+                const { ahead, behind } = await this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
                 
                 const updatedStatus = { ...cached.status };
                 updatedStatus.ahead = ahead;
@@ -402,7 +402,7 @@ export class GitStatusManager extends EventEmitter {
         // hasUncommittedChanges might be true if there were conflicts
         // We'll do a quick check for uncommitted changes
         try {
-          const quickStatus = this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
+          const quickStatus = await this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
           updatedStatus.hasUncommittedChanges = quickStatus.hasModified || quickStatus.hasStaged;
           updatedStatus.hasUntrackedFiles = quickStatus.hasUntracked;
           // Update state based on conflicts
@@ -412,7 +412,7 @@ export class GitStatusManager extends EventEmitter {
 
           if (updatedStatus.hasUncommittedChanges) {
             // Get updated diff stats
-            const quickStats = this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
+            const quickStats = await this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
             updatedStatus.additions = quickStats.additions;
             updatedStatus.deletions = quickStats.deletions;
             updatedStatus.filesChanged = quickStats.filesChanged;
@@ -667,7 +667,7 @@ export class GitStatusManager extends EventEmitter {
     const ctx = this.sessionManager.getProjectContext(sessionId);
     if (!ctx) return;
 
-    const branchName = this.getCurrentBranchName(session.worktreePath, ctx.commandRunner);
+    const branchName = await this.getCurrentBranchName(session.worktreePath, ctx.commandRunner);
     if (!branchName) return;
 
     const cacheKey = `${project.path}:${branchName}`;
@@ -677,9 +677,9 @@ export class GitStatusManager extends EventEmitter {
     }
   }
 
-  private getCurrentBranchName(worktreePath: string, commandRunner: CommandRunner): string | null {
+  private async getCurrentBranchName(worktreePath: string, commandRunner: CommandRunner): Promise<string | null> {
     try {
-      const branchName = commandRunner.exec('git branch --show-current', worktreePath, { silent: true }).trim();
+      const branchName = (await commandRunner.execAsync('git branch --show-current', worktreePath, { silent: true })).stdout.trim();
       if (branchName) return branchName;
     } catch {
       // Fall back to the worktree folder name below.
@@ -715,7 +715,7 @@ export class GitStatusManager extends EventEmitter {
     const ctx = this.sessionManager.getProjectContext(sessionId);
     if (!ctx) return;
 
-    const branchName = this.getCurrentBranchName(session.worktreePath, ctx.commandRunner);
+    const branchName = await this.getCurrentBranchName(session.worktreePath, ctx.commandRunner);
     if (!branchName) return;
 
     const prResult = await this.fetchPrForSessionResult(branchName, project.path, ctx.commandRunner);
@@ -856,7 +856,7 @@ export class GitStatusManager extends EventEmitter {
       const ctx = this.sessionManager.getProjectContext(sessionId);
 
       // Quick check using plumbing commands
-      const quickStatus = this.dependencies.fastCheckWorkingDirectory(worktreePath, ctx?.commandRunner.wslContext);
+      const quickStatus = await this.dependencies.fastCheckWorkingDirectory(worktreePath, ctx?.commandRunner.wslContext);
 
       // Compare with cached status
       const cachedHasChanges = cached.status.hasUncommittedChanges || cached.status.hasUntrackedFiles;
@@ -874,7 +874,7 @@ export class GitStatusManager extends EventEmitter {
           const comparisonBranch = session
             ? await this.worktreeManager.getSessionComparisonBranch(session, ctx)
             : await this.worktreeManager.getProjectMainBranch(ctx.project.path, ctx.commandRunner);
-          const { ahead, behind } = this.dependencies.fastGetAheadBehind(worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+          const { ahead, behind } = await this.dependencies.fastGetAheadBehind(worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
 
           if ((cached.status.ahead || 0) !== ahead || (cached.status.behind || 0) !== behind) {
             return true;
@@ -895,24 +895,22 @@ export class GitStatusManager extends EventEmitter {
   private async fetchGitStatus(sessionId: string): Promise<GitStatus | null> {
     // Create abort controller for this operation
     const abortController = new AbortController();
+    this.abortControllers.get(sessionId)?.abort();
     this.abortControllers.set(sessionId, abortController);
     
     try {
       const session = await this.sessionManager.getSession(sessionId);
       if (!session || !session.worktreePath) {
-        this.abortControllers.delete(sessionId);
         return null;
       }
       
       if (isHomeDirectory(session.worktreePath)) {
         this.logger?.warn(`[GitStatus] ${HOME_GIT_SCAN_WARNING}`);
-        this.abortControllers.delete(sessionId);
         return { state: 'unknown', lastChecked: new Date().toISOString() };
       }
 
       // Check if operation was cancelled
       if (abortController.signal.aborted) {
-        this.abortControllers.delete(sessionId);
         return null;
       }
       
@@ -924,7 +922,7 @@ export class GitStatusManager extends EventEmitter {
       }
 
       // Use fast plumbing commands for initial checks
-      const quickStatus = this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
+      const quickStatus = await this.dependencies.fastCheckWorkingDirectory(session.worktreePath, ctx.commandRunner.wslContext);
       const hasUncommittedChanges = quickStatus.hasModified || quickStatus.hasStaged;
       const hasUntrackedFiles = quickStatus.hasUntracked;
       const hasMergeConflicts = quickStatus.hasConflicts;
@@ -933,7 +931,7 @@ export class GitStatusManager extends EventEmitter {
       let uncommittedDiff = { stats: { filesChanged: 0, additions: 0, deletions: 0 } };
       if (hasUncommittedChanges) {
         // Use fast diff stats instead of full diff capture when possible
-        const quickStats = this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
+        const quickStats = await this.dependencies.fastGetDiffStats(session.worktreePath, ctx.commandRunner.wslContext);
         uncommittedDiff = {
           stats: {
             filesChanged: quickStats.filesChanged,
@@ -945,7 +943,7 @@ export class GitStatusManager extends EventEmitter {
 
       // Get ahead/behind status using fast plumbing command
       const comparisonBranch = await this.worktreeManager.getSessionComparisonBranch(session, ctx);
-      const { ahead, behind } = this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
+      const { ahead, behind } = await this.dependencies.fastGetAheadBehind(session.worktreePath, comparisonBranch, ctx.commandRunner.wslContext);
 
       // Get total additions/deletions for all commits in the branch (compared to comparison branch)
       let totalCommitAdditions = 0;
@@ -954,7 +952,7 @@ export class GitStatusManager extends EventEmitter {
       if (ahead > 0) {
         // Use git diff --shortstat for commit statistics
         try {
-          const statLine = ctx.commandRunner.exec(`git diff --shortstat ${comparisonBranch}...HEAD`, session.worktreePath, { silent: true }).trim();
+          const statLine = (await ctx.commandRunner.execAsync(`git diff --shortstat ${comparisonBranch}...HEAD`, session.worktreePath, { silent: true })).stdout.trim();
           if (statLine) {
             const filesMatch = statLine.match(/(\d+) files? changed/);
             const additionsMatch = statLine.match(/(\d+) insertions?\(\+\)/);
@@ -1002,7 +1000,7 @@ export class GitStatusManager extends EventEmitter {
       // Get total number of commits in the branch
       let totalCommits = ahead;
       try {
-        const countStr = ctx.commandRunner.exec(`git rev-list --count ${comparisonBranch}..HEAD`, session.worktreePath, { silent: true }).trim();
+        const countStr = (await ctx.commandRunner.execAsync(`git rev-list --count ${comparisonBranch}..HEAD`, session.worktreePath, { silent: true })).stdout.trim();
         totalCommits = parseInt(countStr, 10) || ahead;
       } catch {
         // Keep default of ahead if command fails
@@ -1028,14 +1026,13 @@ export class GitStatusManager extends EventEmitter {
         totalCommits: totalCommits > 0 ? totalCommits : undefined
       };
       
+      if (abortController.signal.aborted) return null;
       this.gitLogger.logSessionSuccess(sessionId);
-      this.abortControllers.delete(sessionId);
       return result;
     } catch (error) {
-      this.abortControllers.delete(sessionId);
       
       // Check if this was a cancellation
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (abortController.signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
         this.gitLogger.logSessionFetch(sessionId, true); // cancelled
         return null;
       }
@@ -1045,6 +1042,10 @@ export class GitStatusManager extends EventEmitter {
         state: 'unknown',
         lastChecked: new Date().toISOString()
       };
+    } finally {
+      if (this.abortControllers.get(sessionId) === abortController) {
+        this.abortControllers.delete(sessionId);
+      }
     }
   }
 

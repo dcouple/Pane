@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { isDaemonOwnedChannel } from '../../shared/types/daemon';
 import {
   WINDOW_CONTROLS_OVERLAY_ARG,
   type WindowControlsOverlayColors,
@@ -123,75 +124,6 @@ interface UpdaterInfo {
   path?: string;
   sha512?: string;
   size?: number;
-}
-
-const DAEMON_OWNED_CHANNEL_PREFIXES = [
-  'agent-usage:',
-  'folders:',
-  'logs:',
-  'mobile:',
-  'pane-chat:',
-  'panels:',
-  'projects:',
-  'prompts:',
-  'resource-monitor:',
-  'runpane:',
-  'sessions:',
-  'terminal:',
-  'usage:',
-  'voice:',
-] as const;
-
-const DAEMON_OWNED_EXACT_CHANNELS = [
-  'git:cancel-status-for-project',
-  'git:clone-repo',
-  'git:commit',
-  'git:execute-project',
-  'git:file-status',
-  'git:get-github-remote',
-  'remote:pwa-affordances',
-  'git:restore',
-  'git:revert',
-  'permission:getPending',
-  'permission:respond',
-  'file:copy',
-  'file:delete',
-  'file:duplicate',
-  'file:exists',
-  'file:getPath',
-  'file:list',
-  'file:move',
-  'file:read',
-  'file:read-binary',
-  'file:read-project',
-  'file:readAtRevision',
-  'file:rename',
-  'file:resolveAbsolutePath',
-  'file:search',
-  'file:write',
-  'file:write-binary',
-  'file:write-project',
-] as const;
-const DAEMON_OWNED_EXACT_CHANNEL_SET = new Set<string>(DAEMON_OWNED_EXACT_CHANNELS);
-
-const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
-  'file:showInFolder',
-  'sessions:open-ide',
-  'sessions:set-active-session',
-  'terminal:clipboard-paste-image',
-]);
-
-// Keep the security-sensitive channel classifier visible at the bridge boundary.
-function isDaemonOwnedChannel(channel: string): boolean {
-  if (ELECTRON_ADAPTER_ONLY_CHANNELS.has(channel)) {
-    return false;
-  }
-
-  if (DAEMON_OWNED_EXACT_CHANNEL_SET.has(channel)) {
-    return true;
-  }
-
-  return DAEMON_OWNED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
 }
 
 // Increase max listeners for ipcRenderer to prevent warnings when many components listen to events

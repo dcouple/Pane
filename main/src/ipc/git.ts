@@ -207,7 +207,7 @@ export function registerGitHandlers(
     let useFallback = false;
 
     try {
-      commits = gitDiffManager.getCommitHistory(session.worktreePath, limit, comparisonBranch, ctx.commandRunner);
+      commits = await gitDiffManager.getCommitHistory(session.worktreePath, limit, comparisonBranch, ctx.commandRunner);
     } catch (error) {
       // Only isMainRepo sessions have a fallback path (raw last-N commits);
       // worktree sessions should propagate the error.
@@ -279,7 +279,7 @@ export function registerGitHandlers(
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      const hasUncommittedChanges = gitDiffManager.hasChanges(session.worktreePath, ctx.commandRunner);
+      const hasUncommittedChanges = await gitDiffManager.hasChanges(session.worktreePath, ctx.commandRunner);
       if (hasUncommittedChanges) {
         // Get stats for uncommitted changes
         const uncommittedDiff = await gitDiffManager.getDiffManifest(session.worktreePath, { kind: 'working-tree' }, ctx.commandRunner, {
@@ -331,7 +331,7 @@ export function registerGitHandlers(
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) throw new Error('Project context not found for session');
 
-      const diff = gitDiffManager.getCommitDiff(session.worktreePath, commit.hash, ctx.commandRunner);
+      const diff = await gitDiffManager.getCommitDiff(session.worktreePath, commit.hash, ctx.commandRunner);
       return { success: true, data: diff };
     } catch (error) {
       console.error('Failed to get execution diff:', error);
@@ -358,7 +358,7 @@ export function registerGitHandlers(
       const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
       let branch: string;
       try {
-        branch = ctx.commandRunner.exec('git rev-parse --abbrev-ref HEAD', session.worktreePath).trim() || session.baseBranch || 'unknown';
+        branch = (await ctx.commandRunner.execAsync('git rev-parse --abbrev-ref HEAD', session.worktreePath)).stdout.trim() || session.baseBranch || 'unknown';
       } catch {
         branch = session.baseBranch || 'unknown';
       }
@@ -367,7 +367,7 @@ export function registerGitHandlers(
       let useFallback = false;
 
       try {
-        entries = gitDiffManager.getGraphCommitHistory(session.worktreePath, branch, 50, comparisonBranch, ctx.commandRunner);
+        entries = await gitDiffManager.getGraphCommitHistory(session.worktreePath, branch, 50, comparisonBranch, ctx.commandRunner);
         if (entries.length === 0 && session.isMainRepo) {
           useFallback = true;
         }
@@ -392,14 +392,14 @@ export function registerGitHandlers(
       }
 
       // Prepend uncommitted changes if any
-      const hasUncommittedChanges = gitDiffManager.hasChanges(session.worktreePath, ctx.commandRunner);
+      const hasUncommittedChanges = await gitDiffManager.hasChanges(session.worktreePath, ctx.commandRunner);
       if (hasUncommittedChanges) {
         // Get diff stats for uncommitted changes
         let filesChanged = 0;
         let additions = 0;
         let deletions = 0;
         try {
-          const combinedStat = ctx.commandRunner.exec('git diff HEAD --shortstat', session.worktreePath).trim();
+          const combinedStat = (await ctx.commandRunner.execAsync('git diff HEAD --shortstat', session.worktreePath)).stdout.trim();
           if (combinedStat) {
             const fileMatch = combinedStat.match(/(\d+) files? changed/);
             const addMatch = combinedStat.match(/(\d+) insertions?\(\+\)/);
@@ -444,20 +444,20 @@ export function registerGitHandlers(
       if (!ctx) throw new Error('Project context not found for session');
 
       // Check if there are any changes to commit
-      const status = ctx.commandRunner.exec('git status --porcelain', session.worktreePath).trim();
+      const status = (await ctx.commandRunner.execAsync('git status --porcelain', session.worktreePath)).stdout.trim();
 
       if (!status) {
         return { success: false, error: 'No changes to commit' };
       }
 
       // Stage all changes
-      ctx.commandRunner.exec('git add -A', session.worktreePath);
+      await ctx.commandRunner.execAsync('git add -A', session.worktreePath);
 
       // Create the commit with Pane's signature using safe escaping
       const commitCommand = buildGitCommitCommand(message);
 
       try {
-        ctx.commandRunner.exec(commitCommand, session.worktreePath);
+        await ctx.commandRunner.execAsync(commitCommand, session.worktreePath);
 
         // Refresh git status for this session after commit
         await refreshGitStatusForSession(sessionId);
@@ -497,16 +497,16 @@ export function registerGitHandlers(
       if (!ctx) return { success: false, error: 'No project context' };
 
       // Check working tree + staged changes for this specific file
-      const modified = ctx.commandRunner.exec(
+      const modified = (await ctx.commandRunner.execAsync(
         `git diff --name-only HEAD -- "${filePath}"`,
         session.worktreePath
-      ).trim();
+      )).stdout.trim();
 
       // Check if file is untracked
-      const untracked = ctx.commandRunner.exec(
+      const untracked = (await ctx.commandRunner.execAsync(
         `git ls-files --others --exclude-standard -- "${filePath}"`,
         session.worktreePath
-      ).trim();
+      )).stdout.trim();
 
       const status = untracked.length > 0 ? 'untracked' : modified.length > 0 ? 'modified' : 'clean';
       return { success: true, data: { status } };
@@ -752,7 +752,7 @@ export function registerGitHandlers(
       // Check if we're actually in a rebase state (could have been pre-detected conflicts)
       // Try to abort any existing rebase, but don't fail if there isn't one
       try {
-        const statusOutput = ctx.commandRunner.exec('git status --porcelain=v1', session.worktreePath);
+        const statusOutput = (await ctx.commandRunner.execAsync('git status --porcelain=v1', session.worktreePath)).stdout;
         if (statusOutput.includes('rebase')) {
           await worktreeManager.abortRebase(session.worktreePath, ctx.commandRunner);
 
@@ -1662,7 +1662,7 @@ export function registerGitHandlers(
       const comparisonBranch = await worktreeManager.getSessionComparisonBranch(session, ctx);
 
       // Get current branch name
-      const currentBranch = ctx.commandRunner.exec('git branch --show-current', session.worktreePath).trim();
+      const currentBranch = (await ctx.commandRunner.execAsync('git branch --show-current', session.worktreePath)).stdout.trim();
 
       // Only call getOriginBranch for legacy isMainRepo sessions where baseBranch is not set.
       // When baseBranch is set it already includes the origin/ prefix if applicable — calling
@@ -1772,7 +1772,7 @@ export function registerGitHandlers(
       const ctx = sessionManager.getProjectContext(sessionId);
       if (!ctx) return { success: true, data: null };
 
-      const stdout = ctx.commandRunner.exec('git remote -v', session.worktreePath);
+      const stdout = (await ctx.commandRunner.execAsync('git remote -v', session.worktreePath)).stdout;
 
       // Parse remote output for github.com
       const lines = stdout.split('\n');

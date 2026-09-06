@@ -307,53 +307,6 @@ export function registerDashboardHandlers(ipcMain: IpcMain, services: AppService
   });
 }
 
-// Deprecated: This function is not currently used. Use getMainBranchStatusAsync instead.
-// Keeping for potential future use.
-// function getMainBranchStatus(
-//   ctx: { commandRunner: CommandRunner },
-//   projectPath: string,
-//   mainBranch: string
-// ): MainBranchStatus {
-//   try {
-//     const remoteBranch = `origin/${mainBranch}`;
-//     try {
-//       ctx.commandRunner.exec(`git rev-parse --verify ${remoteBranch}`, projectPath);
-//     } catch {
-//       return {
-//         status: 'up-to-date',
-//         lastFetched: formatForDatabase()
-//       };
-//     }
-//     const aheadBehind = ctx.commandRunner.exec(
-//       `git rev-list --left-right --count ${mainBranch}...${remoteBranch}`,
-//       projectPath
-//     ).trim();
-//     const [ahead, behind] = aheadBehind.split('\t').map((n: string) => parseInt(n, 10));
-//     let status: MainBranchStatus['status'];
-//     if (ahead === 0 && behind === 0) {
-//       status = 'up-to-date';
-//     } else if (ahead > 0 && behind === 0) {
-//       status = 'ahead';
-//     } else if (ahead === 0 && behind > 0) {
-//       status = 'behind';
-//     } else {
-//       status = 'diverged';
-//     }
-//     return {
-//       status,
-//       aheadCount: ahead || undefined,
-//       behindCount: behind || undefined,
-//       lastFetched: formatForDatabase()
-//     };
-//   } catch (error) {
-//     console.error('Error getting main branch status:', error);
-//     return {
-//       status: 'up-to-date',
-//       lastFetched: formatForDatabase()
-//     };
-//   }
-// }
-
 async function getRemoteStatuses(
   ctx: { commandRunner: CommandRunner },
   projectPath: string,
@@ -498,95 +451,6 @@ async function getMainBranchStatusAsync(
   }
 }
 
-// Deprecated: This function is not currently used. Use getSessionBranchInfoAsync instead.
-// Keeping for potential future use.
-// async function getSessionBranchInfo(
-//   ctx: { commandRunner: CommandRunner; pathResolver: PathResolver },
-//   session: { id: string; name: string; worktree_path: string; base_commit?: string; base_branch?: string },
-//   projectPath: string,
-//   mainBranch: string
-// ): Promise<SessionBranchInfo | null> {
-//   try {
-//     const worktreeFsPath = ctx.pathResolver.toFileSystem(session.worktree_path);
-//     if (!fs.existsSync(worktreeFsPath)) {
-//       return null;
-//     }
-//     const branchName = ctx.commandRunner.exec('git branch --show-current', session.worktree_path).trim();
-//     if (!branchName) {
-//       return null;
-//     }
-//     let baseCommit = session.base_commit;
-//     const baseBranch = session.base_branch || mainBranch;
-//     if (!baseCommit) {
-//       try {
-//         baseCommit = ctx.commandRunner.exec(`git merge-base ${branchName} ${mainBranch}`, session.worktree_path).trim();
-//       } catch {
-//         baseCommit = 'unknown';
-//       }
-//     }
-//     let isStale = false;
-//     let staleSince: string | undefined;
-//     if (baseCommit && baseCommit !== 'unknown') {
-//       try {
-//         const currentBaseCommit = ctx.commandRunner.exec(`git rev-parse ${baseBranch}`, projectPath).trim();
-//         isStale = currentBaseCommit !== baseCommit;
-//         if (isStale) {
-//           const commitDate = ctx.commandRunner.exec(`git log -1 --format=%cd --date=iso-strict ${currentBaseCommit}`, projectPath).trim();
-//           staleSince = commitDate;
-//         }
-//       } catch {
-//         // Ignore errors
-//       }
-//     }
-//     const hasUncommittedChanges = checkUncommittedChanges(ctx, session.worktree_path);
-//     let commitsAhead = 0;
-//     let commitsBehind = 0;
-//     try {
-//       const aheadBehind = ctx.commandRunner.exec(`git rev-list --left-right --count ${branchName}...${baseBranch}`, session.worktree_path).trim();
-//       const [ahead, behind] = aheadBehind.split('\t').map((n: string) => parseInt(n, 10));
-//       commitsAhead = ahead;
-//       commitsBehind = behind;
-//     } catch {
-//       // Ignore errors
-//     }
-//     let pullRequest: SessionBranchInfo['pullRequest'];
-//     try {
-//       const prOutput = ctx.commandRunner.exec(`gh pr list --head ${branchName} --state all --json number,title,state,url --limit 1`, projectPath).trim();
-//       if (prOutput) {
-//         const prs = JSON.parse(prOutput);
-//         if (prs.length > 0) {
-//           const pr = prs[0];
-//           pullRequest = {
-//             number: pr.number,
-//             title: pr.title,
-//             state: pr.state.toLowerCase() as 'open' | 'closed' | 'merged',
-//             url: pr.url
-//           };
-//         }
-//       }
-//     } catch {
-//       // gh command might not be available or configured
-//     }
-//     return {
-//       sessionId: session.id,
-//       sessionName: session.name,
-//       branchName,
-//       worktreePath: session.worktree_path,
-//       baseCommit,
-//       baseBranch,
-//       isStale,
-//       staleSince,
-//       hasUncommittedChanges,
-//       pullRequest,
-//       commitsAhead,
-//       commitsBehind
-//     };
-//   } catch (error) {
-//     console.error(`Error getting branch info for session ${session.id}:`, error);
-//     return null;
-//   }
-// }
-
 async function getSessionBranchInfoAsync(
   ctx: { commandRunner: CommandRunner; pathResolver: PathResolver },
   session: { id: string; name: string; worktree_path: string; base_commit?: string; base_branch?: string },
@@ -729,20 +593,6 @@ async function getSessionBranchInfoAsync(
     return null;
   }
 }
-
-// Deprecated: This function is not currently used. Use checkUncommittedChangesAsync instead.
-// Keeping for potential future use.
-// function checkUncommittedChanges(
-//   ctx: { commandRunner: CommandRunner },
-//   worktreePath: string
-// ): boolean {
-//   try {
-//     const status = ctx.commandRunner.exec('git status --porcelain', worktreePath);
-//     return status.trim().length > 0;
-//   } catch {
-//     return false;
-//   }
-// }
 
 async function checkUncommittedChangesAsync(
   ctx: { commandRunner: CommandRunner },
