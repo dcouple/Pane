@@ -7,8 +7,10 @@ import { ScrollbackRetentionService, RetentionSweepResult } from './scrollbackRe
 const dbPath = join(getAppDirectory(), 'sessions.db');
 export const databaseService = new DatabaseService(dbPath);
 
-// Initialize the database schema and run migrations
+// Initialize the database schema and run migrations, including the one-time
+// move of terminal bytes out of tool_panels.state (see panelBufferMigration).
 databaseService.initialize();
+export const startupPanelBufferMigration = databaseService.getPanelBufferMigration();
 
 // Scrollback retention sweep: runs synchronously at module load, which happens
 // before panelManager restores panels on demand. Deferring this

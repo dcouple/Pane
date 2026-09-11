@@ -7,6 +7,8 @@ import * as path from 'path';
 import { promises as fs } from 'fs';
 import { randomUUID } from 'crypto';
 import { getShellPath } from '../utils/shellPath';
+import { trimAnsiSafe } from '../utils/ansiTrim';
+import { databaseService } from './database';
 import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
@@ -33,6 +35,12 @@ const MAX_CONCURRENT_SPAWNS = 3;
 const AGENT_STATUS_POLL_MS = 500; // cadence for re-deriving blocked/working/done from the live screen
 const MAX_SCROLLBACK_BUFFER_SIZE = 500_000; // 500KB of normal shell history
 const MAX_ALTERNATE_SCREEN_BUFFER_SIZE = 100_000; // 100KB of recent TUI redraw state
+// Command-detection heuristic bounds. These buffers live in memory only and
+// are never persisted; full-screen apps redraw without newlines, so the
+// accumulator is frozen while the alternate screen is active.
+const MAX_CURRENT_COMMAND_SIZE = 4096;
+const MAX_COMMAND_HISTORY_ENTRY_SIZE = 1024;
+const MAX_COMMAND_HISTORY_ENTRIES = 100;
 const MIN_PTY_COLS = 20;
 const MIN_PTY_ROWS = 5;
 const FORCED_REDRAW_TRANSITION_MS = 50;
@@ -44,7 +52,7 @@ const SHELL_PROMPT_FALLBACK_MS = 5000;
 // Orca (TERMINAL_SCROLLBACK_REPLAY_BYTE_LIMIT) and Superset (MAX_HISTORY_SCROLLBACK_BYTES) both use
 // 512 * 1024. The 2500-line emulator serialization sits well under this in
 // practice; the cap is a backstop against pathological payloads.
-const MAX_RESTORE_PAYLOAD_SIZE = 512 * 1024;
+export const MAX_RESTORE_PAYLOAD_SIZE = 512 * 1024;
 
 import { CliAgentType, resolveAgentTypeFromCommand } from './agents/agentIdentity';
 import { buildCursorLaunchCommand, createCursorReadyDetector, extractCursorChatId } from './agents/cursorLaunch';
@@ -530,7 +538,7 @@ export class TerminalPanelManager {
   private captureAgentSessionId(terminal: TerminalProcess, output: string): void {
     if (terminal.agentType !== 'codex' && terminal.agentType !== 'cursor') return;
 
-    terminal.agentSessionScrapeBuffer = this.trimAnsiSafe(
+    terminal.agentSessionScrapeBuffer = trimAnsiSafe(
       terminal.agentSessionScrapeBuffer + output,
       2000
     );
@@ -603,50 +611,6 @@ export class TerminalPanelManager {
       this.activeSpawns++;
       next.resolve();
     }
-  }
-
-  private trimAnsiSafe(buffer: string, maxSize: number): string {
-    if (buffer.length <= maxSize) return buffer;
-
-    let start = buffer.length - maxSize;
-
-    // Prefer a line boundary so replay starts from a sane row.
-    const nextNewline = buffer.indexOf('\n', start);
-    if (nextNewline !== -1 && nextNewline < buffer.length - 1) {
-      start = nextNewline + 1;
-    }
-
-    // If the cut lands inside a common ANSI escape sequence, advance past it.
-    const lastEsc = buffer.lastIndexOf('\x1b', start);
-    if (lastEsc !== -1) {
-      let sequenceEnd = -1;
-      const introducer = buffer[lastEsc + 1];
-
-      if (introducer === '[') {
-        const finalByte = buffer.slice(lastEsc + 2).search(/[@-~]/);
-        sequenceEnd = finalByte === -1 ? -1 : lastEsc + 2 + finalByte;
-      } else if (introducer === ']') {
-        const belEnd = buffer.indexOf('\x07', lastEsc + 2);
-        const stEnd = buffer.indexOf('\x1b\\', lastEsc + 2);
-        if (belEnd !== -1 && stEnd !== -1) {
-          sequenceEnd = Math.min(belEnd, stEnd + 1);
-        } else if (belEnd !== -1) {
-          sequenceEnd = belEnd;
-        } else if (stEnd !== -1) {
-          sequenceEnd = stEnd + 1;
-        }
-      } else if (introducer) {
-        sequenceEnd = lastEsc + 1;
-      }
-
-      if (sequenceEnd === -1) {
-        start = buffer.length;
-      } else if (sequenceEnd >= start) {
-        start = sequenceEnd + 1;
-      }
-    }
-
-    return buffer.slice(start);
   }
 
   private flushOutputBuffer(terminal: TerminalProcess): void {
@@ -1238,7 +1202,10 @@ export class TerminalPanelManager {
       // Detect commands (simple heuristic - look for carriage returns)
       if (data.includes('\r') || data.includes('\n')) {
         if (terminal.currentCommand.trim()) {
-          terminal.commandHistory.push(terminal.currentCommand);
+          terminal.commandHistory.push(terminal.currentCommand.slice(0, MAX_COMMAND_HISTORY_ENTRY_SIZE));
+          if (terminal.commandHistory.length > MAX_COMMAND_HISTORY_ENTRIES) {
+            terminal.commandHistory.splice(0, terminal.commandHistory.length - MAX_COMMAND_HISTORY_ENTRIES);
+          }
 
           // Emit command executed event
           panelManager.emitPanelEvent(
@@ -1264,9 +1231,13 @@ export class TerminalPanelManager {
 
           terminal.currentCommand = '';
         }
-      } else {
-        // Accumulate command input
+      } else if (!terminal.isAlternateScreen) {
+        // Accumulate command input. Anything past the cap is not a command
+        // (a TUI frame, a paste, a progress bar), so drop it rather than grow.
         terminal.currentCommand += data;
+        if (terminal.currentCommand.length > MAX_CURRENT_COMMAND_SIZE) {
+          terminal.currentCommand = '';
+        }
       }
 
       // Buffer output for batching instead of sending immediately
@@ -1327,14 +1298,14 @@ export class TerminalPanelManager {
   
   private addToScrollback(terminal: TerminalProcess, data: string): void {
     if (terminal.isAlternateScreen) {
-      terminal.alternateScreenBuffer = this.trimAnsiSafe(
+      terminal.alternateScreenBuffer = trimAnsiSafe(
         terminal.alternateScreenBuffer + data,
         MAX_ALTERNATE_SCREEN_BUFFER_SIZE
       );
       return;
     }
 
-    terminal.scrollbackBuffer = this.trimAnsiSafe(
+    terminal.scrollbackBuffer = trimAnsiSafe(
       terminal.scrollbackBuffer + data,
       MAX_SCROLLBACK_BUFFER_SIZE
     );
@@ -1488,7 +1459,7 @@ export class TerminalPanelManager {
     // append log with its accumulated repaint traffic.
     const savedScrollback =
       !savedIsAlternateScreen && terminal.screenEmulator
-        ? this.trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
+        ? trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
         : terminal.scrollbackBuffer;
     const customState: TerminalPanelState = {
       ...terminalCustomState(state),
@@ -1497,9 +1468,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: savedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen: savedIsAlternateScreen,
-      commandHistory: terminal.commandHistory.slice(-100), // Keep last 100 commands
       lastActivityTime: terminal.lastActivity.toISOString(),
-      lastActiveCommand: terminal.currentCommand,
       serializedBuffer: terminal.screenEmulator?.isAlternateScreen
         ? terminal.screenEmulator.serializeForRestore()
         : this.serializedBuffers.get(panelId),
@@ -1529,7 +1498,10 @@ export class TerminalPanelManager {
   }
   
   async restoreTerminalState(panel: ToolPanel, state: TerminalPanelState, wslContext?: WSLContext | null): Promise<void> {
-    if (!state.scrollbackBuffer || state.scrollbackBuffer.length === 0) {
+    // Terminal bytes live in panel_buffers, never in the panel state JSON.
+    const buffers = databaseService.getPanelBuffers(panel.id);
+    const scrollback = buffers?.scrollback ?? '';
+    if (scrollback.length === 0) {
       return;
     }
 
@@ -1539,15 +1511,8 @@ export class TerminalPanelManager {
     const terminal = this.terminals.get(panel.id);
     if (!terminal) return;
     
-    // Restore scrollback buffer (handle both string and array formats)
-    if (Array.isArray(state.scrollbackBuffer)) {
-      // Convert legacy array format to string
-      terminal.scrollbackBuffer = state.scrollbackBuffer.join('\n');
-    } else {
-      terminal.scrollbackBuffer = state.scrollbackBuffer;
-    }
-    terminal.alternateScreenBuffer = state.alternateScreenBuffer || '';
-    terminal.commandHistory = state.commandHistory || [];
+    terminal.scrollbackBuffer = scrollback;
+    terminal.alternateScreenBuffer = buffers?.alternate ?? '';
     
     // Send restoration indicator to terminal
     const restorationMsg = `\r\n[Session Restored from ${state.lastActivityTime || 'previous session'}]\r\n`;
@@ -1555,21 +1520,16 @@ export class TerminalPanelManager {
     
     // Send scrollback to frontend. Dual-path mirrors `flushOutputBuffer`:
     // `terminal:output` IPC for legacy subscribers, ptyHost port for flag-on.
-    if (state.scrollbackBuffer) {
-      // Cap the renderer replay at the formal ceiling; main's own buffer (set above) keeps full content.
-      const rawScrollback = Array.isArray(state.scrollbackBuffer)
-        ? state.scrollbackBuffer.join('\n')
-        : state.scrollbackBuffer;
-      const output = this.trimAnsiSafe(rawScrollback, MAX_RESTORE_PAYLOAD_SIZE) + restorationMsg;
-      this.sendRendererEvent('terminal:output', {
-        sessionId: panel.sessionId,
-        panelId: panel.id,
-        output,
-      });
-      if (terminal.isPtyHost && terminal.ptyId) {
-        const supervisor = getPtyHostRuntime();
-        supervisor?.postDataToRenderers(terminal.ptyId, output);
-      }
+    // Cap the renderer replay at the formal ceiling; main's own buffer (set above) keeps full content.
+    const output = trimAnsiSafe(scrollback, MAX_RESTORE_PAYLOAD_SIZE) + restorationMsg;
+    this.sendRendererEvent('terminal:output', {
+      sessionId: panel.sessionId,
+      panelId: panel.id,
+      output,
+    });
+    if (terminal.isPtyHost && terminal.ptyId) {
+      const supervisor = getPtyHostRuntime();
+      supervisor?.postDataToRenderers(terminal.ptyId, output);
     }
   }
   
@@ -1587,8 +1547,8 @@ export class TerminalPanelManager {
     // repaints overwrite in place — so its serialization is duplicate-free.
     const cappedScrollback =
       !isAlternateScreen && terminal.screenEmulator
-        ? this.trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
-        : this.trimAnsiSafe(terminal.scrollbackBuffer, MAX_RESTORE_PAYLOAD_SIZE);
+        ? trimAnsiSafe(terminal.screenEmulator.serializeForRestore(true), MAX_RESTORE_PAYLOAD_SIZE)
+        : trimAnsiSafe(terminal.scrollbackBuffer, MAX_RESTORE_PAYLOAD_SIZE);
     return {
       isInitialized: true,
       cwd: process.cwd(), // Simplified - would need platform-specific implementation
@@ -1596,9 +1556,7 @@ export class TerminalPanelManager {
       scrollbackBuffer: cappedScrollback,
       alternateScreenBuffer: terminal.alternateScreenBuffer,
       isAlternateScreen,
-      commandHistory: terminal.commandHistory,
       lastActivityTime: terminal.lastActivity.toISOString(),
-      lastActiveCommand: terminal.currentCommand,
       // An active alternate screen cannot be reconstructed from normal shell
       // scrollback. Serialize the authoritative live model for renderer remounts.
       serializedBuffer: isAlternateScreen

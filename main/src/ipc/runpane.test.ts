@@ -13,6 +13,7 @@ import type { RunpaneToolSpec } from '../../../shared/types/runpaneOrchestration
 import { RUNPANE_CONTRACT } from '../../../shared/types/generatedRunpaneContract';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
+import { databaseService as panelDatabase } from '../services/database';
 import { ArchiveProgressManager } from '../services/archiveProgressManager';
 import { WorkspaceJournal } from '../services/workspaceJournal';
 import { WorkspaceCursorStore } from '../services/workspaceCursorStore';
@@ -37,6 +38,7 @@ vi.spyOn(terminalPanelManager, 'getLastOutputAt');
 vi.spyOn(terminalPanelManager, 'getOutputGeneration');
 vi.spyOn(terminalPanelManager, 'deliverPendingInitialInput');
 vi.spyOn(terminalPanelManager, 'getAgentStatus');
+vi.spyOn(panelDatabase, 'getPanelBuffers');
 vi.spyOn(usageManager, 'getPaneCosts');
 
 const project: Project = {
@@ -293,6 +295,7 @@ describe('runpane IPC handlers', () => {
     vi.mocked(terminalPanelManager.isTerminalInitialized).mockReset();
     vi.mocked(terminalPanelManager.getTerminalSnapshot).mockReset();
     vi.mocked(terminalPanelManager.getTerminalScrollback).mockReset();
+    vi.mocked(panelDatabase.getPanelBuffers).mockReset().mockReturnValue(null);
     vi.mocked(terminalPanelManager.writeToTerminal).mockReset();
     vi.mocked(terminalPanelManager.getLastOutputAt).mockReset();
     vi.mocked(terminalPanelManager.getOutputGeneration).mockReset();
@@ -1315,19 +1318,14 @@ describe('runpane IPC handlers', () => {
   });
 
   it('reads persisted terminal scrollback when the terminal is not live', async () => {
-    const panelWithPersistedScrollback: ToolPanel = {
-      ...terminalPanel,
-      state: {
-        ...terminalPanel.state,
-        customState: {
-          ...terminalPanel.state.customState,
-          scrollbackBuffer: 'persisted one\npersisted two\n',
-          serializedBuffer: undefined,
-        },
-      },
-    };
+    // Persisted bytes live in panel_buffers, never in the panel state.
     vi.mocked(panelManager.getPanel).mockImplementation((panelId: string) =>
-      panelId === terminalPanel.id ? panelWithPersistedScrollback : undefined
+      panelId === terminalPanel.id ? terminalPanel : undefined
+    );
+    vi.mocked(panelDatabase.getPanelBuffers).mockImplementation((panelId: string) =>
+      panelId === terminalPanel.id
+        ? { scrollback: 'persisted one\npersisted two\n', serialized: null, alternate: null }
+        : null
     );
     const services = createServices();
     const registry = createRegistry(services);
@@ -1759,10 +1757,10 @@ describe('runpane IPC handlers', () => {
           ...terminalPanel.state.customState,
           isInitialized: true,
           isCliReady: true,
-          scrollbackBuffer: 'persisted ready\n',
         },
       },
     });
+    vi.mocked(panelDatabase.getPanelBuffers).mockReturnValue({ scrollback: 'persisted ready\n', serialized: null, alternate: null });
     const registry = createRegistry();
 
     const ready = await registry.invoke('runpane:panels:wait', [{

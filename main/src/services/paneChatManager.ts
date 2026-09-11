@@ -163,7 +163,6 @@ export class PaneChatManager {
       nextCustomState.scrollbackBuffer = '';
       nextCustomState.alternateScreenBuffer = '';
       nextCustomState.serializedBuffer = undefined;
-      nextCustomState.lastActiveCommand = undefined;
       nextCustomState.isInitialized = false;
     }
 

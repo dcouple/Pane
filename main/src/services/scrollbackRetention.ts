@@ -9,6 +9,11 @@ export interface RetentionSweepResult {
   bytesFreed: number;
 }
 
+/**
+ * Drops persisted terminal bytes for panels of sessions archived more than
+ * RETENTION_DAYS ago. Bytes live in `panel_buffers`, never in
+ * `tool_panels.state`, so the sweep deletes rows there.
+ */
 export class ScrollbackRetentionService {
   constructor(private db: DatabaseService) {}
 
@@ -28,32 +33,16 @@ export class ScrollbackRetentionService {
     }
 
     const idsJson = JSON.stringify(targetSessions.map(s => s.id));
+    const panelFilter = `panel_id IN (
+      SELECT id FROM tool_panels WHERE session_id IN (SELECT value FROM json_each(?))
+    )`;
 
     const sizeRow = decodeBoundary(sqlite
-      .prepare(
-        `SELECT COALESCE(SUM(
-           COALESCE(LENGTH(json_extract(state, '$.customState.scrollbackBuffer')), 0) +
-           COALESCE(LENGTH(json_extract(state, '$.customState.serializedBuffer')), 0)
-         ), 0) AS bytes
-         FROM tool_panels
-         WHERE session_id IN (SELECT value FROM json_each(?))
-           AND (
-             json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL
-             OR json_extract(state, '$.customState.serializedBuffer') IS NOT NULL
-           )`
-      )
+      .prepare(`SELECT COALESCE(SUM(bytes), 0) AS bytes FROM panel_buffers WHERE ${panelFilter}`)
       .get(idsJson), boundary.object({ bytes: boundary.number }));
 
     const result = sqlite
-      .prepare(
-        `UPDATE tool_panels
-         SET state = json_remove(state, '$.customState.scrollbackBuffer', '$.customState.serializedBuffer')
-         WHERE session_id IN (SELECT value FROM json_each(?))
-           AND (
-             json_extract(state, '$.customState.scrollbackBuffer') IS NOT NULL
-             OR json_extract(state, '$.customState.serializedBuffer') IS NOT NULL
-           )`
-      )
+      .prepare(`DELETE FROM panel_buffers WHERE ${panelFilter}`)
       .run(idsJson);
 
     return {

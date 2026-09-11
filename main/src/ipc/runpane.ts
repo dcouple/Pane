@@ -9,6 +9,8 @@ import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { escapeShellArg } from '../utils/shellEscape';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
+import { databaseService as panelDatabase } from '../services/database';
+import type { PanelBuffers } from '../database/panelBuffers';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { fastCheckWorkingDirectory, listCommitsAhead } from '../services/gitPlumbingCommands';
 import { assessComposerEvidence, isSlashCommandInput } from './runpaneComposerEvidence';
@@ -1521,7 +1523,8 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
   const customState = getTerminalCustomState(panel);
   const state = panelStateSummary(panel, liveSnapshot, customState);
-  const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
+  const persisted = liveSnapshot ? null : panelDatabase.getPanelBuffers(panel.id);
+  const { source, rawText } = selectPanelScreenText(liveSnapshot, customState, persisted);
   const bounded = boundSanitizedLines(rawText, limit);
   const composer = detectPanelComposer(bounded.text, state.agentType);
 
@@ -1576,6 +1579,7 @@ interface PanelScreenText {
 function selectPanelScreenText(
   snapshot: TerminalPanelSnapshot | null,
   customState: TerminalPanelState,
+  persisted: PanelBuffers | null,
 ): PanelScreenText {
   if (snapshot) {
     if (snapshot.screenText !== undefined) {
@@ -1593,12 +1597,12 @@ function selectPanelScreenText(
     return { source: 'empty', rawText: '' };
   }
 
-  const persistedAlternate = customState.alternateScreenBuffer;
+  const persistedAlternate = persisted?.alternate;
   if (customState.isAlternateScreen && persistedAlternate) {
     return { source: 'persistedOutput', rawText: persistedAlternate };
   }
 
-  const persistedScrollback = normalizeScrollbackBuffer(customState.scrollbackBuffer);
+  const persistedScrollback = persisted?.scrollback;
   if (persistedScrollback) {
     return { source: 'persistedOutput', rawText: persistedScrollback };
   }
@@ -1628,9 +1632,7 @@ function panelStateSummary(
 function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
   try {
     return decodeBoundary(panel.state.customState, boundary.object({
-      alternateScreenBuffer: boundary.optional(boundary.string),
       isAlternateScreen: boundary.optional(boundary.boolean),
-      scrollbackBuffer: boundary.optional(boundary.union(boundary.string, boundary.array(boundary.string))),
       agentType: boundary.optional(boundary.enumeration(...RUNPANE_CONTRACT.enums.agents)),
       isCliReady: boundary.optional(boundary.boolean),
       isCliPanel: boundary.optional(boundary.boolean),
@@ -1639,15 +1641,6 @@ function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
   } catch {
     return {};
   }
-}
-
-function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
-  const stringValue = optionalString(value);
-  if (stringValue !== undefined) return stringValue;
-  if (Array.isArray(value)) {
-    return value.join('\n');
-  }
-  return '';
 }
 
 interface BoundedSanitizedLines {
@@ -2117,7 +2110,7 @@ function getPanelScrollback(panel: ToolPanel): string | null {
     return liveScrollback;
   }
 
-  const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
+  const persisted = panelDatabase.getPanelBuffers(panel.id)?.scrollback;
   if (persisted) return persisted;
 
   return null;

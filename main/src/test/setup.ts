@@ -1,5 +1,13 @@
 // Test setup file for Vitest
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { vi } from 'vitest';
+
+// Every module that imports services/database opens `${PANE_DIR}/sessions.db`
+// and runs the startup migrations at import time. Point that at a scratch
+// directory so a test run can never touch the developer's live ~/.pane.
+process.env.PANE_DIR = mkdtempSync(join(tmpdir(), 'pane-vitest-'));
 
 export const app = {
   getPath: vi.fn(() => '/mock/path'),

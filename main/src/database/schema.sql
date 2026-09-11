@@ -124,3 +124,16 @@ CREATE INDEX IF NOT EXISTS idx_conversation_messages_timestamp ON conversation_m
 CREATE INDEX IF NOT EXISTS idx_sessions_project_id ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_worktree_path ON sessions(worktree_path);
 CREATE INDEX IF NOT EXISTS idx_session_git_status_cache_updated_at ON session_git_status_cache(updated_at);
+
+-- Terminal bytes for one panel. tool_panels.state never carries them: the
+-- scrollback log, the serialized emulator snapshot and the alternate-screen
+-- frame live here, capped per panel at write time (see panelBuffers.ts).
+-- Foreign keys are enforced by this SQLite build, so rows go with their panel.
+CREATE TABLE IF NOT EXISTS panel_buffers (
+  panel_id TEXT PRIMARY KEY REFERENCES tool_panels(id) ON DELETE CASCADE,
+  scrollback BLOB,
+  serialized BLOB,
+  alternate BLOB,
+  bytes INTEGER NOT NULL DEFAULT 0,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

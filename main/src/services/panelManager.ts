@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { ToolPanel, CreatePanelRequest, PanelEventType, ToolPanelState, ToolPanelMetadata, ToolPanelType, LogsPanelState } from '../../../shared/types/panels';
 import { getPaneEventSink, getPaneWebviewContextMap } from '../core/runtime';
 import { databaseService } from './database';
+import { splitPanelBufferState } from '../database/panelBuffers';
 import { panelEventBus } from './panelEventBus';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
@@ -279,16 +280,20 @@ class PanelManager {
         return;
       }
       
-      // Update in database
-      databaseService.updatePanel(panelId, {
+      // Update in database. A refused write (state over the ceiling) is
+      // already logged there with the panel, size and largest key; the cache
+      // and renderer keep the last accepted state.
+      const written = databaseService.updatePanel(panelId, {
         title: updates.title,
         state: updates.state,
         metadata: updates.metadata
       });
+      if (!written) return;
       
-      // Update in cache
+      // Update in cache. Terminal bytes are stored in panel_buffers, so the
+      // cached state (and the panel:updated payload) never carries them.
       if (updates.title !== undefined) panel.title = updates.title;
-      if (updates.state !== undefined) panel.state = updates.state;
+      if (updates.state !== undefined) panel.state = splitPanelBufferState(updates.state).state;
       if (updates.metadata !== undefined) panel.metadata = updates.metadata;
       
       // Emit IPC event to notify frontend
@@ -368,15 +373,14 @@ class PanelManager {
     return undefined;
   }
   
-  getPanelsForSession(sessionId: string, includeScrollback = true): ToolPanel[] {
+  getPanelsForSession(sessionId: string): ToolPanel[] {
     // Always get fresh from database to ensure consistency
-    const panels = databaseService.getPanelsForSession(sessionId, includeScrollback);
+    const panels = databaseService.getPanelsForSession(sessionId);
     // If this session has been archived in this process, we still
     // return the panels (callers like the sessions:delete PTY-destroy
     // loop need them) but we do NOT re-populate this.panels — doing so
     // would undo the L3 cleanup that cleared them moments earlier.
-    // Summary reads must never replace complete cached state with missing buffers.
-    const shouldCache = includeScrollback && !this.archivedSessionIds.has(sessionId);
+    const shouldCache = !this.archivedSessionIds.has(sessionId);
 
     if (shouldCache) {
       for (const panel of panels) {

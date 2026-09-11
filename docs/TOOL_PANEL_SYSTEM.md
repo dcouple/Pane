@@ -31,7 +31,8 @@ The tool panel system consists of several key components:
 ## Terminal Panel Specifics
 
 - Each terminal panel spawns an independent PTY process using node-pty
-- Terminal state (scrollback, history, dimensions) persists in `tool_panels.state` as JSON
+- Terminal metadata (cwd, dimensions, agent session) persists in `tool_panels.state` as JSON, ceilinged at 256 KB per panel and merged key by key inside SQLite
+- Terminal bytes (scrollback, serialized snapshot, alternate-screen frame) persist in `panel_buffers`, capped at 4 MB per panel with the oldest scrollback trimmed first
 - XTerm.js instances mount/unmount based on panel visibility to save memory
 - Working directories are maintained independently per panel
 - Command history and environment variables can be preserved across restarts

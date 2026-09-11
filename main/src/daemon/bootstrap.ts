@@ -1,6 +1,6 @@
 import path from 'path';
 import { powerMonitor, type App, type BrowserWindow } from 'electron';
-import { startupRetentionResult } from '../services/database';
+import { startupPanelBufferMigration, startupRetentionResult } from '../services/database';
 import { ConfigManager } from '../services/configManager';
 import { Logger } from '../utils/logger';
 import { DatabaseService } from '../database/database';
@@ -96,6 +96,10 @@ function registerPowerMonitorDiagnostics(logger: Logger): void {
   powerMonitor.on('unlock-screen', () => logger.info('[Lifecycle] power:unlock-screen'));
 }
 
+function megabytes(bytes: number | null): string {
+  return bytes === null ? 'unknown' : `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
 export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Promise<PaneDaemonHost> {
   const mode = options.mode ?? 'desktop';
   const startRemoteTransport = options.startRemoteTransport ?? true;
@@ -111,13 +115,25 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
   console.log('[Main] Logger initialized with file logging to ~/.pane/logs');
   registerPowerMonitorDiagnostics(logger);
 
+  if (startupPanelBufferMigration.error) {
+    logger.error('[PanelBuffers] Startup migration failed', startupPanelBufferMigration.error);
+  } else if (startupPanelBufferMigration.result?.migrated) {
+    const migration = startupPanelBufferMigration.result;
+    logger.info(
+      `[PanelBuffers] Moved terminal bytes out of ${migration.panelsRepaired} panel states ` +
+      `(${migration.panelsWithBuffers} with buffers) in ${migration.durationMs} ms; ` +
+      `sessions.db ${megabytes(migration.fileBytesBefore)} -> ${megabytes(migration.fileBytesAfter)}; ` +
+      `backup ${migration.backupPath ?? 'none'}`,
+    );
+  }
+
   if (startupRetentionResult.error) {
     logger.error('[ScrollbackRetention] Sweep failed', startupRetentionResult.error);
   } else if (startupRetentionResult.result && startupRetentionResult.result.panelsCleared > 0) {
     const result = startupRetentionResult.result;
     logger.info(
       `[ScrollbackRetention] Cleared ${result.panelsCleared} panels across ` +
-      `${result.sessionsTouched} sessions, freed ~${(result.bytesFreed / 1_000_000).toFixed(1)} MB`,
+      `${result.sessionsTouched} sessions, freed ~${megabytes(result.bytesFreed)}`,
     );
   }
 
