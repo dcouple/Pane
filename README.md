@@ -336,9 +336,10 @@ irm https://runpane.com/install.ps1 | iex
 1. **Open Pane** and create or select a project (any git repository)
 2. **Create a pane** — enter a prompt and pick your agent
 3. **Add tabs** — launch a Claude, Codex, or Cursor terminal, diff viewer, file explorer, or any CLI tool
-4. **Work in parallel** — create multiple panes for different approaches
-5. **Review diffs** — see what changed with the built-in diff viewer
-6. **Ship** — commit, rebase, and merge from keyboard shortcuts
+4. **Rename a pane** — double-click its sidebar row, type a new name, press Enter (Escape cancels)
+5. **Work in parallel** — create multiple panes for different approaches
+6. **Review diffs** — see what changed with the built-in diff viewer
+7. **Ship** — commit, rebase, and merge from keyboard shortcuts
 
 ---
 
