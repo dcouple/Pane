@@ -85,6 +85,18 @@ describe('AgentStatusMonitor', () => {
     expect(m.update('p', detection({ state: 'working', visibleWorking: true }), 4050)).toBe('working');
   });
 
+  it('retains activity fallback for real work that starts during startup grace', () => {
+    const m = new AgentStatusMonitor(opts);
+    m.register('p', 0);
+    m.noteActivity('p', 100);
+    expect(m.update('p', detection({ visibleWorking: true }), 110)).toBe('working');
+    const weakPrompt = detection({ matchedRuleId: 'live_prompt_box' });
+    expect(m.update('p', weakPrompt, 120)).toBeNull();
+    m.noteActivity('p', 900);
+    expect(m.update('p', weakPrompt, 1800)).toBeNull();
+    expect(m.update('p', weakPrompt, 1900)).toBe('idle');
+  });
+
   it('does not let a persistent prompt box complete work or wake on typing', () => {
     const m = new AgentStatusMonitor(opts);
     m.register('p', 0);

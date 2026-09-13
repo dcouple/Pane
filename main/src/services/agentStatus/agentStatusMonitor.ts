@@ -70,7 +70,7 @@ export class AgentStatusMonitor {
 
     // Boot banners and shell prompt setup are not evidence of a task. Explicit
     // agent working chrome still takes effect immediately, including at startup.
-    if (now - tracker.startedAt < this.options.startupGraceMs) return;
+    if (now - tracker.startedAt < this.options.startupGraceMs && tracker.published !== 'working') return;
 
     const startsNewBurst =
       tracker.lastActivityAt === undefined || now - tracker.lastActivityAt >= this.options.idleSettleMs;
@@ -105,6 +105,8 @@ export class AgentStatusMonitor {
       candidate = 'blocked';
     } else if (detection.visibleWorking) {
       candidate = 'working';
+      // Visible work is activity evidence too, even before boot output is trusted.
+      tracker.lastActivityAt = now;
     } else if (detection.visibleIdle) {
       candidate = 'idle';
       tracker.lastActivityAt = undefined;
