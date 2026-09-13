@@ -12,6 +12,8 @@ import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
 import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel, type PanelLayoutNode } from '../../../shared/types/panels';
 import type { AppServices } from './types';
+import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
+import { PANE_CHAT_SESSION_ID } from '../../../shared/types/paneChat';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { getWSLHome, linuxToUNCPath, posixJoin } from '../utils/wslUtils';
@@ -369,6 +371,7 @@ const DAEMON_PANEL_CHANNELS = [
   'panels:delete',
   'panels:update',
   'panels:list',
+  'panels:agent-statuses',
   'panels:set-active',
   'panels:getActive',
   'panels:get-layout',
@@ -447,6 +450,29 @@ export function registerPanelHandlers(
     }
   });
   
+  // Renderer baseline includes hidden Pane Chat, which the public workspace
+  // snapshot deliberately omits. Read the same authoritative monitor state.
+  commandRegistry.register('panels:agent-statuses', () => {
+    const sessionIds = new Set(services.sessionManager.getAllSessions()
+      .filter(session => !session.archived)
+      .map(session => session.id));
+    sessionIds.add(PANE_CHAT_SESSION_ID);
+    const statuses: PanelAgentStatusEvent[] = [];
+    for (const sessionId of sessionIds) {
+      for (const panel of panelManager.getPanelsForSession(sessionId)) {
+        if (panel.type !== 'terminal') continue;
+        statuses.push({
+          panelId: panel.id,
+          sessionId,
+          state: terminalPanelManager.getAgentStatus(panel.id)
+            ?? (terminalPanelManager.isTerminalInitialized(panel.id) ? 'unknown' : 'idle'),
+          reason: null,
+        });
+      }
+    }
+    return { success: true, data: statuses };
+  });
+
   commandRegistry.register('panels:list', async (sessionId: string) => {
     try {
       const panels = panelManager.getPanelsForSession(sessionId);

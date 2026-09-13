@@ -7,6 +7,7 @@ import { resetPaneRuntimeForTests, setPaneRuntime } from '../core/runtime';
 import type { PaneEventArgument } from '../core/eventSink';
 import { createFlowControlRecord, disposeFlowControlRecord } from '../ptyHost/flowControl';
 import { panelManager } from '../test/setup';
+import { formatWaitResult } from '../../../packages/runpane/src/watchLines';
 
 function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
   let onData: (data: string) => void = () => undefined;
@@ -197,6 +198,7 @@ describe('terminal status events', () => {
       { channel: 'panel:agentStatus', payload: { panelId: 'p', sessionId: 's', state: 'idle', reason: 'osc_title_idle' } },
     ]);
     expect(journal.readAfter(0).entries).toEqual([]);
+    expect(formatWaitResult({ epoch: journal.epoch, ...journal.readAfter(0) }, 'lines')).toEqual([]);
   });
 
   it('reports immediate real work and completion with coherent reasons', async () => {
@@ -212,6 +214,9 @@ describe('terminal status events', () => {
     expect(manager.getAgentStatus('p')).toBe('idle');
     expect(journal.readAfter(0).entries.map(entry => [entry.kind, entry.reason])).toEqual([
       ['agent.busy', 'osc_title_working'], ['agent.ready', 'osc_title_idle'],
+    ]);
+    expect(formatWaitResult({ epoch: journal.epoch, ...journal.readAfter(0) }, 'lines')).toEqual([
+      'BUSY Pane pane s panel p', 'READY Pane pane s panel p',
     ]);
   });
 });

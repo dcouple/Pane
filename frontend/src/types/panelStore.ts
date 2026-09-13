@@ -8,6 +8,7 @@ export interface PanelStore {
   activityStatus: Record<string, 'active' | 'idle'>; // panelId -> status
   agentStatus: Record<string, AgentState>;    // panelId -> detected agent state (blocked/working/idle)
   agentStatusSession: Record<string, string>; // panelId -> sessionId (so status rolls up without panels loaded)
+  agentStatusSnapshotVersion: number; // Snapshot hydration is silent for notification subscribers
   lastActivityAt: Record<string, string>;     // panelId -> last PTY output timestamp
   unviewedCompletedActivity: Record<string, string>; // sessionId -> completion timestamp
 
