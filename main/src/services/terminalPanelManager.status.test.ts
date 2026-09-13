@@ -89,6 +89,69 @@ afterEach(() => {
 });
 
 describe('terminal status events', () => {
+  it('publishes consistent idle status on exit and deduplicates repeated callbacks', async () => {
+    const fixture = attach('codex');
+    fixture.data('\x1b]2;⠙ Codex\x07');
+    await access.pollAgentStatus();
+    fixture.exit();
+    fixture.exit();
+    expect(events.filter(event => event.channel === 'panel:activityStatus').at(-1)?.payload).toMatchObject({ status: 'idle' });
+    expect(events.filter(event => event.channel === 'terminal:exited')).toHaveLength(1);
+    expect(manager.getAgentStatus('p')).toBeUndefined();
+    expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(1);
+  });
+
+  it('retires destroyed terminals before old exit and data callbacks can affect a replacement', async () => {
+    vi.spyOn(manager, 'saveTerminalState').mockResolvedValue();
+    const old = attach('codex');
+    old.data('\x1b]2;⠙ Codex\x07');
+    await access.pollAgentStatus();
+    manager.destroyTerminal('p');
+    expect(events.filter(event => event.channel === 'panel:agentStatus').at(-1)?.payload).toMatchObject({ state: 'idle' });
+    expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(1);
+    const replacement = attach('codex');
+    replacement.data('\x1b]2;⠙ Codex\x07');
+    await access.pollAgentStatus();
+    const count = events.length;
+    old.exit();
+    old.data('old output');
+    expect(events).toHaveLength(count);
+    expect(manager.isTerminalInitialized('p')).toBe(true);
+    expect(manager.getAgentStatus('p')).toBe('working');
+    replacement.exit();
+    expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(2);
+  });
+
+  it('discards a poll resumed after the terminal was replaced', async () => {
+    const old = attach('codex');
+    let release = () => undefined;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(old.terminal.screenEmulator, 'waitForIdle').mockReturnValue(pending);
+    const polling = access.pollAgentStatus();
+    const replacement = attach('codex');
+    replacement.data('\x1b]2;⠙ Codex\x07');
+    release();
+    await polling;
+    await access.pollAgentStatus();
+    expect(events.filter(event => event.channel === 'panel:agentStatus').map(event => event.payload)).toEqual([
+      { panelId: 'p', sessionId: 's', state: 'working', reason: 'osc_title_working' },
+    ]);
+  });
+
+  it('retains tracking after a write error until actual exit evidence arrives', async () => {
+    const fixture = attach('codex');
+    fixture.data('\x1b]2;⠙ Codex\x07');
+    await access.pollAgentStatus();
+    fixture.terminal.pty.write.mockImplementation(() => { throw new Error('write failed'); });
+    manager.writeToTerminal('p', 'hello');
+    expect(manager.isTerminalInitialized('p')).toBe(true);
+    fixture.data('\x1b]2;Codex\x07');
+    await access.pollAgentStatus();
+    expect(manager.getAgentStatus('p')).toBe('idle');
+    fixture.exit();
+    expect(manager.getAgentStatus('p')).toBeUndefined();
+  });
+
   it.each(['claude', 'codex'] as const)('does not publish work or completion from %s typing and cursor redraws', async agent => {
     const fixture = attach(agent);
     const title = agent === 'claude' ? '✳ Project' : 'Project';

@@ -256,6 +256,13 @@ export class WorkspaceJournal implements PaneEventSink {
     reason?: string | null;
   }): void {
     const { panelId, sessionId: paneId, state } = payload;
+    if (payload.reason === 'terminal_start') {
+      this.exitedPanels.delete(panelId);
+      this.stateByPanel.delete(panelId);
+      this.readySinceByPanel.delete(panelId);
+      return;
+    }
+    if (payload.reason !== 'exit') this.exitedPanels.delete(panelId);
     const panel = this.resolvePanel?.(panelId);
     if (!panel?.isCliPanel) return;
 
