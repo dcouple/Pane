@@ -28,6 +28,9 @@ import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/pendingViewCommit';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';
+import { TerminalDock } from './panels/TerminalDock';
+import { EmptyPanelStage } from './panels/EmptyPanelStage';
+import { getDockTerminalPanel } from '../utils/terminalDock';
 import { SplitLayout } from './panels/SplitLayout';
 import { SessionProvider } from '../contexts/SessionContext';
 import { ToolPanel, ToolPanelType, PANEL_CAPABILITIES, SessionPanelLayout, PanelGroupNode } from '../../../shared/types/panels';
@@ -50,15 +53,12 @@ import {
   mergeAllGroups,
   type DropZone,
 } from '../utils/panelLayout';
-import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, ChevronDown, ChevronUp, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, TerminalSquare, Undo2 } from 'lucide-react';
-import { getCliBrandIcon } from './ui/brandIconRegistry';
+import { Download, Upload, GitMerge, GitPullRequestArrow, Terminal, RefreshCw, Archive, ArchiveRestore, GitCommitHorizontal, Undo2 } from 'lucide-react';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import type { Project } from '../types/project';
 import { devLog, renderLog } from '../utils/console';
 import { useConfigStore } from '../stores/configStore';
 import { cycleIndex } from '../utils/arrayUtils';
-import { formatKeyDisplay } from '../utils/hotkeyUtils';
-import { Kbd } from './ui/Kbd';
 import type { InspectorTab } from './InspectorTabs';
 import { useErrorStore } from '../stores/errorStore';
 import ProjectSettings from './ProjectSettings';
@@ -176,6 +176,13 @@ export const SessionView = memo(() => {
   // repaired centrally instead of in each caller. A collapse that removed the
   // focused group falls back to the primary group; a dead zoom target clears.
   const applyLayout = useCallback((sessionId: string, next: SessionPanelLayout) => {
+    // Closing the dock can promote a working shell. Remove its old tab before
+    // repairing focus/zoom and persisting, for both local and backend deletes.
+    const dock = getDockTerminalPanel(usePanelStore.getState().panels[sessionId] || []);
+    if (dock && findGroupContainingPanel(next.root, dock.id)) {
+      const root = removePanelFromLayout(next.root, dock.id);
+      next = root ? { ...next, root } : createSingleGroupLayout([], null);
+    }
     let focusedGid = next.focusedGroupId;
     if (!focusedGid || !findGroup(next.root, focusedGid)) {
       focusedGid = primaryGroup(next.root).id;
@@ -260,10 +267,10 @@ export const SessionView = memo(() => {
         }
 
         // --- Layout load + reconcile ---
-        // The pinned terminal (first terminal) is excluded from the layout tree
+        // The dock shell is excluded from the layout tree
         // and so are the inspector panels (Explorer / Review), which never
         // sit on the stage — otherwise a close could hand the group to one.
-        const pinned = loadedPanels.find(p => p.type === 'terminal');
+        const pinned = getDockTerminalPanel(loadedPanels);
         const livePanels = loadedPanels.filter(p => p.id !== pinned?.id && !isInspectorPanelType(p.type));
 
         // Sort for initial layout creation (explorer first, diff second, then position)
@@ -285,7 +292,7 @@ export const SessionView = memo(() => {
           // but not in the loadedPanels snapshot. Reconciling against the
           // current store adopts them as orphans instead of dropping them.
           const nowPanels = usePanelStore.getState().panels[sid] || [];
-          const pinnedNow = nowPanels.find(p => p.type === 'terminal');
+          const pinnedNow = getDockTerminalPanel(nowPanels);
           const liveIdsNow: string[] = [];
           for (const p of nowPanels) {
             if (p.id !== pinnedNow?.id && !isInspectorPanelType(p.type)) liveIdsNow.push(p.id);
@@ -333,10 +340,10 @@ export const SessionView = memo(() => {
         if (!panelExists) {
           addPanel(panel);
 
-          // The pinned terminal (first terminal in the session) never enters
+          // The dock shell never enters
           // the layout tree
           const sessionPanelsList = usePanelStore.getState().panels[sid] || [];
-          const pinnedTerminal = sessionPanelsList.find(p => p.type === 'terminal');
+          const pinnedTerminal = getDockTerminalPanel(sessionPanelsList);
           if (pinnedTerminal && panel.id === pinnedTerminal.id) {
             return;
           }
@@ -403,9 +410,9 @@ export const SessionView = memo(() => {
     [panels, activeSession?.id]
   );
 
-  // Bottom terminal panel (first terminal panel in session)
+  // The bottom dock owns a plain shell, never an agent or command panel.
   const defaultTerminalPanel = useMemo(
-    () => sessionPanels.find(p => p.type === 'terminal'),
+    () => getDockTerminalPanel(sessionPanels),
     [sessionPanels]
   );
 
@@ -979,12 +986,6 @@ export const SessionView = memo(() => {
         };
       }
 
-      // Captured BEFORE the create: if the session has no terminal yet, the
-      // panel we are about to create becomes the pinned dock terminal and
-      // must never enter the layout tree.
-      const hadTerminalBefore = (usePanelStore.getState().panels[sid] || [])
-        .some(p => p.type === 'terminal');
-
       const newPanel = await panelApi.createPanel({
         sessionId: sid,
         type,
@@ -996,8 +997,11 @@ export const SessionView = memo(() => {
       addPanel(newPanel);
       setActivePanelInStore(sid, newPanel.id);
 
-      const becomesPinnedTerminal = type === 'terminal' && !hadTerminalBefore;
-      if (becomesPinnedTerminal) return newPanel;
+      const dock = getDockTerminalPanel(usePanelStore.getState().panels[sid] || []);
+      if (dock?.id === newPanel.id) {
+        setIsTerminalCollapsed(false);
+        return newPanel;
+      }
 
       // Add to layout (into the focused group, falling back to the primary
       // group if focus is stale). addPanelToGroup is idempotent, so racing
@@ -1183,49 +1187,9 @@ export const SessionView = memo(() => {
     setDropZones(new Map());
   }, [primaryGroupId, primaryGroupNode, activeSession, isSplitLayout, topBarPanels, applyLayout]);
 
-  const hotkeys = useHotkeyStore((s) => s.hotkeys);
-  const hotkeyDisplay = useCallback((id: string) => {
-    const keys = hotkeys.get(id)?.keys;
-    return keys ? formatKeyDisplay(keys) : null;
-  }, [hotkeys]);
-
-  // The empty stage is the "+" menu laid out inline: one click (or the
-  // shortcut beside it) from a running tool, instead of a placeholder.
   const emptyStage = useMemo(() => (
-    <div className="flex h-full flex-1 items-center justify-center">
-      <div className="w-64">
-        <div className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">Open</div>
-        {[
-          { key: 'terminal', label: 'Terminal', icon: <Terminal className="h-3.5 w-3.5" />, hotkeyId: 'add-tool-terminal', onClick: () => handlePanelCreate('terminal') },
-          ...agentPresets.map(preset => ({
-            key: preset.id,
-            label: preset.title,
-            icon: getCliBrandIcon(preset.iconKey, 'h-3.5 w-3.5'),
-            hotkeyId: preset.hotkeyId,
-            onClick: () => handlePanelCreate('terminal', { initialCommand: preset.command, title: preset.title }),
-          })),
-          ...customCommands.map((cmd, index) => ({
-            key: `custom-${index}`,
-            label: cmd.name,
-            icon: getCliBrandIcon(cmd.command, 'h-3.5 w-3.5') || <TerminalSquare className="h-3.5 w-3.5" />,
-            hotkeyId: `add-tool-custom-${index}`,
-            onClick: () => handlePanelCreate('terminal', { initialCommand: cmd.command, title: cmd.name }),
-          })),
-        ].map(item => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={item.onClick}
-            className="flex h-7 w-full items-center gap-2 rounded px-2 text-left text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
-          >
-            <span className="flex-shrink-0 text-text-tertiary">{item.icon}</span>
-            <span className="truncate">{item.label}</span>
-            {hotkeyDisplay(item.hotkeyId) && <Kbd variant="inline" className="ml-auto pl-3">{hotkeyDisplay(item.hotkeyId)}</Kbd>}
-          </button>
-        ))}
-      </div>
-    </div>
-  ), [agentPresets, customCommands, handlePanelCreate, hotkeyDisplay]);
+    <EmptyPanelStage projectEnvironment={activeProjectEnvironment} onPanelCreate={handlePanelCreate} />
+  ), [activeProjectEnvironment, handlePanelCreate]);
 
   // --- Editor stage element (shared by both layouts) ---
   const editorStageElement = useMemo(() => {
@@ -1498,7 +1462,7 @@ export const SessionView = memo(() => {
   // Unless the user has explicitly closed it previously
   const hasTriedCreatingTerminal = useRef(false);
   useEffect(() => {
-    if (!activeSession?.id || defaultTerminalPanel || hasTriedCreatingTerminal.current) return;
+    if (!activeSession?.id || sessionPanels.some(p => p.type === 'terminal') || hasTriedCreatingTerminal.current) return;
     // Only attempt once per session to avoid loops
     hasTriedCreatingTerminal.current = true;
 
@@ -1517,7 +1481,7 @@ export const SessionView = memo(() => {
         console.error('[SessionView] Failed to auto-create terminal panel:', err);
       });
     });
-  }, [activeSession?.id, defaultTerminalPanel, addPanel]);
+  }, [activeSession?.id, sessionPanels, addPanel]);
 
   // Reset the flag when session changes
   useEffect(() => {
@@ -1540,10 +1504,10 @@ export const SessionView = memo(() => {
     }
   }, [immersiveMode, swappedLayoutRendered, toggleDetailCollapse]);
 
-  // Terminal collapse state with localStorage persistence (collapsed by default)
+  // Share the dock preference across project and session views; expand on first use.
   const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(() => {
     const stored = localStorage.getItem('pane-terminal-collapsed');
-    return stored === null ? true : stored === 'true';
+    return stored === 'true';
   });
 
   useEffect(() => {
@@ -1561,18 +1525,6 @@ export const SessionView = memo(() => {
     containerPx: sessionContentBox.width,
     enabled: !swappedLayoutRendered && detailVisible && !immersiveMode,
   });
-  const terminalResize = useOuterPanelResize({
-    config: OUTER_PANEL_CONFIGS.bottomTerminal,
-    containerPx: centerColumnBox.height,
-    enabled: Boolean(defaultTerminalPanel) && !swappedLayoutRendered && !isTerminalCollapsed && !immersiveMode,
-  });
-  const terminalDockHeight = immersiveMode
-    ? terminalResize.renderedPx
-    : isTerminalCollapsed
-      ? Math.min(32, centerColumnBox.height)
-      : terminalResize.renderedPx;
-  // A zero-height dock is invisible: its chrome must not stay reachable.
-  const terminalDockContentActive = terminalDockHeight > 0;
   const rightTerminalResize = useOuterPanelResize({
     config: OUTER_PANEL_CONFIGS.rightTerminal,
     containerPx: sessionContentBox.width,
@@ -1782,6 +1734,8 @@ export const SessionView = memo(() => {
           projectEnvironment={projectData.environment}
           configuredIDECommand={projectData.open_ide_command}
           onConfigureIDE={() => setShowProjectSettings(true)}
+          isTerminalCollapsed={isTerminalCollapsed}
+          onToggleTerminal={toggleTerminalCollapse}
         />
         <ProjectSettings
           project={projectData}
@@ -1934,70 +1888,16 @@ export const SessionView = memo(() => {
                   {editorStageElement || emptyStage}
                 </div>
 
-                {/* Bottom: persistent terminal (collapsible) */}
                 {defaultTerminalPanel && (
-                  <div
-                    className={`pane-terminal-dock flex-shrink-0 flex flex-col relative overflow-visible ${
-                      !immersiveMode && (isTerminalCollapsed || terminalResize.renderedPx > 0)
-                        ? 'border-t border-border-primary'
-                        : ''
-                    }`}
-                    style={{ height: `${terminalDockHeight}px` }}
-                  >
-                    {terminalResize.separatorVisible && (
-                      <OuterResizeSeparator
-                        label="Resize terminal"
-                        orientation="horizontal"
-                        value={terminalResize.effectivePx}
-                        minimum={terminalResize.floor}
-                        maximum={terminalResize.cap}
-                        {...terminalResize.separatorHandlers}
-                      />
-                    )}
-                    <div
-                      className="pane-terminal-dock-content flex flex-col h-full min-h-0 overflow-hidden"
-                      aria-hidden={!terminalDockContentActive}
-                      inert={!terminalDockContentActive ? true : undefined}
-                    >
-                      {/* Terminal tab header with collapse toggle and pill shortcuts */}
-                      <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2 flex-shrink-0">
-                        {/* Left: chevron + icon + label */}
-                        <button
-                          type="button"
-                          onClick={toggleTerminalCollapse}
-                          aria-label={isTerminalCollapsed ? 'Expand terminal' : 'Collapse terminal'}
-                          className="p-0.5 hover:bg-surface-hover rounded transition-colors"
-                          title={isTerminalCollapsed ? 'Expand terminal' : 'Collapse terminal'}
-                        >
-                          {isTerminalCollapsed ? (
-                            <ChevronUp className="w-3.5 h-3.5 text-text-tertiary" />
-                          ) : (
-                            <ChevronDown className="w-3.5 h-3.5 text-text-tertiary" />
-                          )}
-                        </button>
-                        <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
-                        <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
-
-                        <div className="flex-1" />
-                      </div>
-                      {/* Terminal content (hidden when collapsed) */}
-                      {!isTerminalCollapsed && (
-                        <div
-                          className="pane-terminal-shell-body flex-1 min-h-0 relative pb-1"
-                          style={{ display: terminalResize.bodyActive ? 'block' : 'none' }}
-                          aria-hidden={!terminalResize.bodyActive}
-                          inert={!terminalResize.bodyActive ? true : undefined}
-                        >
-                          <PanelContainer
-                            panel={defaultTerminalPanel}
-                            isActive={terminalResize.bodyActive}
-                            autoFocus={false}
-                            isMainRepo={!!activeSession.isMainRepo}
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                  <TerminalDock
+                    panel={defaultTerminalPanel}
+                    availableHeight={centerColumnBox.height}
+                    collapsed={isTerminalCollapsed}
+                    hidden={immersiveMode}
+                    onToggle={toggleTerminalCollapse}
+                    onClose={() => { void handlePanelClose(defaultTerminalPanel); }}
+                    isMainRepo={!!activeSession.isMainRepo}
+                  />
                 )}
               </div>
 

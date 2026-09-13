@@ -10,6 +10,10 @@ All notable changes to Pane will be documented in this file.
 ### Changed
 - Custom-command keyboard shortcuts moved from `mod+alt+5..9` to `mod+alt+6..9` to make room for the Cursor slot.
 - Cursor Agent is now available inside WSL repositories.
+- Repository main panes now show the default shell in the bottom dock. The dock defaults to expanded in both main and worktree panes, while preserving saved collapse preferences.
+
+### Fixed
+- Agent terminals remain in working tabs after deleting the default shell and switching panes. Closing the dock also repairs tab selection when another shell takes its place.
 
 ## [1.1.123] - 2026-04-25
 
