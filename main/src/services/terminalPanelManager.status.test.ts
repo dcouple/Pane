@@ -17,7 +17,7 @@ function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
     pty: {
       onData: (listener: typeof onData) => { onData = listener; },
       onExit: (listener: typeof onExit) => { onExit = listener; },
-      write: vi.fn(), kill: vi.fn(), cols: 80, rows: 24,
+      write: vi.fn(), kill: vi.fn(), cols: 80, rows: 24, pid: process.pid,
     },
     screenEmulator: new TerminalStateEmulator(80, 24),
     scrollbackBuffer: '', alternateScreenBuffer: '', commandHistory: [],
@@ -38,6 +38,7 @@ interface StatusAccess {
   setupTerminalHandlers(terminal: TerminalFixture['terminal']): void;
   pollAgentStatus(): Promise<void>;
   sendInitialInputOnce(panelId: string): void;
+  getProcessCwd(pid: number): Promise<string>;
 }
 
 let manager: TerminalPanelManager;
@@ -127,7 +128,7 @@ describe('terminal status events', () => {
     const old = attach('codex');
     old.data('\x1b]2;⠙ Codex\x07');
     await access.pollAgentStatus();
-    manager.destroyTerminal('p');
+    await manager.destroyTerminal('p');
     expect(events.filter(event => event.channel === 'panel:agentStatus').at(-1)?.payload).toMatchObject({ state: 'idle', reason: 'destroyed' });
     expect(journal.readAfter(0).entries.map(entry => entry.kind)).toEqual(['agent.busy', 'panel.exited']);
     expect(formatWaitResult({ epoch: journal.epoch, ...journal.readAfter(0) }, 'lines').some(line => line.startsWith('READY'))).toBe(false);
@@ -142,6 +143,66 @@ describe('terminal status events', () => {
     expect(manager.getAgentStatus('p')).toBe('working');
     replacement.exit();
     expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(2);
+  });
+
+  it('drains pending output and saves the live cwd before destroying the emulator', async () => {
+    const fixture = attach('codex');
+    panelManager.getPanel.mockReturnValue({
+      id: 'p', sessionId: 's', type: 'terminal', title: 'Codex',
+      state: { isActive: true, customState: { cwd: '/old' } },
+      metadata: { createdAt: '', lastActiveAt: '', position: 0 },
+    });
+    vi.spyOn(access, 'getProcessCwd').mockResolvedValue('/live');
+    fixture.data('last output before archive');
+    const destroying = manager.destroyTerminal('p');
+    expect(fixture.terminal.pty.kill).not.toHaveBeenCalled();
+    expect(manager.destroyTerminal('p')).toBe(destroying);
+    // Closing callbacks cannot dispose the model before queued writes drain.
+    fixture.exit();
+    fixture.data('output after teardown began');
+    manager.writeToTerminal('p', 'late input');
+    expect(fixture.terminal.pty.write).not.toHaveBeenCalled();
+    await destroying;
+    expect(panelManager.updatePanel).toHaveBeenCalledWith('p', { state: expect.objectContaining({
+      customState: expect.objectContaining({ cwd: '/live', scrollbackBuffer: expect.stringContaining('last output before archive') }),
+    }) });
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(journal.readAfter(0).entries.map(entry => entry.kind)).toEqual(['panel.exited']);
+  });
+
+  it.each(['cwd read', 'emulator drain'])('does not persist or retire a replacement during teardown %s', async phase => {
+    const old = attach('codex');
+    panelManager.getPanel.mockReturnValue({
+      id: 'p', sessionId: 's', type: 'terminal', title: 'Codex',
+      state: { isActive: true }, metadata: { createdAt: '', lastActiveAt: '', position: 0 },
+    });
+    let release: () => void = () => undefined;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(access, 'getProcessCwd').mockImplementation(async () => {
+      if (phase === 'cwd read') await pending;
+      return '/live';
+    });
+    if (phase === 'emulator drain') vi.spyOn(old.terminal.screenEmulator, 'waitForIdle').mockReturnValue(pending);
+    const destroying = manager.destroyTerminal('p');
+    await Promise.resolve();
+    const replacement = attach('codex');
+    replacement.data('\x1b]2;⠙ Codex\x07');
+    release();
+    await destroying;
+    await access.pollAgentStatus();
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    expect(replacement.terminal.pty.kill).not.toHaveBeenCalled();
+    expect(manager.getAgentStatus('p')).toBe('working');
+  });
+
+  it('still retires and kills the terminal when saving fails', async () => {
+    const fixture = attach('codex');
+    vi.spyOn(manager, 'saveTerminalState').mockRejectedValue(new Error('persistence failed'));
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await manager.destroyTerminal('p');
+    expect(error).toHaveBeenCalled();
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(manager.isTerminalInitialized('p')).toBe(false);
   });
 
   it('discards a poll resumed after the terminal was replaced', async () => {

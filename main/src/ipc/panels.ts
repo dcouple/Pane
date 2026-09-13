@@ -419,7 +419,7 @@ export function registerPanelHandlers(
       // Clean up terminal process if it's a terminal panel
       const panel = panelManager.getPanel(panelId);
       if (panel?.type === 'terminal') {
-        terminalPanelManager.destroyTerminal(panelId);
+        await terminalPanelManager.destroyTerminal(panelId);
       }
 
       await panelManager.deletePanel(panelId);

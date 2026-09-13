@@ -196,6 +196,8 @@ interface TerminalProcess {
   currentCommand: string;
   /** The requested tool has not yet been injected into its shell. */
   pendingInitialCommand?: boolean;
+  /** Coalesces teardown callers and prevents callbacks from reviving a closing terminal. */
+  destroying?: Promise<void>;
   lastActivity: Date;
   lastOutputAt?: Date;
   outputGeneration: number;
@@ -453,15 +455,15 @@ export class TerminalPanelManager {
 
   private sendInitialInputOnce(panelId: string): void {
     const terminal = this.terminals.get(panelId);
-    if (!terminal) return;
+    if (!terminal || terminal.destroying) return;
     this.markInitialInputSent(panelId).then((delivery) => {
-      if (!delivery || this.terminals.get(panelId) !== terminal) {
+      if (!delivery || this.terminals.get(panelId) !== terminal || terminal.destroying) {
         return;
       }
 
       this.writeInitialInput(panelId, delivery.input, delivery.submitStrategy);
     }).catch((error) => {
-      if (this.terminals.get(panelId) !== terminal) return;
+      if (this.terminals.get(panelId) !== terminal || terminal.destroying) return;
       console.warn(`[TerminalPanelManager] Failed to send initial input for panel ${panelId}:`, error);
       this.markInitialInputError(panelId, error instanceof Error ? error.message : String(error)).catch(() => {});
     });
@@ -487,11 +489,11 @@ export class TerminalPanelManager {
     submitStrategy: NonNullable<TerminalPanelState['initialInputSubmitStrategy']>,
   ): void {
     const terminal = this.terminals.get(panelId);
-    if (!terminal) return;
+    if (!terminal || terminal.destroying) return;
     if (submitStrategy === 'codex-ctrl-enter') {
       this.writeToTerminal(panelId, input);
       setTimeout(() => {
-        if (this.terminals.get(panelId) !== terminal) return;
+        if (this.terminals.get(panelId) !== terminal || terminal.destroying) return;
         this.writeToTerminal(panelId, '\x1b[13;5u\r');
       }, 500);
       return;
@@ -1089,7 +1091,7 @@ export class TerminalPanelManager {
         });
       }
 
-      if (this.terminals.get(panel.id) !== terminalProcess) return;
+      if (this.terminals.get(panel.id) !== terminalProcess || terminalProcess.destroying) return;
 
       // Detect the interactive prompt before injecting the command.
       // Previous approaches (fixed 500ms delay, then fire-on-any-data + 300ms) failed
@@ -1098,7 +1100,7 @@ export class TerminalPanelManager {
       // so banner lines ending with % or > don't trigger a false positive.
       const panelId = panel.id;
       const injectCommand = () => {
-        if (this.terminals.get(panelId) !== terminalProcess) return;
+        if (this.terminals.get(panelId) !== terminalProcess || terminalProcess.destroying) return;
         terminalProcess.pendingInitialCommand = false;
         this.agentStatusMonitor.register(panelId, Date.now());
         this.writeToTerminal(panelId, commandToRun! + '\r');
@@ -1110,7 +1112,7 @@ export class TerminalPanelManager {
           let onCliOutput: ReturnType<typeof ptyProcess.onData> | null = null;
 
           const signalCliReady = () => {
-            if (cliReadySignaled || this.terminals.get(panelId) !== terminalProcess) return;
+            if (cliReadySignaled || this.terminals.get(panelId) !== terminalProcess || terminalProcess.destroying) return;
             cliReadySignaled = true;
             if (onCliOutput) onCliOutput.dispose();
 
@@ -1148,7 +1150,7 @@ export class TerminalPanelManager {
           setTimeout(signalCliReady, 10000);
         } else if (initialInput) {
           setTimeout(() => {
-            if (this.terminals.get(panelId) === terminalProcess) this.sendInitialInputOnce(panelId);
+            if (this.terminals.get(panelId) === terminalProcess && !terminalProcess.destroying) this.sendInitialInputOnce(panelId);
           }, 1000);
         }
       };
@@ -1156,7 +1158,7 @@ export class TerminalPanelManager {
       this.scheduleAfterShellPrompt(ptyProcess, injectCommand);
     } else if (initialInput) {
       setTimeout(() => {
-        if (this.terminals.get(panel.id) === terminalProcess) this.sendInitialInputOnce(panel.id);
+        if (this.terminals.get(panel.id) === terminalProcess && !terminalProcess.destroying) this.sendInitialInputOnce(panel.id);
       }, 1000);
     }
 
@@ -1185,7 +1187,7 @@ export class TerminalPanelManager {
   private setupTerminalHandlers(terminal: TerminalProcess): void {
     // Handle terminal output
     terminal.pty.onData((data: string) => {
-      if (this.terminals.get(terminal.panelId) !== terminal) return;
+      if (this.terminals.get(terminal.panelId) !== terminal || terminal.destroying) return;
       // Update last activity
       const outputAt = new Date();
       terminal.lastActivity = outputAt;
@@ -1288,7 +1290,7 @@ export class TerminalPanelManager {
     
     // Handle terminal exit
     terminal.pty.onExit((exitCode: { exitCode: number; signal?: number }) => {
-      if (this.terminals.get(terminal.panelId) !== terminal) return;
+      if (this.terminals.get(terminal.panelId) !== terminal || terminal.destroying) return;
       this.retireTerminal(terminal, exitCode);
       terminal.screenEmulator?.dispose();
 
@@ -1347,6 +1349,7 @@ export class TerminalPanelManager {
       return;
     }
 
+    if (terminal.destroying) return;
     try {
       terminal.pty.write(data);
     } catch (err) {
@@ -1364,6 +1367,7 @@ export class TerminalPanelManager {
     options: { force?: boolean } = {},
   ): Promise<void> {
     const terminal = this.terminals.get(panelId);
+    if (terminal?.destroying) return;
     if (!terminal) {
       console.warn(`[TerminalPanelManager] Terminal ${panelId} not found for resize`);
       return;
@@ -1400,14 +1404,14 @@ export class TerminalPanelManager {
         // Back-to-back TIOCSWINSZ calls can collapse into a single pending signal.
         await new Promise(resolve => setTimeout(resolve, FORCED_REDRAW_TRANSITION_MS));
       }
-      if (this.terminals.get(panelId) !== terminal) return;
+      if (this.terminals.get(panelId) !== terminal || terminal.destroying) return;
       terminal.pty.resize(cols, rows);
       terminal.screenEmulator?.resize(cols, rows);
       if (options.force) {
         // Let the final application redraw reach our output batch before the
         // renderer removes its activation mask.
         await new Promise(resolve => setTimeout(resolve, FORCED_REDRAW_SETTLE_MS));
-        if (this.terminals.get(panelId) !== terminal) return;
+        if (this.terminals.get(panelId) !== terminal || terminal.destroying) return;
         this.flushOutputBuffer(terminal);
       }
     } catch (err) {
@@ -1438,9 +1442,6 @@ export class TerminalPanelManager {
     const panel = panelManager.getPanel(panelId);
     if (!panel) return;
 
-    await terminal.screenEmulator?.waitForIdle();
-    if (this.terminals.get(panelId) !== terminal) return;
-    
     // Get current working directory (if possible)
     let cwd = (panel.state.customState && 'cwd' in panel.state.customState) ? panel.state.customState.cwd : undefined;
     cwd = cwd || process.cwd();
@@ -1457,6 +1458,8 @@ export class TerminalPanelManager {
       console.warn(`[TerminalPanelManager] Could not get CWD for terminal ${panelId}:`, error);
     }
     
+    // Cwd lookup can yield while more bytes arrive; drain immediately before serialization.
+    await terminal.screenEmulator?.waitForIdle();
     if (this.terminals.get(panelId) !== terminal || panelManager.getPanel(panelId) !== panel) return;
     await this.persistTerminalState(terminal, panel, cwd);
   }
@@ -1706,13 +1709,13 @@ export class TerminalPanelManager {
     this.agentStatusPolling = true;
     try {
       for (const terminal of this.terminals.values()) {
-        if (terminal.pendingInitialCommand || !this.agentStatusMonitor.isTracked(terminal.panelId)) continue;
+        if (terminal.destroying || terminal.pendingInitialCommand || !this.agentStatusMonitor.isTracked(terminal.panelId)) continue;
         const manifest = getManifestForAgent(terminal.agentType);
         const emulator = terminal.screenEmulator;
         if (!emulator) continue;
 
         await emulator.waitForIdle();
-        if (this.terminals.get(terminal.panelId) !== terminal) continue;
+        if (this.terminals.get(terminal.panelId) !== terminal || terminal.destroying) continue;
         const detection = detectAgentState(manifest, {
           screen: emulator.getScreenText(),
           oscTitle: emulator.getOscTitle(),
@@ -1731,21 +1734,25 @@ export class TerminalPanelManager {
     }
   }
 
-  destroyTerminal(panelId: string): void {
+  destroyTerminal(panelId: string): Promise<void> {
     const terminal = this.terminals.get(panelId);
-    if (!terminal) {
-      return;
-    }
+    if (!terminal) return Promise.resolve();
+    terminal.destroying ??= this.finishDestroyTerminal(terminal);
+    return terminal.destroying;
+  }
 
-    // Capture the current model before disposal. An asynchronous state read here
-    // could otherwise persist a disposed terminal over a replacement's state.
-    const panel = panelManager.getPanel(panelId);
-    if (panel) {
-      const cwd = terminalCustomState(panel.state).cwd || process.cwd();
-      this.persistTerminalState(terminal, panel, cwd).catch((error) => {
-        console.error(`[TerminalPanelManager] Failed to save state for ${panelId}:`, error);
-      });
+  private async finishDestroyTerminal(terminal: TerminalProcess): Promise<void> {
+    const panelId = terminal.panelId;
+    // Stop detection as soon as teardown begins, so output during the save
+    // cannot announce completion. Keep the emulator alive until its writes drain.
+    this.agentStatusMonitor.unregister(panelId);
+    this.maybeStopAgentStatusPoll();
+    try {
+      await this.saveTerminalState(panelId);
+    } catch (error) {
+      console.error(`[TerminalPanelManager] Failed to save state for ${panelId}:`, error);
     }
+    if (this.terminals.get(panelId) !== terminal) return;
 
     this.retireTerminal(terminal);
     terminal.screenEmulator?.dispose();
