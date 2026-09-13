@@ -28,7 +28,7 @@ function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
     isVisible: true, isAlternateScreen: false, inSyncBlock: false,
     filterInAltScreen: false, agentSessionScrapeBuffer: '',
   };
-  return { terminal, data: (data: string) => onData(data), exit: () => onExit({ exitCode: 0 }) };
+  return { terminal, data: (data: string) => onData(data), exit: (exit: { exitCode: number; signal?: number } = { exitCode: 0 }) => onExit(exit) };
 }
 
 type TerminalFixture = ReturnType<typeof createTerminal>;
@@ -155,7 +155,11 @@ describe('terminal status events', () => {
     expect(manager.isTerminalInitialized('p')).toBe(false);
   });
 
-  it('drains pending output and saves the live cwd before destroying the emulator', async () => {
+  it.each([
+    { label: 'live PTY', exit: undefined },
+    { label: 'successful exit', exit: { exitCode: 0 } },
+    { label: 'signaled exit', exit: { exitCode: 17, signal: 9 } },
+  ])('drains and saves before disposal, preserving an exit during teardown ($label)', async ({ exit }) => {
     const fixture = attach('codex');
     panelManager.getPanel.mockReturnValue({
       id: 'p', sessionId: 's', type: 'terminal', title: 'Codex',
@@ -168,7 +172,7 @@ describe('terminal status events', () => {
     expect(fixture.terminal.pty.kill).not.toHaveBeenCalled();
     expect(manager.destroyTerminal('p')).toBe(destroying);
     // Closing callbacks cannot dispose the model before queued writes drain.
-    fixture.exit();
+    if (exit) fixture.exit(exit);
     fixture.data('output after teardown began');
     manager.writeToTerminal('p', 'late input');
     expect(fixture.terminal.pty.write).not.toHaveBeenCalled();
@@ -176,8 +180,14 @@ describe('terminal status events', () => {
     expect(panelManager.updatePanel).toHaveBeenCalledWith('p', { state: expect.objectContaining({
       customState: expect.objectContaining({ cwd: '/live', scrollbackBuffer: expect.stringContaining('last output before archive') }),
     }) });
-    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
-    expect(journal.readAfter(0).entries.map(entry => entry.kind)).toEqual(['panel.exited']);
+    if (exit) expect(fixture.terminal.pty.kill).not.toHaveBeenCalled();
+    else expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(journal.readAfter(0).entries).toMatchObject([{
+      kind: 'panel.exited', exitCode: exit?.exitCode,
+      reason: exit?.signal === undefined ? 'terminal:exit' : `signal:${exit.signal}`,
+    }]);
+    fixture.exit();
+    expect(journal.readAfter(0).entries).toHaveLength(1);
   });
 
   it.each(['cwd read', 'emulator drain'])('does not persist or retire a replacement during teardown %s', async phase => {

@@ -198,6 +198,7 @@ interface TerminalProcess {
   pendingInitialCommand?: boolean;
   /** Coalesces teardown callers and prevents callbacks from reviving a closing terminal. */
   destroying?: Promise<void>;
+  exitDuringDestroy?: { exitCode: number; signal?: number };
   lastActivity: Date;
   lastOutputAt?: Date;
   outputGeneration: number;
@@ -1290,7 +1291,12 @@ export class TerminalPanelManager {
     
     // Handle terminal exit
     terminal.pty.onExit((exitCode: { exitCode: number; signal?: number }) => {
-      if (this.terminals.get(terminal.panelId) !== terminal || terminal.destroying) return;
+      if (this.terminals.get(terminal.panelId) !== terminal) return;
+      if (terminal.destroying) {
+        // The save still owns the emulator; retain exit details until it drains.
+        terminal.exitDuringDestroy ??= exitCode;
+        return;
+      }
       this.retireTerminal(terminal, exitCode);
       terminal.screenEmulator?.dispose();
 
@@ -1754,8 +1760,9 @@ export class TerminalPanelManager {
     }
     if (this.terminals.get(panelId) !== terminal) return;
 
-    this.retireTerminal(terminal);
+    this.retireTerminal(terminal, terminal.exitDuringDestroy);
     terminal.screenEmulator?.dispose();
+    if (terminal.exitDuringDestroy) return;
 
     // Kill the PTY process
     try {
