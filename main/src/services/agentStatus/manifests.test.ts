@@ -22,7 +22,7 @@ describe('getManifestForAgent', () => {
 });
 
 describe('CLAUDE_MANIFEST', () => {
-  it.each(['◐', '◑', '⠙'])('recognizes Claude working title %s', (glyph) => {
+  it.each(['◐', '◑', '◒', '◓', '⠙'])('recognizes Claude working title %s', (glyph) => {
     expect(detectAgentState(CLAUDE_MANIFEST, screen('', `${glyph} Building`)).state).toBe('working');
   });
 

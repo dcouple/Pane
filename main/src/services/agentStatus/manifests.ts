@@ -15,7 +15,7 @@
 import type { AgentManifest } from './manifestEngine';
 
 /** Observed working-title glyphs, including older braille animation. */
-const SPINNER_TITLE = /^[◐◑\u{2800}-\u{28FF}] /u;
+const SPINNER_TITLE = /^[◐◑◒◓\u{2800}-\u{28FF}] /u;
 const CODEX_SPINNER = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/u;
 
 export const CLAUDE_MANIFEST: AgentManifest = {
