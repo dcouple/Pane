@@ -1102,6 +1102,11 @@ export class TerminalPanelManager {
       const panelId = panel.id;
       const injectCommand = () => {
         if (this.terminals.get(panelId) !== terminalProcess || terminalProcess.destroying) return;
+        if (isCliCommand) {
+          // Clear the shell's title in the headless model before trusting agent
+          // status. Queued shell writes drain before this reset and CLI output.
+          terminalProcess.screenEmulator?.write('\x1b]2;\x07');
+        }
         terminalProcess.pendingInitialCommand = false;
         this.agentStatusMonitor.register(panelId, Date.now());
         this.writeToTerminal(panelId, commandToRun! + '\r');
@@ -1297,8 +1302,11 @@ export class TerminalPanelManager {
         terminal.exitDuringDestroy ??= exitCode;
         return;
       }
-      this.retireTerminal(terminal, exitCode);
-      terminal.screenEmulator?.dispose();
+      try {
+        this.retireTerminal(terminal, exitCode);
+      } finally {
+        terminal.screenEmulator?.dispose();
+      }
 
       // Notify frontend (include signal for crash detection)
       this.sendRendererEvent('terminal:exited', {
@@ -1760,25 +1768,34 @@ export class TerminalPanelManager {
     }
     if (this.terminals.get(panelId) !== terminal) return;
 
-    this.retireTerminal(terminal, terminal.exitDuringDestroy);
-    terminal.screenEmulator?.dispose();
-    if (terminal.exitDuringDestroy) return;
-
-    // Kill the PTY process
     try {
-      if (terminal.isWSL) {
-        terminal.pty.write('exit\r');
-        // Give WSL a moment to gracefully exit
-        setTimeout(() => {
-          try { terminal.pty.kill(); } catch { /* already exited */ }
-        }, 500);
-      } else {
-        terminal.pty.kill();
+      this.retireTerminal(terminal, terminal.exitDuringDestroy);
+    } finally {
+      // Event subscribers can throw; cleanup must still reclaim this lifetime.
+      try {
+        terminal.screenEmulator?.dispose();
+      } catch (error) {
+        console.warn(`[TerminalPanelManager] Emulator dispose failed for ${panelId}:`, error);
       }
-    } catch (error) {
-      console.error(`[TerminalPanelManager] Error killing terminal ${panelId}:`, error);
+      if (!terminal.exitDuringDestroy) {
+        try {
+          if (terminal.isWSL) {
+            try {
+              terminal.pty.write('exit\r');
+            } finally {
+              // Reclaim the PTY even if the graceful exit write failed.
+              setTimeout(() => {
+                try { terminal.pty.kill(); } catch { /* already exited */ }
+              }, 500);
+            }
+          } else {
+            terminal.pty.kill();
+          }
+        } catch (error) {
+          console.error(`[TerminalPanelManager] Error killing terminal ${panelId}:`, error);
+        }
+      }
     }
-
   }
 
   /** Retire exactly one terminal lifetime, before kill can call back synchronously. */
@@ -1789,13 +1806,16 @@ export class TerminalPanelManager {
       clearTimeout(terminal.outputFlushTimer);
       terminal.outputFlushTimer = null;
     }
-    disposeFlowControlRecord(terminal.flowControl);
-    this.flushOutputBuffer(terminal);
-    this.agentStatusMonitor.unregister(panelId);
-    this.terminals.delete(panelId);
-    this.visibleViewersByPanel.delete(panelId);
-    this.serializedBuffers.delete(panelId);
-    this.maybeStopAgentStatusPoll();
+    try {
+      this.flushOutputBuffer(terminal);
+    } finally {
+      disposeFlowControlRecord(terminal.flowControl);
+      this.agentStatusMonitor.unregister(panelId);
+      this.terminals.delete(panelId);
+      this.visibleViewersByPanel.delete(panelId);
+      this.serializedBuffers.delete(panelId);
+      this.maybeStopAgentStatusPoll();
+    }
     this.emitAgentStatus(terminal, 'idle', exit ? 'exit' : 'destroyed');
 
     const data = { ...exit, timestamp: new Date().toISOString() };

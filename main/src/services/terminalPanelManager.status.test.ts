@@ -225,6 +225,57 @@ describe('terminal status events', () => {
     expect(manager.isTerminalInitialized('p')).toBe(false);
   });
 
+  it.each(['panel:agentStatus', 'terminal:output'])('cleans up even when %s delivery fails during teardown', async channel => {
+    const fixture = attach('codex');
+    if (channel === 'terminal:output') fixture.data('pending output');
+    const dispose = vi.spyOn(fixture.terminal.screenEmulator, 'dispose');
+    setPaneRuntime({ eventSink: { send(sentChannel) {
+      if (sentChannel === channel) throw new Error('event delivery failed');
+    } } });
+    await expect(manager.destroyTerminal('p', { saveState: false })).rejects.toThrow('event delivery failed');
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(manager.isTerminalInitialized('p')).toBe(false);
+    expect(access.agentStatusMonitor.isTracked('p')).toBe(false);
+    await manager.destroyTerminal('p');
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+  });
+
+  it('kills the PTY even when emulator disposal fails', async () => {
+    const fixture = attach('codex');
+    vi.spyOn(fixture.terminal.screenEmulator, 'dispose').mockImplementationOnce(() => { throw new Error('dispose failed'); });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await manager.destroyTerminal('p', { saveState: false });
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(manager.isTerminalInitialized('p')).toBe(false);
+  });
+
+  it('still kills a WSL terminal when its graceful exit write fails', async () => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    const fixture = attach('codex');
+    Object.assign(fixture.terminal, { isWSL: true });
+    fixture.terminal.pty.write.mockImplementation(() => { throw new Error('exit write failed'); });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await manager.destroyTerminal('p', { saveState: false });
+    expect(manager.isTerminalInitialized('p')).toBe(false);
+    expect(fixture.terminal.pty.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+  });
+
+  it('disposes an exited terminal even when status delivery fails', () => {
+    const fixture = attach('codex');
+    const dispose = vi.spyOn(fixture.terminal.screenEmulator, 'dispose');
+    setPaneRuntime({ eventSink: { send(channel) {
+      if (channel === 'panel:agentStatus') throw new Error('event delivery failed');
+    } } });
+    expect(() => fixture.exit()).toThrow('event delivery failed');
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(manager.isTerminalInitialized('p')).toBe(false);
+    expect(fixture.terminal.pty.kill).not.toHaveBeenCalled();
+  });
+
   it('discards a poll resumed after the terminal was replaced', async () => {
     const old = attach('codex');
     let release = () => undefined;
