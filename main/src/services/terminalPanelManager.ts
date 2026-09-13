@@ -450,13 +450,16 @@ export class TerminalPanelManager {
   }
 
   private sendInitialInputOnce(panelId: string): void {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return;
     this.markInitialInputSent(panelId).then((delivery) => {
-      if (!delivery) {
+      if (!delivery || this.terminals.get(panelId) !== terminal) {
         return;
       }
 
       this.writeInitialInput(panelId, delivery.input, delivery.submitStrategy);
     }).catch((error) => {
+      if (this.terminals.get(panelId) !== terminal) return;
       console.warn(`[TerminalPanelManager] Failed to send initial input for panel ${panelId}:`, error);
       this.markInitialInputError(panelId, error instanceof Error ? error.message : String(error)).catch(() => {});
     });
@@ -481,9 +484,12 @@ export class TerminalPanelManager {
     input: string,
     submitStrategy: NonNullable<TerminalPanelState['initialInputSubmitStrategy']>,
   ): void {
+    const terminal = this.terminals.get(panelId);
+    if (!terminal) return;
     if (submitStrategy === 'codex-ctrl-enter') {
       this.writeToTerminal(panelId, input);
       setTimeout(() => {
+        if (this.terminals.get(panelId) !== terminal) return;
         this.writeToTerminal(panelId, '\x1b[13;5u\r');
       }, 500);
       return;

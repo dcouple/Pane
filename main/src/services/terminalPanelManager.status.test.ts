@@ -8,9 +8,6 @@ import type { PaneEventArgument } from '../core/eventSink';
 import { createFlowControlRecord, disposeFlowControlRecord } from '../ptyHost/flowControl';
 import { panelManager } from '../test/setup';
 
-// These tests exercise PTY/status lifetimes, not the SQLite persistence boundary.
-vi.mock('./database', () => ({ databaseService: {} }));
-
 function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
   let onData: (data: string) => void = () => undefined;
   let onExit: (exit: { exitCode: number; signal?: number }) => void = () => undefined;
@@ -25,6 +22,7 @@ function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
     scrollbackBuffer: '', alternateScreenBuffer: '', commandHistory: [],
     currentCommand: '', lastActivity: new Date(), outputGeneration: 0,
     flowControl: createFlowControlRecord(), outputBuffer: '',
+    // SAFETY: PTY output handlers assign timeout handles; fixtures start without one.
     outputFlushTimer: null as ReturnType<typeof setTimeout> | null,
     isVisible: true, isAlternateScreen: false, inSyncBlock: false,
     filterInAltScreen: false, agentSessionScrapeBuffer: '',
@@ -38,6 +36,7 @@ interface StatusAccess {
   agentStatusMonitor: AgentStatusMonitor;
   setupTerminalHandlers(terminal: TerminalFixture['terminal']): void;
   pollAgentStatus(): Promise<void>;
+  sendInitialInputOnce(panelId: string): void;
 }
 
 let manager: TerminalPanelManager;
@@ -62,7 +61,8 @@ beforeEach(() => {
   fixtures = [];
   events = [];
   manager = new TerminalPanelManager();
-  access = manager as unknown as StatusAccess;
+  // SAFETY: This seam mirrors the private members used by these PTY fixtures.
+  access = manager as StatusAccess;
   journal = new WorkspaceJournal({
     resolvePane: paneId => ({ paneId, paneName: 'Pane' }),
     resolvePanel: panelId => ({ panelId, paneId: 's', isCliPanel: true }),
@@ -86,6 +86,8 @@ afterEach(() => {
   resetPaneRuntimeForTests();
   vi.useRealTimers();
   vi.restoreAllMocks();
+  panelManager.getPanel.mockReset();
+  panelManager.updatePanel.mockReset();
 });
 
 describe('terminal status events', () => {
@@ -136,6 +138,33 @@ describe('terminal status events', () => {
     expect(events.filter(event => event.channel === 'panel:agentStatus').map(event => event.payload)).toEqual([
       { panelId: 'p', sessionId: 's', state: 'working', reason: 'osc_title_working' },
     ]);
+  });
+
+  it.each(['persistence', 'submit delay'])('does not send an old initial prompt after replacement during %s', async phase => {
+    vi.useRealTimers();
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(20_000);
+    const old = attach('codex');
+    let release: () => void = () => undefined;
+    const persisted = new Promise<void>(resolve => { release = resolve; });
+    panelManager.getPanel.mockReturnValue({
+      id: 'p', sessionId: 's', type: 'terminal', title: 'Codex',
+      state: { isActive: true, customState: { initialInput: 'old task', initialInputSubmitStrategy: 'codex-ctrl-enter' } },
+      metadata: { createdAt: '', lastActiveAt: '', position: 0 },
+    });
+    panelManager.updatePanel.mockReturnValue(persisted);
+    access.sendInitialInputOnce('p');
+    if (phase === 'submit delay') {
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(old.terminal.pty.write).toHaveBeenCalledWith('old task');
+    }
+    const replacement = attach('codex');
+    release();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(replacement.terminal.pty.write).not.toHaveBeenCalled();
+    panelManager.getPanel.mockReset();
+    panelManager.updatePanel.mockReset();
   });
 
   it('retains tracking after a write error until actual exit evidence arrives', async () => {
