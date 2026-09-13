@@ -13,7 +13,7 @@ function createTerminal(agentType: 'claude' | 'codex' | undefined = 'codex') {
   let onData: (data: string) => void = () => undefined;
   let onExit: (exit: { exitCode: number; signal?: number }) => void = () => undefined;
   const terminal = {
-    panelId: 'p', sessionId: 's', agentType,
+    panelId: 'p', sessionId: 's', agentType, pendingInitialCommand: false,
     pty: {
       onData: (listener: typeof onData) => { onData = listener; },
       onExit: (listener: typeof onExit) => { onExit = listener; },
@@ -92,6 +92,24 @@ afterEach(() => {
 });
 
 describe('terminal status events', () => {
+  it('keeps idle waits pending during boot and delayed command injection', async () => {
+    const fixture = attach('codex', 20_000);
+    vi.setSystemTime(20_500);
+    await access.pollAgentStatus();
+    expect(manager.getAgentStatus('p')).toBeUndefined();
+    expect(manager.getTerminalSnapshot('p')?.activityStatus).toBe('active');
+    fixture.terminal.pendingInitialCommand = true;
+    vi.setSystemTime(24_500);
+    await access.pollAgentStatus();
+    expect(manager.getAgentStatus('p')).toBeUndefined();
+    expect(manager.getTerminalSnapshot('p')?.activityStatus).toBe('active');
+    fixture.terminal.pendingInitialCommand = false;
+    fixture.data('\x1b]2;Codex\x07');
+    await access.pollAgentStatus();
+    expect(manager.getTerminalSnapshot('p')?.activityStatus).toBe('idle');
+    expect(journal.readAfter(0).entries).toEqual([]);
+  });
+
   it('publishes consistent idle status on exit and deduplicates repeated callbacks', async () => {
     const fixture = attach('codex');
     fixture.data('\x1b]2;⠙ Codex\x07');

@@ -464,8 +464,7 @@ export function registerPanelHandlers(
         statuses.push({
           panelId: panel.id,
           sessionId,
-          state: terminalPanelManager.getAgentStatus(panel.id)
-            ?? (terminalPanelManager.isTerminalInitialized(panel.id) ? 'unknown' : 'idle'),
+          state: terminalPanelManager.getAgentStatus(panel.id) ?? 'unknown',
           reason: null,
         });
       }

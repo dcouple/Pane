@@ -194,6 +194,8 @@ interface TerminalProcess {
   screenEmulator?: TerminalStateEmulator;
   commandHistory: string[];
   currentCommand: string;
+  /** The requested tool has not yet been injected into its shell. */
+  pendingInitialCommand?: boolean;
   lastActivity: Date;
   lastOutputAt?: Date;
   outputGeneration: number;
@@ -1045,6 +1047,8 @@ export class TerminalPanelManager {
       agentSessionScrapeBuffer: ''
     };
 
+    terminalProcess.pendingInitialCommand = Boolean(terminalCustomState(panel.state).initialCommand);
+
     // Store in map (ptyHost path: pid is already populated on the shim).
     this.terminals.set(panel.id, terminalProcess);
 
@@ -1095,6 +1099,8 @@ export class TerminalPanelManager {
       const panelId = panel.id;
       const injectCommand = () => {
         if (this.terminals.get(panelId) !== terminalProcess) return;
+        terminalProcess.pendingInitialCommand = false;
+        this.agentStatusMonitor.register(panelId, Date.now());
         this.writeToTerminal(panelId, commandToRun! + '\r');
 
         // For CLI tool terminals, signal the frontend when the CLI responds
@@ -1626,7 +1632,10 @@ export class TerminalPanelManager {
   
   private deriveActivityStatus(panelId: string): 'active' | 'idle' {
     const state = this.agentStatusMonitor.getState(panelId);
-    return state === 'working' || state === 'blocked' ? 'active' : 'idle';
+    // Legacy idle waits must not succeed while a tracked terminal is still booting.
+    return state === 'working' || state === 'blocked' ||
+      (state === undefined && this.agentStatusMonitor.isTracked(panelId)) ||
+      this.terminals.get(panelId)?.pendingInitialCommand ? 'active' : 'idle';
   }
 
   getAgentStatus(panelId: string): AgentState | undefined {
@@ -1697,7 +1706,7 @@ export class TerminalPanelManager {
     this.agentStatusPolling = true;
     try {
       for (const terminal of this.terminals.values()) {
-        if (!this.agentStatusMonitor.isTracked(terminal.panelId)) continue;
+        if (terminal.pendingInitialCommand || !this.agentStatusMonitor.isTracked(terminal.panelId)) continue;
         const manifest = getManifestForAgent(terminal.agentType);
         const emulator = terminal.screenEmulator;
         if (!emulator) continue;

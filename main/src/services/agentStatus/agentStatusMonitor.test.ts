@@ -57,11 +57,13 @@ describe('AgentStatusMonitor', () => {
     const m = new AgentStatusMonitor(opts);
     m.register('p', 0);
     // Empty shells and boot banners do not represent a completed task.
-    expect(m.update('p', detection({ state: 'idle' }), 500)).toBe('idle');
+    expect(m.update('p', detection({ state: 'idle' }), 500)).toBeNull();
+    expect(m.getState('p')).toBeUndefined();
     m.noteActivity('p', 600);
     m.noteActivity('p', 700);
     expect(m.update('p', detection({}), 800)).toBeNull();
-    expect(m.update('p', detection({}), 3100)).toBeNull();
+    expect(m.getState('p')).toBeUndefined();
+    expect(m.update('p', detection({}), 3100)).toBe('idle');
   });
 
   it('emits only on change', () => {

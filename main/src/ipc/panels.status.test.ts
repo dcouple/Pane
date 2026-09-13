@@ -41,7 +41,7 @@ describe('panel status snapshot IPC', () => {
     await expect(registry.invoke('panels:agent-statuses')).resolves.toEqual({ success: true, data: [
       { panelId: 'agent', sessionId: 'background', state: 'working', reason: null },
       { panelId: 'shell', sessionId: 'background', state: 'unknown', reason: null },
-      { panelId: 'stopped', sessionId: 'background', state: 'idle', reason: null },
+      { panelId: 'stopped', sessionId: 'background', state: 'unknown', reason: null },
       { panelId: 'chat', sessionId: PANE_CHAT_SESSION_ID, state: 'blocked', reason: null },
     ] });
   });

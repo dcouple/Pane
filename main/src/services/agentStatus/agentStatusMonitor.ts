@@ -100,6 +100,12 @@ export class AgentStatusMonitor {
       (tracker.published === 'working' || detection.matchedRuleId === null) &&
       (tracker.published !== 'idle' || tracker.activityChunksInBurst >= 2);
 
+    // A blank boot screen is not yet an idle agent. Keep the initial unknown
+    // state until live chrome appears or the startup grace expires.
+    if (now - tracker.startedAt < this.options.startupGraceMs &&
+        detection.matchedRuleId === null && !recentlyActive &&
+        !detection.visibleWorking && !detection.visibleIdle && detection.state !== 'blocked') return null;
+
     let candidate: AgentState;
     if (detection.state === 'blocked') {
       candidate = 'blocked';
