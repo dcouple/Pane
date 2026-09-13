@@ -44,6 +44,12 @@ describe('CLAUDE_MANIFEST', () => {
     }
   });
 
+  it('ignores an answered permission above the current composer', () => {
+    const text = 'Bash command\nDo you want to proceed?\n❯ 1. Yes\n2. No\nDone.\n────────────\n❯ next task\n────────────';
+    expect(detectAgentState(CLAUDE_MANIFEST, screen(text, '✳ Project')).state).toBe('idle');
+    expect(detectAgentState(CLAUDE_MANIFEST, screen(text, '◐ Building')).state).toBe('working');
+  });
+
   it('classifies a bash permission prompt as blocked', () => {
     const s = [
       '● I will run a command',
