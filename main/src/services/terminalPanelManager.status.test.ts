@@ -145,6 +145,16 @@ describe('terminal status events', () => {
     expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(2);
   });
 
+  it('skips snapshot persistence when the panel is being deleted', async () => {
+    const fixture = attach('codex');
+    const save = vi.spyOn(manager, 'saveTerminalState');
+    await manager.destroyTerminal('p', { saveState: false });
+    expect(save).not.toHaveBeenCalled();
+    expect(panelManager.updatePanel).not.toHaveBeenCalled();
+    expect(fixture.terminal.pty.kill).toHaveBeenCalledOnce();
+    expect(manager.isTerminalInitialized('p')).toBe(false);
+  });
+
   it('drains pending output and saves the live cwd before destroying the emulator', async () => {
     const fixture = attach('codex');
     panelManager.getPanel.mockReturnValue({

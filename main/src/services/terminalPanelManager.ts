@@ -1734,21 +1734,21 @@ export class TerminalPanelManager {
     }
   }
 
-  destroyTerminal(panelId: string): Promise<void> {
+  destroyTerminal(panelId: string, options: { saveState?: boolean } = {}): Promise<void> {
     const terminal = this.terminals.get(panelId);
     if (!terminal) return Promise.resolve();
-    terminal.destroying ??= this.finishDestroyTerminal(terminal);
+    terminal.destroying ??= this.finishDestroyTerminal(terminal, options.saveState !== false);
     return terminal.destroying;
   }
 
-  private async finishDestroyTerminal(terminal: TerminalProcess): Promise<void> {
+  private async finishDestroyTerminal(terminal: TerminalProcess, saveState: boolean): Promise<void> {
     const panelId = terminal.panelId;
     // Stop detection as soon as teardown begins, so output during the save
-    // cannot announce completion. Keep the emulator alive until its writes drain.
+    // cannot announce completion. Keep the emulator alive through any snapshot save.
     this.agentStatusMonitor.unregister(panelId);
     this.maybeStopAgentStatusPoll();
     try {
-      await this.saveTerminalState(panelId);
+      if (saveState) await this.saveTerminalState(panelId);
     } catch (error) {
       console.error(`[TerminalPanelManager] Failed to save state for ${panelId}:`, error);
     }

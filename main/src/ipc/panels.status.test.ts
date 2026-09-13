@@ -10,7 +10,7 @@ import { terminalPanelManager } from '../services/terminalPanelManager';
 import { registerPanelHandlers } from './panels';
 
 function partial<Contract>(value: Partial<Contract>): Contract {
-  // SAFETY: Each fixture supplies every member read by the status snapshot handler.
+  // SAFETY: Each fixture supplies every member read by the tested handlers.
   return value as Contract;
 }
 const panel = (id: string, sessionId: string): ToolPanel => ({
@@ -44,5 +44,23 @@ describe('panel status snapshot IPC', () => {
       { panelId: 'stopped', sessionId: 'background', state: 'unknown', reason: null },
       { panelId: 'chat', sessionId: PANE_CHAT_SESSION_ID, state: 'blocked', reason: null },
     ] });
+  });
+});
+
+describe('panel deletion IPC', () => {
+  it('awaits terminal teardown without saving a snapshot before deleting the row', async () => {
+    vi.spyOn(panelManager, 'getPanel').mockReturnValue(panel('p', 's'));
+    let release: () => void = () => undefined;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const destroy = vi.spyOn(terminalPanelManager, 'destroyTerminal').mockReturnValue(pending);
+    const remove = vi.spyOn(panelManager, 'deletePanel').mockResolvedValue();
+    const registry = new PaneCommandRegistry();
+    registerPanelHandlers(partial<IpcMain>({ handle: vi.fn() }), partial<AppServices>({}), registry);
+    const deleting = registry.invoke('panels:delete', 'p');
+    expect(destroy).toHaveBeenCalledWith('p', { saveState: false });
+    expect(remove).not.toHaveBeenCalled();
+    release();
+    await expect(deleting).resolves.toEqual({ success: true });
+    expect(remove).toHaveBeenCalledWith('p');
   });
 });
