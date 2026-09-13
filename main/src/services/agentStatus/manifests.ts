@@ -14,7 +14,7 @@
 
 import type { AgentManifest } from './manifestEngine';
 
-/** Braille spinner glyphs Claude/Codex animate in their OSC title / status line. */
+/** Observed working-title glyphs, including older braille animation. */
 const SPINNER_TITLE = /^[◐◑\u{2800}-\u{28FF}] /u;
 const CODEX_SPINNER = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/u;
 
@@ -115,7 +115,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
       state: 'idle',
       priority: 950,
       region: 'prompt_box_body',
-      visibleIdle: true,
+      // The composer remains visible mid-turn; it is not completion evidence.
       lineRegex: [/^\s*❯/],
       not: [
         { contains: ['enter to select'] },
@@ -197,7 +197,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'osc_title_idle',
       state: 'idle',
-      priority: 250,
+      priority: 960,
       region: 'osc_title',
       visibleIdle: true,
       regex: [/^\u{2733} /u],

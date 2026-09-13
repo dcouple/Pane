@@ -1167,7 +1167,7 @@ export class TerminalPanelManager {
       terminal.lastOutputAt = outputAt;
       terminal.outputGeneration += 1;
 
-      // Feed PTY activity to the agent-status monitor (the "working" authority).
+      // Feed byte activity as a fallback behind explicit screen/title evidence.
       this.agentStatusMonitor.noteActivity(terminal.panelId, outputAt.getTime());
 
       // Detect alternate screen buffer enter/exit for universal TUI detection
@@ -1700,7 +1700,10 @@ export class TerminalPanelManager {
           oscProgress: emulator.getOscProgress(),
         });
         const next = this.agentStatusMonitor.update(terminal.panelId, detection, Date.now());
-        if (next) this.emitAgentStatus(terminal, next, detection.matchedRuleId);
+        if (next) {
+          const reason = next === detection.state ? detection.matchedRuleId : 'pty_activity';
+          this.emitAgentStatus(terminal, next, reason ?? 'idle_settle');
+        }
       }
     } catch (error) {
       console.error('[TerminalPanelManager] agent status poll failed:', error);
