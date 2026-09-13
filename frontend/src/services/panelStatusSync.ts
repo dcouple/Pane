@@ -23,6 +23,16 @@ export function subscribePanelStatus(): () => void {
   const unsubscribeStatus = api.events.onPanelAgentStatus?.(data => {
     changedDuringRead.add(data.panelId);
     if (deleted.has(data.panelId)) return;
+    if (data.reason === 'exit' || data.reason === 'destroyed') {
+      // Rebaseline notification subscribers atomically, as with a snapshot.
+      // A stopped process must not become an unseen completed agent turn.
+      usePanelStore.setState(state => ({
+        agentStatus: { ...state.agentStatus, [data.panelId]: data.state },
+        agentStatusSession: { ...state.agentStatusSession, [data.panelId]: data.sessionId },
+        agentStatusSnapshotVersion: state.agentStatusSnapshotVersion + 1,
+      }));
+      return;
+    }
     const store = usePanelStore.getState();
     const prevState = store.agentStatus[data.panelId];
     store.setAgentStatus(data.panelId, data.sessionId, data.state);

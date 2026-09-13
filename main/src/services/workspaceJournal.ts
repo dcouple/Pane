@@ -262,7 +262,14 @@ export class WorkspaceJournal implements PaneEventSink {
       this.readySinceByPanel.delete(panelId);
       return;
     }
-    if (payload.reason !== 'exit') this.exitedPanels.delete(panelId);
+    // Ending the process is not a completed agent turn. terminal:exit records
+    // the lifecycle event separately, including user destruction and archive.
+    if (payload.reason === 'exit' || payload.reason === 'destroyed') {
+      this.stateByPanel.delete(panelId);
+      this.readySinceByPanel.delete(panelId);
+      return;
+    }
+    this.exitedPanels.delete(panelId);
     const panel = this.resolvePanel?.(panelId);
     if (!panel?.isCliPanel) return;
 
@@ -290,7 +297,7 @@ export class WorkspaceJournal implements PaneEventSink {
       agentType: panel?.agentType,
       from: previous,
       to: state,
-      source: payload.reason === 'exit' ? 'exit' : 'agent',
+      source: 'agent',
       reason: payload.reason ?? null,
       settledMs,
       heldInput: kind === 'agent.ready' ? truncateHeldInput(panel?.heldInput) : undefined,

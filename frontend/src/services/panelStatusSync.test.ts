@@ -115,6 +115,20 @@ describe('panel status synchronization', () => {
     error.mockRestore();
   });
 
+  it.each(['exit', 'destroyed'])('silently clears working state on %s before panel deletion', async reason => {
+    replies[0](snapshot('working'));
+    await flush();
+    const baseline = usePanelStore.getState().agentStatusSnapshotVersion;
+    status({ ...event('idle'), reason });
+    expect(usePanelStore.getState().getPanelAgentState('p')).toBe('idle');
+    expect(usePanelStore.getState().hasUnviewedCompletedActivity('s')).toBe(false);
+    expect(usePanelStore.getState().agentStatusSnapshotVersion).toBe(baseline + 1);
+    // The next lifetime can still produce a real completion.
+    status(event('working'));
+    status(event('idle'));
+    expect(usePanelStore.getState().hasUnviewedCompletedActivity('s')).toBe(true);
+  });
+
   it('marks real live completion unseen after hydration', async () => {
     replies[0](snapshot('idle'));
     await flush();

@@ -6,7 +6,7 @@ declare global {
   interface Window {
     __statusFixture: {
       setSnapshot(state: AgentState): void;
-      emit(state: AgentState): void;
+      emit(state: AgentState, reason?: string): void;
       remove(): void;
       reconnect(): void;
       notifications: string[];
@@ -66,7 +66,7 @@ test('sidebar and tabs reconcile status without announcing snapshot completions'
     api.window.isFocused = async () => false;
     window.__statusFixture = {
       setSnapshot: state => { snapshotState = state; },
-      emit: state => { for (const listener of statuses) listener({ panelId: 'agent', sessionId: 'Agent pane', state, reason: 'fixture' }); },
+      emit: (state, reason = 'fixture') => { for (const listener of statuses) listener({ panelId: 'agent', sessionId: 'Agent pane', state, reason }); },
       remove: () => { for (const listener of deletions) listener({ panelId: 'agent', sessionId: 'Agent pane' }); },
       reconnect: () => { for (const listener of reconnects) listener(); },
       notifications,
@@ -85,6 +85,11 @@ test('sidebar and tabs reconcile status without announcing snapshot completions'
   await expect.poll(() => page.evaluate(() => window.__statusFixture.notifications.length)).toBe(0);
 
   await page.getByRole('button', { name: 'Other pane', exact: true }).click();
+  for (const reason of ['exit', 'destroyed']) {
+    await page.evaluate(reason => { window.__statusFixture.emit('working'); window.__statusFixture.emit('idle', reason); }, reason);
+    await expect(sidebarPane.locator('..').locator('[aria-label="Agent idle"]')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => window.__statusFixture.notifications)).toEqual([]);
+  }
   await page.evaluate(() => { window.__statusFixture.emit('working'); window.__statusFixture.emit('idle'); });
   await expect(sidebarPane.locator('..').locator('[aria-label="Agent done"]')).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.__statusFixture.notifications)).toEqual(['Codex finished']);

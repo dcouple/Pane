@@ -1782,7 +1782,7 @@ export class TerminalPanelManager {
     this.visibleViewersByPanel.delete(panelId);
     this.serializedBuffers.delete(panelId);
     this.maybeStopAgentStatusPoll();
-    this.emitAgentStatus(terminal, 'idle', 'exit');
+    this.emitAgentStatus(terminal, 'idle', exit ? 'exit' : 'destroyed');
 
     const data = { ...exit, timestamp: new Date().toISOString() };
     if (panelManager.getPanel(panelId)) {

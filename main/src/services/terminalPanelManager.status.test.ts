@@ -119,7 +119,7 @@ describe('terminal status events', () => {
     expect(events.filter(event => event.channel === 'panel:activityStatus').at(-1)?.payload).toMatchObject({ status: 'idle' });
     expect(events.filter(event => event.channel === 'terminal:exited')).toHaveLength(1);
     expect(manager.getAgentStatus('p')).toBeUndefined();
-    expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(1);
+    expect(journal.readAfter(0).entries.map(entry => entry.kind)).toEqual(['agent.busy', 'panel.exited']);
   });
 
   it('retires destroyed terminals before old exit and data callbacks can affect a replacement', async () => {
@@ -128,8 +128,9 @@ describe('terminal status events', () => {
     old.data('\x1b]2;⠙ Codex\x07');
     await access.pollAgentStatus();
     manager.destroyTerminal('p');
-    expect(events.filter(event => event.channel === 'panel:agentStatus').at(-1)?.payload).toMatchObject({ state: 'idle' });
-    expect(journal.readAfter(0).entries.filter(entry => entry.kind === 'panel.exited')).toHaveLength(1);
+    expect(events.filter(event => event.channel === 'panel:agentStatus').at(-1)?.payload).toMatchObject({ state: 'idle', reason: 'destroyed' });
+    expect(journal.readAfter(0).entries.map(entry => entry.kind)).toEqual(['agent.busy', 'panel.exited']);
+    expect(formatWaitResult({ epoch: journal.epoch, ...journal.readAfter(0) }, 'lines').some(line => line.startsWith('READY'))).toBe(false);
     const replacement = attach('codex');
     replacement.data('\x1b]2;⠙ Codex\x07');
     await access.pollAgentStatus();
