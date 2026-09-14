@@ -2,14 +2,15 @@ import type {
   RunpaneWorkspaceEntry,
   RunpaneWorkspaceEntryKind,
 } from '../../../shared/types/runpaneOrchestration';
+import type { WorkspaceJournalFilter } from './workspaceJournal';
 
 export interface WatchCadenceOptions {
   settleMs: number;
   blockedSettleMs: number;
   minIntervalMs: number;
   emitKinds?: readonly RunpaneWorkspaceEntryKind[];
-  /** Identity of the consumer's whole filter; a change discards the instance so held entries never leak scope. */
-  filterKey: string;
+  /** Identity of the whole request shape; a different key means a fresh instance. */
+  key: string;
 }
 
 interface PendingEntry {
@@ -18,38 +19,16 @@ interface PendingEntry {
 }
 
 /** Kinds that end a settle window for the same panel (the state moved on). */
-const SETTLE_CANCELLING_KINDS: ReadonlySet<RunpaneWorkspaceEntryKind> = new Set([
+const SETTLE_CANCELLING_KINDS: readonly RunpaneWorkspaceEntryKind[] = [
   'agent.busy',
   'agent.blocked',
   'agent.unknown',
   'agent.ready',
   'panel.exited',
-]);
-
-/** Kinds that must wake the consumer regardless of the batch interval. */
-const URGENT_KINDS: ReadonlySet<RunpaneWorkspaceEntryKind> = new Set(['agent.blocked']);
-
-/** Kinds the cadence must observe for cancellation even when the consumer did not ask for them. */
-export const CADENCE_OBSERVED_KINDS: readonly RunpaneWorkspaceEntryKind[] = [
-  'agent.busy',
-  'agent.blocked',
-  'agent.unknown',
-  'agent.ready',
-  'panel.exited',
-  'pane.gone',
 ];
 
-export function cadenceOptionsEqual(a: WatchCadenceOptions, b: WatchCadenceOptions): boolean {
-  return a.settleMs === b.settleMs
-    && a.blockedSettleMs === b.blockedSettleMs
-    && a.minIntervalMs === b.minIntervalMs
-    && a.filterKey === b.filterKey
-    && [...a.emitKinds ?? []].sort().join(',') === [...b.emitKinds ?? []].sort().join(',');
-}
-
-function idleKey(entry: RunpaneWorkspaceEntry): string {
-  return entry.panelId ?? entry.paneId;
-}
+/** Kinds the cadence must observe for cancellation even when the consumer did not ask for them. */
+const OBSERVED_KINDS: readonly RunpaneWorkspaceEntryKind[] = [...SETTLE_CANCELLING_KINDS, 'pane.gone'];
 
 /**
  * Per-consumer shaping of workspace entries: READY/BLOCKED settle windows that a
@@ -57,18 +36,18 @@ function idleKey(entry: RunpaneWorkspaceEntry): string {
  * non-urgent lines. BLOCKED bypasses the interval once its settle matures.
  */
 export class WatchCadence {
+  /** Journal position this instance has read up to; the durable cursor may trail it. */
+  readCursor: number | undefined;
   private readonly pending = new Map<string, PendingEntry>();
   private held: RunpaneWorkspaceEntry[] = [];
   private lastFlushAt = 0;
-  private lastIngestedGen = 0;
-  private readonly lastIdleCountByPanel = new Map<string, number>();
 
   constructor(readonly options: WatchCadenceOptions) {}
 
-  /** True when this IDLE step for the panel was already ingested (idle entries share a generation). */
-  hasSeenIdle(entry: RunpaneWorkspaceEntry): boolean {
-    return entry.kind === 'agent.idle'
-      && (entry.idleCount ?? 0) <= (this.lastIdleCountByPanel.get(idleKey(entry)) ?? 0);
+  /** Widen the consumer's filter so state changes it did not ask for still reach `ingest`. */
+  static observeFilter(filter: WorkspaceJournalFilter): WorkspaceJournalFilter {
+    if (!filter.kinds) return filter;
+    return { ...filter, kinds: [...new Set([...filter.kinds, ...OBSERVED_KINDS])] };
   }
 
   /**
@@ -89,23 +68,13 @@ export class WatchCadence {
 
   ingest(entries: readonly RunpaneWorkspaceEntry[], nowMs: number): void {
     for (const entry of entries) {
-      if (entry.kind === 'agent.idle') {
-        if (this.hasSeenIdle(entry)) continue;
-        this.lastIdleCountByPanel.set(idleKey(entry), entry.idleCount ?? 0);
-        this.hold(entry);
-        continue;
-      }
-      if (entry.gen <= this.lastIngestedGen) continue;
-      this.lastIngestedGen = entry.gen;
-
       if (entry.kind === 'pane.gone') {
         for (const [panelId, pending] of this.pending) {
           if (pending.entry.paneId === entry.paneId) this.pending.delete(panelId);
         }
-      } else if (entry.panelId && SETTLE_CANCELLING_KINDS.has(entry.kind)) {
+      } else if (entry.panelId && SETTLE_CANCELLING_KINDS.includes(entry.kind)) {
         this.pending.delete(entry.panelId);
       }
-      if (entry.kind !== 'pane.created') this.lastIdleCountByPanel.delete(idleKey(entry));
 
       const settleMs = entry.kind === 'agent.ready'
         ? this.options.settleMs
@@ -127,8 +96,7 @@ export class WatchCadence {
       this.held.push({ ...pending.entry, settledMs: Math.max(0, nowMs - entryTimeMs(pending.entry, nowMs)) });
     }
     if (this.held.length === 0) return [];
-    const urgent = this.held.some(entry => URGENT_KINDS.has(entry.kind));
-    if (!urgent && nowMs < this.lastFlushAt + this.options.minIntervalMs) return [];
+    if (!this.hasUrgentHeld() && nowMs < this.lastFlushAt + this.options.minIntervalMs) return [];
     const flushed = this.held;
     this.held = [];
     this.lastFlushAt = nowMs;
@@ -139,11 +107,13 @@ export class WatchCadence {
     const deadlines: number[] = [];
     for (const pending of this.pending.values()) deadlines.push(pending.matureAt);
     if (this.held.length > 0) {
-      deadlines.push(this.held.some(entry => URGENT_KINDS.has(entry.kind))
-        ? nowMs
-        : this.lastFlushAt + this.options.minIntervalMs);
+      deadlines.push(this.hasUrgentHeld() ? nowMs : this.lastFlushAt + this.options.minIntervalMs);
     }
     return deadlines.length > 0 ? Math.min(...deadlines) : undefined;
+  }
+
+  private hasUrgentHeld(): boolean {
+    return this.held.some(entry => entry.kind === 'agent.blocked');
   }
 
   private hold(entry: RunpaneWorkspaceEntry): void {

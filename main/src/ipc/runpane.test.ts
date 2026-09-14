@@ -713,12 +713,12 @@ describe('runpane IPC handlers', () => {
     const busyEntry = { ...readyEntry, kind: 'agent.busy' as const, from: 'idle' as const, to: 'working' as const };
     const cadenceRequest = { as: 'cadence', timeoutMs: 0, idleAfterMs: 0, kinds: ['agent.ready'], settleMs: 60_000 };
 
-    function cadenceRegistry() {
+    function cadenceRegistry(options: { capacity?: number } = {}) {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
       const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cadence-test-'));
       tempDirs.push(directory);
-      const workspaceJournal = new WorkspaceJournal();
+      const workspaceJournal = new WorkspaceJournal(options);
       const workspaceCursorStore = new WorkspaceCursorStore(path.join(directory, 'workspace-cursors.json'));
       const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
       return { workspaceJournal, workspaceCursorStore, registry };
@@ -736,6 +736,26 @@ describe('runpane IPC handlers', () => {
       const settled = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
       expect(settled.entries).toEqual([expect.objectContaining({ kind: 'agent.ready', gen: 1, settledMs: 61_000 })]);
       expect(await registry.invoke('runpane:workspace:wait', [cadenceRequest])).toMatchObject({ entries: [] });
+    });
+
+    it('resumes a reused instance from its read cursor so held entries are delivered exactly once', async () => {
+      const { workspaceJournal, workspaceCursorStore, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      vi.setSystemTime(new Date('2026-01-01T12:00:30.000Z'));
+      workspaceJournal.append({ ...readyEntry, panelId: 'panel-other' });
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+      const cursor = workspaceCursorStore.get('cadence');
+      expect(cursor?.pendingGen ?? cursor?.gen).toBe(0);
+
+      vi.setSystemTime(new Date('2026-01-01T12:01:01.000Z'));
+      const first = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(first.entries.map((entry: { gen: number }) => entry.gen)).toEqual([1]);
+      expect(first.generation).toBe(2);
+      vi.setSystemTime(new Date('2026-01-01T12:01:31.000Z'));
+      const second = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(second.entries.map((entry: { gen: number }) => entry.gen)).toEqual([2]);
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
     });
 
     it('drains every page before flushing so a later BUSY still cancels an older READY', async () => {
@@ -796,13 +816,7 @@ describe('runpane IPC handlers', () => {
     });
 
     it('discards the cadence on a cursor-truncated reset', async () => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
-      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cadence-reset-test-'));
-      tempDirs.push(directory);
-      const workspaceJournal = new WorkspaceJournal({ capacity: 2 });
-      const workspaceCursorStore = new WorkspaceCursorStore(path.join(directory, 'workspace-cursors.json'));
-      const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
+      const { workspaceJournal, registry } = cadenceRegistry({ capacity: 2 });
       await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
       workspaceJournal.append(readyEntry);
       expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);

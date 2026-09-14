@@ -321,7 +321,21 @@ function agentEntryKind(state: AgentState, previous: AgentState | undefined): Ru
   return 'agent.unknown';
 }
 
-function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
+/** Stable identity of a filter, for keying per-consumer state. */
+export function workspaceFilterKey(filter: WorkspaceJournalFilter): string {
+  return JSON.stringify({
+    kinds: [...filter.kinds ?? []].sort(),
+    paneIds: [...filter.paneIds ?? []].sort(),
+    excludePaneIds: [...filter.excludePaneIds ?? []].sort(),
+    repoId: filter.repoId ?? null,
+    nameContains: filter.nameContains ?? null,
+    agentsOnly: filter.agentsOnly ?? null,
+    includeHeldInput: filter.includeHeldInput ?? null,
+    includeHeldInputPresence: filter.includeHeldInputPresence ?? null,
+  });
+}
+
+export function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
   if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
   if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
   if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;

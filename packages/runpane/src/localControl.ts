@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { boundary, decodeBoundary } from './boundaryDecoder';
 import { invokeDaemon, PaneDaemonClientError } from './daemonClient';
 import { RUNPANE_CONTRACT } from './generated/contract';
-import type { ParsedArgs, RunpaneAgent } from './commands';
+import { hasCadenceValueFlag, type ParsedArgs, type RunpaneAgent } from './commands';
 import type { BoundarySchema, JsonValue } from './boundaryDecoder';
 import { effectiveWatchHeartbeatMs, formatNonEntry, formatWaitResult, type WatchFormat } from './watchLines';
 
@@ -1162,10 +1162,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   const includeHeldInput = parsed.includeHeldInput && !parsed.noHeldInput ? true : undefined;
   const includeHeldInputPresence = defaults.includeHeldInputPresence
     && !parsed.noHeldInput && parsed.follow && format === 'lines' ? true : undefined;
-  const cadenceRequested = Boolean(parsed.settleMs || parsed.blockedSettleMs || parsed.minIntervalMs);
+  const cadenceValueFlagPresent = hasCadenceValueFlag(parsed);
   // Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
   const watchAs = parsed.watchAs
-    ?? (parsed.follow ? process.env.PANE_PANEL_ID || (cadenceRequested ? `follow-${process.pid}` : undefined) : undefined);
+    ?? (parsed.follow ? process.env.PANE_PANEL_ID || (cadenceValueFlagPresent ? `follow-${process.pid}` : undefined) : undefined);
   const request = {
     as: watchAs,
     since: parsed.watchSince,
@@ -1201,18 +1201,7 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     const timeoutMs = parsed.selfTest ? 0 : Math.min(requestedWaitMs, heartbeatWaitMs, 120_000);
     try {
       const callRequest = parsed.selfTest
-        ? {
-          ...request,
-          as: undefined,
-          since: undefined,
-          from: 'now' as const,
-          idleAfterMs: 0,
-          timeoutMs: 0,
-          settleMs: undefined,
-          blockedSettleMs: undefined,
-          minIntervalMs: undefined,
-          idleBackoff: undefined,
-        }
+        ? { ...request, as: undefined, since: undefined, from: 'now' as const, idleAfterMs: 0, timeoutMs: 0 }
         : { ...request, timeoutMs, idleWindowStartMs: anonymousIdleWindowStartMs };
       const result = await invokeDaemon('runpane:workspace:wait', [callRequest], workspaceWaitResultSchema, {
         paneDir: parsed.paneDir,

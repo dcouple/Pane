@@ -651,15 +651,13 @@ def collect_daemon_health(pane_dir: Optional[str], endpoint: Dict[str, str]) -> 
         }
 
 
+WATCH_DEFAULTS_NOT_REPORTED = {"format", "agentsOnly", "includeHeldInputPresence"}
+
+
 def watch_defaults() -> Dict[str, Any]:
     defaults = RUNPANE_CONTRACT["defaults"]["watch"]
     return {
-        "heartbeatSeconds": defaults["heartbeatSeconds"],
-        "idleAfterMs": defaults["idleAfterMs"],
-        "settleMs": defaults["settleMs"],
-        "blockedSettleMs": defaults["blockedSettleMs"],
-        "minIntervalMs": defaults["minIntervalMs"],
-        "idleBackoff": defaults["idleBackoff"],
+        **{key: value for key, value in defaults.items() if key not in WATCH_DEFAULTS_NOT_REPORTED},
         "kinds": "all",
     }
 

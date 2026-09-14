@@ -456,40 +456,33 @@ async function checkWatchStreamParity() {
           stdout => stdout.includes('WATCH OK gen 4'),
         ),
       );
-      assert.strictEqual(selfTestRequests[0].settleMs, undefined, 'self-test must not settle');
-      assert.strictEqual(selfTestRequests[0].minIntervalMs, undefined, 'self-test must not batch');
-      assert.strictEqual(selfTestRequests[0].idleBackoff, undefined, 'self-test must not back off');
+      assert.strictEqual(selfTestRequests[0].as, undefined, 'self-test must stay anonymous so the daemon applies no cadence');
 
-      for (const badCadenceArgs of [
+      for (const badWatchArgs of [
+        ['watch', '--heartbeat', 'nope'],
         ['watch', '--follow', '--settle', 'nope'],
         ['watch', '--settle', '5'],
         ['watch', '--follow', '--since', '42', '--settle', '180000'],
       ]) {
-        const badCadence = runtime === 'npm'
-          ? childProcess.spawnSync(process.execPath, [npmCli, ...badCadenceArgs], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
-          : childProcess.spawnSync(findPython(), ['-m', 'runpane', ...badCadenceArgs], {
-            encoding: 'utf8',
-            cwd: rootDir,
-            env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: pythonSource, RUNPANE_TELEMETRY_DISABLED: '1' },
-          });
-        assert.strictEqual(badCadence.status, 2, `${badCadenceArgs.join(' ')} must fail`);
-        assertIncludes(badCadence.stdout, 'WATCH ERROR');
+        const badWatch = spawnWatchCli(runtime, badWatchArgs);
+        assert.strictEqual(badWatch.status, 2, `${badWatchArgs.join(' ')} must fail`);
+        assertIncludes(badWatch.stdout, 'WATCH ERROR');
+        assertIncludes(badWatch.stderr, 'WATCH ERROR');
       }
-
-      const badArgs = runtime === 'npm'
-        ? childProcess.spawnSync(process.execPath, [npmCli, 'watch', '--heartbeat', 'nope'], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
-        : childProcess.spawnSync(findPython(), ['-m', 'runpane', 'watch', '--heartbeat', 'nope'], {
-          encoding: 'utf8',
-          cwd: rootDir,
-          env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: pythonSource, RUNPANE_TELEMETRY_DISABLED: '1' },
-        });
-      assert.strictEqual(badArgs.status, 2);
-      assertIncludes(badArgs.stdout, 'WATCH ERROR');
-      assertIncludes(badArgs.stderr, 'WATCH ERROR');
     } finally {
       fs.rmSync(paneDir, { recursive: true, force: true });
     }
   }
+}
+
+function spawnWatchCli(runtime, args) {
+  return runtime === 'npm'
+    ? childProcess.spawnSync(process.execPath, [npmCli, ...args], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
+    : childProcess.spawnSync(findPython(), ['-m', 'runpane', ...args], {
+      encoding: 'utf8',
+      cwd: rootDir,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: pythonSource, RUNPANE_TELEMETRY_DISABLED: '1' },
+    });
 }
 
 function compareParserParity() {

@@ -88,6 +88,11 @@ def run_workspace_state(parsed: Any) -> int:
     return 0
 
 
+def has_cadence_value_flag(parsed: Any) -> bool:
+    """True when any cadence flag that needs a named daemon cursor was given."""
+    return any(value is not None for value in (parsed.settle_ms, parsed.blocked_settle_ms, parsed.min_interval_ms))
+
+
 def run_watch(parsed: Any) -> int:
     if parsed.watch_as and parsed.watch_since is not None:
         raise ValueError("runpane watch accepts either --as or --since, not both.")
@@ -107,12 +112,11 @@ def run_watch(parsed: Any) -> int:
         True if defaults["includeHeldInputPresence"]
         and not parsed.no_held_input and parsed.follow and output_format == "lines" else None
     )
-    cadence_requested = bool(parsed.settle_ms or parsed.blocked_settle_ms or parsed.min_interval_ms)
+    cadence_value_flag_present = has_cadence_value_flag(parsed)
     # Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
-    watch_as = parsed.watch_as or (
-        (os.environ.get("PANE_PANEL_ID") or (f"follow-{os.getpid()}" if cadence_requested else None))
-        if parsed.follow else None
-    )
+    watch_as = parsed.watch_as
+    if watch_as is None and parsed.follow:
+        watch_as = os.environ.get("PANE_PANEL_ID") or (f"follow-{os.getpid()}" if cadence_value_flag_present else None)
     request: Dict[str, Any] = {
         **optional_value("as", watch_as),
         **optional_value("since", parsed.watch_since),
@@ -154,8 +158,6 @@ def run_watch(parsed: Any) -> int:
                 if parsed.self_test:
                     call_request.pop("as", None)
                     call_request.pop("since", None)
-                    for cadence_key in ("settleMs", "blockedSettleMs", "minIntervalMs", "idleBackoff"):
-                        call_request.pop(cadence_key, None)
                     call_request.update({"from": "now", "idleAfterMs": 0, "timeoutMs": 0})
                 elif anonymous_idle_window_start_ms is not None:
                     call_request["idleWindowStartMs"] = anonymous_idle_window_start_ms

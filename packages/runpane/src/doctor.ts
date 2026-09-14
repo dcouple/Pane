@@ -184,15 +184,10 @@ interface DoctorReport {
   nextCommands: string[];
 }
 
-interface DoctorWatchDefaults {
-  heartbeatSeconds: number;
-  idleAfterMs: number;
-  settleMs: number;
-  blockedSettleMs: number;
-  minIntervalMs: number;
-  idleBackoff: boolean;
-  kinds: 'all';
-}
+type DoctorWatchDefaults = Omit<
+  typeof RUNPANE_CONTRACT.defaults.watch,
+  'format' | 'agentsOnly' | 'includeHeldInputPresence'
+> & { kinds: 'all' };
 
 interface RemoteDaemonServiceDoctorCheck {
   paneDir: string;
@@ -923,16 +918,8 @@ function resolveDaemonRecoveryCommand(endpoint: PaneDaemonEndpoint, message: str
 }
 
 export function watchDefaults(): DoctorWatchDefaults {
-  const defaults = RUNPANE_CONTRACT.defaults.watch;
-  return {
-    heartbeatSeconds: defaults.heartbeatSeconds,
-    idleAfterMs: defaults.idleAfterMs,
-    settleMs: defaults.settleMs,
-    blockedSettleMs: defaults.blockedSettleMs,
-    minIntervalMs: defaults.minIntervalMs,
-    idleBackoff: defaults.idleBackoff,
-    kinds: 'all',
-  };
+  const { heartbeatSeconds, idleAfterMs, settleMs, blockedSettleMs, minIntervalMs, idleBackoff } = RUNPANE_CONTRACT.defaults.watch;
+  return { heartbeatSeconds, idleAfterMs, settleMs, blockedSettleMs, minIntervalMs, idleBackoff, kinds: 'all' };
 }
 
 export function formatWatchDefaults(defaults: DoctorWatchDefaults): string {

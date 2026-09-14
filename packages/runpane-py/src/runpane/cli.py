@@ -20,6 +20,7 @@ from .installers import (
     spawn_pane_captured,
 )
 from .local_control import (
+    has_cadence_value_flag,
     run_agents_doctor,
     run_panels_create,
     run_panels_input,
@@ -432,21 +433,23 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         raise ValueError("runpane watch accepts either --all-managed or --pane, not both.")
     if parsed.command == "watch" and parsed.json and parsed.watch_format == "lines":
         raise ValueError("runpane watch accepts either --json or --format lines, not both.")
-    if parsed.command == "watch" and not parsed.follow and (
-        parsed.settle_ms is not None
-        or parsed.blocked_settle_ms is not None
-        or parsed.min_interval_ms is not None
-        or parsed.idle_backoff
-    ):
+    cadence_value_flag_present = has_cadence_value_flag(parsed)
+    if parsed.command == "watch" and not parsed.follow and (cadence_value_flag_present or parsed.idle_backoff):
         raise ValueError("--settle, --blocked-settle, --min-interval, and --idle-backoff require --follow.")
-    if parsed.command == "watch" and parsed.watch_since is not None and (
-        parsed.settle_ms is not None
-        or parsed.blocked_settle_ms is not None
-        or parsed.min_interval_ms is not None
-    ):
+    if parsed.command == "watch" and parsed.watch_since is not None and cadence_value_flag_present:
         raise ValueError(
             "runpane watch accepts either --since or --settle/--blocked-settle/--min-interval, not both (cadence needs a named cursor)."
         )
+    return parsed
+
+
+def parse_non_negative_int_flag(flag: str, value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ValueError(f"{flag} must be a non-negative integer.") from error
+    if parsed < 0:
+        raise ValueError(f"{flag} must be a non-negative integer.")
     return parsed
 
 
@@ -732,36 +735,19 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
         parsed.format = value
         return
     if flag == "--heartbeat":
-        try:
-            heartbeat_seconds = int(value)
-        except ValueError as error:
-            raise ValueError("--heartbeat must be a non-negative integer.") from error
-        if heartbeat_seconds < 0:
-            raise ValueError("--heartbeat must be a non-negative integer.")
-        parsed.heartbeat_seconds = heartbeat_seconds
+        parsed.heartbeat_seconds = parse_non_negative_int_flag(flag, value)
         return
     if flag == "--idle-after":
-        try:
-            idle_after_ms = int(value)
-        except ValueError as error:
-            raise ValueError("--idle-after must be a non-negative integer.") from error
-        if idle_after_ms < 0:
-            raise ValueError("--idle-after must be a non-negative integer.")
-        parsed.idle_after_ms = idle_after_ms
+        parsed.idle_after_ms = parse_non_negative_int_flag(flag, value)
         return
-    if flag in {"--settle", "--blocked-settle", "--min-interval"}:
-        try:
-            ms = int(value)
-        except ValueError as error:
-            raise ValueError(f"{flag} must be a non-negative integer.") from error
-        if ms < 0:
-            raise ValueError(f"{flag} must be a non-negative integer.")
-        if flag == "--settle":
-            parsed.settle_ms = ms
-        elif flag == "--blocked-settle":
-            parsed.blocked_settle_ms = ms
-        else:
-            parsed.min_interval_ms = ms
+    if flag == "--settle":
+        parsed.settle_ms = parse_non_negative_int_flag(flag, value)
+        return
+    if flag == "--blocked-settle":
+        parsed.blocked_settle_ms = parse_non_negative_int_flag(flag, value)
+        return
+    if flag == "--min-interval":
+        parsed.min_interval_ms = parse_non_negative_int_flag(flag, value)
         return
     if flag == "--body-file":
         parsed.body_file = value
