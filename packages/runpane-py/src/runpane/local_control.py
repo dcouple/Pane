@@ -126,6 +126,7 @@ def run_watch(parsed: Any) -> int:
         **optional_value("kinds", parsed.watch_kinds or None),
         **optional_value("paneIds", parsed.watch_pane_ids or None),
         **optional_value("excludePaneIds", parsed.watch_exclude_pane_ids or None),
+        **optional_value("quietPanelIds", parsed.watch_quiet_panel_ids or None),
         **optional_value("repo", parsed.repo),
         **optional_value("nameContains", parsed.name_contains),
         **optional_value("agentsOnly", effective_agents_only),

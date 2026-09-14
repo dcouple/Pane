@@ -31,6 +31,7 @@ export interface WorkspaceJournalFilter {
   kinds?: readonly RunpaneWorkspaceEntryKind[];
   paneIds?: readonly string[];
   excludePaneIds?: readonly string[];
+  quietPanelIds?: readonly string[];
   repoId?: number;
   nameContains?: string;
   agentsOnly?: boolean;
@@ -327,6 +328,7 @@ export function workspaceFilterKey(filter: WorkspaceJournalFilter): string {
     kinds: [...filter.kinds ?? []].sort(),
     paneIds: [...filter.paneIds ?? []].sort(),
     excludePaneIds: [...filter.excludePaneIds ?? []].sort(),
+    quietPanelIds: [...filter.quietPanelIds ?? []].sort(),
     repoId: filter.repoId ?? null,
     nameContains: filter.nameContains ?? null,
     agentsOnly: filter.agentsOnly ?? null,
@@ -337,6 +339,9 @@ export function workspaceFilterKey(filter: WorkspaceJournalFilter): string {
 
 export function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
   if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
+  if (entry.panelId && filter.quietPanelIds?.includes(entry.panelId)
+    && (entry.kind === 'agent.ready' || entry.kind === 'agent.idle')
+    && !entry.heldInputPresent && entry.heldInput === undefined) return false;
   if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
   if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;
   if (filter.repoId !== undefined && entry.repoId !== filter.repoId) return false;

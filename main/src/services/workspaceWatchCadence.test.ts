@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RunpaneWorkspaceEntry, RunpaneWorkspaceEntryKind } from '../../../shared/types/runpaneOrchestration';
 import { WatchCadence } from './workspaceWatchCadence';
+import { matchesFilter } from './workspaceJournal';
 
 const T0 = Date.parse('2026-09-13T01:00:00.000Z');
 let nextGen = 0;
@@ -22,6 +23,22 @@ function entry(kind: RunpaneWorkspaceEntryKind, atMs: number, overrides: Partial
 const kinds = (entries: RunpaneWorkspaceEntry[]) => entries.map(item => item.kind);
 
 describe('WatchCadence', () => {
+  it('observes quiet READY to cancel BLOCKED before suppressing the notification', () => {
+    const filter = { kinds: ['agent.ready', 'agent.blocked'] as const, quietPanelIds: ['panel-1'] };
+    const cadence = new WatchCadence({ settleMs: 180_000, blockedSettleMs: 30_000, minIntervalMs: 600_000,
+      emitKinds: filter.kinds, quietPanelIds: filter.quietPanelIds, key: 'quiet' });
+    const readFilter = WatchCadence.observeFilter(filter);
+    const blocked = entry('agent.blocked', T0);
+    const ready = entry('agent.ready', T0 + 10_000);
+    cadence.ingest([blocked].filter(item => matchesFilter(item, readFilter)), T0);
+    expect(matchesFilter(ready, readFilter)).toBe(true);
+    cadence.ingest([ready].filter(item => matchesFilter(item, readFilter)), T0 + 10_000);
+    expect(cadence.flush(T0 + 600_000)).toEqual([]);
+    expect(cadence.nextDeadline(T0 + 600_000)).toBeUndefined();
+    cadence.ingest([entry('agent.blocked', T0 + 700_000)], T0 + 700_000);
+    expect(kinds(cadence.flush(T0 + 730_000))).toEqual(['agent.blocked']);
+  });
+
   it('cancels a READY silently when the panel goes busy inside the settle window', () => {
     const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 0, emitKinds: ['agent.ready'], key: '' });
     cadence.ingest([entry('agent.ready', T0)], T0);

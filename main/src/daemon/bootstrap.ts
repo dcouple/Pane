@@ -383,6 +383,7 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
       await cliManagerFactory.shutdown();
       await taskQueue.close();
       workspaceJournal.dispose();
+      services.agentMailbox?.dispose();
       await permissionIpcServer?.stop();
       await remoteTransportController.stopWatchingAndShutdown();
       if (paneDaemonServer) {

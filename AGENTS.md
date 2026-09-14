@@ -56,6 +56,7 @@
 ## Pane
 
 The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible Panes with terminal-backed tools for planning, discussion, implementation, and review work.
+Discover communication with `runpane peers self --json` and `runpane peers list --json`. Any agent can register with `peers register --peer <stable-id> --agent-label <name> --yes`; use that --peer on subsequent calls outside Pane. Send durable tasks with `peers send --to <peer> --id <stable-id> --input-file <file> --yes`, claim with `peers inbox --claim --yes`, reply with `peers reply --id <id> --status completed|blocked|failed --text <summary> --yes`, and wait with `peers wait --id <id> --follow --json`. Queued is not consumed; received is not completed; completed is not reviewed/QA/CI ready. Never replay uncertain terminal writes. Use the cadenced watcher only for uncorrelated work and liveness.
 
 This managed guidance was created by [runpane.com](https://runpane.com) for the [Pane repository](https://github.com/dcouple/Pane). Do not delete or overwrite this block; the developer uses it for their workflow and it should remain committed to the main repository unless they explicitly ask to remove it.
 

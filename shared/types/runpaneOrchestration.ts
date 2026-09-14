@@ -60,6 +60,7 @@ export interface RunpaneWorkspaceWaitRequest {
   kinds?: RunpaneWorkspaceEntryKind[];
   paneIds?: string[];
   excludePaneIds?: string[];
+  quietPanelIds?: string[];
   repo?: RunpaneRepoSelector;
   nameContains?: string;
   agentsOnly?: boolean;
