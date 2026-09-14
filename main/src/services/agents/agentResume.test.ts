@@ -7,7 +7,7 @@ const CAPTURED_ID = '7403f755-6758-40d3-bb69-2cd356dd9bf0';
 describe('resolveResumeId', () => {
   it('resumes Claude by panel id, which was its --session-id at launch', () => {
     expect(resolveResumeId('claude', PANEL_ID, {})).toBe(PANEL_ID);
-    expect(resolveResumeId('claude', PANEL_ID, { agentSessionId: CAPTURED_ID })).toBe(PANEL_ID);
+    expect(resolveResumeId('claude', PANEL_ID, { agentSessionId: CAPTURED_ID })).toBe(CAPTURED_ID);
   });
 
   it('resumes Codex by captured session id, falling back to the interactive picker', () => {

@@ -41,7 +41,6 @@
         "bull",
         "chokidar",
         "electron-updater",
-        "web-streams-polyfill",
         "ws",
         "electron-builder-squirrel-windows"
       ]

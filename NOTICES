@@ -975,7 +975,6 @@ The following packages are licensed under the MIT license:
   - utif (2.0.1) - photopea (https://github.com/photopea)
   - util-deprecate (1.0.2) - Nathan Rajlich <nathan@tootallnate.net> (http://n8.io/)
   - uuid (11.1.0)
-  - uuid (13.0.2)
   - uuid (7.0.3)
   - uuid (8.3.2)
   - vary (1.1.2) - Douglas Christopher Wilson <doug@somethingdoug.com>
@@ -989,7 +988,6 @@ The following packages are licensed under the MIT license:
   - vscode-languageserver-types (3.17.5) - Microsoft Corporation
   - vscode-uri (3.0.8) - Microsoft
   - vscode-uri (3.1.0) - Microsoft
-  - web-streams-polyfill (3.3.3) - Mattias Buelens <mattias@buelens.com>
   - webpack-virtual-modules (0.6.2) - SysGears INC
   - when-exit (2.1.4)
   - which-boxed-primitive (1.1.1) - Jordan Harband <ljharb@gmail.com>
@@ -11030,7 +11028,7 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ================================================================================
 
 Package: Pane
-Version: 2.4.97
+Version: 2.4.105
 Author: [object Object]
 License: AGPL-3.0
 

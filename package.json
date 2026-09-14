@@ -108,7 +108,6 @@
     "chokidar": "^5.0.0",
     "electron-updater": "^6.6.8",
     "glob": "^11.0.0",
-    "web-streams-polyfill": "^3.3.3",
     "ws": "^8.20.1"
   },
   "devDependencies": {
