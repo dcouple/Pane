@@ -747,7 +747,7 @@ describe('runpane IPC handlers', () => {
 
       vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
       const result = await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, limit: 1 }]);
-      expect(result).toMatchObject({ entries: [] });
+      expect(result).toMatchObject({ entries: [], generation: 2 });
       vi.setSystemTime(new Date('2026-01-01T12:05:00.000Z'));
       expect(await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, limit: 1 }])).toMatchObject({ entries: [] });
     });
@@ -780,6 +780,19 @@ describe('runpane IPC handlers', () => {
       expect(rescoped.entries).toEqual([]);
       vi.setSystemTime(new Date('2026-01-01T12:04:00.000Z'));
       expect((await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, paneIds: ['session-other'] }])).entries).toEqual([]);
+    });
+
+    it('discards held entries when the consumer changes its idle schedule', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+
+      vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
+      const rescheduled = { ...cadenceRequest, idleBackoff: true };
+      // The rebuilt cadence re-reads the held READY from the capped cursor and settles it afresh.
+      const first = await registry.invoke('runpane:workspace:wait', [rescheduled]);
+      expect(first.entries.map((entry: { kind: string; gen: number }) => [entry.kind, entry.gen])).toEqual([['agent.ready', 1]]);
     });
 
     it('discards the cadence on a cursor-truncated reset', async () => {

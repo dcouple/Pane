@@ -110,6 +110,7 @@ import {
   dueIdleEntries,
   nextIdleDeadline,
   type WorkspaceIdleCandidate,
+  type WorkspaceIdleSchedule,
 } from '../services/workspaceIdleTracker';
 
 const RUNPANE_CHANNELS = [
@@ -943,7 +944,7 @@ export function registerRunpaneHandlers(
         : normalized.since !== undefined ? 0 : requestStartedAt);
       let cursor = normalized.since ?? workspaceJournal.generation;
       let reset: RunpaneWorkspaceWaitResult['reset'];
-      const cadenceOptions = workspaceCadenceOptions(normalized, filter);
+      const cadenceOptions = workspaceCadenceOptions(normalized, filter, idleSchedule);
       const cadenceKey = cadenceOptions && normalized.as ? normalized.as : undefined;
       if (normalized.as && !cadenceKey) cadenceByConsumer.delete(normalized.as);
       // The cadence must observe state changes the consumer did not ask for (a BUSY cancels a settling READY).
@@ -1099,15 +1100,17 @@ export function registerRunpaneHandlers(
       }
       if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
 
+      // On the cadence path the drain loop may have read past the first page.
+      const generation = cadence && !reset ? Math.max(cursor, waited.generation) : waited.generation;
       return {
         ok: true,
         epoch: workspaceJournal.epoch,
-        generation: waited.generation,
+        generation,
         entries,
         timedOut: entries.length === 0 && (cadence !== undefined || waited.timedOut),
         dropped: waited.dropped,
         reset,
-        nextCommand: workspaceNextCommand(normalized, waited.generation),
+        nextCommand: workspaceNextCommand(normalized, generation),
       };
     }, result => ({ resultCount: result.entries.length, timedOut: result.timedOut }), result =>
       result.entries.length > 0 || result.reset !== undefined);
@@ -3324,6 +3327,7 @@ function workspaceEntryMatches(
 function workspaceCadenceOptions(
   request: RunpaneWorkspaceWaitRequest,
   filter: WorkspaceJournalFilter,
+  idleSchedule: WorkspaceIdleSchedule,
 ): WatchCadenceOptions | undefined {
   const settleMs = request.settleMs ?? 0;
   const blockedSettleMs = request.blockedSettleMs ?? 0;
@@ -3338,6 +3342,8 @@ function workspaceCadenceOptions(
     agentsOnly: filter.agentsOnly === true,
     includeHeldInput: filter.includeHeldInput === true,
     includeHeldInputPresence: filter.includeHeldInputPresence === true,
+    idleAfterMs: idleSchedule.idleAfterMs,
+    idleBackoff: idleSchedule.backoff === true,
   });
   return { settleMs, blockedSettleMs, minIntervalMs, emitKinds: request.kinds, filterKey };
 }
