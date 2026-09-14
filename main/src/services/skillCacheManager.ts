@@ -173,8 +173,8 @@ Auto-resume:
   Agent composers often keep submitted text held as a paste, and an
   extra Enter on an empty composer is harmless.
 - Confirm with \`runpane panels screen\`: \`composer.hasUndeliveredText\`
-  is false and the agent is working (the watcher also emits a BUSY
-  line). If your resume message is still held, run
+  is false and the agent is working (the watcher does not report BUSY,
+  so the screen is the proof). If your resume message is still held, run
   \`runpane panels submit-composer --panel <panel-id> --yes --json\`
   once; if it is still held after that, report to the user instead of
   retrying.
@@ -202,11 +202,13 @@ Watcher re-arm:
 
 - The dead-watch rule in the Liveness Contract is unchanged: re-arm
   once, then the doctor report.
-- A HEARTBEAT gap over 120s that ends with lines arriving on their own
-  (a burst of queued lines) is a wake, not a dead watch: re-run
-  \`runpane watch --self-test\` before trusting the new lines, and do
-  not spend the re-arm on it. Each wake resets the re-arm allowance.
-- A gap with no line for 120s while the Mac is awake is a dead watch.`;
+- A long silence that ends with lines arriving on their own (a burst
+  of queued lines, or a WATCH RECONNECTED line) is a wake, not a dead
+  watch: re-run \`runpane watch --self-test\` before trusting the new
+  lines, and do not spend the re-arm on it. Each wake resets the
+  re-arm allowance.
+- Silence alone is never a dead watch: HEARTBEAT is filtered out of
+  the monitor, so only a non-zero exit or a WATCH ERROR line is.`;
 
 interface SkillSyncState {
   lastAttemptAt?: string;
@@ -485,8 +487,9 @@ Do these before anything else:
 2. Pane Chat orchestrator skill: \`${paneOrchestratorSkill}\`
 3. RunPane orchestrator skill: \`${claudeOrchestrator}\` (lifecycle, lanes, stages)
 4. Run the doctor command from the runtime context
-5. Arm liveness per the pane-orchestrator skill (\`runpane watch --self-test\`
-   then \`runpane watch --follow\`)
+5. Arm liveness with the two commands in the pane-orchestrator skill's
+   Liveness Contract (\`runpane watch --self-test\`, then the flagged
+   follow line; never the bare \`--follow\`)
 
 Then, before dispatching anything:
 
@@ -567,8 +570,9 @@ Read all of these in parallel:
   - Codex: \`${codexOrchestrator}\`
 
 Then in parallel: run the doctor command from the runtime context,
-arm liveness with the two commands in the Liveness Contract below (never
-the bare \`--follow\`), and sweep active panes through RunPane.
+arm liveness (\`runpane watch --self-test\`, then the flagged follow line
+from the Liveness Contract below; never the bare \`--follow\`), and sweep
+active panes through RunPane.
 
 ${UNATTENDED_RESILIENCE_PROMPT}
 
@@ -631,8 +635,9 @@ suggestion). Other lines arrive in one batch at most every 10min. BUSY
 is not requested and carries no action. HEARTBEAT every 60s proves
 liveness only.
 
-Dead-watch: no line for 120s or non-zero exit means the primary is
-dead. Re-arm once. If it dies again, capture the last 20 output lines
+Dead-watch: HEARTBEAT is filtered out, so silence proves nothing. The
+primary is dead when the monitor exits non-zero or prints a WATCH ERROR
+line. Re-arm once. If it dies again, capture the last 20 output lines
 to a file and run
 \`runpane doctor --report --title "runpane watch failed" --body-file <evidence-file> --json\`,
 then tell the human.
