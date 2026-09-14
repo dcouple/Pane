@@ -45,9 +45,6 @@ importers:
       glob:
         specifier: ^11.0.0
         version: 11.0.3
-      web-streams-polyfill:
-        specifier: ^3.3.3
-        version: 3.3.3
       ws:
         specifier: ^8.20.1
         version: 8.20.1
@@ -296,12 +293,6 @@ importers:
       js-yaml:
         specifier: ^4.1.1
         version: 4.1.1
-      uuid:
-        specifier: ^13.0.0
-        version: 13.0.2
-      web-streams-polyfill:
-        specifier: ^3.3.3
-        version: 3.3.3
       ws:
         specifier: ^8.20.1
         version: 8.20.1

@@ -205,9 +205,9 @@ export async function createPaneDaemonHost(options: PaneDaemonHostOptions): Prom
     logger.warn('[PaneChat] Failed to ensure startup Pane Chat session', error instanceof Error ? error : undefined);
   });
   const taskQueue = new TaskQueue({
+    claudeCodeManager: defaultCliManager,
     sessionManager,
     worktreeManager,
-    claudeCodeManager: defaultCliManager,
     gitDiffManager,
     executionTracker,
     worktreeNameGenerator,
