@@ -72,6 +72,10 @@ export interface ParsedArgs {
   watchFormat?: 'lines' | 'json';
   heartbeatSeconds?: number;
   idleAfterMs?: number;
+  settleMs?: number;
+  blockedSettleMs?: number;
+  minIntervalMs?: number;
+  idleBackoff?: boolean;
   allManaged?: boolean;
   includeShells?: boolean;
   noHeldInput?: boolean;
@@ -173,6 +177,13 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   }
   if (parsed.command === 'watch' && parsed.json && parsed.watchFormat === 'lines') {
     throw new Error('runpane watch accepts either --json or --format lines, not both.');
+  }
+  const cadenceValueFlagPresent = hasCadenceValueFlag(parsed);
+  if (parsed.command === 'watch' && !parsed.follow && (cadenceValueFlagPresent || parsed.idleBackoff)) {
+    throw new Error('--settle, --blocked-settle, --min-interval, and --idle-backoff require --follow.');
+  }
+  if (parsed.command === 'watch' && parsed.watchSince !== undefined && cadenceValueFlagPresent) {
+    throw new Error('runpane watch accepts either --since or --settle/--blocked-settle/--min-interval, not both (cadence needs a named cursor).');
   }
   return parsed;
 }
@@ -317,6 +328,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
   }
   if (flag === '--follow') {
     parsed.follow = true;
+    return;
+  }
+  if (flag === '--idle-backoff') {
+    parsed.idleBackoff = true;
     return;
   }
   if (flag === '--ack-now') {
@@ -542,19 +557,23 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
     return;
   }
   if (flag === '--heartbeat') {
-    const heartbeatSeconds = Number(value);
-    if (!Number.isInteger(heartbeatSeconds) || heartbeatSeconds < 0) {
-      throw new Error('--heartbeat must be a non-negative integer.');
-    }
-    parsed.heartbeatSeconds = heartbeatSeconds;
+    parsed.heartbeatSeconds = parseNonNegativeIntegerFlag(flag, value);
     return;
   }
   if (flag === '--idle-after') {
-    const idleAfterMs = Number(value);
-    if (!Number.isInteger(idleAfterMs) || idleAfterMs < 0) {
-      throw new Error('--idle-after must be a non-negative integer.');
-    }
-    parsed.idleAfterMs = idleAfterMs;
+    parsed.idleAfterMs = parseNonNegativeIntegerFlag(flag, value);
+    return;
+  }
+  if (flag === '--settle') {
+    parsed.settleMs = parseNonNegativeIntegerFlag(flag, value);
+    return;
+  }
+  if (flag === '--blocked-settle') {
+    parsed.blockedSettleMs = parseNonNegativeIntegerFlag(flag, value);
+    return;
+  }
+  if (flag === '--min-interval') {
+    parsed.minIntervalMs = parseNonNegativeIntegerFlag(flag, value);
     return;
   }
   if (flag === '--body-file') {
@@ -563,6 +582,19 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
   }
 
   throw new Error(`Unknown option for ${parsed.command}: ${flag}`);
+}
+
+function parseNonNegativeIntegerFlag(flag: string, value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${flag} must be a non-negative integer.`);
+  }
+  return parsed;
+}
+
+/** True when any cadence flag that needs a named daemon cursor was given. */
+export function hasCadenceValueFlag(parsed: ParsedArgs): boolean {
+  return [parsed.settleMs, parsed.blockedSettleMs, parsed.minIntervalMs].some(value => value !== undefined);
 }
 
 function isRunpaneLocalCommand(command: RunpaneCommand): boolean {

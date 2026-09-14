@@ -113,6 +113,9 @@ runpane panes rename --pane <pane-id> --name issue-393 --yes --json
 runpane panels list --pane <pane-id> --json
 runpane panels output --panel <panel-id> --limit 200 --json
 printf 'Continue\n' | runpane panels input --panel <panel-id> --input-file - --yes --json
+runpane watch --self-test
+runpane watch --follow
+runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff
 runpane help
 runpane <command> --help
 ```
@@ -167,6 +170,8 @@ If composer submission cannot be verified without risking a duplicate, the creat
 
 When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.
 
+`runpane watch` waits for workspace transitions from the daemon journal without polling. `--follow` keeps waiting and prints one line per event: READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT, plus HEARTBEAT every 60 seconds as proof of life. Defaults are responsive: no settle, no batching, all kinds, IDLE every `--idle-after`. Expensive consumers opt into `--kinds` (drop `agent.busy`; BUSY carries no action), `--settle <ms>` (READY only after a quiet window; a BUSY inside it cancels the line), `--blocked-settle <ms>`, `--min-interval <ms>` (batch non-urgent lines; BLOCKED bypasses it), and `--idle-backoff` (10m, 30m, 1h, 3h, then daily). The recommended orchestrator invocation is `runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff`, which budgets about 6 wake-ups per active pane per hour worst case, usually 1-3. Pane Chat arms it automatically through its skill; only your own scripts need the flags. STUCK means real unsubmitted composer text, never an agent prompt suggestion. Judge a dead watch by a non-zero exit or a WATCH ERROR line, not by silence.
+
 ## Agent Context
 
 Pane lets a developer manage saved base repositories, user-visible Panes (Pane sessions) for feature/PR work, and terminal-backed panel tabs. A Pane is a visible workspace that normally maps to one Pane-managed git worktree and branch; a panel is a terminal tab inside one Pane and shares that Pane's worktree; an agent is a CLI process running inside a panel.
@@ -212,6 +217,7 @@ Brief tools:
 - `panels submit`: Send text plus terminal Enter to a terminal panel.
 - `panels submit-composer`: Submit an agent composer with the correct key sequence, including Ctrl+Enter for Codex.
 - `panels wait`: Wait for terminal initialized, ready, idle, or text state with compact output.
+- `watch`: Wait for workspace transitions (READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT) from the daemon journal without polling; responsive by default, with opt-in cadence flags for expensive consumers.
 
 Managed AGENTS.md block body:
 
@@ -324,6 +330,9 @@ These flags are consumed by local daemon-control commands:
 --format <lines|json>
 --heartbeat <seconds>
 --idle-after <milliseconds>
+--settle <milliseconds>
+--blocked-settle <milliseconds>
+--min-interval <milliseconds>
 --body-file <path|->
 --json
 --wait-ready
@@ -341,6 +350,7 @@ These flags are consumed by local daemon-control commands:
 --include-shells
 --no-held-input
 --self-test
+--idle-backoff
 --report
 ```
 

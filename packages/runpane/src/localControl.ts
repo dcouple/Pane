@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { boundary, decodeBoundary } from './boundaryDecoder';
 import { invokeDaemon, PaneDaemonClientError } from './daemonClient';
 import { RUNPANE_CONTRACT } from './generated/contract';
-import type { ParsedArgs, RunpaneAgent } from './commands';
+import { hasCadenceValueFlag, type ParsedArgs, type RunpaneAgent } from './commands';
 import type { BoundarySchema, JsonValue } from './boundaryDecoder';
 import { effectiveWatchHeartbeatMs, formatNonEntry, formatWaitResult, type WatchFormat } from './watchLines';
 
@@ -1162,7 +1162,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   const includeHeldInput = parsed.includeHeldInput && !parsed.noHeldInput ? true : undefined;
   const includeHeldInputPresence = defaults.includeHeldInputPresence
     && !parsed.noHeldInput && parsed.follow && format === 'lines' ? true : undefined;
-  const watchAs = parsed.watchAs ?? (parsed.follow ? process.env.PANE_PANEL_ID : undefined);
+  const cadenceValueFlagPresent = hasCadenceValueFlag(parsed);
+  // Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
+  const watchAs = parsed.watchAs
+    ?? (parsed.follow ? process.env.PANE_PANEL_ID || (cadenceValueFlagPresent ? `follow-${process.pid}` : undefined) : undefined);
   const request = {
     as: watchAs,
     since: parsed.watchSince,
@@ -1179,6 +1182,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     includeHeldInput,
     includeHeldInputPresence,
     idleAfterMs,
+    settleMs: parsed.settleMs,
+    blockedSettleMs: parsed.blockedSettleMs,
+    minIntervalMs: parsed.minIntervalMs,
+    idleBackoff: parsed.idleBackoff || undefined,
   };
 
   let armed = false;

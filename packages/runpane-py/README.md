@@ -89,6 +89,49 @@ Daemon setup also forwards Pane remote-host options:
 --print-only
 ```
 
+### Watching the Workspace
+
+`runpane watch` waits for workspace transitions from the Pane daemon without
+polling. Under `--follow` it prints one line per event: `READY` (a turn ended),
+`BLOCKED` (the agent is waiting on a human), `IDLE`, `STUCK` (real unsubmitted
+composer text; an agent prompt suggestion never counts), `NEW`, `GONE`, `EXIT`,
+plus `HEARTBEAT` every 60 seconds as proof of life.
+
+```bash
+runpane watch --self-test
+runpane watch --follow
+```
+
+The defaults are responsive: no settle, no batching, all event kinds, `IDLE`
+every 10 minutes. Panes and shell users see every event immediately.
+
+A consumer that pays for every line (an orchestrator that re-reads its whole
+context per wake-up) opts into cadence shaping instead. This is the recommended
+orchestrator invocation, budgeted at about 6 wake-ups per active pane per hour
+worst case, usually 1 to 3:
+
+```bash
+runpane watch --self-test
+runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff
+```
+
+- `--kinds` drops `agent.busy`; `BUSY` carries no action.
+- `--settle <ms>` emits `READY` only after the panel stays idle that long. A
+  `BUSY` inside the window cancels it silently, which removes the idle/working
+  flips a pane makes while it waits on subagents.
+- `--blocked-settle <ms>` does the same for `BLOCKED`, so a prompt answered in
+  the pane within seconds wakes nobody.
+- `--min-interval <ms>` holds non-urgent lines and flushes them together at
+  most once per interval. `BLOCKED` bypasses it.
+- `--idle-backoff` fires `IDLE` at `--idle-after`, then 30m, 1h, 3h, then
+  daily, and resets on any activity.
+
+These flags require `--follow`. Pane Chat arms them automatically through its
+pane-orchestrator skill, so you only need them for your own scripts. Filter
+`HEARTBEAT` out of any monitor that wakes an agent, and judge a dead watch by a
+non-zero exit or a `WATCH ERROR` line, not by silence. `runpane agent-context
+--command watch --json` lists every flag with its default.
+
 ## Attribution
 
 PyPI package downloads use `source=pip` when requesting release artifacts from

@@ -15,22 +15,60 @@ export interface WorkspaceIdleCandidate {
   heldInputPresent?: boolean;
 }
 
+export interface WorkspaceIdleSchedule {
+  idleAfterMs: number;
+  /** Back off after the first step: 30m, 1h, 3h, then every 24h. */
+  backoff?: boolean;
+}
+
+const BACKOFF_STEPS_MS = [30 * 60_000, 60 * 60_000, 3 * 60 * 60_000] as const;
+const BACKOFF_TAIL_MS = 24 * 60 * 60_000;
+
+function backoffThresholds(idleAfterMs: number): number[] {
+  const thresholds = [idleAfterMs];
+  for (const step of BACKOFF_STEPS_MS) {
+    if (step > thresholds[thresholds.length - 1]) thresholds.push(step);
+  }
+  return thresholds;
+}
+
+/** Number of schedule thresholds crossed after `idleMs` of idleness. */
+function idleCountFor(idleMs: number, schedule: WorkspaceIdleSchedule): number {
+  const { idleAfterMs, backoff } = schedule;
+  if (idleAfterMs <= 0 || idleMs < idleAfterMs) return 0;
+  if (!backoff) return Math.floor(idleMs / idleAfterMs);
+  const thresholds = backoffThresholds(idleAfterMs);
+  const crossed = thresholds.filter(threshold => idleMs >= threshold).length;
+  if (crossed < thresholds.length) return crossed;
+  const last = thresholds[thresholds.length - 1];
+  return thresholds.length + Math.floor((idleMs - last) / BACKOFF_TAIL_MS);
+}
+
+/** Idle duration at which the `count`-th IDLE fires (count >= 1). */
+function idleThresholdFor(count: number, schedule: WorkspaceIdleSchedule): number {
+  const { idleAfterMs, backoff } = schedule;
+  if (!backoff) return count * idleAfterMs;
+  const thresholds = backoffThresholds(idleAfterMs);
+  if (count <= thresholds.length) return thresholds[count - 1];
+  return thresholds[thresholds.length - 1] + (count - thresholds.length) * BACKOFF_TAIL_MS;
+}
+
 export function dueIdleEntries(
   candidates: readonly WorkspaceIdleCandidate[],
-  idleAfterMs: number,
+  schedule: WorkspaceIdleSchedule,
   fromMs: number,
   toMs: number,
   generation: number,
 ): RunpaneWorkspaceEntry[] {
-  if (idleAfterMs <= 0 || toMs < fromMs) return [];
+  if (schedule.idleAfterMs <= 0 || toMs < fromMs) return [];
 
   const at = new Date(toMs).toISOString();
   return candidates.flatMap((candidate) => {
     if (candidate.agentState !== 'idle') return [];
     const fromIdleMs = Math.max(0, fromMs - candidate.idleSinceMs);
     const toIdleMs = Math.max(0, toMs - candidate.idleSinceMs);
-    const previousCount = Math.floor(fromIdleMs / idleAfterMs);
-    const idleCount = Math.floor(toIdleMs / idleAfterMs);
+    const previousCount = idleCountFor(fromIdleMs, schedule);
+    const idleCount = idleCountFor(toIdleMs, schedule);
     if (idleCount < 1 || idleCount <= previousCount) return [];
 
     return [{
@@ -47,7 +85,7 @@ export function dueIdleEntries(
       agentType: candidate.agentType,
       to: 'idle' as const,
       source: 'agent' as const,
-      idleMs: idleCount * idleAfterMs,
+      idleMs: idleThresholdFor(idleCount, schedule),
       idleCount,
       heldInputPresent: candidate.heldInputPresent,
     }];
@@ -56,15 +94,15 @@ export function dueIdleEntries(
 
 export function nextIdleDeadline(
   candidates: readonly WorkspaceIdleCandidate[],
-  idleAfterMs: number,
+  schedule: WorkspaceIdleSchedule,
   nowMs: number,
 ): number | undefined {
-  if (idleAfterMs <= 0 || candidates.length === 0) return undefined;
+  if (schedule.idleAfterMs <= 0 || candidates.length === 0) return undefined;
   const deadlines = candidates
     .filter(candidate => candidate.agentState === 'idle')
     .map((candidate) => {
       const elapsed = Math.max(0, nowMs - candidate.idleSinceMs);
-      return candidate.idleSinceMs + (Math.floor(elapsed / idleAfterMs) + 1) * idleAfterMs;
+      return candidate.idleSinceMs + idleThresholdFor(idleCountFor(elapsed, schedule) + 1, schedule);
     });
   return deadlines.length > 0 ? Math.min(...deadlines) : undefined;
 }

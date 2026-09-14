@@ -699,6 +699,141 @@ describe('runpane IPC handlers', () => {
     expect(truncated.entries).toContainEqual(expect.objectContaining({ kind: 'agent.idle', idleCount: 1 }));
   });
 
+  describe('workspace wait cadence', () => {
+    const readyEntry = {
+      kind: 'agent.ready' as const,
+      paneId: session.id,
+      paneName: session.name,
+      panelId: terminalPanel.id,
+      agentType: 'codex',
+      source: 'agent' as const,
+      from: 'working' as const,
+      to: 'idle' as const,
+    };
+    const busyEntry = { ...readyEntry, kind: 'agent.busy' as const, from: 'idle' as const, to: 'working' as const };
+    const cadenceRequest = { as: 'cadence', timeoutMs: 0, idleAfterMs: 0, kinds: ['agent.ready'], settleMs: 60_000 };
+
+    function cadenceRegistry(options: { capacity?: number } = {}) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+      const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cadence-test-'));
+      tempDirs.push(directory);
+      const workspaceJournal = new WorkspaceJournal(options);
+      const workspaceCursorStore = new WorkspaceCursorStore(path.join(directory, 'workspace-cursors.json'));
+      const registry = createRegistry(createServices({ workspaceJournal, workspaceCursorStore }));
+      return { workspaceJournal, workspaceCursorStore, registry };
+    }
+
+    it('keeps a pending READY across a timed-out request and delivers it once settled', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+
+      const held = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(held).toMatchObject({ entries: [], timedOut: true });
+
+      vi.setSystemTime(new Date('2026-01-01T12:01:01.000Z'));
+      const settled = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(settled.entries).toEqual([expect.objectContaining({ kind: 'agent.ready', gen: 1, settledMs: 61_000 })]);
+      expect(await registry.invoke('runpane:workspace:wait', [cadenceRequest])).toMatchObject({ entries: [] });
+    });
+
+    it('resumes a reused instance from its read cursor so held entries are delivered exactly once', async () => {
+      const { workspaceJournal, workspaceCursorStore, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      vi.setSystemTime(new Date('2026-01-01T12:00:30.000Z'));
+      workspaceJournal.append({ ...readyEntry, panelId: 'panel-other' });
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+      const cursor = workspaceCursorStore.get('cadence');
+      expect(cursor?.pendingGen ?? cursor?.gen).toBe(0);
+
+      vi.setSystemTime(new Date('2026-01-01T12:01:01.000Z'));
+      const first = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(first.entries.map((entry: { gen: number }) => entry.gen)).toEqual([1]);
+      expect(first.generation).toBe(2);
+      vi.setSystemTime(new Date('2026-01-01T12:01:31.000Z'));
+      const second = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(second.entries.map((entry: { gen: number }) => entry.gen)).toEqual([2]);
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+    });
+
+    it('drains every page before flushing so a later BUSY still cancels an older READY', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      vi.setSystemTime(new Date('2026-01-01T12:00:01.000Z'));
+      workspaceJournal.append(busyEntry);
+
+      vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
+      const result = await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, limit: 1 }]);
+      expect(result).toMatchObject({ entries: [], generation: 2 });
+      vi.setSystemTime(new Date('2026-01-01T12:05:00.000Z'));
+      expect(await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, limit: 1 }])).toMatchObject({ entries: [] });
+    });
+
+    it('never moves the durable cursor past a held READY', async () => {
+      const { workspaceJournal, workspaceCursorStore, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append({ ...readyEntry, panelId: 'panel-other', paneId: 'session-other', paneName: 'other' });
+      workspaceJournal.append(readyEntry);
+      workspaceJournal.append({ kind: 'pane.created', paneId: 'session-new', paneName: 'new', source: 'session' });
+
+      const held = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(held.entries).toEqual([]);
+      const cursor = workspaceCursorStore.get('cadence');
+      expect(cursor?.pendingGen ?? cursor?.gen).toBe(0);
+
+      const raw = await registry.invoke('runpane:workspace:wait', [{ as: 'cadence', timeoutMs: 0, idleAfterMs: 0, kinds: ['agent.ready'] }]);
+      expect(raw.entries.map((entry: { gen: number }) => entry.gen)).toEqual([1, 2]);
+    });
+
+    it('discards held entries when the consumer changes its filter', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry();
+      const scoped = { ...cadenceRequest, paneIds: [session.id] };
+      await registry.invoke('runpane:workspace:wait', [scoped]);
+      workspaceJournal.append(readyEntry);
+      expect((await registry.invoke('runpane:workspace:wait', [scoped])).entries).toEqual([]);
+
+      vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
+      const rescoped = await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, paneIds: ['session-other'] }]);
+      expect(rescoped.entries).toEqual([]);
+      vi.setSystemTime(new Date('2026-01-01T12:04:00.000Z'));
+      expect((await registry.invoke('runpane:workspace:wait', [{ ...cadenceRequest, paneIds: ['session-other'] }])).entries).toEqual([]);
+    });
+
+    it('discards held entries when the consumer changes its idle schedule', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry();
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+
+      vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
+      const rescheduled = { ...cadenceRequest, idleBackoff: true };
+      // The rebuilt cadence re-reads the held READY from the capped cursor and settles it afresh.
+      const first = await registry.invoke('runpane:workspace:wait', [rescheduled]);
+      expect(first.entries.map((entry: { kind: string; gen: number }) => [entry.kind, entry.gen])).toEqual([['agent.ready', 1]]);
+    });
+
+    it('discards the cadence on a cursor-truncated reset', async () => {
+      const { workspaceJournal, registry } = cadenceRegistry({ capacity: 2 });
+      await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      workspaceJournal.append(readyEntry);
+      expect((await registry.invoke('runpane:workspace:wait', [cadenceRequest])).entries).toEqual([]);
+
+      for (const paneId of ['one', 'two', 'three']) {
+        workspaceJournal.append({ kind: 'pane.created', paneId, paneName: paneId, source: 'session' });
+      }
+      const truncated = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(truncated).toMatchObject({ reset: { reason: 'cursor-truncated' } });
+
+      vi.setSystemTime(new Date('2026-01-01T12:02:00.000Z'));
+      const after = await registry.invoke('runpane:workspace:wait', [cadenceRequest]);
+      expect(after.entries).toEqual([]);
+      expect(after.reset).toBeUndefined();
+    });
+  });
+
   it('announces an evicted named workspace cursor as unknown', async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-runpane-cursor-test-'));
     tempDirs.push(directory);

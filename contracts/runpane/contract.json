@@ -29,6 +29,10 @@
       "format": "lines",
       "heartbeatSeconds": 60,
       "idleAfterMs": 600000,
+      "settleMs": 0,
+      "blockedSettleMs": 0,
+      "minIntervalMs": 0,
+      "idleBackoff": false,
       "agentsOnly": true,
       "includeHeldInputPresence": true
     }
@@ -219,7 +223,7 @@
       "name": "watch",
       "summary": "Wait for workspace agent and Pane transitions using a daemon-held cursor.",
       "usage": [
-        "runpane watch [--as <name>|--since <generation>] [--follow] [--format <lines|json>] [--heartbeat <seconds>] [--idle-after <ms>] [--all-managed|--pane <id>] [--include-shells] [--self-test] [--kinds <kind,...>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
+        "runpane watch [--as <name>|--since <generation>] [--follow] [--format <lines|json>] [--heartbeat <seconds>] [--idle-after <ms>] [--settle <ms>] [--blocked-settle <ms>] [--min-interval <ms>] [--idle-backoff] [--all-managed|--pane <id>] [--include-shells] [--self-test] [--kinds <kind,...>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
       ],
       "jsonSchemas": [
         "workspaceWaitRequest",
@@ -662,6 +666,21 @@
         "description": "Emit agent.idle after this READY duration; 0 disables idle events."
       },
       {
+        "name": "--settle",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: emit READY only after the panel stays idle this long; a BUSY inside the window cancels it silently."
+      },
+      {
+        "name": "--blocked-settle",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: emit BLOCKED only after the panel stays blocked this long; an in-pane answer inside the window cancels it silently."
+      },
+      {
+        "name": "--min-interval",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: hold non-urgent lines and flush them together at most once per interval; BLOCKED bypasses it."
+      },
+      {
         "name": "--body-file",
         "value": "<path|->",
         "description": "Read diagnostic report evidence from a file or stdin."
@@ -731,6 +750,10 @@
       {
         "name": "--self-test",
         "description": "Probe the current daemon watch path without advancing a named cursor."
+      },
+      {
+        "name": "--idle-backoff",
+        "description": "Follow-only opt-in: IDLE fires at --idle-after, then 30m, 1h, 3h, then daily per panel; any activity resets it."
       },
       {
         "name": "--report",
@@ -979,6 +1002,10 @@
         "  --format <lines|json>          Output format; lines is the follow default",
         "  --heartbeat <seconds>          Healthy-silence bound; defaults to 60 under --follow",
         "  --idle-after <ms>              Re-firing READY idle interval; defaults to 600000 under --follow",
+        "  --settle <ms>                  Opt-in: emit READY only after this quiet window (--follow only)",
+        "  --blocked-settle <ms>          Opt-in: emit BLOCKED only after this window (--follow only)",
+        "  --min-interval <ms>            Opt-in: batch non-urgent lines per interval; BLOCKED bypasses (--follow only)",
+        "  --idle-backoff                 Opt-in: IDLE at --idle-after, 30m, 1h, 3h, then daily (--follow only)",
         "  --all-managed                  Explicitly watch all managed panes",
         "  --include-shells               Include ordinary shell panels",
         "  --agents-only                  Limit to CLI agent panels",
@@ -993,7 +1020,13 @@
         "  --ack-now                      Use at-most-once named-cursor delivery",
         "  --include-held-input           Include unsubmitted composer text in JSON",
         "  --no-held-input                Disable redacted STUCK detection",
-        "  --json                         Alias for --format json"
+        "  --json                         Alias for --format json",
+        "",
+        "Defaults are responsive: no settle, no batching, all kinds, IDLE every --idle-after. BUSY carries no action; drop it with --kinds.",
+        "Expensive consumers opt in: --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff",
+        "Pane Chat arms those flags itself through its skill; pass them only for your own scripts.",
+        "STUCK means real unsubmitted composer text; an agent prompt suggestion never counts.",
+        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence."
       ],
       "panes create": [
         "Usage:",
@@ -1480,6 +1513,10 @@
         "  --format <lines|json>",
         "  --heartbeat <seconds>",
         "  --idle-after <ms>",
+        "  --settle <ms>                  Opt-in READY quiet window (--follow only)",
+        "  --blocked-settle <ms>          Opt-in BLOCKED window (--follow only)",
+        "  --min-interval <ms>            Opt-in batching; BLOCKED bypasses (--follow only)",
+        "  --idle-backoff                 Opt-in IDLE backoff (--follow only)",
         "  --all-managed",
         "  --include-shells",
         "  --agents-only",
@@ -1494,7 +1531,13 @@
         "  --ack-now",
         "  --include-held-input",
         "  --no-held-input",
-        "  --json                         Alias for --format json"
+        "  --json                         Alias for --format json",
+        "",
+        "Defaults are responsive: no settle, no batching, all kinds, IDLE every --idle-after. BUSY carries no action; drop it with --kinds.",
+        "Expensive consumers opt in: --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff",
+        "Pane Chat arms those flags itself through its skill; pass them only for your own scripts.",
+        "STUCK means real unsubmitted composer text; an agent prompt suggestion never counts.",
+        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence."
       ],
       "panes create": [
         "Usage:",
@@ -1830,6 +1873,9 @@
       "runpane panels list --pane <pane-id> --json",
       "runpane panels output --panel <panel-id> --limit 200 --json",
       "printf 'Continue\\n' | runpane panels input --panel <panel-id> --input-file - --yes --json",
+      "runpane watch --self-test",
+      "runpane watch --follow",
+      "runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff",
       "runpane help",
       "runpane <command> --help"
     ],
@@ -1858,7 +1904,8 @@
       "`runpane panels input` sends exact input bytes to one terminal panel. Prefer `--input-file` for newlines, Ctrl-C, quotes, or shell-sensitive text.",
       "`runpane panes create --prompt` is an alias for `--initial-input`; request JSON and daemon payloads should use the canonical `initialInput` field.",
       "If composer submission cannot be verified without risking a duplicate, the create item is unsuccessful with `initialInput.staged`, `initialInput.attempts`, `initialInput.blocked.kind: submission_unverified`, and an actionable `nextCommand`. The CLI-facing `--prompt` alias maps to this canonical `initialInput` result.",
-      "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`."
+      "When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.",
+      "`runpane watch` waits for workspace transitions from the daemon journal without polling. `--follow` keeps waiting and prints one line per event: READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT, plus HEARTBEAT every 60 seconds as proof of life. Defaults are responsive: no settle, no batching, all kinds, IDLE every `--idle-after`. Expensive consumers opt into `--kinds` (drop `agent.busy`; BUSY carries no action), `--settle <ms>` (READY only after a quiet window; a BUSY inside it cancels the line), `--blocked-settle <ms>`, `--min-interval <ms>` (batch non-urgent lines; BLOCKED bypasses it), and `--idle-backoff` (10m, 30m, 1h, 3h, then daily). The recommended orchestrator invocation is `runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff`, which budgets about 6 wake-ups per active pane per hour worst case, usually 1-3. Pane Chat arms it automatically through its skill; only your own scripts need the flags. STUCK means real unsubmitted composer text, never an agent prompt suggestion. Judge a dead watch by a non-zero exit or a WATCH ERROR line, not by silence."
     ],
     "wrapperFlagNote": "The top-level `runpane --version` form prints the wrapper version. The install subcommand form `runpane install --version vX.Y.Z` selects a Pane release.",
     "localControlFlagNote": "`runpane doctor --json`, `runpane repos list`, `runpane panes ...`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.",
@@ -1968,6 +2015,13 @@
         "60",
         "--idle-after",
         "600000",
+        "--settle",
+        "180000",
+        "--blocked-settle",
+        "30000",
+        "--min-interval",
+        "600000",
+        "--idle-backoff",
         "--all-managed",
         "--agents-only",
         "--exclude-pane",
@@ -3604,7 +3658,11 @@
         "includeHeldInput": { "type": "boolean" },
         "includeHeldInputPresence": { "type": "boolean" },
         "idleAfterMs": { "type": "number" },
-        "idleWindowStartMs": { "type": "number" }
+        "idleWindowStartMs": { "type": "number" },
+        "settleMs": { "type": "number" },
+        "blockedSettleMs": { "type": "number" },
+        "minIntervalMs": { "type": "number" },
+        "idleBackoff": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -5228,6 +5286,20 @@
             "--json",
             "--pane-dir <path>"
           ]
+        },
+        {
+          "name": "watch",
+          "summary": "Wait for workspace transitions (READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT) from the daemon journal without polling; responsive by default, with opt-in cadence flags for expensive consumers.",
+          "arguments": [
+            "--follow",
+            "--self-test",
+            "--kinds <kind,...>",
+            "--settle <ms>",
+            "--blocked-settle <ms>",
+            "--min-interval <ms>",
+            "--idle-backoff",
+            "--json"
+          ]
         }
       ]
     },
@@ -5810,22 +5882,74 @@
         "requiresPaneDaemon": true,
         "mutates": true,
         "arguments": [
-          { "name": "--repo", "value": "<selector>", "required": true, "description": "Saved repository selector." },
-          { "name": "--path", "value": "<dir>", "required": true, "description": "Existing git worktree path." },
-          { "name": "--name", "value": "<name>", "required": true, "description": "Pane name." },
-          { "name": "--agent", "value": "<codex|claude|cursor>", "required": true, "description": "Agent whose terminal to create." },
-          { "name": "--resume", "value": "<id>", "required": false, "description": "Persist this agent session id and stage its resume command." },
-          { "name": "--folder", "value": "<name>", "required": false, "description": "Top-level sidebar folder." },
-          { "name": "--launch", "required": false, "description": "Run the resume command immediately." },
-          { "name": "--no-pinned", "required": false, "description": "Do not pin the adopted pane." },
-          { "name": "--dry-run", "required": false, "description": "Validate and preview only." },
-          { "name": "--yes", "required": false, "description": "Skip confirmation." },
-          { "name": "--json", "required": false, "description": "Print machine-readable output." }
+          {
+            "name": "--repo",
+            "value": "<selector>",
+            "required": true,
+            "description": "Saved repository selector."
+          },
+          {
+            "name": "--path",
+            "value": "<dir>",
+            "required": true,
+            "description": "Existing git worktree path."
+          },
+          {
+            "name": "--name",
+            "value": "<name>",
+            "required": true,
+            "description": "Pane name."
+          },
+          {
+            "name": "--agent",
+            "value": "<codex|claude|cursor>",
+            "required": true,
+            "description": "Agent whose terminal to create."
+          },
+          {
+            "name": "--resume",
+            "value": "<id>",
+            "required": false,
+            "description": "Persist this agent session id and stage its resume command."
+          },
+          {
+            "name": "--folder",
+            "value": "<name>",
+            "required": false,
+            "description": "Top-level sidebar folder."
+          },
+          {
+            "name": "--launch",
+            "required": false,
+            "description": "Run the resume command immediately."
+          },
+          {
+            "name": "--no-pinned",
+            "required": false,
+            "description": "Do not pin the adopted pane."
+          },
+          {
+            "name": "--dry-run",
+            "required": false,
+            "description": "Validate and preview only."
+          },
+          {
+            "name": "--yes",
+            "required": false,
+            "description": "Skip confirmation."
+          },
+          {
+            "name": "--json",
+            "required": false,
+            "description": "Print machine-readable output."
+          }
         ],
         "examples": [
           "runpane panes adopt --repo active --path /path/to/worktree --name imported --agent codex --resume <id> --yes --json"
         ],
-        "jsonSchemas": ["paneCreateResult"],
+        "jsonSchemas": [
+          "paneCreateResult"
+        ],
         "notes": [
           "The resume command is staged without Enter unless --launch is passed.",
           "Pane never removes an externally owned worktree."
@@ -6530,7 +6654,7 @@
       "watch": {
         "name": "watch",
         "summary": "Wait for workspace transitions using the daemon journal.",
-        "details": "`runpane watch --follow` is the canonical zero-flag monitor: lines, 60-second heartbeats, 10-minute re-firing IDLE, managed-agent scope, and redacted STUCK detection are follow defaults. Named cursors persist in the Pane data directory.",
+        "details": "`runpane watch --follow` is the responsive monitor: lines, 60-second heartbeats, IDLE every 10 minutes, managed-agent scope, redacted STUCK detection, no settle, no batching, all kinds. Expensive consumers (one wake-up per line) opt into the cadence flags. Pane Chat arms them automatically through its pane-orchestrator skill; only your own scripts need to pass them. Named cursors persist in the Pane data directory.",
         "requiresPaneDaemon": true,
         "mutates": false,
         "arguments": [
@@ -6538,36 +6662,100 @@
             "name": "--as",
             "value": "<consumer-name>",
             "required": false,
-            "description": "Use a persisted named cursor."
+            "description": "Use a persisted named cursor (at-least-once delivery). Default: PANE_PANEL_ID under --follow when set, otherwise anonymous."
           },
           {
             "name": "--since",
             "value": "<generation>",
             "required": false,
-            "description": "Use an explicit generation cursor."
+            "description": "Use an explicit generation cursor instead of a name. Cannot be combined with --as, or with --settle, --blocked-settle, --min-interval."
+          },
+          {
+            "name": "--from",
+            "required": false,
+            "value": "<now|earliest>",
+            "description": "Starting point for a new named cursor. Default now (silent baseline); earliest replays the journal."
           },
           {
             "name": "--follow",
             "required": false,
-            "description": "Continue waiting until interrupted."
+            "description": "Continue waiting until interrupted. Required by every cadence flag."
           },
           {
             "name": "--format",
             "value": "<lines|json>",
             "required": false,
-            "description": "Output format; lines is the follow default."
+            "description": "Output format. Default lines in every mode; --json selects json."
           },
           {
             "name": "--heartbeat",
             "value": "<seconds>",
             "required": false,
-            "description": "Healthy-silence bound; defaults to 60 under follow."
+            "description": "Healthy-silence bound; a HEARTBEAT line proves the watcher is alive. Default 60 under --follow, 0 otherwise. Filter it out of any monitor that wakes an agent."
           },
           {
             "name": "--idle-after",
             "value": "<milliseconds>",
             "required": false,
-            "description": "Re-firing READY idle interval; defaults to 600000 under follow."
+            "description": "IDLE fires after a READY panel has stayed idle this long, then re-fires every multiple. Default 600000 under --follow, 0 otherwise."
+          },
+          {
+            "name": "--settle",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): emit READY only after the panel stays idle this long; a BUSY, BLOCKED, UNKNOWN, EXIT, or GONE inside the window cancels it silently. Default 0. Use when a pane flips idle/working while it waits on subagents; the orchestrator value is 180000."
+          },
+          {
+            "name": "--blocked-settle",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): emit BLOCKED only after this window; an in-pane answer inside it cancels the line. Default 0. The orchestrator value is 30000."
+          },
+          {
+            "name": "--min-interval",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): hold READY, IDLE, NEW, GONE, EXIT, and UNKNOWN lines and flush them together at most once per interval; BLOCKED bypasses it and carries the held lines with it. Default 0. The orchestrator value is 600000."
+          },
+          {
+            "name": "--idle-backoff",
+            "required": false,
+            "description": "Opt-in (follow only): IDLE fires at --idle-after, then 30m, 1h, 3h, then daily per panel; any activity resets the schedule. Default off (fixed multiples of --idle-after)."
+          },
+          {
+            "name": "--kinds",
+            "required": false,
+            "value": "<kind,...>",
+            "description": "Limit event kinds: agent.ready, agent.busy, agent.blocked, agent.unknown, agent.idle, pane.created, pane.gone, panel.exited. Default all. Drop agent.busy for any consumer that acts on lines; BUSY carries no action."
+          },
+          {
+            "name": "--pane",
+            "required": false,
+            "value": "<pane-id>",
+            "description": "Limit to a Pane; repeatable. Default all managed panes."
+          },
+          {
+            "name": "--exclude-pane",
+            "required": false,
+            "value": "<pane-id>",
+            "description": "Exclude a Pane; repeatable."
+          },
+          {
+            "name": "--repo",
+            "required": false,
+            "value": "<selector>",
+            "description": "Limit to a saved repository (active, id, path, or name). Default all repositories."
+          },
+          {
+            "name": "--name-contains",
+            "required": false,
+            "value": "<text>",
+            "description": "Limit by Pane name substring."
+          },
+          {
+            "name": "--agents-only",
+            "required": false,
+            "description": "Limit to CLI agent panels. Default on under --follow."
           },
           {
             "name": "--all-managed",
@@ -6580,9 +6768,36 @@
             "description": "Include ordinary shell panels."
           },
           {
+            "name": "--timeout-ms",
+            "required": false,
+            "value": "<milliseconds>",
+            "description": "Wait timeout per request; 0 polls once. Default 60000, capped at 120000 (the follow loop re-issues requests)."
+          },
+          {
+            "name": "--limit",
+            "required": false,
+            "value": "<count>",
+            "description": "Maximum entries per response. Default 256."
+          },
+          {
+            "name": "--ack-now",
+            "required": false,
+            "description": "At-most-once named-cursor delivery (advance before you act). Default at-least-once."
+          },
+          {
+            "name": "--include-held-input",
+            "required": false,
+            "description": "Include up to 120 characters of unsubmitted composer text in JSON entries. Default off (presence only)."
+          },
+          {
+            "name": "--no-held-input",
+            "required": false,
+            "description": "Disable redacted STUCK detection in lines follow mode."
+          },
+          {
             "name": "--self-test",
             "required": false,
-            "description": "Probe the watch path anonymously without advancing a named cursor."
+            "description": "Probe the watch path anonymously without advancing a named cursor; run it before arming --follow."
           },
           {
             "name": "--json",
@@ -6591,10 +6806,18 @@
           }
         ],
         "examples": [
+          "runpane watch --self-test",
           "runpane watch --follow",
-          "runpane watch --as monitor --follow --json"
+          "runpane watch --as monitor --follow --json",
+          "runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff"
         ],
         "notes": [
+          "Defaults stay responsive: no settle, no batching, all kinds, IDLE every --idle-after. Cadence flags are opt-in for expensive consumers and require --follow.",
+          "Recommended orchestrator invocation (what Pane Chat arms automatically): runpane watch --self-test, then runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff. Budget: about 6 wake-ups per active pane per hour worst case, usually 1-3.",
+          "BUSY carries no action; drop it with --kinds. HEARTBEAT is client-side proof of life, is never shaped by cadence flags, and should be filtered out of any monitor that wakes an agent.",
+          "STUCK means real unsubmitted composer text. An agent prompt suggestion (for example a grey Try \"...\" hint) never counts.",
+          "Dead watch: judge death by a non-zero exit or a WATCH ERROR line, not by silence. Re-arm once; if it dies again, file runpane doctor --report.",
+          "Cadence state is held per named consumer; an anonymous --follow with a cadence flag names itself follow-<pid>. Held lines survive a reconnect of the same consumer; a changed filter re-delivers them under the new filter.",
           "Journal loss is surfaced through reset and dropped metadata.",
           "The daemon treats omitted idleAfterMs as disabled so older clients never receive agent.idle unexpectedly."
         ]

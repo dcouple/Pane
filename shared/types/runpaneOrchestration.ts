@@ -68,6 +68,11 @@ export interface RunpaneWorkspaceWaitRequest {
   includeHeldInputPresence?: boolean;
   idleAfterMs?: number;
   idleWindowStartMs?: number;
+  /** Opt-in cadence shaping; each requires a named consumer (`as`). */
+  settleMs?: number;
+  blockedSettleMs?: number;
+  minIntervalMs?: number;
+  idleBackoff?: boolean;
 }
 
 export type RunpaneWorkspaceResetReason =

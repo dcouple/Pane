@@ -415,20 +415,74 @@ async function checkWatchStreamParity() {
       assert.strictEqual(followRequests[0].idleWindowStartMs, 0);
       assert.ok(followRequests[1].idleWindowStartMs > 0, 'anonymous follow must advance its idle window');
 
-      const badArgs = runtime === 'npm'
-        ? childProcess.spawnSync(process.execPath, [npmCli, 'watch', '--heartbeat', 'nope'], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
-        : childProcess.spawnSync(findPython(), ['-m', 'runpane', 'watch', '--heartbeat', 'nope'], {
-          encoding: 'utf8',
-          cwd: rootDir,
-          env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: pythonSource, RUNPANE_TELEMETRY_DISABLED: '1' },
-        });
-      assert.strictEqual(badArgs.status, 2);
-      assertIncludes(badArgs.stdout, 'WATCH ERROR');
-      assertIncludes(badArgs.stderr, 'WATCH ERROR');
+      const cadenceRequests = [];
+      await withFakeDaemon(
+        paneDir,
+        (frame) => {
+          cadenceRequests.push(frame.args[0]);
+          return { result: watchResult(3), delayMs: 0 };
+        },
+        () => runWatchCli(
+          runtime,
+          ['watch', '--follow', '--heartbeat', '1', '--idle-after', '0', '--no-held-input', '--timeout-ms', '1000',
+            '--kinds', 'agent.ready,agent.blocked', '--settle', '180000', '--blocked-settle', '30000', '--min-interval', '600000', '--idle-backoff'],
+          paneDir,
+          stdout => stdout.includes('WATCH OK gen 3'),
+        ),
+      );
+      assert.deepStrictEqual(
+        {
+          settleMs: cadenceRequests[0].settleMs,
+          blockedSettleMs: cadenceRequests[0].blockedSettleMs,
+          minIntervalMs: cadenceRequests[0].minIntervalMs,
+          idleBackoff: cadenceRequests[0].idleBackoff,
+          kinds: cadenceRequests[0].kinds,
+        },
+        { settleMs: 180000, blockedSettleMs: 30000, minIntervalMs: 600000, idleBackoff: true, kinds: ['agent.ready', 'agent.blocked'] },
+      );
+      assert.ok(String(cadenceRequests[0].as).startsWith('follow-'), 'cadence follow must name its consumer');
+
+      const selfTestRequests = [];
+      await withFakeDaemon(
+        paneDir,
+        (frame) => {
+          selfTestRequests.push(frame.args[0]);
+          return { result: watchResult(4) };
+        },
+        () => runWatchCli(
+          runtime,
+          ['watch', '--follow', '--self-test', '--settle', '180000', '--min-interval', '600000', '--idle-backoff'],
+          paneDir,
+          stdout => stdout.includes('WATCH OK gen 4'),
+        ),
+      );
+      assert.strictEqual(selfTestRequests[0].as, undefined, 'self-test must stay anonymous so the daemon applies no cadence');
+
+      for (const badWatchArgs of [
+        ['watch', '--heartbeat', 'nope'],
+        ['watch', '--follow', '--settle', 'nope'],
+        ['watch', '--settle', '5'],
+        ['watch', '--follow', '--since', '42', '--settle', '180000'],
+      ]) {
+        const badWatch = spawnWatchCli(runtime, badWatchArgs);
+        assert.strictEqual(badWatch.status, 2, `${badWatchArgs.join(' ')} must fail`);
+        assertIncludes(badWatch.stdout, 'WATCH ERROR');
+        assertIncludes(badWatch.stderr, 'WATCH ERROR');
+      }
     } finally {
       fs.rmSync(paneDir, { recursive: true, force: true });
     }
   }
+}
+
+function spawnWatchCli(runtime, args) {
+  return runtime === 'npm'
+    ? childProcess.spawnSync(process.execPath, [npmCli, ...args], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
+    : childProcess.spawnSync(findPython(), ['-m', 'runpane', ...args], {
+      encoding: 'utf8',
+      cwd: rootDir,
+      env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', PYTHONPATH: pythonSource, RUNPANE_TELEMETRY_DISABLED: '1' },
+    });
 }
 
 function compareParserParity() {
@@ -493,6 +547,10 @@ function compareParserParity() {
       watchFormat: parsed.watchFormat ?? null,
       heartbeatSeconds: parsed.heartbeatSeconds ?? null,
       idleAfterMs: parsed.idleAfterMs ?? null,
+      settleMs: parsed.settleMs ?? null,
+      blockedSettleMs: parsed.blockedSettleMs ?? null,
+      minIntervalMs: parsed.minIntervalMs ?? null,
+      idleBackoff: parsed.idleBackoff ?? false,
       allManaged: parsed.allManaged ?? false,
       includeShells: parsed.includeShells ?? false,
       noHeldInput: parsed.noHeldInput ?? false,
@@ -570,6 +628,10 @@ for args in samples:
         "watchFormat": parsed.watch_format,
         "heartbeatSeconds": parsed.heartbeat_seconds,
         "idleAfterMs": parsed.idle_after_ms,
+        "settleMs": parsed.settle_ms,
+        "blockedSettleMs": parsed.blocked_settle_ms,
+        "minIntervalMs": parsed.min_interval_ms,
+        "idleBackoff": parsed.idle_backoff,
         "allManaged": parsed.all_managed,
         "includeShells": parsed.include_shells,
         "noHeldInput": parsed.no_held_input,
