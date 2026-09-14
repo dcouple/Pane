@@ -212,9 +212,10 @@ describe('session-owned agent terminals', () => {
     await vi.advanceTimersByTimeAsync(10);
     await second;
     expect(spawn).toHaveBeenCalledTimes(1);
-    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
-      shell: '/bin/bash', args: ['-l', '-c', "exec '/path with spaces/claude' '--model' 'sonnet' '--session-id' '22222222-2222-4222-8222-222222222222' '--' '--model evil'"],
-    }));
+    const invocation = process.platform === 'win32'
+      ? { shell: 'powershell.exe', args: ['-NoLogo', '-NoProfile', '-Command', "$ErrorActionPreference = 'Stop'; & '/path with spaces/claude' '--model' 'sonnet' '--session-id' '22222222-2222-4222-8222-222222222222' '--' '--model evil'; exit $LASTEXITCODE"] }
+      : { shell: '/bin/bash', args: ['-l', '-c', "exec '/path with spaces/claude' '--model' 'sonnet' '--session-id' '22222222-2222-4222-8222-222222222222' '--' '--model evil'"] };
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining(invocation));
     expect(manager.isCommandBoundTerminal(panel.id)).toBe(true);
     manager.destroyTerminal(panel.id, false);
   });
