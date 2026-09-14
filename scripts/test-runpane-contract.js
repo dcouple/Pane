@@ -247,7 +247,13 @@ async function withFakeDaemon(paneDir, onRequest, action) {
     fs.mkdirSync(path.dirname(endpoint.path), { recursive: true });
     fs.rmSync(endpoint.path, { force: true });
   }
+  let socketError;
   const server = net.createServer((socket) => {
+    socket.on('error', (error) => {
+      // runWatchCli kills the peer once the required output is observed, which
+      // can reset a response in flight. Other fixture failures must still fail.
+      if (error.code !== 'ECONNRESET') socketError ??= error;
+    });
     let buffer = '';
     socket.on('data', (chunk) => {
       buffer += chunk.toString('utf8');
@@ -275,8 +281,9 @@ async function withFakeDaemon(paneDir, onRequest, action) {
     server.once('error', reject);
     server.listen(endpoint.path, resolve);
   });
+  let result;
   try {
-    return await action();
+    result = await action();
   } finally {
     await new Promise((resolve) => server.close(resolve));
     if (endpoint.transport === 'unix') {
@@ -284,6 +291,8 @@ async function withFakeDaemon(paneDir, onRequest, action) {
       fs.rmSync(path.dirname(endpoint.path), { recursive: true, force: true });
     }
   }
+  if (socketError) throw socketError;
+  return result;
 }
 
 function runWatchCli(runtime, args, paneDir, until, timeoutMs = 8_000) {
