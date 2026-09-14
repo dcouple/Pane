@@ -1162,7 +1162,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   const includeHeldInput = parsed.includeHeldInput && !parsed.noHeldInput ? true : undefined;
   const includeHeldInputPresence = defaults.includeHeldInputPresence
     && !parsed.noHeldInput && parsed.follow && format === 'lines' ? true : undefined;
-  const watchAs = parsed.watchAs ?? (parsed.follow ? process.env.PANE_PANEL_ID : undefined);
+  const cadenceRequested = Boolean(parsed.settleMs || parsed.blockedSettleMs || parsed.minIntervalMs);
+  // Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
+  const watchAs = parsed.watchAs
+    ?? (parsed.follow ? process.env.PANE_PANEL_ID || (cadenceRequested ? `follow-${process.pid}` : undefined) : undefined);
   const request = {
     as: watchAs,
     since: parsed.watchSince,
@@ -1179,6 +1182,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     includeHeldInput,
     includeHeldInputPresence,
     idleAfterMs,
+    settleMs: parsed.settleMs,
+    blockedSettleMs: parsed.blockedSettleMs,
+    minIntervalMs: parsed.minIntervalMs,
+    idleBackoff: parsed.idleBackoff || undefined,
   };
 
   let armed = false;
@@ -1194,7 +1201,18 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     const timeoutMs = parsed.selfTest ? 0 : Math.min(requestedWaitMs, heartbeatWaitMs, 120_000);
     try {
       const callRequest = parsed.selfTest
-        ? { ...request, as: undefined, since: undefined, from: 'now' as const, idleAfterMs: 0, timeoutMs: 0 }
+        ? {
+          ...request,
+          as: undefined,
+          since: undefined,
+          from: 'now' as const,
+          idleAfterMs: 0,
+          timeoutMs: 0,
+          settleMs: undefined,
+          blockedSettleMs: undefined,
+          minIntervalMs: undefined,
+          idleBackoff: undefined,
+        }
         : { ...request, timeoutMs, idleWindowStartMs: anonymousIdleWindowStartMs };
       const result = await invokeDaemon('runpane:workspace:wait', [callRequest], workspaceWaitResultSchema, {
         paneDir: parsed.paneDir,

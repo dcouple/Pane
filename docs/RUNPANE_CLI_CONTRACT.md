@@ -324,6 +324,9 @@ These flags are consumed by local daemon-control commands:
 --format <lines|json>
 --heartbeat <seconds>
 --idle-after <milliseconds>
+--settle <milliseconds>
+--blocked-settle <milliseconds>
+--min-interval <milliseconds>
 --body-file <path|->
 --json
 --wait-ready
@@ -341,6 +344,7 @@ These flags are consumed by local daemon-control commands:
 --include-shells
 --no-held-input
 --self-test
+--idle-backoff
 --report
 ```
 

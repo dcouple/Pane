@@ -96,6 +96,12 @@ import type {
 import { getAppDirectory } from '../utils/appDirectory';
 import { collectRemoteDaemonExecutableHealth } from '../daemon/remoteDaemonExecutableHealth';
 import { WorkspaceJournal, type WorkspaceJournalFilter } from '../services/workspaceJournal';
+import {
+  CADENCE_OBSERVED_KINDS,
+  WatchCadence,
+  cadenceOptionsEqual,
+  type WatchCadenceOptions,
+} from '../services/workspaceWatchCadence';
 import { WorkspaceStateReader } from '../services/workspaceStateReader';
 import { WorkspaceCursorStore } from '../services/workspaceCursorStore';
 import { usageManager } from '../services/usage/usageManager';
@@ -175,6 +181,7 @@ export function registerRunpaneHandlers(
     path.join(getAppDirectory(), 'workspace-cursors.json'),
   );
   const lastReadAtByConsumer = new Map<string, number>();
+  const cadenceByConsumer = new Map<string, WatchCadence>();
   services.workspaceJournal = workspaceJournal;
   services.workspaceStateReader = workspaceStateReader;
   services.workspaceCursorStore = workspaceCursorStore;
@@ -929,16 +936,22 @@ export function registerRunpaneHandlers(
       };
       const timeoutMs = Math.min(normalized.timeoutMs ?? DEFAULT_WORKSPACE_WAIT_TIMEOUT_MS, MAX_WORKSPACE_WAIT_TIMEOUT_MS);
       const limit = normalized.limit ?? DEFAULT_WORKSPACE_WAIT_LIMIT;
-      const idleAfterMs = normalized.idleAfterMs ?? 0;
+      const idleSchedule = { idleAfterMs: normalized.idleAfterMs ?? 0, backoff: normalized.idleBackoff ?? false };
       const requestStartedAt = Date.now();
       const idleWindowStart = normalized.idleWindowStartMs ?? (normalized.as
         ? lastReadAtByConsumer.get(normalized.as) ?? 0
         : normalized.since !== undefined ? 0 : requestStartedAt);
       let cursor = normalized.since ?? workspaceJournal.generation;
       let reset: RunpaneWorkspaceWaitResult['reset'];
+      const cadenceOptions = workspaceCadenceOptions(normalized);
+      const cadenceKey = cadenceOptions && normalized.as ? normalized.as : undefined;
+      // The cadence must observe state changes the consumer did not ask for (a BUSY cancels a settling READY).
+      const readFilter: WorkspaceJournalFilter = cadenceKey && filter.kinds
+        ? { ...filter, kinds: [...new Set([...filter.kinds, ...CADENCE_OBSERVED_KINDS])] }
+        : filter;
       const currentIdleEntries = (): RunpaneWorkspaceEntry[] => dueIdleEntries(
         workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
-        idleAfterMs,
+        idleSchedule,
         idleWindowStart,
         Date.now(),
         workspaceJournal.generation,
@@ -966,6 +979,7 @@ export function registerRunpaneHandlers(
       }
 
       if (reset) {
+        if (cadenceKey) cadenceByConsumer.delete(cadenceKey);
         const silentBaseline = reset.reason === 'first-use' && normalized.from !== 'earliest';
         const baseline = silentBaseline ? [] : workspaceStateReader.read(project?.id).entries
           .filter(entry => workspaceEntryMatches(entry, filter))
@@ -984,46 +998,74 @@ export function registerRunpaneHandlers(
         };
       }
 
-      const initial = workspaceJournal.readAfter(cursor, filter, limit);
-      const initialIdle = currentIdleEntries();
-      let waited: Awaited<ReturnType<WorkspaceJournal['waitAfter']>>;
-      if (initial.entries.length > 0 || initial.dropped !== undefined || initialIdle.length > 0) {
-        waited = { ...initial, timedOut: initial.entries.length === 0 };
-      } else {
-        const deadline = nextIdleDeadline(
-          workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
-          idleAfterMs,
-          Date.now(),
-        );
-        const parkMs = deadline === undefined
-          ? timeoutMs
-          : Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
-        waited = await workspaceJournal.waitAfter(
-          cursor,
-          filter,
-          parkMs,
-          limit,
-          normalized.as ?? 'anonymous',
-        );
+      let cadence: WatchCadence | undefined;
+      if (cadenceKey && cadenceOptions) {
+        const existing = cadenceByConsumer.get(cadenceKey);
+        cadence = existing && cadenceOptionsEqual(existing.options, cadenceOptions)
+          ? existing
+          : new WatchCadence(cadenceOptions);
+        cadenceByConsumer.set(cadenceKey, cadence);
       }
-      if (waited.dropped) {
-        reset = { reason: 'cursor-truncated' };
-      }
-      let entries = waited.entries;
-      if (reset) {
-        entries = workspaceStateReader.read(project?.id).entries
-          .filter(entry => workspaceEntryMatches(entry, filter))
-          .map(entry => projectWorkspaceEntry(entry, filter));
-      }
-      entries = [...entries, ...currentIdleEntries()];
 
-      if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
-        workspaceCursorStore.advance(
-          normalized.as,
-          waited.generation,
-          workspaceJournal.epoch,
-          !normalized.ackNow,
-        );
+      const deadlineAt = requestStartedAt + timeoutMs;
+      let waited: Awaited<ReturnType<WorkspaceJournal['waitAfter']>>;
+      let entries: RunpaneWorkspaceEntry[];
+      for (;;) {
+        const initial = workspaceJournal.readAfter(cursor, readFilter, limit);
+        const initialIdle = cadence
+          ? currentIdleEntries().filter(entry => !cadence.hasSeenIdle(entry))
+          : currentIdleEntries();
+        if (initial.entries.length > 0 || initial.dropped !== undefined || initialIdle.length > 0) {
+          waited = { ...initial, timedOut: initial.entries.length === 0 };
+        } else {
+          const idleDeadline = nextIdleDeadline(
+            workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
+            idleSchedule,
+            Date.now(),
+          );
+          const now = Date.now();
+          const parkUntil = Math.min(
+            deadlineAt,
+            idleDeadline ?? Number.POSITIVE_INFINITY,
+            cadence?.nextDeadline(now) ?? Number.POSITIVE_INFINITY,
+          );
+          waited = await workspaceJournal.waitAfter(
+            cursor,
+            readFilter,
+            Math.max(0, parkUntil - now),
+            limit,
+            normalized.as ?? 'anonymous',
+          );
+        }
+        if (waited.dropped) {
+          reset = { reason: 'cursor-truncated' };
+        }
+        entries = waited.entries;
+        if (reset) {
+          if (cadenceKey) cadenceByConsumer.delete(cadenceKey);
+          entries = workspaceStateReader.read(project?.id).entries
+            .filter(entry => workspaceEntryMatches(entry, filter))
+            .map(entry => projectWorkspaceEntry(entry, filter));
+        }
+        entries = [...entries, ...currentIdleEntries()];
+
+        if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
+          workspaceCursorStore.advance(
+            normalized.as,
+            waited.generation,
+            workspaceJournal.epoch,
+            !normalized.ackNow,
+          );
+        }
+        if (!cadence || reset) break;
+
+        const now = Date.now();
+        cadence.ingest(entries, now);
+        entries = cadence.flush(now);
+        if (entries.length > 0 || now >= deadlineAt) break;
+        // Nothing matured yet: keep parking inside the same request.
+        cursor = Math.max(cursor, waited.generation);
+        if (cadenceKey && waited.entries.length > 0) workspaceCursorStore.commitPending(cadenceKey);
       }
       if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
 
@@ -2215,6 +2257,10 @@ function parseWorkspaceWaitRequest(value: PaneCommandValue): RunpaneWorkspaceWai
     includeHeldInputPresence: optionalBoolean(value.includeHeldInputPresence),
     idleAfterMs: parseNonNegativeInteger(value.idleAfterMs, 'idleAfterMs'),
     idleWindowStartMs: parseNonNegativeInteger(value.idleWindowStartMs, 'idleWindowStartMs'),
+    settleMs: parseNonNegativeInteger(value.settleMs, 'settleMs'),
+    blockedSettleMs: parseNonNegativeInteger(value.blockedSettleMs, 'blockedSettleMs'),
+    minIntervalMs: parseNonNegativeInteger(value.minIntervalMs, 'minIntervalMs'),
+    idleBackoff: optionalBoolean(value.idleBackoff),
   };
 }
 
@@ -3214,7 +3260,7 @@ function createWorkspaceJournal(services: AppServices): WorkspaceJournal {
         isCliPanel: snapshot?.isCliPanel ?? optionalBoolean(customState.isCliPanel) ?? false,
         agentType: snapshot?.agentType ?? optionalString(customState.agentType),
         lastActivityAt: snapshot?.lastActivityTime,
-        heldInput: snapshot?.screenText ? composerEvidenceText(snapshot.screenText) : undefined,
+        screenText: snapshot?.screenText,
       };
     },
   });
@@ -3243,6 +3289,14 @@ function workspaceEntryMatches(
   if (filter.nameContains && !entry.paneName.toLocaleLowerCase().includes(filter.nameContains.toLocaleLowerCase())) return false;
   if (filter.agentsOnly && !entry.agentType && entry.kind !== 'pane.created' && entry.kind !== 'pane.gone') return false;
   return true;
+}
+
+function workspaceCadenceOptions(request: RunpaneWorkspaceWaitRequest): WatchCadenceOptions | undefined {
+  const settleMs = request.settleMs ?? 0;
+  const blockedSettleMs = request.blockedSettleMs ?? 0;
+  const minIntervalMs = request.minIntervalMs ?? 0;
+  if (settleMs <= 0 && blockedSettleMs <= 0 && minIntervalMs <= 0) return undefined;
+  return { settleMs, blockedSettleMs, minIntervalMs, emitKinds: request.kinds };
 }
 
 function workspaceNextCommand(request: RunpaneWorkspaceWaitRequest, generation: number): string {

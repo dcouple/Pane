@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { PaneEventArgument, PaneEventSink } from '../core/eventSink';
 import type { AgentState } from '../../../shared/types/agentStatus';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
+import { extractWorkspaceHeldInput } from './workspaceHeldInput';
 import type {
   RunpaneWorkspaceEntry,
   RunpaneWorkspaceEntryKind,
@@ -22,7 +23,8 @@ interface WorkspacePanelMetadata {
   agentType?: string;
   panelTitle?: string;
   lastActivityAt?: string;
-  heldInput?: string;
+  /** Latest terminal screen text; held input is derived from it, ignoring composer placeholders. */
+  screenText?: string;
 }
 
 export interface WorkspaceJournalFilter {
@@ -274,8 +276,8 @@ export class WorkspaceJournal implements PaneEventSink {
     const settledMs = kind === 'agent.ready' && Number.isFinite(lastActivityMs)
       ? Math.max(0, now - lastActivityMs)
       : undefined;
-
-    this.append({
+    const heldInput = kind === 'agent.ready' && panel?.screenText ? extractWorkspaceHeldInput(panel.screenText) : undefined;
+    const entry: Omit<RunpaneWorkspaceEntry, 'gen' | 'at'> = {
       ...pane,
       kind,
       panelId,
@@ -286,8 +288,9 @@ export class WorkspaceJournal implements PaneEventSink {
       source: payload.reason === 'exit' ? 'exit' : 'agent',
       reason: payload.reason ?? null,
       settledMs,
-      heldInput: kind === 'agent.ready' ? truncateHeldInput(panel?.heldInput) : undefined,
-    });
+    };
+    if (heldInput) entry.heldInput = heldInput;
+    this.append(entry);
   }
 
   private lookupPane(paneId: string): WorkspacePaneMetadata | undefined {
@@ -340,11 +343,6 @@ export function projectWorkspaceEntry(
     delete projected.heldInputPresent;
   }
   return projected;
-}
-
-function truncateHeldInput(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed.slice(0, 120) : undefined;
 }
 
 function paneMetadataFromEvent(

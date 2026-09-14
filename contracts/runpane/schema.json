@@ -125,6 +125,10 @@
             "format",
             "heartbeatSeconds",
             "idleAfterMs",
+            "settleMs",
+            "blockedSettleMs",
+            "minIntervalMs",
+            "idleBackoff",
             "agentsOnly",
             "includeHeldInputPresence"
           ],
@@ -132,6 +136,10 @@
             "format": { "enum": ["lines", "json"] },
             "heartbeatSeconds": { "type": "number" },
             "idleAfterMs": { "type": "number" },
+            "settleMs": { "type": "number" },
+            "blockedSettleMs": { "type": "number" },
+            "minIntervalMs": { "type": "number" },
+            "idleBackoff": { "type": "boolean" },
             "agentsOnly": { "type": "boolean" },
             "includeHeldInputPresence": { "type": "boolean" }
           },

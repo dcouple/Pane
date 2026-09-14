@@ -107,7 +107,12 @@ def run_watch(parsed: Any) -> int:
         True if defaults["includeHeldInputPresence"]
         and not parsed.no_held_input and parsed.follow and output_format == "lines" else None
     )
-    watch_as = parsed.watch_as or (os.environ.get("PANE_PANEL_ID") if parsed.follow else None)
+    cadence_requested = bool(parsed.settle_ms or parsed.blocked_settle_ms or parsed.min_interval_ms)
+    # Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
+    watch_as = parsed.watch_as or (
+        (os.environ.get("PANE_PANEL_ID") or (f"follow-{os.getpid()}" if cadence_requested else None))
+        if parsed.follow else None
+    )
     request: Dict[str, Any] = {
         **optional_value("as", watch_as),
         **optional_value("since", parsed.watch_since),
@@ -124,6 +129,10 @@ def run_watch(parsed: Any) -> int:
         **optional_value("includeHeldInput", include_held_input),
         **optional_value("includeHeldInputPresence", include_held_input_presence),
         "idleAfterMs": idle_after_ms,
+        **optional_value("settleMs", parsed.settle_ms),
+        **optional_value("blockedSettleMs", parsed.blocked_settle_ms),
+        **optional_value("minIntervalMs", parsed.min_interval_ms),
+        **optional_value("idleBackoff", True if parsed.idle_backoff else None),
     }
 
     armed = False
@@ -145,6 +154,8 @@ def run_watch(parsed: Any) -> int:
                 if parsed.self_test:
                     call_request.pop("as", None)
                     call_request.pop("since", None)
+                    for cadence_key in ("settleMs", "blockedSettleMs", "minIntervalMs", "idleBackoff"):
+                        call_request.pop(cadence_key, None)
                     call_request.update({"from": "now", "idleAfterMs": 0, "timeoutMs": 0})
                 elif anonymous_idle_window_start_ms is not None:
                     call_request["idleWindowStartMs"] = anonymous_idle_window_start_ms

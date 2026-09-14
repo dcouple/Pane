@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional
 
 from .daemon_client import get_pane_daemon_endpoint, invoke_daemon, resolve_pane_directory
+from .generated_contract import RUNPANE_CONTRACT
 from .installers import resolve_existing_pane_path
 from .platforms import PanePlatform, detect_platform
 from .releases import resolve_release
@@ -254,6 +255,7 @@ def build_doctor_report(parsed, source: str) -> Dict[str, Any]:
         "daemon": daemon,
         "remoteDaemonService": remote_daemon_service,
         "remoteSetup": remote_setup,
+        "watchDefaults": watch_defaults(),
         "nextCommands": [
             "runpane agent-context --json",
             "runpane agent-context --command \"<command>\" --json",
@@ -649,6 +651,28 @@ def collect_daemon_health(pane_dir: Optional[str], endpoint: Dict[str, str]) -> 
         }
 
 
+def watch_defaults() -> Dict[str, Any]:
+    defaults = RUNPANE_CONTRACT["defaults"]["watch"]
+    return {
+        "heartbeatSeconds": defaults["heartbeatSeconds"],
+        "idleAfterMs": defaults["idleAfterMs"],
+        "settleMs": defaults["settleMs"],
+        "blockedSettleMs": defaults["blockedSettleMs"],
+        "minIntervalMs": defaults["minIntervalMs"],
+        "idleBackoff": defaults["idleBackoff"],
+        "kinds": "all",
+    }
+
+
+def format_watch_defaults(defaults: Dict[str, Any]) -> str:
+    return (
+        f"Watch defaults (--follow): heartbeat {defaults['heartbeatSeconds']}s, idle-after {defaults['idleAfterMs']}ms, "
+        f"settle {defaults['settleMs']}ms, blocked-settle {defaults['blockedSettleMs']}ms, "
+        f"min-interval {defaults['minIntervalMs']}ms, "
+        f"idle-backoff {'on' if defaults['idleBackoff'] else 'off'}, kinds {defaults['kinds']}"
+    )
+
+
 def render_doctor_text(report: Dict[str, Any]) -> None:
     platform = report.get("platform")
     if platform:
@@ -695,6 +719,7 @@ def render_doctor_text(report: Dict[str, Any]) -> None:
         if diagnostic.get("recoveryCommand"):
             print(f"  Recovery: {diagnostic['recoveryCommand']}")
 
+    print(format_watch_defaults(report["watchDefaults"]))
     print('Agent discovery: run "runpane doctor --json" before Pane actions, then "runpane agent-context --json" for full CLI context.')
     print('Remote setup: run "runpane setup" for guided setup, or "runpane install daemon --label <name>" for scripting.')
 

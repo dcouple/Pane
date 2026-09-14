@@ -31,6 +31,10 @@ export const RUNPANE_CONTRACT = {
       "format": "lines",
       "heartbeatSeconds": 60,
       "idleAfterMs": 600000,
+      "settleMs": 0,
+      "blockedSettleMs": 0,
+      "minIntervalMs": 0,
+      "idleBackoff": false,
       "agentsOnly": true,
       "includeHeldInputPresence": true
     }
@@ -221,7 +225,7 @@ export const RUNPANE_CONTRACT = {
       "name": "watch",
       "summary": "Wait for workspace agent and Pane transitions using a daemon-held cursor.",
       "usage": [
-        "runpane watch [--as <name>|--since <generation>] [--follow] [--format <lines|json>] [--heartbeat <seconds>] [--idle-after <ms>] [--all-managed|--pane <id>] [--include-shells] [--self-test] [--kinds <kind,...>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
+        "runpane watch [--as <name>|--since <generation>] [--follow] [--format <lines|json>] [--heartbeat <seconds>] [--idle-after <ms>] [--settle <ms>] [--blocked-settle <ms>] [--min-interval <ms>] [--idle-backoff] [--all-managed|--pane <id>] [--include-shells] [--self-test] [--kinds <kind,...>] [--repo <selector>] [--name-contains <text>] [--timeout-ms <ms>] [--from <now|earliest>] [--json]"
       ],
       "jsonSchemas": [
         "workspaceWaitRequest",
@@ -664,6 +668,21 @@ export const RUNPANE_CONTRACT = {
         "description": "Emit agent.idle after this READY duration; 0 disables idle events."
       },
       {
+        "name": "--settle",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: emit READY only after the panel stays idle this long; a BUSY inside the window cancels it silently."
+      },
+      {
+        "name": "--blocked-settle",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: emit BLOCKED only after the panel stays blocked this long; an in-pane answer inside the window cancels it silently."
+      },
+      {
+        "name": "--min-interval",
+        "value": "<milliseconds>",
+        "description": "Follow-only opt-in: hold non-urgent lines and flush them together at most once per interval; BLOCKED bypasses it."
+      },
+      {
         "name": "--body-file",
         "value": "<path|->",
         "description": "Read diagnostic report evidence from a file or stdin."
@@ -733,6 +752,10 @@ export const RUNPANE_CONTRACT = {
       {
         "name": "--self-test",
         "description": "Probe the current daemon watch path without advancing a named cursor."
+      },
+      {
+        "name": "--idle-backoff",
+        "description": "Follow-only opt-in: IDLE fires at --idle-after, then 30m, 1h, 3h, then daily per panel; any activity resets it."
       },
       {
         "name": "--report",
@@ -981,6 +1004,10 @@ export const RUNPANE_CONTRACT = {
         "  --format <lines|json>          Output format; lines is the follow default",
         "  --heartbeat <seconds>          Healthy-silence bound; defaults to 60 under --follow",
         "  --idle-after <ms>              Re-firing READY idle interval; defaults to 600000 under --follow",
+        "  --settle <ms>                  Opt-in: emit READY only after this quiet window (--follow only)",
+        "  --blocked-settle <ms>          Opt-in: emit BLOCKED only after this window (--follow only)",
+        "  --min-interval <ms>            Opt-in: batch non-urgent lines per interval; BLOCKED bypasses (--follow only)",
+        "  --idle-backoff                 Opt-in: IDLE at --idle-after, 30m, 1h, 3h, then daily (--follow only)",
         "  --all-managed                  Explicitly watch all managed panes",
         "  --include-shells               Include ordinary shell panels",
         "  --agents-only                  Limit to CLI agent panels",
@@ -995,7 +1022,10 @@ export const RUNPANE_CONTRACT = {
         "  --ack-now                      Use at-most-once named-cursor delivery",
         "  --include-held-input           Include unsubmitted composer text in JSON",
         "  --no-held-input                Disable redacted STUCK detection",
-        "  --json                         Alias for --format json"
+        "  --json                         Alias for --format json",
+        "",
+        "Defaults are responsive: no settle, no batching, all kinds. BUSY carries no action; drop it with --kinds.",
+        "Expensive consumers opt in: --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff"
       ],
       "panes create": [
         "Usage:",
@@ -1482,6 +1512,10 @@ export const RUNPANE_CONTRACT = {
         "  --format <lines|json>",
         "  --heartbeat <seconds>",
         "  --idle-after <ms>",
+        "  --settle <ms>                  Opt-in READY quiet window (--follow only)",
+        "  --blocked-settle <ms>          Opt-in BLOCKED window (--follow only)",
+        "  --min-interval <ms>            Opt-in batching; BLOCKED bypasses (--follow only)",
+        "  --idle-backoff                 Opt-in IDLE backoff (--follow only)",
         "  --all-managed",
         "  --include-shells",
         "  --agents-only",
@@ -1970,6 +2004,13 @@ export const RUNPANE_CONTRACT = {
         "60",
         "--idle-after",
         "600000",
+        "--settle",
+        "180000",
+        "--blocked-settle",
+        "30000",
+        "--min-interval",
+        "600000",
+        "--idle-backoff",
         "--all-managed",
         "--agents-only",
         "--exclude-pane",
@@ -3887,6 +3928,18 @@ export const RUNPANE_CONTRACT = {
         },
         "idleWindowStartMs": {
           "type": "number"
+        },
+        "settleMs": {
+          "type": "number"
+        },
+        "blockedSettleMs": {
+          "type": "number"
+        },
+        "minIntervalMs": {
+          "type": "number"
+        },
+        "idleBackoff": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -6946,6 +6999,29 @@ export const RUNPANE_CONTRACT = {
             "description": "Re-firing READY idle interval; defaults to 600000 under follow."
           },
           {
+            "name": "--settle",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): emit READY only after the panel stays idle this long; a BUSY inside the window cancels it silently. Default 0."
+          },
+          {
+            "name": "--blocked-settle",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): emit BLOCKED only after this window; an in-pane answer inside it cancels the line. Default 0."
+          },
+          {
+            "name": "--min-interval",
+            "value": "<milliseconds>",
+            "required": false,
+            "description": "Opt-in (follow only): hold READY, IDLE, NEW, GONE, EXIT, and UNKNOWN lines and flush them together at most once per interval; BLOCKED bypasses it. Default 0."
+          },
+          {
+            "name": "--idle-backoff",
+            "required": false,
+            "description": "Opt-in (follow only): IDLE fires at --idle-after, then 30m, 1h, 3h, then daily per panel; any activity resets the schedule."
+          },
+          {
             "name": "--all-managed",
             "required": false,
             "description": "Explicit spelling for the all-managed default scope."
@@ -6968,11 +7044,15 @@ export const RUNPANE_CONTRACT = {
         ],
         "examples": [
           "runpane watch --follow",
-          "runpane watch --as monitor --follow --json"
+          "runpane watch --as monitor --follow --json",
+          "runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff"
         ],
         "notes": [
           "Journal loss is surfaced through reset and dropped metadata.",
-          "The daemon treats omitted idleAfterMs as disabled so older clients never receive agent.idle unexpectedly."
+          "The daemon treats omitted idleAfterMs as disabled so older clients never receive agent.idle unexpectedly.",
+          "Defaults stay responsive: no settle, no batching, all kinds, IDLE every --idle-after. Cadence flags are opt-in for expensive consumers and require --follow.",
+          "BUSY carries no action; drop it with --kinds. HEARTBEAT is client-side proof of life and is never shaped by cadence flags.",
+          "Cadence state is held per named consumer; an anonymous --follow with a cadence flag names itself follow-<pid>."
         ]
       }
     },

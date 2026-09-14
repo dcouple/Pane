@@ -72,6 +72,10 @@ export interface ParsedArgs {
   watchFormat?: 'lines' | 'json';
   heartbeatSeconds?: number;
   idleAfterMs?: number;
+  settleMs?: number;
+  blockedSettleMs?: number;
+  minIntervalMs?: number;
+  idleBackoff?: boolean;
   allManaged?: boolean;
   includeShells?: boolean;
   noHeldInput?: boolean;
@@ -173,6 +177,11 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
   }
   if (parsed.command === 'watch' && parsed.json && parsed.watchFormat === 'lines') {
     throw new Error('runpane watch accepts either --json or --format lines, not both.');
+  }
+  if (parsed.command === 'watch' && !parsed.follow
+    && (parsed.settleMs !== undefined || parsed.blockedSettleMs !== undefined
+      || parsed.minIntervalMs !== undefined || parsed.idleBackoff)) {
+    throw new Error('--settle, --blocked-settle, --min-interval, and --idle-backoff require --follow.');
   }
   return parsed;
 }
@@ -317,6 +326,10 @@ function parseLocalBooleanFlag(flag: string, parsed: ParsedArgs): void {
   }
   if (flag === '--follow') {
     parsed.follow = true;
+    return;
+  }
+  if (flag === '--idle-backoff') {
+    parsed.idleBackoff = true;
     return;
   }
   if (flag === '--ack-now') {
@@ -555,6 +568,16 @@ function parseLocalValueFlag(flag: string, value: string, parsed: ParsedArgs): v
       throw new Error('--idle-after must be a non-negative integer.');
     }
     parsed.idleAfterMs = idleAfterMs;
+    return;
+  }
+  if (flag === '--settle' || flag === '--blocked-settle' || flag === '--min-interval') {
+    const ms = Number(value);
+    if (!Number.isInteger(ms) || ms < 0) {
+      throw new Error(`${flag} must be a non-negative integer.`);
+    }
+    if (flag === '--settle') parsed.settleMs = ms;
+    else if (flag === '--blocked-settle') parsed.blockedSettleMs = ms;
+    else parsed.minIntervalMs = ms;
     return;
   }
   if (flag === '--body-file') {
