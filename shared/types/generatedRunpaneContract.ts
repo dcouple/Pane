@@ -7017,7 +7017,7 @@ export const RUNPANE_CONTRACT = {
             "name": "--format",
             "value": "<lines|json>",
             "required": false,
-            "description": "Output format. Default lines under --follow, json elsewhere."
+            "description": "Output format. Default lines in every mode; --json selects json."
           },
           {
             "name": "--heartbeat",
