@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatabaseService } from '../database/database';
 import type { Project } from '../database/models';
+import { withLock } from '../utils/mutex';
 import { CommandRunner } from '../utils/commandRunner';
 import { PathResolver } from '../utils/pathResolver';
 import type { Session } from '../types/session';
@@ -152,6 +153,42 @@ describe('pane creation name reuse', () => {
     } finally {
       await secondQueue.close();
     }
+  });
+
+  it('waits beyond the default mutex timeout for a preceding checkout', async () => {
+    let releaseCheckout!: () => void;
+    let reservationHeld!: () => void;
+    const held = new Promise<void>((resolve) => { reservationHeld = resolve; });
+    const checkout = withLock(`session-create-${project.path}`, async () => {
+      reservationHeld();
+      await new Promise<void>((resolve) => { releaseCheckout = resolve; });
+    });
+    await held;
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+    const pending = createPane();
+    const result = pending.then(value => ({ value }), error => ({ error }));
+    try {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      clock.mockReturnValue(now + 60_000);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    } finally {
+      clock.mockRestore();
+      releaseCheckout();
+      await checkout;
+    }
+    expect(await result).toMatchObject({ value: { name: 'Feature' } });
+    expect(send).not.toHaveBeenCalledWith('session:creation-failed', expect.anything());
+  });
+
+  it('reports post-persistence failures on the existing pane as initialization errors', async () => {
+    vi.spyOn(panelManager, 'ensureExplorerPanel').mockRejectedValueOnce(new Error('Panel setup failed'));
+    await expect(createPane()).rejects.toThrow('Panel setup failed');
+    expect(database.checkActiveSessionNameExists('Feature', project.id)).toBe(true);
+    expect(queueOptions.sessionManager.updateSession).toHaveBeenCalledWith(expect.any(String), {
+      status: 'error', error: 'Panel setup failed', statusMessage: 'Failed to initialize pane: Panel setup failed',
+    });
+    expect(send).not.toHaveBeenCalledWith('session:creation-failed', expect.anything());
   });
 
   it('reuses archived names for panes in the project directory without reserving a branch', async () => {

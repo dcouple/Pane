@@ -181,7 +181,7 @@ export class TaskQueue {
       const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType, startPinned } = job.data;
       const { sessionManager, worktreeManager, claudeCodeManager } = this.options;
 
-      // Processing session creation job - verbose debug logging removed
+      let createdSessionId: string | undefined;
 
       try {
         let targetProject;
@@ -269,8 +269,9 @@ export class TaskQueue {
             actualBaseBranch,
             startPinned
           );
+          createdSessionId = session.id;
           return { session, worktreePath };
-        });
+        }, Infinity); // Checkout operations have their own timeouts; reservations wait for their turn.
 
         // Only add prompt-related data if there's actually a prompt
         if (prompt && prompt.trim().length > 0) {
@@ -486,11 +487,18 @@ export class TaskQueue {
 
         return { sessionId: session.id };
       } catch (error) {
-        console.error(`[TaskQueue] Failed to create session:`, error);
-        getPaneEventSink().send('session:creation-failed', {
-          name: worktreeTemplate || 'New pane',
-          error: error instanceof Error ? error.message : String(error),
-        });
+        const message = error instanceof Error ? error.message : String(error);
+        if (createdSessionId) {
+          console.error(`[TaskQueue] Failed to initialize session ${createdSessionId}:`, error);
+          await sessionManager.updateSession(createdSessionId, {
+            status: 'error', error: message, statusMessage: `Failed to initialize pane: ${message}`,
+          });
+        } else {
+          console.error(`[TaskQueue] Failed to create session:`, error);
+          getPaneEventSink().send('session:creation-failed', {
+            name: worktreeTemplate || 'New pane', error: message,
+          });
+        }
         throw error;
       }
     });
