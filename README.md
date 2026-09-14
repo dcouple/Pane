@@ -340,6 +340,11 @@ irm https://runpane.com/install.ps1 | iex
 5. **Review diffs** — see what changed with the built-in diff viewer
 6. **Ship** — commit, rebase, and merge from keyboard shortcuts
 
+You can reuse an archived or deleted pane's name. Pane keeps any old worktree
+identity and Git branches separate, choosing a free worktree name for the new
+pane. Creation errors appear in a dismissible error dialog on desktop and Remote
+Pane even if the creation dialog has already closed.
+
 ---
 
 ## The Windows Problem

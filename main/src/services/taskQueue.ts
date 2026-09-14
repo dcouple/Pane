@@ -1,5 +1,5 @@
 import Bull from 'bull';
-import { getRuntimeConfigManager } from '../core/runtime';
+import { getPaneEventSink, getRuntimeConfigManager } from '../core/runtime';
 import { SimpleQueue } from './simpleTaskQueue';
 import { SessionManager } from './sessionManager';
 import type { WorktreeManager } from './worktreeManager';
@@ -18,6 +18,7 @@ import { terminalPanelManager } from './terminalPanelManager';
 import { detectProjectConfig } from './projectConfigDetector';
 import { emitFolderCreatedEvent } from './folderEvents';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { withLock } from '../utils/mutex';
 
 interface TaskQueueOptions {
   sessionManager: SessionManager;
@@ -232,42 +233,44 @@ export class TaskQueue {
           }
         }
         
-        // Ensure uniqueness for both names
-        const { sessionName: uniqueSessionName, worktreeName: uniqueWorktreeName } =
-          await this.ensureUniqueNames(sessionName, worktreeName, targetProject, index);
-        sessionName = uniqueSessionName;
-        worktreeName = uniqueWorktreeName;
-
         // Get CommandRunner for this project
         const ctx = sessionManager.getProjectContextByProjectId(targetProject.id);
         if (!ctx) {
           throw new Error(`Failed to get project context for project ${targetProject.id}`);
         }
 
-        // Resolve working directory — worktree or project directory
-        const { worktreePath, baseCommit, baseBranch: actualBaseBranch } = await worktreeManager.resolveWorkingDirectory(
-          targetProject.path, worktreeName, baseBranch, !job.data.isMainRepo, targetProject.worktree_folder || undefined, ctx.pathResolver, ctx.commandRunner
-        );
+        // Reserve names through persistence, including concurrent creates on macOS/Windows.
+        const { session, worktreePath } = await withLock(`session-create-${targetProject.path}`, async () => {
+          const names = await this.ensureUniqueNames(sessionName, worktreeName, targetProject, index, !job.data.isMainRepo);
+          sessionName = names.sessionName;
+          worktreeName = names.worktreeName;
 
-        // For non-worktree sessions, clear worktree_name so archival cleanup
-        // (which checks `worktree_name && !is_main_repo`) won't attempt to
-        // remove a worktree that could belong to another session.
-        const effectiveWorktreeName = job.data.isMainRepo ? '' : worktreeName;
+          // Resolve working directory — worktree or project directory
+          const { worktreePath, baseCommit, baseBranch: actualBaseBranch } = await worktreeManager.resolveWorkingDirectory(
+            targetProject.path, worktreeName, baseBranch, !job.data.isMainRepo, targetProject.worktree_folder || undefined, ctx.pathResolver, ctx.commandRunner
+          );
 
-        const session = await sessionManager.createSession(
-          sessionName,
-          worktreePath,
-          prompt,
-          effectiveWorktreeName,
-          permissionMode,
-          targetProject.id,
-          false, // is_main_repo stays false — reserved for internal singleton.
-          job.data.folderId,
-          toolType,
-          baseCommit,
-          actualBaseBranch,
-          startPinned
-        );
+          // For non-worktree sessions, clear worktree_name so archival cleanup
+          // (which checks `worktree_name && !is_main_repo`) won't attempt to
+          // remove a worktree that could belong to another session.
+          const effectiveWorktreeName = job.data.isMainRepo ? '' : worktreeName;
+
+          const session = await sessionManager.createSession(
+            sessionName,
+            worktreePath,
+            prompt,
+            effectiveWorktreeName,
+            permissionMode,
+            targetProject.id,
+            false, // is_main_repo stays false — reserved for internal singleton.
+            job.data.folderId,
+            toolType,
+            baseCommit,
+            actualBaseBranch,
+            startPinned
+          );
+          return { session, worktreePath };
+        });
 
         // Only add prompt-related data if there's actually a prompt
         if (prompt && prompt.trim().length > 0) {
@@ -484,6 +487,10 @@ export class TaskQueue {
         return { sessionId: session.id };
       } catch (error) {
         console.error(`[TaskQueue] Failed to create session:`, error);
+        getPaneEventSink().send('session:creation-failed', {
+          name: worktreeTemplate || 'New pane',
+          error: error instanceof Error ? error.message : String(error),
+        });
         throw error;
       }
     });
@@ -716,7 +723,7 @@ export class TaskQueue {
     return uniqueName;
   }
 
-  private async ensureUniqueNames(baseSessionName: string, baseWorktreeName: string, project: Project, index?: number): Promise<{ sessionName: string; worktreeName: string }> {
+  private async ensureUniqueNames(baseSessionName: string, baseWorktreeName: string, project: Project, index?: number, useWorktree = true): Promise<{ sessionName: string; worktreeName: string }> {
     const { sessionManager } = this.options;
     const db = sessionManager.db;
     
@@ -729,48 +736,39 @@ export class TaskQueue {
       candidateWorktreeName = `${baseWorktreeName}-${index + 1}`;
     }
     
-    // Check for existing sessions with these names (including archived)
+    // Display names only belong to active panes in this repository. Archived
+    // worktree identities stay reserved so restoring a pane cannot share its files.
     let counter = 1;
     let uniqueSessionName = candidateSessionName;
     let uniqueWorktreeName = candidateWorktreeName;
-    
-    while (true) {
-      // Check session name and worktree name separately using public methods
-      // This is important because different session names could map to the same worktree name
-      // e.g., "Fix Auth Bug" and "Fix-Auth-Bug" both become "fix-auth-bug"
-      const sessionNameExists = db.checkSessionNameExists(uniqueSessionName);
-      const worktreeNameExists = db.checkSessionNameExists(uniqueWorktreeName);
-      
-      // Check if worktree directory exists on filesystem
-      // This handles cases where a worktree was created outside of Pane
-      let worktreePathExists = false;
-      try {
-        if (project) {
-          const resolver = new PathResolver(project);
-          const worktreeFolder = project.worktree_folder || 'worktrees';
-          const worktreePath = resolver.join(project.path, worktreeFolder, uniqueWorktreeName);
-          worktreePathExists = fs.existsSync(resolver.toFileSystem(worktreePath));
-        }
-      } catch {
-        // Ignore filesystem check errors
-      }
-      
-      // All must be unique (session name, worktree name in DB, and no filesystem conflict)
-      if (!sessionNameExists && !worktreeNameExists && !worktreePathExists) {
-        break;
-      }
-      
-      // If any is taken, increment both to keep them in sync
-      if (index !== undefined) {
-        uniqueSessionName = `${baseSessionName} ${index + 1} ${counter}`;
-        uniqueWorktreeName = `${baseWorktreeName}-${index + 1}-${counter}`;
-      } else {
-        uniqueSessionName = `${baseSessionName} ${counter}`;
-        uniqueWorktreeName = `${baseWorktreeName}-${counter}`;
-      }
-      counter++;
+
+    while (db.checkActiveSessionNameExists(uniqueSessionName, project.id)) {
+      uniqueSessionName = `${candidateSessionName} ${counter++}`;
     }
-    
+    if (!useWorktree) return { sessionName: uniqueSessionName, worktreeName: '' };
+
+    const ctx = sessionManager.getProjectContextByProjectId(project.id);
+    if (!ctx) throw new Error(`Failed to get project context for project ${project.id}`);
+    let branches: string[] = [];
+    try {
+      const result = await ctx.commandRunner.execFile('git', ['for-each-ref', '--format=%(refname)', 'refs/heads/'], project.path);
+      branches = result.stdout.trim().split('\n').map(branch => branch.trim().slice('refs/heads/'.length).toLowerCase());
+    } catch (error) {
+      // WorktreeManager initializes folders that are not Git repositories yet.
+      if (!(error instanceof Error) || !error.message.includes('not a git repository')) throw error;
+    }
+    const resolver = new PathResolver(project);
+    counter = 1;
+    while (
+      db.checkSessionNameExists(uniqueWorktreeName) ||
+      branches.some(branch => branch === uniqueWorktreeName || branch.startsWith(`${uniqueWorktreeName}/`)) ||
+      fs.existsSync(resolver.toFileSystem(this.options.worktreeManager.getWorktreePath(
+        project.path, uniqueWorktreeName, project.worktree_folder || undefined, resolver,
+      )))
+    ) {
+      uniqueWorktreeName = `${candidateWorktreeName}-${counter++}`;
+    }
+
     return { sessionName: uniqueSessionName, worktreeName: uniqueWorktreeName };
   }
 

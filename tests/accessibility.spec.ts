@@ -3,6 +3,13 @@ import { expectNoAxeViolations } from './axeTest';
 import { installElectronApiMock } from './electronApiMock';
 import type { JsonValue } from '../shared/validation/boundaryDecoder';
 
+test.beforeEach(async ({ page }) => {
+  // Font CDN availability must not block loading the application stylesheet.
+  await page.route('https://fonts.googleapis.com/**', route => route.fulfill({
+    contentType: 'text/css', body: '',
+  }));
+});
+
 const project = {
   id: 1,
   name: 'Accessibility fixture',
@@ -157,17 +164,25 @@ async function openConnectedRemote(page: Page): Promise<void> {
   await page.addInitScript((profile) => {
     window.localStorage.setItem('pane.remotePwa.savedProfiles', JSON.stringify([profile]));
 
-    class MockEventSource {
+    class MockEventSource extends EventTarget {
       onopen: ((event: Event) => void) | null = null;
       onerror: ((event: Event) => void) | null = null;
 
+      private readonly emitTestEvent = (event: Event) => {
+        if (event instanceof CustomEvent) {
+          this.dispatchEvent(new MessageEvent('daemon-event', { data: JSON.stringify(event.detail) }));
+        }
+      };
+
       constructor(readonly url: string) {
+        super();
+        window.addEventListener('pane-test-daemon-event', this.emitTestEvent);
         window.setTimeout(() => this.onopen?.(new Event('open')), 0);
       }
 
-      addEventListener(): void {}
-      removeEventListener(): void {}
-      close(): void {}
+      close(): void {
+        window.removeEventListener('pane-test-daemon-event', this.emitTestEvent);
+      }
     }
 
     Object.defineProperty(window, 'EventSource', {
@@ -314,6 +329,25 @@ test('seeded Create Pane dialog is keyboard reachable and axe-clean', async ({ p
   await expectNoAxeViolations(page);
 });
 
+test('queued pane creation failures show a dismissible accessible error', async ({ page }) => {
+  await openDesktop(page);
+  await page.evaluate(() => {
+    // SAFETY: installElectronApiMock installs this test event bridge before navigation.
+    const mock = (window as typeof window & { __paneTestElectronMock: {
+      emitSessionCreationFailed(name: string, error: string): void;
+    } }).__paneTestElectronMock;
+    mock.emitSessionCreationFailed('Feature', 'Git could not create the worktree.');
+  });
+  const dialog = page.getByRole('dialog', { name: 'Failed to Create Pane' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Git could not create the worktree.')).toBeVisible();
+  await expect(dialog.getByText('Pane: Feature')).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.screenshot({ path: 'test-results/pane-creation-error.png' });
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test('seeded pane exposes separate compound actions and arrow-keyed panel tabs', async ({ page }) => {
   await openDesktop(page);
 
@@ -421,6 +455,29 @@ test('disconnected Remote Pane screen is axe-clean', async ({ page }) => {
   await expect(page.getByRole('alert')).not.toContainText('Tailscale');
   await expect(codeInput).toHaveAttribute('aria-invalid', 'true');
   await expectNoAxeViolations(page);
+});
+
+test('Remote pane creation failures remain visible across later daemon events', async ({ page }) => {
+  await openConnectedRemote(page);
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('pane-test-daemon-event', { detail: {
+      channel: 'session:creation-failed',
+      args: [{ name: 'Feature', error: 'Git could not create the worktree.' }],
+      timestamp: new Date().toISOString(),
+    } }));
+  });
+  const dialog = page.getByRole('dialog', { name: 'Failed to Create Pane' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Git could not create the worktree.')).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('pane-test-daemon-event', { detail: {
+      channel: 'project:updated', args: [], timestamp: new Date().toISOString(),
+    } }));
+  });
+  await expect(dialog).toBeVisible();
+  await expectNoAxeViolations(page);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(dialog).toBeHidden();
 });
 
 test('connected Remote Create Pane keeps its dialog open on branch Escape and is axe-clean', async ({ page }) => {

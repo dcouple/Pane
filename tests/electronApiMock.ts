@@ -351,6 +351,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onSessionUpdated') {
           return (callback: MockEventCallback) => subscribe('session:updated', callback);
         }
+        if (prop === 'onSessionCreationFailed') {
+          return (callback: MockEventCallback) => subscribe('session:creation-failed', callback);
+        }
         if (prop === 'onPanelCreated') {
           return (callback: MockEventCallback) => subscribe('panel:created', callback);
         }
@@ -1075,6 +1078,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         emitWindowFocusChanged(focused: boolean) {
           emit('window:focus-changed', focused);
+        },
+        emitSessionCreationFailed(name: string, error: string) {
+          emit('session:creation-failed', { name, error });
         },
         getListenerCount(channel: string) {
           return listeners.get(channel)?.size ?? 0;

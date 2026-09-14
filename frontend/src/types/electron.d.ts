@@ -380,6 +380,7 @@ interface ElectronAPI {
   events: {
     onPermissionRequest: (callback: (request: PanePermissionRequest) => void) => () => void;
     onPermissionResolved: (callback: (event: PanePermissionResolvedEvent) => void) => () => void;
+    onSessionCreationFailed: (callback: (failure: { name: string; error: string }) => void) => () => void;
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
     onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => () => void;
