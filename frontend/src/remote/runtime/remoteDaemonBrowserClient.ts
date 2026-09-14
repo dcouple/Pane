@@ -1,3 +1,4 @@
+import { PaneSseParser, type ParsedSseEvent } from '../../../../shared/sseParser';
 import {
   decodeRemoteDaemonEventEnvelope,
   decodeRemoteHeartbeatPayload,
@@ -41,6 +42,21 @@ const HEALTH_CHECK_ATTEMPTS = 5;
 const INVOKE_ATTEMPTS = 4;
 const REQUEST_RETRY_DELAY_MS = 2_000;
 const RUNTIME_ID_STORAGE_KEY = 'pane.remotePwa.runtimeId';
+
+// Retry only reviewed reads. A command name or runtime ID cannot prove that
+// replaying it is safe after the host applied it but its response was lost.
+const RETRYABLE_READ_CHANNELS = new Set([
+  'sessions:get-all-with-projects',
+  'sessions:get',
+  'panels:list',
+  'panels:getActive',
+  'panels:checkInitialized',
+  'panels:get-output',
+  'projects:list-branches',
+  'projects:detect-branch',
+  'remote:pwa-affordances',
+  'mobile:push-status',
+]);
 
 export class RemoteDaemonBrowserClient {
   private abortController: AbortController | null = null;
@@ -97,7 +113,9 @@ export class RemoteDaemonBrowserClient {
   async invoke<T = unknown>(channel: string, args: unknown[] = []): Promise<T> {
     let lastError: Error | null = null;
     const signal = this.abortController?.signal;
-    for (let attempt = 1; attempt <= INVOKE_ATTEMPTS; attempt += 1) {
+    const retryableRead = RETRYABLE_READ_CHANNELS.has(channel);
+    const attempts = retryableRead ? INVOKE_ATTEMPTS : 1;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
         const runtimeId = getRuntimeId();
         const clientLabel = getClientLabel();
@@ -124,7 +142,15 @@ export class RemoteDaemonBrowserClient {
         });
 
         // SAFETY: The named IPC/API channel contract establishes this response payload type.
-        const payload = await response.json() as InvokeSuccessPayload<T> | InvokeErrorPayload;
+        const payload = await response.json().catch((cause: unknown) => {
+          if (isAuthFailureResponse(response.status)) {
+            throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage());
+          }
+          throw cause;
+        }) as InvokeSuccessPayload<T> | InvokeErrorPayload;
+        if (isAuthFailureResponse(response.status)) {
+          throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(!payload?.ok ? payload?.error?.message : undefined));
+        }
         if (response.ok && payload.ok) {
           return payload.result;
         }
@@ -132,14 +158,10 @@ export class RemoteDaemonBrowserClient {
         const message = payload.ok
           ? `Remote request failed with ${response.status}`
           : payload.error?.message ?? 'Remote request failed';
-        const error = new Error(message);
-        if (isAuthFailureResponse(response.status)) {
-          throw new RemoteAuthInvalidError(getRemoteAuthFailureMessage(message));
-        }
         if (!isRetryableResponse(response.status)) {
           throw new NonRetryableRemoteError(message);
         }
-        lastError = error instanceof Error ? error : new Error('Remote request failed');
+        lastError = new Error(message);
       } catch (error) {
         if (error instanceof RemoteAuthInvalidError || error instanceof NonRetryableRemoteError || signal?.aborted) {
           throw error;
@@ -147,14 +169,19 @@ export class RemoteDaemonBrowserClient {
         lastError = error instanceof Error ? error : new Error('Remote request failed');
       }
 
-      if (attempt < INVOKE_ATTEMPTS) {
+      if (attempt < attempts) {
         await delay(REQUEST_RETRY_DELAY_MS * attempt, signal);
       }
     }
 
-    throw lastError instanceof Error
-      ? lastError
-      : new Error('Remote request failed');
+    if (!retryableRead) {
+      throw new Error(
+        'The remote action may have completed, but its result could not be confirmed. ' +
+        'Check the current state before trying again.' +
+        (lastError ? ` (${lastError.message})` : ''),
+      );
+    }
+    throw lastError ?? new Error('Remote request failed');
   }
 
   createDeepgramStreamingSocket(): WebSocket {
@@ -347,7 +374,7 @@ export class RemoteDaemonBrowserClient {
   private async consumeEventStream(stream: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<void> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    const parser = new PaneSseParser();
 
     try {
       while (!signal.aborted) {
@@ -356,9 +383,7 @@ export class RemoteDaemonBrowserClient {
           return;
         }
 
-        buffer += decoder.decode(value, { stream: true });
-        const { events, rest } = parseSseEvents(buffer);
-        buffer = rest;
+        const events = parser.push(decoder.decode(value, { stream: true }));
 
         for (const event of events) {
           this.handleSseEvent(event);
@@ -464,54 +489,6 @@ export class RemoteDaemonBrowserClient {
 
     return error ?? new Error('Remote health check failed');
   }
-}
-
-interface ParsedSseEvent {
-  event: string | null;
-  data: string;
-}
-
-interface ParsedSseBatch {
-  events: ParsedSseEvent[];
-  rest: string;
-}
-
-export function parseSseEvents(buffer: string): ParsedSseBatch {
-  const events: ParsedSseEvent[] = [];
-  let rest = buffer;
-  let boundary = rest.indexOf('\n\n');
-
-  while (boundary !== -1) {
-    const rawEvent = rest.slice(0, boundary);
-    rest = rest.slice(boundary + 2);
-    const event = parseSseEvent(rawEvent);
-    if (event) {
-      events.push(event);
-    }
-    boundary = rest.indexOf('\n\n');
-  }
-
-  return { events, rest };
-}
-
-function parseSseEvent(rawEvent: string): ParsedSseEvent | null {
-  const lines = rawEvent.split(/\r?\n/);
-  let event: string | null = null;
-  const data: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith('event:')) {
-      event = line.slice('event:'.length).trim();
-    } else if (line.startsWith('data:')) {
-      data.push(line.slice('data:'.length).trimStart());
-    }
-  }
-
-  if (!event && data.length === 0) {
-    return null;
-  }
-
-  return { event, data: data.join('\n') };
 }
 
 function getRuntimeId(): string {

@@ -1,49 +1,27 @@
 import { test, expect, Page } from '@playwright/test';
 import type { JsonObject } from '../shared/validation/boundaryDecoder';
 import { installElectronApiMock } from './electronApiMock';
+import { openConnectedRemotePwa } from './remotePwaMock';
 
 test.beforeEach(async ({ page }) => {
   await installElectronApiMock(page);
 });
+
 
 async function dismissStartupDialogs(page: Page) {
   // Dismiss analytics consent dialog if present (shows before welcome)
   const analyticsDecline = page.locator('button:has-text("No thanks")');
   if (await analyticsDecline.isVisible({ timeout: 3000 }).catch(() => false)) {
     await analyticsDecline.click();
-    await page.waitForTimeout(500);
+    await expect(analyticsDecline).toBeHidden();
   }
 
   // Dismiss welcome dialog if present (shows after analytics consent)
   const getStartedButton = page.locator('button:has-text("Get Started")');
   if (await getStartedButton.isVisible({ timeout: 2000 }).catch(() => false)) {
     await getStartedButton.click();
-    await page.waitForTimeout(500);
+    await expect(getStartedButton).toBeHidden();
   }
-}
-
-async function clickDomNode(locator: ReturnType<Page['locator']>) {
-  await locator.evaluate((node: HTMLElement) => {
-    node.click();
-  });
-}
-
-async function setInputValue(locator: ReturnType<Page['locator']>, value: string) {
-  await locator.evaluate((node: HTMLElement, nextValue) => {
-    if (!(node instanceof HTMLInputElement) && !(node instanceof HTMLTextAreaElement)) {
-      throw new Error('Expected an input or textarea element');
-    }
-    const input = node;
-    const prototype = input instanceof HTMLTextAreaElement
-      ? HTMLTextAreaElement.prototype
-      : HTMLInputElement.prototype;
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
-
-    input.focus();
-    descriptor?.set?.call(input, nextValue);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, value);
 }
 
 async function openSettings(page: Page) {
@@ -53,7 +31,7 @@ async function openSettings(page: Page) {
 
   const settingsButton = page.getByRole('button', { name: 'Settings' }).first();
   await expect(settingsButton).toBeVisible({ timeout: 5000 });
-  await clickDomNode(settingsButton);
+  await settingsButton.click();
 
   await expect(page.getByText('Pane Settings')).toBeVisible({ timeout: 5000 });
 }
@@ -61,13 +39,13 @@ async function openSettings(page: Page) {
 async function openRemotePaneSettings(page: Page) {
   const remoteAccessButton = page.getByRole('button', { name: 'Remote Access', exact: true });
   await expect(remoteAccessButton).toBeVisible({ timeout: 5000 });
-  await clickDomNode(remoteAccessButton);
+  await remoteAccessButton.click();
 }
 
 async function openAdvancedRemoteSetup(page: Page) {
   const advancedRemoteSetupButton = page.getByTestId('settings-content').getByRole('button', { name: 'Advanced', exact: true });
   await expect(advancedRemoteSetupButton).toBeVisible({ timeout: 5000 });
-  await clickDomNode(advancedRemoteSetupButton);
+  await advancedRemoteSetupButton.click();
 }
 
 test.describe('Smoke Tests', () => {
@@ -107,8 +85,7 @@ test.describe('Smoke Tests', () => {
 
     await openSettings(page);
 
-    // Small wait to ensure no errors are thrown
-    await page.waitForTimeout(500);
+    await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
 
   test('Worktree file sync custom entries remain editable while typing', async ({ page }) => {
@@ -120,9 +97,9 @@ test.describe('Smoke Tests', () => {
 
     const worktreeFileSyncButton = page.getByRole('button', { name: 'Worktrees & Git', exact: true });
     await expect(worktreeFileSyncButton).toBeVisible({ timeout: 5000 });
-    await clickDomNode(worktreeFileSyncButton);
+    await worktreeFileSyncButton.click();
 
-    await clickDomNode(page.getByRole('button', { name: 'Add Entry' }));
+    await page.getByRole('button', { name: 'Add Entry' }).click();
 
     const customPathInput = page.getByPlaceholder('e.g. .env').last();
     await expect(customPathInput).toBeVisible();
@@ -141,22 +118,22 @@ test.describe('Smoke Tests', () => {
     await openRemotePaneSettings(page);
     await openAdvancedRemoteSetup(page);
 
-    await setInputValue(page.getByLabel('Connection Label', { exact: true }), 'Office Mac mini');
-    await setInputValue(page.getByLabel('Remote Base URL', { exact: true }), 'http://127.0.0.1:42137');
-    await clickDomNode(page.getByRole('button', { name: 'Create Paired Profile' }));
+    await page.getByLabel('Connection Label', { exact: true }).fill('Office Mac mini');
+    await page.getByLabel('Remote Base URL', { exact: true }).fill('http://127.0.0.1:42137');
+    await page.getByRole('button', { name: 'Create Paired Profile' }).click();
 
     await expect(page.getByText('Latest generated remote token')).toBeVisible();
-    await clickDomNode(page.getByRole('button', { name: 'Back to Remote Access' }));
-    await clickDomNode(page.getByRole('button', { name: 'Connections', exact: true }));
+    await page.getByRole('button', { name: 'Back to Remote Access' }).click();
+    await page.getByRole('button', { name: 'Connections', exact: true }).click();
     await expect(page.getByText('Office Mac mini').first()).toBeVisible();
 
-    await clickDomNode(page.getByRole('button', { name: 'Connect', exact: true }).first());
+    await page.getByRole('button', { name: 'Connect', exact: true }).first().click();
 
     await expect(page.getByText('Connected to Office Mac mini').first()).toBeVisible();
 
     const useLocalRuntimeButton = page.getByRole('button', { name: 'Use Local Runtime' }).first();
     await expect(useLocalRuntimeButton).toBeEnabled();
-    await clickDomNode(useLocalRuntimeButton);
+    await useLocalRuntimeButton.click();
 
     await expect(page.getByText('Using local runtime').first()).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
@@ -171,13 +148,13 @@ test.describe('Smoke Tests', () => {
     await openRemotePaneSettings(page);
     await openAdvancedRemoteSetup(page);
 
-    await setInputValue(page.getByLabel('Existing Profile Label'), 'Tunnel from laptop');
-    await setInputValue(page.getByLabel('Existing Remote Base URL'), 'http://127.0.0.1:42137');
-    await setInputValue(page.getByLabel('Existing Remote Token'), 'shared-host-token');
-    await clickDomNode(page.getByRole('button', { name: 'Save Remote Profile' }));
+    await page.getByLabel('Existing Profile Label').fill('Tunnel from laptop');
+    await page.getByLabel('Existing Remote Base URL').fill('http://127.0.0.1:42137');
+    await page.getByLabel('Existing Remote Token').fill('shared-host-token');
+    await page.getByRole('button', { name: 'Save Remote Profile' }).click();
 
-    await clickDomNode(page.getByRole('button', { name: 'Back to Remote Access' }));
-    await clickDomNode(page.getByRole('button', { name: 'Connections', exact: true }));
+    await page.getByRole('button', { name: 'Back to Remote Access' }).click();
+    await page.getByRole('button', { name: 'Connections', exact: true }).click();
     await expect(page.getByText('Tunnel from laptop').first()).toBeVisible();
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
@@ -237,7 +214,7 @@ test.describe('Smoke Tests', () => {
 
     await dismissStartupDialogs(page);
 
-    await page.waitForTimeout(250);
+    await expect(page.getByTestId('sidebar').first()).toBeVisible();
 
     const beforeCount = await page.evaluate(() => {
       // SAFETY: installElectronApiMock defines this test-only bridge before the page loads.
@@ -406,7 +383,7 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByRole('button', { name: 'Use Local Runtime' })).toBeVisible();
     await expect(page.getByText('Daemon Ready')).toHaveCount(0);
 
-    await clickDomNode(page.getByRole('button', { name: 'Use Local Runtime' }));
+    await page.getByRole('button', { name: 'Use Local Runtime' }).click();
 
     await expect(page.getByRole('button', { name: 'Connect Cloud' })).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
@@ -502,7 +479,7 @@ test.describe('Smoke Tests', () => {
     await expect(page.getByText('Cloud Connected')).toHaveCount(0);
     await expect(page.locator('button[title="Stop Cloud VM"]')).toHaveCount(0);
 
-    await clickDomNode(page.getByRole('button', { name: 'Connect Cloud' }));
+    await page.getByRole('button', { name: 'Connect Cloud' }).click();
 
     await expect(page.getByText('Cloud Connected')).toBeVisible({ timeout: 5000 });
     await expect(page.getByRole('button', { name: 'Use Local Runtime' })).toBeVisible();
@@ -531,7 +508,7 @@ test.describe('Smoke Tests', () => {
       });
     });
 
-    await clickDomNode(page.getByRole('button', { name: 'Connect Cloud' }));
+    await page.getByRole('button', { name: 'Connect Cloud' }).click();
 
     await expect(page.getByText(/does not exist/i)).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
@@ -564,9 +541,54 @@ test.describe('Smoke Tests', () => {
       mock?.setCloudDisconnectError('Unable to switch back to local runtime');
     });
 
-    await clickDomNode(page.getByRole('button', { name: 'Use Local Runtime' }));
+    await page.getByRole('button', { name: 'Use Local Runtime' }).click();
 
     await expect(page.getByText('Unable to switch back to local runtime')).toBeVisible({ timeout: 5000 });
     await expect(page.getByText('Something went wrong')).toHaveCount(0);
   });
+});
+
+test('remote terminal ignores output that arrives after its panel is replaced', async ({ page }) => {
+  test.setTimeout(60_000);
+  const pageErrors: string[] = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await openConnectedRemotePwa(page);
+
+  let releaseOutput = () => {};
+  const outputGate = new Promise<void>(resolve => { releaseOutput = resolve; });
+  let reportOutputRequest = () => {};
+  const outputRequested = new Promise<void>(resolve => { reportOutputRequest = resolve; });
+  const deliveries: Promise<void>[] = [];
+  await page.route('**/invoke', async route => {
+    const body = route.request().postDataJSON();
+    if (body.channel !== 'panels:get-output' || body.args[0] !== 'anim-panel-1') {
+      await route.fallback();
+      return;
+    }
+    reportOutputRequest();
+    const delivery = outputGate.then(() => route.fulfill({
+      json: { ok: true, result: { success: true, data: [{
+        type: 'stdout',
+        data: 'Output from the replaced terminal\r\n'.repeat(50),
+        timestamp: new Date(0).toISOString(),
+      }] } },
+    }));
+    deliveries.push(delivery);
+    await delivery;
+  });
+
+  try {
+    await page.getByRole('tab', { name: 'shell', exact: true }).click();
+    await outputRequested;
+    await page.getByRole('tab', { name: 'claude', exact: true }).click();
+    await expect(page.getByRole('tab', { name: 'claude', exact: true })).toHaveAttribute('aria-selected', 'true');
+  } finally {
+    releaseOutput();
+  }
+  await Promise.all(deliveries);
+  // Let xterm's queued rendering run after the stale response is consumed.
+  await page.evaluate(() => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+  expect(pageErrors).toEqual([]);
 });
