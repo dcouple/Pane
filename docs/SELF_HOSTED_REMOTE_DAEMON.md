@@ -277,7 +277,9 @@ before submitting it again. Authentication failures stop immediately.
 The browser normally uses native EventSource for output. Its fetch fallback and
 the desktop transport share one SSE text parser, accepting LF, CRLF, and CR line
 endings across chunks. Each transport decodes UTF-8 incrementally before parsing;
-reconnecting discards the previous stream's incomplete event.
+reconnecting discards the previous stream's incomplete event. Terminal output
+responses are applied only to the terminal instance that requested them, so a
+late response cannot clear or write to a terminal disposed during a tab switch.
 
 ### I changed host settings but nothing happened
 
