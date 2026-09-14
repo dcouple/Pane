@@ -12,7 +12,7 @@ import { splitPanelBufferState } from '../database/panelBuffers';
 import { trimAnsiSafe } from '../utils/ansiTrim';
 import { ConfigManager } from './configManager';
 import { databaseService } from './database';
-import { panelManager as panelManagerMock } from '../test/setup';
+import { panelManager as panelManagerMock } from '../test/panelManagerFake';
 import { MAX_RESTORE_PAYLOAD_SIZE, TerminalPanelManager } from './terminalPanelManager';
 
 /** In-process stand-in for a ptyHost PTY: output is whatever the test emits. */
@@ -159,7 +159,7 @@ describe('terminal panel persistence', () => {
   });
 
   async function startTerminal(panel: ToolPanel): Promise<{ manager: TerminalPanelManager; handle: FakePtyHandle }> {
-    const manager = new TerminalPanelManager();
+    const manager = new TerminalPanelManager(panelManagerMock);
     managers.push(manager);
     panelManagerMock.getPanel.mockReturnValue(panel);
     if (!databaseService.getPanel(panel.id)) {
@@ -236,7 +236,7 @@ describe('terminal panel persistence', () => {
     expect(databaseService.updatePanel(panel.id, { state: lastPersisted ?? { isActive: false } })).toBe(true);
     first.destroyTerminal(panel.id);
 
-    const second = new TerminalPanelManager();
+    const second = new TerminalPanelManager(panelManagerMock);
     managers.push(second);
     const reloaded = databaseService.getPanel(panel.id);
     expect(reloaded?.state.customState).not.toHaveProperty('scrollbackBuffer');

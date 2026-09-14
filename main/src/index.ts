@@ -1,5 +1,4 @@
 // Load ReadableStream polyfill before any other imports
-import './polyfills/readablestream';
 
 import { hasHeadlessDaemonLaunchArg, hasRemoteSetupLaunchArg } from './utils/runtimeMode';
 import { getAppDirectory } from './utils/appDirectory';

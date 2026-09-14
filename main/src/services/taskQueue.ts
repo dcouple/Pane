@@ -1,11 +1,12 @@
 import Bull from 'bull';
+import type { AbstractCliManager } from './panels/cli/AbstractCliManager';
 import { getPaneEventSink, getRuntimeConfigManager } from '../core/runtime';
 import { SimpleQueue } from './simpleTaskQueue';
 import type { Session } from '../types/session';
 import { SessionManager } from './sessionManager';
 import type { WorktreeManager } from './worktreeManager';
 import { WorktreeNameGenerator } from './worktreeNameGenerator';
-import type { AbstractCliManager } from './panels/cli/AbstractCliManager';
+import { runSessionClaude } from './sessionClaudeTerminal';
 import type { GitDiffManager } from './gitDiffManager';
 import type { ExecutionTracker } from './executionTracker';
 import { formatForDisplay } from '../utils/timestampUtils';
@@ -22,9 +23,9 @@ import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDec
 import { withLock } from '../utils/mutex';
 
 interface TaskQueueOptions {
+  claudeCodeManager: AbstractCliManager;
   sessionManager: SessionManager;
   worktreeManager: WorktreeManager;
-  claudeCodeManager: AbstractCliManager;
   gitDiffManager: GitDiffManager;
   executionTracker: ExecutionTracker;
   worktreeNameGenerator: WorktreeNameGenerator;
@@ -101,7 +102,7 @@ export class TaskQueue {
   private continueQueue: Bull.Queue<ContinueSessionJob> | SimpleQueue<ContinueSessionJob>;
   private useSimpleQueue: boolean;
 
-  constructor(private options: TaskQueueOptions) {
+  constructor(private options: TaskQueueOptions, RedisQueue: typeof Bull = Bull) {
     console.log('[TaskQueue] Initializing task queue...');
     
     // Headless daemon mode still needs the in-process queue when Redis is not
@@ -122,33 +123,16 @@ export class TaskQueue {
       this.inputQueue = new SimpleQueue<SendInputJob>('session-input', 10);
       this.continueQueue = new SimpleQueue<ContinueSessionJob>('session-continue', 10);
     } else {
-      // Use Bull with Redis
-      const redisOptions = process.env.REDIS_URL ? {
-        redis: process.env.REDIS_URL
-      } : undefined;
-      
-      console.log('[TaskQueue] Using Bull with Redis:', process.env.REDIS_URL || 'default');
+      // Keep retention defaults for both an explicit Redis URL and localhost.
+      const queueOptions: Bull.QueueOptions = {
+        defaultJobOptions: { removeOnComplete: true, removeOnFail: false },
+      };
+      if (process.env.REDIS_URL) queueOptions.redis = process.env.REDIS_URL;
+      console.log('[TaskQueue] Using Bull with Redis');
 
-      this.sessionQueue = new Bull('session-creation', redisOptions || {
-        defaultJobOptions: {
-          removeOnComplete: true,
-          removeOnFail: false
-        }
-      });
-
-      this.inputQueue = new Bull('session-input', redisOptions || {
-        defaultJobOptions: {
-          removeOnComplete: true,
-          removeOnFail: false
-        }
-      });
-
-      this.continueQueue = new Bull('session-continue', redisOptions || {
-        defaultJobOptions: {
-          removeOnComplete: true,
-          removeOnFail: false
-        }
-      });
+      this.sessionQueue = new RedisQueue('session-creation', queueOptions);
+      this.inputQueue = new RedisQueue('session-input', queueOptions);
+      this.continueQueue = new RedisQueue('session-continue', queueOptions);
     }
     
     // Add event handlers for debugging
@@ -180,7 +164,7 @@ export class TaskQueue {
     
     this.sessionQueue.process(sessionConcurrency, async (job) => {
       const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType, startPinned } = job.data;
-      const { sessionManager, worktreeManager, claudeCodeManager } = this.options;
+      const { sessionManager, worktreeManager } = this.options;
 
       let createdSession: Session | undefined;
       let sessionCreatedEmitted = false;
@@ -457,9 +441,9 @@ export class TaskQueue {
             // Update status message
             sessionManager.updateSessionStatus(session.id, 'initializing', 'Starting Claude Code...');
 
-            // Use claudeCodeManager to start session directly (session-based, not panel-based)
+            // Start the agent through the normal persisted terminal lifecycle.
             try {
-              await claudeCodeManager.startSession(session.id, session.worktreePath, prompt, permissionMode);
+              await runSessionClaude(sessionManager, session.id, prompt, { mode: 'start', permissionMode }, this.options.claudeCodeManager);
             } catch (error) {
               console.error(`[TaskQueue] Failed to start Claude Code session:`, error);
               throw new Error(`Failed to start Claude session: ${error}`);
@@ -519,26 +503,12 @@ export class TaskQueue {
 
     this.inputQueue.process(10, async (job) => {
       const { sessionId, input } = job.data;
-      const { claudeCodeManager } = this.options;
-
-      // Use claudeCodeManager to send input directly (session-based)
-      claudeCodeManager.sendInput(sessionId, input);
+      await runSessionClaude(this.options.sessionManager, sessionId, input, { mode: 'input' }, this.options.claudeCodeManager);
     });
 
     this.continueQueue.process(10, async (job) => {
       const { sessionId, prompt } = job.data;
-      const { sessionManager, claudeCodeManager } = this.options;
-
-      const session = await sessionManager.getSession(sessionId);
-      if (!session) {
-        throw new Error(`Session ${sessionId} not found`);
-      }
-
-      // Get conversation history using session-based method
-      const conversationHistory = await sessionManager.getConversationMessages(sessionId);
-
-      // Use claudeCodeManager to continue session directly (session-based)
-      await claudeCodeManager.continueSession(sessionId, session.worktreePath, prompt, conversationHistory);
+      await runSessionClaude(this.options.sessionManager, sessionId, prompt, { mode: 'continue' }, this.options.claudeCodeManager);
     });
   }
 

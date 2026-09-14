@@ -15,6 +15,7 @@ import type { GitStatus } from './types/session';
 import { resourceMonitorService } from './services/resourceMonitorService';
 import type { ResourceSnapshot } from '../../shared/types/resourceMonitor';
 import type { PaneEventArgument } from './core/eventSink';
+import { setupSessionTerminalLifecycle } from './services/sessionClaudeTerminal';
 
 function isArchivedSessionOutputValidation(validation: { error?: string; sessionId?: string }): boolean {
   return Boolean(
@@ -43,6 +44,8 @@ export function setupEventListeners(services: AppServices): void {
     archiveProgressManager,
     analyticsManager
   } = services;
+
+  setupSessionTerminalLifecycle(sessionManager);
 
   async function appendSessionSummary(sessionId: string, failed: boolean): Promise<void> {
     try {
