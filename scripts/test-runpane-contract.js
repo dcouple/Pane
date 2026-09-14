@@ -460,7 +460,11 @@ async function checkWatchStreamParity() {
       assert.strictEqual(selfTestRequests[0].minIntervalMs, undefined, 'self-test must not batch');
       assert.strictEqual(selfTestRequests[0].idleBackoff, undefined, 'self-test must not back off');
 
-      for (const badCadenceArgs of [['watch', '--follow', '--settle', 'nope'], ['watch', '--settle', '5']]) {
+      for (const badCadenceArgs of [
+        ['watch', '--follow', '--settle', 'nope'],
+        ['watch', '--settle', '5'],
+        ['watch', '--follow', '--since', '42', '--settle', '180000'],
+      ]) {
         const badCadence = runtime === 'npm'
           ? childProcess.spawnSync(process.execPath, [npmCli, ...badCadenceArgs], { encoding: 'utf8', env: { ...process.env, RUNPANE_TELEMETRY_DISABLED: '1' } })
           : childProcess.spawnSync(findPython(), ['-m', 'runpane', ...badCadenceArgs], {

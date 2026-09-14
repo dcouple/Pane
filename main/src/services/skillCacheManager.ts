@@ -567,8 +567,8 @@ Read all of these in parallel:
   - Codex: \`${codexOrchestrator}\`
 
 Then in parallel: run the doctor command from the runtime context,
-arm liveness (\`runpane watch --self-test\` then \`runpane watch --follow\`),
-and sweep active panes through RunPane.
+arm liveness with the two commands in the Liveness Contract below (never
+the bare \`--follow\`), and sweep active panes through RunPane.
 
 ${UNATTENDED_RESILIENCE_PROMPT}
 
@@ -620,7 +620,8 @@ Every wake-up replays your whole context, so the flags above are the
 budget: about 6 wake-ups per active pane per hour worst case, usually
 1-3. Overnight runs must not burn the usage cap. Do not loosen them.
 
-Key lines: READY (turn ended and stayed quiet for 3min; a /do pane's
+Key lines: READY (turn ended and stayed quiet for 3min; delivered with
+the next batch, so up to ~13min after the turn ended; a /do pane's
 status flips while it waits on subagents or Codex dispatches are the
 false wake-ups the settle suppresses), BLOCKED (agent waiting on human;
 arrives within 30s and bypasses batching), IDLE (nothing dispatched;

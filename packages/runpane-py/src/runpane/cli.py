@@ -439,6 +439,14 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         or parsed.idle_backoff
     ):
         raise ValueError("--settle, --blocked-settle, --min-interval, and --idle-backoff require --follow.")
+    if parsed.command == "watch" and parsed.watch_since is not None and (
+        parsed.settle_ms is not None
+        or parsed.blocked_settle_ms is not None
+        or parsed.min_interval_ms is not None
+    ):
+        raise ValueError(
+            "runpane watch accepts either --since or --settle/--blocked-settle/--min-interval, not both (cadence needs a named cursor)."
+        )
     return parsed
 
 

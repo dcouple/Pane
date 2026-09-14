@@ -8,6 +8,8 @@ export interface WatchCadenceOptions {
   blockedSettleMs: number;
   minIntervalMs: number;
   emitKinds?: readonly RunpaneWorkspaceEntryKind[];
+  /** Identity of the consumer's whole filter; a change discards the instance so held entries never leak scope. */
+  filterKey: string;
 }
 
 interface PendingEntry {
@@ -41,7 +43,12 @@ export function cadenceOptionsEqual(a: WatchCadenceOptions, b: WatchCadenceOptio
   return a.settleMs === b.settleMs
     && a.blockedSettleMs === b.blockedSettleMs
     && a.minIntervalMs === b.minIntervalMs
-    && (a.emitKinds ?? []).join(',') === (b.emitKinds ?? []).join(',');
+    && a.filterKey === b.filterKey
+    && [...a.emitKinds ?? []].sort().join(',') === [...b.emitKinds ?? []].sort().join(',');
+}
+
+function idleKey(entry: RunpaneWorkspaceEntry): string {
+  return entry.panelId ?? entry.paneId;
 }
 
 /**
@@ -61,14 +68,30 @@ export class WatchCadence {
   /** True when this IDLE step for the panel was already ingested (idle entries share a generation). */
   hasSeenIdle(entry: RunpaneWorkspaceEntry): boolean {
     return entry.kind === 'agent.idle'
-      && (entry.idleCount ?? 0) <= (this.lastIdleCountByPanel.get(entry.panelId ?? entry.paneId) ?? 0);
+      && (entry.idleCount ?? 0) <= (this.lastIdleCountByPanel.get(idleKey(entry)) ?? 0);
+  }
+
+  /**
+   * Lowest journal generation still pending or held. The durable cursor must stay
+   * below it so a consumer that dies (or a discarded cadence) re-reads the entry.
+   * IDLE entries carry a synthetic generation and are excluded.
+   */
+  lowestUnflushedGen(): number | undefined {
+    let lowest: number | undefined;
+    const consider = (entry: RunpaneWorkspaceEntry) => {
+      if (entry.kind === 'agent.idle') return;
+      if (lowest === undefined || entry.gen < lowest) lowest = entry.gen;
+    };
+    for (const pending of this.pending.values()) consider(pending.entry);
+    for (const entry of this.held) consider(entry);
+    return lowest;
   }
 
   ingest(entries: readonly RunpaneWorkspaceEntry[], nowMs: number): void {
     for (const entry of entries) {
       if (entry.kind === 'agent.idle') {
         if (this.hasSeenIdle(entry)) continue;
-        this.lastIdleCountByPanel.set(entry.panelId ?? entry.paneId, entry.idleCount ?? 0);
+        this.lastIdleCountByPanel.set(idleKey(entry), entry.idleCount ?? 0);
         this.hold(entry);
         continue;
       }
@@ -82,7 +105,7 @@ export class WatchCadence {
       } else if (entry.panelId && SETTLE_CANCELLING_KINDS.has(entry.kind)) {
         this.pending.delete(entry.panelId);
       }
-      if (entry.panelId && entry.kind !== 'pane.created') this.lastIdleCountByPanel.delete(entry.panelId);
+      if (entry.kind !== 'pane.created') this.lastIdleCountByPanel.delete(idleKey(entry));
 
       const settleMs = entry.kind === 'agent.ready'
         ? this.options.settleMs

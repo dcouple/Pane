@@ -943,8 +943,9 @@ export function registerRunpaneHandlers(
         : normalized.since !== undefined ? 0 : requestStartedAt);
       let cursor = normalized.since ?? workspaceJournal.generation;
       let reset: RunpaneWorkspaceWaitResult['reset'];
-      const cadenceOptions = workspaceCadenceOptions(normalized);
+      const cadenceOptions = workspaceCadenceOptions(normalized, filter);
       const cadenceKey = cadenceOptions && normalized.as ? normalized.as : undefined;
+      if (normalized.as && !cadenceKey) cadenceByConsumer.delete(normalized.as);
       // The cadence must observe state changes the consumer did not ask for (a BUSY cancels a settling READY).
       const readFilter: WorkspaceJournalFilter = cadenceKey && filter.kinds
         ? { ...filter, kinds: [...new Set([...filter.kinds, ...CADENCE_OBSERVED_KINDS])] }
@@ -961,6 +962,10 @@ export function registerRunpaneHandlers(
 
       if (normalized.as) {
         const evicted = workspaceCursorStore.evictStale();
+        for (const name of evicted) {
+          cadenceByConsumer.delete(name);
+          lastReadAtByConsumer.delete(name);
+        }
         let named = workspaceCursorStore.get(normalized.as);
         if (!named) {
           cursor = normalized.from === 'earliest'
@@ -1008,6 +1013,8 @@ export function registerRunpaneHandlers(
       }
 
       const deadlineAt = requestStartedAt + timeoutMs;
+      const startCursor = cursor;
+      let readAny = false;
       let waited: Awaited<ReturnType<WorkspaceJournal['waitAfter']>>;
       let entries: RunpaneWorkspaceEntry[];
       for (;;) {
@@ -1049,23 +1056,46 @@ export function registerRunpaneHandlers(
         }
         entries = [...entries, ...currentIdleEntries()];
 
-        if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
-          workspaceCursorStore.advance(
-            normalized.as,
-            waited.generation,
-            workspaceJournal.epoch,
-            !normalized.ackNow,
-          );
+        if (!cadence || reset) {
+          if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
+            workspaceCursorStore.advance(
+              normalized.as,
+              waited.generation,
+              workspaceJournal.epoch,
+              !normalized.ackNow,
+            );
+          }
+          break;
         }
-        if (!cadence || reset) break;
 
+        // Drain every page before flushing so a BUSY on a later page can still
+        // cancel a READY on an earlier one.
         const now = Date.now();
+        if (waited.entries.length > 0) readAny = true;
         cadence.ingest(entries, now);
+        cursor = Math.max(cursor, waited.generation);
+        while (waited.entries.length > 0 && cursor < workspaceJournal.generation) {
+          const page = workspaceJournal.readAfter(cursor, readFilter, limit);
+          if (page.entries.length === 0) break;
+          cadence.ingest(page.entries, now);
+          cursor = Math.max(cursor, page.generation);
+        }
         entries = cadence.flush(now);
         if (entries.length > 0 || now >= deadlineAt) break;
-        // Nothing matured yet: keep parking inside the same request.
-        cursor = Math.max(cursor, waited.generation);
-        if (cadenceKey && waited.entries.length > 0) workspaceCursorStore.commitPending(cadenceKey);
+      }
+      if (cadence && !reset && normalized.as && (readAny || waited.dropped !== undefined)) {
+        // The durable cursor never passes an entry still pending or held in memory. The
+        // next call re-reads from there and the cadence dedupes by generation, so nothing
+        // repeats while this instance lives. If the instance is discarded (filter change,
+        // eviction, reset, or a call without cadence flags) the re-read re-delivers the held
+        // entries under the new filter, and later entries already delivered may repeat: that
+        // is the accepted at-least-once contract.
+        const lowestUnflushed = cadence.lowestUnflushedGen();
+        const durableGen = Math.max(
+          startCursor,
+          Math.min(cursor, lowestUnflushed === undefined ? cursor : lowestUnflushed - 1),
+        );
+        workspaceCursorStore.advance(normalized.as, durableGen, workspaceJournal.epoch, !normalized.ackNow);
       }
       if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
 
@@ -1074,7 +1104,7 @@ export function registerRunpaneHandlers(
         epoch: workspaceJournal.epoch,
         generation: waited.generation,
         entries,
-        timedOut: entries.length === 0 && waited.timedOut,
+        timedOut: entries.length === 0 && (cadence !== undefined || waited.timedOut),
         dropped: waited.dropped,
         reset,
         nextCommand: workspaceNextCommand(normalized, waited.generation),
@@ -3291,12 +3321,25 @@ function workspaceEntryMatches(
   return true;
 }
 
-function workspaceCadenceOptions(request: RunpaneWorkspaceWaitRequest): WatchCadenceOptions | undefined {
+function workspaceCadenceOptions(
+  request: RunpaneWorkspaceWaitRequest,
+  filter: WorkspaceJournalFilter,
+): WatchCadenceOptions | undefined {
   const settleMs = request.settleMs ?? 0;
   const blockedSettleMs = request.blockedSettleMs ?? 0;
   const minIntervalMs = request.minIntervalMs ?? 0;
   if (settleMs <= 0 && blockedSettleMs <= 0 && minIntervalMs <= 0) return undefined;
-  return { settleMs, blockedSettleMs, minIntervalMs, emitKinds: request.kinds };
+  const filterKey = JSON.stringify({
+    kinds: [...filter.kinds ?? []].sort(),
+    paneIds: [...filter.paneIds ?? []].sort(),
+    excludePaneIds: [...filter.excludePaneIds ?? []].sort(),
+    repoId: filter.repoId ?? null,
+    nameContains: filter.nameContains ?? null,
+    agentsOnly: filter.agentsOnly === true,
+    includeHeldInput: filter.includeHeldInput === true,
+    includeHeldInputPresence: filter.includeHeldInputPresence === true,
+  });
+  return { settleMs, blockedSettleMs, minIntervalMs, emitKinds: request.kinds, filterKey };
 }
 
 function workspaceNextCommand(request: RunpaneWorkspaceWaitRequest, generation: number): string {

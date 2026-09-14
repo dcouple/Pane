@@ -23,7 +23,7 @@ const kinds = (entries: RunpaneWorkspaceEntry[]) => entries.map(item => item.kin
 
 describe('WatchCadence', () => {
   it('cancels a READY silently when the panel goes busy inside the settle window', () => {
-    const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 0, emitKinds: ['agent.ready'] });
+    const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 0, emitKinds: ['agent.ready'], filterKey: '' });
     cadence.ingest([entry('agent.ready', T0)], T0);
     expect(cadence.flush(T0 + 30_000)).toEqual([]);
     expect(cadence.nextDeadline(T0 + 30_000)).toBe(T0 + 120_000);
@@ -33,7 +33,7 @@ describe('WatchCadence', () => {
   });
 
   it('emits a READY that stays quiet for the whole window and records how long it settled', () => {
-    const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 0 });
+    const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 0, filterKey: '' });
     cadence.ingest([entry('agent.ready', T0)], T0);
     expect(cadence.flush(T0 + 119_999)).toEqual([]);
     const flushed = cadence.flush(T0 + 120_000);
@@ -43,7 +43,7 @@ describe('WatchCadence', () => {
   });
 
   it('holds a BLOCKED for its own window and drops it when the pane answers in time', () => {
-    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 15_000, minIntervalMs: 0 });
+    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 15_000, minIntervalMs: 0, filterKey: '' });
     cadence.ingest([entry('agent.blocked', T0)], T0);
     expect(cadence.flush(T0 + 5_000)).toEqual([]);
     cadence.ingest([entry('agent.ready', T0 + 6_000)], T0 + 6_000);
@@ -53,7 +53,7 @@ describe('WatchCadence', () => {
   });
 
   it('lets a matured BLOCKED bypass the minimum interval and carry held lines with it', () => {
-    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 15_000, minIntervalMs: 300_000 });
+    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 15_000, minIntervalMs: 300_000, filterKey: '' });
     cadence.ingest([entry('pane.created', T0, { panelId: undefined, source: 'session' })], T0);
     expect(kinds(cadence.flush(T0))).toEqual(['pane.created']);
     cadence.ingest([entry('agent.ready', T0 + 10_000)], T0 + 10_000);
@@ -66,7 +66,7 @@ describe('WatchCadence', () => {
   });
 
   it('batches non-urgent lines into one flush per interval', () => {
-    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 0, minIntervalMs: 300_000 });
+    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 0, minIntervalMs: 300_000, filterKey: '' });
     cadence.ingest([entry('agent.ready', T0)], T0);
     expect(kinds(cadence.flush(T0))).toEqual(['agent.ready']);
     cadence.ingest([entry('agent.ready', T0 + 60_000, { panelId: 'panel-2' })], T0 + 60_000);
@@ -79,7 +79,7 @@ describe('WatchCadence', () => {
   });
 
   it('ignores re-delivered generations and repeated IDLE steps', () => {
-    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 0, minIntervalMs: 0 });
+    const cadence = new WatchCadence({ settleMs: 0, blockedSettleMs: 0, minIntervalMs: 0, filterKey: '' });
     const ready = entry('agent.ready', T0);
     const idle = entry('agent.idle', T0, { idleCount: 1, idleMs: 600_000 });
     cadence.ingest([ready, idle], T0);
@@ -90,12 +90,47 @@ describe('WatchCadence', () => {
     expect(kinds(cadence.flush(T0 + 2_000))).toEqual(['agent.idle']);
   });
 
+  it('cancels pending entries for every panel of a pane that goes away', () => {
+    const cadence = new WatchCadence({
+      settleMs: 120_000,
+      blockedSettleMs: 120_000,
+      minIntervalMs: 0,
+      emitKinds: ['agent.ready', 'agent.blocked'],
+      filterKey: '',
+    });
+    cadence.ingest([
+      entry('agent.ready', T0, { panelId: 'panel-1' }),
+      entry('agent.blocked', T0, { panelId: 'panel-2' }),
+      entry('agent.ready', T0, { paneId: 'pane-2', panelId: 'panel-3' }),
+    ], T0);
+    expect(cadence.lowestUnflushedGen()).toBe(nextGen - 2);
+    cadence.ingest([entry('pane.gone', T0 + 1_000, { panelId: undefined, source: 'session' })], T0 + 1_000);
+    expect(cadence.nextDeadline(T0 + 1_000)).toBe(T0 + 120_000);
+    const flushed = cadence.flush(T0 + 120_000);
+    expect(flushed.map(item => item.panelId)).toEqual(['panel-3']);
+    expect(cadence.lowestUnflushedGen()).toBeUndefined();
+  });
+
+  it('reports the lowest generation still pending or held, ignoring synthetic IDLE generations', () => {
+    const cadence = new WatchCadence({ settleMs: 120_000, blockedSettleMs: 0, minIntervalMs: 300_000, filterKey: '' });
+    expect(cadence.lowestUnflushedGen()).toBeUndefined();
+    const ready = entry('agent.ready', T0);
+    const exited = entry('panel.exited', T0, { panelId: 'panel-2', source: 'exit', exitCode: 1 });
+    cadence.ingest([ready, exited, entry('agent.idle', T0, { gen: 1, idleCount: 1, idleMs: 600_000 })], T0);
+    expect(cadence.lowestUnflushedGen()).toBe(ready.gen);
+    expect(kinds(cadence.flush(T0))).toEqual(['panel.exited', 'agent.idle']);
+    expect(cadence.lowestUnflushedGen()).toBe(ready.gen);
+    expect(kinds(cadence.flush(T0 + 300_000))).toEqual(['agent.ready']);
+    expect(cadence.lowestUnflushedGen()).toBeUndefined();
+  });
+
   it('observes BUSY for cancellation without ever emitting it when the consumer excluded it', () => {
     const cadence = new WatchCadence({
       settleMs: 120_000,
       blockedSettleMs: 0,
       minIntervalMs: 0,
       emitKinds: ['agent.ready', 'agent.blocked'],
+      filterKey: '',
     });
     cadence.ingest([entry('agent.busy', T0)], T0);
     expect(cadence.flush(T0)).toEqual([]);

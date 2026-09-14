@@ -183,6 +183,10 @@ export function parseRunpaneArgs(argv: string[]): ParsedArgs {
       || parsed.minIntervalMs !== undefined || parsed.idleBackoff)) {
     throw new Error('--settle, --blocked-settle, --min-interval, and --idle-backoff require --follow.');
   }
+  if (parsed.command === 'watch' && parsed.watchSince !== undefined
+    && (parsed.settleMs !== undefined || parsed.blockedSettleMs !== undefined || parsed.minIntervalMs !== undefined)) {
+    throw new Error('runpane watch accepts either --since or --settle/--blocked-settle/--min-interval, not both (cadence needs a named cursor).');
+  }
   return parsed;
 }
 
