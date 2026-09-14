@@ -19,6 +19,17 @@ function setup(filename = ':memory:') {
 }
 
 describe('durable agent mailbox', () => {
+  it('claims the specifically woken task without consuming an older queued task', () => {
+    const box = setup();
+    box.send('task-a', 'sender', 'worker', 'Older task');
+    box.send('task-b', 'sender', 'worker', 'Requested task');
+    box.attemptWake('task-b', 'sender');
+    expect(box.inbox('worker', true, false, 1, 'task-b')).toMatchObject([{ id: 'task-b', status: 'received' }]);
+    expect(box.get('task-a').status).toBe('queued');
+    expect(box.inbox('worker', true, false, 1, 'task-b')).toEqual([]);
+    expect(() => box.inbox('stranger', true, false, 1, 'task-a')).toThrow('different recipient');
+  });
+
   it('deduplicates exact sends, rejects conflicting reuse, and commits before observation', () => {
     const box = setup();
     expect(box.send('task-1', 'sender', 'worker', 'Implement issue')).toMatchObject({ duplicate: false });

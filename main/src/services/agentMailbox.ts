@@ -89,15 +89,16 @@ export class AgentMailbox {
     });
   }
 
-  inbox(peer: string, claim: boolean, includeReceived = false, limit = 20): AgentMessage[] {
+  inbox(peer: string, claim: boolean, includeReceived = false, limit = 20, id?: string): AgentMessage[] {
     mailboxId(peer);
+    if (id !== undefined && this.get(id).recipient !== peer) throw new Error('Message belongs to a different recipient.');
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1-100.');
     if (claim && includeReceived) throw new Error('Recovery inspection cannot claim received messages again.');
     this.touch(peer);
     const read = () => {
-      const rows = this.db.prepare(`SELECT * FROM agent_messages WHERE recipient=? AND
+      const rows = this.db.prepare(`SELECT * FROM agent_messages WHERE recipient=? AND (?='' OR id=?) AND
         status IN (${includeReceived ? "'queued', 'received', 'blocked'" : "'queued'"})
-        ORDER BY CASE WHEN status='queued' THEN 1 ELSE 0 END, updatedAt, id LIMIT ?`).all(peer, limit);
+        ORDER BY CASE WHEN status='queued' THEN 1 ELSE 0 END, updatedAt, id LIMIT ?`).all(peer, id ?? '', id ?? '', limit);
       return rows.map(row => {
         const message = decodeBoundary(row, messageSchema);
         if (!claim) return message;
@@ -149,14 +150,14 @@ export class AgentMailbox {
     return { timedOut: !changed, message: read() };
   }
 
-  async waitInbox(peer: string, claim: boolean, includeReceived: boolean, limit: number, timeoutMs: number) {
+  async waitInbox(peer: string, claim: boolean, includeReceived: boolean, limit: number, timeoutMs: number, id?: string) {
     // Claims happen after waking, synchronously, so competing consumers cannot
     // claim the same row. A lost response leaves a durable received record.
     const deadline = this.now() + timeoutMs;
     do {
-      const messages = this.inbox(peer, claim, includeReceived, limit);
+      const messages = this.inbox(peer, claim, includeReceived, limit, id);
       if (messages.length || this.now() >= deadline) return { messages, timedOut: !messages.length };
-      const changed = await this.waitFor(() => this.inbox(peer, false, includeReceived, limit).length > 0,
+      const changed = await this.waitFor(() => this.inbox(peer, false, includeReceived, limit, id).length > 0,
         Math.max(0, deadline - this.now()));
       if (!changed) return { messages: [], timedOut: true };
     } while (!this.closed);

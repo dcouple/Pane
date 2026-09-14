@@ -14,16 +14,32 @@ import { registerPeerHandlers } from './runpanePeers';
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 const cleanup: Array<() => void | Promise<void>> = [];
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close(); });
-function setup() {
+function setup(managedWorker = false) {
   const db = new DatabaseSync(':memory:');
   const mailbox = new AgentMailbox(db);
   cleanup.push(() => { mailbox.dispose(); db.close(); });
   const registry = new PaneCommandRegistry();
-  registerPeerHandlers(registry, { agentMailbox: mailbox, databaseService: { getDb: () => { throw new Error('Unexpected database reopen'); } } }, { listManagedCliPanels: () => [] }, { isTerminalInitialized: () => true });
+  registerPeerHandlers(registry, { agentMailbox: mailbox, databaseService: { getDb: () => { throw new Error('Unexpected database reopen'); } } }, {
+    listManagedCliPanels: () => managedWorker ? [{ panelId: 'worker', paneId: 'pane-1', paneName: 'Worker', agentState: 'idle' }] : [],
+  }, { isTerminalInitialized: () => true });
   return { registry, call: (request: Record<string, string | boolean | number>) => registry.invoke('runpane:peers', [request]) };
 }
 
 describe('peer command protocol', () => {
+  it('binds a terminal wake and the resulting inbox claim to the requested message', async () => {
+    const { call, registry } = setup(true);
+    let cue = '';
+    registry.register('runpane:panels:screen', () => ({ state: { isCliReady: true }, composer: { isPresent: true, hasUndeliveredText: false } }));
+    registry.register('runpane:panels:submit', (request: { panelId: string; input: string }) => { cue = request.input; return { ok: true }; });
+    await call({ action: 'register', peer: 'sender', confirmed: true });
+    for (const id of ['task-a', 'task-b']) await call({ action: 'send', peer: 'sender', to: 'worker', id, text: id, confirmed: true });
+    await call({ action: 'wake', peer: 'sender', id: 'task-b', confirmed: true });
+    expect(cue).toContain('inbox --peer worker --id task-b --claim');
+    expect(await call({ action: 'inbox', peer: 'worker', id: 'task-b', claim: true, confirmed: true }))
+      .toMatchObject({ messages: [{ id: 'task-b', status: 'received' }] });
+    expect(await call({ action: 'inbox', peer: 'worker' })).toMatchObject({ messages: [{ id: 'task-a', status: 'queued' }] });
+  });
+
   it('discovers unregistered callers and arbitrary agent labels without pretending they have native delivery', async () => {
     const { call } = setup();
     expect(await call({ action: 'self' })).toMatchObject({ protocolVersion: 1, identity: null, peer: null });

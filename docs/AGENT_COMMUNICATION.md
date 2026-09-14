@@ -77,7 +77,9 @@ a new task id. Terminal results remain durable across daemon restarts.
 
 For an idle managed agent without a native receiver, `peers wake --id <id> --yes`
 attempts one guarded inbox cue. It requires an observed empty agent composer,
-records the attempt before writing, and reports consumption as unconfirmed. It
+records the attempt before writing, and reports consumption as unconfirmed. The
+cue uses `peers inbox --id <id> --claim` so it consumes the requested task even
+when an older task is also queued. It
 does not send the task body as shell input. If the composer cannot be established,
 inspect the panel and deliver an inbox instruction using the existing terminal
 workflow. Never replay an uncertain write automatically.

@@ -71,7 +71,7 @@ export function registerPeerHandlers(registry: PaneCommandRegistry,
     const timeoutMs = request.timeoutMs ?? (request.action === 'wait' ? 60_000 : 0);
     if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || timeoutMs > 120_000) throw new Error('timeout must be 0-120000 ms.');
     if (request.action === 'inbox') return {
-      ...protocol, ...await mailbox().waitInbox(peer, request.claim ?? false, request.includeReceived ?? false, request.limit ?? 20, timeoutMs),
+      ...protocol, ...await mailbox().waitInbox(peer, request.claim ?? false, request.includeReceived ?? false, request.limit ?? 20, timeoutMs, request.id),
     };
     const id = mailboxId(request.id, 'message id');
     if (request.action === 'send') {
@@ -106,7 +106,7 @@ export function registerPeerHandlers(registry: PaneCommandRegistry,
     mailbox().attemptWake(id, peer);
     try {
       await registry.invoke('runpane:panels:submit', [{ panelId: panel.panelId,
-        input: `A task is queued in your Pane inbox. Run runpane peers inbox --claim --limit 1 --yes --json, follow its task, and reply using its message id.` }]);
+        input: `Pane task ${id} is queued. Run runpane peers inbox --peer ${message.recipient} --id ${id} --claim --limit 1 --yes --json, follow that task, and reply using its message id.` }]);
       return { ...protocol, message: receipt(mailbox().get(id)), delivery: 'terminal wake attempted; consumption unconfirmed' };
     } catch (error) {
       return { ...protocol, message: receipt(mailbox().get(id)), delivery: 'terminal wake outcome unknown; do not replay',

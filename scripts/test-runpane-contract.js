@@ -2488,7 +2488,7 @@ async function checkPeerProtocolParity() {
       const cases = [
         { args: ['peers', 'register', '--peer', 'external', '--agent-label', 'future-agent', '--yes', '--json'], expected: { action: 'register', peer: 'external', agent: 'future-agent', confirmed: true } },
         { args: ['peers', 'send', '--peer', 'external', '--to', 'worker', '--id', 'task-1', '--input-file', taskFile, '--yes', '--json'], expected: { action: 'send', to: 'worker', id: 'task-1', text: fs.readFileSync(taskFile, 'utf8') } },
-        { args: ['peers', 'inbox', '--peer', 'worker', '--claim', '--limit', '1', '--yes', '--json'], expected: { action: 'inbox', claim: true, limit: 1 } },
+        { args: ['peers', 'inbox', '--peer', 'worker', '--id', 'task-1', '--claim', '--limit', '1', '--yes', '--json'], expected: { action: 'inbox', id: 'task-1', claim: true, limit: 1 } },
         { args: ['peers', 'reply', '--peer', 'worker', '--id', 'task-1', '--status', 'completed', '--text', 'Tests passed', '--yes', '--json'], expected: { action: 'reply', status: 'completed', text: 'Tests passed' } },
       ];
       for (const testCase of cases) {
