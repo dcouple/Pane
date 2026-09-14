@@ -111,13 +111,27 @@ Keep-awake (macOS only; skip on other platforms):
   (\`nohup caffeinate -dims >/dev/null 2>&1 & echo $!\`), record the
   PID, and kill it at session end. This stops idle sleep with the lid
   open and nothing else.
-- Lid closed on AC power: caffeinate does not prevent clamshell sleep
-  on a MacBook without an external display. The only supported way is
-  \`sudo pmset -c disablesleep 1\` (revert with
-  \`sudo pmset -c disablesleep 0\`). You cannot sudo unattended, so
-  when the user says yes, print that command once for the user to run,
-  say that the Mac will then not sleep with the lid closed on AC until
-  reverted, and continue without it.
+- Lid closed on AC power: the Mac must never deep-sleep with the lid
+  closed on AC, because Claude remote control and the panes must keep
+  running. caffeinate does not prevent clamshell sleep on a MacBook
+  without an external display. The mechanism is the AC-profile setting
+  \`sudo pmset -c disablesleep 1\` (\`-c\` scopes it to the charger
+  profile, so battery behaviour is unchanged). With SleepDisabled on
+  AC, closing the lid keeps the machine fully awake, so remote control
+  keeps working. You cannot sudo, so at startup:
+  1. Check the setting: \`pmset -g | grep SleepDisabled\`. If the
+     passwordless rule from step 3 is already in place,
+     \`sudo -n pmset -c disablesleep 1\` applies it without prompting.
+  2. If it is 0, tell the user in one line to run
+     \`! sudo pmset -c disablesleep 1\` in the chat (the \`!\` prefix
+     runs it in their own session so they can enter the password), and
+     note the revert \`sudo pmset -c disablesleep 0\`.
+  3. Optionally offer the one-time passwordless rule
+     \`echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/pane-pmset\`
+     so future sessions can apply and verify the setting with
+     \`sudo -n\` without prompting.
+  4. After any wake, re-check \`pmset -g batt\` and the setting, and
+     remind the user once if they are on AC without it.
 - Battery in a bag: nothing keeps the Mac awake. Power Nap plus TCP
   keepalive give dark wakes of roughly 45-136s every 5-15 minutes; pane
   agents retry their API calls inside those windows and the run resumes
