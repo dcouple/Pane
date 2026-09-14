@@ -188,6 +188,21 @@ describe('pane creation name reuse', () => {
     expect(queueOptions.sessionManager.updateSession).toHaveBeenCalledWith(expect.any(String), {
       status: 'error', error: 'Panel setup failed', statusMessage: 'Failed to initialize pane: Panel setup failed',
     });
+    expect(queueOptions.sessionManager.emitSessionCreated).toHaveBeenCalledOnce();
+    expect(queueOptions.sessionManager.emitSessionCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Feature', status: 'error', statusMessage: 'Failed to initialize pane: Panel setup failed' }),
+      { activateOnCreate: true, createDefaultTerminalOnCreate: false },
+    );
+    expect(send).not.toHaveBeenCalledWith('session:creation-failed', expect.anything());
+  });
+
+  it('does not re-announce a pane when initialization fails after its creation event', async () => {
+    vi.spyOn(queueOptions.sessionManager, 'updateSession').mockImplementationOnce(() => { throw new Error('Status update failed'); });
+    await expect(createPane()).rejects.toThrow('Status update failed');
+    expect(queueOptions.sessionManager.emitSessionCreated).toHaveBeenCalledOnce();
+    expect(queueOptions.sessionManager.updateSession).toHaveBeenLastCalledWith(expect.any(String), {
+      status: 'error', error: 'Status update failed', statusMessage: 'Failed to initialize pane: Status update failed',
+    });
     expect(send).not.toHaveBeenCalledWith('session:creation-failed', expect.anything());
   });
 

@@ -1,6 +1,7 @@
 import Bull from 'bull';
 import { getPaneEventSink, getRuntimeConfigManager } from '../core/runtime';
 import { SimpleQueue } from './simpleTaskQueue';
+import type { Session } from '../types/session';
 import { SessionManager } from './sessionManager';
 import type { WorktreeManager } from './worktreeManager';
 import { WorktreeNameGenerator } from './worktreeNameGenerator';
@@ -181,7 +182,8 @@ export class TaskQueue {
       const { prompt, worktreeTemplate, index, permissionMode, projectId, baseBranch, toolType, startPinned } = job.data;
       const { sessionManager, worktreeManager, claudeCodeManager } = this.options;
 
-      let createdSessionId: string | undefined;
+      let createdSession: Session | undefined;
+      let sessionCreatedEmitted = false;
 
       try {
         let targetProject;
@@ -269,7 +271,7 @@ export class TaskQueue {
             actualBaseBranch,
             startPinned
           );
-          createdSessionId = session.id;
+          createdSession = session;
           return { session, worktreePath };
         }, Infinity); // Checkout operations have their own timeouts; reservations wait for their turn.
 
@@ -313,6 +315,8 @@ export class TaskQueue {
         sessionManager.emitSessionCreated(session, {
           activateOnCreate: job.data.activateOnCreate !== false,
         });
+
+        sessionCreatedEmitted = true;
 
         // Worktree file sync — copy gitignored files in background, then run install
         // Fire-and-forget: copies first, then writes install command to the terminal
@@ -488,11 +492,21 @@ export class TaskQueue {
         return { sessionId: session.id };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        if (createdSessionId) {
-          console.error(`[TaskQueue] Failed to initialize session ${createdSessionId}:`, error);
-          await sessionManager.updateSession(createdSessionId, {
-            status: 'error', error: message, statusMessage: `Failed to initialize pane: ${message}`,
+        if (createdSession) {
+          console.error(`[TaskQueue] Failed to initialize session ${createdSession.id}:`, error);
+          const failedSession = {
+            ...createdSession, status: 'error' as const, error: message,
+            statusMessage: `Failed to initialize pane: ${message}`,
+          };
+          await sessionManager.updateSession(createdSession.id, {
+            status: failedSession.status, error: message, statusMessage: failedSession.statusMessage,
           });
+          if (!sessionCreatedEmitted) {
+            sessionManager.emitSessionCreated(failedSession, {
+              activateOnCreate: job.data.activateOnCreate !== false,
+              createDefaultTerminalOnCreate: false,
+            });
+          }
         } else {
           console.error(`[TaskQueue] Failed to create session:`, error);
           getPaneEventSink().send('session:creation-failed', {
