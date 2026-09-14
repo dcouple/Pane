@@ -8,6 +8,7 @@ import sys
 from typing import Callable, Dict, List, Optional, Tuple, TypeVar
 
 from .agent_context import run_agent_context
+from .peers import run_peers
 from .doctor import run_doctor
 from .download import download_artifact
 from .generated_contract import RUNPANE_CONTRACT
@@ -64,7 +65,7 @@ TARGETS = set(RUNPANE_CONTRACT["enums"]["installTargets"])
 FORMATS = set(RUNPANE_CONTRACT["enums"]["artifactFormats"])
 CHANNELS = set(RUNPANE_CONTRACT["enums"]["channels"])
 AGENTS = set(RUNPANE_CONTRACT["enums"]["agents"])
-COMMAND_GROUP_HELP_TOPICS = {"panes", "panels", "workspace"}
+COMMAND_GROUP_HELP_TOPICS = {"panes", "panels", "workspace", "peers"}
 
 REMOTE_VALUE_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteValue"]}
 REMOTE_BOOLEAN_FLAGS = {flag["name"] for flag in RUNPANE_CONTRACT["flags"]["remoteBoolean"]}
@@ -84,6 +85,15 @@ DEFAULTS = RUNPANE_CONTRACT["defaults"]
 @dataclass
 class ParsedArgs:
     command: str
+    peer: Optional[str] = None
+    peer_to: Optional[str] = None
+    message_id: Optional[str] = None
+    agent_label: Optional[str] = None
+    receiver: Optional[str] = None
+    reply_status: Optional[str] = None
+    after_revision: Optional[int] = None
+    claim: bool = False
+    include_received: bool = False
     target: str = DEFAULTS["target"]
     pane_version: str = DEFAULTS["paneVersion"]
     channel: str = DEFAULTS["channel"]
@@ -132,6 +142,7 @@ class ParsedArgs:
     watch_kinds: List[str] = field(default_factory=list)
     watch_pane_ids: List[str] = field(default_factory=list)
     watch_exclude_pane_ids: List[str] = field(default_factory=list)
+    watch_quiet_panel_ids: List[str] = field(default_factory=list)
     name_contains: Optional[str] = None
     follow: bool = False
     agents_only: bool = False
@@ -214,6 +225,8 @@ def dispatch_parsed_command(parsed: ParsedArgs, telemetry_context: WrapperTeleme
         return run_panes_cost(parsed)
     if parsed.command == "workspace state":
         return run_workspace_state(parsed)
+    if parsed.command.startswith("peers "):
+        return run_peers(parsed)
     if parsed.command == "watch":
         return run_watch(parsed)
     if parsed.command == "panes create":
@@ -527,6 +540,12 @@ def match_command_group_help(args: List[str]) -> Optional[str]:
 
 
 def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
+    if flag == "--claim":
+        parsed.claim = True
+        return
+    if flag == "--include-received":
+        parsed.include_received = True
+        return
     if flag == "--json":
         parsed.json = True
         return
@@ -582,6 +601,27 @@ def parse_local_boolean_flag(parsed: ParsedArgs, flag: str) -> None:
 
 
 def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
+    if flag == "--peer":
+        parsed.peer = value
+        return
+    if flag == "--to":
+        parsed.peer_to = value
+        return
+    if flag == "--id":
+        parsed.message_id = value
+        return
+    if flag == "--agent-label":
+        parsed.agent_label = value
+        return
+    if flag == "--receiver":
+        parsed.receiver = value
+        return
+    if flag == "--status":
+        parsed.reply_status = value
+        return
+    if flag == "--after":
+        parsed.after_revision = parse_non_negative_int_flag(flag, value)
+        return
     if flag == "--pane-dir":
         parsed.pane_dir = value
         return
@@ -593,6 +633,9 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             parsed.watch_pane_ids.append(value)
         else:
             parsed.pane_id = value
+        return
+    if flag == "--quiet-panel":
+        parsed.watch_quiet_panel_ids.append(value)
         return
     if flag == "--exclude-pane":
         parsed.watch_exclude_pane_ids.append(value)
@@ -643,7 +686,7 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
             timeout_ms = float(value)
         except ValueError as error:
             raise ValueError("--timeout-ms must be a positive number.") from error
-        if timeout_ms < 0 or (timeout_ms == 0 and parsed.command != "watch"):
+        if timeout_ms < 0 or (timeout_ms == 0 and parsed.command != "watch" and not parsed.command.startswith("peers ")):
             raise ValueError("--timeout-ms must be a positive number (watch also accepts 0).")
         parsed.timeout_ms = timeout_ms
         return
@@ -756,7 +799,7 @@ def parse_local_value_flag(parsed: ParsedArgs, flag: str, value: str) -> None:
 
 
 def is_runpane_local_command(command: str) -> bool:
-    return command in {
+    return command.startswith("peers ") or command in {
         "doctor",
         "daemon repair",
         "repos list",

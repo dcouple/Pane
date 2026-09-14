@@ -1175,6 +1175,7 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     kinds: parsed.watchKinds,
     paneIds: parsed.watchPaneIds,
     excludePaneIds: parsed.watchExcludePaneIds,
+    quietPanelIds: parsed.watchQuietPanelIds,
     repo: parsed.repo,
     nameContains: parsed.nameContains,
     agentsOnly: effectiveAgentsOnly,

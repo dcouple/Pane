@@ -390,6 +390,62 @@
       "jsonSchemas": [
         "panelWaitResult"
       ]
+    },
+    {
+      "name": "peers self",
+      "summary": "Discover caller identity, available messaging capabilities and the optional Pi extension.",
+      "usage": [
+        "runpane peers self [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers list",
+      "summary": "List managed panels and registered peers with honest live receiver capabilities.",
+      "usage": [
+        "runpane peers list [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers register",
+      "summary": "Register any agent, including one outside a Pane terminal.",
+      "usage": [
+        "runpane peers register --peer <stable-id> --agent-label <name> [--receiver cooperative|pi] --yes [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers send",
+      "summary": "Durably queue one idempotent task; a queued response is not consumption.",
+      "usage": [
+        "runpane peers send --to <peer> --id <request-id> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers inbox",
+      "summary": "Read or atomically claim queued tasks. Inspect received tasks after uncertain delivery; never reclaim automatically.",
+      "usage": [
+        "runpane peers inbox [--claim --yes] [--include-received] [--limit <1-100>] [--timeout-ms <0-120000>] [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers reply",
+      "summary": "Reply to a claimed task as its recipient; terminal replies are immutable.",
+      "usage": [
+        "runpane peers reply --id <request-id> --status <blocked|completed|failed> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers wait",
+      "summary": "Quietly wait for a correlated blocked, failed or completed reply; --follow suppresses timeouts.",
+      "usage": [
+        "runpane peers wait --id <request-id> [--after <revision>] [--timeout-ms <0-120000>] [--follow] [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
+    },
+    {
+      "name": "peers wake",
+      "summary": "Attempt one guarded terminal inbox cue. A crash or uncertain write is never automatically replayed.",
+      "usage": [
+        "runpane peers wake --id <request-id> --yes [--peer <id>] [--pane-dir <path>] [--json]"
+      ]
     }
   ],
   "flags": {
@@ -684,6 +740,46 @@
         "name": "--body-file",
         "value": "<path|->",
         "description": "Read diagnostic report evidence from a file or stdin."
+      },
+      {
+        "name": "--peer",
+        "value": "<id>",
+        "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID."
+      },
+      {
+        "name": "--to",
+        "value": "<id>",
+        "description": "Recipient peer id from peers list."
+      },
+      {
+        "name": "--id",
+        "value": "<id>",
+        "description": "Stable caller-supplied message id, reused only for the exact same task."
+      },
+      {
+        "name": "--agent-label",
+        "value": "<name>",
+        "description": "Arbitrary runtime label; no brand allowlist."
+      },
+      {
+        "name": "--receiver",
+        "value": "<cooperative|pi>",
+        "description": "Advertised receiver implementation; Pi is set by the optional native extension."
+      },
+      {
+        "name": "--status",
+        "value": "<blocked|completed|failed>",
+        "description": "Task reply status. Completed does not imply reviewed, QA passed or merge ready."
+      },
+      {
+        "name": "--after",
+        "value": "<revision>",
+        "description": "Return only a reply newer than this durable message revision."
+      },
+      {
+        "name": "--quiet-panel",
+        "value": "<panel-id>",
+        "description": "Repeat to suppress inferred READY/IDLE for panels tracked with correlated peer waits. BLOCKED, STUCK and exits remain visible."
       }
     ],
     "localBoolean": [
@@ -758,6 +854,14 @@
       {
         "name": "--report",
         "description": "Prepare a redacted doctor report; external filing still requires --yes."
+      },
+      {
+        "name": "--claim",
+        "description": "Atomically mark queued inbox messages received; requires --yes."
+      },
+      {
+        "name": "--include-received",
+        "description": "Inspect queued, received and blocked inbox tasks for recovery; cannot combine with --claim."
       }
     ]
   },
@@ -775,6 +879,7 @@
         "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
+        "  runpane peers self --json  # discover identity, peers and communication",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
@@ -1026,7 +1131,9 @@
         "Expensive consumers opt in: --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff",
         "Pane Chat arms those flags itself through its skill; pass them only for your own scripts.",
         "STUCK means real unsubmitted composer text; an agent prompt suggestion never counts.",
-        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence."
+        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence.",
+        "",
+        "  --quiet-panel <panel-id>        Repeat for tasks tracked with peers wait; keeps blockers and exits."
       ],
       "panes create": [
         "Usage:",
@@ -1282,6 +1389,81 @@
         "  --strategy <strategy>         Defaults to auto; Codex sends Ctrl+Enter and other panels send Enter.",
         "  --yes                         Skip confirmation prompts.",
         "  --json                        Print JSON output."
+      ],
+      "peers self": [
+        "Usage:",
+        "  runpane peers self [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Discover caller identity, available messaging capabilities and the optional Pi extension.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers list": [
+        "Usage:",
+        "  runpane peers list [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "List managed panels and registered peers with honest live receiver capabilities.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers register": [
+        "Usage:",
+        "  runpane peers register --peer <stable-id> --agent-label <name> [--receiver cooperative|pi] --yes [--pane-dir <path>] [--json]",
+        "",
+        "Register any agent, including one outside a Pane terminal.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers send": [
+        "Usage:",
+        "  runpane peers send --to <peer> --id <request-id> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Durably queue one idempotent task; a queued response is not consumption.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers inbox": [
+        "Usage:",
+        "  runpane peers inbox [--claim --yes] [--include-received] [--limit <1-100>] [--timeout-ms <0-120000>] [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Read or atomically claim queued tasks. Inspect received tasks after uncertain delivery; never reclaim automatically.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers reply": [
+        "Usage:",
+        "  runpane peers reply --id <request-id> --status <blocked|completed|failed> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Reply to a claimed task as its recipient; terminal replies are immutable.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers wait": [
+        "Usage:",
+        "  runpane peers wait --id <request-id> [--after <revision>] [--timeout-ms <0-120000>] [--follow] [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Quietly wait for a correlated blocked, failed or completed reply; --follow suppresses timeouts.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers wake": [
+        "Usage:",
+        "  runpane peers wake --id <request-id> --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Attempt one guarded terminal inbox cue. A crash or uncertain write is never automatically replayed.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers": [
+        "Agent discovery and task communication:",
+        "  runpane peers self --help",
+        "  runpane peers list --help",
+        "  runpane peers register --help",
+        "  runpane peers send --help",
+        "  runpane peers inbox --help",
+        "  runpane peers reply --help",
+        "  runpane peers wait --help",
+        "  runpane peers wake --help"
       ]
     },
     "pip": {
@@ -1297,6 +1479,7 @@
         "  runpane daemon repair [--pane-dir <path>] [--yes] [--json]",
         "  runpane agent-context [--json]",
         "  runpane agents doctor --agent <codex|claude|cursor> [--repo <selector>] [--json]",
+        "  runpane peers self --json  # discover identity, peers and communication",
         "  runpane repos list [--json]",
         "  runpane repos add --path <path> [--name <name>]",
         "  runpane panes list [--repo <selector>] [--json]",
@@ -1537,7 +1720,9 @@
         "Expensive consumers opt in: --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff",
         "Pane Chat arms those flags itself through its skill; pass them only for your own scripts.",
         "STUCK means real unsubmitted composer text; an agent prompt suggestion never counts.",
-        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence."
+        "Dead watch: HEARTBEAT is proof of life only. Judge death by a non-zero exit or a WATCH ERROR line, not by silence.",
+        "",
+        "  --quiet-panel <panel-id>        Repeat for tasks tracked with peers wait; keeps blockers and exits."
       ],
       "panes create": [
         "Usage:",
@@ -1793,6 +1978,81 @@
         "  --strategy <strategy>         Defaults to auto; Codex sends Ctrl+Enter and other panels send Enter.",
         "  --yes                         Skip confirmation prompts.",
         "  --json                        Print JSON output."
+      ],
+      "peers self": [
+        "Usage:",
+        "  runpane peers self [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Discover caller identity, available messaging capabilities and the optional Pi extension.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers list": [
+        "Usage:",
+        "  runpane peers list [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "List managed panels and registered peers with honest live receiver capabilities.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers register": [
+        "Usage:",
+        "  runpane peers register --peer <stable-id> --agent-label <name> [--receiver cooperative|pi] --yes [--pane-dir <path>] [--json]",
+        "",
+        "Register any agent, including one outside a Pane terminal.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers send": [
+        "Usage:",
+        "  runpane peers send --to <peer> --id <request-id> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Durably queue one idempotent task; a queued response is not consumption.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers inbox": [
+        "Usage:",
+        "  runpane peers inbox [--claim --yes] [--include-received] [--limit <1-100>] [--timeout-ms <0-120000>] [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Read or atomically claim queued tasks. Inspect received tasks after uncertain delivery; never reclaim automatically.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers reply": [
+        "Usage:",
+        "  runpane peers reply --id <request-id> --status <blocked|completed|failed> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Reply to a claimed task as its recipient; terminal replies are immutable.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers wait": [
+        "Usage:",
+        "  runpane peers wait --id <request-id> [--after <revision>] [--timeout-ms <0-120000>] [--follow] [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Quietly wait for a correlated blocked, failed or completed reply; --follow suppresses timeouts.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers wake": [
+        "Usage:",
+        "  runpane peers wake --id <request-id> --yes [--peer <id>] [--pane-dir <path>] [--json]",
+        "",
+        "Attempt one guarded terminal inbox cue. A crash or uncertain write is never automatically replayed.",
+        "",
+        "Run \"runpane peers self --json\" for discovery. --peer identifies a local-user participant; it is not an authentication credential."
+      ],
+      "peers": [
+        "Agent discovery and task communication:",
+        "  runpane peers self --help",
+        "  runpane peers list --help",
+        "  runpane peers register --help",
+        "  runpane peers send --help",
+        "  runpane peers inbox --help",
+        "  runpane peers reply --help",
+        "  runpane peers wait --help",
+        "  runpane peers wake --help"
       ]
     }
   },
@@ -5042,6 +5302,7 @@
       "summary": "Pane lets a developer manage saved base repositories, user-visible Panes (Pane sessions) for feature/PR work, and terminal-backed panel tabs. A Pane is a visible workspace that normally maps to one Pane-managed git worktree and branch; a panel is a terminal tab inside one Pane and shares that Pane's worktree; an agent is a CLI process running inside a panel.",
       "rules": [
         "Start with `runpane doctor --json` to understand wrapper, platform, daemon reachability, and the next safe commands before mutating Pane state.",
+        "Discover communication with `runpane peers self --json` and `runpane peers list --json`. Any agent can register with `peers register --peer <stable-id> --agent-label <name> --yes`; use that --peer on subsequent calls outside Pane. Send durable tasks with `peers send --to <peer> --id <stable-id> --input-file <file> --yes`, claim with `peers inbox --claim --yes`, reply with `peers reply --id <id> --status completed|blocked|failed --text <summary> --yes`, and wait with `peers wait --id <id> --follow --json`. Queued is not consumed; received is not completed; completed is not reviewed/QA/CI ready. Never replay uncertain terminal writes. Use the cadenced watcher only for uncorrelated work and liveness.",
         "In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`.",
         "Happy path for any user request to use Pane/RunPane: run `runpane doctor --json`, read `runpane agent-context --json`, resolve or add the saved base repo, create the requested visible Pane with a complete command such as `runpane panes create --repo <repo> --name <name> --agent <agent> --prompt \"<task>\" --source agent --no-focus --wait-ready --yes --json` (the new Pane is pinned by default; add `--no-pinned` for a throwaway Pane, or use `--tool-command <command>` instead of `--agent <agent>`), then validate with `panels wait` or `panels screen`.",
         "Treat Pane as the user's visible cockpit for watching/co-driving work. Do not create Panes or panels for private delegation unless the user asked for visible Pane orchestration or the result should appear in the Pane app.",
@@ -5299,6 +5560,22 @@
             "--min-interval <ms>",
             "--idle-backoff",
             "--json"
+          ]
+        },
+        {
+          "name": "peers self",
+          "summary": "Discover caller identity, available messaging capabilities and the optional Pi extension.",
+          "arguments": [
+            "--json",
+            "--peer <id>"
+          ]
+        },
+        {
+          "name": "peers list",
+          "summary": "List managed panels and registered peers with honest live receiver capabilities.",
+          "arguments": [
+            "--json",
+            "--peer <id>"
           ]
         }
       ]
@@ -6803,6 +7080,12 @@
             "name": "--json",
             "required": false,
             "description": "Emit structured NDJSON; held-input content remains opt-in."
+          },
+          {
+            "name": "--quiet-panel",
+            "value": "<panel-id>",
+            "description": "Repeat to suppress inferred READY/IDLE for panels tracked with correlated peer waits. BLOCKED, STUCK and exits remain visible.",
+            "required": false
           }
         ],
         "examples": [
@@ -6821,12 +7104,413 @@
           "Journal loss is surfaced through reset and dropped metadata.",
           "The daemon treats omitted idleAfterMs as disabled so older clients never receive agent.idle unexpectedly."
         ]
+      },
+      "peers self": {
+        "name": "peers self",
+        "summary": "Discover caller identity, available messaging capabilities and the optional Pi extension.",
+        "details": "Discover caller identity, available messaging capabilities and the optional Pi extension. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers self [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers list": {
+        "name": "peers list",
+        "summary": "List managed panels and registered peers with honest live receiver capabilities.",
+        "details": "List managed panels and registered peers with honest live receiver capabilities. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers list [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers register": {
+        "name": "peers register",
+        "summary": "Register any agent, including one outside a Pane terminal.",
+        "details": "Register any agent, including one outside a Pane terminal. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--agent-label",
+            "value": "<name>",
+            "description": "Arbitrary runtime label; no brand allowlist.",
+            "required": false
+          },
+          {
+            "name": "--receiver",
+            "value": "<cooperative|pi>",
+            "description": "Advertised receiver implementation; Pi is set by the optional native extension.",
+            "required": false
+          },
+          {
+            "name": "--yes",
+            "description": "Confirm the requested mutation.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers register --peer <stable-id> --agent-label <name> [--receiver cooperative|pi] --yes [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers send": {
+        "name": "peers send",
+        "summary": "Durably queue one idempotent task; a queued response is not consumption.",
+        "details": "Durably queue one idempotent task; a queued response is not consumption. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--to",
+            "value": "<id>",
+            "description": "Recipient peer id from peers list.",
+            "required": true
+          },
+          {
+            "name": "--id",
+            "value": "<id>",
+            "description": "Stable caller-supplied message id, reused only for the exact same task.",
+            "required": true
+          },
+          {
+            "name": "--text",
+            "value": "<text>",
+            "description": "Text bytes to send to a terminal panel.",
+            "required": false
+          },
+          {
+            "name": "--input-file",
+            "value": "<path|->",
+            "description": "Read panel input from a file or stdin.",
+            "required": false
+          },
+          {
+            "name": "--yes",
+            "description": "Confirm the requested mutation.",
+            "required": false
+          },
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers send --to <peer> --id <request-id> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers inbox": {
+        "name": "peers inbox",
+        "summary": "Read or atomically claim queued tasks. Inspect received tasks after uncertain delivery; never reclaim automatically.",
+        "details": "Read or atomically claim queued tasks. Inspect received tasks after uncertain delivery; never reclaim automatically. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--claim",
+            "description": "Atomically mark queued inbox messages received; requires --yes.",
+            "required": false
+          },
+          {
+            "name": "--include-received",
+            "description": "Inspect queued, received and blocked inbox tasks for recovery; cannot combine with --claim.",
+            "required": false
+          },
+          {
+            "name": "--limit",
+            "value": "<count>",
+            "description": "Maximum recent output lines or records to read.",
+            "required": false
+          },
+          {
+            "name": "--timeout-ms",
+            "value": "<milliseconds>",
+            "description": "Maximum time to wait for each pane creation job.",
+            "required": false
+          },
+          {
+            "name": "--yes",
+            "description": "Confirm the requested mutation.",
+            "required": false
+          },
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers inbox [--claim --yes] [--include-received] [--limit <1-100>] [--timeout-ms <0-120000>] [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers reply": {
+        "name": "peers reply",
+        "summary": "Reply to a claimed task as its recipient; terminal replies are immutable.",
+        "details": "Reply to a claimed task as its recipient; terminal replies are immutable. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--id",
+            "value": "<id>",
+            "description": "Stable caller-supplied message id, reused only for the exact same task.",
+            "required": true
+          },
+          {
+            "name": "--status",
+            "value": "<blocked|completed|failed>",
+            "description": "Task reply status. Completed does not imply reviewed, QA passed or merge ready.",
+            "required": false
+          },
+          {
+            "name": "--text",
+            "value": "<text>",
+            "description": "Text bytes to send to a terminal panel.",
+            "required": false
+          },
+          {
+            "name": "--input-file",
+            "value": "<path|->",
+            "description": "Read panel input from a file or stdin.",
+            "required": false
+          },
+          {
+            "name": "--yes",
+            "description": "Confirm the requested mutation.",
+            "required": false
+          },
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers reply --id <request-id> --status <blocked|completed|failed> (--text <text>|--input-file <path|->) --yes [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers wait": {
+        "name": "peers wait",
+        "summary": "Quietly wait for a correlated blocked, failed or completed reply; --follow suppresses timeouts.",
+        "details": "Quietly wait for a correlated blocked, failed or completed reply; --follow suppresses timeouts. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": false,
+        "arguments": [
+          {
+            "name": "--id",
+            "value": "<id>",
+            "description": "Stable caller-supplied message id, reused only for the exact same task.",
+            "required": true
+          },
+          {
+            "name": "--after",
+            "value": "<revision>",
+            "description": "Return only a reply newer than this durable message revision.",
+            "required": false
+          },
+          {
+            "name": "--timeout-ms",
+            "value": "<milliseconds>",
+            "description": "Maximum time to wait for each pane creation job.",
+            "required": false
+          },
+          {
+            "name": "--follow",
+            "description": "Continue waiting for workspace events until interrupted.",
+            "required": false
+          },
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers wait --id <request-id> [--after <revision>] [--timeout-ms <0-120000>] [--follow] [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
+      },
+      "peers wake": {
+        "name": "peers wake",
+        "summary": "Attempt one guarded terminal inbox cue. A crash or uncertain write is never automatically replayed.",
+        "details": "Attempt one guarded terminal inbox cue. A crash or uncertain write is never automatically replayed. Uses the existing daemon and durable sessions.db. Payloads: task <=32768 bytes, reply <=4096 bytes; use artifact references for longer output.",
+        "requiresPaneDaemon": true,
+        "mutates": true,
+        "arguments": [
+          {
+            "name": "--id",
+            "value": "<id>",
+            "description": "Stable caller-supplied message id, reused only for the exact same task.",
+            "required": true
+          },
+          {
+            "name": "--yes",
+            "description": "Confirm the requested mutation.",
+            "required": false
+          },
+          {
+            "name": "--peer",
+            "value": "<id>",
+            "description": "Caller identity; defaults to PANE_PEER_ID then PANE_PANEL_ID.",
+            "required": false
+          },
+          {
+            "name": "--pane-dir",
+            "value": "<path>",
+            "description": "Connect to a Pane daemon using this Pane data directory.",
+            "required": false
+          },
+          {
+            "name": "--json",
+            "description": "Print machine-readable JSON output.",
+            "required": false
+          }
+        ],
+        "examples": [
+          "runpane peers wake --id <request-id> --yes [--peer <id>] [--pane-dir <path>] [--json]"
+        ],
+        "notes": [
+          "Use the compact `peers self` discovery first. Identity is local-user scoped, not an authentication credential.",
+          "A queued or received task is not completed; completed still requires workflow evidence."
+        ]
       }
     },
     "managedBlock": [
       "## Pane",
       "",
       "The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible Panes with terminal-backed tools for planning, discussion, implementation, and review work.",
+      "Discover communication with `runpane peers self --json` and `runpane peers list --json`. Any agent can register with `peers register --peer <stable-id> --agent-label <name> --yes`; use that --peer on subsequent calls outside Pane. Send durable tasks with `peers send --to <peer> --id <stable-id> --input-file <file> --yes`, claim with `peers inbox --claim --yes`, reply with `peers reply --id <id> --status completed|blocked|failed --text <summary> --yes`, and wait with `peers wait --id <id> --follow --json`. Queued is not consumed; received is not completed; completed is not reviewed/QA/CI ready. Never replay uncertain terminal writes. Use the cadenced watcher only for uncorrelated work and liveness.",
       "",
       "This managed guidance was created by [runpane.com](https://runpane.com) for the [Pane repository](https://github.com/dcouple/Pane). Do not delete or overwrite this block; the developer uses it for their workflow and it should remain committed to the main repository unless they explicitly ask to remove it.",
       "",

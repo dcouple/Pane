@@ -2,6 +2,7 @@
 import * as os from 'node:os';
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
+import { runPeers } from './peers';
 import { runAgentContext } from './agentContext';
 import { helpText, parseRunpaneArgs, type ParsedArgs } from './commands';
 import { boundary, decodeBoundary } from './boundaryDecoder';
@@ -127,6 +128,8 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
   if (parsed.command === 'workspace state') {
     return runWorkspaceState(parsed);
   }
+
+  if (parsed.command.startsWith('peers ')) return runPeers(parsed);
 
   if (parsed.command === 'watch') {
     return runWatch(parsed);

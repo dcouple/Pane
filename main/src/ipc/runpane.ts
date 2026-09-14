@@ -1,4 +1,5 @@
 import { execFileSync } from 'child_process';
+import { registerPeerHandlers } from './runpanePeers';
 import fs from 'fs';
 import path from 'path';
 import type { IpcMain } from 'electron';
@@ -114,6 +115,7 @@ import {
 } from '../services/workspaceIdleTracker';
 
 const RUNPANE_CHANNELS = [
+  'runpane:peers',
   'runpane:doctor',
   'runpane:repos:list',
   'runpane:repos:add',
@@ -185,6 +187,7 @@ export function registerRunpaneHandlers(
   services.workspaceJournal = workspaceJournal;
   services.workspaceStateReader = workspaceStateReader;
   services.workspaceCursorStore = workspaceCursorStore;
+  registerPeerHandlers(commandRegistry, services, workspaceStateReader, terminalPanelManager);
 
   commandRegistry.register('runpane:doctor', async (): Promise<RunpaneDoctorResult> => {
     return withRunpaneAction(services, 'doctor', {}, () => {
@@ -928,6 +931,7 @@ export function registerRunpaneHandlers(
         kinds: normalized.kinds,
         paneIds: normalized.paneIds,
         excludePaneIds: normalized.excludePaneIds,
+        quietPanelIds: normalized.quietPanelIds,
         repoId: project?.id,
         nameContains: normalized.nameContains,
         agentsOnly: normalized.agentsOnly,
@@ -2262,6 +2266,7 @@ function parseWorkspaceWaitRequest(value: PaneCommandValue): RunpaneWorkspaceWai
     kinds: parseWorkspaceKinds(value.kinds),
     paneIds: parseStringArray(value.paneIds, 'paneIds'),
     excludePaneIds: parseStringArray(value.excludePaneIds, 'excludePaneIds'),
+    quietPanelIds: parseStringArray(value.quietPanelIds, 'quietPanelIds'),
     repo: value.repo === undefined || value.repo === null || value.repo === '' ? undefined : parseRepoSelector(value.repo),
     nameContains: optionalString(value.nameContains),
     agentsOnly: optionalBoolean(value.agentsOnly),

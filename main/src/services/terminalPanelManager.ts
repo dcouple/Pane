@@ -1,3 +1,4 @@
+import { getAppDirectory } from '../utils/appDirectory';
 import * as pty from '@lydell/node-pty';
 import { filterSyncBlockClears } from './syncBlockClearFilter';
 import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
@@ -920,6 +921,8 @@ export class TerminalPanelManager {
             'PANE_PORT',
             'PANE_SESSION_ID',
             'PANE_PANEL_ID',
+            'PANE_PEER_ID',
+            'PANE_AGENT_DISCOVERY',
             'WORKTREE_PATH',
             'PANE_WORKSPACE_PATH',
           ]),
@@ -939,6 +942,7 @@ export class TerminalPanelManager {
         baseEnv[key] = value;
       }
     }
+    if (!isWSL) baseEnv.PANE_DIR = getAppDirectory();
     const spawnEnv = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
@@ -949,6 +953,9 @@ export class TerminalPanelManager {
       WORKTREE_PATH: cwd,
       PANE_SESSION_ID: panel.sessionId,
       PANE_PANEL_ID: panel.id,
+      PANE_PEER_ID: panel.id,
+      PANE_AGENT_DISCOVERY: 'runpane peers self --json',
+
       PANE_PORT: String(panePort),
       PANE_WORKSPACE_PATH: cwd,
       ...wslEnvVars,

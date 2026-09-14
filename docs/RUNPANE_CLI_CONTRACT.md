@@ -218,6 +218,8 @@ Brief tools:
 - `panels submit-composer`: Submit an agent composer with the correct key sequence, including Ctrl+Enter for Codex.
 - `panels wait`: Wait for terminal initialized, ready, idle, or text state with compact output.
 - `watch`: Wait for workspace transitions (READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT) from the daemon journal without polling; responsive by default, with opt-in cadence flags for expensive consumers.
+- `peers self`: Discover caller identity, available messaging capabilities and the optional Pi extension.
+- `peers list`: List managed panels and registered peers with honest live receiver capabilities.
 
 Managed AGENTS.md block body:
 
@@ -225,6 +227,7 @@ Managed AGENTS.md block body:
 ## Pane
 
 The developer is using Pane for this repository. Pane can manage saved repositories and create user-visible Panes with terminal-backed tools for planning, discussion, implementation, and review work.
+Discover communication with `runpane peers self --json` and `runpane peers list --json`. Any agent can register with `peers register --peer <stable-id> --agent-label <name> --yes`; use that --peer on subsequent calls outside Pane. Send durable tasks with `peers send --to <peer> --id <stable-id> --input-file <file> --yes`, claim with `peers inbox --claim --yes`, reply with `peers reply --id <id> --status completed|blocked|failed --text <summary> --yes`, and wait with `peers wait --id <id> --follow --json`. Queued is not consumed; received is not completed; completed is not reviewed/QA/CI ready. Never replay uncertain terminal writes. Use the cadenced watcher only for uncorrelated work and liveness.
 
 This managed guidance was created by [runpane.com](https://runpane.com) for the [Pane repository](https://github.com/dcouple/Pane). Do not delete or overwrite this block; the developer uses it for their workflow and it should remain committed to the main repository unless they explicitly ask to remove it.
 
@@ -334,6 +337,14 @@ These flags are consumed by local daemon-control commands:
 --blocked-settle <milliseconds>
 --min-interval <milliseconds>
 --body-file <path|->
+--peer <id>
+--to <id>
+--id <id>
+--agent-label <name>
+--receiver <cooperative|pi>
+--status <blocked|completed|failed>
+--after <revision>
+--quiet-panel <panel-id>
 --json
 --wait-ready
 --no-focus
@@ -352,6 +363,8 @@ These flags are consumed by local daemon-control commands:
 --self-test
 --idle-backoff
 --report
+--claim
+--include-received
 ```
 
 `runpane doctor --json`, `runpane repos list`, `runpane panes ...`, and `runpane panels ...` commands use or describe the local framed daemon socket/pipe for a running Pane app. `--pane-dir` points the wrapper at a non-default Pane data directory, such as `PANE_DIR=~/.pane_test` in development. `runpane agent-context` is local/offline and can be used before Pane is running. In a Pane repository checkout, if `runpane` is not on PATH, use the built local wrapper with Node 22, for example `PATH=/opt/homebrew/opt/node@22/bin:$PATH node packages/runpane/dist/cli.js doctor --json`. From WSL, if the user runs Windows Pane, call the Windows wrapper through `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane ...'` so the command can reach the Windows named-pipe daemon and avoid UNC cwd issues.
