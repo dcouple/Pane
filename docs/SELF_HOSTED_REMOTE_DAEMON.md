@@ -266,6 +266,19 @@ Check:
 - the client profile base URL matches the client-side tunnel endpoint
 - the `pane-remote://...` code was not truncated
 
+### A remote action could not be confirmed
+
+The browser client automatically retries a reviewed set of read-only requests after
+transient network or server failures. It sends actions such as terminal input and
+pane creation once: the host may finish an action even if the response is lost.
+If Pane says the action may have completed, inspect the current panes or terminal
+before submitting it again. Authentication failures stop immediately.
+
+The browser normally uses native EventSource for output. Its fetch fallback and
+the desktop transport share one SSE text parser, accepting LF, CRLF, and CR line
+endings across chunks. Each transport decodes UTF-8 incrementally before parsing;
+reconnecting discards the previous stream's incomplete event.
+
 ### I changed host settings but nothing happened
 
 The headless daemon watches config and starts or stops the remote transport based on saved host config. If behavior looks stale, restart the daemon once and verify the correct `PANE_DIR`.

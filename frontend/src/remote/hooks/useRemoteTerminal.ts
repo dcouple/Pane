@@ -42,6 +42,14 @@ export function useRemoteTerminal({
     terminalRef.current?.focus();
   };
 
+  const sendInput = useCallback(async (data: string) => {
+    try {
+      await adapter.sendTerminalInput(panel.id, data);
+    } catch (error) {
+      setStatusText(error instanceof Error ? error.message : 'Failed to send input');
+    }
+  }, [adapter, panel.id]);
+
   const resetTerminal = () => {
     terminalRef.current?.clear();
     terminalRef.current?.focus();
@@ -111,9 +119,7 @@ export function useRemoteTerminal({
     visualViewport?.addEventListener('scroll', handleViewportChange);
 
     const inputDisposable = terminal.onData(data => {
-      void adapter.sendTerminalInput(panel.id, data).catch(error => {
-        setStatusText(error instanceof Error ? error.message : 'Failed to send input');
-      });
+      void sendInput(data);
     });
 
     const unsubscribe = adapter.onEvent(event => {
@@ -172,7 +178,7 @@ export function useRemoteTerminal({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [adapter, panel.id, sessionId]);
+  }, [adapter, panel.id, sessionId, sendInput]);
 
   useEffect(() => {
     if (connectionStatus !== 'connected' || !terminalRef.current) return;
@@ -180,7 +186,7 @@ export function useRemoteTerminal({
     void adapter.setTerminalVisibility(panel.id, true, TERMINAL_VIEWER_ID).catch(() => {});
   }, [adapter, connectionStatus, panel.id]);
 
-  return { containerRef, statusText, focusTerminal, resetTerminal, scrollLines, scrollToBottom };
+  return { containerRef, statusText, focusTerminal, sendInput, resetTerminal, scrollLines, scrollToBottom };
 }
 
 async function hydrateTerminal(adapter: RemoteRuntimeAdapter, panelId: string, terminal: Terminal): Promise<void> {
