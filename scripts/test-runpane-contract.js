@@ -248,6 +248,15 @@ async function withFakeDaemon(paneDir, onRequest, action) {
     fs.rmSync(endpoint.path, { force: true });
   }
   const server = net.createServer((socket) => {
+    // Monitors stop their CLI as soon as the expected line arrives. A delayed
+    // fixture response may race that disconnect, especially on macOS.
+    socket.on('error', error => {
+      if (error.code === 'EPIPE' || error.code === 'ECONNRESET') {
+        socket.destroy();
+        return;
+      }
+      throw error;
+    });
     let buffer = '';
     socket.on('data', (chunk) => {
       buffer += chunk.toString('utf8');
