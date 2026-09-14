@@ -169,6 +169,13 @@ export function useIPCEvents() {
     const unsubscribeFunctions: (() => void)[] = [];
 
     // Listen for session events
+    unsubscribeFunctions.push(window.electronAPI.events.onSessionCreationFailed((failure) => {
+      showError({
+        title: 'Failed to Create Pane',
+        error: failure.error,
+        details: `Pane: ${failure.name}`,
+      });
+    }));
     const unsubscribeSessionCreated = window.electronAPI.events.onSessionCreated((session: Session) => {
       devLog.debug('[useIPCEvents] Session created:', session.id);
       addSession({...session, output: session.output || [], jsonMessages: session.jsonMessages || []});

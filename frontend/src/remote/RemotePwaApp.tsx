@@ -23,6 +23,8 @@ import { loadRemoteProfiles, saveRemoteProfiles } from './runtime/remoteProfileS
 import { addNativeAppListener, isNativeMobile } from './runtime/nativeMobile';
 import { consumeNativePushRoute, getNativePushStatus, installNativePushRouting, revokeNativePush, setupNativePush, updateNativePushControls, type NativePushRoute } from './runtime/nativePush';
 import { useRemoteSessionStore } from './stores/remoteSessionStore';
+import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { ErrorDialog } from '../components/ErrorDialog';
 
 const EMPTY_AFFORDANCES: RemotePwaAffordances = {
   terminalShortcuts: [],
@@ -86,6 +88,7 @@ export function RemotePwaApp() {
   const [affordancesLoading, setAffordancesLoading] = useState(false);
   const [sidebarActionSessionId, setSidebarActionSessionId] = useState<string | null>(null);
   const [createSessionProject, setCreateSessionProject] = useState<RemoteProjectWithSessions | null>(null);
+  const [creationFailure, setCreationFailure] = useState<{ name: string; error: string } | null>(null);
   const [mountedTerminalPanelIds, setMountedTerminalPanelIds] = useState<string[]>([]);
   const profilesLoadedRef = useRef(false);
   const activeRuntimeRef = useRef<RemoteRuntimeAdapter | null>(null);
@@ -357,6 +360,7 @@ export function RemotePwaApp() {
     activeRuntimeRef.current = null;
     pushRoutePanelRef.current = null;
     updateConnection(INITIAL_CONNECTION);
+    setCreationFailure(null);
     setPushStatus(null);
     setAffordances(EMPTY_AFFORDANCES);
     setAffordancesLoading(false);
@@ -506,6 +510,11 @@ export function RemotePwaApp() {
   useEffect(() => {
     if (!adapter) return;
     return adapter.onEvent(event => {
+      if (event.channel === 'session:creation-failed') {
+        const failure = decodeBoundary(event.args[0], boundary.object({ name: boundary.string, error: boundary.string }));
+        setCreationFailure(failure);
+        return;
+      }
       if (event.channel === 'panel:created' || event.channel === 'panel:updated') {
         // SAFETY: The surrounding typed producer establishes the narrower value shape consumed here.
         const panel = event.args[0] as ToolPanel | undefined;
@@ -560,6 +569,13 @@ export function RemotePwaApp() {
 
   return (
     <div className="flex h-dvh min-h-dvh w-full overflow-hidden bg-bg-primary text-text-primary">
+      <ErrorDialog
+        isOpen={creationFailure !== null}
+        onClose={() => setCreationFailure(null)}
+        title="Failed to Create Pane"
+        error={creationFailure?.error ?? ''}
+        details={creationFailure ? `Pane: ${creationFailure.name}` : undefined}
+      />
       <Dialog.Root open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="pane-scrim fixed inset-0 z-50 bg-black/60 md:hidden" />

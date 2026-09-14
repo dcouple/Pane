@@ -3311,6 +3311,12 @@ export class DatabaseService {
     return result !== undefined;
   }
 
+  checkActiveSessionNameExists(name: string, projectId: number): boolean {
+    return this.db.prepare(
+      "SELECT id FROM sessions WHERE name = ? AND project_id = ? AND (archived = 0 OR archived IS NULL) LIMIT 1",
+    ).get(name, projectId) !== undefined;
+  }
+
   updateSession(id: string, data: UpdateSessionData): Session | undefined {
     console.log(`[Database] Updating session ${id} with data:`, data);
 
