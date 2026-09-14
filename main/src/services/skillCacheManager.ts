@@ -86,6 +86,79 @@ const FALLBACK_RAW_FILES = [
 
 const REQUIRED_FALLBACK_RAW_FILE_SET = new Set<string>(REQUIRED_FALLBACK_RAW_FILES);
 
+const UNATTENDED_RESILIENCE_QUESTION =
+  'Enable unattended resilience for this session? (keeps the Mac awake with caffeinate, '
+  + 'auto-resumes panes whose turn died from a sleep/network API error, re-arms the watcher). Default: yes.';
+
+const UNATTENDED_RESILIENCE_PROMPT = `Ask the user once, in one short message:
+"${UNATTENDED_RESILIENCE_QUESTION}"
+The default is yes. If the user does not answer and instead sends any
+other prompt, treat that as yes and say so in one line. An explicit
+"no" disables it for the session.`;
+
+const UNATTENDED_RESILIENCE_SECTION = `## Unattended resilience (when enabled)
+
+Applies only when the startup question resolved to yes. When disabled,
+skip this whole section; the Liveness Contract stays as is.
+
+Keep-awake:
+
+- Start \`caffeinate -dims\` in the background for the session and
+  record its PID. Kill that PID at session end.
+- caffeinate cannot stop clamshell sleep on battery. Run
+  \`pmset -g batt\` once; if it reports battery power, tell the user
+  once to plug in and keep the lid open.
+- Pane's own keep-awake setting only prevents app suspension, not
+  system sleep, so caffeinate is still needed.
+
+Auto-resume:
+
+- On a READY or IDLE line for a pane you dispatched, read
+  \`runpane panels screen --panel <panel-id> --limit 80 --json\`.
+- Resume only when the composer is empty (the screen payload reports
+  \`composer.hasUndeliveredText: false\`) and the tail shows a
+  sleep/network death signature, one of:
+  - "Your computer went to sleep mid-response"
+  - "Can't reach the API server"
+  - "ENOTFOUND"
+  - "Agent stalled: no progress"
+  - "Agent terminated early due to an API error"
+  - retry attempts exhausted
+- Submit a resume message with
+  \`runpane panels submit --panel <panel-id> --text "<message>" --yes --json\`.
+  The message names the failure and tells the agent to inspect its
+  durable state and continue from the earliest incomplete gate, for
+  example: "Your previous turn died: \`<signature>\`. Inspect your
+  durable state and continue from the earliest incomplete gate."
+- Then send a carriage return, because submit alone often only pastes:
+  \`printf '\\r' | runpane panels input --panel <panel-id> --input-file - --yes --json\`.
+- Confirm the pane went BUSY: the watcher emits a BUSY line, or
+  \`runpane panels screen\` shows the composer empty and the agent
+  working. If the text is still sitting in the composer, run
+  \`runpane panels submit-composer --panel <panel-id> --yes --json\`,
+  then the carriage return once more if needed.
+
+Guardrails:
+
+- Never auto-resume a pane that is BLOCKED on a human question or an
+  approval.
+- Never resume the same pane more than 3 times per hour. Past that,
+  report to the user instead.
+- Never resume a pane you did not dispatch unless the user asked you
+  to keep all panes moving.
+- Log every resume (pane, signature, time) in your report to the user.
+- A resume message never authorizes merge, deploy, release,
+  publishing, version changes, or destructive actions. Hard stops
+  apply unchanged.
+
+Watcher re-arm:
+
+- The dead-watch rule is unchanged: re-arm once, then
+  \`runpane doctor --report\`.
+- After a detected wake (a burst of queued watcher lines, or a
+  HEARTBEAT gap over 120s), re-run \`runpane watch --self-test\`
+  before trusting new lines.`;
+
 interface SkillSyncState {
   lastAttemptAt?: string;
   lastSuccessAt?: string;
@@ -363,6 +436,12 @@ Read these before doing anything:
 2. Pane Chat orchestrator skill: \`${paneOrchestratorSkill}\`
 3. RunPane orchestrator skill: \`${claudeOrchestrator}\` (lifecycle, lanes, stages)
 4. Run the doctor command from the runtime context
+5. Arm liveness per the pane-orchestrator skill (\`runpane watch --self-test\`
+   then \`runpane watch --follow\`)
+
+Then, before dispatching anything:
+
+${UNATTENDED_RESILIENCE_PROMPT}
 
 The runtime context wins over cached docs when they conflict. Do not
 fetch GitHub to initialize; the cached files are refreshed in the
@@ -394,6 +473,8 @@ delegating, name the stage and the relevant artifact.
 
 Before dispatching: state your assumptions so the user can correct
 them, and ask about gaps no sweep reaches.
+
+${UNATTENDED_RESILIENCE_SECTION}
 
 ## Hard stops
 
@@ -439,6 +520,8 @@ Read all of these in parallel:
 Then in parallel: run the doctor command from the runtime context,
 arm liveness (\`runpane watch --self-test\` then \`runpane watch --follow\`),
 and sweep active panes through RunPane.
+
+${UNATTENDED_RESILIENCE_PROMPT}
 
 ## Role
 
@@ -492,6 +575,8 @@ dead. Re-arm once. If it dies again, capture the last 20 output lines
 to a file and run
 \`runpane doctor --report --title "runpane watch failed" --body-file <evidence-file> --json\`,
 then tell the human.
+
+${UNATTENDED_RESILIENCE_SECTION}
 
 ## Local references
 

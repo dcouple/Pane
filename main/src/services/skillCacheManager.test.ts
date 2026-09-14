@@ -329,6 +329,80 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
     expect(canonicalSkill).not.toContain('fresh-eyes');
   });
 
+  it('asks the unattended resilience question and specifies the mode in every emitted variant', async () => {
+    const manager = new SkillCacheManager();
+
+    await manager.ensurePaneChatGuide();
+
+    const guide = await fs.readFile(manager.paneChatGuidePath, 'utf8');
+    const canonicalSkill = await fs.readFile(manager.paneChatOrchestratorSkillPath, 'utf8');
+    const codexSkill = await fs.readFile(manager.codexPaneOrchestratorSkillPath, 'utf8');
+    const claudeSkill = await fs.readFile(manager.claudePaneOrchestratorSkillPath, 'utf8');
+    const cursorRule = await fs.readFile(manager.cursorPaneOrchestratorRulePath, 'utf8');
+
+    for (const rawVariant of [guide, canonicalSkill, codexSkill, claudeSkill, cursorRule]) {
+      const variant = rawVariant.replace(/\s+/g, ' ');
+      expect(variant).toContain('Enable unattended resilience for this session?');
+      expect(variant).toContain('Default: yes.');
+      expect(variant).toContain('treat that as yes and say so in one line');
+      expect(variant).toContain('An explicit "no" disables it for the session.');
+      expect(variant).toContain('## Unattended resilience (when enabled)');
+      expect(variant).toContain('caffeinate -dims');
+      expect(variant).toContain('pmset -g batt');
+      expect(variant).toContain('Your computer went to sleep');
+      expect(variant).toContain("Can't reach the API server");
+      expect(variant).toContain('ENOTFOUND');
+      expect(variant).toContain('Agent stalled: no progress');
+      expect(variant).toContain('Agent terminated early due to an API error');
+      expect(variant).toContain('composer.hasUndeliveredText: false');
+      expect(variant).toContain('runpane panels screen --panel <panel-id> --limit 80 --json');
+      expect(variant).toContain('runpane panels submit-composer --panel <panel-id> --yes --json');
+      expect(variant).toContain('runpane panels submit --panel <panel-id> --text "<message>" --yes --json');
+      expect(variant).toContain("printf '\\r' | runpane panels input --panel <panel-id> --input-file - --yes --json");
+      expect(variant).toContain('earliest incomplete gate');
+      expect(variant).toContain('Never auto-resume a pane that is BLOCKED');
+      expect(variant).toContain('more than 3 times per hour');
+      expect(variant).toContain('unless the user asked you to keep all panes moving');
+      expect(variant).toContain('Log every resume');
+      expect(variant).toContain('never authorizes merge, deploy, release');
+      expect(variant).toContain('HEARTBEAT gap over 120s');
+      expect(variant).toContain('re-run `runpane watch --self-test`');
+      expect(variant).toContain('## Hard stops');
+    }
+
+    // The question is asked once, after doctor, and the section stays clear of the hard stops.
+    expect(guide.indexOf('Run the doctor command')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
+    expect(guide.indexOf('runpane watch --self-test')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
+    expect(guide.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(guide.indexOf('## Hard stops'));
+    expect(canonicalSkill.indexOf('runpane watch --self-test')).toBeLessThan(canonicalSkill.indexOf('Enable unattended resilience'));
+    expect(canonicalSkill.indexOf('## Liveness Contract')).toBeLessThan(canonicalSkill.indexOf('## Unattended resilience (when enabled)'));
+    expect(canonicalSkill.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(canonicalSkill.indexOf('## Hard stops'));
+    expect(canonicalSkill.split('Enable unattended resilience for this session?')).toHaveLength(2);
+  });
+
+  it('rewrites stale generated guide and skill files on upgrade', async () => {
+    const manager = new SkillCacheManager();
+    const targets = [
+      manager.paneChatGuidePath,
+      manager.paneChatOrchestratorSkillPath,
+      manager.codexPaneOrchestratorSkillPath,
+      manager.claudePaneOrchestratorSkillPath,
+      manager.cursorPaneOrchestratorRulePath,
+    ];
+    for (const target of targets) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, '# stale pre-upgrade text\n', 'utf8');
+    }
+
+    await manager.ensurePaneChatGuide();
+
+    for (const target of targets) {
+      const contents = await fs.readFile(target, 'utf8');
+      expect(contents).not.toContain('stale pre-upgrade text');
+      expect(contents).toContain('## Unattended resilience (when enabled)');
+    }
+  });
+
   it('writes a project-scoped pane-orchestrator rule for Cursor', async () => {
     const manager = new SkillCacheManager();
 
