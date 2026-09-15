@@ -4,6 +4,9 @@ import { useSessionStore } from '../stores/sessionStore';
 import type { Session } from '../types/session';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';
+import { TerminalDock } from './panels/TerminalDock';
+import { EmptyPanelStage } from './panels/EmptyPanelStage';
+import { getDockTerminalPanel } from '../utils/terminalDock';
 import { usePanelStore } from '../stores/panelStore';
 import { panelApi } from '../services/panelApi';
 import type { ToolPanel, ToolPanelType } from '../../../shared/types/panels';
@@ -28,6 +31,8 @@ interface ProjectViewProps {
   projectEnvironment: ProjectEnvironment | undefined;
   configuredIDECommand?: string | null;
   onConfigureIDE: () => void;
+  isTerminalCollapsed: boolean;
+  onToggleTerminal: () => void;
 }
 
 export const ProjectView: React.FC<ProjectViewProps> = ({ 
@@ -36,9 +41,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
   projectEnvironment,
   configuredIDECommand,
   onConfigureIDE,
+  isTerminalCollapsed,
+  onToggleTerminal,
 }) => {
   const [mainRepoSessionId, setMainRepoSessionId] = useState<string | null>(null);
   const [mainRepoSession, setMainRepoSession] = useState<Session | null>(null);
+  const [restoredPanelSessionId, setRestoredPanelSessionId] = useState<string | null>(null);
   const [branchState, setBranchState] = useState<{
     projectId: number;
     worktreePath: string | null;
@@ -89,6 +97,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   const immersiveMode = useNavigationStore(s => s.immersiveMode);
   const projectContentBox = useObservedContentBox<HTMLDivElement>();
+  const centerColumnBox = useObservedContentBox<HTMLDivElement>();
   const detailResize = useOuterPanelResize({
     config: OUTER_PANEL_CONFIGS.projectInspector,
     containerPx: projectContentBox.width,
@@ -97,23 +106,30 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   // Load panels when main repo session changes (no auto-creation, matches worktree session behavior)
   useEffect(() => {
+    setRestoredPanelSessionId(null);
+    let cancelled = false;
     if (mainRepoSessionId) {
       panelApi.loadPanelsForSession(mainRepoSessionId).then(async (loadedPanels) => {
+        if (cancelled) return;
         setPanels(mainRepoSessionId, loadedPanels);
 
         // Pick default active: the first working panel (Explorer and Review
         // live in the inspector, not the stage).
-        const fallback = loadedPanels.find(p => p.type !== 'diff' && p.type !== 'explorer');
+        const dock = getDockTerminalPanel(loadedPanels);
+        const fallback = loadedPanels.find(p => p.type !== 'diff' && p.type !== 'explorer' && p.id !== dock?.id);
 
         const activePanel = await panelApi.getActivePanel(mainRepoSessionId);
+        if (cancelled) return;
         if (activePanel) {
           setActivePanelInStore(mainRepoSessionId, activePanel.id);
         } else if (fallback) {
           setActivePanelInStore(mainRepoSessionId, fallback.id);
           await panelApi.setActivePanel(mainRepoSessionId, fallback.id);
         }
+        if (!cancelled) setRestoredPanelSessionId(mainRepoSessionId);
       });
     }
+    return () => { cancelled = true; };
   }, [mainRepoSessionId, setPanels, setActivePanelInStore]);
   
   // Get panels for current main repo session
@@ -124,9 +140,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   const filesPanel = useMemo(() => sessionPanels.find(p => p.type === 'explorer'), [sessionPanels]);
   const changesPanel = useMemo(() => sessionPanels.find(p => p.type === 'diff'), [sessionPanels]);
+  const defaultTerminalPanel = useMemo(() => getDockTerminalPanel(sessionPanels), [sessionPanels]);
   const workingPanels = useMemo(
-    () => sessionPanels.filter(p => p.type !== 'explorer' && p.type !== 'diff'),
-    [sessionPanels]
+    () => sessionPanels.filter(p => p.type !== 'explorer' && p.type !== 'diff' && p.id !== defaultTerminalPanel?.id),
+    [sessionPanels, defaultTerminalPanel]
   );
 
   const currentActivePanel = useMemo(
@@ -134,24 +151,28 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     [workingPanels, activePanels, mainRepoSessionId]
   );
 
-  // A persisted active panel that now lives in the inspector opens that tab
-  // and hands the stage to the first working panel.
+  // Keep the stage selection and persisted active panel in agreement when
+  // the active panel moves into the inspector or dock, or is deleted.
   const staleActiveHandledRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!mainRepoSessionId) return;
+    // A missing selection during loading must not overwrite the saved tab.
+    if (!mainRepoSessionId || restoredPanelSessionId !== mainRepoSessionId) return;
     const activeId = activePanels[mainRepoSessionId];
     const stale = activeId ? sessionPanels.find(p => p.id === activeId && (p.type === 'explorer' || p.type === 'diff')) : undefined;
-    if (!stale) return;
-    const key = `${mainRepoSessionId}:${stale.id}`;
-    if (staleActiveHandledRef.current === key) return;
-    staleActiveHandledRef.current = key;
-    setInspectorTab(stale.type === 'diff' ? 'changes' : 'files');
+    if (stale) {
+      const key = `${mainRepoSessionId}:${stale.id}`;
+      if (staleActiveHandledRef.current !== key) {
+        staleActiveHandledRef.current = key;
+        setInspectorTab(stale.type === 'diff' ? 'changes' : 'files');
+      }
+    }
+    if (workingPanels.some(p => p.id === activeId)) return;
     const next = workingPanels[0];
     if (next) {
       setActivePanelInStore(mainRepoSessionId, next.id);
       void panelApi.setActivePanel(mainRepoSessionId, next.id);
     }
-  }, [mainRepoSessionId, activePanels, sessionPanels, workingPanels, setActivePanelInStore]);
+  }, [mainRepoSessionId, restoredPanelSessionId, activePanels, sessionPanels, workingPanels, setActivePanelInStore]);
 
   const detailSession = useMemo(() => {
     if (!activeMainRepoSession || !displayBranch) return activeMainRepoSession;
@@ -199,15 +220,21 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     async (panel: ToolPanel) => {
       if (!mainRepoSessionId) return;
 
-      // Activate the neighbouring working tab (never an inspector panel).
-      const panelIndex = workingPanels.findIndex(p => p.id === panel.id);
-      const nextPanel = workingPanels[panelIndex + 1] || workingPanels[panelIndex - 1];
-
       // Remove from store first for immediate UI update
       removePanel(mainRepoSessionId, panel.id);
 
+      // The dock isn't in workingPanels, and closing it may promote another
+      // shell. Choose from the tabs that remain after that promotion.
+      const remaining = usePanelStore.getState().panels[mainRepoSessionId] || [];
+      const dock = getDockTerminalPanel(remaining);
+      const remainingTabs = remaining.filter(p => p.type !== 'explorer' && p.type !== 'diff' && p.id !== dock?.id);
+      const panelIndex = workingPanels.findIndex(p => p.id === panel.id);
+      const nextPanel = panelIndex === -1
+        ? remainingTabs[0]
+        : remainingTabs[Math.min(panelIndex, remainingTabs.length - 1)];
+
       // Set next active panel if available
-      if (nextPanel) {
+      if (nextPanel && activePanels[mainRepoSessionId] === panel.id) {
         setActivePanelInStore(mainRepoSessionId, nextPanel.id);
         await panelApi.setActivePanel(mainRepoSessionId, nextPanel.id);
       }
@@ -215,7 +242,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // Delete on backend
       await panelApi.deletePanel(panel.id);
     },
-    [mainRepoSessionId, workingPanels, removePanel, setActivePanelInStore]
+    [mainRepoSessionId, workingPanels, activePanels, removePanel, setActivePanelInStore]
   );
 
   const handlePanelCreate = useCallback(
@@ -243,9 +270,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // The panel:created event will also fire, but addPanel checks for duplicates
       addPanel(newPanel);
       setActivePanelInStore(mainRepoSessionId, newPanel.id);
+      if (isTerminalCollapsed && getDockTerminalPanel(usePanelStore.getState().panels[mainRepoSessionId] || [])?.id === newPanel.id) {
+        onToggleTerminal();
+      }
       return newPanel;
     },
-    [mainRepoSessionId, addPanel, setActivePanelInStore]
+    [mainRepoSessionId, addPanel, setActivePanelInStore, isTerminalCollapsed, onToggleTerminal]
   );
 
   const handleOpenUrlInBrowser = useCallback(async (url: string, title: string) => {
@@ -423,59 +453,64 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
           {/* Content area: center panels + right detail */}
           <div ref={projectContentBox.ref} className="pane-project-content flex-1 flex flex-row min-h-0 min-w-0">
-            {/* Center: panel content */}
-            <div className="flex-1 relative min-h-0 min-w-0 overflow-hidden">
-              {isLoadingSession ? (
-                <div
-                  role="status"
-                  aria-label="Loading main repository session"
-                  className="h-full animate-pulse"
-                >
-                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
-                    <div className="h-3 w-28 bg-surface-tertiary rounded" />
-                    <div className="flex items-center gap-2">
-                      <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
-                      <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
-                    </div>
-                  </div>
-                  <div className="p-4 space-y-3">
-                    <div className="h-4 w-40 bg-surface-tertiary rounded" />
-                    <div className="h-3 w-full bg-surface-tertiary rounded" />
-                    <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
-                    <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
-                    <div className="h-3 w-2/3 bg-surface-tertiary rounded" />
-                  </div>
-                </div>
-              ) : workingPanels.length > 0 && currentActivePanel ? (
-                workingPanels.map(panel => {
-                  const isActive = panel.id === currentActivePanel.id;
-                  return (
-                    <div
-                      key={panel.id}
-                      className="absolute inset-0"
-                      style={{
-                        display: isActive ? 'block' : 'none',
-                        pointerEvents: isActive ? 'auto' : 'none'
-                      }}
-                    >
-                      <PanelContainer
-                        panel={panel}
-                        isActive={isActive}
-                        isMainRepo={!!mainRepoSession?.isMainRepo}
-                      />
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="flex h-full items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => handlePanelCreate('terminal')}
-                    className="flex h-7 items-center gap-2 rounded px-3 text-[13px] text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring-subtle"
+            <div ref={centerColumnBox.ref} className="pane-center-column flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+              {/* Center: panel content */}
+              <div className="flex-1 relative min-h-0 min-w-0 overflow-hidden">
+                {isLoadingSession ? (
+                  <div
+                    role="status"
+                    aria-label="Loading main repository session"
+                    className="h-full animate-pulse"
                   >
-                    Open a terminal
-                  </button>
-                </div>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
+                      <div className="h-3 w-28 bg-surface-tertiary rounded" />
+                      <div className="flex items-center gap-2">
+                        <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
+                        <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
+                      </div>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="h-4 w-40 bg-surface-tertiary rounded" />
+                      <div className="h-3 w-full bg-surface-tertiary rounded" />
+                      <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
+                      <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
+                      <div className="h-3 w-2/3 bg-surface-tertiary rounded" />
+                    </div>
+                  </div>
+                ) : workingPanels.length > 0 && currentActivePanel ? (
+                  workingPanels.map(panel => {
+                    const isActive = panel.id === currentActivePanel.id;
+                    return (
+                      <div
+                        key={panel.id}
+                        className="absolute inset-0"
+                        style={{
+                          display: isActive ? 'block' : 'none',
+                          pointerEvents: isActive ? 'auto' : 'none'
+                        }}
+                      >
+                        <PanelContainer
+                          panel={panel}
+                          isActive={isActive}
+                          isMainRepo={!!mainRepoSession?.isMainRepo}
+                        />
+                      </div>
+                    );
+                  })
+                ) : (
+                  <EmptyPanelStage projectEnvironment={projectEnvironment} onPanelCreate={handlePanelCreate} />
+                )}
+              </div>
+              {defaultTerminalPanel && (
+                <TerminalDock
+                  panel={defaultTerminalPanel}
+                  availableHeight={centerColumnBox.height}
+                  collapsed={isTerminalCollapsed}
+                  hidden={immersiveMode}
+                  onToggle={onToggleTerminal}
+                  onClose={() => { void handlePanelClose(defaultTerminalPanel); }}
+                  isMainRepo
+                />
               )}
             </div>
 

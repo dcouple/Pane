@@ -120,6 +120,7 @@ async function selectFirstLine(page: Page, terminal: Locator): Promise<void> {
 }
 
 test('selection popover works in restored bottom and tab terminals', async ({ page }, testInfo) => {
+  await page.addInitScript(() => localStorage.setItem('pane-terminal-collapsed', 'true'));
   await installClipboardMock(page);
   await installElectronApiMock(page, {
     initialProjects: [project],
