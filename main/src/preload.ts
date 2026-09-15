@@ -744,6 +744,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('permission:resolved', wrappedCallback);
     },
     // Session events
+    onSessionCreationFailed: (callback: (failure: { name: string; error: string }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, failure: { name: string; error: string }) => callback(failure);
+      ipcRenderer.on('session:creation-failed', wrappedCallback);
+      return () => ipcRenderer.removeListener('session:creation-failed', wrappedCallback);
+    },
     onSessionCreated: (callback: (session: Session) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Session) => callback(session);
       ipcRenderer.on('session:created', wrappedCallback);

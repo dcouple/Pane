@@ -223,11 +223,14 @@ export class WorktreeManager {
     }
   }
 
+  getWorktreePath(projectPath: string, name: string, worktreeFolder: string | undefined, pathResolver: PathResolver): string {
+    return pathResolver.join(this.getProjectPaths(projectPath, worktreeFolder, pathResolver).baseDir, name);
+  }
+
   async createWorktree(projectPath: string, name: string, branch: string | undefined, baseBranch: string | undefined, worktreeFolder: string | undefined, pathResolver: PathResolver, commandRunner: CommandRunner): Promise<{ worktreePath: string; baseCommit: string; baseBranch: string }> {
     return await withLock(`worktree-create-${projectPath}-${name}`, async () => {
 
-      const { baseDir } = this.getProjectPaths(projectPath, worktreeFolder, pathResolver);
-      const worktreePath = pathResolver.join(baseDir, name);
+      const worktreePath = this.getWorktreePath(projectPath, name, worktreeFolder, pathResolver);
       const branchName = branch || name;
     
 
