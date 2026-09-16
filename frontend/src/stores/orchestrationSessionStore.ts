@@ -18,6 +18,7 @@ interface OrchestrationSessionState {
   availability: OrchestrationSessionAvailability;
   error: string | null;
   load: () => Promise<void>;
+  refresh: (options?: { adoptServerSelection?: boolean }) => Promise<void>;
   select: (selector: OrchestrationSessionSelector) => Promise<void>;
   create: (input: OrchestrationSessionCreateInput) => Promise<OrchestrationSessionView<Session>>;
   update: (selector: OrchestrationSessionSelector, input: OrchestrationSessionUpdateInput) => Promise<OrchestrationSessionRecord>;
@@ -25,6 +26,7 @@ interface OrchestrationSessionState {
 
 let loadPromise: Promise<void> | null = null;
 let operationGeneration = 0;
+let refreshSequence = 0;
 
 function getOrchestrationApi(): typeof window.electronAPI.orchestrationSessions | undefined {
   return window.electronAPI?.orchestrationSessions;
@@ -78,6 +80,38 @@ export const useOrchestrationSessionStore = create<OrchestrationSessionState>((s
       }
     })();
     return loadPromise;
+  },
+
+  refresh: async (options) => {
+    const orchestrationApi = getOrchestrationApi();
+    if (!orchestrationApi) return;
+    const generation = operationGeneration;
+    const sequence = ++refreshSequence;
+
+    try {
+      const data = ensureSuccess(await API.orchestrationSessions.list(), 'Failed to refresh Sessions');
+      if (generation !== operationGeneration || sequence !== refreshSequence) return;
+      set((state) => {
+        const selectedSessionId = options?.adoptServerSelection
+          ? data.selectedSessionId
+          : state.selectedSessionId;
+        const selectedStillExists = selectedSessionId
+          ? data.sessions.some(session => session.id === selectedSessionId)
+          : false;
+        return {
+          sessions: data.sessions,
+          selectedSessionId: selectedStillExists ? selectedSessionId : data.selectedSessionId,
+          availability: state.availability === 'idle' ? 'ready' : state.availability,
+          error: null,
+        };
+      });
+    } catch (error) {
+      if (generation !== operationGeneration || sequence !== refreshSequence) return;
+      set((state) => ({
+        error: error instanceof Error ? error.message : 'Failed to refresh Sessions',
+        availability: state.availability === 'idle' ? 'error' : state.availability,
+      }));
+    }
   },
 
   select: async (selector) => {

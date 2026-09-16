@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, Folder, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { usePanelStore } from '../stores/panelStore';
@@ -8,18 +8,15 @@ import {
   useOrchestrationSessionStore,
   type OrchestrationSessionAvailability,
 } from '../stores/orchestrationSessionStore';
-import type {
-  OrchestrationSessionCreateInput,
-  OrchestrationSessionRecord,
-} from '../../../shared/types/orchestrationSession';
-import type { PaneChatAgent } from '../../../shared/types/paneChat';
+import type { OrchestrationSessionRecord } from '../../../shared/types/orchestrationSession';
+import { DEFAULT_PANE_CHAT_AGENT, type PaneChatAgent } from '../../../shared/types/paneChat';
 import { LEGACY_ORCHESTRATION_SESSION_ID } from '../../../shared/types/orchestrationSession';
 import { Modal, ModalBody, ModalFooter, ModalHeader } from './ui/Modal';
 import { Button } from './ui/Button';
-import { Input, Textarea } from './ui/Input';
 import { Tooltip } from './ui/Tooltip';
 import { AgentStatusDot } from './ui/AgentStatusDot';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
+import { visibleAgentPresets } from '../utils/agentPresets';
 import { cn } from '../utils/cn';
 
 interface OrchestrationSessionNavProps {
@@ -40,6 +37,26 @@ function availabilityIsVisible(availability: OrchestrationSessionAvailability): 
   return availability === 'ready' || availability === 'loading' || availability === 'error';
 }
 
+const SESSION_AGENT_OPTIONS: ReadonlyArray<{ id: PaneChatAgent; label: string }> = [
+  { id: 'claude', label: 'Claude' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'cursor', label: 'Cursor' },
+];
+
+function availableSessionAgents(): ReadonlyArray<{ id: PaneChatAgent; label: string }> {
+  const visible = new Set(visibleAgentPresets().map(preset => preset.id));
+  return SESSION_AGENT_OPTIONS.filter(option => visible.has(option.id));
+}
+
+function nextSessionName(sessions: readonly OrchestrationSessionRecord[]): string {
+  const existingNames = new Set(sessions.map(session => session.name.trim().toLocaleLowerCase()));
+  if (!existingNames.has('new chat')) return 'New chat';
+
+  let suffix = 2;
+  while (existingNames.has(`new chat ${suffix}`)) suffix += 1;
+  return `New chat ${suffix}`;
+}
+
 function useAggregateSessionStatus(sessions: OrchestrationSessionRecord[]) {
   return usePanelStore(state => rollupAgentDisplayStatus(
     sessions.map(session => {
@@ -50,10 +67,6 @@ function useAggregateSessionStatus(sessions: OrchestrationSessionRecord[]) {
       );
     }),
   ));
-}
-
-function isPaneChatAgent(value: string): value is PaneChatAgent {
-  return value === 'claude' || value === 'codex' || value === 'cursor';
 }
 
 /** Top-level shortcut that keeps the expanded sidebar's navigation compact. */
@@ -93,6 +106,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const availability = useOrchestrationSessionStore(state => state.availability);
   const error = useOrchestrationSessionStore(state => state.error);
   const load = useOrchestrationSessionStore(state => state.load);
+  const refresh = useOrchestrationSessionStore(state => state.refresh);
   const select = useOrchestrationSessionStore(state => state.select);
   const create = useOrchestrationSessionStore(state => state.create);
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
@@ -100,22 +114,28 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
 
-  const createSession = useCallback(async (input: OrchestrationSessionCreateInput) => {
-    await create(input);
+  const createSession = useCallback(async (agent: PaneChatAgent) => {
+    await load();
+    const name = nextSessionName(useOrchestrationSessionStore.getState().sessions);
+    await create({ name, agent });
     setShowCreate(false);
     setActiveSession(null);
     navigateToPaneChat();
-  }, [create, navigateToPaneChat, setActiveSession]);
+  }, [create, load, navigateToPaneChat, setActiveSession]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    const handleSessionsChanged = () => void load();
+    const handleSessionsChanged = (event: Event) => {
+      const adoptServerSelection = event instanceof CustomEvent
+        && event.detail?.kind === 'selected';
+      void refresh({ adoptServerSelection });
+    };
     window.addEventListener('orchestration-sessions-changed', handleSessionsChanged);
     return () => window.removeEventListener('orchestration-sessions-changed', handleSessionsChanged);
-  }, [load]);
+  }, [refresh]);
 
   const openSession = useCallback(async (sessionId: string) => {
     try {
@@ -252,22 +272,26 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
                 'flex h-8 w-full items-center gap-0.5 text-[13px] transition-colors',
                 session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
               )}>
-                <button
-                  type="button"
-                  data-testid={`orchestration-session-toggle-${session.id}`}
-                  aria-label={`${expanded ? 'Collapse' : 'Expand'} Session ${label}`}
-                  aria-expanded={expanded}
-                  aria-controls={paneRows.length > 0 ? `orchestration-session-panes-${session.id}` : undefined}
-                  onClick={() => setCollapsedSessionIds(current => {
-                    const next = new Set(current);
-                    if (next.has(session.id)) next.delete(session.id);
-                    else next.add(session.id);
-                    return next;
-                  })}
-                  className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
-                >
-                  {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                </button>
+                {paneRows.length > 0 ? (
+                  <button
+                    type="button"
+                    data-testid={`orchestration-session-toggle-${session.id}`}
+                    aria-label={`${expanded ? 'Collapse' : 'Expand'} Session ${label}`}
+                    aria-expanded={expanded}
+                    aria-controls={`orchestration-session-panes-${session.id}`}
+                    onClick={() => setCollapsedSessionIds(current => {
+                      const next = new Set(current);
+                      if (next.has(session.id)) next.delete(session.id);
+                      else next.add(session.id);
+                      return next;
+                    })}
+                    className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+                  >
+                    {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                ) : (
+                  <span aria-hidden="true" className="inline-flex h-6 w-6 flex-shrink-0" />
+                )}
                 <button
                   type="button"
                   data-testid={isLegacy ? 'orchestration-pane-chat' : `orchestration-session-${session.id}`}
@@ -275,7 +299,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
                   onClick={() => void openSession(session.id)}
                   className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
                 >
-                  <Folder className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
+                  <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
                   <span className="min-w-0 flex-1 truncate">{label}</span>
                   {paneRows.length > 0 && <span className="pr-1 text-[10px] tabular-nums text-text-muted">{paneRows.length}</span>}
                 </button>
@@ -297,44 +321,39 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
 interface CreateOrchestrationSessionDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (input: OrchestrationSessionCreateInput) => Promise<void>;
+  onCreate: (agent: PaneChatAgent) => Promise<void>;
 }
 
 function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateOrchestrationSessionDialogProps) {
-  const [name, setName] = useState('');
-  const [goal, setGoal] = useState('');
-  const [context, setContext] = useState('');
-  const [agent, setAgent] = useState<PaneChatAgent>('claude');
+  const [agent, setAgent] = useState<PaneChatAgent>(DEFAULT_PANE_CHAT_AGENT);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const config = useConfigStore(state => state.config);
   const fetchConfig = useConfigStore(state => state.fetchConfig);
+  const updateConfig = useConfigStore(state => state.updateConfig);
+  const userSelectedAgent = useRef(false);
 
   useEffect(() => {
-    if (isOpen) {
-      setName('');
-      setGoal('');
-      setContext('');
-      setAgent('claude');
-      setError(null);
-      if (!useConfigStore.getState().config) void fetchConfig();
+    if (!isOpen) return;
+    userSelectedAgent.current = false;
+    setAgent(useConfigStore.getState().config?.defaultOrchestratorAgent ?? DEFAULT_PANE_CHAT_AGENT);
+    setError(null);
+    if (!useConfigStore.getState().config) {
+      void fetchConfig().then(nextConfig => {
+        if (!userSelectedAgent.current && nextConfig.defaultOrchestratorAgent) setAgent(nextConfig.defaultOrchestratorAgent);
+      }).catch(() => undefined);
     }
   }, [fetchConfig, isOpen]);
 
-  useEffect(() => {
-    if (isOpen && config?.defaultOrchestratorAgent) setAgent(config.defaultOrchestratorAgent);
-  }, [config?.defaultOrchestratorAgent, isOpen]);
-
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!name.trim()) {
-      setError('Session name is required.');
-      return;
-    }
     setIsSubmitting(true);
     setError(null);
     try {
-      await onCreate({ name: name.trim(), goal: goal.trim(), context: context.trim(), agent });
+      if (config?.defaultOrchestratorAgent !== agent) {
+        await updateConfig({ defaultOrchestratorAgent: agent });
+      }
+      await onCreate(agent);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to create Session');
     } finally {
@@ -343,21 +362,39 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="md" ariaLabel="Create Session">
+    <Modal isOpen={isOpen} onClose={onClose} size="sm" ariaLabel="Create Session">
       <form onSubmit={submit}>
-        <ModalHeader title="Create Session" description="Keep intent, discussion, and evidence together before implementation." onClose={onClose} />
-        <ModalBody className="space-y-4">
-          <Input label="Name" value={name} onChange={event => setName(event.target.value)} placeholder="For example, Improve onboarding" autoFocus fullWidth />
-          <Textarea label="Goal" value={goal} onChange={event => setGoal(event.target.value)} placeholder="What outcome should this Session drive?" rows={3} fullWidth />
-          <Textarea label="Context" value={context} onChange={event => setContext(event.target.value)} placeholder="Relevant constraints, links, or background" rows={3} fullWidth />
-          <label className="block text-label font-medium text-text-primary" htmlFor="orchestration-session-agent">
-            Session agent
-            <select id="orchestration-session-agent" value={agent} onChange={event => { const value = event.target.value; if (isPaneChatAgent(value)) setAgent(value); }} className="mt-1 h-9 w-full rounded-input border border-border-primary bg-bg-primary px-3 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-interactive">
-              <option value="claude">Claude</option>
-              <option value="codex">Codex</option>
-              <option value="cursor">Cursor</option>
-            </select>
-          </label>
+        <ModalHeader title="Create Session" />
+        <ModalBody>
+          <fieldset className="space-y-2">
+            <legend className="text-label font-medium text-text-primary">Choose an agent</legend>
+            <div className="grid gap-2" role="radiogroup" aria-label="Session agent">
+              {availableSessionAgents().map(option => {
+                const selected = agent === option.id;
+                const isDefault = config?.defaultOrchestratorAgent === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid={`create-session-agent-${option.id}`}
+                    onClick={() => {
+                      userSelectedAgent.current = true;
+                      setAgent(option.id);
+                    }}
+                    className={cn(
+                      'flex items-center justify-between rounded border px-3 py-2 text-left text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-interactive',
+                      selected ? 'border-interactive bg-surface-selected text-text-primary' : 'border-border-primary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+                    )}
+                  >
+                    <span>{option.label}</span>
+                    {isDefault && <span className="text-[11px] text-text-muted">Default</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
           {error && <p role="alert" className="text-sm text-status-error">{error}</p>}
         </ModalBody>
         <ModalFooter>

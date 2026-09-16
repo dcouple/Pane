@@ -34,6 +34,10 @@ type UiSessionFixture = {
   updatedAt: string;
 };
 
+type SessionFixtureOptions = {
+  listDelayMs?: number;
+};
+
 function sessionFixture(
   id: string,
   name: string,
@@ -109,13 +113,14 @@ async function installSessionsFixture(
   page: Page,
   initialSessions: UiSessionFixture[],
   paneSessions: JsonObject[] = [],
+  fixtureOptions: SessionFixtureOptions = {},
 ): Promise<void> {
   await installElectronApiMock(page, {
     initialConfig: { defaultOrchestratorAgent: 'claude' },
     initialProjects: [{ id: 1, name: 'Pane fixtures', path: '/tmp/pane-fixtures', active: true }],
     initialSessions: paneSessions,
   });
-  await page.addInitScript((seed: UiSessionFixture[]) => {
+  await page.addInitScript(({ seed, listDelayMs }: { seed: UiSessionFixture[]; listDelayMs: number }) => {
     type SessionRecord = UiSessionFixture;
     type Selector = { sessionId?: string; name?: string };
     type Update = Partial<Pick<SessionRecord, 'name' | 'goal' | 'context' | 'decisions' | 'blockers' | 'nextAction'>> & { expectedRevision?: number };
@@ -127,6 +132,8 @@ async function installSessionsFixture(
     let sessions = clone(seed);
     let selectedSessionId = sessions[0]?.id;
     let nextId = 1;
+    let currentListDelayMs = listDelayMs;
+    let selectCalls = 0;
 
     const find = (selector: Selector): SessionRecord => {
       const session = sessions.find(candidate =>
@@ -179,8 +186,13 @@ async function installSessionsFixture(
     const changed = () => window.dispatchEvent(new Event('orchestration-sessions-changed'));
 
     const api = {
-      list: async () => success({ sessions: clone(sessions), selectedSessionId }),
+      list: async () => {
+        const snapshot = { sessions: clone(sessions), selectedSessionId };
+        if (currentListDelayMs > 0) await new Promise(resolve => setTimeout(resolve, currentListDelayMs));
+        return success(snapshot);
+      },
       select: async (selector: Selector) => {
+        selectCalls += 1;
         selectedSessionId = find(selector).id;
         changed();
         return success({ sessions: clone(sessions), selectedSessionId });
@@ -274,7 +286,12 @@ async function installSessionsFixture(
     };
 
     Object.assign(window.electronAPI, { orchestrationSessions: api });
-  }, initialSessions);
+    Object.assign(window.__paneTestElectronMock, {
+      setOrchestrationListDelay: (delayMs: number) => { currentListDelayMs = delayMs; },
+      getOrchestrationSelectCalls: () => selectCalls,
+      emitOrchestrationChanged: (kind = 'updated') => window.dispatchEvent(new CustomEvent('orchestration-sessions-changed', { detail: { sessionId: selectedSessionId, kind } })),
+    });
+  }, { seed: initialSessions, listDelayMs: fixtureOptions.listDelayMs ?? 0 });
 }
 
 async function dismissStartupDialogs(page: Page): Promise<void> {
@@ -289,6 +306,8 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await installSessionsFixture(page, [
     sessionFixture('roadmap', 'Roadmap', 'Plan the next release.', 'Roadmap context stays here.', '2026-09-16T12:00:00.000Z'),
     sessionFixture('onboarding', 'Onboarding', 'Improve onboarding.', 'Onboarding context stays here.', '2026-09-16T12:01:00.000Z'),
+    sessionFixture('existing-new-chat', 'new chat', '', '', '2026-09-16T12:02:00.000Z'),
+    sessionFixture('existing-new-chat-2', ' NEW CHAT 2 ', '', '', '2026-09-16T12:03:00.000Z'),
   ]);
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
@@ -296,35 +315,107 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await expect(page.getByTestId('sessions-nav')).toBeVisible({ timeout: 10_000 });
   await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Roadmap', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Show overview', exact: true })).toBeVisible();
+  await expect(page.getByText('Roadmap context stays here.', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
   await expect(page.getByText('Roadmap context stays here.', { exact: true })).toBeVisible();
 
   await page.getByTestId('new-orchestration-session').click();
   const createDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   await expect(createDialog.getByRole('heading', { name: 'Create Session', exact: true })).toBeVisible();
-  await createDialog.getByLabel('Name', { exact: true }).fill('Release checklist');
-  await createDialog.getByLabel('Goal', { exact: true }).fill('Coordinate the release checks.');
-  await createDialog.getByLabel('Context', { exact: true }).fill('Checklist context stays here.');
+  await expect(createDialog.getByLabel('Name', { exact: true })).toHaveCount(0);
+  await expect(createDialog.getByLabel('Goal', { exact: true })).toHaveCount(0);
+  await expect(createDialog.getByLabel('Context', { exact: true })).toHaveCount(0);
+  await expect(createDialog.getByTestId('create-session-agent-claude')).toHaveAttribute('aria-checked', 'true');
+  await createDialog.getByTestId('create-session-agent-codex').click();
   await createDialog.getByRole('button', { name: 'Create Session', exact: true }).click();
 
-  await expect(page.getByRole('heading', { name: 'Release checklist', exact: true })).toBeVisible();
-  await expect(page.getByText('Checklist context stays here.', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New chat 3', exact: true })).toBeVisible();
+  await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Codex');
+  const configUpdates = await page.evaluate(() => {
+    // SAFETY: installElectronApiMock installs this controller before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getConfigUpdates: () => JsonObject[] } };
+    return mockWindow.__paneTestElectronMock.getConfigUpdates();
+  });
+  expect(configUpdates).toContainEqual({ defaultOrchestratorAgent: 'codex' });
+  await expect(page.getByText('Roadmap context stays here.', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Show overview', exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Edit Session overview' }).click();
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
+  await page.getByRole('button', { name: 'Rename Session' }).click();
   await page.getByLabel('Name', { exact: true }).fill('Release checklist renamed');
-  await page.getByRole('button', { name: 'Save overview', exact: true }).click();
+  await page.getByRole('button', { name: 'Save name', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Release checklist renamed', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Session Release checklist renamed', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Open Session Onboarding', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Onboarding', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
   await expect(page.getByText('Onboarding context stays here.', { exact: true })).toBeVisible();
   await expect(page.getByText('Checklist context stays here.', { exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open Session Release checklist renamed', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Release checklist renamed', exact: true })).toBeVisible();
-  await expect(page.getByText('Checklist context stays here.', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
+  await expect(page.getByText('Checklist context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Onboarding context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Something went wrong')).toHaveCount(0);
+});
+
+test('Session metadata refresh stays quiet and cannot steal a later selection', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture('alpha', 'Alpha', 'Alpha goal.', 'Alpha context.', '2026-09-16T12:00:00.000Z'),
+    sessionFixture('beta', 'Beta', 'Beta goal.', 'Beta context.', '2026-09-16T12:01:00.000Z'),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await page.getByTestId('sessions-nav').click();
+  await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: {
+        setOrchestrationListDelay: (delayMs: number) => void;
+        emitOrchestrationChanged: (kind?: string) => void;
+        getOrchestrationSelectCalls: () => number;
+      };
+    };
+    mockWindow.__paneTestElectronMock.setOrchestrationListDelay(50);
+    for (let index = 0; index < 10; index += 1) {
+      mockWindow.__paneTestElectronMock.emitOrchestrationChanged('updated');
+    }
+  });
+  await page.waitForTimeout(150);
+  await expect(page.getByText('Opening Sessions…', { exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
+  })).toBe(0);
+
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: {
+        setOrchestrationListDelay: (delayMs: number) => void;
+        emitOrchestrationChanged: (kind?: string) => void;
+      };
+    };
+    mockWindow.__paneTestElectronMock.setOrchestrationListDelay(300);
+    mockWindow.__paneTestElectronMock.emitOrchestrationChanged('updated');
+  });
+  await page.getByRole('button', { name: 'Open Session Beta', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Beta', exact: true })).toBeVisible();
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('heading', { name: 'Beta', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
+  })).toBe(1);
 });
 
 test('Sessions group live managed Panes while preserving the focused Pane rows', async ({ page }) => {

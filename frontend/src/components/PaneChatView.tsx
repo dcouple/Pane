@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, RefreshCw, Save, Terminal, X } from 'lucide-react';
+import { ExternalLink, Pencil, RefreshCw, Terminal, X } from 'lucide-react';
 import { API } from '../utils/api';
 import type { Session } from '../types/session';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
@@ -12,35 +12,18 @@ import type {
 import { SessionProvider } from '../contexts/SessionContext';
 import { PanelContainer } from './panels/PanelContainer';
 import { Button } from './ui/Button';
-import { Input, Textarea } from './ui/Input';
-import { ClaudeIcon, CursorIcon, OpenAIIcon } from './ui/BrandIcons';
+import { Input } from './ui/Input';
 import { cn } from '../utils/cn';
 import { LiveRegion } from './ui/LiveRegion';
-import { visibleAgentPresets } from '../utils/agentPresets';
 import { useOrchestrationSessionStore } from '../stores/orchestrationSessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
-
-const ALL_PANE_CHAT_AGENT_OPTIONS: Array<{
-  id: PaneChatAgent;
-  label: string;
-  icon: typeof ClaudeIcon;
-}> = [
-  { id: 'claude', label: 'Claude', icon: ClaudeIcon },
-  { id: 'codex', label: 'Codex', icon: OpenAIIcon },
-  { id: 'cursor', label: 'Cursor', icon: CursorIcon },
-];
 
 const PANE_CHAT_AGENT_LABELS = {
   claude: 'Claude',
   codex: 'Codex',
   cursor: 'Cursor',
 } satisfies Record<PaneChatAgent, string>;
-
-function availableAgentOptions(): typeof ALL_PANE_CHAT_AGENT_OPTIONS {
-  const visible = new Set(visibleAgentPresets().map(preset => preset.id));
-  return ALL_PANE_CHAT_AGENT_OPTIONS.filter(option => visible.has(option.id));
-}
 
 function responseError(response: { success: boolean; error?: string }, fallback: string): Error | null {
   return response.success ? null : new Error(response.error || fallback);
@@ -50,13 +33,13 @@ export function PaneChatView() {
   const [legacyState, setLegacyState] = useState<PaneChatState<Session> | null>(null);
   const [namedView, setNamedView] = useState<OrchestrationSessionView<Session> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [switchingAgent, setSwitchingAgent] = useState<PaneChatAgent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const requestGeneration = useRef(0);
 
   const availability = useOrchestrationSessionStore(state => state.availability);
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
+  const selectedSessionRecord = useOrchestrationSessionStore(state => state.sessions.find(session => session.id === state.selectedSessionId));
   const loadSessions = useOrchestrationSessionStore(state => state.load);
   const updateSession = useOrchestrationSessionStore(state => state.update);
   const selectSession = useOrchestrationSessionStore(state => state.select);
@@ -83,17 +66,21 @@ export function PaneChatView() {
     setError(null);
     try {
       await loadSessions();
+      if (generation !== requestGeneration.current) return;
       const current = useOrchestrationSessionStore.getState();
       if (current.availability === 'error') throw new Error(current.error || 'Sessions could not be loaded');
+      if (sessionId && current.selectedSessionId && sessionId !== current.selectedSessionId) return;
       const targetId = sessionId ?? current.selectedSessionId ?? current.sessions[0]?.id;
       if (!targetId) throw new Error('No Sessions have been created yet');
       if (targetId !== current.selectedSessionId) {
         await selectSession({ sessionId: targetId });
+        if (generation !== requestGeneration.current) return;
       }
       const response = await API.orchestrationSessions.get({ sessionId: targetId });
       const responseFailure = responseError(response, 'Failed to open Session');
       if (responseFailure || !response.data) throw responseFailure ?? new Error('Failed to open Session');
-      if (generation !== requestGeneration.current) return;
+      const selectedAfterLoad = useOrchestrationSessionStore.getState().selectedSessionId;
+      if (generation !== requestGeneration.current || (selectedAfterLoad && selectedAfterLoad !== targetId)) return;
       setNamedView(response.data);
       setLegacyState(null);
     } catch (cause) {
@@ -122,58 +109,10 @@ export function PaneChatView() {
   }, [loadNamedSession, namedView?.session.id, selectedSessionId]);
 
   useEffect(() => {
-    const handleChanged = () => {
-      if (window.electronAPI?.orchestrationSessions) void loadNamedSession(selectedSessionId);
-    };
-    window.addEventListener('orchestration-sessions-changed', handleChanged);
-    return () => window.removeEventListener('orchestration-sessions-changed', handleChanged);
-  }, [loadNamedSession, selectedSessionId]);
-
-  const handleLegacyAgentChange = useCallback(async (agent: PaneChatAgent) => {
-    if (!legacyState || legacyState.agent === agent || switchingAgent) return;
-    setSwitchingAgent(agent);
-    setError(null);
-    setStatusAnnouncement(`Switching Pane Chat to ${PANE_CHAT_AGENT_LABELS[agent]}`);
-    try {
-      const response = await API.paneChat.setAgent(agent);
-      const responseFailure = responseError(response, 'Failed to switch Pane Chat agent');
-      if (responseFailure || !response.data) throw responseFailure ?? new Error('Failed to switch Pane Chat agent');
-      setLegacyState(response.data);
-      setStatusAnnouncement(`Pane Chat is now using ${PANE_CHAT_AGENT_LABELS[agent]}`);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to switch Pane Chat agent');
-    } finally {
-      setSwitchingAgent(null);
-    }
-  }, [legacyState, switchingAgent]);
-
-  const handleNamedAgentChange = useCallback(async (agent: PaneChatAgent) => {
-    if (!namedView || namedView.agent === agent || switchingAgent) return;
-    const sessionId = namedView.session.id;
-    const generation = requestGeneration.current;
-    setSwitchingAgent(agent);
-    setError(null);
-    setStatusAnnouncement(`Switching ${namedView.session.name} to ${PANE_CHAT_AGENT_LABELS[agent]}`);
-    try {
-      const response = await API.orchestrationSessions.setAgent({ sessionId }, agent);
-      const responseFailure = responseError(response, 'Failed to switch Session agent');
-      if (responseFailure || !response.data) throw responseFailure ?? new Error('Failed to switch Session agent');
-      if (generation !== requestGeneration.current || useOrchestrationSessionStore.getState().selectedSessionId !== sessionId) return;
-      setNamedView(response.data);
-      await loadSessions();
-      if (generation === requestGeneration.current && useOrchestrationSessionStore.getState().selectedSessionId === sessionId) {
-        setStatusAnnouncement(`${namedView.session.name} is now using ${PANE_CHAT_AGENT_LABELS[agent]}`);
-      }
-    } catch (cause) {
-      if (generation === requestGeneration.current && useOrchestrationSessionStore.getState().selectedSessionId === sessionId) {
-        setError(cause instanceof Error ? cause.message : 'Failed to switch Session agent');
-      }
-    } finally {
-      if (generation === requestGeneration.current && useOrchestrationSessionStore.getState().selectedSessionId === sessionId) {
-        setSwitchingAgent(null);
-      }
-    }
-  }, [loadSessions, namedView, switchingAgent]);
+    if (!namedView || !selectedSessionRecord || namedView.session.id !== selectedSessionRecord.id) return;
+    if (namedView.session.revision === selectedSessionRecord.revision) return;
+    setNamedView(current => current ? { ...current, session: selectedSessionRecord } : current);
+  }, [namedView, selectedSessionRecord]);
 
   const handleNamedOverviewUpdate = useCallback(async (input: OrchestrationSessionUpdateInput): Promise<OrchestrationSessionRecord> => {
     if (!namedView) throw new Error('No Session selected');
@@ -208,8 +147,6 @@ export function PaneChatView() {
         state={legacyState}
         error={error}
         statusAnnouncement={statusAnnouncement}
-        switchingAgent={switchingAgent}
-        onAgentChange={handleLegacyAgentChange}
         onRetry={loadLegacyPaneChat}
       />
     );
@@ -243,53 +180,21 @@ export function PaneChatView() {
       view={namedView}
       error={error}
       statusAnnouncement={statusAnnouncement}
-      switchingAgent={switchingAgent}
-      onAgentChange={handleNamedAgentChange}
       onOverviewUpdate={handleNamedOverviewUpdate}
       onRetry={() => void loadNamedSession(namedView.session.id)}
     />
   );
 }
 
-interface AgentChoiceProps {
-  selected: PaneChatAgent;
-  switchingAgent: PaneChatAgent | null;
-  label: string;
-  inputName: string;
-  onChange: (agent: PaneChatAgent) => void;
-}
-
-function AgentChoice({ selected, switchingAgent, label, inputName, onChange }: AgentChoiceProps) {
+function PaneChatAgentBadge({ agent }: { agent: PaneChatAgent }) {
   return (
-    <fieldset className="flex h-8 flex-shrink-0 items-center rounded-md border border-border-secondary bg-surface-secondary p-0.5">
-      <legend className="sr-only">{label} agent</legend>
-      {availableAgentOptions().map(option => {
-        const Icon = switchingAgent === option.id ? RefreshCw : option.icon;
-        const isSelected = selected === option.id;
-        return (
-          <label
-            key={option.id}
-            className={cn(
-              'relative inline-flex h-7 min-w-[76px] cursor-pointer items-center justify-center gap-1.5 rounded px-2 text-xs font-medium transition-colors focus-within:ring-2 focus-within:ring-interactive',
-              switchingAgent !== null && 'cursor-not-allowed opacity-70',
-              isSelected ? 'bg-bg-primary text-text-primary shadow-sm' : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-            )}
-          >
-            <input
-              type="radio"
-              name={inputName}
-              value={option.id}
-              checked={isSelected}
-              aria-disabled={switchingAgent !== null || undefined}
-              onChange={() => onChange(option.id)}
-              className="sr-only"
-            />
-            <Icon className={cn('h-3.5 w-3.5', switchingAgent === option.id && 'animate-spin')} />
-            <span>{option.label}</span>
-          </label>
-        );
-      })}
-    </fieldset>
+    <span
+      data-testid="pane-chat-agent-badge"
+      aria-label={`Session agent: ${PANE_CHAT_AGENT_LABELS[agent]}`}
+      className="inline-flex h-7 items-center rounded-md border border-border-secondary bg-surface-secondary px-2.5 text-xs font-medium text-text-secondary"
+    >
+      {PANE_CHAT_AGENT_LABELS[agent]}
+    </span>
   );
 }
 
@@ -297,12 +202,10 @@ interface LegacyPaneChatWorkspaceProps {
   state: PaneChatState<Session>;
   error: string | null;
   statusAnnouncement: string;
-  switchingAgent: PaneChatAgent | null;
-  onAgentChange: (agent: PaneChatAgent) => void;
   onRetry: () => void;
 }
 
-function LegacyPaneChatWorkspace({ state, error, statusAnnouncement, switchingAgent, onAgentChange, onRetry }: LegacyPaneChatWorkspaceProps) {
+function LegacyPaneChatWorkspace({ state, error, statusAnnouncement, onRetry }: LegacyPaneChatWorkspaceProps) {
   return (
     <div className="pane-chat-shell flex-1 flex flex-col overflow-hidden bg-bg-primary">
       <LiveRegion>{statusAnnouncement}</LiveRegion>
@@ -312,7 +215,7 @@ function LegacyPaneChatWorkspace({ state, error, statusAnnouncement, switchingAg
           <h1 className="truncate text-sm font-semibold text-text-primary">Pane Chat</h1>
           {error && <span role="alert" className="truncate text-xs text-status-error">{error}</span>}
         </div>
-        <AgentChoice selected={state.agent} switchingAgent={switchingAgent} label="Pane Chat" inputName="pane-chat-agent" onChange={onAgentChange} />
+        <PaneChatAgentBadge agent={state.agent} />
       </div>
       <SessionProvider session={state.session}>
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -328,16 +231,14 @@ interface NamedSessionWorkspaceProps {
   view: OrchestrationSessionView<Session>;
   error: string | null;
   statusAnnouncement: string;
-  switchingAgent: PaneChatAgent | null;
-  onAgentChange: (agent: PaneChatAgent) => void;
   onOverviewUpdate: (input: OrchestrationSessionUpdateInput) => Promise<OrchestrationSessionRecord>;
   onRetry: () => void;
 }
 
-function NamedSessionWorkspace({ view, error, statusAnnouncement, switchingAgent, onAgentChange, onOverviewUpdate, onRetry }: NamedSessionWorkspaceProps) {
+function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpdate, onRetry }: NamedSessionWorkspaceProps) {
   const [overview, setOverview] = useState<OrchestrationSessionOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [showOverview, setShowOverview] = useState(true);
+  const [showOverview, setShowOverview] = useState(false);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -369,7 +270,6 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, switchingAgent
           <Terminal className="h-4 w-4 flex-shrink-0 text-text-tertiary" />
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold text-text-primary">{view.session.name}</h1>
-            <p className="truncate text-[11px] text-text-muted">{view.session.goal || 'Session conversation'}</p>
           </div>
           {error && <span role="alert" className="truncate text-xs text-status-error">{error}</span>}
         </div>
@@ -377,7 +277,7 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, switchingAgent
           <Button type="button" variant="ghost" size="sm" onClick={() => setShowOverview(value => !value)} aria-expanded={showOverview}>
             {showOverview ? 'Hide overview' : 'Show overview'}
           </Button>
-          <AgentChoice selected={view.agent} switchingAgent={switchingAgent} label={view.session.name} inputName={`orchestration-agent-${view.session.id}`} onChange={onAgentChange} />
+          <PaneChatAgentBadge agent={view.agent} />
         </div>
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -417,22 +317,12 @@ interface SessionOverviewPanelProps {
 function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, onRetry }: SessionOverviewPanelProps) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(record.name);
-  const [goal, setGoal] = useState(record.goal);
-  const [context, setContext] = useState(record.context);
-  const [decisions, setDecisions] = useState(record.decisions.join('\n'));
-  const [blockers, setBlockers] = useState(record.blockers.join('\n'));
-  const [nextAction, setNextAction] = useState(record.nextAction);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (editing) return;
     setName(record.name);
-    setGoal(record.goal);
-    setContext(record.context);
-    setDecisions(record.decisions.join('\n'));
-    setBlockers(record.blockers.join('\n'));
-    setNextAction(record.nextAction);
   }, [editing, record]);
 
   const save = async () => {
@@ -441,11 +331,6 @@ function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, on
     try {
       await onUpdate({
         name,
-        goal,
-        context,
-        decisions: splitLines(decisions),
-        blockers: splitLines(blockers),
-        nextAction,
       });
       setEditing(false);
     } catch (cause) {
@@ -467,22 +352,17 @@ function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, on
         </div>
         <div className="flex items-center gap-1">
           <button type="button" aria-label="Refresh Session overview" title="Refresh" onClick={() => void onRefresh()} className="rounded p-1 text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-interactive"><RefreshCw className="h-3.5 w-3.5" /></button>
-          <button type="button" aria-label={editing ? 'Cancel editing Session overview' : 'Edit Session overview'} title={editing ? 'Cancel editing' : 'Edit overview'} onClick={() => setEditing(value => !value)} className="rounded p-1 text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-interactive">{editing ? <X className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}</button>
+          <button type="button" aria-label={editing ? 'Cancel renaming Session' : 'Rename Session'} title={editing ? 'Cancel renaming' : 'Rename Session'} onClick={() => setEditing(value => !value)} className="rounded p-1 text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-interactive">{editing ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}</button>
         </div>
       </div>
       <div className="space-y-3 p-3 text-xs">
         {editing ? (
           <>
             <Input label="Name" value={name} onChange={event => setName(event.target.value)} fullWidth />
-            <Textarea label="Goal" value={goal} onChange={event => setGoal(event.target.value)} rows={2} fullWidth />
-            <Textarea label="Context" value={context} onChange={event => setContext(event.target.value)} rows={3} fullWidth />
-            <Textarea label="Decisions" helperText="One decision per line" value={decisions} onChange={event => setDecisions(event.target.value)} rows={3} fullWidth />
-            <Textarea label="Blockers" helperText="One blocker per line" value={blockers} onChange={event => setBlockers(event.target.value)} rows={3} fullWidth />
-            <Input label="Next action" value={nextAction} onChange={event => setNextAction(event.target.value)} fullWidth />
             {saveError && <p role="alert" className="text-status-error">{saveError}</p>}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
-              <Button type="button" size="sm" loading={isSaving} loadingText="Saving…" onClick={() => void save()}>Save overview</Button>
+              <Button type="button" size="sm" loading={isSaving} loadingText="Saving…" onClick={() => void save()}>Save name</Button>
             </div>
           </>
         ) : (
@@ -586,10 +466,6 @@ async function openSessionLink(value: string): Promise<void> {
   } catch (cause) {
     console.error('Failed to reveal Session artifact:', cause);
   }
-}
-
-function splitLines(value: string): string[] {
-  return value.split('\n').map(line => line.trim()).filter(Boolean);
 }
 
 function formatActivityTime(value: string): string {
