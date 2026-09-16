@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
+import type { JsonObject } from '../shared/validation/boundaryDecoder';
+
+type UiAssociationFixture = {
+  paneId: string;
+  panelIds: string[];
+  attachedAt: string;
+};
 
 type UiSessionFixture = {
   id: string;
@@ -14,7 +21,7 @@ type UiSessionFixture = {
   nextAction: string;
   evidence: [];
   outputs: [];
-  associations: [];
+  associations: UiAssociationFixture[];
   activity: Array<{
     id: string;
     kind: 'created' | 'updated';
@@ -27,7 +34,14 @@ type UiSessionFixture = {
   updatedAt: string;
 };
 
-function sessionFixture(id: string, name: string, goal: string, context: string, createdAt: string): UiSessionFixture {
+function sessionFixture(
+  id: string,
+  name: string,
+  goal: string,
+  context: string,
+  createdAt: string,
+  associations: UiAssociationFixture[] = [],
+): UiSessionFixture {
   const panelIds = {
     claude: `__orchestration_panel_${id}_claude`,
     codex: `__orchestration_panel_${id}_codex`,
@@ -46,7 +60,7 @@ function sessionFixture(id: string, name: string, goal: string, context: string,
     nextAction: 'Review the context.',
     evidence: [],
     outputs: [],
-    associations: [],
+    associations,
     activity: [{
       id: `${id}-created`,
       kind: 'created',
@@ -60,11 +74,46 @@ function sessionFixture(id: string, name: string, goal: string, context: string,
   };
 }
 
-async function installSessionsFixture(page: Page, initialSessions: UiSessionFixture[]): Promise<void> {
+function paneFixture(
+  id: string,
+  name: string,
+  isFavorite = false,
+): JsonObject {
+  const pane: JsonObject = {
+    id,
+    name,
+    worktreePath: `/tmp/${id}`,
+    prompt: `Work for ${name}`,
+    status: 'ready',
+    createdAt: '2026-09-16T12:00:00.000Z',
+    lastActivity: '2026-09-16T12:00:00.000Z',
+    output: [],
+    jsonMessages: [],
+    isRunning: false,
+    projectId: 1,
+    isFavorite,
+    worktreeOwnership: 'pane',
+    archived: false,
+    isHidden: false,
+    gitStatus: {
+      state: 'modified',
+      additions: 17,
+      deletions: 2,
+    },
+  };
+  if (isFavorite) pane.favoritePinnedAt = '2026-09-16T12:02:00.000Z';
+  return pane;
+}
+
+async function installSessionsFixture(
+  page: Page,
+  initialSessions: UiSessionFixture[],
+  paneSessions: JsonObject[] = [],
+): Promise<void> {
   await installElectronApiMock(page, {
     initialConfig: { defaultOrchestratorAgent: 'claude' },
-    initialProjects: [],
-    initialSessions: [],
+    initialProjects: [{ id: 1, name: 'Pane fixtures', path: '/tmp/pane-fixtures', active: true }],
+    initialSessions: paneSessions,
   });
   await page.addInitScript((seed: UiSessionFixture[]) => {
     type SessionRecord = UiSessionFixture;
@@ -198,8 +247,26 @@ async function installSessionsFixture(page: Page, initialSessions: UiSessionFixt
         record.revision += 1;
         return success(view(record));
       },
-      associate: async (selector: Selector) => success(clone(find(selector))),
-      detach: async (selector: Selector) => success(clone(find(selector))),
+      associate: async (selector: Selector, association: { paneId: string; panelIds?: string[] }) => {
+        const record = find(selector);
+        if (!record.associations.some(candidate => candidate.paneId === association.paneId)) {
+          record.associations.push({
+            paneId: association.paneId,
+            panelIds: association.panelIds ?? [],
+            attachedAt: new Date().toISOString(),
+          });
+          changed();
+        }
+        return success(clone(record));
+      },
+      detach: async (selector: Selector, paneId?: string) => {
+        const record = find(selector);
+        record.associations = paneId
+          ? record.associations.filter(association => association.paneId !== paneId)
+          : [];
+        changed();
+        return success(clone(record));
+      },
       overview: async (selector: Selector) => {
         const record = find(selector);
         return success({ session: clone(record), status: 'unassociated', panes: [], activity: clone(record.activity), refreshedAt: new Date().toISOString() });
@@ -258,4 +325,67 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await expect(page.getByText('Checklist context stays here.', { exact: true })).toBeVisible();
   await expect(page.getByText('Onboarding context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Something went wrong')).toHaveCount(0);
+});
+
+test('Sessions group live managed Panes while preserving the focused Pane rows', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture(
+      'evolution',
+      'Pane evolution',
+      'Track the Pane sidebar evolution.',
+      'Evolution context.',
+      '2026-09-16T12:00:00.000Z',
+      [
+        { paneId: 'pane-evolution-worker', panelIds: [], attachedAt: '2026-09-16T12:00:00.000Z' },
+        { paneId: 'missing-pane', panelIds: [], attachedAt: '2026-09-16T12:00:00.000Z' },
+      ],
+    ),
+    sessionFixture(
+      'doozy',
+      'Doozy fixes',
+      'Track Doozy fixes.',
+      'Doozy context.',
+      '2026-09-16T12:01:00.000Z',
+      [{ paneId: 'pane-doozy-worker', panelIds: [], attachedAt: '2026-09-16T12:01:00.000Z' }],
+    ),
+  ], [
+    paneFixture('pane-evolution-worker', 'Pane/pane chat to session'),
+    paneFixture('pane-doozy-worker', 'Pane/managed pane sidebar'),
+    paneFixture('pinned-pane', 'Pinned pane', true),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await expect(page.getByTestId('sessions-nav')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('usage-nav')).toBeVisible();
+  await expect(page.getByTestId('orchestration-session-evolution')).toContainText('Pane evolution');
+  await expect(page.getByTestId('orchestration-session-evolution')).toContainText('1');
+  await expect(page.getByTestId('orchestration-session-doozy')).toContainText('Doozy fixes');
+  await expect(page.getByRole('button', { name: 'Pane/pane chat to session', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Pane/managed pane sidebar', exact: true })).toBeVisible();
+  await expect(page.getByText('missing-pane', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Pinned pane', { exact: true })).toBeVisible();
+
+  const evolutionToggle = page.getByTestId('orchestration-session-toggle-evolution');
+  await evolutionToggle.click();
+  await expect(evolutionToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByRole('button', { name: 'Pane/pane chat to session', exact: true })).toHaveCount(0);
+  await evolutionToggle.click();
+  await expect(evolutionToggle).toHaveAttribute('aria-expanded', 'true');
+
+  await page.getByTestId('orchestration-session-doozy').click();
+  await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Pane/managed pane sidebar', exact: true }).click();
+  await page.getByTestId('sessions-nav').click();
+  await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();
+
+  await page.evaluate(async () => {
+    await window.electronAPI.orchestrationSessions.associate(
+      { sessionId: 'evolution' },
+      { paneId: 'pinned-pane' },
+    );
+  });
+  await expect(page.getByTestId('orchestration-session-evolution')).toContainText('2');
+  await expect(page.getByRole('button', { name: 'Pinned pane', exact: true })).toBeVisible();
 });

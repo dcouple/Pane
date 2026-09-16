@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronRight, Folder, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { usePanelStore } from '../stores/panelStore';
 import { useConfigStore } from '../stores/configStore';
 import {
   useOrchestrationSessionStore,
@@ -17,10 +18,16 @@ import { Modal, ModalBody, ModalFooter, ModalHeader } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input, Textarea } from './ui/Input';
 import { Tooltip } from './ui/Tooltip';
+import { AgentStatusDot } from './ui/AgentStatusDot';
+import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { cn } from '../utils/cn';
 
 interface OrchestrationSessionNavProps {
   compact?: boolean;
+  /** Pane IDs that are still present in the normal Pane list. */
+  availablePaneIds?: ReadonlySet<string>;
+  /** Renders an associated Pane with the existing Pane row experience. */
+  renderPane?: (paneId: string, parentSessionId: string, index: number) => ReactNode | null;
 }
 
 function statusLabel(session: OrchestrationSessionRecord): string {
@@ -33,11 +40,54 @@ function availabilityIsVisible(availability: OrchestrationSessionAvailability): 
   return availability === 'ready' || availability === 'loading' || availability === 'error';
 }
 
+function useAggregateSessionStatus(sessions: OrchestrationSessionRecord[]) {
+  return usePanelStore(state => rollupAgentDisplayStatus(
+    sessions.map(session => {
+      if (session.blockers.length > 0) return 'blocked';
+      return toAgentDisplayStatus(
+        rollupSessionAgentState(state.agentStatus, state.agentStatusSession, session.internalSessionId),
+        Boolean(state.unviewedCompletedActivity[session.internalSessionId]),
+      );
+    }),
+  ));
+}
+
 function isPaneChatAgent(value: string): value is PaneChatAgent {
   return value === 'claude' || value === 'codex' || value === 'cursor';
 }
 
-export function OrchestrationSessionNav({ compact = false }: OrchestrationSessionNavProps) {
+/** Top-level shortcut that keeps the expanded sidebar's navigation compact. */
+export function OrchestrationSessionShortcut() {
+  const sessions = useOrchestrationSessionStore(state => state.sessions);
+  const availability = useOrchestrationSessionStore(state => state.availability);
+  const aggregateStatus = useAggregateSessionStatus(sessions);
+  const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
+  const activeView = useNavigationStore(state => state.activeView);
+  const setActiveSession = useSessionStore(state => state.setActiveSession);
+
+  if (!availabilityIsVisible(availability)) return null;
+
+  return (
+    <button
+      type="button"
+      data-testid="sessions-nav"
+      onClick={() => {
+        setActiveSession(null);
+        navigateToPaneChat();
+      }}
+      className={cn(
+        'flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive',
+        activeView === 'pane-chat' ? 'bg-surface-hover text-text-primary' : 'text-text-secondary',
+      )}
+    >
+      <MessageSquare className="h-4 w-4" />
+      <span>Sessions</span>
+      <AgentStatusDot status={aggregateStatus} size="sm" className="ml-auto" />
+    </button>
+  );
+}
+
+export function OrchestrationSessionNav({ compact = false, availablePaneIds, renderPane }: OrchestrationSessionNavProps) {
   const sessions = useOrchestrationSessionStore(state => state.sessions);
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
   const availability = useOrchestrationSessionStore(state => state.availability);
@@ -48,6 +98,7 @@ export function OrchestrationSessionNav({ compact = false }: OrchestrationSessio
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const [showCreate, setShowCreate] = useState(false);
+  const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
 
   const createSession = useCallback(async (input: OrchestrationSessionCreateInput) => {
     await create(input);
@@ -153,21 +204,9 @@ export function OrchestrationSessionNav({ compact = false }: OrchestrationSessio
 
   return (
     <>
-      <div className="mt-1 border-b border-border-primary pb-1" role="group" aria-label="Sessions">
-        <div className="flex items-center gap-1 px-3 py-1">
-          <button
-            type="button"
-            data-testid="sessions-nav"
-            onClick={() => {
-              setActiveSession(null);
-              navigateToPaneChat();
-            }}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left text-[13px] font-semibold text-text-primary hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive"
-          >
-            <MessageSquare className="h-4 w-4 flex-shrink-0 text-text-tertiary" />
-            <span className="truncate">Sessions</span>
-            <ChevronRight className="ml-auto h-3.5 w-3.5 flex-shrink-0 text-text-muted" />
-          </button>
+      <div className="mt-1" role="group" aria-label="Sessions">
+        <div className="flex items-center justify-between gap-2 pl-3 pr-2 py-0.5">
+          <span className="truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary">Sessions</span>
           <button
             type="button"
             data-testid="new-orchestration-session"
@@ -194,23 +233,61 @@ export function OrchestrationSessionNav({ compact = false }: OrchestrationSessio
         {availability === 'ready' && sessions.length === 0 && (
           <p className="px-4 py-1 text-[11px] text-text-muted">Create a Session to keep intent and discussion together.</p>
         )}
-        {sessions.map(session => (
-          <button
-            type="button"
-            key={session.id}
-            data-testid={session.id === LEGACY_ORCHESTRATION_SESSION_ID ? 'orchestration-pane-chat' : `orchestration-session-${session.id}`}
-            aria-label={session.id === LEGACY_ORCHESTRATION_SESSION_ID ? 'Pane Chat' : `Open Session ${session.name}`}
-            onClick={() => void openSession(session.id)}
-            className={cn(
-              'flex h-8 w-full items-center gap-2 px-4 text-left text-[13px] transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive',
-              session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary',
-            )}
-          >
-            <span className={cn('h-1.5 w-1.5 flex-shrink-0 rounded-full', session.blockers.length > 0 ? 'bg-status-error' : session.report ? 'bg-status-success' : 'bg-text-muted')} aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{session.name}</span>
-            {session.associations.length > 0 && <span className="text-[10px] text-text-muted">{session.associations.length}</span>}
-          </button>
-        ))}
+        {sessions.map(session => {
+          const visibleAssociations = session.associations.filter(association => (
+            !availablePaneIds || availablePaneIds.has(association.paneId)
+          ));
+          const paneRows = renderPane
+            ? visibleAssociations
+              .map((association, index) => renderPane(association.paneId, session.id, index))
+              .filter((row): row is ReactNode => row !== null && row !== undefined)
+            : [];
+          const expanded = !collapsedSessionIds.has(session.id);
+          const isLegacy = session.id === LEGACY_ORCHESTRATION_SESSION_ID;
+          const label = session.name || 'Pane Chat';
+
+          return (
+            <div key={session.id} className="group/orchestration-session">
+              <div className={cn(
+                'flex h-8 w-full items-center gap-0.5 text-[13px] transition-colors',
+                session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
+              )}>
+                <button
+                  type="button"
+                  data-testid={`orchestration-session-toggle-${session.id}`}
+                  aria-label={`${expanded ? 'Collapse' : 'Expand'} Session ${label}`}
+                  aria-expanded={expanded}
+                  aria-controls={paneRows.length > 0 ? `orchestration-session-panes-${session.id}` : undefined}
+                  onClick={() => setCollapsedSessionIds(current => {
+                    const next = new Set(current);
+                    if (next.has(session.id)) next.delete(session.id);
+                    else next.add(session.id);
+                    return next;
+                  })}
+                  className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+                >
+                  {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+                <button
+                  type="button"
+                  data-testid={isLegacy ? 'orchestration-pane-chat' : `orchestration-session-${session.id}`}
+                  aria-label={isLegacy ? label : `Open Session ${session.name}`}
+                  onClick={() => void openSession(session.id)}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+                >
+                  <Folder className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  {paneRows.length > 0 && <span className="pr-1 text-[10px] tabular-nums text-text-muted">{paneRows.length}</span>}
+                </button>
+              </div>
+              {expanded && paneRows.length > 0 && (
+                <div id={`orchestration-session-panes-${session.id}`} className="ml-4 border-l border-border-primary">
+                  {paneRows}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
       <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
     </>
@@ -240,9 +317,9 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
       setContext('');
       setAgent('claude');
       setError(null);
-      if (!config) void fetchConfig();
+      if (!useConfigStore.getState().config) void fetchConfig();
     }
-  }, [config, fetchConfig, isOpen]);
+  }, [fetchConfig, isOpen]);
 
   useEffect(() => {
     if (isOpen && config?.defaultOrchestratorAgent) setAgent(config.defaultOrchestratorAgent);

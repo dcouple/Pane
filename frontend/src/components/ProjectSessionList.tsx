@@ -19,7 +19,7 @@ import { cn } from '../utils/cn';
 import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
 import { usePanelStore } from '../stores/panelStore';
-import { OrchestrationSessionNav } from './OrchestrationSessionNav';
+import { OrchestrationSessionNav, OrchestrationSessionShortcut } from './OrchestrationSessionNav';
 import { useOrchestrationSessionStore } from '../stores/orchestrationSessionStore';
 import type { SidebarNavigationScope } from '../stores/navigationStore';
 import {
@@ -90,6 +90,7 @@ export function ProjectSessionList({
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
   const orchestrationAvailability = useOrchestrationSessionStore(s => s.availability);
+  const selectOrchestrationSession = useOrchestrationSessionStore(s => s.select);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
   const navigateToUsage = useNavigationStore(s => s.navigateToUsage);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
@@ -186,11 +187,11 @@ export function ProjectSessionList({
     persistExpandedProjects(expandedProjectIds);
   };
 
-  const handleSessionClick = (sessionId: string, scope: SidebarNavigationScope = 'repositories') => {
+  const handleSessionClick = useCallback((sessionId: string, scope: SidebarNavigationScope = 'repositories') => {
     setSidebarNavigationScope(scope);
     setActiveSession(sessionId);
     navigateToSessions();
-  };
+  }, [navigateToSessions, setActiveSession, setSidebarNavigationScope]);
 
   const handleNewSession = (project: Project) => {
     setCreateForProject(project);
@@ -198,21 +199,21 @@ export function ProjectSessionList({
   };
 
   // Session operations
-  const handleArchiveSession = async (sessionId: string) => {
+  const handleArchiveSession = useCallback(async (sessionId: string) => {
     try {
       await API.sessions.delete(sessionId);
     } catch (e) {
       console.error('Failed to archive session:', e);
     }
-  };
+  }, []);
 
-  const handleTogglePinnedSession = async (sessionId: string) => {
+  const handleTogglePinnedSession = useCallback(async (sessionId: string) => {
     try {
       await API.sessions.toggleFavorite(sessionId);
     } catch (e) {
       console.error('Failed to toggle pinned session:', e);
     }
-  };
+  }, []);
 
   // Project operations
   const handleDeleteProject = async (projectId: number) => {
@@ -289,6 +290,45 @@ export function ProjectSessionList({
     return map;
   }, [projects, expandedProjects, sessionsByProject]);
 
+  const paneById = useMemo(
+    () => new Map(sessions.map(session => [session.id, session])),
+    [sessions],
+  );
+
+  const availablePaneIds = useMemo(
+    () => new Set(sessions.filter(session => !session.archived && !session.isHidden).map(session => session.id)),
+    [sessions],
+  );
+
+  const handleManagedPaneClick = useCallback(async (paneId: string, parentSessionId: string) => {
+    try {
+      // Keep the parent Session selected so the top-level Sessions shortcut
+      // returns to the conversation that owns the focused Pane.
+      await selectOrchestrationSession({ sessionId: parentSessionId });
+    } catch {
+      // The Pane remains navigable if the orchestration selection cannot refresh.
+    }
+    handleSessionClick(paneId, 'repositories');
+  }, [handleSessionClick, selectOrchestrationSession]);
+
+  const renderManagedPane = useCallback((paneId: string, parentSessionId: string) => {
+    const pane = paneById.get(paneId);
+    if (!pane || pane.archived || pane.isHidden) return null;
+
+    return (
+      <SessionRow
+        key={`orchestration-${parentSessionId}-${pane.id}`}
+        session={pane}
+        isActive={pane.id === activeSessionId}
+        globalIndex={globalSessionIndex.get(pane.id) ?? -1}
+        onClick={() => void handleManagedPaneClick(pane.id, parentSessionId)}
+        onArchive={() => void handleArchiveSession(pane.id)}
+        onTogglePinned={() => void handleTogglePinnedSession(pane.id)}
+        rowLayout={sidebarPaneRowLayout}
+      />
+    );
+  }, [activeSessionId, globalSessionIndex, handleArchiveSession, handleManagedPaneClick, handleTogglePinnedSession, paneById, sidebarPaneRowLayout]);
+
   return (
     <>
       <div className="flex flex-col py-1.5">
@@ -305,8 +345,6 @@ export function ProjectSessionList({
           <Home className="w-4 h-4" />
           <span>Home</span>
         </button>
-
-        <OrchestrationSessionNav />
 
         {orchestrationAvailability === 'unavailable' || orchestrationAvailability === 'idle' ? (
           <button
@@ -330,7 +368,9 @@ export function ProjectSessionList({
             <span>Pane Chat</span>
             <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
           </button>
-        ) : null}
+        ) : (
+          <OrchestrationSessionShortcut />
+        )}
 
         <button
           type="button"
@@ -367,6 +407,11 @@ export function ProjectSessionList({
         )}
 
         <div className="mx-2 my-2 border-t border-border-primary" aria-hidden="true" />
+
+        <OrchestrationSessionNav
+          availablePaneIds={availablePaneIds}
+          renderPane={renderManagedPane}
+        />
 
         {pinnedSessions.length > 0 && (
           <>
