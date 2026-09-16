@@ -339,6 +339,40 @@ describe('OrchestrationSessionManager', () => {
     }
   });
 
+  it('normalizes persisted unsupported Session agents before opening their panels', async () => {
+    const legacy = {
+      ...orchestrationRecord(LEGACY_ORCHESTRATION_SESSION_ID, 'Pane Chat'),
+      internalSessionId: PANE_CHAT_SESSION_ID,
+      panelIds: {
+        claude: getPaneChatPanelId('claude'),
+        codex: getPaneChatPanelId('codex'),
+        cursor: getPaneChatPanelId('cursor'),
+      },
+    } satisfies OrchestrationSessionRecord;
+    const persisted = orchestrationRecord('windows-session', 'Windows Session');
+    const fixture = createFixture('claude', {
+      version: 1,
+      sessions: [legacy, { ...persisted, agent: 'cursor' }],
+      selectedSessionId: persisted.id,
+    });
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      await fixture.manager.initialize();
+      const normalized = await fixture.manager.get({ sessionId: persisted.id });
+      expect(normalized.agent).toBe('claude');
+      expect(normalized.panelIds).toEqual(persisted.panelIds);
+      expect(normalized.activity).toEqual(persisted.activity);
+
+      const view = await fixture.manager.getView({ sessionId: persisted.id });
+      expect(view.agent).toBe('claude');
+      expect(view.panel.id).toBe(persisted.panelIds.claude);
+      expect(panelManager.getPanel(persisted.panelIds.cursor)).toBeUndefined();
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
+  });
+
   it('imports each existing legacy agent history into an addressable Session without duplicating ownership', async () => {
     const existing = orchestrationRecord('existing-session', 'Pane Chat · Claude');
     const fixture = createFixture('codex', { version: 1, sessions: [existing], selectedSessionId: existing.id });
@@ -521,6 +555,31 @@ describe('OrchestrationSessionManager', () => {
     expect(panelManager.getPanel(persisted.panelIds[persisted.agent])).toBeDefined();
     const resumed = await fixture.manager.getView({ sessionId: persisted.id });
     expect(resumed.internalSession.id).toBe(persisted.internalSessionId);
+  });
+
+  it('does not commit an agent change when its panel cannot be provisioned', async () => {
+    const fixture = createFixture();
+    const created = await fixture.manager.create({ name: 'Agent Retry', agent: 'claude' });
+    const changedEvents: string[] = [];
+    fixture.manager.on('changed', event => changedEvents.push(event.kind));
+    vi.mocked(fixture.skillCacheManager.ensurePaneChatGuide).mockRejectedValueOnce(new Error('guide unavailable'));
+
+    await expect(fixture.manager.update(
+      { sessionId: created.session.id },
+      { agent: 'codex', expectedRevision: created.session.revision },
+    )).rejects.toThrow('guide unavailable');
+
+    const afterFailure = await fixture.manager.get({ sessionId: created.session.id });
+    expect(afterFailure.agent).toBe('claude');
+    expect(afterFailure.revision).toBe(created.session.revision);
+    expect(changedEvents).toEqual([]);
+
+    const retried = await fixture.manager.update(
+      { sessionId: created.session.id },
+      { agent: 'codex', expectedRevision: created.session.revision },
+    );
+    expect(retried.agent).toBe('codex');
+    expect(retried.revision).toBe(created.session.revision + 1);
   });
 
   it('recreates missing named Session owners once on startup without touching the shared legacy owner', async () => {

@@ -245,9 +245,9 @@ export class OrchestrationSessionManager extends EventEmitter {
         nextRecord.reportAcceptedAt = undefined;
       }
       trimActivity(nextRecord);
+      if (nextRecord.agent !== current.agent) await this.ensurePanelForAgent(nextRecord);
       const nextData = replaceSession(data, nextRecord);
       this.store.write(nextData);
-      if (nextRecord.agent !== current.agent) await this.ensurePanelForAgent(nextRecord);
       this.emitChanged(nextRecord, input.report ? 'report' : 'updated');
       return clone(nextRecord);
     });
@@ -387,9 +387,21 @@ export class OrchestrationSessionManager extends EventEmitter {
     if (this.initialized) return;
     const data = this.store.read();
     const migrated = await this.migrateLegacySessions(data);
-    if (migrated !== data) this.store.write(migrated);
-    this.reconcilePersistedSessionOwners(migrated);
+    const normalized = this.normalizePersistedSessionAgents(migrated);
+    if (normalized !== data) this.store.write(normalized);
+    this.reconcilePersistedSessionOwners(normalized);
     this.initialized = true;
+  }
+
+  private normalizePersistedSessionAgents(data: OrchestrationSessionStoreData): OrchestrationSessionStoreData {
+    let changed = false;
+    const sessions = data.sessions.map(session => {
+      const agent = resolveSupportedPaneChatAgent(session.agent);
+      if (agent === session.agent) return session;
+      changed = true;
+      return { ...session, agent };
+    });
+    return changed ? { ...data, sessions } : data;
   }
 
   private reconcilePersistedSessionOwners(data: OrchestrationSessionStoreData): void {
