@@ -4,6 +4,7 @@ import { withLock } from '../utils/mutex';
 import { getAppDirectory } from '../utils/appDirectory';
 import { panelManager } from './panelManager';
 import { terminalPanelManager } from './terminalPanelManager';
+import { databaseService } from './database';
 import type { ConfigManager } from './configManager';
 import type { SessionManager } from './sessionManager';
 import type { Session } from '../types/session';
@@ -47,6 +48,14 @@ import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDec
 import { OrchestrationSessionStore } from './orchestrationSessionStore';
 
 const ORCHESTRATION_SESSION_PANEL_PREFIX = '__orchestration_panel_';
+const LEGACY_AGENT_SESSION_ID_PREFIX = `${LEGACY_ORCHESTRATION_SESSION_ID}-`;
+const PANE_CHAT_AGENTS: readonly PaneChatAgent[] = ['claude', 'codex', 'cursor'];
+type PaneChatPanelIds = { claude: string; codex: string; cursor: string };
+const PANE_CHAT_AGENT_LABELS = {
+  claude: 'Claude',
+  codex: 'Codex',
+  cursor: 'Cursor',
+} satisfies Record<PaneChatAgent, string>;
 
 const ORCHESTRATION_SESSION_TITLE = 'Session';
 const ORCHESTRATION_BOOTSTRAP_VERSION = 1;
@@ -365,15 +374,94 @@ export class OrchestrationSessionManager extends EventEmitter {
   private async ensureInitializedUnlocked(): Promise<void> {
     if (this.initialized) return;
     const data = this.store.read();
-    if (!data.sessions.some(session => session.id === LEGACY_ORCHESTRATION_SESSION_ID)) {
-      const legacy = await this.migrateLegacyPaneChat();
-      this.store.write({
-        ...data,
-        selectedSessionId: data.selectedSessionId ?? legacy.id,
-        sessions: [...data.sessions, legacy],
-      });
-    }
+    const migrated = await this.migrateLegacySessions(data);
+    if (migrated !== data) this.store.write(migrated);
     this.initialized = true;
+  }
+
+  private async migrateLegacySessions(data: OrchestrationSessionStoreData): Promise<OrchestrationSessionStoreData> {
+    let sessions = [...data.sessions];
+    let selectedSessionId = data.selectedSessionId;
+    let legacy = sessions.find(session => session.id === LEGACY_ORCHESTRATION_SESSION_ID);
+    let changed = false;
+
+    if (!legacy) {
+      legacy = await this.migrateLegacyPaneChat();
+      sessions.push(legacy);
+      selectedSessionId ??= legacy.id;
+      changed = true;
+    }
+
+    const importedAgents = new Set<PaneChatAgent>();
+    for (const agent of PANE_CHAT_AGENTS) {
+      if (agent === legacy.agent) continue;
+      const importedId = getLegacyAgentSessionId(agent);
+      const existing = sessions.find(session => session.id === importedId);
+      const panel = panelManager.getPanel(getPaneChatPanelId(agent));
+      const hasHistory = panel?.sessionId === legacy.internalSessionId && panelHasLegacyHistory(panel);
+      if (!existing && !hasHistory) continue;
+
+      importedAgents.add(agent);
+      if (!existing) {
+        sessions.push(this.createLegacyAgentSession(legacy, agent, sessions));
+        changed = true;
+      }
+    }
+
+    const legacyId = legacy.id;
+    const legacyPanelIds = legacyPanelIdsForOwner(legacyId, legacy.agent, importedAgents);
+    if (!samePanelIds(legacy.panelIds, legacyPanelIds)) {
+      const nextLegacy = { ...legacy, panelIds: legacyPanelIds };
+      legacy = nextLegacy;
+      sessions = sessions.map(session => session.id === legacyId ? nextLegacy : session);
+      changed = true;
+    }
+
+    for (const agent of importedAgents) {
+      const importedId = getLegacyAgentSessionId(agent);
+      const existing = sessions.find(session => session.id === importedId);
+      if (!existing) continue;
+      const panelIds = legacyAgentPanelIdsForOwner(existing.id, agent);
+      if (samePanelIds(existing.panelIds, panelIds)) continue;
+      sessions = sessions.map(session => session.id === existing.id ? { ...session, panelIds } : session);
+      changed = true;
+    }
+
+    return changed ? { ...data, selectedSessionId, sessions } : data;
+  }
+
+  private createLegacyAgentSession(
+    legacy: OrchestrationSessionRecord,
+    agent: PaneChatAgent,
+    sessions: OrchestrationSessionRecord[],
+  ): OrchestrationSessionRecord {
+    const id = getLegacyAgentSessionId(agent);
+    const now = legacy.createdAt;
+    return {
+      id,
+      name: uniqueLegacyAgentName(legacy.name, agent, sessions),
+      agent,
+      internalSessionId: legacy.internalSessionId,
+      panelIds: legacyAgentPanelIdsForOwner(id, agent),
+      goal: '',
+      context: '',
+      decisions: [],
+      blockers: [],
+      nextAction: '',
+      evidence: [],
+      outputs: [],
+      associations: [],
+      activity: [{
+        id: `${id}-imported`,
+        kind: 'created',
+        message: `Imported existing ${PANE_CHAT_AGENT_LABELS[agent]} Pane Chat terminal history.`,
+        at: now,
+        source: 'system',
+      }],
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
   }
 
   private async migrateLegacyPaneChat(): Promise<OrchestrationSessionRecord> {
@@ -677,6 +765,71 @@ function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
 
 function normalizeSessionName(name: string): string {
   return name.trim().toLocaleLowerCase();
+}
+
+function getLegacyAgentSessionId(agent: PaneChatAgent): string {
+  return `${LEGACY_AGENT_SESSION_ID_PREFIX}${agent}`;
+}
+
+function legacyPanelIdsForOwner(
+  ownerId: string,
+  ownerAgent: PaneChatAgent,
+  importedAgents: ReadonlySet<PaneChatAgent>,
+): PaneChatPanelIds {
+  return {
+    claude: ownerAgent === 'claude' || !importedAgents.has('claude')
+      ? getPaneChatPanelId('claude')
+      : getOrchestrationPanelId(ownerId, 'claude'),
+    codex: ownerAgent === 'codex' || !importedAgents.has('codex')
+      ? getPaneChatPanelId('codex')
+      : getOrchestrationPanelId(ownerId, 'codex'),
+    cursor: ownerAgent === 'cursor' || !importedAgents.has('cursor')
+      ? getPaneChatPanelId('cursor')
+      : getOrchestrationPanelId(ownerId, 'cursor'),
+  };
+}
+
+function legacyAgentPanelIdsForOwner(ownerId: string, ownerAgent: PaneChatAgent): PaneChatPanelIds {
+  return {
+    claude: ownerAgent === 'claude' ? getPaneChatPanelId('claude') : getOrchestrationPanelId(ownerId, 'claude'),
+    codex: ownerAgent === 'codex' ? getPaneChatPanelId('codex') : getOrchestrationPanelId(ownerId, 'codex'),
+    cursor: ownerAgent === 'cursor' ? getPaneChatPanelId('cursor') : getOrchestrationPanelId(ownerId, 'cursor'),
+  };
+}
+
+function samePanelIds(left: Record<PaneChatAgent, string>, right: Record<PaneChatAgent, string>): boolean {
+  return PANE_CHAT_AGENTS.every(agent => left[agent] === right[agent]);
+}
+
+function panelHasLegacyHistory(panel: ToolPanel): boolean {
+  // SAFETY: PanelManager returns the persisted ToolPanel boundary and legacy
+  // terminal panels store their launch metadata in TerminalPanelState.
+  const customState = panel.state.customState as TerminalPanelState | undefined;
+  if (customState?.isInitialized === true
+    || customState?.isCliReady === true
+    || customState?.initialInputSentAt !== undefined
+    || customState?.agentSessionId !== undefined) {
+    return true;
+  }
+  const buffers = databaseService.getPanelBuffers(panel.id);
+  return buffers !== null && [buffers.scrollback, buffers.serialized, buffers.alternate]
+    .some(buffer => buffer !== null && buffer.length > 0);
+}
+
+function uniqueLegacyAgentName(
+  baseName: string,
+  agent: PaneChatAgent,
+  sessions: OrchestrationSessionRecord[],
+): string {
+  const base = `${baseName} · ${PANE_CHAT_AGENT_LABELS[agent]}`;
+  const existingNames = new Set(sessions.map(session => normalizeSessionName(session.name)));
+  let candidate = base;
+  let suffix = 2;
+  while (existingNames.has(normalizeSessionName(candidate))) {
+    candidate = `${base} ${suffix}`;
+    suffix += 1;
+  }
+  return candidate;
 }
 
 function validateAssociationInput(input: OrchestrationAssociationInput): void {

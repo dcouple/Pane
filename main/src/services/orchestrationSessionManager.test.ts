@@ -15,9 +15,11 @@ import type {
   OrchestrationLink,
   OrchestrationSessionCreateInput,
   OrchestrationSessionRecord,
+  OrchestrationSessionStoreData,
   OrchestrationSessionUpdateInput,
 } from '../../../shared/types/orchestrationSession';
 import { LEGACY_ORCHESTRATION_SESSION_ID } from '../../../shared/types/orchestrationSession';
+import { getPaneChatPanelId, PANE_CHAT_SESSION_ID, type PaneChatAgent } from '../../../shared/types/paneChat';
 import { OrchestrationSessionStore } from './orchestrationSessionStore';
 import { terminalPanelManager } from './terminalPanelManager';
 import { OrchestrationSessionManager } from './orchestrationSessionManager';
@@ -108,7 +110,7 @@ function ensureDatabaseSession(session: Session): void {
     .run(session.archived ? 1 : 0, session.isHidden ? 1 : 0, session.id);
 }
 
-function createFixture() {
+function createFixture(initialData?: OrchestrationSessionStoreData) {
   const sessions = new Map<string, Session>();
   const legacySession = createSession('__pane_chat_session__', 'Pane Chat', {
     output: ['prior conversation line'],
@@ -150,16 +152,18 @@ function createFixture() {
   const skillCacheManager = serviceStub<SkillCacheManager>({
     ensurePaneChatGuide: vi.fn(async () => '/tmp/issue-653/guide.md'),
   });
+  const store = createStore();
+  if (initialData) store.write(initialData);
   const manager = new OrchestrationSessionManager(
     configManager,
     sessionManager,
     skillCacheManager,
     paneChatManager,
     undefined,
-    createStore(),
+    store,
   );
 
-  return { manager, sessions, sessionManager, paneChatManager, configManager };
+  return { manager, sessions, sessionManager, paneChatManager, configManager, store };
 }
 
 function paneFixture(
@@ -185,6 +189,64 @@ async function seedPanel(panel: ToolPanel): Promise<ToolPanel> {
     initialState: { customState: panel.state.customState },
     metadata: panel.metadata,
   });
+}
+
+async function seedLegacyPanel(agent: PaneChatAgent, agentSessionId: string): Promise<ToolPanel> {
+  const panel = createPanel(getPaneChatPanelId(agent), PANE_CHAT_SESSION_ID, `Pane Chat · ${agent}`);
+  panel.state.customState = {
+    agentType: agent,
+    agentSessionId,
+    isInitialized: true,
+    scrollbackBuffer: `${agent} historical terminal output`,
+  };
+  const existing = panelManager.getPanel(panel.id);
+  if (existing) {
+    await panelManager.updatePanel(panel.id, { title: panel.title, state: panel.state });
+    return panelManager.getPanel(panel.id) ?? existing;
+  }
+  return seedPanel(panel);
+}
+
+function orchestrationRecord(id: string, name: string): OrchestrationSessionRecord {
+  const timestamp = '2026-09-16T12:00:00.000Z';
+  return {
+    id,
+    name,
+    agent: 'claude',
+    internalSessionId: `${id}-terminal`,
+    panelIds: {
+      claude: `${id}-claude`,
+      codex: `${id}-codex`,
+      cursor: `${id}-cursor`,
+    },
+    goal: 'Existing goal',
+    context: 'Existing context',
+    decisions: ['Keep this record'],
+    blockers: [],
+    nextAction: 'Review existing context',
+    evidence: [createLink('Existing evidence')],
+    outputs: [createLink('Existing output')],
+    associations: [],
+    activity: [{
+      id: `${id}-created`,
+      kind: 'created',
+      message: 'Created existing Session.',
+      at: timestamp,
+      source: 'user',
+    }],
+    report: {
+      summary: 'Existing report',
+      status: 'reported',
+      evidence: [createLink('Report evidence')],
+      reportedAt: timestamp,
+      provenance: 'test fixture',
+    },
+    reportActivityId: `${id}-created`,
+    reportAcceptedAt: timestamp,
+    revision: 4,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
 }
 
 afterEach(() => {
@@ -234,6 +296,81 @@ describe('OrchestrationSessionManager', () => {
     expect(persisted.internalSessionId).toBe(imported.internalSessionId);
     expect(persisted.panelIds).toEqual(imported.panelIds);
     expect(first.paneChatManager.getOrCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('imports each existing legacy agent history into an addressable Session without duplicating ownership', async () => {
+    const existing = orchestrationRecord('existing-session', 'Pane Chat · Claude');
+    const fixture = createFixture({ version: 1, sessions: [existing], selectedSessionId: existing.id });
+    const configBefore = fixture.configManager.getConfig();
+    const claudePanel = await seedLegacyPanel('claude', 'claude-resume-id');
+    const codexPanel = await seedLegacyPanel('codex', 'codex-resume-id');
+
+    await fixture.manager.initialize();
+    const first = await fixture.manager.list();
+    const legacy = first.sessions.find(session => session.id === LEGACY_ORCHESTRATION_SESSION_ID);
+    const claude = first.sessions.find(session => session.id === `${LEGACY_ORCHESTRATION_SESSION_ID}-claude`);
+    expect(legacy).toBeDefined();
+    expect(claude).toBeDefined();
+    if (!legacy || !claude) throw new Error('Legacy migration did not create expected Sessions');
+
+    expect(first.selectedSessionId).toBe(existing.id);
+    expect(fixture.configManager.getConfig()).toEqual(configBefore);
+    expect(first.sessions.find(session => session.id === existing.id)).toMatchObject({
+      name: existing.name,
+      goal: existing.goal,
+      context: existing.context,
+      report: existing.report,
+      revision: existing.revision,
+    });
+    expect(claude.name).toBe('Pane Chat · Claude 2');
+    expect(claude.agent).toBe('claude');
+    expect(claude.internalSessionId).toBe('__pane_chat_session__');
+    expect(claude.panelIds.claude).toBe(claudePanel.id);
+    expect(claude.goal).toBe('');
+    expect(claude.context).toBe('');
+    expect(claude.evidence).toEqual([]);
+    expect(claude.outputs).toEqual([]);
+    expect(claude.associations).toEqual([]);
+    expect(claude.report).toBeUndefined();
+    expect(claude.activity).toHaveLength(1);
+    expect(claude.activity[0]).toMatchObject({ kind: 'created', source: 'system' });
+
+    expect(legacy.agent).toBe('codex');
+    expect(legacy.panelIds.codex).toBe(codexPanel.id);
+    expect(legacy.panelIds.claude).not.toBe(claudePanel.id);
+    expect(first.sessions.some(session => session.id === `${LEGACY_ORCHESTRATION_SESSION_ID}-codex`)).toBe(false);
+    expect(first.sessions.some(session => session.id === `${LEGACY_ORCHESTRATION_SESSION_ID}-cursor`)).toBe(false);
+    const panelOwners = first.sessions.flatMap(session => Object.values(session.panelIds));
+    expect(new Set(panelOwners).size).toBe(panelOwners.length);
+
+    const claudeView = await fixture.manager.getView({ sessionId: claude.id });
+    expect(claudeView.panel.id).toBe(claudePanel.id);
+    expect(claudeView.panel.state.customState).toMatchObject({ agentSessionId: 'claude-resume-id' });
+    expect(databaseService.getPanelBuffers(claudePanel.id)?.scrollback).toBe('claude historical terminal output');
+    const legacyView = await fixture.manager.getView({ sessionId: legacy.id });
+    expect(legacyView.panel.id).toBe(codexPanel.id);
+    expect(legacyView.panel.state.customState).toMatchObject({ agentSessionId: 'codex-resume-id' });
+
+    await fixture.manager.notifyLiveActivity(claudePanel.id, 'working');
+    const afterActivity = await fixture.manager.list();
+    expect(afterActivity.sessions.find(session => session.id === claude.id)?.activity.at(-1)?.panelId).toBe(claudePanel.id);
+    expect(afterActivity.sessions.find(session => session.id === legacy.id)?.activity.some(activity => activity.panelId === claudePanel.id)).toBe(false);
+
+    const reloaded = new OrchestrationSessionManager(
+      fixture.configManager,
+      fixture.sessionManager,
+      serviceStub<SkillCacheManager>({ ensurePaneChatGuide: vi.fn(async () => '/tmp/issue-653/guide.md') }),
+      serviceStub<PaneChatManager>({ getOrCreate: vi.fn(async () => { throw new Error('rerun migration must not create Pane Chat state'); }) }),
+      undefined,
+      fixture.store,
+    );
+    await reloaded.initialize();
+    const second = await reloaded.list();
+    expect(second.selectedSessionId).toBe(existing.id);
+    expect(second.sessions.filter(session => session.id === claude.id)).toHaveLength(1);
+    expect(second.sessions.filter(session => session.id === `${LEGACY_ORCHESTRATION_SESSION_ID}-codex`)).toHaveLength(0);
+    expect(second.sessions).toHaveLength(first.sessions.length);
+    expect(panelManager.getPanel(getPaneChatPanelId('cursor'))).toBeUndefined();
   });
 
   it('gives each named Session stable hidden terminal identities while switching agent conversations', async () => {
