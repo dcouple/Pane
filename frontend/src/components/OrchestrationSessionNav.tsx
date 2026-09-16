@@ -49,6 +49,12 @@ function availableSessionAgents(): ReadonlyArray<{ id: PaneChatAgent; label: str
   return SESSION_AGENT_OPTIONS.filter(option => visible.has(option.id));
 }
 
+function supportedSessionAgent(preferred?: PaneChatAgent): PaneChatAgent {
+  const options = availableSessionAgents();
+  if (preferred && options.some(option => option.id === preferred)) return preferred;
+  return options[0]?.id ?? DEFAULT_PANE_CHAT_AGENT;
+}
+
 function nextSessionName(sessions: readonly OrchestrationSessionRecord[]): string {
   const existingNames = new Set(sessions.map(session => session.name.trim().toLocaleLowerCase()));
   if (!existingNames.has('new chat')) return 'New chat';
@@ -342,12 +348,13 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
   useEffect(() => {
     if (!isOpen) return;
     userSelectedAgent.current = false;
-    setAgent(useConfigStore.getState().config?.defaultOrchestratorAgent ?? DEFAULT_PANE_CHAT_AGENT);
+    const savedConfig = useConfigStore.getState().config;
+    setAgent(supportedSessionAgent(savedConfig?.defaultOrchestratorAgent));
     setName('');
     setError(null);
-    if (!useConfigStore.getState().config) {
+    if (!savedConfig) {
       void fetchConfig().then(nextConfig => {
-        if (!userSelectedAgent.current && nextConfig.defaultOrchestratorAgent) setAgent(nextConfig.defaultOrchestratorAgent);
+        if (!userSelectedAgent.current) setAgent(supportedSessionAgent(nextConfig.defaultOrchestratorAgent));
       }).catch(() => undefined);
     }
   }, [fetchConfig, isOpen]);

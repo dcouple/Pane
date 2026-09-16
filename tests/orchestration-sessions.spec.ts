@@ -52,6 +52,7 @@ type UiSessionFixture = {
 type SessionFixtureOptions = {
   listDelayMs?: number;
   overviewPanes?: Record<string, UiPaneOverviewFixture[]>;
+  defaultOrchestratorAgent?: UiSessionFixture['agent'];
 };
 
 function sessionFixture(
@@ -132,7 +133,7 @@ async function installSessionsFixture(
   fixtureOptions: SessionFixtureOptions = {},
 ): Promise<void> {
   await installElectronApiMock(page, {
-    initialConfig: { defaultOrchestratorAgent: 'claude' },
+    initialConfig: { defaultOrchestratorAgent: fixtureOptions.defaultOrchestratorAgent ?? 'claude' },
     initialProjects: [{ id: 1, name: 'Pane fixtures', path: '/tmp/pane-fixtures', active: true }],
     initialSessions: paneSessions,
   });
@@ -450,7 +451,7 @@ test('Session creation hides unsupported Cursor on Windows', async ({ page }) =>
   await page.setViewportSize({ width: 1400, height: 900 });
   await installSessionsFixture(page, [
     sessionFixture('windows', 'Windows chat', 'Windows goal.', 'Windows context.', '2026-09-16T12:00:00.000Z'),
-  ]);
+  ], [], { defaultOrchestratorAgent: 'cursor' });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
@@ -459,6 +460,10 @@ test('Session creation hides unsupported Cursor on Windows', async ({ page }) =>
   const dialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   await expect(dialog.getByRole('radio')).toHaveCount(2);
   await expect(dialog.getByRole('radio', { name: 'Cursor', exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole('radio', { name: 'Claude', exact: true })).toBeChecked();
+  await dialog.getByRole('button', { name: 'Create Session', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'New chat', exact: true })).toBeVisible();
+  await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Claude');
 });
 
 test('Session metadata refresh stays quiet and cannot steal a later selection', async ({ page }) => {
@@ -686,6 +691,14 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   await expect(evolutionOverview.getByText('Unknown', { exact: true })).toHaveCount(0);
   await expect(evolutionOverview.getByText('Not started', { exact: true })).toHaveCount(0);
   await expect(evolutionOverview.getByText('Status unavailable', { exact: true })).toHaveCount(0);
+
+  await page.evaluate(async () => {
+    await window.electronAPI.orchestrationSessions.update(
+      { sessionId: 'evolution' },
+      { context: 'Updated evolution context.' },
+    );
+  });
+  await expect(evolutionOverview.getByText('Updated Session context.', { exact: true })).toBeVisible();
 
   await page.getByTestId('orchestration-session-doozy').click();
   await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();

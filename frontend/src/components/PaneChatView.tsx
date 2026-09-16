@@ -250,28 +250,54 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpda
   const [overview, setOverview] = useState<OrchestrationSessionOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [showOverview, setShowOverview] = useState(false);
+  const overviewRequestId = useRef(0);
+  const isMounted = useRef(false);
 
   const refreshOverview = useCallback(async () => {
+    const sessionId = view.session.id;
+    const requestId = ++overviewRequestId.current;
+    const isCurrentRequest = () => isMounted.current
+      && requestId === overviewRequestId.current
+      && useOrchestrationSessionStore.getState().selectedSessionId === sessionId;
+
     try {
-      const response = await API.orchestrationSessions.overview({ sessionId: view.session.id });
+      const response = await API.orchestrationSessions.overview({ sessionId });
       const responseFailure = responseError(response, 'Failed to refresh Session overview');
       if (responseFailure || !response.data) throw responseFailure ?? new Error('Failed to refresh Session overview');
+      if (!isCurrentRequest()) return;
       setOverview(response.data);
       setOverviewError(null);
     } catch (cause) {
+      if (!isCurrentRequest()) return;
       setOverviewError(cause instanceof Error ? cause.message : 'Failed to refresh Session overview');
     }
   }, [view.session.id]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      overviewRequestId.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     void refreshOverview();
   }, [refreshOverview]);
 
   useEffect(() => {
-    const handleRefresh = () => void refreshOverview();
+    const handleRefresh = (event: Event) => {
+      const sessionId = event instanceof CustomEvent ? event.detail?.sessionId : undefined;
+      if (sessionId && sessionId !== view.session.id) return;
+      void refreshOverview();
+    };
+    window.addEventListener('orchestration-sessions-changed', handleRefresh);
     window.addEventListener('orchestration-sessions-overview-updated', handleRefresh);
-    return () => window.removeEventListener('orchestration-sessions-overview-updated', handleRefresh);
-  }, [refreshOverview]);
+    return () => {
+      window.removeEventListener('orchestration-sessions-changed', handleRefresh);
+      window.removeEventListener('orchestration-sessions-overview-updated', handleRefresh);
+    };
+  }, [refreshOverview, view.session.id]);
 
   return (
     <div className="pane-chat-shell flex-1 flex min-h-0 flex-col overflow-hidden bg-bg-primary">
