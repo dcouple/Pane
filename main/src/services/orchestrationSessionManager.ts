@@ -392,39 +392,43 @@ export class OrchestrationSessionManager extends EventEmitter {
       changed = true;
     }
 
+    const legacyRecord = legacy;
+    const hadSupplementalLayout = PANE_CHAT_AGENTS.some(agent =>
+      legacyRecord.panelIds[agent] !== getPaneChatPanelId(agent)
+      || sessions.some(session => session.id === getLegacyAgentSessionId(agent)),
+    );
     const importedAgents = new Set<PaneChatAgent>();
     for (const agent of PANE_CHAT_AGENTS) {
-      if (agent === legacy.agent) continue;
       const importedId = getLegacyAgentSessionId(agent);
       const existing = sessions.find(session => session.id === importedId);
+      if (existing) {
+        // Supplemental rows keep their original fixed panel owner even when a
+        // user later switches the row's active agent.
+        importedAgents.add(agent);
+        continue;
+      }
+      const ownsFixedPanel = legacyRecord.panelIds[agent] === getPaneChatPanelId(agent);
+      if ((hadSupplementalLayout && ownsFixedPanel) || (!hadSupplementalLayout && agent === legacyRecord.agent)) continue;
       const panel = panelManager.getPanel(getPaneChatPanelId(agent));
-      const hasHistory = panel?.sessionId === legacy.internalSessionId && panelHasLegacyHistory(panel);
-      if (!existing && !hasHistory) continue;
+      const hasHistory = panel?.sessionId === legacyRecord.internalSessionId && panelHasLegacyHistory(panel);
+      if (!hasHistory) continue;
 
       importedAgents.add(agent);
-      if (!existing) {
-        sessions.push(this.createLegacyAgentSession(legacy, agent, sessions));
+      sessions.push(this.createLegacyAgentSession(legacyRecord, agent, sessions));
+      changed = true;
+    }
+
+    // A legacy record starts with the three fixed IDs. Normalize that layout
+    // once, then preserve it across mutable active-agent changes and restarts.
+    if (!hadSupplementalLayout) {
+      const legacyId = legacyRecord.id;
+      const legacyPanelIds = legacyPanelIdsForOwner(legacyId, legacyRecord.agent, importedAgents);
+      if (!samePanelIds(legacyRecord.panelIds, legacyPanelIds)) {
+        const nextLegacy = { ...legacyRecord, panelIds: legacyPanelIds };
+        legacy = nextLegacy;
+        sessions = sessions.map(session => session.id === legacyId ? nextLegacy : session);
         changed = true;
       }
-    }
-
-    const legacyId = legacy.id;
-    const legacyPanelIds = legacyPanelIdsForOwner(legacyId, legacy.agent, importedAgents);
-    if (!samePanelIds(legacy.panelIds, legacyPanelIds)) {
-      const nextLegacy = { ...legacy, panelIds: legacyPanelIds };
-      legacy = nextLegacy;
-      sessions = sessions.map(session => session.id === legacyId ? nextLegacy : session);
-      changed = true;
-    }
-
-    for (const agent of importedAgents) {
-      const importedId = getLegacyAgentSessionId(agent);
-      const existing = sessions.find(session => session.id === importedId);
-      if (!existing) continue;
-      const panelIds = legacyAgentPanelIdsForOwner(existing.id, agent);
-      if (samePanelIds(existing.panelIds, panelIds)) continue;
-      sessions = sessions.map(session => session.id === existing.id ? { ...session, panelIds } : session);
-      changed = true;
     }
 
     return changed ? { ...data, selectedSessionId, sessions } : data;

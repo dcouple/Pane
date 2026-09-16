@@ -95,6 +95,12 @@ agent. The imported legacy Pane Chat record retains its legacy internal IDs,
 resume IDs, and terminal buffers. New Session records must not reuse those
 identities.
 
+When legacy Pane Chat contains history for more than one agent, each existing
+agent history is imported as its own named Session. The imported rows retain
+the original hidden Session, fixed panel, buffers, and resume ID; generated
+unused panel slots keep those owners distinct across agent switches and
+restarts.
+
 The overview joins persisted intent with fresh Pane, tab, branch, worktree,
 agent, and available Git or pull request evidence. Working, idle, stopped,
 exited, missing, and archived states describe activity or availability. They
