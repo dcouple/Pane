@@ -15,6 +15,13 @@ import { ensureProjectAgentContext } from '../services/agentContextManager';
 import type { ConfigManager } from '../services/configManager';
 import type { Project } from '../database/models';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import type { DefaultAgentLaunchResult } from '../../../shared/types/workspaceEntry';
+import type { ProjectEnvironment } from '../../../shared/types/panels';
+import {
+  forgetProjectLaunchState,
+  launchDefaultAgentOnce,
+  resolveConfiguredLaunchPreset,
+} from '../services/workspaceEntry';
 import { createRequire } from 'node:module';
 
 const loadProjectDependency = createRequire(__filename);
@@ -223,10 +230,37 @@ export function registerProjectHandlers(
         });
       }
 
-      const projectWithEnv = project ? {
+      let defaultAgentLaunch: DefaultAgentLaunchResult | undefined;
+      if (projectData.launchDefaultAgent === true && project) {
+        try {
+          defaultAgentLaunch = await launchDefaultAgentOnce(services, project.id, {
+            disclosedAgent: projectData.disclosedAgent,
+          });
+        } catch (launchError) {
+          const preset = resolveConfiguredLaunchPreset(configManager.getConfig());
+          defaultAgentLaunch = preset
+            ? {
+              status: 'failed',
+              agentType: preset.id,
+              agentTitle: preset.title,
+              initialCommand: preset.command,
+              reason: 'launch-error',
+              message: launchError instanceof Error ? launchError.message : `Failed to start ${preset.title}.`,
+            }
+            : { status: 'skipped', reason: 'no-default' };
+        }
+      }
+
+      const projectWithEnv: (Project & {
+        environment: ProjectEnvironment;
+        defaultAgentLaunch?: DefaultAgentLaunchResult;
+      }) | null = project ? {
         ...project,
-        environment: new PathResolver(project).environment
+        environment: new PathResolver(project).environment,
       } : null;
+      if (projectWithEnv && defaultAgentLaunch) {
+        projectWithEnv.defaultAgentLaunch = defaultAgentLaunch;
+      }
 
       return { success: true, data: projectWithEnv };
     } catch (error) {
@@ -361,6 +395,7 @@ export function registerProjectHandlers(
   commandRegistry.register('projects:delete', async (projectId: string) => {
     try {
       const projectIdNum = parseInt(projectId);
+      forgetProjectLaunchState(projectIdNum);
       
       // Get the project to access its path
       const project = databaseService.getProject(projectIdNum);
@@ -445,6 +480,7 @@ export function registerProjectHandlers(
 
       // Now safe to delete the project
       const success = databaseService.deleteProject(projectIdNum);
+      forgetProjectLaunchState(projectIdNum);
       return { success: true, data: success };
     } catch (error) {
       console.error('Failed to delete project:', error);

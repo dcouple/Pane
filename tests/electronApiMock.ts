@@ -22,6 +22,10 @@ type AnalyticsMainEvent = {
   properties?: JsonObject;
 };
 
+type ProjectCreateCall = JsonObject & {
+  disclosedAgent?: PaneChatAgent;
+};
+
 type ElectronApiMockOptions = {
   analyticsConsentShown?: boolean;
   analyticsIdentity?: JsonObject;
@@ -59,6 +63,7 @@ type ElectronApiMockOptions = {
   /** Seeded split layout for the session under test (panels:get-layout). */
   initialLayout?: JsonObject | null;
   initialTerminalStates?: Record<string, JsonObject>;
+  initialAgentStatusEvents?: Array<{ panelId: string; sessionId: string; state: 'blocked' | 'working' | 'idle' }>;
   initialAgentUsage?: JsonObject;
   initialUsageReport?: JsonObject;
   initialLeaderboardStatus?: JsonObject;
@@ -71,6 +76,10 @@ type ElectronApiMockOptions = {
   activeProjectId?: number | null;
   paneChatAgentChangeDelayMs?: number;
   feedbackOutcome?: 'success' | 'failure';
+  projectCreateLaunchResult?: JsonObject;
+  projectCreateDelayMs?: number;
+  renameFailure?: string;
+  omitDefaultOrchestratorAgent?: boolean;
   openExternalOutcome?: 'success' | 'failure';
 };
 
@@ -181,6 +190,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       ...clone(mockOptions.initialConfig ?? {}),
       ...clone(mockOptions.appearance.seeded),
     };
+    if (mockOptions.omitDefaultOrchestratorAgent) {
+      delete configState.defaultOrchestratorAgent;
+    }
     const paneChatSession = {
       id: '__pane_chat_session__',
       name: 'Pane Chat',
@@ -267,6 +279,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
     const preferenceWrites: Array<{ key: string; value: string }> = [];
     const sessionDeleteCalls: string[] = [];
     const sessionFavoriteToggleCalls: string[] = [];
+    const sessionRenameCalls: Array<[string, string]> = [];
+    const projectCreateCalls: ProjectCreateCall[] = [];
+    const panelCreateCalls: JsonObject[] = [];
     const invokeCalls = new Map<string, Array<{ channel: string; args: unknown[] }>>();
     let sessionsGetCount = 0;
 
@@ -335,6 +350,15 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         }
         if (prop === 'onGitStatusUpdated') {
           return (callback: MockEventCallback) => subscribe('git-status-updated', callback);
+        }
+        if (prop === 'onPanelAgentStatus') {
+          return (callback: MockEventCallback) => {
+            const unsubscribeAgentStatus = subscribe('panel:agent-status', callback);
+            queueMicrotask(() => {
+              for (const event of mockOptions.initialAgentStatusEvents ?? []) callback(clone(event));
+            });
+            return unsubscribeAgentStatus;
+          };
         }
         if (prop === 'onTerminalOutput') {
           return (callback: MockEventCallback) => subscribe('terminal-output', callback);
@@ -677,6 +701,12 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
       folders: namespace({
         getByProject: () => success([]),
       }),
+      dialog: namespace({
+        openDirectory: () => success('/tmp/clone-destination'),
+      }),
+      git: namespace({
+        cloneRepo: (_url: string, destination: string) => success({ clonedPath: destination, repoName: 'cloned' }),
+      }),
       onboarding: namespace({
         detectEnvironment: () => success({}),
         getGitHubAuthCommand: () => success({ command: '', reason: 'ready' }),
@@ -705,6 +735,7 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
           clone(mockPanels.filter((panel) => panel.sessionId === sessionId)),
         ),
         createPanel: (sessionId: string, type: string, title: string, initialState?: JsonObject) => {
+          panelCreateCalls.push(clone({ sessionId, type, title, initialState }));
           const now = new Date().toISOString();
           const panel = {
             id: `mock-panel-${mockPanels.length + 1}`,
@@ -740,6 +771,43 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         getActive: () => success(clone(
           mockProjects.find((project) => project.id === mockActiveProjectId) ?? null,
         )),
+        create: async (request: JsonObject) => {
+          projectCreateCalls.push(clone(request));
+          if (mockOptions.projectCreateDelayMs) {
+            await new Promise(resolve => setTimeout(resolve, mockOptions.projectCreateDelayMs));
+          }
+          const id = Math.max(0, ...mockProjects.map(project => Number(project.id) || 0)) + 1;
+          const now = new Date().toISOString();
+          const project = {
+            id,
+            name: String(request.name ?? 'Repository'),
+            path: String(request.path ?? ''),
+            active: false,
+            created_at: now,
+            updated_at: now,
+          };
+          mockProjects.push(project);
+          mockSessions.push({
+            id: `main-${id}`,
+            name: `${project.name} (Main)`,
+            worktreePath: project.path,
+            prompt: '',
+            status: 'stopped',
+            createdAt: now,
+            output: [],
+            jsonMessages: [],
+            projectId: id,
+            isMainRepo: true,
+          });
+          const result: JsonObject = {
+            ...project,
+            environment: 'macos',
+          };
+          if (mockOptions.projectCreateLaunchResult) {
+            result.defaultAgentLaunch = mockOptions.projectCreateLaunchResult;
+          }
+          return success(clone(result));
+        },
         activate: (projectId: string) => {
           mockActiveProjectId = Number(projectId);
           return success();
@@ -782,6 +850,18 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         delete: (sessionId: string) => {
           sessionDeleteCalls.push(sessionId);
           return success();
+        },
+        rename: (sessionId: string, newName: string) => {
+          sessionRenameCalls.push([sessionId, newName]);
+          if (mockOptions.renameFailure) {
+            return Promise.resolve({ success: false as const, error: mockOptions.renameFailure });
+          }
+          const session = mockSessions.find(candidate => candidate.id === sessionId);
+          if (!session) return Promise.resolve({ success: false as const, error: 'Session not found' });
+          session.name = newName;
+          session.nameManuallySet = true;
+          emit('session:updated', clone(session));
+          return success(clone(session));
         },
         permanentDelete: () => success(),
         permanentDeleteArchived: () => success({ deletedCount: 0 }),
@@ -1156,6 +1236,15 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         },
         getSessionFavoriteToggleCalls() {
           return clone(sessionFavoriteToggleCalls);
+        },
+        getSessionRenameCalls() {
+          return clone(sessionRenameCalls);
+        },
+        getProjectCreateCalls() {
+          return clone(projectCreateCalls);
+        },
+        getPanelCreateCalls() {
+          return clone(panelCreateCalls);
         },
         getDiffManifestCalls() {
           return clone(diffManifestCalls);
