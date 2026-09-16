@@ -110,6 +110,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const select = useOrchestrationSessionStore(state => state.select);
   const create = useOrchestrationSessionStore(state => state.create);
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
+  const activeView = useNavigationStore(state => state.activeView);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
@@ -166,7 +167,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             className={cn(
               'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive',
               'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
-              selectedSessionId && 'bg-surface-selected text-text-primary',
+              activeView === 'pane-chat' && 'bg-surface-selected text-text-primary',
             )}
           >
             <MessageSquare className="h-4 w-4" />
@@ -270,7 +271,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             <div key={session.id} className="group/orchestration-session">
               <div className={cn(
                 'flex h-8 w-full items-center gap-0.5 text-[13px] transition-colors',
-                session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
+                activeView === 'pane-chat' && session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
               )}>
                 {paneRows.length > 0 ? (
                   <button
