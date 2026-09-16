@@ -240,6 +240,13 @@ function watchResult(generation) {
   };
 }
 
+function isExpectedClientDisconnect(error, socket) {
+  if (error === null || error === undefined) return false;
+  if (error.code === 'EPIPE' && error.syscall === 'write') return true;
+  if (error.code === 'ECONNRESET' && error.syscall === 'read') return true;
+  return error.code === 'ERR_STREAM_DESTROYED' && socket.destroyed;
+}
+
 async function withFakeDaemon(paneDir, onRequest, action) {
   const { getPaneDaemonEndpoint } = require(path.join(rootDir, 'packages', 'runpane', 'dist', 'daemonClient.js'));
   const endpoint = getPaneDaemonEndpoint(paneDir);
@@ -247,8 +254,22 @@ async function withFakeDaemon(paneDir, onRequest, action) {
     fs.mkdirSync(path.dirname(endpoint.path), { recursive: true });
     fs.rmSync(endpoint.path, { force: true });
   }
+  const pendingResponseTimers = new Map();
+  const unexpectedSocketErrors = [];
+  const rememberSocketError = (error, socket) => {
+    if (isExpectedClientDisconnect(error, socket)) return;
+    unexpectedSocketErrors.push(error);
+  };
+  const clearResponseTimers = (socket) => {
+    const timers = pendingResponseTimers.get(socket);
+    if (!timers) return;
+    for (const timer of timers) clearTimeout(timer);
+    pendingResponseTimers.delete(socket);
+  };
   const server = net.createServer((socket) => {
     let buffer = '';
+    socket.on('error', (error) => rememberSocketError(error, socket));
+    socket.once('close', () => clearResponseTimers(socket));
     socket.on('data', (chunk) => {
       buffer += chunk.toString('utf8');
       while (buffer.includes('\n')) {
@@ -263,11 +284,19 @@ async function withFakeDaemon(paneDir, onRequest, action) {
           socket.destroy();
           continue;
         }
-        setTimeout(() => {
+        const timer = setTimeout(() => {
+          const timers = pendingResponseTimers.get(socket);
+          timers?.delete(timer);
+          if (timers?.size === 0) pendingResponseTimers.delete(socket);
           if (!socket.destroyed) {
-            socket.end(`${JSON.stringify({ type: 'response', id: 1, ok: true, result: response.result })}\n`);
+            socket.end(`${JSON.stringify({ type: 'response', id: 1, ok: true, result: response.result })}\n`, (error) => {
+              if (error) rememberSocketError(error, socket);
+            });
           }
         }, response.delayMs || 0);
+        const timers = pendingResponseTimers.get(socket) ?? new Set();
+        timers.add(timer);
+        pendingResponseTimers.set(socket, timers);
       }
     });
   });
@@ -275,15 +304,28 @@ async function withFakeDaemon(paneDir, onRequest, action) {
     server.once('error', reject);
     server.listen(endpoint.path, resolve);
   });
+  let actionResult;
+  let actionError;
+  let actionFailed = false;
   try {
-    return await action();
+    actionResult = await action();
+  } catch (error) {
+    actionFailed = true;
+    actionError = error;
   } finally {
+    for (const timers of pendingResponseTimers.values()) {
+      for (const timer of timers) clearTimeout(timer);
+    }
+    pendingResponseTimers.clear();
     await new Promise((resolve) => server.close(resolve));
     if (endpoint.transport === 'unix') {
       fs.rmSync(endpoint.path, { force: true });
       fs.rmSync(path.dirname(endpoint.path), { recursive: true, force: true });
     }
   }
+  if (actionFailed) throw actionError;
+  if (unexpectedSocketErrors.length > 0) throw unexpectedSocketErrors[0];
+  return actionResult;
 }
 
 function runWatchCli(runtime, args, paneDir, until, timeoutMs = 8_000) {
