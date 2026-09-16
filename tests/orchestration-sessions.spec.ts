@@ -150,6 +150,7 @@ async function installSessionsFixture(
     let nextId = 1;
     let currentListDelayMs = listDelayMs;
     let selectCalls = 0;
+    const viewRequests: Array<{ sessionId: string; agent: SessionRecord['agent']; panelId: string }> = [];
 
     const find = (selector: Selector): SessionRecord => {
       const session = sessions.find(candidate =>
@@ -243,7 +244,11 @@ async function installSessionsFixture(
         changed();
         return success(view(record));
       },
-      get: async (selector: Selector) => success(view(find(selector))),
+      get: async (selector: Selector) => {
+        const record = find(selector);
+        viewRequests.push({ sessionId: record.id, agent: record.agent, panelId: record.panelIds[record.agent] });
+        return success(view(record));
+      },
       update: async (selector: Selector, input: Update) => {
         const record = find(selector);
         if (input.expectedRevision !== undefined && input.expectedRevision !== record.revision) {
@@ -305,6 +310,15 @@ async function installSessionsFixture(
     Object.assign(window.__paneTestElectronMock, {
       setOrchestrationListDelay: (delayMs: number) => { currentListDelayMs = delayMs; },
       getOrchestrationSelectCalls: () => selectCalls,
+      getOrchestrationViewRequests: () => clone(viewRequests),
+      setExternalOrchestrationAgent: (agent: SessionRecord['agent'], sessionId = selectedSessionId) => {
+        if (!sessionId) throw new Error('No Session is selected');
+        const record = find({ sessionId });
+        record.agent = agent;
+        record.revision += 1;
+        record.updatedAt = new Date().toISOString();
+        window.dispatchEvent(new CustomEvent('orchestration-sessions-changed', { detail: { sessionId, kind: 'updated' } }));
+      },
       emitOrchestrationChanged: (kind = 'updated') => window.dispatchEvent(new CustomEvent('orchestration-sessions-changed', { detail: { sessionId: selectedSessionId, kind } })),
     });
   }, { seed: initialSessions, listDelayMs: fixtureOptions.listDelayMs ?? 0, overviewPanes: fixtureOptions.overviewPanes ?? {} });
@@ -512,6 +526,90 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
     const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
     return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
   })).toBe(1);
+});
+
+test('Session view follows an external agent switch without selecting again or reloading on event bursts', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture('alpha', 'Alpha', 'Alpha goal.', 'Alpha context.', '2026-09-16T12:00:00.000Z'),
+    sessionFixture('beta', 'Beta', 'Beta goal.', 'Beta context.', '2026-09-16T12:01:00.000Z'),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await page.getByTestId('sessions-nav').click();
+  await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Claude');
+  const initialViewRequests = await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: { getOrchestrationViewRequests: () => Array<{ sessionId: string; agent: string; panelId: string }> };
+    };
+    return mockWindow.__paneTestElectronMock.getOrchestrationViewRequests();
+  });
+  const initialSelectCalls = await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
+  });
+
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: {
+        setExternalOrchestrationAgent: (agent: 'claude' | 'codex' | 'cursor', sessionId?: string) => void;
+      };
+    };
+    mockWindow.__paneTestElectronMock.setExternalOrchestrationAgent('codex', 'alpha');
+  });
+  await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Codex');
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: { getOrchestrationViewRequests: () => Array<{ sessionId: string; agent: string; panelId: string }> };
+    };
+    return mockWindow.__paneTestElectronMock.getOrchestrationViewRequests().length;
+  })).toBe(initialViewRequests.length + 1);
+  const switchedViewRequests = await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: { getOrchestrationViewRequests: () => Array<{ sessionId: string; agent: string; panelId: string }> };
+    };
+    return mockWindow.__paneTestElectronMock.getOrchestrationViewRequests();
+  });
+  expect(switchedViewRequests.at(-1)).toEqual({
+    sessionId: 'alpha',
+    agent: 'codex',
+    panelId: '__orchestration_panel_alpha_codex',
+  });
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
+  })).toBe(initialSelectCalls);
+
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: { emitOrchestrationChanged: (kind?: string) => void };
+    };
+    for (let index = 0; index < 10; index += 1) {
+      mockWindow.__paneTestElectronMock.emitOrchestrationChanged('updated');
+    }
+  });
+  await page.waitForTimeout(150);
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: { getOrchestrationViewRequests: () => Array<{ sessionId: string; agent: string; panelId: string }> };
+    };
+    return mockWindow.__paneTestElectronMock.getOrchestrationViewRequests().length;
+  })).toBe(initialViewRequests.length + 1);
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
+  })).toBe(initialSelectCalls);
 });
 
 test('Sessions group live managed Panes while preserving the focused Pane rows', async ({ page }) => {

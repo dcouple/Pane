@@ -36,6 +36,7 @@ export function PaneChatView() {
   const [error, setError] = useState<string | null>(null);
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const requestGeneration = useRef(0);
+  const agentReloadKey = useRef<string | null>(null);
 
   const availability = useOrchestrationSessionStore(state => state.availability);
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
@@ -110,9 +111,19 @@ export function PaneChatView() {
 
   useEffect(() => {
     if (!namedView || !selectedSessionRecord || namedView.session.id !== selectedSessionRecord.id) return;
+    if (namedView.agent !== selectedSessionRecord.agent) {
+      const reloadKey = `${selectedSessionRecord.id}:${selectedSessionRecord.agent}`;
+      if (agentReloadKey.current === reloadKey) return;
+      agentReloadKey.current = reloadKey;
+      void loadNamedSession(namedView.session.id).finally(() => {
+        if (agentReloadKey.current === reloadKey) agentReloadKey.current = null;
+      });
+      return;
+    }
+    agentReloadKey.current = null;
     if (namedView.session.revision === selectedSessionRecord.revision) return;
     setNamedView(current => current ? { ...current, session: selectedSessionRecord } : current);
-  }, [namedView, selectedSessionRecord]);
+  }, [loadNamedSession, namedView, selectedSessionRecord]);
 
   const handleNamedOverviewUpdate = useCallback(async (input: OrchestrationSessionUpdateInput): Promise<OrchestrationSessionRecord> => {
     if (!namedView) throw new Error('No Session selected');
