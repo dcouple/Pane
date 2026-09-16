@@ -133,6 +133,7 @@ test.describe('sidebar pane actions', () => {
     await expect(restoredRow).toBeVisible();
     await expect(restored.getByRole('button', { name: 'Alpha/Human label', exact: true })).toBeVisible();
     await expect(restored).toHaveTitle(/Human label/);
+    await restored.mouse.move(800, 500);
     await restoredRow.hover();
     await expect(restored.getByRole('tooltip')).toContainText('Latest PR title');
     await restored.getByRole('button', { name: 'Collapse sidebar' }).click();
