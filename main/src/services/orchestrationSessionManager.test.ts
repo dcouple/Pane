@@ -344,4 +344,19 @@ describe('OrchestrationSessionManager', () => {
     await fixture.manager.create(createInput);
     await expect(fixture.manager.create({ name: 'context handoff' })).rejects.toThrow('already exists');
   });
+
+  it('normalizes names for create and rename uniqueness while preserving the existing record', async () => {
+    const fixture = createFixture();
+    const first = await fixture.manager.create({ name: 'Alpha', context: 'Keep this context' });
+
+    await expect(fixture.manager.create({ name: ' Alpha ' })).rejects.toThrow('already exists');
+    await expect(fixture.manager.create({ name: 'alpha' })).rejects.toThrow('already exists');
+
+    const second = await fixture.manager.create({ name: 'Beta' });
+    await expect(fixture.manager.update({ sessionId: second.session.id }, { name: ' alpha ' })).rejects.toThrow('already exists');
+    await expect(fixture.manager.update({ sessionId: first.session.id }, { name: '   ' })).rejects.toThrow('Session name is required');
+
+    const preserved = await fixture.manager.get({ sessionId: first.session.id });
+    expect(preserved).toMatchObject({ name: 'Alpha', context: 'Keep this context', revision: first.session.revision });
+  });
 });

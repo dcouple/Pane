@@ -134,8 +134,9 @@ export class OrchestrationSessionManager extends EventEmitter {
       await this.ensureInitializedUnlocked();
       validateCreateInput(input);
       const data = this.store.read();
-      if (data.sessions.some(session => session.name.localeCompare(input.name, undefined, { sensitivity: 'accent' }) === 0)) {
-        throw new Error(`A Session named ${input.name} already exists`);
+      const name = input.name.trim();
+      if (data.sessions.some(session => normalizeSessionName(session.name) === normalizeSessionName(name))) {
+        throw new Error(`A Session named ${name} already exists`);
       }
       const now = new Date().toISOString();
       const id = `${ORCHESTRATION_SESSION_INTERNAL_ID_PREFIX}${randomUUID()}__`;
@@ -146,7 +147,7 @@ export class OrchestrationSessionManager extends EventEmitter {
       this.assertAgentSupported(agent);
       const record: OrchestrationSessionRecord = {
         id,
-        name: input.name.trim(),
+        name,
         agent,
         internalSessionId,
         panelIds: {
@@ -162,7 +163,7 @@ export class OrchestrationSessionManager extends EventEmitter {
         evidence: cloneLinks(input.evidence ?? []),
         outputs: cloneLinks(input.outputs ?? []),
         associations: [],
-        activity: [this.activity('created', `Created Session “${input.name.trim()}”.`, 'user')],
+        activity: [this.activity('created', `Created Session “${name}”.`, 'user')],
         revision: 1,
         createdAt: now,
         updatedAt: now,
@@ -192,9 +193,10 @@ export class OrchestrationSessionManager extends EventEmitter {
       if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) {
         throw new Error(`Session ${current.name} changed; expected revision ${input.expectedRevision}, found ${current.revision}`);
       }
+      const name = input.name?.trim() ?? current.name;
       const nextRecord: OrchestrationSessionRecord = {
         ...current,
-        name: input.name?.trim() ?? current.name,
+        name,
         agent: input.agent ? normalizePaneChatAgent(input.agent) : current.agent,
         goal: input.goal?.trim() ?? current.goal,
         context: input.context?.trim() ?? current.context,
@@ -208,7 +210,7 @@ export class OrchestrationSessionManager extends EventEmitter {
         updatedAt: new Date().toISOString(),
         activity: [...current.activity],
       };
-      if (input.name && nextRecord.name !== current.name && data.sessions.some(session => session.id !== current.id && session.name.toLocaleLowerCase() === nextRecord.name.toLocaleLowerCase())) {
+      if (input.name !== undefined && data.sessions.some(session => session.id !== current.id && normalizeSessionName(session.name) === normalizeSessionName(nextRecord.name))) {
         throw new Error(`A Session named ${nextRecord.name} already exists`);
       }
       this.assertAgentSupported(nextRecord.agent);
@@ -655,6 +657,7 @@ function validateCreateInput(input: OrchestrationSessionCreateInput): void {
 
 function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
   validateOptionalText(input.name, 'name');
+  if (input.name !== undefined && input.name.trim().length === 0) throw new Error('Session name is required');
   validateOptionalText(input.goal, 'goal');
   validateOptionalText(input.context, 'context');
   validateOptionalText(input.nextAction, 'next action');
@@ -670,6 +673,10 @@ function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
   if (input.expectedRevision !== undefined && (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 0)) {
     throw new Error('Expected revision must be a non-negative integer');
   }
+}
+
+function normalizeSessionName(name: string): string {
+  return name.trim().toLocaleLowerCase();
 }
 
 function validateAssociationInput(input: OrchestrationAssociationInput): void {
