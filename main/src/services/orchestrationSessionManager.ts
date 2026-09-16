@@ -37,6 +37,7 @@ import {
   type OrchestrationSessionView,
 } from '../../../shared/types/orchestrationSession';
 import {
+  DEFAULT_PANE_CHAT_AGENT,
   getPaneChatPanelId,
   normalizePaneChatAgent,
   PANE_CHAT_SESSION_ID,
@@ -183,13 +184,24 @@ export class OrchestrationSessionManager extends EventEmitter {
         sessions: [...data.sessions, record],
       };
       this.store.write(next);
-      // Persist the durable record before creating/publishing its hidden
-      // terminal owner. A failed write must not leave a live Session that the
-      // metadata store cannot recover on restart.
-      this.createInternalSession(record);
-      const panel = await this.ensurePanelForAgent(record);
-      this.emitChanged(record, 'created');
-      return this.viewFromRecord(record, panel);
+      try {
+        // Persist the durable record before creating/publishing its hidden
+        // terminal owner so a process exit can be repaired during startup.
+        this.createInternalSession(record);
+        const panel = await this.ensurePanelForAgent(record);
+        const view = await this.viewFromRecord(record, panel);
+        this.emitChanged(record, 'created');
+        return view;
+      } catch (error) {
+        // If owner/panel provisioning started, keep the durable record linked
+        // to those resources so startup can finish the same Session. Roll
+        // back only when no resource was published and the write is otherwise
+        // an unrecoverable duplicate-name orphan.
+        const ownerExists = this.sessionManager.getSession(record.internalSessionId) !== undefined;
+        const panelExists = panelManager.getPanel(record.panelIds[record.agent]) !== undefined;
+        if (!ownerExists && !panelExists) this.store.write(data);
+        throw error;
+      }
     });
   }
 
@@ -376,7 +388,17 @@ export class OrchestrationSessionManager extends EventEmitter {
     const data = this.store.read();
     const migrated = await this.migrateLegacySessions(data);
     if (migrated !== data) this.store.write(migrated);
+    this.reconcilePersistedSessionOwners(migrated);
     this.initialized = true;
+  }
+
+  private reconcilePersistedSessionOwners(data: OrchestrationSessionStoreData): void {
+    for (const record of data.sessions) {
+      // Pane Chat and its imported agent rows intentionally share one hidden
+      // owner managed by PaneChatManager.
+      if (record.id === LEGACY_ORCHESTRATION_SESSION_ID || record.internalSessionId === PANE_CHAT_SESSION_ID) continue;
+      this.createInternalSession(record);
+    }
   }
 
   private async migrateLegacySessions(data: OrchestrationSessionStoreData): Promise<OrchestrationSessionStoreData> {
@@ -470,8 +492,15 @@ export class OrchestrationSessionManager extends EventEmitter {
 
   private async migrateLegacyPaneChat(): Promise<OrchestrationSessionRecord> {
     const now = new Date().toISOString();
+    const configuredAgent = normalizePaneChatAgent(this.configManager.getConfig().defaultOrchestratorAgent);
+    const supportedAgent = resolveSupportedPaneChatAgent(configuredAgent);
+    if (supportedAgent !== configuredAgent) {
+      await this.configManager.updateConfig({ defaultOrchestratorAgent: supportedAgent });
+    }
     const state = this.paneChatManager ? await this.paneChatManager.getOrCreate() : undefined;
-    const agent = state?.agent ?? normalizePaneChatAgent(this.configManager.getConfig().defaultOrchestratorAgent);
+    const agent = state?.agent && isAgentSupportedOnPlatform(state.agent, process.platform)
+      ? state.agent
+      : supportedAgent;
     this.assertAgentSupported(agent);
     return {
       id: LEGACY_ORCHESTRATION_SESSION_ID,
@@ -769,6 +798,10 @@ function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
 
 function normalizeSessionName(name: string): string {
   return name.trim().toLocaleLowerCase();
+}
+
+function resolveSupportedPaneChatAgent(agent: PaneChatAgent): PaneChatAgent {
+  return isAgentSupportedOnPlatform(agent, process.platform) ? agent : DEFAULT_PANE_CHAT_AGENT;
 }
 
 function getLegacyAgentSessionId(agent: PaneChatAgent): string {

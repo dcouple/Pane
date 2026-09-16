@@ -113,6 +113,7 @@ function ensureDatabaseSession(session: Session): void {
 function createFixture(
   legacyAgent: PaneChatAgent = 'codex',
   initialData?: OrchestrationSessionStoreData,
+  configuredAgent: PaneChatAgent = 'claude',
 ) {
   const sessions = new Map<string, Session>();
   const legacySession = createSession('__pane_chat_session__', 'Pane Chat', {
@@ -139,8 +140,13 @@ function createFixture(
     getProjectContext: vi.fn(() => null),
   });
 
+  const configState = { defaultOrchestratorAgent: configuredAgent };
   const configManager = serviceStub<ConfigManager>({
-    getConfig: vi.fn(() => ({ defaultOrchestratorAgent: 'claude' })),
+    getConfig: vi.fn(() => configState),
+    updateConfig: vi.fn(async updates => {
+      Object.assign(configState, updates);
+      return configState;
+    }),
   });
   const paneChatManager = serviceStub<PaneChatManager>({
     getOrCreate: vi.fn(async () => ({
@@ -166,7 +172,7 @@ function createFixture(
     store,
   );
 
-  return { manager, sessions, sessionManager, paneChatManager, configManager, store };
+  return { manager, sessions, sessionManager, paneChatManager, skillCacheManager, configManager, store };
 }
 
 function paneFixture(
@@ -299,6 +305,38 @@ describe('OrchestrationSessionManager', () => {
     expect(persisted.internalSessionId).toBe(imported.internalSessionId);
     expect(persisted.panelIds).toEqual(imported.panelIds);
     expect(first.paneChatManager.getOrCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it('repairs an unsupported persisted default before legacy Pane Chat migration', async () => {
+    const fixture = createFixture('codex', undefined, 'cursor');
+    vi.mocked(fixture.paneChatManager.getOrCreate).mockImplementation(async () => {
+      const configuredAgent = fixture.configManager.getConfig().defaultOrchestratorAgent;
+      if (configuredAgent === 'cursor') throw new Error('unsupported persisted default reached PaneChatManager');
+      const session = fixture.sessions.get(PANE_CHAT_SESSION_ID);
+      if (!session) throw new Error('Pane Chat fixture session is missing');
+      return {
+        session,
+        panel: createPanel(getPaneChatPanelId('codex'), PANE_CHAT_SESSION_ID, 'Pane Chat'),
+        agent: 'codex',
+        cwd: '/tmp/issue-653',
+        guidePath: '/tmp/issue-653/guide.md',
+        started: false,
+      };
+    });
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      await fixture.manager.initialize();
+      expect(fixture.configManager.updateConfig).toHaveBeenCalledWith({ defaultOrchestratorAgent: 'claude' });
+      expect(fixture.configManager.getConfig().defaultOrchestratorAgent).toBe('claude');
+
+      const imported = await fixture.manager.get({ sessionId: LEGACY_ORCHESTRATION_SESSION_ID });
+      expect(imported.agent).toBe('codex');
+      expect(imported.internalSessionId).toBe(PANE_CHAT_SESSION_ID);
+      expect(fixture.sessions.get(PANE_CHAT_SESSION_ID)?.output).toEqual(['prior conversation line']);
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, 'platform', originalPlatform);
+    }
   });
 
   it('imports each existing legacy agent history into an addressable Session without duplicating ownership', async () => {
@@ -452,6 +490,77 @@ describe('OrchestrationSessionManager', () => {
     expect(switched.session.internalSessionId).toBe(firstRecord.internalSessionId);
     expect(fixture.sessions.has(firstRecord.internalSessionId)).toBe(true);
     expect(panelManager.getPanel(firstRecord.panelIds.claude)).toBeDefined();
+  });
+
+  it('rolls back metadata when hidden owner provisioning fails before publication', async () => {
+    const fixture = createFixture();
+    await fixture.manager.initialize();
+    vi.mocked(fixture.sessionManager.createSessionWithId).mockImplementationOnce(() => {
+      throw new Error('hidden owner provisioning failed');
+    });
+
+    await expect(fixture.manager.create({ name: 'Recoverable Session' })).rejects.toThrow('hidden owner provisioning failed');
+    const afterFailure = await fixture.manager.list();
+    expect(afterFailure.sessions.some(session => session.name === 'Recoverable Session')).toBe(false);
+    expect(afterFailure.selectedSessionId).toBe(LEGACY_ORCHESTRATION_SESSION_ID);
+
+    const retried = await fixture.manager.create({ name: 'Recoverable Session' });
+    expect(retried.session.name).toBe('Recoverable Session');
+  });
+
+  it('retains durable metadata when later provisioning fails with a published owner', async () => {
+    const fixture = createFixture();
+    await fixture.manager.initialize();
+    vi.mocked(fixture.skillCacheManager.ensurePaneChatGuide)
+      .mockResolvedValueOnce('/tmp/issue-653/guide.md')
+      .mockRejectedValueOnce(new Error('guide publication failed'));
+
+    await expect(fixture.manager.create({ name: 'Published Session' })).rejects.toThrow('guide publication failed');
+    const persisted = await fixture.manager.get({ name: 'Published Session' });
+    expect(fixture.sessions.has(persisted.internalSessionId)).toBe(true);
+    expect(panelManager.getPanel(persisted.panelIds[persisted.agent])).toBeDefined();
+    const resumed = await fixture.manager.getView({ sessionId: persisted.id });
+    expect(resumed.internalSession.id).toBe(persisted.internalSessionId);
+  });
+
+  it('recreates missing named Session owners once on startup without touching the shared legacy owner', async () => {
+    const legacy = {
+      ...orchestrationRecord(LEGACY_ORCHESTRATION_SESSION_ID, 'Pane Chat'),
+      internalSessionId: PANE_CHAT_SESSION_ID,
+      panelIds: {
+        claude: getPaneChatPanelId('claude'),
+        codex: getPaneChatPanelId('codex'),
+        cursor: getPaneChatPanelId('cursor'),
+      },
+    } satisfies OrchestrationSessionRecord;
+    const orphan = orchestrationRecord('orphan-session', 'Recovered Session');
+    const fixture = createFixture('codex', {
+      version: 1,
+      sessions: [legacy, orphan],
+      selectedSessionId: orphan.id,
+    });
+
+    await fixture.manager.initialize();
+    expect(fixture.paneChatManager.getOrCreate).not.toHaveBeenCalled();
+    const recovered = await fixture.manager.getView({ sessionId: orphan.id });
+    expect(recovered.internalSession.id).toBe(orphan.internalSessionId);
+    expect(fixture.sessions.has(PANE_CHAT_SESSION_ID)).toBe(true);
+    expect(fixture.sessionManager.createSessionWithId).toHaveBeenCalledTimes(1);
+
+    const reloaded = new OrchestrationSessionManager(
+      fixture.configManager,
+      fixture.sessionManager,
+      fixture.skillCacheManager,
+      serviceStub<PaneChatManager>({ getOrCreate: vi.fn(async () => { throw new Error('restart should use persisted legacy state'); }) }),
+      undefined,
+      fixture.store,
+    );
+    await reloaded.initialize();
+    const afterReload = await reloaded.list();
+    expect(afterReload.sessions.filter(session => session.id === orphan.id)).toHaveLength(1);
+    expect(afterReload.sessions.filter(session => session.id === LEGACY_ORCHESTRATION_SESSION_ID)).toHaveLength(1);
+    expect(afterReload.selectedSessionId).toBe(orphan.id);
+    expect(fixture.sessionManager.createSessionWithId).toHaveBeenCalledTimes(1);
   });
 
   it('enforces exclusive Pane ownership, validates tab membership, and permits reassignment after detach', async () => {
