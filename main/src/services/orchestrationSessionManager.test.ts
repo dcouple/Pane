@@ -79,7 +79,7 @@ function createLink(label: string, url = 'https://example.test/evidence'): Orche
 }
 
 function createStore(): OrchestrationSessionStore {
-  const directory = fs.mkdtempSync(path.join(path.resolve(__dirname, '../../../tmp/issue-653'), 'orchestration-manager-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pane-orchestration-manager-'));
   temporaryDirectories.push(directory);
   return new OrchestrationSessionStore(path.join(directory, 'orchestration-sessions.json'));
 }
