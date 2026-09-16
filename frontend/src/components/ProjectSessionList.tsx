@@ -19,6 +19,8 @@ import { cn } from '../utils/cn';
 import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
 import { usePanelStore } from '../stores/panelStore';
+import { OrchestrationSessionNav } from './OrchestrationSessionNav';
+import { useOrchestrationSessionStore } from '../stores/orchestrationSessionStore';
 import type { SidebarNavigationScope } from '../stores/navigationStore';
 import {
   createProjectById,
@@ -87,6 +89,7 @@ export function ProjectSessionList({
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
   const navigateToPaneChat = useNavigationStore(s => s.navigateToPaneChat);
   const paneChatStatus = useSessionAgentDisplayStatus(PANE_CHAT_SESSION_ID);
+  const orchestrationAvailability = useOrchestrationSessionStore(s => s.availability);
   const navigateToProject = useNavigationStore(s => s.navigateToProject);
   const navigateToUsage = useNavigationStore(s => s.navigateToUsage);
   const setSidebarNavigationScope = useNavigationStore(s => s.setSidebarNavigationScope);
@@ -303,27 +306,31 @@ export function ProjectSessionList({
           <span>Home</span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => {
-            setSidebarNavigationScope('repositories');
-            setActiveSession(null);
-            navigateToPaneChat();
-          }}
-          className={cn(
-            SIDEBAR_ROW_BASE,
-            SIDEBAR_ROW_GAP,
-            SIDEBAR_ROW_PADDING,
-            'h-8 text-[13px] hover:bg-surface-hover hover:text-text-primary',
-            activeView === 'pane-chat'
-              ? 'bg-surface-hover text-text-primary'
-              : 'text-text-secondary',
-          )}
-        >
-          <MessageSquare className="w-4 h-4" />
-          <span>Pane Chat</span>
-          <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
-        </button>
+        <OrchestrationSessionNav />
+
+        {orchestrationAvailability === 'unavailable' || orchestrationAvailability === 'idle' ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSidebarNavigationScope('repositories');
+              setActiveSession(null);
+              navigateToPaneChat();
+            }}
+            className={cn(
+              SIDEBAR_ROW_BASE,
+              SIDEBAR_ROW_GAP,
+              SIDEBAR_ROW_PADDING,
+              'h-8 text-[13px] hover:bg-surface-hover hover:text-text-primary',
+              activeView === 'pane-chat'
+                ? 'bg-surface-hover text-text-primary'
+                : 'text-text-secondary',
+            )}
+          >
+            <MessageSquare className="w-4 h-4" />
+            <span>Pane Chat</span>
+            <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
+          </button>
+        ) : null}
 
         <button
           type="button"

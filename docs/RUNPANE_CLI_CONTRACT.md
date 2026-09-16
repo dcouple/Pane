@@ -116,6 +116,14 @@ printf 'Continue\n' | runpane panels input --panel <panel-id> --input-file - --y
 runpane watch --self-test
 runpane watch --follow
 runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff
+runpane sessions list [--json] [--pane-dir <path>]
+runpane sessions create --from-json <path|-> [--json] [--pane-dir <path>]
+runpane sessions get --session <id|name> [--json] [--pane-dir <path>]
+runpane sessions update --session <id|name> --from-json <path|-> [--json] [--pane-dir <path>]
+runpane sessions set-agent --session <id|name> --agent <codex|claude|cursor> [--json] [--pane-dir <path>]
+runpane sessions associate --session <id|name> --pane <pane-id> [--json] [--pane-dir <path>]
+runpane sessions detach --session <id|name> [--pane <pane-id>] [--json] [--pane-dir <path>]
+runpane sessions overview --session <id|name> [--json] [--pane-dir <path>]
 runpane help
 runpane <command> --help
 ```
@@ -171,6 +179,22 @@ If composer submission cannot be verified without risking a duplicate, the creat
 When running from WSL while Pane is installed on Windows, the Linux wrapper may look for a missing `/tmp/pane-daemon.../daemon.sock` or resolve to a Windows shim such as Volta. In that case invoke the Windows wrapper through PowerShell from a Windows cwd, for example `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane repos list --json'`.
 
 `runpane watch` waits for workspace transitions from the daemon journal without polling. `--follow` keeps waiting and prints one line per event: READY, BLOCKED, IDLE, STUCK, NEW, GONE, EXIT, plus HEARTBEAT every 60 seconds as proof of life. Defaults are responsive: no settle, no batching, all kinds, IDLE every `--idle-after`. Expensive consumers opt into `--kinds` (drop `agent.busy`; BUSY carries no action), `--settle <ms>` (READY only after a quiet window; a BUSY inside it cancels the line), `--blocked-settle <ms>`, `--min-interval <ms>` (batch non-urgent lines; BLOCKED bypasses it), and `--idle-backoff` (10m, 30m, 1h, 3h, then daily). The recommended orchestrator invocation is `runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff`, which budgets about 6 wake-ups per active pane per hour worst case, usually 1-3. Pane Chat arms it automatically through its skill; only your own scripts need the flags. STUCK means real unsubmitted composer text, never an agent prompt suggestion. Judge a dead watch by a non-zero exit or a WATCH ERROR line, not by silence.
+
+`sessions list` list durable named orchestration Sessions.
+
+`sessions create` create a durable named orchestration Session and its hidden terminal owner.
+
+`sessions get` read one durable named orchestration Session.
+
+`sessions update` update a Session overview from structured JSON.
+
+`sessions set-agent` switch the durable terminal agent for a named Session.
+
+`sessions associate` associate a user-visible Pane with a named Session.
+
+`sessions detach` detach a Pane from a named Session.
+
+`sessions overview` read a live status, activity, git, and pull request overview for a named Session.
 
 ## Agent Context
 
@@ -334,6 +358,7 @@ These flags are consumed by local daemon-control commands:
 --blocked-settle <milliseconds>
 --min-interval <milliseconds>
 --body-file <path|->
+--session <id|name>
 --json
 --wait-ready
 --no-focus

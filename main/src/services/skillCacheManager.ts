@@ -24,6 +24,12 @@ const TOP_LEVEL_FILES = [
   'docs/readme-skill-legend.excalidraw',
 ] as const;
 
+// The upstream orchestrator references this Pane-specific guide even though
+// it lives beside the skill roots. Keep it available when Git is unavailable.
+const SUPPORTING_REPOSITORY_FILES = [
+  'parsa/pane-chat/work-questions.md',
+] as const;
+
 const SOURCE_SKILL_ROOT_PATHS = [
   'parsa/.codex/skills',
   'parsa/.claude/skills',
@@ -31,6 +37,10 @@ const SOURCE_SKILL_ROOT_PATHS = [
 
 const IMPORTANT_SKILL_PATHS = [
   'parsa/.codex/skills/runpane-orchestrator',
+  'parsa/.codex/skills/astra-ticket',
+  'parsa/.codex/skills/create-ticket',
+  'parsa/.codex/skills/cold-read',
+  'parsa/.codex/skills/explain-visually',
   'parsa/.codex/skills/discussion',
   'parsa/.codex/skills/plan',
   'parsa/.codex/skills/simple-plan',
@@ -42,8 +52,13 @@ const IMPORTANT_SKILL_PATHS = [
   'parsa/.codex/skills/teach-back',
   'parsa/.codex/skills/investigate',
   'parsa/.codex/skills/codebase-explorer',
+  'parsa/.codex/skills/pane-work-recap',
+  'parsa/.codex/skills/pane-work-prioritizer',
   'parsa/.codex/skills/commit',
   'parsa/.claude/skills/runpane-orchestrator',
+  'parsa/.claude/skills/create-ticket',
+  'parsa/.claude/skills/cold-read',
+  'parsa/.claude/skills/explain-visually',
   'parsa/.claude/skills/discussion',
   'parsa/.claude/skills/create-plan',
   'parsa/.claude/skills/simple-plan',
@@ -54,29 +69,35 @@ const IMPORTANT_SKILL_PATHS = [
   'parsa/.claude/skills/review',
   'parsa/.claude/skills/teach-back',
   'parsa/.claude/skills/investigate',
+  'parsa/.claude/skills/pane-work-recap',
+  'parsa/.claude/skills/pane-work-prioritizer',
   'parsa/.claude/skills/commit',
 ] as const;
 
 const REQUIRED_FALLBACK_RAW_FILES = [
   ...TOP_LEVEL_FILES,
+  ...SUPPORTING_REPOSITORY_FILES,
   ...IMPORTANT_SKILL_PATHS.map(skillPath => `${skillPath}/SKILL.md`),
+  'parsa/.codex/skills/create-ticket/agents/openai.yaml',
+  'parsa/.codex/skills/create-ticket/references/intent-handoff.md',
+  'parsa/.codex/skills/create-ticket/references/socrates.md',
+  'parsa/.claude/skills/create-ticket/references/intent-handoff.md',
+  'parsa/.claude/skills/create-ticket/references/socrates.md',
   'parsa/.codex/skills/gh-address-comments/agents/openai.yaml',
   'parsa/.codex/skills/pr-test-automation/agents/openai.yaml',
+  'parsa/.codex/skills/pane-work-recap/agents/openai.yaml',
+  'parsa/.codex/skills/pane-work-prioritizer/agents/openai.yaml',
   'parsa/.claude/skills/gh-address-comments/agents/openai.yaml',
   'parsa/.claude/skills/pr-test-automation/agents/openai.yaml',
+  'parsa/.claude/skills/pane-work-recap/agents/openai.yaml',
+  'parsa/.claude/skills/pane-work-prioritizer/agents/openai.yaml',
   'parsa/.claude/skills/review/CRITERIA.md',
 ] as const;
 
 const OPTIONAL_FALLBACK_RAW_FILES = [
   'parsa/.codex/skills/plan/plan_base.md',
   'parsa/.codex/skills/teach-back/agents/openai.yaml',
-  'parsa/.codex/skills/pane-work-recap/SKILL.md',
-  'parsa/.codex/skills/pane-work-recap/agents/openai.yaml',
-  'parsa/.codex/skills/pane-work-prioritizer/SKILL.md',
-  'parsa/.codex/skills/pane-work-prioritizer/agents/openai.yaml',
   'parsa/.claude/skills/create-plan/plan_base.md',
-  'parsa/.claude/skills/pane-work-recap/SKILL.md',
-  'parsa/.claude/skills/pane-work-prioritizer/SKILL.md',
 ] as const;
 
 const FALLBACK_RAW_FILES = [
@@ -210,6 +231,98 @@ Watcher re-arm:
 - Silence alone is never a dead watch: HEARTBEAT is filtered out of
   the monitor, so only a non-zero exit or a WATCH ERROR line is.`;
 
+const SESSIONS_ROUTING_ADAPTER_START = '<!-- Pane Sessions routing adapter: begin -->';
+const SESSIONS_ROUTING_ADAPTER_END = '<!-- Pane Sessions routing adapter: end -->';
+
+/**
+ * This is deliberately an adapter, rather than a copy of astra-ticket. The
+ * upstream skill keeps its control-plane, inspection, and readiness guidance;
+ * the adapter defines who owns the implementation entry point in Sessions.
+ */
+const CACHED_SESSIONS_ROUTING_ADAPTER = `${SESSIONS_ROUTING_ADAPTER_START}
+## Pane Sessions routing adapter (authoritative)
+
+When this cached skill is loaded by Pane Chat or a RunPane Session, this
+section is the Pane-specific routing contract. It takes precedence over any
+generic lifecycle examples in the synchronized skill.
+
+The Session owns the user's ongoing conversation and intent. Keep discussion,
+read-only code exploration and investigation, clarification, and ticket work
+in that Session. Use \`discussion\`, \`investigate\`, \`codebase-explorer\`, and
+\`create-ticket\` as appropriate. A Session may update authorized control-plane
+notes, briefs, and tickets, but it does not edit project implementation files
+or run an implementation lifecycle in its hidden conversation.
+
+When the ticket is ready and the user authorizes implementation, dispatch
+\`astra-ticket\` through RunPane in a suitable existing Pane or tab, or create a
+Pane/tab when one is needed. Pass the stable Session ID, its persisted goal,
+context, decisions, blockers, next action, evidence, and associated Pane/tab
+IDs with the delegation. A Session may coordinate one Pane or several Panes;
+tabs share their parent Pane's worktree.
+
+The delegated \`astra-ticket\` skill remains authoritative for its own model,
+planning, implementation, PR, review, QA, and CI requirements. Do not copy,
+inline, or substitute that pipeline here. Keep the user's selected Session
+agent, profile, and tool configuration unchanged while the delegated workflow
+runs.
+
+Use the Sessions control plane to inspect and update the overview:
+
+\`\`\`text
+runpane sessions overview --session <session-id-or-name> --json
+\`\`\`
+
+Read \`PANE_ORCHESTRATION_SESSION_ID\` from the current environment whenever
+this conversation starts or resumes. TerminalPanelManager exports this stable
+identity for Session panels, including resume paths that do not receive the
+original bootstrap input. Do not infer the Session from a terminal panel ID or
+from conversation text. When the variable is present, reload the saved record
+and reconcile live state before acting:
+
+\`\`\`text
+runpane sessions get --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+runpane sessions overview --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+\`\`\`
+
+If the variable is missing, use \`runpane sessions list --json\` to resolve a
+Session explicitly; never guess an identity. If the stable ID cannot be
+resolved, report the error before taking Session-specific actions.
+
+RunPane Sessions commands are \`list\`, \`create\`, \`get\`, \`update\`,
+\`set-agent\`, \`associate\`, \`detach\`, and \`overview\`. Selectors accept
+the stable Session ID or an exact name. Use \`--from-json <path|->\` for
+structured \`create\` and \`update\` input. The IPC counterparts are
+\`orchestration-sessions:list/select/create/get/update/set-agent/associate/detach/overview\`.
+
+For conversational notifications, use one durable named cursor scoped to the
+Session's associated Panes and return findings to that Session:
+
+\`\`\`text
+runpane watch --as session-<session-id> --follow --pane <pane-id> \\
+  --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone \\
+  --settle 180000 --blocked-settle 30000 --min-interval 600000 \\
+  --idle-backoff --json
+\`\`\`
+
+Repeat \`--pane\` for every associated Pane. A discussion-only Session has no
+follow watcher; never omit \`--pane\` to watch all Panes. After an associate or
+detach mutation, refresh the overview and re-arm the same named cursor with the
+current Pane set, removing detached Panes from its scope. On restart, retain
+the cursor name tied to the stable Session ID and capture a fresh output
+baseline before interpreting notifications. Terminal idle, stopped, or exited
+state is activity evidence only; it never proves completion. Completion reports
+require explicit evidence and provenance, and new activity makes older reports
+stale.
+
+The retained RunPane control-plane, authorization, inspection, configuration,
+dispatch, evidence, and hard-stop guidance remains available. Feedback and
+readiness remain inspectable; an authorized response goes back through the
+delegated \`astra-ticket\` Pane. The generic implementation lane and lifecycle
+sections are intentionally removed from this Pane cache because the delegated
+workflow owns them. Every authorized implementation in a Pane Session enters
+through \`astra-ticket\` after the Session-owned discussion and ticket gate.
+${SESSIONS_ROUTING_ADAPTER_END}`;
+
 interface SkillSyncState {
   lastAttemptAt?: string;
   lastSuccessAt?: string;
@@ -324,6 +437,7 @@ export class SkillCacheManager {
       } else {
         await this.downloadFallbackFiles();
       }
+      await this.reconcileCachedOrchestratorGuidance();
       await this.writePaneChatGuide();
 
       await this.writeSyncState({
@@ -368,6 +482,10 @@ export class SkillCacheManager {
     await fs.mkdir(this.cacheRoot, { recursive: true });
 
     for (const relativePath of TOP_LEVEL_FILES) {
+      await copyPath(path.join(this.sourceRoot, relativePath), path.join(this.cacheRoot, relativePath));
+    }
+
+    for (const relativePath of SUPPORTING_REPOSITORY_FILES) {
       await copyPath(path.join(this.sourceRoot, relativePath), path.join(this.cacheRoot, relativePath));
     }
 
@@ -433,6 +551,7 @@ export class SkillCacheManager {
   }
 
   private async writePaneChatGuide(): Promise<void> {
+    await this.reconcileCachedOrchestratorGuidance();
     const guide = this.buildPaneChatGuide();
     const runtimeContext = await this.buildPaneChatRuntimeContext();
     const orchestratorSkill = this.buildPaneOrchestratorSkill();
@@ -448,6 +567,28 @@ export class SkillCacheManager {
     await fs.chmod(this.paneWatchScriptPath, 0o755);
     await this.writeTextFile(this.paneIdleWatchScriptPath, this.buildPaneIdleWatchScript());
     await fs.chmod(this.paneIdleWatchScriptPath, 0o755);
+  }
+
+  /**
+   * Upstream's generic orchestrator is intentionally retained in the cache,
+   * but Pane Sessions need one authoritative entry point. Re-apply this small
+   * adapter after every clone, pull, fallback download, and startup refresh so
+   * a newer upstream checkout cannot silently restore the competing route.
+   */
+  private async reconcileCachedOrchestratorGuidance(): Promise<void> {
+    const cachedOrchestratorPaths = [
+      path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'runpane-orchestrator', 'SKILL.md'),
+      path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md'),
+    ];
+
+    for (const filePath of cachedOrchestratorPaths) {
+      if (!(await exists(filePath))) continue;
+      const contents = await fs.readFile(filePath, 'utf8');
+      const reconciled = reconcileSessionsRouting(contents);
+      if (reconciled !== contents) {
+        await this.writeTextFile(filePath, reconciled);
+      }
+    }
   }
 
   /** Cursor reads .cursor/rules/*.mdc, not SKILL.md files — swap the frontmatter. */
@@ -473,11 +614,16 @@ export class SkillCacheManager {
     const runtimeContext = this.paneChatRuntimeContextPath;
     const paneOrchestratorSkill = this.paneChatOrchestratorSkillPath;
     const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
+    const claudeCreateTicket = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'create-ticket', 'SKILL.md');
+    const codexAstraTicket = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'astra-ticket', 'SKILL.md');
+    const workQuestions = path.join(this.cacheRoot, 'parsa', 'pane-chat', 'work-questions.md');
     const managedBlock = RUNPANE_CONTRACT.agentContext.managedBlock.join('\n');
 
-    return `# Pane Chat Orchestrator
+    return `# Pane Chat Orchestrator (Sessions)
 
-You are Pane Chat, the global orchestrator for this Pane workspace.
+You are the user's Session orchestrator for this Pane workspace. The Session
+is the named, ongoing conversation where intent lives; associated Panes and
+tabs are the focused work surfaces.
 
 ## Initialize
 
@@ -485,15 +631,41 @@ Do these before anything else:
 
 1. Runtime context: \`${runtimeContext}\` (authoritative for this Pane install)
 2. Pane Chat orchestrator skill: \`${paneOrchestratorSkill}\`
-3. RunPane orchestrator skill: \`${claudeOrchestrator}\` (lifecycle, lanes, stages)
-4. Run the doctor command from the runtime context
-5. Arm liveness with the two commands in the pane-orchestrator skill's
+3. RunPane orchestrator skill: \`${claudeOrchestrator}\` (control-plane, inspection, dispatch, evidence)
+4. Session ticket skill: \`${claudeCreateTicket}\`
+5. Delegated implementation skill: \`${codexAstraTicket}\` (its workflow
+   requirements apply only after implementation is authorized)
+6. Work-question guide: \`${workQuestions}\`
+7. Run the doctor command from the runtime context
+8. Arm liveness with the two commands in the pane-orchestrator skill's
    Liveness Contract (\`runpane watch --self-test\`, then the flagged
    follow line; never the bare \`--follow\`)
 
 Then, before dispatching anything:
 
 ${UNATTENDED_RESILIENCE_PROMPT}
+
+## Resume and refresh persisted Session context
+
+Read \`PANE_ORCHESTRATION_SESSION_ID\` from the current environment whenever
+this conversation starts or resumes. TerminalPanelManager exports this stable
+identity for Session panels, including resume paths that do not receive the
+original bootstrap input. Do not infer the Session from a terminal panel ID or
+from conversation text.
+
+When the variable is present, reload persisted intent and associations before
+acting, then refresh live state with the overview command:
+
+\`\`\`text
+runpane sessions get --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+runpane sessions overview --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+\`\`\`
+
+Run \`get\` to recover the saved record and \`overview\` after a resume or
+mutation to reconcile current Pane, tab, branch, and evidence state. If the
+variable is missing, use \`runpane sessions list --json\` to resolve a Session
+explicitly; never guess an identity. If the stable ID cannot be resolved,
+report the error before taking Session-specific actions.
 
 The runtime context wins over cached docs when they conflict. Do not
 fetch GitHub to initialize; the cached files are refreshed in the
@@ -505,23 +677,77 @@ discover them by name.
 
 ## Role
 
-You are an orchestrator, not an implementation worker. Delegate code
-work to Pane agents through RunPane. Do not write implementation files
-from Pane Chat unless the user says "do it yourself in this chat."
+You are the user's Session orchestrator, not an implementation worker. Keep
+discussion, read-only exploration/investigation, clarification, and ticket
+creation or revision in this Session. Authorized control-plane notes, briefs,
+and tickets may be updated from the Session, but project implementation files
+belong in an associated Pane/tab.
 
 For "what did I work on?" or "what should I do next?", use
-\`pane-work-recap\` or \`pane-work-prioritizer\`. Do not create
-workstreams for those answers.
+\`pane-work-recap\` or \`pane-work-prioritizer\` with \`${workQuestions}\`.
+Do not create implementation workstreams for those answers.
 
-## Workflow
+## Session-owned workflow (authoritative)
+
+1. Discuss the goal and read the relevant context in this conversation.
+2. Dispatch read-only exploration when repository facts are needed, then bring
+   findings back to this Session.
+3. Use \`create-ticket\` to capture the current what, why, scope, decisions,
+   and acceptance criteria. Revise the same ticket and brief as intent changes.
+4. After the ticket is ready and the user explicitly authorizes implementation,
+   dispatch \`astra-ticket\` in an appropriate existing Pane or tab, or create
+   one when needed. Pass the stable Session ID, persisted overview, and
+   associated Pane/tab IDs so progress returns to this conversation.
+5. Keep the Session's selected agent, profile, and tool configuration intact;
+   the delegated \`astra-ticket\` workflow owns its own model, planning,
+   implementation, review, QA, and CI requirements.
+
+Never write project implementation files from the Session and never route an
+authorized implementation through a competing legacy lifecycle loop. A
+Session can remain discussion-only, coordinate one Pane, or coordinate several
+Panes; tabs share their parent Pane's worktree.
+
+RunPane Sessions commands are \`list\`, \`create\`, \`get\`, \`update\`,
+\`set-agent\`, \`associate\`, \`detach\`, and \`overview\`. Selectors accept
+the stable Session ID or an exact name. Use \`--from-json <path|->\` for
+structured \`create\` and \`update\` input. The IPC counterparts are
+\`orchestration-sessions:list/select/create/get/update/set-agent/associate/detach/overview\`.
+
+Use \`runpane sessions overview --session <session-id-or-name> --json\` after
+mutations and use one named watcher scoped to every associated Pane:
+
+\`\`\`text
+runpane watch --as session-<session-id> --follow --pane <pane-id> \\
+  --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone \\
+  --settle 180000 --blocked-settle 30000 --min-interval 600000 \\
+  --idle-backoff --json
+\`\`\`
+
+Repeat \`--pane\` for every associated Pane. A discussion-only Session has no
+follow watcher; never omit \`--pane\` to watch all Panes. After an associate or
+detach mutation, refresh the overview and re-arm the same named cursor with the
+current Pane set, removing detached Panes from its scope. On restart, retain
+the cursor name tied to the stable Session ID and capture a fresh output
+baseline before interpreting notifications. Keep findings in this
+conversation. Idle, stopped, and exited terminal state is activity evidence;
+it does not prove completion. Completion reports require inspectable evidence,
+timestamp, and provenance, and new activity makes an older report stale.
+
+## Other orchestration capabilities
 
 Use RunPane as the control plane. Verify state through RunPane commands
 after every mutation. Never write an ad-hoc watcher; the Liveness
 Contract in the pane-orchestrator skill owns that.
 
-The cached \`runpane-orchestrator\` skill owns the lifecycle, lanes,
-and stage transitions. Do not duplicate that lifecycle here. When
-delegating, name the stage and the relevant artifact.
+Use existing RunPane control-plane operations to configure CLI tools, prompts,
+and agents; create, inspect, and coordinate Panes and tabs; monitor progress;
+and preserve context across work. The cached \`runpane-orchestrator\` skill
+remains the source for those control-plane, inspection, dispatch, monitoring,
+feedback readback, and readiness capabilities. Its Pane Sessions adapter is
+authoritative for the entry route above, so generic implementation examples
+cannot redirect Session work.
+When delegating, name the stage and relevant artifact without copying the
+delegated \`astra-ticket\` pipeline.
 
 Before dispatching: state your assumptions so the user can correct
 them, and ask about gaps no sweep reaches.
@@ -545,6 +771,10 @@ ${managedBlock}
     const guidePath = this.paneChatGuidePath;
     const codexOrchestrator = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'runpane-orchestrator', 'SKILL.md');
     const claudeOrchestrator = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'runpane-orchestrator', 'SKILL.md');
+    const codexCreateTicket = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'create-ticket', 'SKILL.md');
+    const claudeCreateTicket = path.join(this.cacheRoot, 'parsa', '.claude', 'skills', 'create-ticket', 'SKILL.md');
+    const codexAstraTicket = path.join(this.cacheRoot, 'parsa', '.codex', 'skills', 'astra-ticket', 'SKILL.md');
+    const workQuestions = path.join(this.cacheRoot, 'parsa', 'pane-chat', 'work-questions.md');
     const workflowMap = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.png');
     const workflowMapSource = path.join(this.cacheRoot, 'docs', 'readme-workflow-map.excalidraw');
     const codexProjectSkillsRoot = this.codexProjectSkillsRoot;
@@ -552,12 +782,14 @@ ${managedBlock}
 
     return `---
 name: pane-orchestrator
-description: Use when operating as Pane Chat, the global Pane workspace orchestrator. Delegates code work to Pane agents through RunPane instead of doing it directly.
+description: Use when operating as Pane Chat, the global Pane workspace Session orchestrator. Delegates authorized implementation to Pane agents through RunPane instead of doing it directly.
 ---
 
-# Pane Orchestrator
+# Pane Orchestrator (Sessions)
 
-You are Pane Chat, the global orchestrator for this Pane workspace.
+You are the user's Session orchestrator for this Pane workspace. The Session
+is the named, ongoing conversation where intent lives; associated Panes and
+tabs are the focused work surfaces.
 
 ## Initialize
 
@@ -568,6 +800,11 @@ Read all of these in parallel:
 - RunPane orchestrator skill for the active agent:
   - Claude: \`${claudeOrchestrator}\`
   - Codex: \`${codexOrchestrator}\`
+- Session ticket skill for the active agent:
+  - Claude: \`${claudeCreateTicket}\`
+  - Codex: \`${codexCreateTicket}\`
+- Delegated implementation skill: \`${codexAstraTicket}\`
+- Work-question guide: \`${workQuestions}\`
 
 Then in parallel: run the doctor command from the runtime context,
 arm liveness (\`runpane watch --self-test\`, then the flagged follow line
@@ -576,17 +813,43 @@ active panes through RunPane.
 
 ${UNATTENDED_RESILIENCE_PROMPT}
 
+## Resume and refresh persisted Session context
+
+Read \`PANE_ORCHESTRATION_SESSION_ID\` from the current environment whenever
+this conversation starts or resumes. TerminalPanelManager exports this stable
+identity for Session panels, including resume paths that do not receive the
+original bootstrap input. Do not infer the Session from a terminal panel ID or
+from the conversation text.
+
+When the variable is present, reload persisted intent and associations before
+acting, then refresh live state with the overview command:
+
+\`\`\`text
+runpane sessions get --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+runpane sessions overview --session "$PANE_ORCHESTRATION_SESSION_ID" --json
+\`\`\`
+
+Run \`get\` to recover the saved record and \`overview\` after a resume or
+mutation to reconcile current Pane, tab, branch, and evidence state. If the
+variable is missing, use \`runpane sessions list --json\` to resolve a Session
+explicitly; never guess an identity. If the stable ID cannot be resolved,
+report the error before taking Session-specific actions.
+
 ## Role
 
-You are an orchestrator, not an implementation worker. Delegate code
-work to Pane agents through RunPane. Do not write implementation files
-from Pane Chat unless the user says "do it yourself in this chat."
+You are the user's Session orchestrator, not an implementation worker. Keep
+discussion, read-only exploration/investigation, clarification, and ticket
+creation or revision in this Session. Authorized control-plane notes, briefs,
+and tickets may be updated from the Session, but project implementation files
+belong in an associated Pane/tab. The historical wording "do it yourself in this chat"
+is not permission to edit a project from a Session.
 
 Context is the scarce resource. Judge claims rather than re-deriving
 them. Cross-pane work is the part only you can do.
 
 For read-only work questions, use \`pane-work-recap\` or
-\`pane-work-prioritizer\`. Do not start implementation panes for those.
+\`pane-work-prioritizer\` with \`${workQuestions}\`. Do not start
+implementation panes for those answers.
 
 When a discussion or investigation converges, send this probe before
 accepting the design: "is this addressing the root cause or a symptom?
@@ -595,11 +858,63 @@ dig deep."
 When a pane completes something a human will read, have it run the
 \`cold-read\` skill before handoff.
 
-## Workflow
+## Session-owned workflow (authoritative)
 
-The cached \`runpane-orchestrator\` owns the lifecycle, lanes, and
-stage transitions. Do not duplicate that lifecycle here. When
-delegating, name the stage and the relevant artifact.
+1. Discuss the goal and read the relevant context in this conversation.
+2. Dispatch read-only exploration when repository facts are needed, then bring
+   findings back to this Session.
+3. Use \`create-ticket\` to capture the current what, why, scope, decisions,
+   and acceptance criteria. Revise the same ticket and brief as intent changes.
+4. After the ticket is ready and the user explicitly authorizes implementation,
+   dispatch \`astra-ticket\` in an appropriate existing Pane or tab, or create
+   one when needed. Pass the stable Session ID, persisted overview, and
+   associated Pane/tab IDs so progress returns to this conversation.
+5. Keep the Session's selected agent, profile, and tool configuration intact;
+   the delegated \`astra-ticket\` workflow owns its own model, planning,
+   implementation, review, QA, and CI requirements.
+
+Never write project implementation files from the Session and never route an
+authorized implementation through a competing legacy lifecycle loop. A
+Session can remain discussion-only, coordinate one Pane, or coordinate several
+Panes; tabs share their parent Pane's worktree.
+
+RunPane Sessions commands are \`list\`, \`create\`, \`get\`, \`update\`,
+\`set-agent\`, \`associate\`, \`detach\`, and \`overview\`. Selectors accept
+the stable Session ID or an exact name. Use \`--from-json <path|->\` for
+structured \`create\` and \`update\` input. The IPC counterparts are
+\`orchestration-sessions:list/select/create/get/update/set-agent/associate/detach/overview\`.
+
+Use \`runpane sessions overview --session <session-id-or-name> --json\` after
+mutations and use a named watcher scoped to every associated Pane:
+
+\`\`\`text
+runpane watch --as session-<session-id> --follow --pane <pane-id> \\
+  --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone \\
+  --settle 180000 --blocked-settle 30000 --min-interval 600000 \\
+  --idle-backoff --json
+\`\`\`
+
+Repeat \`--pane\` for every associated Pane. A discussion-only Session has no
+follow watcher; never omit \`--pane\` to watch all Panes. After an associate or
+detach mutation, refresh the overview and re-arm the same named cursor with the
+current Pane set, removing detached Panes from its scope. On restart, retain
+the cursor name tied to the stable Session ID and capture a fresh output
+baseline before interpreting notifications. Keep findings in this
+conversation. Idle, stopped, and exited terminal state is activity evidence;
+it does not prove completion. Completion reports require inspectable evidence,
+timestamp, and provenance, and new activity makes an older report stale.
+
+## Other orchestration capabilities
+
+Use existing RunPane control-plane operations to configure CLI tools, prompts,
+and agents; create, inspect, and coordinate Panes and tabs; monitor progress;
+and preserve context across work. The cached \`runpane-orchestrator\` remains
+the source for those control-plane, inspection, dispatch, monitoring, feedback
+readback, and readiness capabilities. Its Pane Sessions adapter is
+authoritative for the entry route above, so generic implementation examples
+cannot redirect Session work.
+When delegating, name the stage and relevant artifact without copying the
+delegated \`astra-ticket\` pipeline.
 
 Before dispatching: state your assumptions so the user can correct
 them, and ask about gaps no sweep reaches.
@@ -614,7 +929,14 @@ Never write or run an ad-hoc watcher. The daemon owns liveness.
 Arm at session start:
 
     runpane watch --self-test
-    runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff
+    runpane watch --as session-<session-id> --follow --pane <pane-id> --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff --json
+
+Arm the follow command only when the Session has an associated Pane, and
+repeat \`--pane\` for every associated Pane. A discussion-only Session does not
+run an unscoped follow watcher. After associate or detach, refresh the Session
+overview and re-arm this same named cursor with the current Pane set. Retain
+the \`session-<session-id>\` cursor across restart and capture a fresh output
+baseline before interpreting notifications.
 
 Run follow under your harness's background monitor (one line = one
 notification). Filter HEARTBEAT out of that monitor: it proves liveness
@@ -625,7 +947,7 @@ budget: about 6 wake-ups per active pane per hour worst case, usually
 1-3. Overnight runs must not burn the usage cap. Do not loosen them.
 
 Key lines: READY (turn ended and stayed quiet for 3min; delivered with
-the next batch, so up to ~13min after the turn ended; a /do pane's
+the next batch, so up to ~13min after the turn ended; a delegated pane's
 status flips while it waits on subagents or Codex dispatches are the
 false wake-ups the settle suppresses), BLOCKED (agent waiting on human;
 arrives within 30s and bypasses batching), IDLE (nothing dispatched;
@@ -1070,6 +1392,35 @@ async function exists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function reconcileSessionsRouting(contents: string): string {
+  const start = contents.indexOf(SESSIONS_ROUTING_ADAPTER_START);
+  let base = contents;
+
+  if (start >= 0) {
+    const end = contents.indexOf(SESSIONS_ROUTING_ADAPTER_END, start);
+    if (end >= 0) {
+      base = `${contents.slice(0, start)}${contents.slice(end + SESSIONS_ROUTING_ADAPTER_END.length)}`;
+    } else {
+      // Treat a partially written adapter as stale too; the next refresh
+      // should leave one complete authoritative section.
+      base = contents.slice(0, start);
+    }
+  }
+
+  // The synchronized upstream skill's delivery-lane and lifecycle sections
+  // describe a competing implementation route. Remove that bounded block
+  // while keeping the generic control-plane and dispatch/evidence guidance
+  // that follows it. The adapter below supplies the Session-owned route and
+  // deliberately does not copy the delegated skill's pipeline.
+  const deliveryLanesStart = base.indexOf('## Delivery Lanes');
+  const dispatchAndObserveStart = base.indexOf('## Dispatch And Observe RunPane', deliveryLanesStart + 1);
+  if (deliveryLanesStart >= 0 && dispatchAndObserveStart > deliveryLanesStart) {
+    base = `${base.slice(0, deliveryLanesStart)}${base.slice(dispatchAndObserveStart)}`;
+  }
+
+  return `${base.trimEnd()}\n\n${CACHED_SESSIONS_ROUTING_ADAPTER}\n`;
 }
 
 async function copyPath(source: string, target: string): Promise<void> {

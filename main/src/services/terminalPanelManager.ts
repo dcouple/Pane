@@ -1,4 +1,5 @@
 import * as pty from '@lydell/node-pty';
+import { EventEmitter } from 'events';
 import { filterSyncBlockClears } from './syncBlockClearFilter';
 import { ToolPanel, TerminalPanelState } from '../../../shared/types/panels';
 import { getPaneDaemonEventSink, getPaneEventSink, getPtyHostRuntime, getRuntimeConfigManager, type PtyHandleLike, type PtyHostRuntime } from '../core/runtime';
@@ -236,7 +237,7 @@ interface CliLaunchResolution {
   isCliCommand: boolean;
 }
 
-export class TerminalPanelManager {
+export class TerminalPanelManager extends EventEmitter {
   private terminals = new Map<string, TerminalProcess>();
   private serializedBuffers = new Map<string, string>();
   private readonly visibleViewersByPanel = new Map<string, Map<string, number>>();
@@ -251,6 +252,11 @@ export class TerminalPanelManager {
   private readonly agentStatusMonitor = new AgentStatusMonitor();
   private agentStatusPollTimer: ReturnType<typeof setInterval> | null = null;
   private agentStatusPolling = false;
+
+  constructor() {
+    super();
+    this.setMaxListeners(100);
+  }
 
   private quoteCommandArgument(value: string): string {
     return `"${value.replace(/([\\"$`])/g, '\\$1')}"`;
@@ -912,6 +918,7 @@ export class TerminalPanelManager {
      * PANE_* var) silently disappear inside WSL terminals.
      */
     const isWSL = !!wslContext && process.platform === 'win32';
+    const panelCustomState = terminalCustomState(panel.state);
     const wslEnvVars: Record<string, string> = isWSL
       ? {
           WSLENV: buildWSLENV([
@@ -920,6 +927,7 @@ export class TerminalPanelManager {
             'PANE_PORT',
             'PANE_SESSION_ID',
             'PANE_PANEL_ID',
+            'PANE_ORCHESTRATION_SESSION_ID',
             'WORKTREE_PATH',
             'PANE_WORKSPACE_PATH',
           ]),
@@ -939,7 +947,7 @@ export class TerminalPanelManager {
         baseEnv[key] = value;
       }
     }
-    const spawnEnv = {
+    const baseSpawnEnv = {
       ...baseEnv,
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: enhancedPath,
@@ -953,6 +961,9 @@ export class TerminalPanelManager {
       PANE_WORKSPACE_PATH: cwd,
       ...wslEnvVars,
     } satisfies Record<string, string>;
+    const spawnEnv = panelCustomState.orchestrationSessionId
+      ? { ...baseSpawnEnv, PANE_ORCHESTRATION_SESSION_ID: panelCustomState.orchestrationSessionId }
+      : baseSpawnEnv;
 
     // Read the setting once per spawn so we don't scatter config reads.
     // `getPtyHostRuntime()` returns null when the setting is off or when
@@ -1661,6 +1672,7 @@ export class TerminalPanelManager {
       reason,
     };
     this.sendRendererEvent('panel:agentStatus', payload);
+    this.emit('agent-status', payload);
     this.emitActivityStatus(terminal);
   }
 
