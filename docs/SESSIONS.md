@@ -1,9 +1,10 @@
 # Sessions
 
-Sessions are the named, ongoing conversations where work intent lives. A
-Session keeps the goal, context, decisions, blockers, evidence, outputs, and
-next action together while one or more existing or new Panes provide the
-focused work surfaces. A tab shares its parent Pane's worktree.
+Sessions are named, ongoing Pane Chats where work intent lives. Each Session
+opens one chat, and its sidebar row can expand to show associated Panes. The
+optional overview keeps the Session name, associated Panes, and recent
+activity together while the chat remains the focused work surface. A tab
+shares its parent Pane's worktree.
 
 In the sidebar, `+` opens an agent picker and an optional chat name field. Pane
 remembers the chosen agent as the default for future Sessions while existing

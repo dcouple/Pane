@@ -8,6 +8,21 @@ type UiAssociationFixture = {
   attachedAt: string;
 };
 
+type UiPaneOverviewFixture = {
+  paneId: string;
+  name: string;
+  branch?: string;
+  archived: boolean;
+  missing: boolean;
+  panels: Array<{
+    panelId: string;
+    title: string;
+    state: 'blocked' | 'working' | 'idle' | 'unknown';
+    initialized: boolean;
+    missing?: boolean;
+  }>;
+};
+
 type UiSessionFixture = {
   id: string;
   name: string;
@@ -36,6 +51,7 @@ type UiSessionFixture = {
 
 type SessionFixtureOptions = {
   listDelayMs?: number;
+  overviewPanes?: Record<string, UiPaneOverviewFixture[]>;
 };
 
 function sessionFixture(
@@ -120,7 +136,7 @@ async function installSessionsFixture(
     initialProjects: [{ id: 1, name: 'Pane fixtures', path: '/tmp/pane-fixtures', active: true }],
     initialSessions: paneSessions,
   });
-  await page.addInitScript(({ seed, listDelayMs }: { seed: UiSessionFixture[]; listDelayMs: number }) => {
+  await page.addInitScript(({ seed, listDelayMs, overviewPanes }: { seed: UiSessionFixture[]; listDelayMs: number; overviewPanes: Record<string, UiPaneOverviewFixture[]> }) => {
     type SessionRecord = UiSessionFixture;
     type Selector = { sessionId?: string; name?: string };
     type Update = Partial<Pick<SessionRecord, 'name' | 'goal' | 'context' | 'decisions' | 'blockers' | 'nextAction'>> & { expectedRevision?: number };
@@ -281,7 +297,7 @@ async function installSessionsFixture(
       },
       overview: async (selector: Selector) => {
         const record = find(selector);
-        return success({ session: clone(record), status: 'unassociated', panes: [], activity: clone(record.activity), refreshedAt: new Date().toISOString() });
+        return success({ session: clone(record), status: 'unassociated', panes: clone(overviewPanes[record.id] ?? []), activity: clone(record.activity), refreshedAt: new Date().toISOString() });
       },
     };
 
@@ -291,7 +307,7 @@ async function installSessionsFixture(
       getOrchestrationSelectCalls: () => selectCalls,
       emitOrchestrationChanged: (kind = 'updated') => window.dispatchEvent(new CustomEvent('orchestration-sessions-changed', { detail: { sessionId: selectedSessionId, kind } })),
     });
-  }, { seed: initialSessions, listDelayMs: fixtureOptions.listDelayMs ?? 0 });
+  }, { seed: initialSessions, listDelayMs: fixtureOptions.listDelayMs ?? 0, overviewPanes: fixtureOptions.overviewPanes ?? {} });
 }
 
 async function dismissStartupDialogs(page: Page): Promise<void> {
@@ -307,7 +323,7 @@ async function layoutBox(locator: Locator): Promise<{ x: number; y: number; widt
   return { x: box.x, y: box.y, width: box.width, height: box.height };
 }
 
-test('Sessions create, rename, switch, and keep each context isolated', async ({ page }) => {
+test('Sessions create, rename, switch, and keep chat surfaces focused', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await installSessionsFixture(page, [
     sessionFixture('roadmap', 'Roadmap', 'Plan the next release.', 'Roadmap context stays here.', '2026-09-16T12:00:00.000Z'),
@@ -324,7 +340,14 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await expect(page.getByRole('button', { name: 'Show overview', exact: true })).toBeVisible();
   await expect(page.getByText('Roadmap context stays here.', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Show overview', exact: true }).click();
-  await expect(page.getByText('Roadmap context stays here.', { exact: true })).toBeVisible();
+  const roadmapOverview = page.getByRole('complementary', { name: 'Session overview', exact: true });
+  await expect(roadmapOverview.getByRole('heading', { name: 'Roadmap', exact: true })).toBeVisible();
+  await expect(roadmapOverview.getByRole('heading', { name: 'Associated Panes', exact: true })).toBeVisible();
+  await expect(roadmapOverview.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await expect(roadmapOverview.getByText('Created Session “Roadmap”.', { exact: true })).toBeVisible();
+  for (const label of ['Goal', 'Context', 'Decisions', 'Blockers', 'Next action', 'Evidence and outputs']) {
+    await expect(roadmapOverview.getByText(label, { exact: true })).toHaveCount(0);
+  }
 
   await page.getByTestId('new-orchestration-session').click();
   const createDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
@@ -332,8 +355,9 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await expect(createDialog.getByLabel('Name your chat (optional)', { exact: true })).toHaveValue('');
   await expect(createDialog.getByLabel('Goal', { exact: true })).toHaveCount(0);
   await expect(createDialog.getByLabel('Context', { exact: true })).toHaveCount(0);
-  await expect(createDialog.getByTestId('create-session-agent-claude')).toHaveAttribute('aria-checked', 'true');
+  await expect(createDialog.getByRole('radio', { name: 'Claude', exact: true })).toBeChecked();
   await createDialog.getByTestId('create-session-agent-codex').click();
+  await expect(createDialog.getByRole('radio', { name: 'Codex', exact: true })).toBeChecked();
   await createDialog.getByRole('button', { name: 'Create Session', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'New chat 3', exact: true })).toBeVisible();
@@ -351,13 +375,13 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await page.getByRole('button', { name: 'Rename Session' }).click();
   await page.getByLabel('Name', { exact: true }).fill('Release checklist renamed');
   await page.getByRole('button', { name: 'Save name', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Release checklist renamed', exact: true })).toBeVisible();
+  await expect(page.locator('h1').filter({ hasText: 'Release checklist renamed' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Session Release checklist renamed', exact: true })).toBeVisible();
 
   await page.getByTestId('new-orchestration-session').click();
   const namedCreateDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   await namedCreateDialog.getByLabel('Name your chat (optional)', { exact: true }).fill('  Custom named chat  ');
-  await expect(namedCreateDialog.getByTestId('create-session-agent-codex')).toHaveAttribute('aria-checked', 'true');
+  await expect(namedCreateDialog.getByRole('radio', { name: 'Codex', exact: true })).toBeChecked();
   await namedCreateDialog.getByRole('button', { name: 'Create Session', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Custom named chat', exact: true })).toBeVisible();
   await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Codex');
@@ -365,7 +389,10 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await page.getByRole('button', { name: 'Open Session Onboarding', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Onboarding', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Show overview', exact: true }).click();
-  await expect(page.getByText('Onboarding context stays here.', { exact: true })).toBeVisible();
+  const onboardingOverview = page.getByRole('complementary', { name: 'Session overview', exact: true });
+  await expect(onboardingOverview.getByRole('heading', { name: 'Onboarding', exact: true })).toBeVisible();
+  await expect(onboardingOverview.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await expect(onboardingOverview.getByText('Onboarding context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Checklist context stays here.', { exact: true })).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Open Session Release checklist renamed', exact: true }).click();
@@ -374,6 +401,50 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await expect(page.getByText('Checklist context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Onboarding context stays here.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Something went wrong')).toHaveCount(0);
+});
+
+test('Session creation agent picker supports native radio keyboard semantics', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture('keyboard', 'Keyboard chat', 'Keyboard goal.', 'Keyboard context.', '2026-09-16T12:00:00.000Z'),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await page.getByTestId('sessions-nav').click();
+  await page.getByTestId('new-orchestration-session').click();
+  const dialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
+  const radios = dialog.getByRole('radio');
+  await expect(radios).toHaveCount(3);
+  await expect(dialog.getByRole('radio', { name: 'Claude', exact: true })).toBeChecked();
+
+  await radios.first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(radios.nth(1)).toBeFocused();
+  await expect(radios.nth(1)).toBeChecked();
+  await page.keyboard.press('ArrowRight');
+  await expect(radios.nth(2)).toBeFocused();
+  await expect(radios.nth(2)).toBeChecked();
+  await page.keyboard.press('Space');
+  await expect(radios.nth(2)).toBeChecked();
+});
+
+test('Session creation hides unsupported Cursor on Windows', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'platform', { configurable: true, get: () => 'Win32' });
+  });
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture('windows', 'Windows chat', 'Windows goal.', 'Windows context.', '2026-09-16T12:00:00.000Z'),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await page.getByTestId('sessions-nav').click();
+  await page.getByTestId('new-orchestration-session').click();
+  const dialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
+  await expect(dialog.getByRole('radio')).toHaveCount(2);
+  await expect(dialog.getByRole('radio', { name: 'Cursor', exact: true })).toHaveCount(0);
 });
 
 test('Session metadata refresh stays quiet and cannot steal a later selection', async ({ page }) => {
@@ -469,7 +540,23 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
     paneFixture('pane-evolution-worker', 'Pane/pane chat to session'),
     paneFixture('pane-doozy-worker', 'Pane/managed pane sidebar'),
     paneFixture('pinned-pane', 'Pinned pane', true),
-  ]);
+  ], {
+    overviewPanes: {
+      evolution: [{
+        paneId: 'pane-evolution-worker',
+        name: 'Pane/pane chat to session',
+        branch: 'feature/sidebar',
+        archived: false,
+        missing: false,
+        panels: [
+          { panelId: 'unstarted-terminal', title: 'Unstarted terminal', state: 'unknown', initialized: false },
+          { panelId: 'initialized-terminal', title: 'Initialized terminal', state: 'unknown', initialized: true },
+          { panelId: 'working-terminal', title: 'Working terminal', state: 'working', initialized: true },
+          { panelId: 'missing-terminal', title: 'Missing terminal', state: 'unknown', initialized: false, missing: true },
+        ],
+      }],
+    },
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
@@ -489,6 +576,18 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   await expect(page.getByRole('button', { name: 'Pane/pane chat to session', exact: true })).toHaveCount(0);
   await evolutionToggle.click();
   await expect(evolutionToggle).toHaveAttribute('aria-expanded', 'true');
+
+  await page.getByTestId('orchestration-session-evolution').click();
+  await expect(page.getByRole('heading', { name: 'Pane evolution', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
+  const evolutionOverview = page.getByRole('complementary', { name: 'Session overview', exact: true });
+  await expect(evolutionOverview.getByText('Unstarted terminal', { exact: true })).toBeVisible();
+  await expect(evolutionOverview.getByText('Initialized terminal', { exact: true })).toBeVisible();
+  await expect(evolutionOverview.getByText('Working', { exact: true })).toBeVisible();
+  await expect(evolutionOverview.getByText('Missing', { exact: true })).toBeVisible();
+  await expect(evolutionOverview.getByText('Unknown', { exact: true })).toHaveCount(0);
+  await expect(evolutionOverview.getByText('Not started', { exact: true })).toHaveCount(0);
+  await expect(evolutionOverview.getByText('Status unavailable', { exact: true })).toHaveCount(0);
 
   await page.getByTestId('orchestration-session-doozy').click();
   await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();

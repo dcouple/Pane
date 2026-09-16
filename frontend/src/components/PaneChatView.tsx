@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, Pencil, RefreshCw, Terminal, X } from 'lucide-react';
+import { Pencil, RefreshCw, Terminal, X } from 'lucide-react';
 import { API } from '../utils/api';
 import type { Session } from '../types/session';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
@@ -340,15 +340,11 @@ function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, on
     }
   };
 
-  const report = overview ? overview.report : record.report;
-  const reportFreshness = overview?.report?.freshness ?? 'pending';
-
   return (
     <aside className="flex w-[min(360px,38vw)] min-w-[280px] flex-shrink-0 flex-col overflow-y-auto border-l border-border-primary bg-surface-primary" aria-label="Session overview">
       <div className="flex items-center justify-between gap-2 border-b border-border-primary px-3 py-2">
         <div>
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">Overview</h2>
-          <p className="text-[10px] text-text-muted">Revision {record.revision}</p>
+          <h2 className="truncate text-sm font-semibold text-text-primary">{record.name}</h2>
         </div>
         <div className="flex items-center gap-1">
           <button type="button" aria-label="Refresh Session overview" title="Refresh" onClick={() => void onRefresh()} className="rounded p-1 text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-interactive"><RefreshCw className="h-3.5 w-3.5" /></button>
@@ -365,34 +361,14 @@ function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, on
               <Button type="button" size="sm" loading={isSaving} loadingText="Saving…" onClick={() => void save()}>Save name</Button>
             </div>
           </>
-        ) : (
-          <>
-            <OverviewText label="Goal" value={record.goal} empty="No goal recorded." />
-            <OverviewText label="Context" value={record.context} empty="No context recorded." />
-            <OverviewList label="Decisions" values={record.decisions} empty="No decisions recorded." />
-            <OverviewList label="Blockers" values={record.blockers} empty="No blockers recorded." />
-            <OverviewText label="Next action" value={record.nextAction} empty="No next action recorded." />
-          </>
-        )}
+        ) : null}
 
-        <div className="border-t border-border-primary pt-3">
+        <div>
           <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Associated Panes</h3>
           {!overview && !error && <p className="text-text-muted">Loading live state…</p>}
           {error && <div className="space-y-1"><p role="alert" className="text-status-error">{error}</p><button type="button" className="underline text-text-secondary" onClick={onRetry}>Retry</button></div>}
           {overview?.panes.length === 0 && <p className="text-text-muted">This Session has no associated Panes.</p>}
           {overview?.panes.map(pane => <PaneOverviewCard key={pane.paneId} pane={pane} />)}
-        </div>
-
-        <div className="border-t border-border-primary pt-3">
-          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">Evidence and outputs</h3>
-          <LinkList links={[...record.evidence, ...record.outputs]} />
-          {report && (
-            <div className="mt-2 rounded border border-border-primary bg-surface-secondary p-2">
-              <p className="font-medium text-text-primary">{report.summary}</p>
-              <p className="mt-1 text-[10px] text-text-muted">{report.status === 'verified' ? 'Marked verified by source' : 'Reported by source'} · {report.provenance} · {reportFreshness === 'stale' ? 'stale after later activity' : reportFreshness === 'current' ? 'current at last refresh' : 'freshness pending'}</p>
-              <LinkList links={report.evidence} />
-            </div>
-          )}
         </div>
 
         <div className="border-t border-border-primary pt-3">
@@ -411,14 +387,6 @@ function SessionOverviewPanel({ record, overview, error, onRefresh, onUpdate, on
   );
 }
 
-function OverviewText({ label, value, empty }: { label: string; value: string; empty: string }) {
-  return <div><h3 className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">{label}</h3><p className={cn('whitespace-pre-wrap leading-relaxed', value ? 'text-text-secondary' : 'text-text-muted')}>{value || empty}</p></div>;
-}
-
-function OverviewList({ label, values, empty }: { label: string; values: string[]; empty: string }) {
-  return <div><h3 className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">{label}</h3>{values.length > 0 ? <ul className="list-disc space-y-0.5 pl-4 text-text-secondary">{values.map((value, index) => <li key={`${value}-${index}`}>{value}</li>)}</ul> : <p className="text-text-muted">{empty}</p>}</div>;
-}
-
 function PaneOverviewCard({ pane }: { pane: OrchestrationSessionOverview['panes'][number] }) {
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const navigateToSessions = useNavigationStore(state => state.navigateToSessions);
@@ -433,39 +401,17 @@ function PaneOverviewCard({ pane }: { pane: OrchestrationSessionOverview['panes'
         <div className="min-w-0"><p className="truncate font-medium text-text-primary">{pane.name}</p><p className="truncate text-[10px] text-text-muted">{pane.branch || 'Branch unknown'}{pane.archived ? ' · archived' : pane.missing ? ' · missing' : ''}</p></div>
         {!pane.missing && <button type="button" onClick={openPane} className="flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] text-interactive hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-interactive">Open Pane</button>}
       </div>
-      {pane.panels.map(panel => <div key={panel.panelId} className="mt-1 flex items-center justify-between gap-2 text-[10px]"><span className="min-w-0 truncate text-text-secondary">{panel.title}</span><span className={cn('flex-shrink-0', panel.state === 'blocked' ? 'text-status-error' : panel.state === 'working' ? 'text-status-warning' : 'text-text-muted')}>{panel.missing ? 'missing' : panel.state}</span></div>)}
+      {pane.panels.map(panel => {
+        const stateLabel = panel.missing
+          ? 'Missing'
+          : panel.state === 'unknown'
+            ? null
+            : `${panel.state.charAt(0).toUpperCase()}${panel.state.slice(1)}`;
+        return <div key={panel.panelId} className="mt-1 flex items-center justify-between gap-2 text-[10px]"><span className="min-w-0 truncate text-text-secondary">{panel.title}</span>{stateLabel && <span className={cn('flex-shrink-0', panel.state === 'blocked' ? 'text-status-error' : panel.state === 'working' ? 'text-status-warning' : 'text-text-muted')}>{stateLabel}</span>}</div>;
+      })}
       {pane.git && <p className="mt-1 text-[10px] text-text-muted">{pane.git.hasUncommittedChanges ? 'Uncommitted changes' : 'Clean working tree'}{pane.git.prNumber ? ` · PR #${pane.git.prNumber}` : ''}</p>}
     </div>
   );
-}
-
-function LinkList({ links }: { links: OrchestrationSessionRecord['evidence'] }) {
-  if (links.length === 0) return <p className="text-text-muted">No links recorded.</p>;
-  return <ul className="mt-1 space-y-1">{links.map((link, index) => <li key={`${link.url}-${index}`}><button type="button" onClick={() => void openSessionLink(link.url)} className="inline-flex max-w-full items-center gap-1 text-left text-interactive hover:underline focus:outline-none focus:ring-2 focus:ring-interactive"><ExternalLink className="h-3 w-3 flex-shrink-0" /><span className="truncate">{link.label}</span></button>{link.provenance && <span className="ml-1 text-[10px] text-text-muted">({link.provenance})</span>}</li>)}</ul>;
-}
-
-async function openSessionLink(value: string): Promise<void> {
-  if (!/^file:/i.test(value)) {
-    await window.electronAPI.openExternal(value);
-    return;
-  }
-
-  try {
-    const url = new URL(value);
-    if (url.hostname && url.hostname !== 'localhost') {
-      console.error('Refusing to reveal a file link on a remote host');
-      return;
-    }
-    let filePath = decodeURIComponent(url.pathname);
-    if (/^\/[A-Za-z]:\//.test(filePath)) filePath = filePath.slice(1);
-    if (!filePath) {
-      console.error('Refusing to reveal an empty file link');
-      return;
-    }
-    await window.electronAPI.invoke('app:showItemInFolder', filePath);
-  } catch (cause) {
-    console.error('Failed to reveal Session artifact:', cause);
-  }
 }
 
 function formatActivityTime(value: string): string {

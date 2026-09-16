@@ -381,24 +381,31 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
                 const selected = agent === option.id;
                 const isDefault = config?.defaultOrchestratorAgent === option.id;
                 return (
-                  <button
+                  <label
                     key={option.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
                     data-testid={`create-session-agent-${option.id}`}
-                    onClick={() => {
-                      userSelectedAgent.current = true;
-                      setAgent(option.id);
-                    }}
+                    htmlFor={`create-session-agent-input-${option.id}`}
                     className={cn(
-                      'flex items-center justify-between rounded border px-3 py-2 text-left text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-interactive',
+                      'flex cursor-pointer items-center justify-between rounded border px-3 py-2 text-left text-sm transition-colors focus-within:outline-none focus-within:ring-2 focus-within:ring-interactive',
                       selected ? 'border-interactive bg-surface-selected text-text-primary' : 'border-border-primary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
                     )}
                   >
+                    <input
+                      id={`create-session-agent-input-${option.id}`}
+                      type="radio"
+                      name="orchestration-session-agent"
+                      value={option.id}
+                      aria-label={option.label}
+                      checked={selected}
+                      onChange={() => {
+                        userSelectedAgent.current = true;
+                        setAgent(option.id);
+                      }}
+                      className="sr-only"
+                    />
                     <span>{option.label}</span>
                     {isDefault && <span className="text-[11px] text-text-muted">Default</span>}
-                  </button>
+                  </label>
                 );
               })}
             </div>
