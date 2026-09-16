@@ -13,6 +13,7 @@ import { DEFAULT_PANE_CHAT_AGENT, type PaneChatAgent } from '../../../shared/typ
 import { LEGACY_ORCHESTRATION_SESSION_ID } from '../../../shared/types/orchestrationSession';
 import { Modal, ModalBody, ModalFooter, ModalHeader } from './ui/Modal';
 import { Button } from './ui/Button';
+import { Input } from './ui/Input';
 import { Tooltip } from './ui/Tooltip';
 import { AgentStatusDot } from './ui/AgentStatusDot';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
@@ -115,9 +116,9 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
 
-  const createSession = useCallback(async (agent: PaneChatAgent) => {
+  const createSession = useCallback(async (agent: PaneChatAgent, requestedName?: string) => {
     await load();
-    const name = nextSessionName(useOrchestrationSessionStore.getState().sessions);
+    const name = requestedName?.trim() || nextSessionName(useOrchestrationSessionStore.getState().sessions);
     await create({ name, agent });
     setShowCreate(false);
     setActiveSession(null);
@@ -226,8 +227,17 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   return (
     <>
       <div className="mt-1" role="group" aria-label="Sessions">
-        <div className="flex items-center justify-between gap-2 pl-3 pr-2 py-0.5">
-          <span className="truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary">Sessions</span>
+        <div data-testid="sessions-section-header" className="flex items-center justify-between gap-2 pl-3 pr-2 py-0.5">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary">Sessions</span>
+            <span
+              className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
+              role={availability === 'loading' ? 'status' : undefined}
+              aria-label={availability === 'loading' ? 'Loading Sessions' : undefined}
+            >
+              {availability === 'loading' && <RefreshCw aria-hidden="true" className="h-3 w-3 animate-spin text-text-muted" />}
+            </span>
+          </div>
           <button
             type="button"
             data-testid="new-orchestration-session"
@@ -239,12 +249,6 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
-        {availability === 'loading' && (
-          <div className="flex items-center gap-2 px-4 py-1 text-[11px] text-text-muted" role="status">
-            <RefreshCw className="h-3 w-3 animate-spin" />
-            Loading Sessions…
-          </div>
-        )}
         {error && (
           <div className="mx-3 mb-1 rounded border border-status-error/40 bg-status-error/10 px-2 py-1.5 text-[11px] text-status-error" role="alert">
             <p>{error}</p>
@@ -322,11 +326,12 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
 interface CreateOrchestrationSessionDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (agent: PaneChatAgent) => Promise<void>;
+  onCreate: (agent: PaneChatAgent, name?: string) => Promise<void>;
 }
 
 function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateOrchestrationSessionDialogProps) {
   const [agent, setAgent] = useState<PaneChatAgent>(DEFAULT_PANE_CHAT_AGENT);
+  const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const config = useConfigStore(state => state.config);
@@ -338,6 +343,7 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
     if (!isOpen) return;
     userSelectedAgent.current = false;
     setAgent(useConfigStore.getState().config?.defaultOrchestratorAgent ?? DEFAULT_PANE_CHAT_AGENT);
+    setName('');
     setError(null);
     if (!useConfigStore.getState().config) {
       void fetchConfig().then(nextConfig => {
@@ -354,7 +360,7 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
       if (config?.defaultOrchestratorAgent !== agent) {
         await updateConfig({ defaultOrchestratorAgent: agent });
       }
-      await onCreate(agent);
+      await onCreate(agent, name.trim() || undefined);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to create Session');
     } finally {
@@ -367,6 +373,7 @@ function CreateOrchestrationSessionDialog({ isOpen, onClose, onCreate }: CreateO
       <form onSubmit={submit}>
         <ModalHeader title="Create Session" />
         <ModalBody>
+          <Input label="Name your chat (optional)" value={name} onChange={event => setName(event.target.value)} placeholder="New chat" autoFocus fullWidth />
           <fieldset className="space-y-2">
             <legend className="text-label font-medium text-text-primary">Choose an agent</legend>
             <div className="grid gap-2" role="radiogroup" aria-label="Session agent">

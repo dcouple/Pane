@@ -5,12 +5,12 @@ Session keeps the goal, context, decisions, blockers, evidence, outputs, and
 next action together while one or more existing or new Panes provide the
 focused work surfaces. A tab shares its parent Pane's worktree.
 
-In the sidebar, `+` opens an agent picker. Pane remembers the chosen agent as
-the default for future Sessions while existing Sessions keep their own agent.
-Each new Session receives a generated name such as `New chat` or `New chat 2`
-and opens as one Pane Chat; rename it later from the optional read-only
-overview. Expand a Session to see its associated Panes and open any Pane in
-its existing sidebar view.
+In the sidebar, `+` opens an agent picker and an optional chat name field. Pane
+remembers the chosen agent as the default for future Sessions while existing
+Sessions keep their own agent. A blank name receives a generated name such as
+`New chat` or `New chat 2`; each new Session opens as one Pane Chat and can be
+renamed later from the optional read-only overview. Expand a Session to see
+its associated Panes and open any Pane in its existing sidebar view.
 
 The Session owns discussion, read-only code exploration and investigation,
 clarification, and ticket creation or revision. After a ticket is ready and

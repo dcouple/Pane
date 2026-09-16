@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 import type { JsonObject } from '../shared/validation/boundaryDecoder';
 
@@ -301,6 +301,12 @@ async function dismissStartupDialogs(page: Page): Promise<void> {
   if (await getStarted.isVisible({ timeout: 2000 }).catch(() => false)) await getStarted.click();
 }
 
+async function layoutBox(locator: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('Expected layout target to be visible');
+  return { x: box.x, y: box.y, width: box.width, height: box.height };
+}
+
 test('Sessions create, rename, switch, and keep each context isolated', async ({ page }) => {
   await page.setViewportSize({ width: 1400, height: 900 });
   await installSessionsFixture(page, [
@@ -323,7 +329,7 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await page.getByTestId('new-orchestration-session').click();
   const createDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   await expect(createDialog.getByRole('heading', { name: 'Create Session', exact: true })).toBeVisible();
-  await expect(createDialog.getByLabel('Name', { exact: true })).toHaveCount(0);
+  await expect(createDialog.getByLabel('Name your chat (optional)', { exact: true })).toHaveValue('');
   await expect(createDialog.getByLabel('Goal', { exact: true })).toHaveCount(0);
   await expect(createDialog.getByLabel('Context', { exact: true })).toHaveCount(0);
   await expect(createDialog.getByTestId('create-session-agent-claude')).toHaveAttribute('aria-checked', 'true');
@@ -347,6 +353,14 @@ test('Sessions create, rename, switch, and keep each context isolated', async ({
   await page.getByRole('button', { name: 'Save name', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Release checklist renamed', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Session Release checklist renamed', exact: true })).toBeVisible();
+
+  await page.getByTestId('new-orchestration-session').click();
+  const namedCreateDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
+  await namedCreateDialog.getByLabel('Name your chat (optional)', { exact: true }).fill('  Custom named chat  ');
+  await expect(namedCreateDialog.getByTestId('create-session-agent-codex')).toHaveAttribute('aria-checked', 'true');
+  await namedCreateDialog.getByRole('button', { name: 'Create Session', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Custom named chat', exact: true })).toBeVisible();
+  await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Codex');
 
   await page.getByRole('button', { name: 'Open Session Onboarding', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Onboarding', exact: true })).toBeVisible();
@@ -373,6 +387,10 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
 
   await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
+  const sessionsHeader = page.getByTestId('sessions-section-header');
+  const firstSessionRow = page.getByTestId('orchestration-session-alpha');
+  const beforeHeaderBox = await layoutBox(sessionsHeader);
+  const beforeFirstRowBox = await layoutBox(firstSessionRow);
   await page.evaluate(() => {
     // SAFETY: installSessionsFixture adds these controls before the app loads.
     const mockWindow = window as typeof window & {
@@ -407,8 +425,15 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
     mockWindow.__paneTestElectronMock.emitOrchestrationChanged('updated');
   });
   await page.getByRole('button', { name: 'Open Session Beta', exact: true }).click();
+  const loadingStatus = page.getByRole('status', { name: 'Loading Sessions', exact: true });
+  await expect(loadingStatus).toBeVisible();
+  expect(await layoutBox(sessionsHeader)).toEqual(beforeHeaderBox);
+  expect(await layoutBox(firstSessionRow)).toEqual(beforeFirstRowBox);
   await expect(page.getByRole('heading', { name: 'Beta', exact: true })).toBeVisible();
   await page.waitForTimeout(400);
+  await expect(loadingStatus).toHaveCount(0);
+  expect(await layoutBox(sessionsHeader)).toEqual(beforeHeaderBox);
+  expect(await layoutBox(firstSessionRow)).toEqual(beforeFirstRowBox);
   await expect(page.getByRole('heading', { name: 'Beta', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => {
