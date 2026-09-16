@@ -42,7 +42,6 @@ import {
   utilityProcess,
   type MessagePortMain,
   type UtilityProcess,
-  type WebContents,
 } from 'electron';
 
 import {
@@ -214,6 +213,17 @@ export class PtyHandle {
 interface WindowPortPair {
   mainPort: MessagePortMain;
   rendererPort: MessagePortMain;
+}
+
+/**
+ * The slice of Electron's `WebContents` the data-port hand-off actually uses.
+ * Declared structurally so `attachWindow` can be exercised without standing up
+ * a real renderer; `mainWindow.webContents` satisfies it unchanged.
+ */
+export interface PtyHostPortTarget {
+  readonly id: number;
+  postMessage(channel: string, message: null, transfer?: MessagePortMain[]): void;
+  once(event: 'destroyed', listener: () => void): void;
 }
 
 export class PtyHostSupervisor extends EventEmitter {
@@ -589,22 +599,37 @@ export class PtyHostSupervisor extends EventEmitter {
 
   /**
    * Stand up the per-BrowserWindow data port pair and deliver the renderer
-   * end to the window. Called from `index.ts` on `did-finish-load`.
+   * end to the window. Called from `index.ts` on every `did-finish-load`, which
+   * MUST be subscribed before the awaited `loadURL`/`loadFile` — those resolve
+   * on that same event, so a listener armed afterwards never fires.
    *
-   * Chunk C scope: the renderer port is a passthrough. Bytes still flow from
-   * ptyHost → supervisor → `PtyHandle.emitData` and from there to main-side
-   * code (SQLite, sync-block strip). `TerminalPanel.tsx` continues to receive
-   * bytes via the existing `terminal:output` IPC path. Chunk D switches the
-   * renderer to subscribe on this port, and future work may extend ptyHost to
-   * tee bytes directly to the renderer end.
+   * This port is now the ONLY byte source for ptyHost-spawned panels:
+   * `TerminalPanel.tsx` stops reading the legacy `terminal:output` IPC as soon
+   * as its `ptyId` arrives. A window that never receives a port therefore shows
+   * each terminal's first frame and nothing after it, while main's emulator
+   * stays correct — so a manual Refresh (`terminal:getState`) still paints, and
+   * the terminal looks frozen rather than broken.
    *
    * Both ports are retained on `windowPorts` — port GC would otherwise close
    * the channel (plan gotcha line 323).
+   *
+   * Re-entrant per load, not per window: `webContents.id` survives a reload but
+   * the preload closure that holds the renderer end does not, so a reloaded
+   * window has no port even though the old pair is still mapped. Close the
+   * stale pair and hand out a fresh one instead of returning early — keeping
+   * the old entry would leave `electronAPI.ptyHost.onData` permanently dead for
+   * that window.
    */
-  attachWindow(webContents: WebContents): void {
-    // Guard: ignore if we've already attached this window.
-    if (this.windowPorts.has(webContents.id)) {
-      return;
+  attachWindow(webContents: PtyHostPortTarget): void {
+    const stale = this.windowPorts.get(webContents.id);
+    if (stale) {
+      this.windowPorts.delete(webContents.id);
+      try {
+        stale.mainPort.close();
+        stale.rendererPort.close();
+      } catch (err) {
+        console.warn('[ptyHost] failed to close stale window port pair', err);
+      }
     }
 
     const { port1: mainPort, port2: rendererPort } = new MessageChannelMain();
@@ -626,12 +651,16 @@ export class PtyHostSupervisor extends EventEmitter {
     webContents.postMessage('ptyHost-port', null, [rendererPort]);
 
     // Clean up on window destroy so the map doesn't retain dead entries.
-    // Both ports become unreferenced and GC closes the channel.
-    webContents.once('destroyed', () => {
-      this.windowPorts.delete(webContents.id);
-    });
+    // Both ports become unreferenced and GC closes the channel. Registered on
+    // the first attach only; re-attaches reuse the same `webContents`, so a
+    // listener per load would pile up against its max-listeners budget.
+    if (!stale) {
+      webContents.once('destroyed', () => {
+        this.windowPorts.delete(webContents.id);
+      });
+    }
 
-    console.log(`[ptyHost] attached window webContentsId=${webContents.id}`);
+    console.log(`[ptyHost] attached window webContentsId=${webContents.id}${stale ? ' (replaced stale port pair)' : ''}`);
   }
 
   /**
