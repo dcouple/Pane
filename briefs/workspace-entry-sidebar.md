@@ -152,3 +152,11 @@ The three visible requests do not have the same underlying cause.
 - VS Code workspace folders can have a user-facing `name` independent of their resource `path`, supporting Pane's display-label/Git-identity split: [Multi-root Workspaces](https://code.visualstudio.com/docs/editing/workspaces/multi-root-workspaces#_workspace-file-schema).
 - VS Code defines independent list/tree selection and hover backgrounds while badges carry compact information, matching the proposed separation of interaction state from agent status: [Theme Color Reference](https://code.visualstudio.com/api/references/theme-color#lists-and-trees).
 - VS Code's first-open task automation has an explicit configuration/trust gate and instance limits. It is not the same feature, but it reinforces the need for a clear source and idempotency boundary: [Tasks: run behavior](https://code.visualstudio.com/docs/debugtest/tasks#_run-behavior).
+
+## Closeout — 2026-09-16
+
+Integrated current main while preserving its terminal creation suppression contract (`createDefaultTerminalOnCreate`) and external-worktree labels. PR #573 remains open: its double-click inline editor is separate from this PR's context-menu rename. Its relevant dual-copy main-repository store bug is fixed here too: session updates must reach both the sidebar array and the active main-repository session.
+
+The September 5 feedback is covered by a real SQLite close/reopen test, fresh session hydration, an actual renderer rename followed by rehydration and PR/commit-stat updates, and a late AI-name result after the user explicitly chooses the original fallback label. A manual name and its provenance survive each path; Git identity is unchanged. There is no commit-subject naming producer in the current code.
+
+Blank names remain rejected under the original brief. A separate clear/reset-to-automatic action is not implemented and needs an owner decision; this PR does not silently reinterpret blank input. Real-agent login/trust screens, cross-platform agent launch and full native app restart remain manual QA limits. Current run evidence and final tested SHA are recorded on PR #551; historical QA is not presented as proof of the integrated head.

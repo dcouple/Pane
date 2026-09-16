@@ -103,6 +103,43 @@ test.describe('sidebar pane actions', () => {
     await expect(page.getByRole('menu', { name: 'Pane actions for Human label' })).toBeVisible();
   });
 
+  test('keeps a renamed label after renderer reload and PR/commit refresh', async ({ page, context }) => {
+    await setup(page);
+    const row = page.getByRole('button', { name: 'Regular work', exact: true }).last();
+    await row.click();
+    await row.click({ button: 'right' });
+    await page.getByRole('menuitem', { name: 'Rename' }).click();
+    await page.getByRole('textbox', { name: 'Pane name' }).fill('Human label');
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Human label', exact: true })).toBeVisible();
+    const response = await page.evaluate(() => window.electronAPI.sessions.getAll());
+    expect(response.success).toBe(true);
+    // A new renderer hydrates the backend response; SQLite restart is covered in the main test.
+    const restored = await context.newPage();
+    await installElectronApiMock(restored, {
+      initialProjects: [project], initialSessions: response.data,
+      initialUiState: { expandedProjects: [1], pinnedSectionExpanded: true, repositoriesSectionExpanded: true },
+    });
+    await restored.goto('/', { waitUntil: 'domcontentloaded' });
+    const restoredRow = restored.getByRole('button', { name: 'Human label', exact: true });
+    await restoredRow.click();
+    await restored.evaluate(() => (
+      // SAFETY: installElectronApiMock installs this test-only bridge before navigation.
+      window as typeof window & { __paneTestElectronMock: { emitGitStatusUpdated: (id: string, status: JsonObject) => void } }
+    ).__paneTestElectronMock.emitGitStatusUpdated('regular', {
+      state: 'ahead', ahead: 3, prNumber: 42, prTitle: 'Latest PR title', prState: 'OPEN',
+      commitAdditions: 20, commitDeletions: 4, commitFilesChanged: 2,
+    }));
+    await expect(restoredRow).toBeVisible();
+    await expect(restored.getByRole('button', { name: 'Alpha/Human label', exact: true })).toBeVisible();
+    await expect(restored).toHaveTitle(/Human label/);
+    await restoredRow.hover();
+    await expect(restored.getByRole('tooltip')).toContainText('Latest PR title');
+    await restored.getByRole('button', { name: 'Collapse sidebar' }).click();
+    await expect(restored.getByTestId('compact-repository-pane-regular')).toHaveAttribute('aria-label', /Human label/);
+    await restored.close();
+  });
+
   test('rejects blank names and cancels without a rename call', async ({ page }) => {
     await setup(page);
     const row = page.getByRole('button', { name: 'Regular work', exact: true }).last();
