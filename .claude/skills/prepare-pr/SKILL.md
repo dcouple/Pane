@@ -1,6 +1,6 @@
 ---
 name: prepare-pr
-description: Commits changes grouped by done-plans, rebases main, builds API and webapp, then creates or updates a PR. Replaces the commit command. Use when you're ready to open or update a pull request.
+description: Commits changes grouped by done-plans, rebases main, runs build and quality gates, then creates or updates a PR. Replaces the commit command. Use when you're ready to open or update a pull request.
 argument-hint: "[optional: PR title or description]"
 disable-model-invocation: true
 ---
@@ -49,42 +49,28 @@ For each group:
    - If the resolution is **ambiguous** (e.g., both sides changed the same logic, semantic conflicts), show the user the conflict with context and ask them how to resolve it. Wait for their response before continuing.
 4. After rebase completes, verify with `git log --oneline -10` that history looks correct.
 
-## Step 2.5: Generate Production Migration SQL (If Schema Changed)
+## Step 3: Build and Quality Gates
 
-Check if `apps/api/src/shared/db/schema.ts` was modified in any commit on this branch (vs origin/main):
+Run the build and quality gates, fixing any errors:
 
 ```bash
-git diff origin/main...HEAD --name-only | grep schema.ts
+pnpm build
 ```
 
-If schema.ts was changed:
-1. Run `npm run db:diff:prod` and capture the actual output SQL.
-2. Wrap it in a transaction block (`BEGIN; ... COMMIT;`).
-3. Include the **actual SQL** in the PR description under the **Schema Changes** section — not instructions to run a command.
-4. Only include additive SQL (CREATE, ADD). If destructive SQL (DROP, ALTER type) appears, flag it for the user to review and confirm.
-
-If schema.ts was NOT changed, omit the **Schema Changes** section from the PR template entirely.
-
-## Step 3: Build and Fix Errors
-
-Run both builds and fix any errors:
-
-### Build webapp
 ```bash
-npx nx build @doozy/webapp
+pnpm lint
 ```
 
-### Build API
 ```bash
-npx nx build @doozy/api
+pnpm typecheck
 ```
 
-For each build:
+For each command:
 1. If it **passes**, move on.
 2. If it **fails**, read the error output carefully:
-   - Fix type errors, missing imports, and build issues.
-   - After fixing, re-run the failing build to confirm the fix.
-   - Repeat until both builds pass.
+   - Fix type errors, missing imports, lint violations, and build issues.
+   - After fixing, re-run the failing command to confirm the fix.
+   - Repeat until all gates pass.
 3. If a fix requires non-trivial changes (architectural issues, missing dependencies), tell the user and ask how to proceed.
 
 **Commit build fixes** as a separate commit: `fix: resolve build errors`
@@ -134,23 +120,10 @@ Build the PR description from the done-plans. List work in **chronological order
 - [ ] [Another key behavior to verify]
 - [ ] [Edge case or integration point worth checking]
 
-## Schema Changes
-<!-- Only include this section if schema.ts was modified -->
-- [ ] Migration SQL reviewed
-- [ ] Migration applied to staging
-- [ ] Migration applied to production
-
-### Production Migration SQL
-⚠️ Run this SQL against the production database BEFORE deploying:
-```sql
-BEGIN;
--- actual generated SQL from npm run db:diff:prod goes here
-COMMIT;
-```
-
 ## Build Verification
-- [x] `npx nx build @doozy/webapp` passes
-- [x] `npx nx build @doozy/api` passes
+- [x] `pnpm build` passes
+- [x] `pnpm lint` passes
+- [x] `pnpm typecheck` passes
 ```
 
 Use `$ARGUMENTS` as the PR title if provided, otherwise derive one from the done-plans.
@@ -171,9 +144,9 @@ PR ready.
 Commits:
 - <commit summaries>
 
-Build:
-  webapp: PASS
-  api: PASS
+Build: PASS
+Lint: PASS
+Typecheck: PASS
 
 PR: <url>
 Branch: <branch name> (rebased on main)

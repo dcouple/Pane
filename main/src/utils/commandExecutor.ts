@@ -1,7 +1,7 @@
-import { execSync as nodeExecSync, execFileSync as nodeExecFileSync, ExecSyncOptions, ExecSyncOptionsWithStringEncoding, ExecSyncOptionsWithBufferEncoding, exec, execFile, ExecOptions, ExecFileOptions } from 'child_process';
+import { exec, execFile, ExecOptions, ExecFileOptions } from 'child_process';
 import { promisify } from 'util';
 import { getShellPath } from './shellPath';
-import { WSLContext, getWSLExecArgs } from './wslUtils';
+import { WSLContext, escapeForBash, getWSLExecArgs } from './wslUtils';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
 
 const nodeExecAsync = promisify(exec);
@@ -32,113 +32,30 @@ function getExtraEnvVars(mergedEnv?: Record<string, string | undefined>): Record
   return Object.keys(extra).length > 0 ? extra : undefined;
 }
 
-/**
- * Extended ExecSyncOptions that includes a custom 'silent' flag
- * to suppress command execution logging
- */
-interface ExtendedExecSyncOptions extends ExecSyncOptions {
-  silent?: boolean;
-}
-
 interface ExtendedExecAsyncOptions extends ExecOptions {
   timeout?: number;
   silent?: boolean;
 }
 
-class CommandExecutor {
-  execSync(command: string, options: ExecSyncOptionsWithStringEncoding & { silent?: boolean }, wslContext?: WSLContext | null): string;
-  execSync(command: string, options?: ExecSyncOptionsWithBufferEncoding & { silent?: boolean }, wslContext?: WSLContext | null): Buffer;
-  execSync(command: string, options?: ExtendedExecSyncOptions, wslContext?: WSLContext | null): string | Buffer {
-    // Log the command being executed (unless silent mode requested)
-    const cwd = options?.cwd || process.cwd();
+export interface ExecFileAsyncOptions extends ExecFileOptions {
+  okExitCodes?: number[];
+  silent?: boolean;
+}
 
-    const extendedOptions = options;
-    const silentMode = extendedOptions?.silent === true;
+export interface ExecFileResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
 
-    // Get enhanced shell PATH
-    const shellPath = getShellPath();
+interface ExecFileFailure extends Error {
+  code?: number | string;
+  stdout?: string | Buffer;
+  stderr?: string | Buffer;
+}
 
-    if (wslContext) {
-      // Invoke wsl.exe directly via execFileSync — bypasses cmd.exe entirely,
-      // avoiding all cmd.exe escaping issues (%, ^, &, etc.)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { cwd: _cwd, silent: _silent, ...cleanOptions } = extendedOptions || {};
-      const wslCwd = decodeStringCwd(cwd);
-      const extraEnv = getExtraEnvVars(cleanOptions?.env);
-      const { file, args } = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
-
-      if (!silentMode) {
-        console.log(`[CommandExecutor] Executing (WSL): ${file} ${args.join(' ')} in ${cwd}`);
-      }
-
-      const wslOptions = {
-        ...cleanOptions,
-        maxBuffer: cleanOptions?.maxBuffer || 10 * 1024 * 1024,
-        encoding: cleanOptions?.encoding || 'utf-8',
-        env: { ...process.env, ...cleanOptions?.env, PATH: shellPath },
-      };
-
-      try {
-        const result = nodeExecFileSync(file, args, wslOptions);
-
-        if (result && !silentMode) {
-          const resultStr = result.toString();
-          const lines = resultStr.split('\n');
-          const preview = lines[0].substring(0, 100) +
-                          (lines.length > 1 ? ` ... (${lines.length} lines)` : '');
-          console.log(`[CommandExecutor] Success: ${preview}`);
-        }
-
-        return result;
-      } catch (error: unknown) {
-        if (!silentMode) {
-          console.error(`[CommandExecutor] Failed (WSL): ${command}`);
-          console.error(`[CommandExecutor] Error: ${error instanceof Error ? error.message : String(error)}`);
-        }
-        throw error;
-      }
-    }
-
-    if (!silentMode) {
-      console.log(`[CommandExecutor] Executing: ${command} in ${cwd}`);
-    }
-
-    // Merge enhanced PATH into options (but remove our custom silent flag)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { silent: _silent, ...cleanOptions } = extendedOptions || {};
-    const enhancedOptions = {
-      ...cleanOptions,
-      maxBuffer: cleanOptions?.maxBuffer || 10 * 1024 * 1024,
-      env: {
-        ...process.env,
-        ...cleanOptions?.env,
-        PATH: shellPath
-      }
-    };
-
-    try {
-      const result = nodeExecSync(command, enhancedOptions);
-
-      // Log success with a preview of the result (unless silent mode)
-      if (result && !silentMode) {
-        const resultStr = result.toString();
-        const lines = resultStr.split('\n');
-        const preview = lines[0].substring(0, 100) +
-                        (lines.length > 1 ? ` ... (${lines.length} lines)` : '');
-        console.log(`[CommandExecutor] Success: ${preview}`);
-      }
-
-      return result;
-    } catch (error: unknown) {
-      // Log error (unless silent mode)
-      if (!silentMode) {
-        console.error(`[CommandExecutor] Failed: ${command}`);
-        console.error(`[CommandExecutor] Error: ${error instanceof Error ? error.message : String(error)}`);
-      }
-
-      throw error;
-    }
-  }
+export class CommandExecutor {
+  constructor(private readonly fileExecutor: typeof nodeExecFileAsync = nodeExecFileAsync) {}
 
   async execAsync(command: string, options?: ExtendedExecAsyncOptions, wslContext?: WSLContext | null): Promise<{ stdout: string; stderr: string }> {
     const cwd = options?.cwd || process.cwd();
@@ -226,10 +143,56 @@ class CommandExecutor {
       throw error;
     }
   }
+
+  async execFileAsync(
+    file: string,
+    args: readonly string[],
+    options?: ExecFileAsyncOptions,
+    wslContext?: WSLContext | null,
+  ): Promise<ExecFileResult> {
+    const cwd = options?.cwd || process.cwd();
+    const shellPath = getShellPath();
+    const silentMode = options?.silent === true;
+    const { okExitCodes = [], silent: _silent, ...cleanOptions } = options || {};
+    void _silent;
+    let executable = file;
+    let executableArgs = [...args];
+    let executionOptions: ExecFileOptions = {
+      ...cleanOptions,
+      cwd,
+      timeout: cleanOptions.timeout || 60_000,
+      maxBuffer: cleanOptions.maxBuffer || 10 * 1024 * 1024,
+      env: { ...process.env, ...cleanOptions.env, PATH: shellPath },
+    };
+
+    if (wslContext) {
+      const wslCwd = decodeStringCwd(cwd);
+      const extraEnv = getExtraEnvVars(cleanOptions.env);
+      const command = [file, ...args].map(escapeForBash).join(' ');
+      const wrapped = getWSLExecArgs(command, wslContext.distribution, wslCwd, extraEnv);
+      executable = wrapped.file;
+      executableArgs = wrapped.args;
+      executionOptions = { ...executionOptions, cwd: undefined };
+    }
+
+    if (!silentMode) console.log(`[CommandExecutor] Executing file: ${executable} ${executableArgs.join(' ')} in ${cwd}`);
+    try {
+      const result = await this.fileExecutor(executable, executableArgs, executionOptions);
+      return { stdout: String(result.stdout), stderr: String(result.stderr), exitCode: 0 };
+    } catch (cause: unknown) {
+      // SAFETY: Node's execFile rejection contract supplies Error plus code/stdout/stderr.
+      const error = cause as ExecFileFailure;
+      if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw error;
+      let numericCode: number | null = null;
+      try { numericCode = decodeBoundary(error.code, boundary.number); } catch { numericCode = null; }
+      if (numericCode !== null && okExitCodes.includes(numericCode)) {
+        return { stdout: String(error.stdout ?? ''), stderr: String(error.stderr ?? ''), exitCode: numericCode };
+      }
+      if (!silentMode) console.error(`[CommandExecutor] File execution failed: ${error.message}`);
+      throw error;
+    }
+  }
 }
 
 // Export a singleton instance
 export const commandExecutor = new CommandExecutor();
-
-// Export the execSync function as a drop-in replacement
-export const execSync = commandExecutor.execSync.bind(commandExecutor);

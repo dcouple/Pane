@@ -1,12 +1,13 @@
 import React, { useState, memo } from 'react';
-import { RotateCcw, GitCommitHorizontal } from 'lucide-react';
+import { RotateCcw, GitCommitHorizontal, GitCompare } from 'lucide-react';
 import type { ExecutionListProps } from '../types/diff';
 import { useScrollSurface } from '../hooks/useScrollSurface';
 
 const ExecutionList: React.FC<ExecutionListProps> = memo(({
   sessionId,
   executions,
-  selectedExecutions,
+  selection,
+  onSelectAll,
   onSelectionChange,
   onCommit,
   onRevert,
@@ -35,36 +36,20 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
     }
   };
 
-  const handleSelectAll = () => {
-    if (executions.length > 0) {
-      const firstId = executions[executions.length - 1].id;
-      const lastId = executions.find(e => e.id !== 0)?.id || firstId;
-      onSelectionChange([firstId, lastId]);
-    }
-  };
-
   const truncateMessage = (message: string, maxLength: number = 50) => {
     if (message.length <= maxLength) return message;
     return message.substring(0, maxLength) + '...';
   };
 
   const isInRange = (executionId: number): boolean => {
-    if (selectedExecutions.length === 0) return false;
-    if (selectedExecutions.length === 1) return selectedExecutions[0] === executionId;
-    if (selectedExecutions.length === 2) {
-      const [start, end] = selectedExecutions;
+    if (selection.kind === 'all' || selection.ids.length === 0) return false;
+    if (selection.ids.length === 1) return selection.ids[0] === executionId;
+    if (selection.ids.length === 2) {
+      const [start, end] = selection.ids;
       return executionId >= Math.min(start, end) && executionId <= Math.max(start, end);
     }
     return false;
   };
-
-  if (executions.length === 0) {
-    return (
-      <div className="p-4 text-text-tertiary text-center text-xs">
-        No commits found
-      </div>
-    );
-  }
 
   return (
     <div ref={executionListRef} className="execution-list h-full flex flex-col">
@@ -73,17 +58,15 @@ const ExecutionList: React.FC<ExecutionListProps> = memo(({
         <span className="text-[11px] font-medium text-text-tertiary uppercase tracking-wider">
           Commits <span className="text-text-muted">{executions.filter(e => e.id !== 0).length}</span>
         </span>
-        <button
-          type="button"
-          onClick={handleSelectAll}
-          className="text-[10px] text-text-muted hover:text-interactive transition-colors"
-        >
-          Select all
-        </button>
       </div>
 
       {/* Commit list */}
       <div ref={scrollSurfaceRef} tabIndex={-1} className="flex-1 overflow-y-auto min-h-0">
+        <div className={`relative flex h-9 items-center gap-2 border-l-2 px-3 ${selection.kind === 'all' ? 'border-l-interactive bg-interactive/10' : 'border-l-transparent hover:bg-surface-hover'}`}>
+          <button type="button" className="absolute inset-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive" aria-label="All changes" aria-pressed={selection.kind === 'all'} onClick={onSelectAll} />
+          <GitCompare className="pointer-events-none h-3.5 w-3.5 text-interactive" />
+          <span className="pointer-events-none text-xs font-medium text-text-primary">All changes</span>
+        </div>
         {executions.map((execution, idx) => {
           const isSelected = isInRange(execution.id);
           const isUncommitted = execution.id === 0;

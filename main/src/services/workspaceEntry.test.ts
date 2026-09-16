@@ -134,7 +134,7 @@ describe('launchDefaultAgentOnce', () => {
       initialState: { initialCommand: command, agentType: agent, isCliPanel: true },
     });
     expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced).toHaveBeenCalledWith(id, {
-      autoCreateTerminal: false,
+      createDefaultTerminalOnCreate: false,
     });
     expect(services.sessionManager.getOrCreateMainRepoSessionAnnounced.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.runAgentDoctor.mock.invocationCallOrder[0]);
@@ -211,7 +211,7 @@ describe('launchDefaultAgentOnce', () => {
     await expect(launchDisclosedCodex(services, id)).resolves.toMatchObject({
       status: 'failed', reason: 'validation-failed', message: `${check} failed`,
     });
-    expect(getSession).toHaveBeenCalledWith(id, { autoCreateTerminal: false });
+    expect(getSession).toHaveBeenCalledWith(id, { createDefaultTerminalOnCreate: false });
     expect(getSession.mock.invocationCallOrder[0]).toBeLessThan(mocks.runAgentDoctor.mock.invocationCallOrder[0]);
     expect(mocks.createPanel).not.toHaveBeenCalled();
     expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
@@ -234,7 +234,7 @@ describe('launchDefaultAgentOnce', () => {
       reason: 'launch-error',
       message: 'Project was deleted before Codex started.',
     });
-    expect(getSession).toHaveBeenCalledWith(id, { autoCreateTerminal: false });
+    expect(getSession).toHaveBeenCalledWith(id, { createDefaultTerminalOnCreate: false });
     expect(mocks.createPanel).not.toHaveBeenCalled();
     expect(mocks.setActivePanel).toHaveBeenCalledWith(`session-${id}`, `explorer-session-${id}`);
     expect(updateProject).not.toHaveBeenCalled();

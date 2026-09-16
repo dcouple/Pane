@@ -1,22 +1,37 @@
 # Analytics Invariants
 
-These rules keep Pane's PostHog funnel person-stitchable and privacy-safe.
+These rules keep Pane's PostHog funnel person-stitchable and privacy-safe. Pane
+uses default-on product analytics for new and previously undecided installs.
+Privacy Settings clearly discloses that default and provides the opt-out.
+Explicit choices from older versions must never be overwritten.
 
 ## Identity Comes First
 
 Resolve analytics identity in the main process before the renderer captures any
-consent event.
+analytics disclosure or choice event.
 
 Required ordering:
 
 1. Resolve GitHub CLI email, git email, or stable `install_id`.
 2. Persist the analytics identity in config.
-3. Capture `consent_dialog_shown`.
-4. Capture `analytics_opted_in` or `analytics_opted_out`.
-5. Capture `app_first_opened` and usage events only after the consent decision.
+3. Capture `analytics_default_enabled` for an undecided install entering the
+   default-on experiment.
+4. Capture `analytics_opted_in` or `analytics_opted_out` for explicit Settings
+   choices.
+5. Capture `app_first_opened` and usage events only after the default or choice
+   is applied.
 
-Do not let the app-level PostHog initializer flush queued usage while the
-consent dialog is open. The consent dialog owns the first opt-in/opt-out flush.
+Do not flush queued usage until the initial default or stored choice has been
+resolved. Opting out must capture the choice marker directly, discard queued
+usage, and leave the PostHog SDK opted out.
+
+## Existing Choice Preservation
+
+`analytics_consent_shown=true` records an explicit choice made under the legacy
+opt-in dialog. Its stored `analytics.enabled` value is authoritative. Never
+replace an explicit `false` with the default-on value. The
+`analytics_default_applied` distinguishes installs already processed by the
+new experiment from previously undecided installs.
 
 ## Required Event Context
 
@@ -36,6 +51,10 @@ The event should also set person properties when the identity is known:
 - `install_id`
 - `app_version`
 - `platform`
+
+Privacy Settings must disclose that analytics can be associated with locally
+available GitHub or Git account details, including a username or email. Do not
+describe this telemetry as anonymous while those person properties are sent.
 
 ## Opt-Out Is Still Identified
 
@@ -60,7 +79,7 @@ it. In particular, do not drop:
 When web attribution is present, emit attribution events with the same
 `distinct_id` and `install_id` as consent and usage events.
 
-App version should come from the running app context and be attached to consent,
+App version should come from the running app context and be attached to disclosure,
 first-open, usage, attribution, and close events. This lets PostHog distinguish
 current users from older installs.
 
@@ -118,7 +137,7 @@ count buckets.
 
 ## Test Coverage
 
-Changes to consent, analytics config, or first-run event ordering should update
+Changes to disclosure, analytics config, or first-run event ordering should update
 or add coverage in:
 
 - `main/src/services/analyticsIdentity.test.ts`

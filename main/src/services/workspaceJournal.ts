@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { PaneEventArgument, PaneEventSink } from '../core/eventSink';
 import type { AgentState } from '../../../shared/types/agentStatus';
 import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
+import { extractWorkspaceHeldInput } from './workspaceHeldInput';
 import type {
   RunpaneWorkspaceEntry,
   RunpaneWorkspaceEntryKind,
@@ -22,7 +23,8 @@ interface WorkspacePanelMetadata {
   agentType?: string;
   panelTitle?: string;
   lastActivityAt?: string;
-  heldInput?: string;
+  /** Latest terminal screen text; held input is derived from it, ignoring composer placeholders. */
+  screenText?: string;
 }
 
 export interface WorkspaceJournalFilter {
@@ -274,8 +276,8 @@ export class WorkspaceJournal implements PaneEventSink {
     const settledMs = kind === 'agent.ready' && Number.isFinite(lastActivityMs)
       ? Math.max(0, now - lastActivityMs)
       : undefined;
-
-    this.append({
+    const heldInput = kind === 'agent.ready' && panel?.screenText ? extractWorkspaceHeldInput(panel.screenText) : undefined;
+    const entry: Omit<RunpaneWorkspaceEntry, 'gen' | 'at'> = {
       ...pane,
       kind,
       panelId,
@@ -286,8 +288,9 @@ export class WorkspaceJournal implements PaneEventSink {
       source: payload.reason === 'exit' ? 'exit' : 'agent',
       reason: payload.reason ?? null,
       settledMs,
-      heldInput: kind === 'agent.ready' ? truncateHeldInput(panel?.heldInput) : undefined,
-    });
+    };
+    if (heldInput) entry.heldInput = heldInput;
+    this.append(entry);
   }
 
   private lookupPane(paneId: string): WorkspacePaneMetadata | undefined {
@@ -318,7 +321,21 @@ function agentEntryKind(state: AgentState, previous: AgentState | undefined): Ru
   return 'agent.unknown';
 }
 
-function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
+/** Stable identity of a filter, for keying per-consumer state. */
+export function workspaceFilterKey(filter: WorkspaceJournalFilter): string {
+  return JSON.stringify({
+    kinds: [...filter.kinds ?? []].sort(),
+    paneIds: [...filter.paneIds ?? []].sort(),
+    excludePaneIds: [...filter.excludePaneIds ?? []].sort(),
+    repoId: filter.repoId ?? null,
+    nameContains: filter.nameContains ?? null,
+    agentsOnly: filter.agentsOnly ?? null,
+    includeHeldInput: filter.includeHeldInput ?? null,
+    includeHeldInputPresence: filter.includeHeldInputPresence ?? null,
+  });
+}
+
+export function matchesFilter(entry: RunpaneWorkspaceEntry, filter: WorkspaceJournalFilter): boolean {
   if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
   if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
   if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;
@@ -340,11 +357,6 @@ export function projectWorkspaceEntry(
     delete projected.heldInputPresent;
   }
   return projected;
-}
-
-function truncateHeldInput(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed.slice(0, 120) : undefined;
 }
 
 function paneMetadataFromEvent(

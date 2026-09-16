@@ -99,6 +99,7 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
   onPanelSelect,
   onPanelClose,
   onPanelCreate,
+  onShowExplorer,
   projectEnvironment,
   context = 'worktree',  // Default to worktree for backward compatibility
   onToggleDetailPanel,
@@ -632,7 +633,10 @@ export const PanelTabBar: React.FC<PanelTabBarProps> = memo(({
                   ref={(el) => { dropdownItemsRef.current[refIndex++] = el; }}
                   role="menuitem"
                   className={menuItemClass}
-                  onClick={() => handleAddPanel('explorer')}
+                  onClick={() => {
+                    onShowExplorer();
+                    setShowDropdown(false);
+                  }}
                 >
                   <FolderTree className="w-3.5 h-3.5 flex-shrink-0" />
                   <span className="truncate">Explorer</span>

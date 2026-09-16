@@ -154,7 +154,7 @@ export function registerProjectHandlers(
 
       // Check if it's a git repository
       try {
-        commandRunner.exec('git rev-parse --is-inside-work-tree', actualPath, { silent: true });
+        await commandRunner.execAsync('git rev-parse --is-inside-work-tree', actualPath, { silent: true });
         isGitRepo = true;
         console.log('[Main] Directory is already a git repository');
       } catch {
@@ -165,13 +165,13 @@ export function registerProjectHandlers(
       if (!isGitRepo) {
         try {
           const branchName = 'main';
-          commandRunner.exec('git init', actualPath);
+          await commandRunner.execAsync('git init', actualPath);
           console.log('[Main] Git repository initialized successfully');
 
-          commandRunner.exec(`git checkout -b ${branchName}`, actualPath);
+          await commandRunner.execAsync(`git checkout -b ${branchName}`, actualPath);
           console.log(`[Main] Created and checked out branch: ${branchName}`);
 
-          commandRunner.exec('git commit -m "Initial commit" --allow-empty', actualPath, { env: getGitAttributionEnv(configManager.getConfig()) });
+          await commandRunner.execAsync('git commit -m "Initial commit" --allow-empty', actualPath, { env: getGitAttributionEnv(configManager.getConfig()) });
           console.log('[Main] Created initial empty commit');
         } catch (error) {
           console.error('[Main] Failed to initialize git repository:', error);
@@ -436,7 +436,7 @@ export function registerProjectHandlers(
       if (ctx) {
         for (const session of allProjectSessions) {
           // Skip sessions that are main repo or don't have worktrees
-          if (session.is_main_repo || !session.worktree_name) {
+          if (session.is_main_repo || !session.worktree_name || session.worktree_ownership === 'external') {
             continue;
           }
 
@@ -457,7 +457,7 @@ export function registerProjectHandlers(
         }
       } else {
         for (const session of allProjectSessions) {
-          if (session.is_main_repo || !session.worktree_name) {
+          if (session.is_main_repo || !session.worktree_name || session.worktree_ownership === 'external') {
             continue;
           }
           console.warn(`[WorktreeAudit] remove_skipped source="project-delete" sessionId=${JSON.stringify(session.id)} projectId=${projectIdNum} projectPath=${JSON.stringify(project.path)} worktreeName=${JSON.stringify(session.worktree_name)} worktreePath=${JSON.stringify(session.worktree_path || '')} reason="missing_project_context"`);

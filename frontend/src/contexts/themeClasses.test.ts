@@ -6,7 +6,7 @@ import { THEME_CLASSES } from './themeContextValue';
 
 /**
  * frontend/index.html stamps the theme classes before React loads (to avoid a
- * flash) and duplicates THEME_CLASSES twice — once for <html>, once for <body>.
+ * flash) and therefore mirrors the shared THEME_CLASSES map once.
  * PR #362 found that copy had silently drifted; this keeps it honest.
  */
 const INDEX_HTML = readFileSync(
@@ -24,22 +24,19 @@ function parseClassMap(source: string) {
   );
 }
 
-function parseIdList(source: string): string[] {
-  return [...source.matchAll(/'([\w-]+)'/g)].map((m) => m[1]);
-}
-
 describe('index.html theme bootstrap', () => {
-  const classMaps = [...INDEX_HTML.matchAll(/const (?:themeClasses|tc) = \{([\s\S]*?)\};/g)].map((m) => parseClassMap(m[1]));
-  const idLists = [...INDEX_HTML.matchAll(/const (?:validThemes|vt) = \[([^\]]*)\];/g)].map((m) => parseIdList(m[1]));
+  const classMaps = [...INDEX_HTML.matchAll(/const themeClasses = \{([\s\S]*?)\};/g)].map((m) => parseClassMap(m[1]));
 
-  it('has one head and one body copy of the class map and valid-theme list', () => {
-    expect(classMaps).toHaveLength(2);
-    expect(idLists).toHaveLength(2);
+  it('has one complete class map and the expected precedence inputs', () => {
+    expect(classMaps).toHaveLength(1);
+    expect(Object.keys(classMaps[0]).sort()).toEqual(Object.keys(THEME_CLASSES).sort());
+    expect(INDEX_HTML).toContain('appearanceSnapshot');
+    expect(INDEX_HTML).toContain('pane.appearance.v1');
+    expect(INDEX_HTML).toContain('prefers-color-scheme');
   });
 
-  it('keeps both copies identical to THEME_CLASSES', () => {
+  it('keeps the bootstrap copy identical to THEME_CLASSES', () => {
     for (const map of classMaps) expect(map).toEqual(THEME_CLASSES);
-    for (const ids of idLists) expect(ids.sort()).toEqual(Object.keys(THEME_CLASSES).sort());
   });
 
   it('every theme composes on the light or dark base', () => {

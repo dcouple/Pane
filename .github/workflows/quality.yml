@@ -8,6 +8,41 @@ on:
   workflow_dispatch:
 
 jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      runpane: ${{ steps.filter.outputs.runpane }}
+      main: ${{ steps.filter.outputs.main }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Filter changed paths
+      id: filter
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          runpane:
+            - 'packages/runpane/**'
+            - 'packages/runpane-py/**'
+            - 'contracts/runpane/**'
+            - 'shared/types/runpaneOrchestration.ts'
+            - 'shared/types/generatedRunpaneContract.ts'
+            - 'scripts/generate-runpane-contract.js'
+            - 'scripts/sync-runpane-package-versions.js'
+            - 'scripts/test-runpane-contract.js'
+            - 'scripts/test-runpane-package-smoke.js'
+            - 'scripts/fixtures/**'
+            - '.github/workflows/quality.yml'
+          main:
+            - 'main/**'
+            - 'shared/**'
+            - 'package.json'
+            - 'pnpm-lock.yaml'
+            - 'pnpm-workspace.yaml'
+            - '.github/workflows/quality.yml'
+
   quality-checks:
     name: Quality Checks + Smoke
     runs-on: ubuntu-latest
@@ -33,6 +68,9 @@ jobs:
 
     - name: Run consolidated lint harness
       run: pnpm lint
+
+    - name: Verify GitHub release publication behavior
+      run: bash scripts/test-publish-github-release.sh
 
     - name: Rebuild native modules for Node tests
       run: pnpm rebuild better-sqlite3-multiple-ciphers
@@ -64,15 +102,25 @@ jobs:
       env:
         PANE_DIR: ${{ runner.temp }}/pane-ci
 
+  # Published wrapper CLIs (npm + PyPI). Runs only when wrapper/contract files
+  # change on a PR; always runs on pushes to main. Each OS is tested once at
+  # the runtime floors (Node 20 / Python 3.8) and once at current (Node 22 /
+  # Python 3.13) instead of the full Node x Python cross product.
   runpane-wrapper-tests:
     name: Runpane Wrapper (${{ matrix.os }}, Node ${{ matrix.node-version }}, Python ${{ matrix.python-version }})
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.runpane == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
-        node-version: ['18.17.0', '22.18.0']
-        python-version: ['3.8', '3.13']
+        include:
+          - { os: ubuntu-latest, node-version: '20.0.0', python-version: '3.8' }
+          - { os: ubuntu-latest, node-version: '22.18.0', python-version: '3.13' }
+          - { os: macos-latest, node-version: '20.0.0', python-version: '3.8' }
+          - { os: macos-latest, node-version: '22.18.0', python-version: '3.13' }
+          - { os: windows-2022, node-version: '20.0.0', python-version: '3.8' }
+          - { os: windows-2022, node-version: '22.18.0', python-version: '3.13' }
 
     steps:
     - name: Checkout code
@@ -107,13 +155,17 @@ jobs:
     - name: Run package manager smoke tests
       run: node scripts/test-runpane-package-smoke.js
 
+  # Ubuntu is already covered by quality-checks above; this job only adds the
+  # other platforms, and only when main-process code (or its deps) changed.
   cross-os-main-tests:
     name: Main Process Tests (${{ matrix.os }})
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.main == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
+        os: [macos-latest, windows-2022]
 
     steps:
     - name: Checkout code

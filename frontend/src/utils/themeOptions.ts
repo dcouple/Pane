@@ -1,4 +1,5 @@
 import type { Theme } from '../contexts/themeContextValue';
+import { isLightTheme } from '../contexts/themeContextValue';
 
 export type ThemeFamily = 'Standard' | 'Neon' | 'Editorial' | 'Retro' | 'Atmosphere' | 'Accessibility';
 
@@ -14,7 +15,7 @@ export interface ThemeOption {
 // Picker order: the original themes first (their long-standing order), then the
 // 15 batch themes grouped by family — neon, editorial, retro, atmosphere,
 // accessibility. Every Theme id must appear here exactly once.
-export const THEME_OPTIONS = [
+const THEME_OPTIONS = [
   { id: 'light-rounded', label: 'Light (rounded)', description: 'Clean white with rounded, islanded panels', family: 'Standard' },
   { id: 'light', label: 'Light (sharp)', description: 'Clean white, flat edge-to-edge chrome', family: 'Standard' },
   { id: 'forge', label: 'Forge', description: 'IntelliJ-style two-tone graphite with a blue accent', family: 'Standard' },
@@ -56,7 +57,7 @@ const THEME_LABELS: Record<Theme, string> = Object.fromEntries(
 export const getThemeLabel = (theme: Theme): string => THEME_LABELS[theme];
 
 /** THEME_OPTIONS partitioned by family, in first-appearance order. */
-export const THEME_OPTION_GROUPS: ReadonlyArray<{ family: ThemeFamily; options: readonly ThemeOption[] }> = (() => {
+const THEME_OPTION_GROUPS: ReadonlyArray<{ family: ThemeFamily; options: readonly ThemeOption[] }> = (() => {
   const groups: Array<{ family: ThemeFamily; options: ThemeOption[] }> = [];
   for (const option of THEME_OPTIONS) {
     const group = groups.find((g) => g.family === option.family);
@@ -65,3 +66,13 @@ export const THEME_OPTION_GROUPS: ReadonlyArray<{ family: ThemeFamily; options: 
   }
   return groups;
 })();
+
+export type ThemeSlot = 'light' | 'dark' | 'any';
+
+export const themeOptionsForSlot = (slot: ThemeSlot): readonly ThemeOption[] =>
+  slot === 'any' ? THEME_OPTIONS : THEME_OPTIONS.filter((option) => isLightTheme(option.id) === (slot === 'light'));
+
+export const themeOptionGroupsForSlot = (slot: ThemeSlot): ReadonlyArray<{ family: ThemeFamily; options: readonly ThemeOption[] }> =>
+  THEME_OPTION_GROUPS
+    .map((group) => ({ ...group, options: group.options.filter((option) => slot === 'any' || isLightTheme(option.id) === (slot === 'light')) }))
+    .filter((group) => group.options.length > 0);

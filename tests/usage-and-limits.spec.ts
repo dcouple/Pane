@@ -243,6 +243,11 @@ test('opens Usage & Limits from expanded and compact navigation', async ({ page 
   await expect(page.getByRole('button', { name: 'Share usage image' })).toBeVisible();
 
   await capture(page, testInfo, '01-usage-dashboard-expanded.png');
+  const cadence = page.getByText('Usage is checked every 4 hours; large scans may take longer. Refresh to check now.', { exact: true });
+  await cadence.scrollIntoViewIfNeeded();
+  await expect(cadence).toBeVisible();
+  await expect(page.getByText(/^Last successful scan:/)).toBeVisible();
+  await capture(page, testInfo, '04-usage-freshness-footer.png');
 
   await page.getByRole('button', { name: 'Collapse sidebar' }).click();
   await expect(page.getByTestId('compact-usage')).toBeVisible();

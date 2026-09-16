@@ -33,6 +33,7 @@ import type {
 } from '../../../shared/types/panels';
 import type { JsonValue } from '../../../shared/validation/boundaryDecoder';
 import type { PanelAgentStatusEvent } from '../../../shared/types/agentStatus';
+import type { DiffManifest, DiffScope, FileDiffRequest, FileDiffResult } from '../../../shared/types/gitDiff';
 import type { AgentUsageSnapshot } from '../../../shared/types/agentUsage';
 import type { PaneChatAgent, PaneChatState } from '../../../shared/types/paneChat';
 import type { UsageIndexStatus, UsageReport, UsageReportRequest } from '../../../shared/types/usage';
@@ -40,6 +41,7 @@ import type { LeaderboardResponse, LeaderboardStatus, LeaderboardSubmitResult } 
 import type { CreateSessionRequest } from './session';
 import type { DetectedProjectConfig } from '../../../shared/types/projectConfig';
 import type { CloudVmState } from '../../../shared/types/cloud';
+import type { UpdateCapabilities } from '../../../shared/types/updater';
 import type {
   ProjectDashboardData,
   ProjectDashboardSessionUpdateEvent,
@@ -70,6 +72,7 @@ interface IPCResponse<T = any> {
   error?: string;
   details?: string;
   command?: string;
+  code?: string;
 }
 
 interface ElectronAPI {
@@ -93,7 +96,9 @@ interface ElectronAPI {
   // plain boolean, not a promise: it is resolved in the preload from argv so the
   // first render already knows whether the page owns the title bar.
   windowControlsOverlayEnabled: boolean;
+  appearanceSnapshot?: import('../../../shared/types/appearance').AppearanceSnapshot;
   setTitleBarOverlay: (colors: { color: string; symbolColor: string }) => Promise<IPCResponse>;
+  setBackgroundColor: (payload: { theme: import('../../../shared/types/appearance').Theme; color: string }) => Promise<IPCResponse>;
 
   // Version checking
   checkForUpdates: () => Promise<IPCResponse<VersionInfo>>;
@@ -101,6 +106,7 @@ interface ElectronAPI {
   
   // Auto-updater
   updater: {
+    getCapabilities: () => Promise<IPCResponse<UpdateCapabilities>>;
     checkAndDownload: () => Promise<IPCResponse>;
     downloadUpdate: () => Promise<IPCResponse>;
     installUpdate: () => Promise<IPCResponse>;
@@ -176,8 +182,8 @@ interface ElectronAPI {
     getExecutionDiff: (sessionId: string, executionId: string) => Promise<IPCResponse>;
     gitCommit: (sessionId: string, message: string) => Promise<IPCResponse>;
     gitDiff: (sessionId: string) => Promise<IPCResponse>;
-    getCombinedDiff: (sessionId: string, executionIds?: number[]) => Promise<IPCResponse>;
-    getCommitDiffByHash: (sessionId: string, commitHash: string) => Promise<IPCResponse>;
+    getDiffManifest: (sessionId: string, scope: DiffScope) => Promise<IPCResponse<DiffManifest>>;
+    getFileDiff: (sessionId: string, scope: DiffScope, request: FileDiffRequest) => Promise<IPCResponse<FileDiffResult>>;
 
     // Script operations
     hasRunScript: (sessionId: string) => Promise<IPCResponse>;
@@ -374,6 +380,7 @@ interface ElectronAPI {
   events: {
     onPermissionRequest: (callback: (request: PanePermissionRequest) => void) => () => void;
     onPermissionResolved: (callback: (event: PanePermissionResolvedEvent) => void) => () => void;
+    onSessionCreationFailed: (callback: (failure: { name: string; error: string }) => void) => () => void;
     onSessionCreated: (callback: (session: Session) => void) => () => void;
     onSessionUpdated: (callback: (session: Session) => void) => () => void;
     onSessionDeleted: (callback: (session: Pick<Session, 'id'>) => void) => () => void;
@@ -441,6 +448,7 @@ interface ElectronAPI {
 
     // Terminal font config events
     onTerminalFontUpdated: (callback: (data: { terminalFontFamily: string; terminalFontSize: number }) => void) => () => void;
+    onNativeAppearanceUpdated: (callback: (data: { prefersDark: boolean }) => void) => () => void;
 
     removeAllListeners: (channel: string) => void;
   };

@@ -2,21 +2,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { ToolPanel, CreatePanelRequest, PanelEventType, ToolPanelState, ToolPanelMetadata, ToolPanelType, LogsPanelState } from '../../../shared/types/panels';
 import { getPaneEventSink, getPaneWebviewContextMap } from '../core/runtime';
 import { databaseService } from './database';
+import { splitPanelBufferState } from '../database/panelBuffers';
 import { panelEventBus } from './panelEventBus';
 import { withLock } from '../utils/mutex';
 import type { AnalyticsManager } from './analyticsManager';
 import type { PaneEventArgument } from '../core/eventSink';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
-
-type PersistedPanelValue = ToolPanelState | ToolPanelMetadata | string;
-
-function serializedPanelValue(value: PersistedPanelValue): string | null {
-  try {
-    return decodeBoundary(value, boundary.string);
-  } catch {
-    return null;
-  }
-}
 
 function logsPanelState(panel: ToolPanel): LogsPanelState {
   // SAFETY: Callers first discriminate `panel.type === 'logs'`; this state is
@@ -44,20 +35,20 @@ class PanelManager {
   }
 
   constructor() {
-    // Load panels from database on startup (but don't initialize processes)
+    // Clean up restart-only state; other panels are loaded on demand
     this.loadPanelsFromDatabase();
   }
   
   private loadPanelsFromDatabase(): void {
     // This will be called on app startup to restore panel state
     // But we don't start any processes - that happens lazily
-    console.log('[PanelManager] Loading panels from database...');
+    console.log('[PanelManager] Loading panels requiring restart cleanup...');
     
-    // Load all panels from database
-    const allPanels = databaseService.getAllPanels();
+    // Load only panels requiring restart cleanup; terminal state is loaded on demand.
+    const startupPanels = databaseService.getPanelsForStartup();
     
     // Clean up any stale running states in logs panels
-    allPanels.forEach(panel => {
+    startupPanels.forEach(panel => {
       if (panel.type === 'logs' && panel.state?.customState) {
         const logsState = logsPanelState(panel);
         if (logsState.isRunning) {
@@ -289,16 +280,20 @@ class PanelManager {
         return;
       }
       
-      // Update in database
-      databaseService.updatePanel(panelId, {
+      // Update in database. A refused write (state over the ceiling) is
+      // already logged there with the panel, size and largest key; the cache
+      // and renderer keep the last accepted state.
+      const written = databaseService.updatePanel(panelId, {
         title: updates.title,
         state: updates.state,
         metadata: updates.metadata
       });
+      if (!written) return;
       
-      // Update in cache
+      // Update in cache. Terminal bytes are stored in panel_buffers, so the
+      // cached state (and the panel:updated payload) never carries them.
       if (updates.title !== undefined) panel.title = updates.title;
-      if (updates.state !== undefined) panel.state = updates.state;
+      if (updates.state !== undefined) panel.state = splitPanelBufferState(updates.state).state;
       if (updates.metadata !== undefined) panel.metadata = updates.metadata;
       
       // Emit IPC event to notify frontend
@@ -366,25 +361,6 @@ class PanelManager {
     // Load from database if not cached
     const panel = databaseService.getPanel(panelId);
     if (panel) {
-      // Fix any panels that have state stored as a string (defensive programming)
-      const serializedState = serializedPanelValue(panel.state);
-      if (serializedState !== null) {
-        try {
-          panel.state = JSON.parse(serializedState);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
-          panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
-        }
-      }
-      const serializedMetadata = serializedPanelValue(panel.metadata);
-      if (serializedMetadata !== null) {
-        try {
-          panel.metadata = JSON.parse(serializedMetadata);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
-          panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
-        }
-      }
       // Skip caching if this panel belongs to a session we've already
       // archived in this process. Prevents a post-archive event from
       // resurrecting the cache entry and undoing L3 cleanup.
@@ -415,31 +391,11 @@ class PanelManager {
     // would undo the L3 cleanup that cleared them moments earlier.
     const shouldCache = !this.archivedSessionIds.has(sessionId);
 
-    // Fix any panels that have state stored as a string (defensive programming)
-    panels.forEach(panel => {
-      const serializedState = serializedPanelValue(panel.state);
-      if (serializedState !== null) {
-        try {
-          panel.state = JSON.parse(serializedState);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel state for ${panel.id}:`, e);
-          panel.state = { isActive: false, hasBeenViewed: false, customState: {} };
-        }
-      }
-      const serializedMetadata = serializedPanelValue(panel.metadata);
-      if (serializedMetadata !== null) {
-        try {
-          panel.metadata = JSON.parse(serializedMetadata);
-        } catch (e) {
-          console.error(`[PanelManager] Failed to parse panel metadata for ${panel.id}:`, e);
-          panel.metadata = { createdAt: new Date().toISOString(), lastActiveAt: new Date().toISOString(), position: 0 };
-        }
-      }
-      // Update cache unless we've archived this session
-      if (shouldCache) {
+    if (shouldCache) {
+      for (const panel of panels) {
         this.panels.set(panel.id, panel);
       }
-    });
+    }
 
     return panels;
   }

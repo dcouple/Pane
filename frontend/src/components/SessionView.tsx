@@ -18,13 +18,14 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { ProjectView } from './ProjectView';
 import { UsageView } from './usage/UsageView';
 import { API } from '../utils/api';
-import { useResizable } from '../hooks/useResizable';
-import { useResizableHeight } from '../hooks/useResizableHeight';
+import { useObservedContentBox } from '../hooks/useObservedContentBox';
+import { useOuterPanelResize } from '../hooks/useOuterPanelResize';
+import { OUTER_PANEL_CONFIGS } from '../utils/outerPanelSizing';
+import { OuterResizeSeparator } from './ui/OuterResizeSeparator';
 import { usePanelStore } from '../stores/panelStore';
 import { useProjectViewActionsStore } from '../stores/projectViewActionsStore';
 import { panelApi } from '../services/panelApi';
 import { setPendingViewCommit } from './panels/diff/pendingViewCommit';
-import { requestLocalReviewMode } from './panels/diff/reviewModePreference';
 import { PanelTabBar } from './panels/PanelTabBar';
 import { PanelContainer } from './panels/PanelContainer';
 import { SplitLayout } from './panels/SplitLayout';
@@ -631,7 +632,6 @@ export const SessionView = memo(() => {
       // currently active, CombinedDiffView is unmounted and will read this
       // module-level variable when it mounts after the panel switch.
       setPendingViewCommit(activeSession.id, commitHash);
-      requestLocalReviewMode(activeSession.id);
       openInspector('changes');
       window.setTimeout(() => {
         window.dispatchEvent(new CustomEvent('diff:view-commit', {
@@ -970,7 +970,7 @@ export const SessionView = memo(() => {
       const sid = activeSession.id;
 
       // For terminal panels with initialCommand (e.g., Terminal (Claude))
-      let initialState: { customState?: unknown } | undefined = undefined;
+      let initialState = options?.initialState;
       if (type === 'terminal' && options?.initialCommand) {
         initialState = {
           customState: {
@@ -997,7 +997,7 @@ export const SessionView = memo(() => {
       setActivePanelInStore(sid, newPanel.id);
 
       const becomesPinnedTerminal = type === 'terminal' && !hadTerminalBefore;
-      if (becomesPinnedTerminal) return;
+      if (becomesPinnedTerminal) return newPanel;
 
       // Add to layout (into the focused group, falling back to the primary
       // group if focus is stale). addPanelToGroup is idempotent, so racing
@@ -1012,9 +1012,39 @@ export const SessionView = memo(() => {
           applyLayout(sid, { ...currentLayout, root: nextRoot });
         }
       }
+      return newPanel;
     },
     [activeSession, addPanel, setActivePanelInStore, applyLayout]
   );
+
+  const handleOpenUrlInBrowser = useCallback(async (url: string, title: string) => {
+    if (!activeSession) return;
+    const existingPanel = sessionPanels.find((candidate) => candidate.type === 'browser');
+    if (existingPanel) {
+      const updatedPanel = {
+        ...existingPanel,
+        title,
+        state: { ...existingPanel.state, customState: { ...existingPanel.state.customState, currentUrl: url } },
+      };
+      await panelApi.updatePanel(existingPanel.id, { title, state: updatedPanel.state });
+      updatePanelState(updatedPanel);
+      await handlePanelSelect(updatedPanel);
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url, sessionId: activeSession.id },
+      }));
+      return;
+    }
+
+    await handlePanelCreate('browser', {
+      title,
+      initialState: { customState: { currentUrl: url } },
+    });
+  }, [activeSession, handlePanelCreate, handlePanelSelect, sessionPanels, updatePanelState]);
+
+  const handleShowExplorer = useCallback(async () => {
+    if (!filesPanel) await handlePanelCreate('explorer');
+    openInspector('files');
+  }, [filesPanel, handlePanelCreate, openInspector]);
 
   // --- SplitLayout callbacks ---
   const handleSizesChange = useCallback((splitNodeId: string, sizes: number[]) => {
@@ -1405,19 +1435,11 @@ export const SessionView = memo(() => {
     }
   }, [activeSession, isRemoteMode]);
 
-  // Right-side resizable
-  const { width: detailWidth, startResize: startDetailResize } = useResizable({
-    defaultWidth: 360,
-    minWidth: 240,
-    maxWidth: 720,
-    storageKey: 'pane-detail-panel-width',
-    side: 'right'
-  });
-
   // Layout swap state
   const [layoutSwapped, setLayoutSwapped] = useState(() => {
     return localStorage.getItem('pane-layout-swapped') === 'true';
   });
+  const swappedLayoutRendered = layoutSwapped && Boolean(defaultTerminalPanel);
 
   useEffect(() => {
     localStorage.setItem('pane-layout-swapped', String(layoutSwapped));
@@ -1502,30 +1524,6 @@ export const SessionView = memo(() => {
     hasTriedCreatingTerminal.current = false;
   }, [activeSession?.id]);
 
-  const { height: terminalHeight, startResize: startTerminalResize } = useResizableHeight({
-    defaultHeight: 200,
-    minHeight: 100,
-    maxHeight: 500,
-    storageKey: 'pane-bottom-terminal-height',
-  });
-
-  // Resizable width for terminal when it occupies the right column (swapped layout)
-  const { width: rightTerminalWidth, startResize: startRightTerminalResize } = useResizable({
-    defaultWidth: 350,
-    minWidth: 200,
-    maxWidth: 600,
-    storageKey: 'pane-right-terminal-width',
-    side: 'right',
-  });
-
-  // Resizable height for detail panel when it is the bottom bar (swapped layout)
-  const { height: detailBottomHeight, startResize: startDetailBottomResize } = useResizableHeight({
-    defaultHeight: 200,
-    minHeight: 80,
-    maxHeight: 400,
-    storageKey: 'pane-bottom-detail-height',
-  });
-
   const toggleDetailCollapse = useCallback(() => {
     setIsDetailCollapsed(prev => !prev);
   }, []);
@@ -1535,12 +1533,12 @@ export const SessionView = memo(() => {
     if (immersiveMode) {
       return;
     }
-    if (layoutSwapped) {
+    if (swappedLayoutRendered) {
       toggleDetailCollapse();
     } else {
       setDetailVisible(v => !v);
     }
-  }, [immersiveMode, layoutSwapped, toggleDetailCollapse]);
+  }, [immersiveMode, swappedLayoutRendered, toggleDetailCollapse]);
 
   // Terminal collapse state with localStorage persistence (collapsed by default)
   const [isTerminalCollapsed, setIsTerminalCollapsed] = useState(() => {
@@ -1555,6 +1553,36 @@ export const SessionView = memo(() => {
   const toggleTerminalCollapse = useCallback(() => {
     setIsTerminalCollapsed(prev => !prev);
   }, []);
+
+  const sessionContentBox = useObservedContentBox<HTMLDivElement>();
+  const centerColumnBox = useObservedContentBox<HTMLDivElement>();
+  const detailResize = useOuterPanelResize({
+    config: OUTER_PANEL_CONFIGS.worktreeInspector,
+    containerPx: sessionContentBox.width,
+    enabled: !swappedLayoutRendered && detailVisible && !immersiveMode,
+  });
+  const terminalResize = useOuterPanelResize({
+    config: OUTER_PANEL_CONFIGS.bottomTerminal,
+    containerPx: centerColumnBox.height,
+    enabled: Boolean(defaultTerminalPanel) && !swappedLayoutRendered && !isTerminalCollapsed && !immersiveMode,
+  });
+  const terminalDockHeight = immersiveMode
+    ? terminalResize.renderedPx
+    : isTerminalCollapsed
+      ? Math.min(32, centerColumnBox.height)
+      : terminalResize.renderedPx;
+  // A zero-height dock is invisible: its chrome must not stay reachable.
+  const terminalDockContentActive = terminalDockHeight > 0;
+  const rightTerminalResize = useOuterPanelResize({
+    config: OUTER_PANEL_CONFIGS.rightTerminal,
+    containerPx: sessionContentBox.width,
+    enabled: swappedLayoutRendered && !immersiveMode,
+  });
+  const bottomDetailResize = useOuterPanelResize({
+    config: OUTER_PANEL_CONFIGS.bottomDetail,
+    containerPx: centerColumnBox.height,
+    enabled: swappedLayoutRendered && !isDetailCollapsed && !immersiveMode,
+  });
 
   // Ctrl+`: toggle bottom terminal
   useHotkey({
@@ -1787,7 +1815,7 @@ export const SessionView = memo(() => {
         {sessionStatusAnnouncement}
       </LiveRegion>
       {/* SINGLE SessionProvider wraps everything */}
-      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command} isRemoteMode={isRemoteMode}>
+      <SessionProvider session={activeSession} gitBranchActions={branchActions} isMerging={hook.isMerging} gitCommands={hook.gitCommands} onOpenIDEWithCommand={handleOpenIDEWithCommand} onOpenUrlInBrowser={handleOpenUrlInBrowser} onConfigureIDE={() => setShowProjectSettings(true)} onSetTracking={handleOpenSetTracking} trackingBranch={currentUpstream} configuredIDECommand={sessionProject?.open_ide_command} isRemoteMode={isRemoteMode}>
 
         {/* Tab bar at top */}
         <PanelTabBar
@@ -1796,6 +1824,7 @@ export const SessionView = memo(() => {
           onPanelSelect={handlePanelSelect}
           onPanelClose={handlePanelClose}
           onPanelCreate={handlePanelCreate}
+          onShowExplorer={() => { void handleShowExplorer(); }}
           projectEnvironment={activeProjectEnvironment}
           onToggleDetailPanel={handleToggleDetailPanel}
           detailPanelVisible={detailVisible}
@@ -1814,11 +1843,11 @@ export const SessionView = memo(() => {
         />
 
         {/* Content area: center panels + right detail */}
-        <div className="pane-session-content flex-1 flex flex-row min-h-0">
-          {layoutSwapped && defaultTerminalPanel ? (
+        <div ref={sessionContentBox.ref} className="pane-session-content flex-1 flex flex-row min-h-0 min-w-0">
+          {swappedLayoutRendered && defaultTerminalPanel ? (
             <>
               {/* SWAPPED LAYOUT: Center column with panels on top, horizontal detail panel on bottom */}
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div ref={centerColumnBox.ref} className="pane-center-column flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
                 {/* Top: active panel content */}
                 <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
                   {editorStageElement || emptyStage}
@@ -1829,8 +1858,17 @@ export const SessionView = memo(() => {
                   isVisible={true}
                   onToggle={toggleDetailCollapse}
                   width={0}
-                  height={detailBottomHeight}
-                  onResize={startDetailBottomResize}
+                  height={bottomDetailResize.effectivePx}
+                  availableHeight={centerColumnBox.height}
+                  bodyActive={bottomDetailResize.bodyActive}
+                  resizeSeparator={bottomDetailResize.separatorVisible ? {
+                    label: 'Resize detail panel',
+                    orientation: 'horizontal',
+                    value: bottomDetailResize.effectivePx,
+                    minimum: bottomDetailResize.floor,
+                    maximum: bottomDetailResize.cap,
+                    ...bottomDetailResize.separatorHandlers,
+                  } : undefined}
                   mergeError={hook.mergeError}
                   orientation="horizontal"
                   isCollapsed={isDetailCollapsed}
@@ -1848,36 +1886,41 @@ export const SessionView = memo(() => {
 
               {/* Right column: terminal at full height — outer wrapper clips, inner stays fixed width so xterm doesn't reflow */}
               <div
-                className={`pane-terminal-rail pane-reveal flex-shrink-0 overflow-hidden transition-[width] duration-reveal ease-out-strong ${immersiveMode ? '' : 'border-l border-border-primary'}`}
-                style={{ width: immersiveMode ? '0px' : `${rightTerminalWidth}px` }}
+                className={`pane-terminal-rail flex-shrink-0 overflow-visible relative ${rightTerminalResize.renderedPx > 0 ? 'border-l border-border-primary' : ''}`}
+                style={{ width: `${rightTerminalResize.renderedPx}px` }}
               >
-                <div
-                  className="pane-terminal-rail-shell bg-surface-primary flex flex-col h-full relative"
-                  style={{ width: `${rightTerminalWidth}px` }}
-                >
-                  {/* Resize handle on left edge */}
+                {rightTerminalResize.separatorVisible && (
+                  <OuterResizeSeparator
+                    label="Resize terminal"
+                    orientation="vertical"
+                    value={rightTerminalResize.effectivePx}
+                    minimum={rightTerminalResize.floor}
+                    maximum={rightTerminalResize.cap}
+                    {...rightTerminalResize.separatorHandlers}
+                  />
+                )}
+                <div className="pane-terminal-rail-clip h-full overflow-hidden">
                   <div
-                    className="absolute top-0 left-0 w-1 h-full cursor-col-resize group z-10"
-                    onMouseDown={startRightTerminalResize}
+                    className="pane-terminal-rail-shell bg-surface-primary flex flex-col h-full relative overflow-hidden"
+                    style={{ width: `${rightTerminalResize.effectivePx}px` }}
+                    aria-hidden={!rightTerminalResize.bodyActive}
+                    inert={!rightTerminalResize.bodyActive ? true : undefined}
                   >
-                    <div className="absolute inset-0 bg-border-secondary group-hover:bg-border-hover group-active:bg-border-hover" />
-                    <div className="absolute -left-2 right-0 top-0 bottom-0" />
-                  </div>
+                    {/* Terminal header */}
+                    <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
+                      <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
+                      <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
+                    </div>
 
-                  {/* Terminal header */}
-                  <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
-                    <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
-                    <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
-                  </div>
-
-                  {/* Terminal content - full height */}
-                  <div className="pane-terminal-shell-body flex-1 relative min-h-0 pb-1">
-                    <PanelContainer
-                      panel={defaultTerminalPanel}
-                      isActive={!immersiveMode}
-                      autoFocus={false}
-                      isMainRepo={!!activeSession.isMainRepo}
-                    />
+                    {/* Terminal content - full height */}
+                    <div className="pane-terminal-shell-body flex-1 relative min-h-0 pb-1">
+                      <PanelContainer
+                        panel={defaultTerminalPanel}
+                        isActive={rightTerminalResize.bodyActive}
+                        autoFocus={false}
+                        isMainRepo={!!activeSession.isMainRepo}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1885,7 +1928,7 @@ export const SessionView = memo(() => {
           ) : (
             <>
               {/* DEFAULT LAYOUT: Center column with panels on top, terminal on bottom */}
-              <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+              <div ref={centerColumnBox.ref} className="pane-center-column flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
                 {/* Top: active panel content */}
                 <div className="pane-editor-stage flex-1 relative min-h-0 overflow-hidden bg-bg-editor">
                   {editorStageElement || emptyStage}
@@ -1894,47 +1937,66 @@ export const SessionView = memo(() => {
                 {/* Bottom: persistent terminal (collapsible) */}
                 {defaultTerminalPanel && (
                   <div
-                    className="pane-terminal-dock pane-reveal flex-shrink-0 border-t border-border-primary transition-[height] duration-reveal ease-out-strong"
-                    style={{ height: isTerminalCollapsed ? '32px' : `${terminalHeight}px` }}
+                    className={`pane-terminal-dock flex-shrink-0 flex flex-col relative overflow-visible ${
+                      !immersiveMode && (isTerminalCollapsed || terminalResize.renderedPx > 0)
+                        ? 'border-t border-border-primary'
+                        : ''
+                    }`}
+                    style={{ height: `${terminalDockHeight}px` }}
                   >
-                    {/* Terminal tab header with collapse toggle and pill shortcuts */}
-                    <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2">
-                      {/* Left: chevron + icon + label */}
-                      <button
-                        onClick={toggleTerminalCollapse}
-                        className="p-0.5 hover:bg-surface-hover rounded transition-colors"
-                        title={isTerminalCollapsed ? 'Expand terminal' : 'Collapse terminal'}
-                      >
-                        {isTerminalCollapsed ? (
-                          <ChevronUp className="w-3.5 h-3.5 text-text-tertiary" />
-                        ) : (
-                          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary" />
-                        )}
-                      </button>
-                      <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
-                      <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
+                    {terminalResize.separatorVisible && (
+                      <OuterResizeSeparator
+                        label="Resize terminal"
+                        orientation="horizontal"
+                        value={terminalResize.effectivePx}
+                        minimum={terminalResize.floor}
+                        maximum={terminalResize.cap}
+                        {...terminalResize.separatorHandlers}
+                      />
+                    )}
+                    <div
+                      className="pane-terminal-dock-content flex flex-col h-full min-h-0 overflow-hidden"
+                      aria-hidden={!terminalDockContentActive}
+                      inert={!terminalDockContentActive ? true : undefined}
+                    >
+                      {/* Terminal tab header with collapse toggle and pill shortcuts */}
+                      <div className="pane-terminal-shell-header flex items-center h-8 px-3 bg-surface-primary border-b border-border-primary gap-2 flex-shrink-0">
+                        {/* Left: chevron + icon + label */}
+                        <button
+                          type="button"
+                          onClick={toggleTerminalCollapse}
+                          aria-label={isTerminalCollapsed ? 'Expand terminal' : 'Collapse terminal'}
+                          className="p-0.5 hover:bg-surface-hover rounded transition-colors"
+                          title={isTerminalCollapsed ? 'Expand terminal' : 'Collapse terminal'}
+                        >
+                          {isTerminalCollapsed ? (
+                            <ChevronUp className="w-3.5 h-3.5 text-text-tertiary" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5 text-text-tertiary" />
+                          )}
+                        </button>
+                        <Terminal className="w-3.5 h-3.5 text-text-tertiary" />
+                        <span className="text-[11px] font-medium text-text-secondary uppercase tracking-wider">Terminal</span>
 
-                      <div className="flex-1" />
-
-                      {/* Right: resize grip (only when expanded, always outside scroll container) */}
+                        <div className="flex-1" />
+                      </div>
+                      {/* Terminal content (hidden when collapsed) */}
                       {!isTerminalCollapsed && (
                         <div
-                          className="ml-2 h-full flex items-center cursor-row-resize group flex-shrink-0"
-                          onMouseDown={startTerminalResize}
-                        />
+                          className="pane-terminal-shell-body flex-1 min-h-0 relative pb-1"
+                          style={{ display: terminalResize.bodyActive ? 'block' : 'none' }}
+                          aria-hidden={!terminalResize.bodyActive}
+                          inert={!terminalResize.bodyActive ? true : undefined}
+                        >
+                          <PanelContainer
+                            panel={defaultTerminalPanel}
+                            isActive={terminalResize.bodyActive}
+                            autoFocus={false}
+                            isMainRepo={!!activeSession.isMainRepo}
+                          />
+                        </div>
                       )}
                     </div>
-                    {/* Terminal content (hidden when collapsed) */}
-                    {!isTerminalCollapsed && (
-                      <div className="pane-terminal-shell-body relative pb-1" style={{ height: `calc(100% - 36px)` }}>
-                        <PanelContainer
-                          panel={defaultTerminalPanel}
-                          isActive={true}
-                          autoFocus={false}
-                          isMainRepo={!!activeSession.isMainRepo}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1943,8 +2005,16 @@ export const SessionView = memo(() => {
               <DetailPanel
                 isVisible={detailVisible}
                 onToggle={() => setDetailVisible(v => !v)}
-                width={detailWidth}
-                onResize={startDetailResize}
+                width={detailResize.renderedPx}
+                bodyActive={detailResize.bodyActive}
+                resizeSeparator={detailResize.separatorVisible ? {
+                  label: 'Resize inspector',
+                  orientation: 'vertical',
+                  value: detailResize.effectivePx,
+                  minimum: detailResize.floor,
+                  maximum: detailResize.cap,
+                  ...detailResize.separatorHandlers,
+                } : undefined}
                 mergeError={hook.mergeError}
                 onSwapLayout={toggleLayoutSwap}
                 onCommitClick={handleCommitClick}
@@ -1996,7 +2066,7 @@ export const SessionView = memo(() => {
         onClose={() => hook.setShowArchiveConfirm(false)}
         onConfirm={hook.handleConfirmArchive}
         title="Archive Pane"
-        message={`Archive pane "${activeSession?.name}"? This will:\n\n• Move the pane to the archived panes list\n• Preserve all pane history and outputs\n${activeSession?.isMainRepo ? '• Close the active Claude Code connection' : `• Remove the git worktree locally (${activeSession?.worktreePath?.split('/').pop() || 'worktree'})`}`}
+        message={`Archive pane "${activeSession?.name}"? This will:\n\n• Move the pane to the archived panes list\n• Preserve all pane history and outputs\n${activeSession?.isMainRepo ? '• Close the active Claude Code connection' : activeSession?.worktreeOwnership === 'external' ? '• Leave the externally managed worktree untouched' : `• Remove the git worktree locally (${activeSession?.worktreePath?.split('/').pop() || 'worktree'})`}`}
         confirmText="Archive"
         variant="warning"
         icon={<Archive className="w-6 h-6 text-amber-500 flex-shrink-0" />}

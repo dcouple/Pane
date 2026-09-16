@@ -119,22 +119,12 @@ describe('SkillCacheManager Pane Chat guide', () => {
 
     const guide = await fs.readFile(manager.paneChatGuidePath, 'utf8');
     const normalizedGuide = normalizePathSeparators(guide);
-    expect(guide).toContain('Pane Chat orchestrator skill');
-    expect(guide).toContain('RunPane orchestrator skill for Codex');
-    expect(normalizedGuide).toContain('/skills/dcouple/parsa/.codex/skills/runpane-orchestrator/SKILL.md');
-    expect(normalizedGuide).toContain('/skills/dcouple/docs/readme-workflow-map.png');
+    expect(guide).toContain('Pane Chat Orchestrator');
     expect(guide).toContain('pane-work-recap');
     expect(guide).toContain('pane-work-prioritizer');
-    expect(guide).toContain('when they ask what to work on next');
-    expect(guide).toContain('Do not replace orchestration with a normal chat answer for Pane work.');
-    expect(guide).toContain('verify its state with');
-    expect(guide).toContain('Liveness is governed by the Liveness Contract');
-    expect(guide).toContain('never write a watcher');
-    expect(guide).toContain('## Contract Precedence');
-    expect(guide).toContain("active agent's cached RunPane orchestrator skill is authoritative for the");
-    expect(guide).toContain('review-feedback interrupts, current-head evidence invalidation, and');
-    expect(guide).toContain('`ready_to_merge` predicate');
-    expect(guide).toContain('Stop before merge, deploy, release creation, publishing, version changes');
+    expect(guide).toContain('runpane-orchestrator');
+    expect(guide).toContain('## Hard stops');
+    expect(normalizedGuide).toContain('/skills/dcouple/parsa/.claude/skills/runpane-orchestrator/SKILL.md');
   });
 
   it('writes runtime context with same-runtime CLI recovery guidance', async () => {
@@ -322,65 +312,119 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
     expect(codexSkill).toBe(canonicalSkill);
     expect(claudeSkill).toBe(canonicalSkill);
     expect(canonicalSkill).toContain('name: pane-orchestrator');
-    expect(canonicalSkill).toContain('You are an orchestrator, not an implementation worker.');
-    expect(canonicalSkill).toContain('## Liveness Contract (non-negotiable)');
-    expect(canonicalSkill).toContain('Never write, generate, or run an ad-hoc watcher');
-    expect(canonicalSkill).toContain('On 2026-08-28 an inline watcher');
+    expect(canonicalSkill).toContain('orchestrator, not an implementation worker');
+    expect(canonicalSkill).toContain('## Liveness Contract');
     expect(canonicalSkill).toContain('runpane watch --self-test');
     expect(canonicalSkill).toContain('runpane watch --follow');
-    expect(canonicalSkill).toContain('READY <pane> pane P panel Q');
-    expect(canonicalSkill).toContain('BLOCKED <pane> pane P panel Q');
-    expect(canonicalSkill).toContain('IDLE <pane> 10m pane P panel Q');
-    expect(canonicalSkill).toContain('STUCK <pane> … held-input-present');
-    expect(canonicalSkill).toContain('HEARTBEAT gen N at T');
-    expect(canonicalSkill).toContain('WATCH ERROR <code>: <msg>');
-    expect(canonicalSkill).toContain('WATCH RECONNECTED gen N');
-    expect(canonicalSkill).toContain('daemon is unreachable → no watcher fallback works');
-    expect(canonicalSkill).toContain('must delegate the actual work to a Pane agent or panel through RunPane');
-    expect(canonicalSkill).toContain('unless the user explicitly');
-    expect(canonicalSkill).toContain('says: "do it yourself in this chat."');
-    expect(canonicalSkill).toContain('Inspect the workflow map and skill legend');
-    expect(canonicalSkill).toContain('Reconstitute the in-flight work picture with this bounded live-state sweep');
-    expect(canonicalSkill).toContain('Use panel activity status, running panels');
-    expect(canonicalSkill).toContain('unpinned panes');
-    expect(canonicalSkill).toContain('pinning is a UI favorite signal');
-    expect(canonicalSkill).toContain('inspect all non-archived panes before narrowing');
-    expect(canonicalSkill).toContain('Do not infer ownership from the pane name');
-    expect(canonicalSkill).toContain('Query the VCS host for live state');
-    expect(canonicalSkill).toContain('Discover connected sources instead of assuming them');
-    expect(canonicalSkill).toContain('Treat stored notes as leads to verify, not authority');
-    expect(canonicalSkill).toContain('Keep the sweep cheap: parallelize independent queries');
-    expect(canonicalSkill).toContain('cap fallback enumeration at non-archived');
-    expect(canonicalSkill).toContain('avoid fetching');
-    expect(canonicalSkill).toContain('Report in decision-shaped terms');
-    expect(canonicalSkill).toContain('Do not claim initialization is complete');
-    expect(canonicalSkill).toContain('completed the bounded live-state sweep');
-    expect(canonicalSkill).toContain('## Contract Precedence');
-    expect(canonicalSkill).toContain('The generated runtime context is authoritative');
-    expect(canonicalSkill).toContain("active agent's cached RunPane orchestrator skill is authoritative");
-    expect(canonicalSkill).toContain('persisted intent and holds');
-    expect(canonicalSkill).toContain('review-feedback interrupts');
-    expect(canonicalSkill).toContain('current-head evidence invalidation');
-    expect(canonicalSkill).toContain('`ready_to_merge` predicate');
-    expect(canonicalSkill).toContain('Pane Chat owns discussion and clarification with the user');
-    expect(canonicalSkill).toContain('Do not maintain a');
-    expect(canonicalSkill).toContain('second Pane-generated copy of that lifecycle');
-    expect(canonicalSkill).toContain('Treat review feedback as an interrupt owned by the upstream lifecycle');
-    expect(canonicalSkill).toContain('routes to `gh-address-comments`');
-    expect(canonicalSkill).toContain('rerun stale');
-    expect(canonicalSkill).toContain('Delegate discussion to another agent only when the user explicitly asks');
-    expect(canonicalSkill).toContain('create a minimal local git repository and register it with Pane');
-    expect(canonicalSkill).toContain('Creating a new Pane from a saved repository should normally create an');
-    expect(canonicalSkill).toContain('Use extra terminal tabs/panels inside a Pane for clean-context review');
-    expect(canonicalSkill).toContain('After a PR is merged, the user can archive the Pane');
-    expect(canonicalSkill).toContain('Workflow map source:');
-    expect(canonicalSkill).toContain('Skill legend source:');
+    expect(canonicalSkill).toContain('--kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff');
+    expect(canonicalSkill).toContain('about 6 wake-ups per active pane per hour');
+    expect(canonicalSkill).toContain('Filter HEARTBEAT out of that monitor');
+    expect(canonicalSkill).toContain('BUSY\nis not requested and carries no action');
+    expect(canonicalSkill).toContain('waits on subagents or Codex dispatches');
+    expect(canonicalSkill).toContain('up to ~13min after the turn ended');
+    expect(canonicalSkill).toContain('exits non-zero or prints a WATCH ERROR');
+    expect(canonicalSkill).not.toMatch(/runpane watch --follow[\n`]/);
+    expect(canonicalSkill).toContain('READY');
+    expect(canonicalSkill).toContain('BLOCKED');
+    expect(canonicalSkill).toContain('HEARTBEAT');
+    expect(canonicalSkill).toContain('runpane doctor --report');
+    expect(canonicalSkill).toContain('do it yourself in this chat');
+    expect(canonicalSkill).toContain('cold-read');
     expect(canonicalSkill).toContain('pane-work-recap');
     expect(canonicalSkill).toContain('pane-work-prioritizer');
-    expect(canonicalSkill).toContain('Do not start implementation panes for those answers');
-    expect(canonicalSkill).toContain('Stop before merge, deploy, release creation, publishing, version changes');
-    expect(canonicalSkill).not.toContain('PR test automation or prepare-pr only after implementation review passes');
-    expect(canonicalSkill).not.toContain('treating a broad brief as a plan is usually too loose');
+    expect(canonicalSkill).toContain('## Hard stops');
+    expect(canonicalSkill).toContain('runpane-orchestrator');
+    expect(canonicalSkill).not.toContain('fresh-eyes');
+  });
+
+  it('asks the unattended resilience question and specifies the mode in every emitted variant', async () => {
+    const manager = new SkillCacheManager();
+
+    await manager.ensurePaneChatGuide();
+
+    const guide = await fs.readFile(manager.paneChatGuidePath, 'utf8');
+    const canonicalSkill = await fs.readFile(manager.paneChatOrchestratorSkillPath, 'utf8');
+    const codexSkill = await fs.readFile(manager.codexPaneOrchestratorSkillPath, 'utf8');
+    const claudeSkill = await fs.readFile(manager.claudePaneOrchestratorSkillPath, 'utf8');
+    const cursorRule = await fs.readFile(manager.cursorPaneOrchestratorRulePath, 'utf8');
+
+    for (const rawVariant of [guide, canonicalSkill, codexSkill, claudeSkill, cursorRule]) {
+      const variant = rawVariant.replace(/\s+/g, ' ');
+      expect(variant).toContain('Enable unattended resilience for this session?');
+      expect(variant).toContain('Default: yes.');
+      expect(variant).toContain('treat that as yes and say so in one line');
+      expect(variant).toContain('An explicit "no", at any point, disables it for the rest of the session');
+      expect(variant).toContain('## Unattended resilience (when enabled)');
+      expect(variant).toContain('caffeinate -dims');
+      expect(variant).toContain('sudo pmset -c disablesleep 1');
+      expect(variant).toContain('sudo pmset -c disablesleep 0');
+      expect(variant).toContain('pmset -g | grep SleepDisabled');
+      expect(variant).toContain('`! sudo pmset -c disablesleep 1` in the chat');
+      expect(variant).toContain('echo "$USER ALL=(root) NOPASSWD: /usr/bin/pmset" | sudo tee /etc/sudoers.d/pane-pmset');
+      expect(variant).toContain('sudo -n pmset -c disablesleep 1');
+      expect(variant).toContain('closing the lid keeps the machine fully awake, so remote control keeps working');
+      expect(variant).toContain('After any wake, re-check `pmset -g batt` and the setting');
+      expect(variant).toContain('pmset -g custom');
+      expect(variant).toContain('warn once if `powernap` or `tcpkeepalive` is 0. Do not change them.');
+      expect(variant).toContain('idempotent and fast enough to finish inside one short wake window');
+      expect(variant).toContain('pmset -g batt');
+      expect(variant).not.toContain('caffeinate cannot stop clamshell');
+      expect(variant).toContain('Your computer went to sleep');
+      expect(variant).toContain("Can't reach the API server");
+      expect(variant).toContain('ENOTFOUND');
+      expect(variant).toContain('Agent stalled: no progress');
+      expect(variant).toContain('Agent terminated early due to an API error');
+      expect(variant).toContain('composer.hasUndeliveredText: false');
+      expect(variant).toContain('runpane panels screen --panel <panel-id> --limit 80 --json');
+      expect(variant).toContain('runpane panels submit-composer --panel <panel-id> --yes --json');
+      expect(variant).toContain('runpane panels submit --panel <panel-id> --text "<message>" --yes --json');
+      expect(variant).toContain("printf '\\r' | runpane panels input --panel <panel-id> --input-file - --yes --json");
+      expect(variant).toContain('earliest incomplete gate');
+      expect(variant).toContain('Never auto-resume a pane that is BLOCKED');
+      expect(variant).toContain('more than 3 times in any rolling hour');
+      expect(variant).toContain('unless the user asked you to keep all panes moving');
+      expect(variant).toContain('Log every resume');
+      expect(variant).toContain('never authorizes merge, deploy, release');
+      expect(variant).toContain('is a wake, not a dead watch');
+      expect(variant).toContain('Silence alone is never a dead watch');
+      expect(variant).not.toContain('the watcher also emits a BUSY');
+      expect(variant).not.toContain('no line for 120s');
+      expect(variant).toContain('A STUCK line (held input) belongs to the Liveness Contract');
+      expect(variant).toContain('re-run `runpane watch --self-test`');
+      expect(variant).toContain('## Hard stops');
+    }
+
+    // The question is asked once, after doctor, and the section stays clear of the hard stops.
+    expect(guide.indexOf('Run the doctor command')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
+    expect(guide.indexOf('runpane watch --self-test')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
+    expect(guide.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(guide.indexOf('## Hard stops'));
+    expect(canonicalSkill.indexOf('runpane watch --self-test')).toBeLessThan(canonicalSkill.indexOf('Enable unattended resilience'));
+    expect(canonicalSkill.indexOf('## Liveness Contract')).toBeLessThan(canonicalSkill.indexOf('## Unattended resilience (when enabled)'));
+    expect(canonicalSkill.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(canonicalSkill.indexOf('## Hard stops'));
+    expect(canonicalSkill.split('Enable unattended resilience for this session?')).toHaveLength(2);
+  });
+
+  it('rewrites stale generated guide and skill files on upgrade', async () => {
+    const manager = new SkillCacheManager();
+    const targets = [
+      manager.paneChatGuidePath,
+      manager.paneChatOrchestratorSkillPath,
+      manager.codexPaneOrchestratorSkillPath,
+      manager.claudePaneOrchestratorSkillPath,
+      manager.cursorPaneOrchestratorRulePath,
+    ];
+    for (const target of targets) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, '# stale pre-upgrade text\n', 'utf8');
+    }
+
+    await manager.ensurePaneChatGuide();
+
+    for (const target of targets) {
+      const contents = await fs.readFile(target, 'utf8');
+      expect(contents).not.toContain('stale pre-upgrade text');
+      expect(contents).toContain('## Unattended resilience (when enabled)');
+    }
   });
 
   it('writes a project-scoped pane-orchestrator rule for Cursor', async () => {

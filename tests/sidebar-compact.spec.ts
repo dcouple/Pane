@@ -55,6 +55,47 @@ async function collapseSidebar(page: Page) {
 }
 
 test.describe('compact sidebar', () => {
+  test('collapses repositories from the full sidebar using the shared section state', async ({ page }) => {
+    await installElectronApiMock(page, {
+      initialConfig: { theme: 'night-owl' },
+      initialProjects: projects,
+      initialSessions: [
+        session('pinned', 'Pinned work', 1, {
+          isFavorite: true,
+          favoritePinnedAt: '2026-01-03T00:00:00.000Z',
+        }),
+        session('regular', 'Regular work', 1),
+      ],
+      initialUiState: {
+        expandedProjects: [1],
+        pinnedSectionExpanded: true,
+        repositoriesSectionExpanded: true,
+      },
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    const pinnedToggle = page.getByRole('button', { name: 'Pinned', exact: true });
+    const repositoriesToggle = page.getByRole('button', { name: 'Repositories', exact: true });
+    await expect(pinnedToggle).toBeVisible();
+    await expect(repositoriesToggle).toBeVisible();
+    await expect(page.getByText('Alpha', { exact: true })).toBeVisible();
+
+    const [pinnedBox, repositoriesBox] = await Promise.all([
+      pinnedToggle.boundingBox(),
+      repositoriesToggle.boundingBox(),
+    ]);
+    expect(repositoriesBox?.height).toBe(pinnedBox?.height);
+
+    await repositoriesToggle.click();
+    await expect(page.getByText('Alpha', { exact: true })).toHaveCount(0);
+
+    await collapseSidebar(page);
+    await expect(page.getByTestId('compact-repositories-toggle')).toHaveAttribute('aria-expanded', 'false');
+    await page.getByTestId('compact-repositories-toggle').click();
+    await expect(page.getByTestId('compact-repository-1')).toBeVisible();
+  });
+
   test('shows the full pane title when hovering a long sidebar label', async ({ page }) => {
     const longPaneTitle = 'TIP416A · Show the complete descriptive pane title in the sidebar hover popover';
 
@@ -289,6 +330,8 @@ test.describe('compact sidebar', () => {
     });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('button', { name: 'Repositories', exact: true })).toBeVisible();
+    await expect(page.getByText('Alpha', { exact: true })).toHaveCount(0);
     await collapseSidebar(page);
 
     await expect(page.getByTestId('compact-pinned-toggle')).toHaveAttribute('aria-expanded', 'true');

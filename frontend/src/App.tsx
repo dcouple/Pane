@@ -12,7 +12,6 @@ import { Sidebar } from './components/Sidebar';
 import { SessionView } from './components/SessionView';
 import Welcome from './components/Welcome';
 import Help from './components/Help';
-import AnalyticsConsentDialog from './components/AnalyticsConsentDialog';
 import OnboardingDialog, {
   ONBOARDING_GH_PROMPT_SHOWN_PREFERENCE,
   ONBOARDING_REPO_SETUP_PREFERENCE,
@@ -25,7 +24,7 @@ import { UpdateDialog } from './components/UpdateDialog';
 import { MainProcessLogger } from './components/MainProcessLogger';
 import { ErrorDialog } from './components/ErrorDialog';
 import { PermissionDialog } from './components/PermissionDialog';
-import { DiscordPopup } from './components/DiscordPopup';
+import { DISCORD_INVITE_URL } from './components/DiscordIcon';
 import { ResumeSessionsDialog } from './components/ResumeSessionsDialog';
 import { useErrorStore } from './stores/errorStore';
 import { useSessionStore } from './stores/sessionStore';
@@ -75,34 +74,24 @@ const preferenceResponseSchema = boundary.object({
   data: boundary.optional(boundary.string),
   error: boundary.optional(boundary.string),
 });
-const lastOpenResponseSchema = boundary.object({
-  success: boundary.boolean,
-  data: boundary.optional(boundary.object({ discord_shown: boundary.optional(boundary.boolean) })),
-  error: boundary.optional(boundary.string),
-});
-
 function App() {
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
-  const [isAnalyticsConsentOpen, setIsAnalyticsConsentOpen] = useState(false);
-  const [hasCheckedAnalyticsConsent, setHasCheckedAnalyticsConsent] = useState(false);
+  const [hasCheckedAnalyticsDefault, setHasCheckedAnalyticsDefault] = useState(false);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
   const [updateVersionInfo, setUpdateVersionInfo] = useState<VersionUpdateInfo | null>(null);
   const [currentPermissionRequest, setCurrentPermissionRequest] = useState<PanePermissionRequest | null>(null);
-  const [isDiscordOpen, setIsDiscordOpen] = useState(false);
-  const [hasCheckedWelcome, setHasCheckedWelcome] = useState(false);
   const [hasResolvedStartupDialogs, setHasResolvedStartupDialogs] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isSupportPaneOpen, setIsSupportPaneOpen] = useState(false);
   const [hasCheckedOnboarding, setHasCheckedOnboarding] = useState(false);
   const [completedOnboardingThisSession, setCompletedOnboardingThisSession] = useState(false);
-  const [analyticsIdentity, setAnalyticsIdentity] = useState<AnalyticsIdentity | undefined>();
   const analyticsCheckStarted = useRef(false);
   const analyticsIdentityPromise = useRef<Promise<AnalyticsIdentity | undefined> | null>(null);
-  const analyticsConsentOpenRef = useRef(false);
   const appFirstOpenedCaptured = useRef(false);
   const onboardingCheckStarted = useRef(false);
+  const welcomeCheckStarted = useRef(false);
   const supportPromptCheckStarted = useRef(false);
 
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -131,7 +120,8 @@ function App() {
     }
   }, [sidebarCollapsed, setSidebarCollapsed]);
   const { currentError, clearError } = useErrorStore();
-  const { sessions, isLoaded } = useSessionStore();
+  const sessions = useSessionStore(state => state.sessions);
+  const isLoaded = useSessionStore(state => state.isLoaded);
   const activeSessionId = useSessionStore(state => state.activeSessionId);
   const { fetchConfig, config: appConfig } = useConfigStore();
   const terminalShortcuts = appConfig?.terminalShortcuts ?? EMPTY_TERMINAL_SHORTCUTS;
@@ -161,10 +151,6 @@ function App() {
 
   useIPCEvents();
   const { showNotification } = useNotifications();
-
-  useEffect(() => {
-    analyticsConsentOpenRef.current = isAnalyticsConsentOpen;
-  }, [isAnalyticsConsentOpen]);
 
   // Global panel activity status listener
   useEffect(() => {
@@ -331,7 +317,6 @@ function App() {
         try {
           const identityResult = await window.electronAPI?.analytics?.getIdentity?.();
           if (identityResult?.success && identityResult.data) {
-            setAnalyticsIdentity(identityResult.data);
             return identityResult.data;
           }
         } catch (error) {
@@ -354,56 +339,70 @@ function App() {
     await captureAppFirstOpened(identity);
   }, []);
 
-  // Check if analytics consent dialog should be shown (before other dialogs)
+  // Apply the default-on experiment only when no explicit legacy choice exists.
   useEffect(() => {
-    if (!appConfig || hasCheckedAnalyticsConsent || analyticsCheckStarted.current) return;
+    if (!appConfig || hasCheckedAnalyticsDefault || analyticsCheckStarted.current) return;
     analyticsCheckStarted.current = true;
+    let cancelled = false;
 
-    const checkAnalyticsConsent = async () => {
+    const checkAnalyticsDefault = async () => {
       if (!window.electron?.invoke) {
-        setHasCheckedAnalyticsConsent(true);
+        if (!cancelled) setHasCheckedAnalyticsDefault(true);
         return;
       }
 
       try {
-        const consentResult = decodeOptionalBoundary(
-          await window.electron.invoke('preferences:get', 'analytics_consent_shown'),
-          preferenceResponseSchema,
-        );
-        const hasShownConsent = consentResult?.data === 'true';
+        const [legacyConsentResult, defaultAppliedResult] = await Promise.all([
+          window.electron.invoke('preferences:get', 'analytics_consent_shown'),
+          window.electron.invoke('preferences:get', 'analytics_default_applied'),
+        ]);
+        const hasLegacyChoice = decodeOptionalBoundary(legacyConsentResult, preferenceResponseSchema)?.data === 'true';
+        const hasAppliedDefault = decodeOptionalBoundary(defaultAppliedResult, preferenceResponseSchema)?.data === 'true';
 
-        if (!hasShownConsent) {
+        if (!hasLegacyChoice && !hasAppliedDefault) {
           const identity = await resolveAnalyticsIdentity();
+
           initPostHog({
-            enabled: false,
+            enabled: true,
             posthogApiKey: appConfig.analytics?.posthogApiKey,
             posthogHost: appConfig.analytics?.posthogHost,
             identity,
           }, { flushPendingEvents: false });
-          // Fire consent_dialog_shown BEFORE the user can opt in/out, so we
-          // have a true "saw the dialog" denominator for funnel math instead
-          // of the conservative opted_in + opted_out lower bound. Uses direct
-          // HTTP via captureUnconditionally so it bypasses the opt-in gate.
-          // See docs/analytics-attribution.md in runpane-website repo for
-          // the funnel formula this event enables.
-          await captureUnconditionally('consent_dialog_shown', undefined, identity);
+
+          aliasInstallIdentity(identity);
+          if (identity?.webDistinctId) {
+            aliasWebVisitor(identity.webDistinctId, identity.distinctId);
+            void window.electronAPI?.analytics?.redeemAttribution?.();
+          }
+
+          await captureUnconditionally('analytics_default_enabled', { experiment: 'analytics_default_on' }, identity);
           await captureFirstOpenOnce(identity);
-          setIsAnalyticsConsentOpen(true);
+          flushPendingEvents();
+          await window.electron.invoke('preferences:set', 'analytics_default_applied', 'true');
+          if (appConfig.analytics?.enabled !== true) {
+            await useConfigStore.getState().updateConfig({
+              analytics: { ...appConfig.analytics, enabled: true },
+            });
+          }
         }
       } catch (error) {
-        console.error('[App] Error checking analytics consent:', error);
+        console.error('[App] Error applying analytics default:', error);
       } finally {
-        setHasCheckedAnalyticsConsent(true);
+        if (!cancelled) setHasCheckedAnalyticsDefault(true);
       }
     };
 
-    checkAnalyticsConsent();
-  }, [appConfig, captureFirstOpenOnce, hasCheckedAnalyticsConsent, resolveAnalyticsIdentity]);
+    void checkAnalyticsDefault();
+    return () => {
+      cancelled = true;
+      analyticsCheckStarted.current = false;
+    };
+  }, [appConfig, captureFirstOpenOnce, hasCheckedAnalyticsDefault, resolveAnalyticsIdentity]);
 
   // Initialize PostHog after config loads, then start forwarding main-process events.
   // Both must live in the same effect so buffered events aren't replayed before init.
   useEffect(() => {
-    if (!appConfig) return;
+    if (!appConfig || !hasCheckedAnalyticsDefault) return;
 
     let cleanup: (() => void) | undefined;
     let cancelled = false;
@@ -413,11 +412,13 @@ function App() {
       let consentDecided = false;
 
       try {
-        const consentResult = decodeOptionalBoundary(
-          await window.electron?.invoke?.('preferences:get', 'analytics_consent_shown'),
-          preferenceResponseSchema,
+        const [legacyConsentResult, defaultAppliedResult] = await Promise.all([
+          window.electron?.invoke?.('preferences:get', 'analytics_consent_shown'),
+          window.electron?.invoke?.('preferences:get', 'analytics_default_applied'),
+        ]);
+        consentDecided = [legacyConsentResult, defaultAppliedResult].some((result) =>
+          decodeOptionalBoundary(result, preferenceResponseSchema)?.data === 'true'
         );
-        consentDecided = consentResult?.data === 'true';
       } catch (error) {
         console.error('[App] Error resolving analytics consent state:', error);
       }
@@ -458,7 +459,7 @@ function App() {
         }
       });
 
-      if (analyticsEnabled && !analyticsConsentOpenRef.current) {
+      if (analyticsEnabled) {
         await captureFirstOpenOnce(identity);
         flushPendingEvents();
       }
@@ -470,7 +471,7 @@ function App() {
       cancelled = true;
       cleanup?.();
     };
-  }, [appConfig, captureFirstOpenOnce, resolveAnalyticsIdentity]);
+  }, [appConfig, captureFirstOpenOnce, hasCheckedAnalyticsDefault, resolveAnalyticsIdentity]);
 
   // CRITICAL PERFORMANCE FIX: Cleanup to prevent V8 array iteration issues
   // Uses visibility-aware interval: 60s when active, 600s when hidden
@@ -515,15 +516,15 @@ function App() {
     };
   }, []);
 
-  // Check if onboarding should be shown (after analytics consent completes, before welcome)
+  // Check if onboarding should be shown after analytics defaults are resolved.
   useEffect(() => {
-    // Wait until the analytics consent check has finished AND the consent dialog is closed
-    if (hasCheckedOnboarding || onboardingCheckStarted.current || !hasCheckedAnalyticsConsent || isAnalyticsConsentOpen) return;
+    if (hasCheckedOnboarding || onboardingCheckStarted.current || !hasCheckedAnalyticsDefault) return;
     onboardingCheckStarted.current = true;
+    let cancelled = false;
 
     const checkOnboarding = async () => {
       if (!window.electron?.invoke) {
-        setHasCheckedOnboarding(true);
+        if (!cancelled) setHasCheckedOnboarding(true);
         return;
       }
       try {
@@ -537,30 +538,36 @@ function App() {
           const projectsRes = await API.projects.getAll();
           const hasExistingProjects = projectsRes.success && projectsRes.data && projectsRes.data.length > 0;
           if (!hasExistingProjects) {
-            setIsOnboardingOpen(true);
+            if (!cancelled) setIsOnboardingOpen(true);
           }
         }
       } catch (error) {
         console.error('[App] Error checking onboarding:', error);
       } finally {
-        setHasCheckedOnboarding(true);
+        if (!cancelled) setHasCheckedOnboarding(true);
       }
     };
 
-    checkOnboarding();
-  }, [hasCheckedOnboarding, hasCheckedAnalyticsConsent, isAnalyticsConsentOpen]);
+    void checkOnboarding();
+    return () => {
+      cancelled = true;
+      onboardingCheckStarted.current = false;
+    };
+  }, [hasCheckedOnboarding, hasCheckedAnalyticsDefault]);
 
   useEffect(() => {
-    // Show welcome screen and Discord popup intelligently based on user state
+    // Show the welcome screen intelligently based on user state.
     // This should only run once when the app is loaded, not when sessions change
     // Don't show welcome until onboarding check has completed and its dialog (if any) is closed
-    if (!isLoaded || hasCheckedWelcome || isAnalyticsConsentOpen || !hasCheckedOnboarding || isOnboardingOpen) {
+    if (!isLoaded || welcomeCheckStarted.current || !hasCheckedOnboarding || isOnboardingOpen) {
       return;
     }
+    welcomeCheckStarted.current = true;
+    let cancelled = false;
 
     const checkInitialState = async () => {
       if (!window.electron?.invoke) {
-        setHasResolvedStartupDialogs(true);
+        if (!cancelled) setHasResolvedStartupDialogs(true);
         return;
       }
 
@@ -568,20 +575,12 @@ function App() {
         // Get preferences from database
         const hideWelcomeResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'hide_welcome'), preferenceResponseSchema);
         const welcomeShownResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'welcome_shown'), preferenceResponseSchema);
-        const hideDiscordResult = decodeOptionalBoundary(await window.electron.invoke('preferences:get', 'hide_discord'), preferenceResponseSchema);
-
         const hideWelcome = hideWelcomeResult?.data === 'true';
         const hasSeenWelcome = welcomeShownResult?.data === 'true';
-        const hideDiscord = hideDiscordResult?.data === 'true';
 
-
-        // Track whether we're showing the welcome screen
-        let welcomeScreenShown = false;
 
         // If user explicitly said "don't show again", respect that preference
-        if (hideWelcome || completedOnboardingThisSession) {
-          welcomeScreenShown = false;
-        } else {
+        if (!hideWelcome && !completedOnboardingThisSession) {
           try {
             const projectsResponse = await API.projects.getAll();
             const hasProjects = projectsResponse.success && projectsResponse.data && projectsResponse.data.length > 0;
@@ -597,86 +596,43 @@ function App() {
 
 
             if (isFirstTimeUser || isReturningUserWithNoData) {
-              setIsWelcomeOpen(true);
-              welcomeScreenShown = true;
+              if (!cancelled) setIsWelcomeOpen(true);
               // Mark that welcome has been shown at least once
               await window.electron.invoke('preferences:set', 'welcome_shown', 'true');
-            } else {
-              welcomeScreenShown = false;
             }
           } catch (error) {
             console.error('Error checking initial state:', error);
-            welcomeScreenShown = false;
           }
         }
 
-        // If welcome screen is not shown and Discord hasn't been hidden, check if we should show Discord popup
-        if (!welcomeScreenShown && !hideDiscord) {
-
-          try {
-            // Get the last app open to see if Discord was already shown
-            const result = decodeOptionalBoundary(await window.electron.invoke('app:get-last-open'), lastOpenResponseSchema);
-
-            if (result?.success && result.data) {
-              const lastOpen = result.data;
-
-              // Show Discord popup if it hasn't been shown yet
-              if (!lastOpen.discord_shown) {
-                setIsDiscordOpen(true);
-                // Mark that we're showing the Discord popup
-                if (window.electron?.invoke) {
-                  await window.electron.invoke('app:update-discord-shown');
-                }
-              } else {
-                // Discord already shown
-              }
-            } else {
-              // No previous app open - show Discord popup
-              setIsDiscordOpen(true);
-              // Will update discord shown status after recording app open
-            }
-          } catch {
-            // Error checking Discord popup
-          }
-
-          // Record this app open
-          if (window.electron?.invoke) {
-            await window.electron.invoke('app:record-open', hideWelcome, false);
-
-            // If we showed Discord popup and there was no previous app open, update the status
-            const result = decodeOptionalBoundary(await window.electron.invoke('app:get-last-open'), lastOpenResponseSchema);
-            if (!result?.data?.discord_shown && isDiscordOpen) {
-              await window.electron.invoke('app:update-discord-shown');
-            }
-          }
-        }
       } finally {
-        setHasResolvedStartupDialogs(true);
+        if (!cancelled) setHasResolvedStartupDialogs(true);
       }
     };
 
-    // Set the flag first to prevent re-runs
-    setHasCheckedWelcome(true);
-    checkInitialState();
-  }, [isLoaded, hasCheckedWelcome, isAnalyticsConsentOpen, hasCheckedOnboarding, isOnboardingOpen, completedOnboardingThisSession, isDiscordOpen]);
+    void checkInitialState();
+    return () => {
+      cancelled = true;
+      welcomeCheckStarted.current = false;
+    };
+  }, [isLoaded, hasCheckedOnboarding, isOnboardingOpen, completedOnboardingThisSession]);
 
   useEffect(() => {
     if (
       supportPromptCheckStarted.current ||
       !isLoaded ||
-      !hasCheckedAnalyticsConsent ||
-      isAnalyticsConsentOpen ||
+      !hasCheckedAnalyticsDefault ||
       !hasCheckedOnboarding ||
       isOnboardingOpen ||
       completedOnboardingThisSession ||
       !hasResolvedStartupDialogs ||
-      isWelcomeOpen ||
-      isDiscordOpen
+      isWelcomeOpen
     ) {
       return;
     }
 
     supportPromptCheckStarted.current = true;
+    let cancelled = false;
 
     const checkDeferredSupportPrompt = async () => {
       if (!window.electron?.invoke || !window.electronAPI?.onboarding?.detectEnvironment) {
@@ -698,34 +654,36 @@ function App() {
           source: 'future_launch',
           gh_status: 'gh_ready',
         });
-        setIsSupportPaneOpen(true);
+        if (!cancelled) setIsSupportPaneOpen(true);
       } catch (error) {
         console.error('[App] Failed to check deferred onboarding support prompt:', error);
       }
     };
 
     void checkDeferredSupportPrompt();
+    return () => {
+      cancelled = true;
+      supportPromptCheckStarted.current = false;
+    };
   }, [
     isLoaded,
-    hasCheckedAnalyticsConsent,
-    isAnalyticsConsentOpen,
+    hasCheckedAnalyticsDefault,
     hasCheckedOnboarding,
     isOnboardingOpen,
     completedOnboardingThisSession,
     hasResolvedStartupDialogs,
     isWelcomeOpen,
-    isDiscordOpen,
   ]);
-
-  // Discord popup logic is now combined with welcome screen logic above
 
   // Check for resumable sessions on startup (auto-resume feature)
   useEffect(() => {
-    if (!isLoaded || isAnalyticsConsentOpen) return;
+    if (!isLoaded) return;
+    let cancelled = false;
 
     const checkResumableSessions = async () => {
       try {
         const result = await window.electronAPI.sessions.getResumable();
+        if (cancelled) return;
         if (result.success && result.data && Array.isArray(result.data) && result.data.length > 0) {
           setResumableSessions(result.data);
           setIsResumeDialogOpen(true);
@@ -735,8 +693,11 @@ function App() {
       }
     };
 
-    checkResumableSessions();
-  }, [isLoaded, isAnalyticsConsentOpen]);
+    void checkResumableSessions();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoaded]);
 
   const loadNextPendingPermission = useCallback(async () => {
     try {
@@ -852,6 +813,10 @@ function App() {
             onHelpClick={() => setIsHelpOpen(true)}
             onDocsClick={() => setIsDocsOpen(true)}
             onFeedbackClick={() => setIsFeedbackOpen(true)}
+            onDiscordClick={() => {
+              capture('discord_clicked', { source: 'sidebar' });
+              void window.electronAPI.openExternal(DISCORD_INVITE_URL);
+            }}
           />
         </div>
         <SessionView />
@@ -870,13 +835,6 @@ function App() {
           }}
           onUpdate={handleUpdateRequest}
           onSendFeedback={() => setIsFeedbackOpen(true)}
-        />
-        <AnalyticsConsentDialog
-          isOpen={isAnalyticsConsentOpen}
-          onClose={() => setIsAnalyticsConsentOpen(false)}
-          analyticsIdentity={analyticsIdentity}
-          onResolveAnalyticsIdentity={resolveAnalyticsIdentity}
-          onCaptureFirstOpen={captureFirstOpenOnce}
         />
         <OnboardingDialog
           isOpen={isOnboardingOpen}
@@ -910,10 +868,6 @@ function App() {
           request={currentPermissionRequest}
           onRespond={handlePermissionResponse}
           session={currentPermissionRequest ? sessions.find(s => s.id === currentPermissionRequest.sessionId) : undefined}
-        />
-        <DiscordPopup
-          isOpen={isDiscordOpen}
-          onClose={() => setIsDiscordOpen(false)}
         />
         <ResumeSessionsDialog
           isOpen={isResumeDialogOpen}

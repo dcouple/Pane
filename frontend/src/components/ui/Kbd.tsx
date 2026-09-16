@@ -73,7 +73,7 @@ export function Kbd({ children, size = 'sm', variant = 'default', className }: K
             )}
             <kbd
               className={cn(
-                'inline-flex items-center justify-center rounded-md border border-border-primary/70 bg-surface-primary font-mono font-medium leading-none shadow-[0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.16)]',
+                'inline-flex items-center justify-center rounded-md border border-border-primary bg-surface-primary font-mono font-medium leading-none shadow-[0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.16)]',
                 sizeStyles[size].key,
               )}
             >
@@ -84,7 +84,7 @@ export function Kbd({ children, size = 'sm', variant = 'default', className }: K
       ) : (
         <kbd
           className={cn(
-            'inline-flex items-center justify-center rounded-md border border-border-primary/70 bg-surface-primary font-mono font-medium leading-none shadow-[0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.16)]',
+            'inline-flex items-center justify-center rounded-md border border-border-primary bg-surface-primary font-mono font-medium leading-none shadow-[0_1px_0_rgba(255,255,255,0.04),0_1px_2px_rgba(0,0,0,0.16)]',
             sizeStyles[size].key,
           )}
         >

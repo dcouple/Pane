@@ -9,6 +9,8 @@ import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
 import { escapeShellArg } from '../utils/shellEscape';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager, type TerminalPanelSnapshot } from '../services/terminalPanelManager';
+import { databaseService as panelDatabase } from '../services/database';
+import type { PanelBuffers } from '../database/panelBuffers';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { projectToRepoSummary, runAgentDoctor } from '../services/agents/agentDoctor';
 import { fastCheckWorkingDirectory, listCommitsAhead } from '../services/gitPlumbingCommands';
@@ -38,6 +40,8 @@ import type {
   RunpanePaneArchiveResult,
   RunpanePaneArchiveSafetyCheck,
   RunpanePaneArchiveSuccessResult,
+  RunpanePaneAdoptRequest,
+  RunpanePaneAdoptResult,
   RunpanePaneCostRequest,
   RunpanePaneCostResult,
   RunpanePaneListRequest,
@@ -91,14 +95,22 @@ import type {
 } from '../../../shared/types/runpaneOrchestration';
 import { getAppDirectory } from '../utils/appDirectory';
 import { collectRemoteDaemonExecutableHealth } from '../daemon/remoteDaemonExecutableHealth';
-import { WorkspaceJournal, type WorkspaceJournalFilter } from '../services/workspaceJournal';
+import {
+  WorkspaceJournal,
+  matchesFilter,
+  workspaceFilterKey,
+  type WorkspaceJournalFilter,
+} from '../services/workspaceJournal';
+import { WatchCadence, type WatchCadenceOptions } from '../services/workspaceWatchCadence';
 import { WorkspaceStateReader } from '../services/workspaceStateReader';
 import { WorkspaceCursorStore } from '../services/workspaceCursorStore';
 import { usageManager } from '../services/usage/usageManager';
+import { parseWSLPath } from '../utils/wslUtils';
 import {
   dueIdleEntries,
   nextIdleDeadline,
   type WorkspaceIdleCandidate,
+  type WorkspaceIdleSchedule,
 } from '../services/workspaceIdleTracker';
 
 const RUNPANE_CHANNELS = [
@@ -108,6 +120,7 @@ const RUNPANE_CHANNELS = [
   'runpane:panes:list',
   'runpane:panes:cost',
   'runpane:panes:create',
+  'runpane:panes:adopt',
   'runpane:panes:pin',
   'runpane:panes:rename',
   'runpane:panes:archive',
@@ -143,6 +156,7 @@ const DEFAULT_WORKSPACE_WAIT_LIMIT = 256;
 const WORKSPACE_CONSUMER_PATTERN = /^[A-Za-z0-9._-]{1,64}$/u;
 const MUTATING_RUNPANE_ACTIONS = new Set([
   'panes:create',
+  'panes:adopt',
   'panes:archive',
   'panes:pin',
   'panes:rename',
@@ -167,7 +181,7 @@ export function registerRunpaneHandlers(
   const workspaceCursorStore = services.workspaceCursorStore ?? new WorkspaceCursorStore(
     path.join(getAppDirectory(), 'workspace-cursors.json'),
   );
-  const lastReadAtByConsumer = new Map<string, number>();
+  const consumerRuntime = new Map<string, { lastReadAt?: number; cadence?: WatchCadence }>();
   services.workspaceJournal = workspaceJournal;
   services.workspaceStateReader = workspaceStateReader;
   services.workspaceCursorStore = workspaceCursorStore;
@@ -459,6 +473,119 @@ export function registerRunpaneHandlers(
     }, result => ({ repoId: result.repo.id, resultCount: result.items.length }));
   });
 
+  commandRegistry.register('runpane:panes:adopt', async (request: PaneCommandValue): Promise<RunpanePaneAdoptResult> => {
+    return withRunpaneAction(services, 'panes:adopt', {}, async () => {
+      const normalized = parsePaneAdoptRequest(request);
+      const repo = resolveRepoSelector(databaseService.getAllProjects(), normalized.repo);
+      const repoSummary = projectToRepoSummary(repo, sessionManager.getSessionsForProject(repo.id).length);
+      const items: RunpanePaneCreateResultItem[] = [];
+
+      for (const [index, item] of normalized.panes.entries()) {
+        let createdSessionId: string | undefined;
+        let storedWorktreePath = item.path;
+        try {
+          const validatedPath = await validateAdoptedWorktree(services, repo, item.path);
+          storedWorktreePath = validatedPath.storagePath;
+          const existing = findSessionByWorktreeIdentity(
+            databaseService.getAllSessionsIncludingArchived({ includeHidden: true }),
+            validatedPath.identityPath,
+            validatedPath.pathResolver,
+          );
+          if (existing) {
+            throw new Error(`Worktree path is already registered by pane "${existing.name}" (${existing.id})`);
+          }
+          const tool = resolveToolSpec(item.tool, new PathResolver(repo).environment);
+          if (normalized.dryRun) {
+            items.push({ ok: true, index, name: item.name, pinned: item.pinned !== false, worktreePath: storedWorktreePath, tool: describeTool(tool) });
+            continue;
+          }
+
+          const session = await sessionManager.createSession(
+            item.name,
+            storedWorktreePath,
+            '',
+            path.basename(storedWorktreePath),
+            'ignore',
+            repo.id,
+            false,
+            item.folder
+              ? resolveOrCreateAdoptFolder(databaseService, repo.id, item.folder)
+              : undefined,
+            'none',
+            undefined,
+            item.baseBranch,
+            item.pinned !== false,
+            { worktreeOwnership: 'external' },
+          );
+          createdSessionId = session.id;
+          await sessionManager.updateSession(session.id, { status: 'stopped' });
+          const stoppedSession = sessionManager.getSession(session.id);
+          if (!stoppedSession) throw new Error(`Created session ${session.id} was not found after status update`);
+          await Promise.all([
+            panelManager.ensureExplorerPanel(session.id),
+            panelManager.ensureDiffPanel(session.id),
+          ]);
+
+          const resumeCommand = item.resume && tool.agent
+            ? buildAdoptResumeCommand(tool.agent, item.resume)
+            : tool.command;
+          const initialState: TerminalPanelState = {
+            initialCommand: item.launch ? resumeCommand : undefined,
+            agentType: tool.agent,
+            agentSessionId: item.resume,
+            hasClaudeSessionId: tool.agent === 'claude' && Boolean(item.resume),
+            isCliPanel: Boolean(tool.agent),
+          };
+          const panel = await panelManager.createPanel({
+            sessionId: session.id,
+            type: 'terminal',
+            title: tool.title,
+            initialState,
+            activate: normalized.focus === true,
+          });
+          const context = sessionManager.getProjectContext(session.id);
+          await terminalPanelManager.initializeTerminal(panel, storedWorktreePath, context?.commandRunner.wslContext ?? null);
+          if (!item.launch) {
+            terminalPanelManager.writeToTerminal(panel.id, resumeCommand);
+          }
+          sessionManager.emitSessionCreated(stoppedSession, {
+            activateOnCreate: normalized.focus === true,
+            createDefaultTerminalOnCreate: false,
+          });
+          items.push({
+            ok: true,
+            index,
+            name: item.name,
+            pinned: item.pinned !== false,
+            sessionId: session.id,
+            paneId: session.id,
+            panelId: panel.id,
+            worktreePath: storedWorktreePath,
+            tool: describeTool(tool),
+            active: Boolean(panel.state.isActive),
+            focused: Boolean(panel.state.isActive),
+            nextCommand: panelOutputCommand(panel.id),
+          });
+        } catch (error) {
+          let failureSessionId = createdSessionId;
+          if (createdSessionId) {
+            try {
+              await sessionManager.archiveSession(createdSessionId);
+              if (databaseService.deleteArchivedSessionPermanently(createdSessionId)) {
+                failureSessionId = undefined;
+              }
+            } catch (rollbackError) {
+              console.error(`[Runpane] Failed to roll back adopted pane ${createdSessionId}:`, rollbackError);
+            }
+          }
+          items.push(createFailureItem(index, item, error, failureSessionId, storedWorktreePath));
+        }
+      }
+
+      return { ok: items.every(item => item.ok), repo: repoSummary, items };
+    }, result => ({ repoId: result.repo.id, resultCount: result.items.length }));
+  });
+
   commandRegistry.register('runpane:panes:archive', async (request: PaneCommandValue): Promise<RunpanePaneArchiveResult> => {
     return withRunpaneAction(services, 'panes:archive', {}, async () => {
       const normalized = parsePaneArchiveRequest(request);
@@ -468,7 +595,9 @@ export function registerRunpaneHandlers(
         throw new Error(`Pane ${normalized.paneId} is already archived`);
       }
 
-      const worktreeCleanupApplicable = Boolean(pane.projectId) && !pane.isMainRepo;
+      const worktreeCleanupApplicable = Boolean(pane.projectId)
+        && !pane.isMainRepo
+        && pane.worktreeOwnership !== 'external';
       const safetyCheck = worktreeCleanupApplicable
         ? await computeArchiveSafety(services, pane)
         : { performed: false };
@@ -801,25 +930,34 @@ export function registerRunpaneHandlers(
       };
       const timeoutMs = Math.min(normalized.timeoutMs ?? DEFAULT_WORKSPACE_WAIT_TIMEOUT_MS, MAX_WORKSPACE_WAIT_TIMEOUT_MS);
       const limit = normalized.limit ?? DEFAULT_WORKSPACE_WAIT_LIMIT;
-      const idleAfterMs = normalized.idleAfterMs ?? 0;
+      const idleSchedule: WorkspaceIdleSchedule = { idleAfterMs: normalized.idleAfterMs ?? 0, backoff: normalized.idleBackoff ?? false };
       const requestStartedAt = Date.now();
-      const idleWindowStart = normalized.idleWindowStartMs ?? (normalized.as
-        ? lastReadAtByConsumer.get(normalized.as) ?? 0
+      // Take the consumer's in-memory record now; it is put back only on a non-reset exit.
+      const runtime = normalized.as ? consumerRuntime.get(normalized.as) : undefined;
+      if (normalized.as) consumerRuntime.delete(normalized.as);
+      let idleWindowStart = normalized.idleWindowStartMs ?? (normalized.as
+        ? runtime?.lastReadAt ?? 0
         : normalized.since !== undefined ? 0 : requestStartedAt);
       let cursor = normalized.since ?? workspaceJournal.generation;
       let reset: RunpaneWorkspaceWaitResult['reset'];
-      const currentIdleEntries = (): RunpaneWorkspaceEntry[] => dueIdleEntries(
-        workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
-        idleAfterMs,
+      const cadenceOptions = normalized.as ? workspaceCadenceOptions(normalized, filter, idleSchedule) : undefined;
+      const readFilter = cadenceOptions ? WatchCadence.observeFilter(filter) : filter;
+      const currentIdleEntries = (candidates: readonly WorkspaceIdleCandidate[]): RunpaneWorkspaceEntry[] => dueIdleEntries(
+        candidates,
+        idleSchedule,
         idleWindowStart,
         Date.now(),
         workspaceJournal.generation,
       )
-        .filter(entry => workspaceEntryMatches(entry, filter))
+        .filter(entry => matchesFilter(entry, filter))
+        .map(entry => projectWorkspaceEntry(entry, filter));
+      const baselineEntries = (): RunpaneWorkspaceEntry[] => workspaceStateReader.read(project?.id).entries
+        .filter(entry => matchesFilter(entry, filter))
         .map(entry => projectWorkspaceEntry(entry, filter));
 
       if (normalized.as) {
         const evicted = workspaceCursorStore.evictStale();
+        for (const name of evicted) consumerRuntime.delete(name);
         let named = workspaceCursorStore.get(normalized.as);
         if (!named) {
           cursor = normalized.from === 'earliest'
@@ -839,12 +977,10 @@ export function registerRunpaneHandlers(
 
       if (reset) {
         const silentBaseline = reset.reason === 'first-use' && normalized.from !== 'earliest';
-        const baseline = silentBaseline ? [] : workspaceStateReader.read(project?.id).entries
-          .filter(entry => workspaceEntryMatches(entry, filter))
-          .map(entry => projectWorkspaceEntry(entry, filter))
+        const baseline = silentBaseline ? [] : baselineEntries()
           .map(entry => reset?.reason === 'epoch-changed' ? { ...entry, changedWhileAway: true as const } : entry);
-        const entries = [...baseline, ...currentIdleEntries()];
-        if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
+        const entries = [...baseline, ...currentIdleEntries(workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id))];
+        if (normalized.as) consumerRuntime.set(normalized.as, { lastReadAt: Date.now() });
         return {
           ok: true,
           epoch: workspaceJournal.epoch,
@@ -856,58 +992,99 @@ export function registerRunpaneHandlers(
         };
       }
 
-      const initial = workspaceJournal.readAfter(cursor, filter, limit);
-      const initialIdle = currentIdleEntries();
+      let cadence: WatchCadence | undefined;
+      if (cadenceOptions) {
+        cadence = runtime?.cadence?.options.key === cadenceOptions.key ? runtime.cadence : new WatchCadence(cadenceOptions);
+        cursor = cadence.readCursor ?? cursor;
+      }
+
+      const deadlineAt = requestStartedAt + timeoutMs;
+      const startCursor = cursor;
+      let readAny = false;
       let waited: Awaited<ReturnType<WorkspaceJournal['waitAfter']>>;
-      if (initial.entries.length > 0 || initial.dropped !== undefined || initialIdle.length > 0) {
-        waited = { ...initial, timedOut: initial.entries.length === 0 };
-      } else {
-        const deadline = nextIdleDeadline(
-          workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id),
-          idleAfterMs,
-          Date.now(),
-        );
-        const parkMs = deadline === undefined
-          ? timeoutMs
-          : Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
-        waited = await workspaceJournal.waitAfter(
-          cursor,
-          filter,
-          parkMs,
-          limit,
-          normalized.as ?? 'anonymous',
-        );
-      }
-      if (waited.dropped) {
-        reset = { reason: 'cursor-truncated' };
-      }
-      let entries = waited.entries;
-      if (reset) {
-        entries = workspaceStateReader.read(project?.id).entries
-          .filter(entry => workspaceEntryMatches(entry, filter))
-          .map(entry => projectWorkspaceEntry(entry, filter));
-      }
-      entries = [...entries, ...currentIdleEntries()];
+      let entries: RunpaneWorkspaceEntry[];
+      for (;;) {
+        const idleCandidates = workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id);
+        const initial = workspaceJournal.readAfter(cursor, readFilter, limit);
+        let idleEntries = currentIdleEntries(idleCandidates);
+        if (initial.entries.length > 0 || initial.dropped !== undefined || idleEntries.length > 0) {
+          waited = { ...initial, timedOut: initial.entries.length === 0 };
+        } else {
+          const now = Date.now();
+          const parkUntil = Math.min(
+            deadlineAt,
+            nextIdleDeadline(idleCandidates, idleSchedule, now) ?? Number.POSITIVE_INFINITY,
+            cadence?.nextDeadline(now) ?? Number.POSITIVE_INFINITY,
+          );
+          waited = await workspaceJournal.waitAfter(
+            cursor,
+            readFilter,
+            Math.max(0, parkUntil - now),
+            limit,
+            normalized.as ?? 'anonymous',
+          );
+          idleEntries = currentIdleEntries(workspaceIdleCandidates(workspaceStateReader, workspaceJournal, project?.id));
+        }
+        if (waited.dropped) {
+          reset = { reason: 'cursor-truncated' };
+        }
+        entries = [...reset ? baselineEntries() : waited.entries, ...idleEntries];
 
-      if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
-        workspaceCursorStore.advance(
-          normalized.as,
-          waited.generation,
-          workspaceJournal.epoch,
-          !normalized.ackNow,
-        );
-      }
-      if (normalized.as) lastReadAtByConsumer.set(normalized.as, Date.now());
+        if (!cadence || reset) {
+          if (normalized.as && (!waited.timedOut || waited.dropped !== undefined)) {
+            workspaceCursorStore.advance(
+              normalized.as,
+              waited.generation,
+              workspaceJournal.epoch,
+              !normalized.ackNow,
+            );
+          }
+          break;
+        }
 
+        // Drain the rest of the backlog before flushing so a BUSY on a later page
+        // can still cancel a READY on an earlier one.
+        const now = Date.now();
+        if (waited.entries.length > 0) readAny = true;
+        cadence.ingest(entries, now);
+        idleWindowStart = now;
+        cursor = Math.max(cursor, waited.generation);
+        if (waited.entries.length > 0 && cursor < workspaceJournal.generation) {
+          const rest = workspaceJournal.readAfter(cursor, readFilter, Number.MAX_SAFE_INTEGER);
+          cadence.ingest(rest.entries, now);
+          cursor = Math.max(cursor, rest.generation);
+        }
+        cadence.readCursor = cursor;
+        entries = cadence.flush(now);
+        if (entries.length > 0 || now >= deadlineAt) break;
+      }
+      if (cadence && !reset && readAny) {
+        // The durable cursor never passes an entry still pending or held in memory. The
+        // instance resumes from its own read cursor, so nothing repeats while it lives. If
+        // the instance is discarded (request shape change, eviction, reset, or a call without
+        // cadence flags) the re-read from the durable cursor re-delivers the held entries under
+        // the new filter, and later entries already delivered may repeat: that is the accepted
+        // at-least-once contract.
+        const lowestUnflushed = cadence.lowestUnflushedGen();
+        const durableGen = Math.max(
+          startCursor,
+          Math.min(cursor, lowestUnflushed === undefined ? cursor : lowestUnflushed - 1),
+        );
+        workspaceCursorStore.advance(normalized.as ?? '', durableGen, workspaceJournal.epoch, !normalized.ackNow);
+      }
+      // A reset drops the cadence; the idle window still moves forward.
+      if (normalized.as) consumerRuntime.set(normalized.as, { lastReadAt: Date.now(), cadence: reset ? undefined : cadence });
+
+      const generation = cadence && !reset ? cursor : waited.generation;
       return {
         ok: true,
         epoch: workspaceJournal.epoch,
-        generation: waited.generation,
+        generation,
         entries,
-        timedOut: entries.length === 0 && waited.timedOut,
+        timedOut: entries.length === 0 && (cadence !== undefined || waited.timedOut),
         dropped: waited.dropped,
         reset,
-        nextCommand: workspaceNextCommand(normalized, waited.generation),
+        nextCommand: workspaceNextCommand(normalized, generation),
       };
     }, result => ({ resultCount: result.entries.length, timedOut: result.timedOut }), result =>
       result.entries.length > 0 || result.reset !== undefined);
@@ -952,6 +1129,7 @@ function sessionToPaneSummary(session: Session, project: Project): RunpanePaneSu
     createdAt: toIsoString(session.createdAt),
     lastActivity: toIsoString(session.lastActivity),
     archived: session.archived || undefined,
+    ownership: session.worktreeOwnership ?? 'pane',
   };
 }
 
@@ -1383,7 +1561,8 @@ async function buildPanelScreenResult(panel: ToolPanel, limit: number): Promise<
   const liveSnapshot = terminalPanelManager.getTerminalSnapshot(panel.id);
   const customState = getTerminalCustomState(panel);
   const state = panelStateSummary(panel, liveSnapshot, customState);
-  const { source, rawText } = selectPanelScreenText(liveSnapshot, customState);
+  const persisted = liveSnapshot ? null : panelDatabase.getPanelBuffers(panel.id);
+  const { source, rawText } = selectPanelScreenText(liveSnapshot, customState, persisted);
   const bounded = boundSanitizedLines(rawText, limit);
   const composer = detectPanelComposer(bounded.text, state.agentType);
 
@@ -1438,6 +1617,7 @@ interface PanelScreenText {
 function selectPanelScreenText(
   snapshot: TerminalPanelSnapshot | null,
   customState: TerminalPanelState,
+  persisted: PanelBuffers | null,
 ): PanelScreenText {
   if (snapshot) {
     if (snapshot.screenText !== undefined) {
@@ -1455,12 +1635,12 @@ function selectPanelScreenText(
     return { source: 'empty', rawText: '' };
   }
 
-  const persistedAlternate = customState.alternateScreenBuffer;
+  const persistedAlternate = persisted?.alternate;
   if (customState.isAlternateScreen && persistedAlternate) {
     return { source: 'persistedOutput', rawText: persistedAlternate };
   }
 
-  const persistedScrollback = normalizeScrollbackBuffer(customState.scrollbackBuffer);
+  const persistedScrollback = persisted?.scrollback;
   if (persistedScrollback) {
     return { source: 'persistedOutput', rawText: persistedScrollback };
   }
@@ -1490,9 +1670,7 @@ function panelStateSummary(
 function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
   try {
     return decodeBoundary(panel.state.customState, boundary.object({
-      alternateScreenBuffer: boundary.optional(boundary.string),
       isAlternateScreen: boundary.optional(boundary.boolean),
-      scrollbackBuffer: boundary.optional(boundary.union(boundary.string, boundary.array(boundary.string))),
       agentType: boundary.optional(boundary.enumeration(...RUNPANE_CONTRACT.enums.agents)),
       isCliReady: boundary.optional(boundary.boolean),
       isCliPanel: boundary.optional(boundary.boolean),
@@ -1501,15 +1679,6 @@ function getTerminalCustomState(panel: ToolPanel): TerminalPanelState {
   } catch {
     return {};
   }
-}
-
-function normalizeScrollbackBuffer(value: TerminalPanelState['scrollbackBuffer']): string {
-  const stringValue = optionalString(value);
-  if (stringValue !== undefined) return stringValue;
-  if (Array.isArray(value)) {
-    return value.join('\n');
-  }
-  return '';
 }
 
 interface BoundedSanitizedLines {
@@ -1834,7 +2003,7 @@ function getPanelScrollback(panel: ToolPanel): string | null {
     return liveScrollback;
   }
 
-  const persisted = normalizeScrollbackBuffer(getTerminalCustomState(panel).scrollbackBuffer);
+  const persisted = panelDatabase.getPanelBuffers(panel.id)?.scrollback;
   if (persisted) return persisted;
 
   return null;
@@ -1939,6 +2108,10 @@ function parseWorkspaceWaitRequest(value: PaneCommandValue): RunpaneWorkspaceWai
     includeHeldInputPresence: optionalBoolean(value.includeHeldInputPresence),
     idleAfterMs: parseNonNegativeInteger(value.idleAfterMs, 'idleAfterMs'),
     idleWindowStartMs: parseNonNegativeInteger(value.idleWindowStartMs, 'idleWindowStartMs'),
+    settleMs: parseNonNegativeInteger(value.settleMs, 'settleMs'),
+    blockedSettleMs: parseNonNegativeInteger(value.blockedSettleMs, 'blockedSettleMs'),
+    minIntervalMs: parseNonNegativeInteger(value.minIntervalMs, 'minIntervalMs'),
+    idleBackoff: optionalBoolean(value.idleBackoff),
   };
 }
 
@@ -2007,6 +2180,132 @@ function parsePaneCreateRequest(value: PaneCommandValue): RunpanePaneCreateReque
     focus: optionalBoolean(value.focus),
     source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
   };
+}
+
+function parsePaneAdoptRequest(value: PaneCommandValue): RunpanePaneAdoptRequest {
+  if (!isRecord(value)) throw new Error('Pane adopt request must be an object');
+  if (!Array.isArray(value.panes) || value.panes.length === 0) {
+    throw new Error('Pane adopt request must include at least one pane');
+  }
+  if (value.noFocus === true && value.focus === true) {
+    throw new Error('Pane adopt request cannot include both noFocus and focus');
+  }
+  return {
+    repo: parseRepoSelector(value.repo),
+    panes: value.panes.map((entry, index) => {
+      if (!isRecord(entry)) throw new Error(`Pane adopt item ${index} must be an object`);
+      const worktreePath = optionalString(entry.path)?.trim();
+      const name = optionalString(entry.name)?.trim();
+      if (!worktreePath) throw new Error(`Pane adopt item ${index} must include path`);
+      if (!name) throw new Error(`Pane adopt item ${index} must include name`);
+      return {
+        path: worktreePath,
+        name,
+        baseBranch: optionalString(entry.baseBranch),
+        folder: optionalString(entry.folder),
+        pinned: optionalBoolean(entry.pinned),
+        tool: parseRunpaneToolSpec(entry.tool, `Pane adopt item ${index}`),
+        resume: optionalString(entry.resume),
+        launch: optionalBoolean(entry.launch),
+      };
+    }),
+    dryRun: optionalBoolean(value.dryRun),
+    noFocus: optionalBoolean(value.noFocus),
+    focus: optionalBoolean(value.focus),
+    source: value.source === 'user' || value.source === 'agent' ? value.source : undefined,
+  };
+}
+
+async function validateAdoptedWorktree(
+  services: AppServices,
+  repo: Project,
+  requestedPath: string,
+): Promise<{ storagePath: string; identityPath: string; pathResolver: PathResolver }> {
+  const context = services.sessionManager.getProjectContextByProjectId(repo.id);
+  if (!context) throw new Error(`Project context is unavailable for ${repo.name}`);
+  let identityPath: string;
+  try {
+    identityPath = resolvePathIdentity(requestedPath, context.pathResolver);
+  } catch {
+    throw new Error(`Adopt path does not exist: ${requestedPath}`);
+  }
+  const worktrees = await services.worktreeManager.listWorktrees(repo.path, context.commandRunner);
+  const registeredPaths = worktrees.flatMap(entry => {
+    try {
+      return [resolvePathIdentity(entry.path, context.pathResolver)];
+    } catch {
+      return [];
+    }
+  });
+  if (!registeredPaths.some(registeredPath => pathsHaveSameIdentity(registeredPath, identityPath))) {
+    throw new Error(`Adopt path is not a git worktree of the selected repository: ${requestedPath}`);
+  }
+
+  const storagePath = context.pathResolver.environment === 'wsl'
+    ? parseWSLPath(identityPath)?.linuxPath ?? requestedPath
+    : identityPath;
+  const candidateCommon = await resolveGitCommonDirectory(storagePath, context.pathResolver, context.commandRunner);
+  const repoCommon = await resolveGitCommonDirectory(repo.path, context.pathResolver, context.commandRunner);
+  if (!pathsHaveSameIdentity(candidateCommon, repoCommon)) {
+    throw new Error(`Adopt path belongs to a different git repository: ${requestedPath}`);
+  }
+  return { storagePath, identityPath, pathResolver: context.pathResolver };
+}
+
+async function resolveGitCommonDirectory(
+  directory: string,
+  pathResolver: PathResolver,
+  commandRunner: CommandRunner,
+): Promise<string> {
+  const { stdout } = await commandRunner.execAsync('git rev-parse --git-common-dir', directory);
+  const common = stdout.trim();
+  const storedCommon = pathResolver.environment === 'wsl'
+    ? common.startsWith('/') ? common : path.posix.resolve(directory, common)
+    : path.resolve(directory, common);
+  return resolvePathIdentity(storedCommon, pathResolver);
+}
+
+function resolvePathIdentity(storedPath: string, pathResolver: PathResolver): string {
+  return fs.realpathSync.native(pathResolver.toFileSystem(storedPath));
+}
+
+function pathsHaveSameIdentity(left: string, right: string): boolean {
+  const normalize = (value: string): string => {
+    const normalized = path.normalize(value).replace(/[\\/]+$/u, '');
+    return process.platform === 'win32' ? normalized.toLocaleLowerCase('en-US') : normalized;
+  };
+  return normalize(left) === normalize(right);
+}
+
+function findSessionByWorktreeIdentity<T extends { worktree_path: string }>(
+  sessions: readonly T[],
+  identityPath: string,
+  pathResolver: PathResolver,
+): T | undefined {
+  return sessions.find(session => {
+    try {
+      return pathsHaveSameIdentity(resolvePathIdentity(session.worktree_path, pathResolver), identityPath);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function buildAdoptResumeCommand(agent: RunpaneAgentId, sessionId: string): string {
+  const id = escapeShellArg(sessionId);
+  if (agent === 'claude') return `claude --resume ${id} --dangerously-skip-permissions`;
+  if (agent === 'codex') return `codex resume --yolo ${id}`;
+  return `cursor-agent --force --trust --resume ${id}`;
+}
+
+function resolveOrCreateAdoptFolder(
+  databaseService: AppServices['databaseService'],
+  projectId: number,
+  folderName: string,
+): string {
+  const existing = databaseService.getFoldersForProject(projectId)
+    .find(folder => folder.name === folderName && !folder.parent_folder_id);
+  return existing?.id ?? databaseService.createFolder(folderName, projectId).id;
 }
 
 function parsePanelListRequest(value: PaneCommandValue): RunpanePanelListRequest {
@@ -2246,7 +2545,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
     // Deliberately bypass gitStatusManager's cache (up to CACHE_TTL_MS stale)
     // and read git plumbing directly — a safety gate must see the current
     // state, not a snapshot from moments-ago that predates a recent commit.
-    const workingDirectory = fastCheckWorkingDirectory(pane.worktreePath, ctx.commandRunner.wslContext);
+    const workingDirectory = await fastCheckWorkingDirectory(pane.worktreePath, ctx.commandRunner.wslContext);
     const hasUncommittedChanges = workingDirectory.hasModified || workingDirectory.hasStaged || workingDirectory.hasConflicts;
     const hasUntrackedFiles = workingDirectory.hasUntracked;
 
@@ -2258,7 +2557,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
         pane.worktreePath,
         { timeout: 30000 },
       );
-      const unpushedCommitDetails = listCommitsAhead(
+      const unpushedCommitDetails = await listCommitsAhead(
         pane.worktreePath,
         upstream,
         ctx.commandRunner.wslContext,
@@ -2279,7 +2578,7 @@ async function computeArchiveSafety(services: AppServices, pane: Session): Promi
     // commits ahead of its base/comparison branch are the closest proxy for
     // "unpushed work".
     const comparisonBranch = await services.worktreeManager.getSessionComparisonBranch(pane, ctx);
-    const unpushedCommitDetails = listCommitsAhead(
+    const unpushedCommitDetails = await listCommitsAhead(
       pane.worktreePath,
       comparisonBranch,
       ctx.commandRunner.wslContext,
@@ -2812,7 +3111,7 @@ function createWorkspaceJournal(services: AppServices): WorkspaceJournal {
         isCliPanel: snapshot?.isCliPanel ?? optionalBoolean(customState.isCliPanel) ?? false,
         agentType: snapshot?.agentType ?? optionalString(customState.agentType),
         lastActivityAt: snapshot?.lastActivityTime,
-        heldInput: snapshot?.screenText ? composerEvidenceText(snapshot.screenText) : undefined,
+        screenText: snapshot?.screenText,
       };
     },
   });
@@ -2830,17 +3129,24 @@ function createWorkspaceJournal(services: AppServices): WorkspaceJournal {
   return journal;
 }
 
-function workspaceEntryMatches(
-  entry: RunpaneWorkspaceEntry,
+function workspaceCadenceOptions(
+  request: RunpaneWorkspaceWaitRequest,
   filter: WorkspaceJournalFilter,
-): boolean {
-  if (filter.kinds && !filter.kinds.includes(entry.kind)) return false;
-  if (filter.paneIds && !filter.paneIds.includes(entry.paneId)) return false;
-  if (filter.excludePaneIds && filter.excludePaneIds.includes(entry.paneId)) return false;
-  if (filter.repoId !== undefined && entry.repoId !== filter.repoId) return false;
-  if (filter.nameContains && !entry.paneName.toLocaleLowerCase().includes(filter.nameContains.toLocaleLowerCase())) return false;
-  if (filter.agentsOnly && !entry.agentType && entry.kind !== 'pane.created' && entry.kind !== 'pane.gone') return false;
-  return true;
+  idleSchedule: WorkspaceIdleSchedule,
+): WatchCadenceOptions | undefined {
+  const settleMs = request.settleMs ?? 0;
+  const blockedSettleMs = request.blockedSettleMs ?? 0;
+  const minIntervalMs = request.minIntervalMs ?? 0;
+  if (settleMs <= 0 && blockedSettleMs <= 0 && minIntervalMs <= 0) return undefined;
+  const key = JSON.stringify({
+    settleMs,
+    blockedSettleMs,
+    minIntervalMs,
+    idleAfterMs: idleSchedule.idleAfterMs,
+    idleBackoff: idleSchedule.backoff === true,
+    filter: workspaceFilterKey(filter),
+  });
+  return { settleMs, blockedSettleMs, minIntervalMs, emitKinds: request.kinds, key };
 }
 
 function workspaceNextCommand(request: RunpaneWorkspaceWaitRequest, generation: number): string {

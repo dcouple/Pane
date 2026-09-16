@@ -269,6 +269,23 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1500): Promise<void
 }
 
 describe('PaneRemoteHttpApiServer', () => {
+  it.each(['mobile:push-status', 'mobile:push-register', 'mobile:push-controls', 'mobile:push-revoke'])(
+    'uses the authenticated client for %s even when extra arguments forge an identity', async channel => {
+      const registry = new PaneCommandRegistry();
+      const handler = vi.fn(async () => ({ ok: true }));
+      registry.register(channel, handler);
+      const server = new PaneRemoteHttpApiServer(registry, createConfigManagerStub(createEnabledRemoteConfig()));
+      activeServers.push(server);
+      await server.start();
+      const input = { platform: 'ios', installationId: 'install-1' };
+      await expect(requestJson(server, 'POST', '/invoke', {
+        channel, args: [input, { clientId: 'victim-client' }],
+      }, 'secret-token')).resolves.toMatchObject({ statusCode: 200, body: { ok: true } });
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(input, { clientId: 'client-1' });
+    },
+  );
+
   it('invokes daemon-owned commands over authenticated HTTP', async () => {
     const registry = new PaneCommandRegistry();
     registry.register('sessions:get-all', async () => [{ id: 'session-1' }]);

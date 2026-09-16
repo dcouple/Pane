@@ -62,7 +62,7 @@ describe('WorkspaceJournal', () => {
         isCliPanel: true,
         agentType: 'codex',
         lastActivityAt: '2026-08-26T10:00:00.000Z',
-        heldInput: 'ship it',
+        screenText: 'output\n> ship it\n',
       }),
     });
     journal.send('session:created', { id: 'pane-1', name: 'Monitor', worktreePath: '/repo/monitor' });
@@ -78,6 +78,27 @@ describe('WorkspaceJournal', () => {
     expect(presenceOnly).toMatchObject({ heldInputPresent: true });
     expect(presenceOnly).not.toHaveProperty('heldInput');
     expect(journal.readySince('panel-1')).toBe(now);
+  });
+
+  it('does not report the Claude Code prompt suggestion as held input', () => {
+    const screens = new Map<string, string>([
+      ['panel-suggestion', 'done\n> Try "fix the bug"\n'],
+      ['panel-real', 'done\n> please rerun tests\n'],
+    ]);
+    const journal = new WorkspaceJournal({
+      resolvePanel: panelId => ({ panelId, paneId: 'pane-1', isCliPanel: true, agentType: 'claude', screenText: screens.get(panelId) }),
+    });
+    journal.send('session:created', { id: 'pane-1', name: 'Monitor' });
+    for (const panelId of screens.keys()) {
+      journal.send('panel:agentStatus', { panelId, sessionId: 'pane-1', state: 'working' });
+      journal.send('panel:agentStatus', { panelId, sessionId: 'pane-1', state: 'idle' });
+    }
+
+    const ready = journal.readAfter(0, { kinds: ['agent.ready'], includeHeldInput: true, includeHeldInputPresence: true }).entries;
+    expect(ready.map(entry => entry.panelId)).toEqual(['panel-suggestion', 'panel-real']);
+    expect(ready[0]).not.toHaveProperty('heldInput');
+    expect(ready[0]).not.toHaveProperty('heldInputPresent');
+    expect(ready[1]).toMatchObject({ heldInput: 'please rerun tests', heldInputPresent: true });
   });
 
   it('clears the ready clock when a panel becomes busy or exits', () => {

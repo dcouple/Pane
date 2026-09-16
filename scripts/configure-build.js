@@ -16,7 +16,11 @@ function configureBuild() {
   const signingDisabled = process.env.CSC_DISABLE === 'true';
   
   // Check if we have Apple signing credentials
-  const hasAppleCertificate = !!(process.env.CSC_LINK || process.env.APPLE_CERTIFICATE);
+  const hasAppleCertificate = !!(
+    process.env.CSC_LINK
+    || process.env.APPLE_CERTIFICATE
+    || process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'true'
+  );
   const hasAppleId = !!(process.env.APPLE_ID);
   const hasTeamId = !!(process.env.APPLE_TEAM_ID);
   const hasAppPassword = !!(process.env.APPLE_APP_SPECIFIC_PASSWORD || process.env.APPLE_APP_PASSWORD);

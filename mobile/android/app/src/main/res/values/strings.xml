@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pane</string>
+    <string name="title_activity_main">Pane</string>
+    <string name="package_name">com.dcouple.pane.mobile</string>
+    <string name="custom_url_scheme">com.dcouple.pane.mobile</string>
+</resources>

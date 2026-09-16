@@ -105,8 +105,11 @@ function createThrottledWithDrain<T extends (...args: never[]) => void>(
 }
 
 export function useIPCEvents() {
-  const { setSessions, loadSessions, addSession, updateSession, deleteSession } = useSessionStore();
-  const { showError } = useErrorStore();
+  const loadSessions = useSessionStore(state => state.loadSessions);
+  const addSession = useSessionStore(state => state.addSession);
+  const updateSession = useSessionStore(state => state.updateSession);
+  const deleteSession = useSessionStore(state => state.deleteSession);
+  const showError = useErrorStore(state => state.showError);
   
   // Create throttled handlers for git status events (with drain support)
   const [gitStatusLoading] = useState(() =>
@@ -166,6 +169,13 @@ export function useIPCEvents() {
     const unsubscribeFunctions: (() => void)[] = [];
 
     // Listen for session events
+    unsubscribeFunctions.push(window.electronAPI.events.onSessionCreationFailed((failure) => {
+      showError({
+        title: 'Failed to Create Pane',
+        error: failure.error,
+        details: `Pane: ${failure.name}`,
+      });
+    }));
     const unsubscribeSessionCreated = window.electronAPI.events.onSessionCreated((session: Session) => {
       devLog.debug('[useIPCEvents] Session created:', session.id);
       addSession({...session, output: session.output || [], jsonMessages: session.jsonMessages || []});
@@ -435,11 +445,5 @@ export function useIPCEvents() {
       // Clean up all event listeners
       unsubscribeFunctions.forEach(unsubscribe => unsubscribe());
     };
-  }, [setSessions, loadSessions, addSession, updateSession, deleteSession, showError, gitStatusLoading, gitStatusUpdated]);
-  
-  // Return a mock socket object for compatibility
-  return {
-    connected: true,
-    disconnect: () => {},
-  };
+  }, [loadSessions, addSession, updateSession, deleteSession, showError, gitStatusLoading, gitStatusUpdated]);
 }

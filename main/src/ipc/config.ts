@@ -9,6 +9,7 @@ import { ShellDetector } from '../utils/shellDetector';
 import { syncAutoStartOnBoot } from '../utils/autoStart';
 import { ensureProjectAgentContext } from '../services/agentContextManager';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import { AppearanceValidationError } from '../../../shared/types/appearance';
 
 export function registerConfigHandlers(
   ipcMain: IpcMain,
@@ -108,6 +109,9 @@ export function registerConfigHandlers(
       return { success: true, data: updatedConfig };
     } catch (error) {
       console.error('Failed to update config:', error);
+      if (error instanceof AppearanceValidationError) {
+        return { success: false, error: error.message };
+      }
       return { success: false, error: 'Failed to update config' };
     }
   });

@@ -19,44 +19,11 @@ export interface ExecutionDiff {
   history_limit_reached?: boolean;
 }
 
-interface GitDiffStats {
-  additions: number;
-  deletions: number;
-  filesChanged: number;
-}
-
-export interface GitDiffResult {
-  diff: string;
-  stats: GitDiffStats;
-  changedFiles: string[];
-  beforeHash?: string;
-  afterHash?: string;
-}
-
-export interface FileDiff {
-  path: string;
-  oldPath: string;
-  type: 'added' | 'deleted' | 'modified' | 'renamed';
-  isBinary: boolean;
-  additions: number;
-  deletions: number;
-  rawDiff: string;
-}
-
-export interface DiffViewerProps {
-  files: FileDiff[];
-  className?: string;
-  sessionId?: string;
-  /** Path shown by the active editor tab, highlighted in the list. */
-  activePath?: string | null;
-  /** Single-click previews (pin=false); double-click pins. */
-  onFileOpen: (file: FileDiff, pin: boolean) => void;
-}
-
 export interface ExecutionListProps {
   sessionId: string;
   executions: ExecutionDiff[];
-  selectedExecutions: number[];
+  selection: { kind: 'all' } | { kind: 'ids'; ids: number[] };
+  onSelectAll: () => void;
   onSelectionChange: (selectedIds: number[]) => void;
   onCommit?: () => void;
   onRevert?: (commitHash: string) => void;
@@ -67,7 +34,6 @@ export interface ExecutionListProps {
 
 export interface CombinedDiffViewProps {
   sessionId: string;
-  selectedExecutions: number[];
   isGitOperationRunning?: boolean;
   isMainRepo?: boolean;
   isVisible?: boolean;

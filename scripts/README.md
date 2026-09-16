@@ -2,6 +2,20 @@
 
 This directory contains build and maintenance scripts for the Pane application.
 
+## benchmark-session-output.js
+
+Compares loading terminal history just to count it with an indexed SQLite
+count on a temporary 10,000-row database. Reports median read time and heap
+growth, then deletes the fixture.
+
+```bash
+pnpm build:main
+node --expose-gc scripts/benchmark-session-output.js
+```
+
+See [the session output audit](../docs/SESSION_OUTPUT_PERFORMANCE.md) for
+results, regression checks, and measurement limits.
+
 ## generate-notices.js
 
 Generates a NOTICES file containing all third-party licenses for dependencies included in the Pane distribution.

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 
 // Once a pane is split, every tab lives in its group's strip: the top tab
@@ -54,6 +54,19 @@ const layout = {
   },
 };
 
+async function computedVar(page: Page, cssProp: string, value: string): Promise<string> {
+  return page.evaluate(({ cssProp, value }) => {
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    try {
+      probe.style.setProperty(cssProp, value);
+      return getComputedStyle(probe).getPropertyValue(cssProp);
+    } finally {
+      probe.remove();
+    }
+  }, { cssProp, value });
+}
+
 test('a split pane keeps its tabs in the group strips and collapses the top row', async ({ page }, testInfo) => {
   await installElectronApiMock(page, {
     platform: 'darwin',
@@ -74,6 +87,33 @@ test('a split pane keeps its tabs in the group strips and collapses the top row'
 
   // The top row has nothing to show while every tab is in a group strip.
   await expect(page.locator('.panel-tab-bar')).toBeHidden();
+
+  const groupRows = page.locator('.panel-group-tab-bar');
+  await expect(groupRows).toHaveCount(2);
+  const expectedBackground = await computedVar(page, 'background-color', 'var(--color-bg-chrome)');
+  for (let index = 0; index < 2; index += 1) {
+    const styles = await groupRows.nth(index).evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        backgroundColor: style.backgroundColor,
+        borderBottomWidth: style.borderBottomWidth,
+        borderTopWidth: style.borderTopWidth,
+        borderLeftWidth: style.borderLeftWidth,
+        borderRightWidth: style.borderRightWidth,
+        borderRadius: style.borderRadius,
+        boxShadow: style.boxShadow,
+      };
+    });
+    expect(styles).toEqual({
+      backgroundColor: expectedBackground,
+      borderBottomWidth: '1px',
+      borderTopWidth: '0px',
+      borderLeftWidth: '0px',
+      borderRightWidth: '0px',
+      borderRadius: '0px',
+      boxShadow: 'none',
+    });
+  }
 
   // Global controls moved to the title strip.
   const trailing = page.getByTestId('window-title-bar-trailing-controls');

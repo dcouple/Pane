@@ -32,11 +32,11 @@ surface after all review lanes complete.
 Run these checks and record exact output for failures:
 
 ```bash
-npm run typecheck
+pnpm typecheck
 ```
 
 ```bash
-npm run lint
+pnpm lint
 ```
 
 ## Step 2: Plan Completeness
@@ -69,8 +69,9 @@ Also check for:
 Review all changed files against the criteria in `.claude/skills/review/CRITERIA.md`. Focus on:
 
 - **Sections 1-2 (Must-Fix):** Bugs, correctness, and security issues. These block completion.
-- **Sections 3-5 (Should-Fix):** Architecture, React patterns, and TypeScript quality. Flag these but they don't block.
-- **Sections 6-7 (Suggestion):** Tailwind/shadcn and conventions. Note briefly, low priority.
+- **Sections 3-4 (Should-Fix):** React patterns and TypeScript quality. Flag these but they don't block.
+- **Section 5 (Suggestion):** Conventions. Note briefly, low priority.
+- **Per-repo section:** Apply project-specific criteria at their stated severity.
 
 Only review files that were changed by the implementation — don't review the entire codebase.
 
@@ -98,17 +99,12 @@ PASS/FAIL
 - [DEVIATED] Task description — deviation: [explanation]
 
 ### Integration Check
-- [ ] All new routes registered
+- [ ] All new routes or IPC channels registered
 - [ ] All new exports added to barrel files
-- [ ] All new types exported from @doozy/shared (if cross-app)
-- [ ] Frontend components wired to API endpoints
-- [ ] Database schema changes reflected in types
+- [ ] All new shared types exported from the shared package
+- [ ] Frontend components wired to their data sources
+- [ ] Schema or type changes reflected across package boundaries
 [Check or uncheck each as appropriate]
-
-### Schema Changes
-[Run: git diff origin/main --name-only | grep schema.ts]
-- If schema.ts was modified: "⚠️ Schema changes detected — migration SQL will be generated after this review."
-- If not modified: omit this section entirely.
 
 ### Code Quality Issues
 

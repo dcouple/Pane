@@ -13,6 +13,8 @@
   <img src="assets/readme-remote-pane.png" alt="Pane desktop app and Remote Pane mobile browser app" title="Pane desktop app and Remote Pane mobile browser app" width="100%">
 </a>
 
+Appearance follows your OS — see [Appearance](docs/APPEARANCE.md).
+
 [![AGPL-3.0 License](https://img.shields.io/badge/License-AGPL--3.0-555555.svg?labelColor=333333&color=666666)](./LICENSE)
 [![Downloads](https://img.shields.io/endpoint?url=https://runpane.com/api/badge/downloads&labelColor=333333&color=666666)](https://github.com/dcouple/Pane/releases)
 [![GitHub](https://img.shields.io/badge/GitHub-source-555555?labelColor=333333&color=666666&logo=github&logoColor=white)](https://github.com/dcouple/Pane)
@@ -337,6 +339,11 @@ irm https://runpane.com/install.ps1 | iex
 4. **Work in parallel** — create multiple panes for different approaches
 5. **Review diffs** — see what changed with the built-in diff viewer
 6. **Ship** — commit, rebase, and merge from keyboard shortcuts
+
+You can reuse an archived or deleted pane's name. Pane keeps any old worktree
+identity and Git branches separate, choosing a free worktree name for the new
+pane. Creation errors appear in a dismissible error dialog on desktop and Remote
+Pane even if the creation dialog has already closed.
 
 ---
 

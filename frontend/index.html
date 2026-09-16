@@ -9,9 +9,6 @@
     <link rel="preload" href="/fonts/SymbolsNerdFontMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <title>Pane</title>
     <script>
-      // Apply theme class before React loads to prevent flash
-      const savedTheme = localStorage.getItem('theme');
-      const validThemes = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory', 'colorblind-safe', 'low-fatigue', 'high-legibility'];
       const themeClasses = {
         'light': ['light'],
         'light-rounded': ['light', 'light-rounded'],
@@ -41,52 +38,40 @@
         'low-fatigue': ['dark', 'low-fatigue'],
         'high-legibility': ['light', 'high-legibility'],
       };
-      const theme = validThemes.includes(savedTheme) ? savedTheme : 'light-rounded';
-      document.documentElement.classList.add(...themeClasses[theme]);
-      if (localStorage.getItem('high-contrast') === 'true') {
-        document.documentElement.classList.add('high-contrast');
+      try {
+        const defaults = { appearanceMode: 'system', theme: 'light-rounded', systemLightTheme: 'light-rounded', systemDarkTheme: 'dark' };
+        const snapshot = window.electronAPI?.appearanceSnapshot;
+        let cached;
+        try {
+          const parsed = JSON.parse(localStorage.getItem('pane.appearance.v1') || 'null');
+          cached = parsed?.v === 1 ? parsed : undefined;
+        } catch { cached = undefined; }
+        const legacy = localStorage.getItem('theme');
+        const hasTheme = (value) => typeof value === 'string' && Object.prototype.hasOwnProperty.call(themeClasses, value);
+        const source = snapshot || cached || (hasTheme(legacy) ? { ...defaults, appearanceMode: 'fixed', theme: legacy } : defaults);
+        const fixedTheme = hasTheme(source.theme) ? source.theme : defaults.theme;
+        const lightTheme = hasTheme(source.systemLightTheme) && themeClasses[source.systemLightTheme][0] === 'light' ? source.systemLightTheme : defaults.systemLightTheme;
+        const darkTheme = hasTheme(source.systemDarkTheme) && themeClasses[source.systemDarkTheme][0] === 'dark' ? source.systemDarkTheme : defaults.systemDarkTheme;
+        const mode = source.appearanceMode === 'fixed' ? 'fixed' : 'system';
+        const prefersDark = matchMedia('(prefers-color-scheme: dark)').matches;
+        const resolved = mode === 'fixed' ? fixedTheme : (prefersDark ? darkTheme : lightTheme);
+        window.__paneBootstrapThemeClasses = themeClasses[resolved];
+        document.documentElement.classList.add(...window.__paneBootstrapThemeClasses);
+        document.documentElement.style.colorScheme = themeClasses[resolved][0];
+        if (localStorage.getItem('high-contrast') === 'true') document.documentElement.classList.add('high-contrast');
+      } catch {
+        window.__paneBootstrapThemeClasses = ['light', 'light-rounded'];
+        document.documentElement.classList.add(...window.__paneBootstrapThemeClasses);
+        document.documentElement.style.colorScheme = 'light';
+        if (localStorage.getItem('high-contrast') === 'true') document.documentElement.classList.add('high-contrast');
       }
     </script>
   </head>
   <body>
     <script>
-      // Also apply to body (mirrors the head script logic)
-      const t = localStorage.getItem('theme');
-      const vt = ['light', 'light-rounded', 'dark', 'oled', 'dusk', 'dusk-oled', 'forge', 'ember', 'aurora', 'night-owl', 'night-owl-oled', 'terracotta', 'synthwave', 'acid', 'tokyo-rain', 'folio', 'newsprint', 'walnut', 'amber-crt', 'teletype', 'dot-matrix', 'haar', 'abyss', 'understory', 'colorblind-safe', 'low-fatigue', 'high-legibility'];
-      const tc = {
-        'light': ['light'],
-        'light-rounded': ['light', 'light-rounded'],
-        'dark': ['dark'],
-        'oled': ['dark', 'oled'],
-        'dusk': ['dark', 'dusk'],
-        'dusk-oled': ['dark', 'dusk', 'dusk-oled'],
-        'forge': ['dark', 'forge'],
-        'ember': ['dark', 'ember'],
-        'aurora': ['dark', 'aurora'],
-        'night-owl': ['dark', 'night-owl'],
-        'night-owl-oled': ['dark', 'night-owl', 'night-owl-oled'],
-        'terracotta': ['dark', 'terracotta'],
-        'synthwave': ['dark', 'synthwave'],
-        'acid': ['dark', 'acid'],
-        'tokyo-rain': ['dark', 'tokyo-rain'],
-        'folio': ['light', 'folio'],
-        'newsprint': ['light', 'newsprint'],
-        'walnut': ['dark', 'walnut'],
-        'amber-crt': ['dark', 'amber-crt'],
-        'teletype': ['light', 'teletype'],
-        'dot-matrix': ['dark', 'dot-matrix'],
-        'haar': ['light', 'haar'],
-        'abyss': ['dark', 'abyss'],
-        'understory': ['dark', 'understory'],
-        'colorblind-safe': ['dark', 'colorblind-safe'],
-        'low-fatigue': ['dark', 'low-fatigue'],
-        'high-legibility': ['light', 'high-legibility'],
-      };
-      const bt = vt.includes(t) ? t : 'light-rounded';
-      document.body.classList.add(...tc[bt]);
-      if (localStorage.getItem('high-contrast') === 'true') {
-        document.body.classList.add('high-contrast');
-      }
+      const cls = window.__paneBootstrapThemeClasses || ['light', 'light-rounded'];
+      document.body.classList.add(...cls);
+      if (localStorage.getItem('high-contrast') === 'true') document.body.classList.add('high-contrast');
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

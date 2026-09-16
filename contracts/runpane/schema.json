@@ -125,6 +125,10 @@
             "format",
             "heartbeatSeconds",
             "idleAfterMs",
+            "settleMs",
+            "blockedSettleMs",
+            "minIntervalMs",
+            "idleBackoff",
             "agentsOnly",
             "includeHeldInputPresence"
           ],
@@ -132,6 +136,10 @@
             "format": { "enum": ["lines", "json"] },
             "heartbeatSeconds": { "type": "number" },
             "idleAfterMs": { "type": "number" },
+            "settleMs": { "type": "number" },
+            "blockedSettleMs": { "type": "number" },
+            "minIntervalMs": { "type": "number" },
+            "idleBackoff": { "type": "boolean" },
             "agentsOnly": { "type": "boolean" },
             "includeHeldInputPresence": { "type": "boolean" }
           },
@@ -373,6 +381,7 @@
         "workspace state",
         "watch",
         "panes create",
+        "panes adopt",
         "panes archive",
         "panes pin",
         "panes unpin",
@@ -438,6 +447,9 @@
           "$ref": "#/$defs/helpLines"
         },
         "panes create": {
+          "$ref": "#/$defs/helpLines"
+        },
+        "panes adopt": {
           "$ref": "#/$defs/helpLines"
         },
         "panes archive": {

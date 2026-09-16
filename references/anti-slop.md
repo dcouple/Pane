@@ -49,4 +49,4 @@ promotion appear clean.
 The root development toolchain requires Node 22.18 or newer because Oxlint's
 TypeScript plugin runs under the developer Node process. This does not change
 Electron 41's bundled Node 24 runtime, and the published `runpane` wrapper keeps
-its Node 18.17 runtime floor.
+its Node 20 runtime floor.

@@ -19,6 +19,7 @@ import type {
   PanePermissionResponse,
 } from '../../../shared/types/daemon';
 import type { ProjectDashboardSessionUpdateEvent, ProjectDashboardUpdateEvent } from '../types/projectDashboard';
+import type { DiffScope, FileDiffRequest } from '../../../shared/types/gitDiff';
 
 // Type for IPC response
 // oxlint-disable-next-line typescript/no-explicit-any -- Generic type parameter default for flexible API responses
@@ -28,6 +29,7 @@ export interface IPCResponse<T = any> {
   error?: string;
   details?: string;
   command?: string;
+  code?: string;
 }
 
 // Type for Git error response
@@ -236,14 +238,14 @@ export class API {
       return window.electronAPI.sessions.gitDiff(sessionId);
     },
 
-    async getCombinedDiff(sessionId: string, executionIds?: number[]) {
+    async getDiffManifest(sessionId: string, scope: DiffScope) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.sessions.getCombinedDiff(sessionId, executionIds);
+      return window.electronAPI.sessions.getDiffManifest(sessionId, scope);
     },
 
-    async getCommitDiffByHash(sessionId: string, commitHash: string) {
+    async getFileDiff(sessionId: string, scope: DiffScope, request: FileDiffRequest) {
       if (!isElectron()) throw new Error('Electron API not available');
-      return window.electronAPI.sessions.getCommitDiffByHash(sessionId, commitHash);
+      return window.electronAPI.sessions.getFileDiff(sessionId, scope, request);
     },
 
     // Main repo session

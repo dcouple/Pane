@@ -85,7 +85,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       className={cn(
         'fixed z-[10001] min-w-[300px] max-w-[420px]',
         'bg-surface-primary/95 backdrop-blur-md overflow-hidden',
-        'border border-border-primary/60 rounded-none shadow-dropdown-elevated',
+        'border border-border-primary rounded-none shadow-dropdown-elevated',
         'will-change-[transform,opacity]',
         mounted ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.98]',
       )}
@@ -97,7 +97,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
     >
       {/* Filter header — only when filtering */}
       {filterText && (
-        <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle/50">
+        <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border-subtle">
           <span className="font-mono text-text-secondary">@{filterText}</span>
         </div>
       )}
@@ -139,7 +139,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       </div>
 
       {/* Line count + mode controls */}
-      <div className="px-3 py-2 border-t border-border-subtle/50 flex items-center justify-between">
+      <div className="px-3 py-2 border-t border-border-subtle flex items-center justify-between">
         {/* Line count */}
         <div className="flex items-center gap-1">
           <span className="text-[11px] text-text-quaternary mr-0.5">Lines</span>
@@ -183,7 +183,7 @@ export const InterceptorDropdown: React.FC<InterceptorDropdownProps> = ({
       </div>
 
       {/* Footer hints with kbd */}
-      <div className="px-3 py-1.5 border-t border-border-subtle/50 flex items-center justify-center gap-2.5 text-[11px] text-text-quaternary">
+      <div className="px-3 py-1.5 border-t border-border-subtle flex items-center justify-center gap-2.5 text-[11px] text-text-quaternary">
         <span className="inline-flex items-center gap-1">
           <Kbd size="xs" variant="muted">↑↓</Kbd>
           <span>select</span>

@@ -110,7 +110,7 @@ export function AboutDialog({ isOpen, onClose, onUpdate }: AboutDialogProps) {
       onClose={onClose}
       size="sm"
       restoreFocusOnClose={!isHandingOff}
-      className="mx-auto !w-[360px] max-w-full !rounded-xl border border-border-primary/50 !bg-surface-primary !shadow-2xl"
+      className="mx-auto !w-[360px] max-w-full !rounded-xl border border-border-primary !bg-surface-primary !shadow-2xl"
     >
         <LiveRegion>
           {isChecking
@@ -254,7 +254,7 @@ export function AboutDialog({ isOpen, onClose, onUpdate }: AboutDialogProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-4 bg-surface-secondary/50 border-t border-border-primary/50">
+        <div className="px-8 py-4 bg-surface-secondary/50 border-t border-border-primary">
           <p className="text-[10px] text-text-tertiary text-center leading-relaxed">
             Made by <a href="https://dcouple.ai" target="_blank" rel="noopener noreferrer" className="hover:text-text-secondary">Dcouple</a> · macOS, Windows & Linux
           </p>

@@ -5,9 +5,9 @@ This document describes how to integrate UI interaction event tracking into Pane
 ## Overview
 
 Before changing UI event tracking, read
-[Analytics Invariants](ANALYTICS_INVARIANTS.md). First-run consent events must
-be captured only after identity is resolved, and settings saves must preserve
-analytics identity and attribution config.
+[Analytics Invariants](ANALYTICS_INVARIANTS.md). First-run disclosure and
+choice events must be captured only after identity is resolved, and settings
+saves must preserve analytics identity and attribution config.
 
 The analytics system has been implemented with:
 1. Backend IPC handlers in `/main/src/ipc/analytics.ts`
@@ -306,4 +306,7 @@ All backend infrastructure is complete. Frontend developers should:
 3. Follow the privacy guidelines (no PII, use hashing/categorization)
 4. Test with verbose logging enabled to verify events are tracked
 
-The tracking is opt-in (users can disable analytics in settings) and respects user privacy by design.
+Product analytics are enabled by default for new and previously undecided
+installs. Privacy Settings discloses the default and provides the visible
+opt-out. Pane does not collect prompts, code, or file paths, and capture stops
+after an opt-out.

@@ -1,17 +1,24 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const oxlint = join(root, "node_modules", ".bin", process.platform === "win32" ? "oxlint.cmd" : "oxlint");
+// Resolve oxlint's real Node entry (its bin is a plain ESM shim) and invoke it
+// with the current Node executable. This avoids the platform-specific .bin
+// shims (Node 24 refuses to spawn the Windows oxlint.cmd without a shell,
+// throwing EINVAL) and needs no shell, so it is safe on all platforms.
+const oxlintManifestPath = require.resolve("oxlint/package.json");
+const oxlintArgs = [join(dirname(oxlintManifestPath), require(oxlintManifestPath).bin.oxlint)];
 const config = join(root, ".oxlintrc.json");
 const primitives = [
   join(root, "shared", "validation", "boundaryDecoder.ts"),
   join(root, "packages", "runpane", "src", "boundaryDecoder.ts"),
 ];
 
-execFileSync(oxlint, ["--config", config, "--deny-warnings", ...primitives], {
+execFileSync(process.execPath, [...oxlintArgs, "--config", config, "--deny-warnings", ...primitives], {
   cwd: root,
   stdio: "pipe",
 });
@@ -29,7 +36,7 @@ try {
       "}",
     ].join("\n"),
   );
-  const result = spawnSync(oxlint, ["--config", config, "--deny-warnings", fixture], {
+  const result = spawnSync(process.execPath, [...oxlintArgs, "--config", config, "--deny-warnings", fixture], {
     cwd: root,
     encoding: "utf8",
   });

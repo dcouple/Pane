@@ -5,11 +5,24 @@ All notable changes to Pane will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Opt-in cadence flags for `runpane watch --follow`, so an orchestrator that pays for every line can wake up less often without changing what everyone else sees. `--settle <ms>` emits READY only after a pane stays idle that long (a BUSY inside the window cancels it silently, which removes the idle/working flips a pane makes while it waits on subagents). `--blocked-settle <ms>` does the same for BLOCKED. `--min-interval <ms>` holds non-urgent lines and flushes them together at most once per interval; BLOCKED bypasses it. `--idle-backoff` fires IDLE at `--idle-after`, then 30m, 1h, 3h, then daily, and resets on activity. Use `--kinds` to drop `agent.busy`, which carries no action. The flags require `--follow`. Recommended orchestrator invocation, budgeted at about 6 wake-ups per active pane per hour worst case, usually 1 to 3:
+
+  ```bash
+  runpane watch --self-test
+  runpane watch --follow --kinds agent.ready,agent.blocked,agent.idle,panel.exited,pane.gone --settle 180000 --blocked-settle 30000 --min-interval 600000 --idle-backoff
+  ```
+
+  Pane Chat arms this automatically through its pane-orchestrator skill, so you only need the flags for your own scripts. `runpane watch --help`, `runpane agent-context --command watch --json`, and `runpane doctor` (which now prints the effective watch defaults) document every flag with its default.
 - Cursor Agent CLI (`cursor-agent`) as a third built-in agent tool: launch pill/menu entries with `mod+alt+5`, prompt-as-argument delivery, chat pre-creation with resume-after-restart, at-a-glance status detection, RunPane `--agent cursor` support with a doctor fallback probe for `~/.local/bin`, and a Cursor option for the Pane Chat orchestrator. Pane supports Cursor in macOS, Linux, and WSL repositories. Native Windows launches stay disabled.
 
 ### Changed
 - Custom-command keyboard shortcuts moved from `mod+alt+5..9` to `mod+alt+6..9` to make room for the Cursor slot.
 - Cursor Agent is now available inside WSL repositories.
+- `runpane watch` defaults are unchanged and stay responsive: no settle, no batching, all event kinds, IDLE every 10 minutes, HEARTBEAT every 60 seconds under `--follow`.
+- The Pane Chat orchestrator's Liveness Contract now arms the cadence flags above, filters HEARTBEAT out of its monitor, and judges a dead watch by a non-zero exit or a `WATCH ERROR` line rather than by silence.
+
+### Fixed
+- `runpane watch` no longer reports STUCK for the grey prompt suggestion Claude Code shows in an empty composer. STUCK now means real unsubmitted composer text.
 
 ## [1.1.123] - 2026-04-25
 

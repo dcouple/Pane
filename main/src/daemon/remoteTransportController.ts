@@ -12,6 +12,8 @@ import type { RemoteDaemonHostConfig } from '../../../shared/types/remoteDaemon'
 import type { PaneCommandRegistry } from './commandRegistry';
 import { PaneRemoteHttpApiServer } from './httpApiServer';
 import { remoteHostRuntimeStateStore } from './remoteHostRuntimeState';
+import { getMobilePushSender, type MobilePushSender } from './mobilePushSender';
+import { boundary, decodeOptionalBoundary } from '../../../shared/validation/boundaryDecoder';
 
 let activeRemoteHttpApiServer: PaneRemoteHttpApiServer | null = null;
 
@@ -23,6 +25,7 @@ interface RemoteTransportConfigProvider {
   getConfig(): Pick<ReturnType<ConfigManager['getConfig']>, 'deepgramApiKey' | 'remoteDaemon'>;
   on(event: 'config-updated', listener: () => void): object;
   off(event: 'config-updated', listener: () => void): object;
+  updateConfigWith: ConfigManager['updateConfigWith'];
 }
 
 export class PaneRemoteTransportController {
@@ -30,6 +33,7 @@ export class PaneRemoteTransportController {
   private activeBindingKey: string | null = null;
   private syncQueue: Promise<void> = Promise.resolve();
   private configListenerAttached = false;
+  private readonly mobilePushSender: MobilePushSender;
 
   private readonly configUpdatedListener = () => {
     void this.syncToConfig().catch((error) => {
@@ -40,6 +44,17 @@ export class PaneRemoteTransportController {
   private readonly eventSink: PaneEventSink = {
     send: (channel, ...args) => {
       this.remoteHttpApiServer?.getEventSink().send(channel, ...args);
+      if (channel === 'panel:agentStatus') {
+        const event = decodeOptionalBoundary(args[0], boundary.object({
+          panelId: boundary.nonEmptyString,
+          sessionId: boundary.nonEmptyString,
+          state: boundary.enumeration('blocked', 'working', 'idle', 'unknown'),
+          reason: boundary.nullable(boundary.string),
+        }));
+        if (event) void this.mobilePushSender.observeStatus(event).catch(() => {
+          console.warn('[Pane mobile push] Could not persist attention state');
+        });
+      }
     },
   };
 
@@ -47,7 +62,9 @@ export class PaneRemoteTransportController {
     private readonly commandRegistry: PaneCommandRegistry,
     private readonly configManager: RemoteTransportConfigProvider,
     private readonly analyticsManager?: Pick<AnalyticsManager, 'track'>,
-  ) {}
+  ) {
+    this.mobilePushSender = getMobilePushSender(configManager);
+  }
 
   getEventSink(): PaneEventSink {
     return this.eventSink;

@@ -36,6 +36,7 @@ const SIDEBAR_ROW_PADDING = 'px-4';
 const SIDEBAR_ROW_GAP = 'gap-2';
 const SIDEBAR_SECTION_ROW = 'mt-1.5 flex w-full items-center justify-between gap-2 pl-3.5 pr-2 py-0.5';
 const SIDEBAR_SECTION_LABEL = 'truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-navigation-muted';
+const SIDEBAR_SECTION_TOGGLE = 'group/section relative z-20 -my-1 flex min-h-6 min-w-0 flex-1 items-center justify-between gap-2 py-1 text-left text-sm text-navigation-muted transition-colors hover:text-navigation-primary focus-visible:text-navigation-primary';
 
 interface ProjectSessionListProps {
   projects: Project[];
@@ -43,7 +44,9 @@ interface ProjectSessionListProps {
   onProjectsRefresh: () => void;
   sessionSortAscending: boolean;
   pinnedSectionExpanded: boolean;
+  repositoriesSectionExpanded: boolean;
   onPinnedSectionExpandedChange: (expanded: boolean) => void;
+  onRepositoriesSectionExpandedChange: (expanded: boolean) => void;
   /** Lets the sidebar footer's "Add repository" open this list's dialog. */
   onRegisterAddRepository?: (open: () => void) => void;
   showRemoteDesktopLink?: boolean;
@@ -57,7 +60,9 @@ export function ProjectSessionList({
   onProjectsRefresh,
   sessionSortAscending,
   pinnedSectionExpanded,
+  repositoriesSectionExpanded,
   onPinnedSectionExpandedChange,
+  onRepositoriesSectionExpandedChange,
   onRegisterAddRepository,
   showRemoteDesktopLink = false,
   onRemoteDesktopClick,
@@ -380,7 +385,7 @@ export function ProjectSessionList({
               <button
                 type="button"
                 onClick={() => onPinnedSectionExpandedChange(!pinnedSectionExpanded)}
-                className="group/section flex min-w-0 flex-1 items-center justify-between gap-2 text-left text-sm text-navigation-muted hover:text-navigation-primary focus-visible:text-navigation-primary transition-colors"
+                className={SIDEBAR_SECTION_TOGGLE}
               >
                 <span className={SIDEBAR_SECTION_LABEL}>Pinned</span>
                 <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
@@ -413,8 +418,25 @@ export function ProjectSessionList({
           </>
         )}
 
+        <div className={SIDEBAR_SECTION_ROW}>
+          <button
+            type="button"
+            onClick={() => onRepositoriesSectionExpandedChange(!repositoriesSectionExpanded)}
+            className={SIDEBAR_SECTION_TOGGLE}
+          >
+            <span className={SIDEBAR_SECTION_LABEL}>Repositories</span>
+            <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
+              {repositoriesSectionExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-current" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-current" />
+              )}
+            </span>
+          </button>
+        </div>
+
         {/* Projects */}
-        {projects.map((project, projectIndex) => {
+        {repositoriesSectionExpanded && projects.map((project, projectIndex) => {
           const isExpanded = expandedProjects.has(project.id);
           const projectSessions = sessionsByProject.get(project.id) || [];
 
@@ -604,13 +626,14 @@ const ROW_ACTION_REVEAL =
 // SessionRowContent so it can sit at the row's right edge, after the hover
 // actions — the actions collapse to nothing at rest, so an idle sidebar spends
 // its width on pane names instead of reserved button slots.
-function SessionRowMetadata({ prNumber, hasDiff, adds, dels }: {
+function SessionRowMetadata({ prNumber, hasDiff, adds, dels, isExternal }: {
+  isExternal: boolean;
   prNumber: number | undefined;
   hasDiff: boolean;
   adds: number;
   dels: number;
 }) {
-  if (!prNumber && !hasDiff) return null;
+  if (!prNumber && !hasDiff && !isExternal) return null;
   return (
     <span className="flex flex-shrink-0 items-center gap-1.5 text-xs tabular-nums">
       {hasDiff && (
@@ -620,6 +643,7 @@ function SessionRowMetadata({ prNumber, hasDiff, adds, dels }: {
         </span>
       )}
       {prNumber && <span className="text-navigation-muted">#{prNumber}</span>}
+      {isExternal && <span className="text-navigation-muted">External</span>}
     </span>
   );
 }
@@ -647,7 +671,7 @@ function SessionRowContent({
 }) {
   const title = resolveSessionLabel(session, displayName);
   const prNumber = gs?.prNumber;
-  const showMetadata = Boolean(prNumber || hasDiff);
+  const showMetadata = Boolean(prNumber || hasDiff || session.worktreeOwnership === 'external');
 
   if (rowLayout === 'single') {
     return (
@@ -691,6 +715,9 @@ function SessionRowContent({
                 <span className="text-status-success">+{adds}</span>
                 <span className="text-status-error">-{dels}</span>
               </>
+            )}
+            {session.worktreeOwnership === 'external' && (
+              <span className="text-text-tertiary">External</span>
             )}
           </span>
         )}
@@ -853,7 +880,7 @@ function SessionRow({
           </button>
 
           {rowLayout === 'single' && (
-            <SessionRowMetadata prNumber={gs?.prNumber} hasDiff={hasDiff} adds={adds} dels={dels} />
+            <SessionRowMetadata isExternal={session.worktreeOwnership === 'external'} prNumber={gs?.prNumber} hasDiff={hasDiff} adds={adds} dels={dels} />
           )}
           <SessionStatusBadge sessionId={session.id} size="sm" />
         </div>

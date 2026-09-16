@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import { isDaemonOwnedChannel } from '../../shared/types/daemon';
 import {
   WINDOW_CONTROLS_OVERLAY_ARG,
   type WindowControlsOverlayColors,
@@ -22,6 +23,7 @@ import type {
   RemotePaneConnectionProfile,
 } from '../../shared/types/remoteDaemon';
 import type { ToolPanel } from '../../shared/types/panels';
+import type { DiffScope, FileDiffRequest } from '../../shared/types/gitDiff';
 import type { PanelAgentStatusEvent } from '../../shared/types/agentStatus';
 import type { AgentUsageSnapshot } from '../../shared/types/agentUsage';
 import type { CloudVmState } from '../../shared/types/cloud';
@@ -35,6 +37,7 @@ import type {
 // The main build bundles this runtime dependency into preload.js; the sandbox
 // verification step rejects any remaining require other than Electron itself.
 import { boundary, decodeBoundary, type JsonObject } from '../../shared/validation/boundaryDecoder';
+import { decodeAppearanceSnapshotArg, type Theme } from '../../shared/types/appearance';
 
 interface LogEntry {
   timestamp: string;
@@ -121,74 +124,6 @@ interface UpdaterInfo {
   path?: string;
   sha512?: string;
   size?: number;
-}
-
-const DAEMON_OWNED_CHANNEL_PREFIXES = [
-  'agent-usage:',
-  'folders:',
-  'logs:',
-  'pane-chat:',
-  'panels:',
-  'projects:',
-  'prompts:',
-  'resource-monitor:',
-  'runpane:',
-  'sessions:',
-  'terminal:',
-  'usage:',
-  'voice:',
-] as const;
-
-const DAEMON_OWNED_EXACT_CHANNELS = [
-  'git:cancel-status-for-project',
-  'git:clone-repo',
-  'git:commit',
-  'git:execute-project',
-  'git:file-status',
-  'git:get-github-remote',
-  'remote:pwa-affordances',
-  'git:restore',
-  'git:revert',
-  'permission:getPending',
-  'permission:respond',
-  'file:copy',
-  'file:delete',
-  'file:duplicate',
-  'file:exists',
-  'file:getPath',
-  'file:list',
-  'file:move',
-  'file:read',
-  'file:read-binary',
-  'file:read-project',
-  'file:readAtRevision',
-  'file:rename',
-  'file:resolveAbsolutePath',
-  'file:search',
-  'file:write',
-  'file:write-binary',
-  'file:write-project',
-] as const;
-const DAEMON_OWNED_EXACT_CHANNEL_SET = new Set<string>(DAEMON_OWNED_EXACT_CHANNELS);
-
-const ELECTRON_ADAPTER_ONLY_CHANNELS = new Set<string>([
-  'file:showInFolder',
-  'sessions:open-ide',
-  'sessions:set-active-session',
-  'terminal:clipboard-paste-image',
-]);
-
-// Keep the security-sensitive channel classifier visible at the bridge boundary.
-function isDaemonOwnedChannel(channel: string): boolean {
-  if (ELECTRON_ADAPTER_ONLY_CHANNELS.has(channel)) {
-    return false;
-  }
-
-  if (DAEMON_OWNED_EXACT_CHANNEL_SET.has(channel)) {
-    return true;
-  }
-
-  return DAEMON_OWNED_CHANNEL_PREFIXES.some((prefix) => channel.startsWith(prefix));
 }
 
 // Increase max listeners for ipcRenderer to prevent warnings when many components listen to events
@@ -434,8 +369,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // answer through additionalArguments, so the renderer can branch on it during
   // its first render instead of awaiting IPC and flashing the wrong layout.
   windowControlsOverlayEnabled: process.argv.includes(WINDOW_CONTROLS_OVERLAY_ARG),
+  appearanceSnapshot: decodeAppearanceSnapshotArg(process.argv),
   setTitleBarOverlay: (colors: WindowControlsOverlayColors): Promise<IPCResponse> =>
     invokeIpc('window:set-title-bar-overlay', colors),
+  setBackgroundColor: (payload: { theme: Theme; color: string }): Promise<IPCResponse> =>
+    invokeIpc('window:set-background-color', payload),
 
   // Version checking
   checkForUpdates: (): Promise<IPCResponse> => invokeIpc('version:check-for-updates'),
@@ -443,6 +381,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Auto-updater
   updater: {
+    getCapabilities: (): Promise<IPCResponse> => invokeIpc('updater:get-capabilities'),
     checkAndDownload: (): Promise<IPCResponse> => invokeIpc('updater:check-and-download'),
     downloadUpdate: (): Promise<IPCResponse> => invokeIpc('updater:download-update'),
     installUpdate: (): Promise<IPCResponse> => invokeIpc('updater:install-update'),
@@ -526,8 +465,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getExecutionDiff: (sessionId: string, executionId: string): Promise<IPCResponse> => invokeIpc('sessions:get-execution-diff', sessionId, executionId),
     gitCommit: (sessionId: string, message: string): Promise<IPCResponse> => invokeIpc('sessions:git-commit', sessionId, message),
     gitDiff: (sessionId: string): Promise<IPCResponse> => invokeIpc('sessions:git-diff', sessionId),
-    getCombinedDiff: (sessionId: string, executionIds?: number[]): Promise<IPCResponse> => invokeIpc('sessions:get-combined-diff', sessionId, executionIds),
-    getCommitDiffByHash: (sessionId: string, commitHash: string): Promise<IPCResponse> => invokeIpc('sessions:get-commit-diff-by-hash', sessionId, commitHash),
+    getDiffManifest: (sessionId: string, scope: DiffScope): Promise<IPCResponse> => invokeIpc('sessions:get-diff-manifest', sessionId, scope),
+    getFileDiff: (sessionId: string, scope: DiffScope, request: FileDiffRequest): Promise<IPCResponse> => invokeIpc('sessions:get-file-diff', sessionId, scope, request),
 
     // Main repo session
     getOrCreateMainRepoSession: (projectId: number): Promise<IPCResponse> => invokeIpc('sessions:get-or-create-main-repo', projectId),
@@ -805,6 +744,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('permission:resolved', wrappedCallback);
     },
     // Session events
+    onSessionCreationFailed: (callback: (failure: { name: string; error: string }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, failure: { name: string; error: string }) => callback(failure);
+      ipcRenderer.on('session:creation-failed', wrappedCallback);
+      return () => ipcRenderer.removeListener('session:creation-failed', wrappedCallback);
+    },
     onSessionCreated: (callback: (session: Session) => void) => {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, session: Session) => callback(session);
       ipcRenderer.on('session:created', wrappedCallback);
@@ -1034,6 +978,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { terminalFontFamily: string; terminalFontSize: number }) => callback(data);
       ipcRenderer.on('config:terminal-font-updated', wrappedCallback);
       return () => ipcRenderer.removeListener('config:terminal-font-updated', wrappedCallback);
+    },
+    onNativeAppearanceUpdated: (callback: (data: { prefersDark: boolean }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, data: { prefersDark: boolean }) => callback(data);
+      ipcRenderer.on('window:appearance-native-updated', wrappedCallback);
+      return () => ipcRenderer.removeListener('window:appearance-native-updated', wrappedCallback);
     },
 
     // Process management events

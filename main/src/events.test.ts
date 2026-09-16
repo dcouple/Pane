@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Session } from './types/session';
 import { handleSessionCreatedEvent } from './events';
 
-function createSession(autoCreateTerminal?: boolean): Session {
+function createSession(createDefaultTerminalOnCreate?: boolean): Session {
   return {
     id: 'session-1',
     name: 'Pane',
@@ -13,7 +13,7 @@ function createSession(autoCreateTerminal?: boolean): Session {
     output: [],
     jsonMessages: [],
     archived: true,
-    autoCreateTerminal,
+    createDefaultTerminalOnCreate,
   };
 }
 
@@ -34,7 +34,7 @@ describe('session-created event listener', () => {
     });
   });
 
-  it('skips the default terminal when autoCreateTerminal is false', async () => {
+  it('skips the default terminal when createDefaultTerminalOnCreate is false', async () => {
     const createPanel = vi.fn().mockResolvedValue({});
 
     await handleSessionCreatedEvent(createSession(false), {

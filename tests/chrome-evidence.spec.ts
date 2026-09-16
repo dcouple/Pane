@@ -1,4 +1,4 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 
 const now = new Date(0).toISOString();
@@ -22,26 +22,159 @@ const session = {
   archived: false,
   gitStatus: { state: 'clean', ahead: 0, behind: 0, hasUncommittedChanges: false, hasUntrackedFiles: false, filesChanged: 0 },
 };
-const panels = [{
+const basePanel = {
   id: 'chrome-terminal',
   sessionId: session.id,
   type: 'terminal',
   title: 'Terminal',
   state: { isActive: true, hasBeenViewed: true, customState: { isInitialized: false } },
   metadata: { createdAt: now, lastActiveAt: now, position: 0, permanent: true },
-}];
+};
 
-async function bootChromeFixture(page: Page) {
+const changedPath = 'frontend/src/components/panels/PanelGroupView.tsx';
+const execution = {
+  id: 1,
+  session_id: session.id,
+  execution_sequence: 1,
+  after_commit_hash: '1234567890abcdef',
+  commit_message: 'Guard macOS chrome typography',
+  timestamp: '2026-08-29T12:00:00.000Z',
+  stats_additions: 8,
+  stats_deletions: 3,
+  stats_files_changed: 1,
+  author: 'Pane QA',
+  comparison_branch: 'origin/main',
+  history_source: 'branch',
+};
+const combinedDiff = {
+  diff: [
+    `diff --git a/${changedPath} b/${changedPath}`,
+    'index 1111111..2222222 100644',
+    `--- a/${changedPath}`,
+    `+++ b/${changedPath}`,
+    '@@ -1 +1 @@',
+    '-old chrome',
+    '+flat chrome',
+  ].join('\n'),
+  stats: { additions: 8, deletions: 3, filesChanged: 1 },
+  changedFiles: [changedPath],
+};
+
+interface BootOptions {
+  theme?: string;
+  mountTerminal?: boolean;
+  diff?: boolean;
+}
+
+async function bootChromeFixture(page: Page, opts: BootOptions = {}) {
+  if (opts.theme) {
+    await page.addInitScript((theme) => window.localStorage.setItem('theme', theme), opts.theme);
+  }
+
+  const fixturePanels = [{
+    ...basePanel,
+    state: { ...basePanel.state, isActive: !opts.mountTerminal },
+  }];
+  if (opts.mountTerminal) {
+    fixturePanels.push({
+      id: 'chrome-live-terminal',
+      sessionId: session.id,
+      type: 'terminal',
+      title: 'Shell',
+      state: { isActive: true, hasBeenViewed: true, customState: { isInitialized: true } },
+      metadata: { createdAt: now, lastActiveAt: now, position: 1, permanent: false },
+    });
+  }
+  if (opts.diff) {
+    fixturePanels.push({
+      id: 'chrome-diff',
+      sessionId: session.id,
+      type: 'diff',
+      title: 'Diff',
+      state: { isActive: false, hasBeenViewed: true, customState: { isInitialized: false } },
+      metadata: { createdAt: now, lastActiveAt: now, position: fixturePanels.length, permanent: true },
+    });
+  }
+
   await installElectronApiMock(page, {
     platform: 'darwin',
+    initialConfig: opts.theme ? { theme: opts.theme, appearanceMode: 'fixed' } : undefined,
     initialProjects: [project],
-    initialSessions: [session],
-    initialPanels: panels,
+    initialSessions: [{
+      ...session,
+      gitStatus: opts.diff
+        ? { ...session.gitStatus, ahead: 1, filesChanged: 1, additions: 8, deletions: 3, totalCommits: 1 }
+        : session.gitStatus,
+    }],
+    initialPanels: fixturePanels,
+    initialTerminalStates: opts.mountTerminal
+      ? { 'chrome-live-terminal': { scrollbackBuffer: 'ready\r\n' } }
+      : undefined,
+    initialCombinedDiff: opts.diff ? combinedDiff : undefined,
+    initialExecutions: opts.diff ? [execution] : undefined,
     activeProjectId: project.id,
   });
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await page.getByRole('button', { name: /^Expand repository Pane$/ }).click();
   await page.getByRole('button', { name: 'Flat chrome', exact: true }).click();
+  if (opts.theme) {
+    await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${opts.theme}\\b`));
+  }
+  if (opts.mountTerminal) {
+    await expect(page.locator('.xterm-screen')).toHaveCount(1, { timeout: 15_000 });
+  }
+}
+
+async function computedVar(page: Page, cssProp: string, value: string): Promise<string> {
+  return page.evaluate(({ cssProp, value }) => {
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    try {
+      probe.style.setProperty(cssProp, value);
+      return getComputedStyle(probe).getPropertyValue(cssProp);
+    } finally {
+      probe.remove();
+    }
+  }, { cssProp, value });
+}
+
+async function computedClassFont(page: Page, className: string): Promise<string> {
+  return page.evaluate((className) => {
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    try {
+      probe.classList.add(className);
+      return getComputedStyle(probe).fontFamily;
+    } finally {
+      probe.remove();
+    }
+  }, className);
+}
+
+async function expectTabRowChrome(page: Page, row: Locator): Promise<void> {
+  await expect(row).toBeVisible();
+  const expectedBackground = await computedVar(page, 'background-color', 'var(--color-bg-chrome)');
+  const styles = await row.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      backgroundColor: style.backgroundColor,
+      borderBottomWidth: style.borderBottomWidth,
+      borderTopWidth: style.borderTopWidth,
+      borderLeftWidth: style.borderLeftWidth,
+      borderRightWidth: style.borderRightWidth,
+      borderRadius: style.borderRadius,
+      boxShadow: style.boxShadow,
+    };
+  });
+  expect(styles).toEqual({
+    backgroundColor: expectedBackground,
+    borderBottomWidth: '1px',
+    borderTopWidth: '0px',
+    borderLeftWidth: '0px',
+    borderRightWidth: '0px',
+    borderRadius: '0px',
+    boxShadow: 'none',
+  });
 }
 
 async function attachScreenshot(page: Page, testInfo: TestInfo, name: string) {
@@ -78,4 +211,51 @@ test('inspector and add-tool surfaces remain reachable', async ({ page }, testIn
   await page.getByRole('button', { name: 'Add tool', exact: true }).click();
   await expect(page.getByRole('menu')).toBeVisible();
   await attachScreenshot(page, testInfo, 'chrome-add-tool');
+});
+
+for (const theme of ['light-rounded', 'dark']) {
+  test(`tab row paints on the chrome plane (${theme})`, async ({ page }) => {
+    await bootChromeFixture(page, { theme });
+    await expectTabRowChrome(page, page.locator('.panel-tab-bar'));
+  });
+}
+
+test('macOS UI uses the sans stack; content surfaces stay monospace', async ({ page }) => {
+  await bootChromeFixture(page, { mountTerminal: true, diff: true });
+
+  const sans = await computedVar(page, 'font-family', 'var(--font-family-sans)');
+  const expectSans = async (locator: Locator) => {
+    await expect(locator).toBeVisible();
+    await expect(locator).toHaveCSS('font-family', sans);
+  };
+
+  await expectSans(page.locator('body'));
+  await expectSans(page.getByRole('button', { name: 'Add tool', exact: true }));
+  await expectSans(page.getByRole('tab', { name: 'Details', exact: true }));
+
+  await page.getByRole('button', { name: 'Feedback', exact: true }).click();
+  const feedback = page.getByRole('dialog', { name: 'Send feedback' });
+  await expectSans(feedback.getByRole('heading', { name: 'Send feedback' }).last());
+  await expectSans(feedback.getByText('Create a public issue in dcouple/Pane.'));
+  await feedback.getByRole('button', { name: 'Close modal' }).click();
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).first().click();
+  const settings = page.getByRole('dialog', { name: 'Pane Settings' });
+  await expectSans(settings.getByRole('heading', { name: 'Pane Settings' }).last());
+  await settings.getByRole('button', { name: 'Terminal', exact: true }).click();
+  await expectSans(settings.getByText('Choose an enumerated monospace font or enter a custom installed font name. Nerd Font symbols remain available.'));
+  await expectSans(settings.getByRole('textbox', { name: 'Custom terminal font family' }));
+  await expectSans(settings.getByRole('button', { name: 'Decrease terminal font size' }));
+  await settings.getByRole('button', { name: 'Close modal' }).click();
+
+  await expect(page.locator('[data-terminal-font]').first()).toHaveAttribute(
+    'data-terminal-font',
+    '"Geist Mono", "Symbols Nerd Font Mono", monospace',
+  );
+
+  await page.getByRole('tab', { name: 'Changes', exact: true }).click();
+  await expect(page.getByRole('button', { name: /^Open diff for .+$/ })).toBeVisible();
+  const mono = await computedClassFont(page, 'font-mono');
+  await expect(page.getByText(changedPath, { exact: true })).toHaveCSS('font-family', mono);
+  await expect(page.getByText('1234567', { exact: true })).toHaveCSS('font-family', mono);
 });

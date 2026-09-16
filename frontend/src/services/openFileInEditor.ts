@@ -8,7 +8,7 @@
  * - A file that is already open in any editor tab is focused, not duplicated.
  */
 import type { EditorDiffRef, EditorPanelState, SessionPanelLayout, ToolPanel } from '../../../shared/types/panels';
-import { diffRefLabel, sameDiffRef } from '../components/panels/diff/diffSource';
+import { diffRefLabel, sameDiffRef } from '../components/panels/diff/diffScope';
 import { panelApi } from './panelApi';
 import { usePanelStore } from '../stores/panelStore';
 import { addPanelToGroup, findGroup, findGroupContainingPanel, primaryGroup } from '../utils/panelLayout';

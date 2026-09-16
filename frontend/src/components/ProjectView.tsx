@@ -11,11 +11,14 @@ import type { PanelCreateOptions } from '../types/panelComponents';
 import { SessionProvider } from '../contexts/SessionContext';
 import { DetailPanel } from './DetailPanel';
 import type { InspectorTab } from './InspectorTabs';
-import { useResizable } from '../hooks/useResizable';
+import { useObservedContentBox } from '../hooks/useObservedContentBox';
+import { useOuterPanelResize } from '../hooks/useOuterPanelResize';
+import { OUTER_PANEL_CONFIGS } from '../utils/outerPanelSizing';
 import { CommitMessageDialog } from './session/CommitMessageDialog';
 import { SetTrackingBranchDialog } from './session/SetTrackingBranchDialog';
 import { useMainRepoGitActions } from '../hooks/useMainRepoGitActions';
 import { useProjectViewActionsStore } from '../stores/projectViewActionsStore';
+import { useNavigationStore } from '../stores/navigationStore';
 import { PANEL_CAPABILITIES } from '../../../shared/types/panels';
 import type { ProjectEnvironment } from '../../../shared/types/panels';
 import { useWorkspaceEntryStore } from '../stores/workspaceEntryStore';
@@ -62,7 +65,8 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     setPanels,
     setActivePanel: setActivePanelInStore,
     addPanel,
-    removePanel
+    removePanel,
+    updatePanelState,
   } = usePanelStore();
 
   // Detail panel state
@@ -87,13 +91,12 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
     localStorage.setItem('pane-project-detail-panel-visible', String(detailVisible));
   }, [detailVisible]);
 
-  // Right-side resizable
-  const { width: detailWidth, startResize: startDetailResize } = useResizable({
-    defaultWidth: 360,
-    minWidth: 240,
-    maxWidth: 720,
-    storageKey: 'pane-project-detail-panel-width',
-    side: 'right'
+  const immersiveMode = useNavigationStore(s => s.immersiveMode);
+  const projectContentBox = useObservedContentBox<HTMLDivElement>();
+  const detailResize = useOuterPanelResize({
+    config: OUTER_PANEL_CONFIGS.projectInspector,
+    containerPx: projectContentBox.width,
+    enabled: detailVisible && !immersiveMode,
   });
 
   // Load panels when main repo session changes (no auto-creation, matches worktree session behavior)
@@ -221,10 +224,10 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
 
   const handlePanelCreate = useCallback(
     async (type: ToolPanelType, options?: PanelCreateOptions) => {
-      if (!mainRepoSessionId) return false;
+      if (!mainRepoSessionId) return;
 
       // For terminal panels with initialCommand (e.g., Terminal (Claude))
-      let initialState: { customState?: unknown } | undefined = undefined;
+      let initialState = options?.initialState;
       if (type === 'terminal' && options?.initialCommand) {
         const customState = { initialCommand: options.initialCommand };
         if (options.agentType) {
@@ -246,10 +249,40 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
       // The panel:created event will also fire, but addPanel checks for duplicates
       addPanel(newPanel);
       setActivePanelInStore(mainRepoSessionId, newPanel.id);
-      return true;
+      return newPanel;
     },
     [mainRepoSessionId, addPanel, setActivePanelInStore]
   );
+
+  const handleOpenUrlInBrowser = useCallback(async (url: string, title: string) => {
+    if (!mainRepoSessionId) return;
+    const existingPanel = workingPanels.find((candidate) => candidate.type === 'browser');
+    if (existingPanel) {
+      const updatedPanel = {
+        ...existingPanel,
+        title,
+        state: { ...existingPanel.state, customState: { ...existingPanel.state.customState, currentUrl: url } },
+      };
+      await panelApi.updatePanel(existingPanel.id, { title, state: updatedPanel.state });
+      updatePanelState(updatedPanel);
+      await handlePanelSelect(updatedPanel);
+      window.dispatchEvent(new CustomEvent('browser-panel:navigate', {
+        detail: { url, sessionId: mainRepoSessionId },
+      }));
+      return;
+    }
+
+    await handlePanelCreate('browser', {
+      title,
+      initialState: { customState: { currentUrl: url } },
+    });
+  }, [handlePanelCreate, handlePanelSelect, mainRepoSessionId, updatePanelState, workingPanels]);
+
+  const handleShowExplorer = useCallback(async () => {
+    if (!filesPanel) await handlePanelCreate('explorer');
+    setInspectorTab('files');
+    setDetailVisible(true);
+  }, [filesPanel, handlePanelCreate]);
   
   // Expose this view's tab / inspector actions to the global hotkeys.
   const setProjectViewActions = useProjectViewActionsStore((state) => state.setActions);
@@ -373,6 +406,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           isMerging={mainRepoGit.actionsBusy}
           gitCommands={mainRepoGit.gitCommands}
           onOpenIDEWithCommand={mainRepoGit.handleOpenIDE}
+          onOpenUrlInBrowser={handleOpenUrlInBrowser}
           onConfigureIDE={onConfigureIDE}
           onSetTracking={mainRepoGit.handleOpenSetTracking}
           trackingBranch={mainRepoGit.currentUpstream}
@@ -386,6 +420,7 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             onPanelSelect={handlePanelSelect}
             onPanelClose={handlePanelClose}
             onPanelCreate={handlePanelCreate}
+            onShowExplorer={() => { void handleShowExplorer(); }}
             projectEnvironment={projectEnvironment}
             context="project"
             onToggleDetailPanel={() => setDetailVisible(v => !v)}
@@ -393,9 +428,9 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
           />
 
           {/* Content area: center panels + right detail */}
-          <div className="flex-1 flex flex-row min-h-0">
+          <div ref={projectContentBox.ref} className="pane-project-content flex-1 flex flex-row min-h-0 min-w-0">
             {/* Center: panel content */}
-            <div className="flex-1 relative min-h-0 overflow-hidden">
+            <div className="flex-1 relative min-h-0 min-w-0 overflow-hidden">
               {isLoadingSession ? (
                 <div
                   role="status"
@@ -471,8 +506,16 @@ export const ProjectView: React.FC<ProjectViewProps> = ({
             <DetailPanel
               isVisible={detailVisible}
               onToggle={() => setDetailVisible(v => !v)}
-              width={detailWidth}
-              onResize={startDetailResize}
+              width={detailResize.renderedPx}
+              bodyActive={detailResize.bodyActive}
+              resizeSeparator={detailResize.separatorVisible ? {
+                label: 'Resize main repository inspector',
+                orientation: 'vertical',
+                value: detailResize.effectivePx,
+                minimum: detailResize.floor,
+                maximum: detailResize.cap,
+                ...detailResize.separatorHandlers,
+              } : undefined}
               mergeError={mainRepoGit.error}
               inspectorTab={inspectorTab}
               onInspectorTabChange={openInspector}

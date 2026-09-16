@@ -115,6 +115,7 @@ export interface UsageReportRequest {
 /** Health of the background transcript index, surfaced in the page header. */
 export interface UsageIndexStatus {
   lastScanStartedMs: number | null;
+  /** Last successful full scan; failed or canceled passes do not advance it. */
   lastScanFinishedMs: number | null;
   filesTracked: number;
   eventsIndexed: number;

@@ -8,11 +8,19 @@ import { DEFAULT_WORKTREE_FILE_SYNC_ENTRIES } from '../../../shared/types/worktr
 import fs from 'fs/promises';
 import { watch, type FSWatcher } from 'fs';
 import path from 'path';
-import os from 'os';
 import { randomUUID } from 'crypto';
+import { HOME_GIT_SCAN_WARNING, isHomeDirectory } from '../utils/gitScanSafety';
 import { getAppDirectory } from '../utils/appDirectory';
 import { clearShellPathCache } from '../utils/shellPath';
 import { boundary, decodeBoundary } from '../../../shared/validation/boundaryDecoder';
+import {
+  AppearanceValidationError,
+  DEFAULT_APPEARANCE,
+  isLightTheme,
+  isTheme,
+  normalizeAppearance,
+  type AppearanceConfig,
+} from '../../../shared/types/appearance';
 
 const DEFAULT_POSTHOG_API_KEY = 'phc_wir25CCsjr2NsZGEdlWNdvwcNG1XDjhxc9RyL5KDCf1';
 const LEGACY_POSTHOG_HOST = 'https://us.i.posthog.com';
@@ -20,7 +28,7 @@ const DEFAULT_POSTHOG_HOST = 'https://runpane.com/api/c';
 
 function defaultAnalyticsConfig(): NonNullable<AppConfig['analytics']> {
   return {
-    enabled: false,
+    enabled: true,
     posthogApiKey: DEFAULT_POSTHOG_API_KEY,
     posthogHost: DEFAULT_POSTHOG_HOST
   };
@@ -39,7 +47,8 @@ export class ConfigManager extends EventEmitter {
     this.configDir = getAppDirectory();
     this.configPath = path.join(this.configDir, 'config.json');
     this.config = {
-      gitRepoPath: defaultGitPath || os.homedir(),
+      gitRepoPath: defaultGitPath || '',
+      usePtyHost: process.platform === 'win32',
       verbose: false,
       anthropicApiKey: undefined,
       falApiKey: undefined,
@@ -49,6 +58,9 @@ export class ConfigManager extends EventEmitter {
       systemPromptAppend: undefined,
       runScript: undefined,
       theme: 'light-rounded',
+      appearanceMode: 'system',
+      systemLightTheme: 'light-rounded',
+      systemDarkTheme: 'dark',
       highContrast: false,
       terminalFontFamily: 'Geist Mono',
       terminalFontSize: 14,
@@ -119,12 +131,21 @@ export class ConfigManager extends EventEmitter {
   }
 
   async initialize(): Promise<void> {
+    await this.enqueueConfigWrite(() => this.initializeFromDisk());
+  }
+
+  private async initializeFromDisk(): Promise<void> {
     // Ensure the config directory exists
     await fs.mkdir(this.configDir, { recursive: true });
     
     try {
       const data = await fs.readFile(this.configPath, 'utf-8');
-      const loadedConfig = JSON.parse(data);
+      // SAFETY: initialize immediately normalizes boundary-sensitive fields before assigning the parsed config.
+      const loadedConfig = JSON.parse(data) as AppConfig;
+      const normalizedAppearance = normalizeAppearance(loadedConfig);
+      for (const diagnostic of normalizedAppearance.diagnostics) {
+        console.error(`[ConfigManager] appearance: ${diagnostic}`);
+      }
       
       // Migrate legacy notification fields from older config files.
       // notifyWhenBackgrounded -> enabled (if enabled is not explicitly set)
@@ -149,6 +170,7 @@ export class ConfigManager extends EventEmitter {
       this.config = {
         ...this.config,
         ...loadedConfig,
+        ...normalizedAppearance.appearance,
         notifications: migratedNotifications,
         sessionCreationPreferences: {
           ...this.config.sessionCreationPreferences,
@@ -163,11 +185,11 @@ export class ConfigManager extends EventEmitter {
           }
         },
         analytics: {
-          ...this.config.analytics,
+          ...this.config.analytics!,
           ...loadedConfig.analytics
         },
         agentContext: {
-          ...this.config.agentContext,
+          ...this.config.agentContext!,
           ...loadedConfig.agentContext
         },
         defaultOrchestratorAgent: normalizePaneChatAgent(
@@ -184,9 +206,13 @@ export class ConfigManager extends EventEmitter {
           : DEFAULT_WORKTREE_FILE_SYNC_ENTRIES
       };
 
+      let shouldPersistMigration = normalizedAppearance.migrated;
       if (this.config.analytics?.posthogHost === LEGACY_POSTHOG_HOST) {
         this.config.analytics.posthogHost = DEFAULT_POSTHOG_HOST;
-        await this.saveConfig();
+        shouldPersistMigration = true;
+      }
+      if (shouldPersistMigration) {
+        await this.writeConfigToDisk(this.config);
       }
     } catch (error: unknown) {
       let errorCode: string | undefined;
@@ -200,7 +226,7 @@ export class ConfigManager extends EventEmitter {
       const isNotFound = errorCode === 'ENOENT';
       if (isNotFound) {
         // Config file doesn't exist — create with defaults
-        await this.saveConfig();
+        await this.writeConfigToDisk(this.config);
       } else {
         // Config exists but is corrupted — log and keep defaults in memory
         // Do NOT overwrite the file (user might want to recover it)
@@ -209,25 +235,29 @@ export class ConfigManager extends EventEmitter {
     }
   }
 
+  private async writeConfigToDisk(config: AppConfig): Promise<void> {
+    const configJson = JSON.stringify(config, null, 2);
+    await fs.mkdir(this.configDir, { recursive: true });
+    const tmpPath = `${this.configPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+
+    try {
+      await fs.writeFile(tmpPath, configJson);
+      await fs.rename(tmpPath, this.configPath);
+      this.lastConfigJson = configJson;
+    } catch (error) {
+      await fs.unlink(tmpPath).catch(() => {});
+      throw error;
+    }
+  }
+
+  private async enqueueConfigWrite<T>(work: () => Promise<T>): Promise<T> {
+    const queuedWrite = this.saveConfigQueue.then(work, work);
+    this.saveConfigQueue = queuedWrite.then(() => undefined, () => undefined);
+    return queuedWrite;
+  }
+
   private async saveConfig(): Promise<void> {
-    const writeConfig = async () => {
-      const configJson = JSON.stringify(this.config, null, 2);
-      await fs.mkdir(this.configDir, { recursive: true });
-      const tmpPath = `${this.configPath}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-
-      try {
-        await fs.writeFile(tmpPath, configJson);
-        await fs.rename(tmpPath, this.configPath);
-        this.lastConfigJson = configJson;
-      } catch (error) {
-        await fs.unlink(tmpPath).catch(() => {});
-        throw error;
-      }
-    };
-
-    const queuedWrite = this.saveConfigQueue.then(writeConfig, writeConfig);
-    this.saveConfigQueue = queuedWrite.catch(() => {});
-    await queuedWrite;
+    await this.enqueueConfigWrite(() => this.writeConfigToDisk(this.config));
   }
 
   getConfig(): AppConfig {
@@ -313,51 +343,81 @@ export class ConfigManager extends EventEmitter {
   }
 
   async updateConfig(updates: Partial<AppConfig>): Promise<AppConfig> {
-    const analytics =
-      updates.analytics !== undefined
-        ? {
-            ...defaultAnalyticsConfig(),
-            ...this.config.analytics,
-            ...updates.analytics
-          }
+    return this.updateConfigWith(() => updates);
+  }
+
+  async updateConfigWith(update: (current: AppConfig) => Partial<AppConfig>): Promise<AppConfig> {
+    return this.enqueueConfigWrite(async () => {
+      const updates = update(this.getConfig());
+      const analytics = updates.analytics !== undefined
+        ? { ...defaultAnalyticsConfig(), ...this.config.analytics, ...updates.analytics }
         : this.config.analytics;
-    const agentContext =
-      updates.agentContext !== undefined
-        ? {
-            ...this.config.agentContext,
-            ...updates.agentContext
-          }
+      const agentContext = updates.agentContext !== undefined
+        ? { ...this.config.agentContext, ...updates.agentContext }
         : this.config.agentContext;
+      const next: AppConfig = {
+        ...this.config,
+        ...updates,
+        analytics,
+        agentContext,
+        defaultOrchestratorAgent: 'defaultOrchestratorAgent' in updates
+          ? normalizePaneChatAgent(updates.defaultOrchestratorAgent)
+          : this.config.defaultOrchestratorAgent,
+        cloud: 'cloud' in updates
+          ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
+          : this.config.cloud,
+        remoteDaemon: 'remoteDaemon' in updates
+          ? normalizeRemoteDaemonConfig(updates.remoteDaemon)
+          : this.config.remoteDaemon,
+      };
 
-    this.config = {
-      ...this.config,
-      ...updates,
-      analytics,
-      agentContext,
-      defaultOrchestratorAgent: 'defaultOrchestratorAgent' in updates
-        ? normalizePaneChatAgent(updates.defaultOrchestratorAgent)
-        : this.config.defaultOrchestratorAgent,
-      cloud: 'cloud' in updates
-        ? (updates.cloud === undefined ? undefined : normalizeCloudVmConfig(updates.cloud))
-        : this.config.cloud,
-      remoteDaemon: 'remoteDaemon' in updates
-        ? normalizeRemoteDaemonConfig(updates.remoteDaemon)
-        : this.config.remoteDaemon,
-    };
-    await this.saveConfig();
+      this.validateAppearanceUpdate(updates, next);
+      await this.writeConfigToDisk(next);
+      this.config = next;
 
-    // Clear PATH cache if additional paths were updated
-    if ('additionalPaths' in updates) {
-      clearShellPathCache();
-      console.log('[ConfigManager] Additional paths updated, cleared PATH cache');
+      if ('additionalPaths' in updates) {
+        clearShellPathCache();
+        console.log('[ConfigManager] Additional paths updated, cleared PATH cache');
+      }
+      this.emit('config-updated', this.config);
+      return this.getConfig();
+    });
+  }
+
+  private validateAppearanceUpdate(updates: Partial<AppConfig>, next: AppConfig): void {
+    if ('appearanceMode' in updates && updates.appearanceMode !== 'system' && updates.appearanceMode !== 'fixed') {
+      throw new AppearanceValidationError('appearanceMode must be system or fixed');
     }
-    
-    this.emit('config-updated', this.config);
-    return this.getConfig();
+    if ('theme' in updates && !isTheme(updates.theme)) {
+      throw new AppearanceValidationError('theme must be a valid palette');
+    }
+    if ('systemLightTheme' in updates && (!isTheme(updates.systemLightTheme) || !isLightTheme(updates.systemLightTheme))) {
+      throw new AppearanceValidationError('systemLightTheme must be a light palette');
+    }
+    if ('systemDarkTheme' in updates && (!isTheme(updates.systemDarkTheme) || isLightTheme(updates.systemDarkTheme))) {
+      throw new AppearanceValidationError('systemDarkTheme must be a dark palette');
+    }
+    const appearance: AppearanceConfig = {
+      appearanceMode: next.appearanceMode ?? DEFAULT_APPEARANCE.appearanceMode,
+      theme: next.theme ?? DEFAULT_APPEARANCE.theme,
+      systemLightTheme: next.systemLightTheme ?? DEFAULT_APPEARANCE.systemLightTheme,
+      systemDarkTheme: next.systemDarkTheme ?? DEFAULT_APPEARANCE.systemDarkTheme,
+    };
+    if (!isLightTheme(appearance.systemLightTheme)) {
+      throw new AppearanceValidationError('systemLightTheme must be a light palette');
+    }
+    if (isLightTheme(appearance.systemDarkTheme)) {
+      throw new AppearanceValidationError('systemDarkTheme must be a dark palette');
+    }
   }
 
   getGitRepoPath(): string {
-    return this.config.gitRepoPath || '';
+    const repoPath = this.config.gitRepoPath || '';
+    if (isHomeDirectory(repoPath)) {
+      console.warn(`[ConfigManager] ${HOME_GIT_SCAN_WARNING}`);
+      return '';
+    }
+    return repoPath;
   }
 
   isVerbose(): boolean {
@@ -366,7 +426,7 @@ export class ConfigManager extends EventEmitter {
 
   /**
    * Whether PTY spawns should be routed through the isolated ptyHost
-   * `UtilityProcess`. Off by default. The `PANE_USE_PTY_HOST=1` env var is
+   * `UtilityProcess`. On by default on Windows. The `PANE_USE_PTY_HOST=1` env var is
    * honored as a dev override so testing doesn't require flipping the config.
    */
   getUsePtyHost(): boolean {
@@ -424,7 +484,7 @@ export class ConfigManager extends EventEmitter {
   }
 
   isAnalyticsEnabled(): boolean {
-    return this.config.analytics?.enabled ?? false; // Opt-in: default to false
+    return this.config.analytics?.enabled ?? true;
   }
 
   getAnalyticsDistinctId(): string | undefined {

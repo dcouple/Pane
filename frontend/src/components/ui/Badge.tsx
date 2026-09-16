@@ -13,7 +13,7 @@ interface BadgeProps {
 }
 
 const variantClasses = {
-  default: 'bg-surface-secondary text-text-secondary border-border-secondary dark:border-border-secondary/60',
+  default: 'bg-surface-secondary text-text-secondary border-border-secondary',
   success: 'bg-status-success/20 text-status-success border-status-success/30 dark:border-status-success/20',
   warning: 'bg-status-warning/20 text-status-warning border-status-warning/30 dark:border-status-warning/20',
   error: 'bg-status-error/20 text-status-error border-status-error/30 dark:border-status-error/20',

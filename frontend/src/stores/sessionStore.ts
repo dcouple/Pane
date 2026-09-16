@@ -361,73 +361,40 @@ export const useSessionStore = create<SessionStore>((set, get) => ({
   
   setSessionOutputs: (sessionId, outputs) => set((state) => {
     
-    // PERFORMANCE: Process arrays in chunks to avoid V8 optimization bailouts
+    const sessionIndex = state.sessions.findIndex(session => session.id === sessionId);
+    if (sessionIndex === -1 && state.activeMainRepoSession?.id !== sessionId) return state;
+
+    const MAX_STORED_OUTPUTS = 300;
+    const MAX_STORED_MESSAGES = 100;
     const stdOutputs: string[] = [];
     const jsonMessages: ClaudeJsonMessage[] = [];
-    
-    // Process in smaller batches to avoid long-running loops that trigger V8 deoptimization
-    const BATCH_SIZE = 100;
-    for (let batch = 0; batch < outputs.length; batch += BATCH_SIZE) {
-      const batchEnd = Math.min(batch + BATCH_SIZE, outputs.length);
-      
-      for (let i = batch; i < batchEnd; i++) {
-        const output = normalizeSessionOutput(outputs[i]);
-        if (output.type === 'json') {
-          // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
-          jsonMessages.push({ ...(output.data as ClaudeJsonMessage), timestamp: output.timestamp });
-        } else if (output.type === 'stdout' || output.type === 'stderr') {
-          // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
-          stdOutputs.push(output.data as string);
-        }
+
+    // Read newest first so each category retains its own tail. Only normalize
+    // messages we keep, and stop when both bounded buffers are full.
+    for (let i = outputs.length - 1; i >= 0; i--) {
+      const output = outputs[i];
+      if (output.type === 'json' && jsonMessages.length < MAX_STORED_MESSAGES) {
+        // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
+        jsonMessages.push({ ...(output.data as ClaudeJsonMessage), timestamp: normalizeSessionOutput(output).timestamp });
+      } else if ((output.type === 'stdout' || output.type === 'stderr') && stdOutputs.length < MAX_STORED_OUTPUTS) {
+        // SAFETY: The output type discriminator is paired with this payload shape by the IPC contract.
+        stdOutputs.push(output.data as string);
       }
-      
-      // Allow event loop to breathe between batches for very large arrays
-      if (batchEnd < outputs.length && outputs.length > 500) {
-        // This is a synchronous operation, so we can't truly yield,
-        // but we can at least break up the work
-        if (stdOutputs.length > 300 || jsonMessages.length > 100) {
-          // Stop early if we already have enough data
-          break;
-        }
-      }
+      if (stdOutputs.length === MAX_STORED_OUTPUTS && jsonMessages.length === MAX_STORED_MESSAGES) break;
     }
-    
-    // CRITICAL PERFORMANCE FIX: Even more aggressive limits to prevent V8 optimization failures
-    // V8 was getting stuck in recursive array iterations with large arrays
-    const MAX_STORED_OUTPUTS = 300; // Further reduced to prevent CPU spikes
-    const MAX_STORED_MESSAGES = 100; // Further reduced to prevent memory pressure
-    
-    const trimmedOutputs = stdOutputs.length > MAX_STORED_OUTPUTS 
-      ? stdOutputs.slice(-MAX_STORED_OUTPUTS) 
-      : stdOutputs;
-    
-    const trimmedMessages = jsonMessages.length > MAX_STORED_MESSAGES
-      ? jsonMessages.slice(-MAX_STORED_MESSAGES)
-      : jsonMessages;
-    
-    
-    // Performance optimization: Only create new array if session is found
+    stdOutputs.reverse();
+    jsonMessages.reverse();
+
     let updatedSessions = state.sessions;
-    let sessionFound = false;
-    
-    // Use a for loop for better performance with large arrays
-    for (let i = 0; i < state.sessions.length; i++) {
-      if (state.sessions[i].id === sessionId) {
-        const newSession = { ...state.sessions[i], output: trimmedOutputs, jsonMessages: trimmedMessages };
-        // Only create new array when we actually find the session to update
-        if (!sessionFound) {
-          updatedSessions = state.sessions.slice(); // Shallow copy is more efficient than spread
-          sessionFound = true;
-        }
-        updatedSessions[i] = newSession;
-        break;
-      }
+    if (sessionIndex !== -1) {
+      updatedSessions = state.sessions.slice();
+      updatedSessions[sessionIndex] = { ...state.sessions[sessionIndex], output: stdOutputs, jsonMessages };
     }
-    
+
     // Also update activeMainRepoSession if it matches
     let updatedActiveMainRepoSession = state.activeMainRepoSession;
     if (state.activeMainRepoSession && state.activeMainRepoSession.id === sessionId) {
-      updatedActiveMainRepoSession = { ...state.activeMainRepoSession, output: trimmedOutputs, jsonMessages: trimmedMessages };
+      updatedActiveMainRepoSession = { ...state.activeMainRepoSession, output: stdOutputs, jsonMessages };
     }
     
     return {

@@ -1,133 +1,131 @@
-import React, { useState, useEffect, memo, useCallback, useRef, useMemo, forwardRef, useImperativeHandle } from 'react';
-import DiffViewer from './DiffViewer';
+import { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { RefreshCw } from 'lucide-react';
+import type { ChangedFileSummary, DiffManifest, DiffScope } from '../../../../../shared/types/gitDiff';
+import type { CombinedDiffViewProps, ExecutionDiff } from '../../../types/diff';
+import { API } from '../../../utils/api';
 import ExecutionList from '../../ExecutionList';
 import { CommitDialog } from '../../CommitDialog';
-import { API } from '../../../utils/api';
-import type { CombinedDiffViewProps, FileDiff } from '../../../types/diff';
-import type { ExecutionDiff, GitDiffResult } from '../../../types/diff';
-import { RefreshCw } from 'lucide-react';
 import { editorPanelState, openFileInEditor } from '../../../services/openFileInEditor';
 import { usePanelStore } from '../../../stores/panelStore';
-import { parseUnifiedDiffToFiles } from './diffSource';
-import type { EditorDiffRef } from '../../../../../shared/types/panels';
+import { ChangesTree } from './ChangesTree';
+import { buildChangesTree, compactChains, defaultExpanded, reconcileExpanded, revealPath, type ChangesTreeNode } from './changesTreeModel';
+import { editorDiffRefForFile, isMutableScope, normalizeEditorDiffRef, sameScope, scopeKey, scopeLabel } from './diffScope';
 import { clearPendingViewCommit, takePendingViewCommit } from './pendingViewCommit';
-import { useCommittedRef } from '../../../hooks/useCommittedRef';
 
 const HISTORY_LIMIT = 50;
-
 const SIDEBAR_STORAGE_KEY = 'diff-panel-sidebar-width';
 const DEFAULT_SIDEBAR_WIDTH = 300;
 const MIN_SIDEBAR_WIDTH = 150;
 const MAX_SIDEBAR_WIDTH = 600;
+const SESSION_SCOPE: DiffScope = { kind: 'session' };
+const NO_EXPANSION: ReadonlySet<string> = new Set();
 
-type CommitDiffLoadResult =
-  | { success: true; data: GitDiffResult }
-  | { success: false; error: string };
+export interface CombinedDiffViewHandle { refresh: () => void }
 
-async function loadCommitDiff(sessionId: string, commitHash: string): Promise<CommitDiffLoadResult> {
-  try {
-    const response = await API.sessions.getCommitDiffByHash(sessionId, commitHash);
-    if (!response.success) {
-      return { success: false, error: response.error ?? 'Failed to load commit diff' };
-    }
-    return { success: true, data: response.data };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Failed to load commit diff',
-    };
-  }
-}
+/** One loaded scope: the request-side scope, its manifest, and the tree derived from it exactly once. */
+interface LoadedScope { key: string; scope: DiffScope; manifest: DiffManifest; tree: ChangesTreeNode }
 
-// --- CombinedDiffView ---
+const loadScope = (key: string, scope: DiffScope, manifest: DiffManifest): LoadedScope =>
+  ({ key, scope, manifest, tree: compactChains(buildChangesTree(manifest.files)) });
 
-export interface CombinedDiffViewHandle {
-  refresh: () => void;
-}
-
-const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffViewProps>(({
+const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffViewProps>(function CombinedDiffView({
   sessionId,
-  selectedExecutions: initialSelected,
   isGitOperationRunning = false,
   isMainRepo = false,
   isVisible = true,
-}, ref) => {
+}, ref) {
   const [executions, setExecutions] = useState<ExecutionDiff[]>([]);
-  const [selectedExecutions, setSelectedExecutions] = useState<number[]>(initialSelected);
-  const [lastSessionId, setLastSessionId] = useState<string>(sessionId);
-  const [combinedDiff, setCombinedDiff] = useState<GitDiffResult | null>(null);
+  // The mount site keys this component by session, so per-session state starts fresh on a switch.
+  const [scope, setScope] = useState<DiffScope>(SESSION_SCOPE);
+  const [display, setDisplay] = useState<LoadedScope | null>(null);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null);
   const [executionsLoading, setExecutionsLoading] = useState(false);
-  const [diffLoading, setDiffLoading] = useState(false);
-  const [commitDiffLoading, setCommitDiffLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [viewingCommitHash, setViewingCommitHash] = useState<string | null>(null);
-
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [showCommitDialog, setShowCommitDialog] = useState(false);
-  const [mainBranch, setMainBranch] = useState<string>('main');
+  const [mainBranch, setMainBranch] = useState('main');
   const [historySource, setHistorySource] = useState<'remote' | 'local' | 'branch'>(isMainRepo ? 'remote' : 'branch');
-  const [executionRefreshNonce, setExecutionRefreshNonce] = useState<number>(0);
-
-  // Diff cache: keyed by sessionId + sorted selection
-  const diffCacheRef = useRef<Map<string, { diff: GitDiffResult; parsedFiles: FileDiff[] }>>(new Map());
-  const executionsRequestIdRef = useRef(0);
-  const combinedDiffRequestIdRef = useRef(0);
-  const commitDiffRequestIdRef = useRef(0);
-  const executionsRef = useCommittedRef(executions);
-  const selectedExecutionsRef = useCommittedRef(selectedExecutions);
-  const viewingCommitHashRef = useCommittedRef(viewingCommitHash);
-  const mountedRef = useRef(true);
-
-  // Resizable sidebar state
-  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+  const [expandedByScope, setExpandedByScope] = useState<Record<string, Set<string>>>({});
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-    if (stored) {
-      const width = parseInt(stored, 10);
-      if (!isNaN(width) && width >= MIN_SIDEBAR_WIDTH && width <= MAX_SIDEBAR_WIDTH) {
-        return width;
-      }
-    }
-    return DEFAULT_SIDEBAR_WIDTH;
+    const width = stored ? Number.parseInt(stored, 10) : Number.NaN;
+    return Number.isNaN(width) || width < MIN_SIDEBAR_WIDTH || width > MAX_SIDEBAR_WIDTH
+      ? DEFAULT_SIDEBAR_WIDTH
+      : width;
   });
   const [isResizing, setIsResizing] = useState(false);
+  const scopeCache = useRef(new Map<string, LoadedScope>());
+  // Survives refresh eviction so a refetched mutable scope can reconcile its expansion state.
+  const lastTreeByKey = useRef(new Map<string, ChangesTreeNode>());
+  const requestId = useRef(0);
+  const executionRequestId = useRef(0);
 
+  const key = `${sessionId}:${scopeKey(scope)}`;
+  const expanded = useMemo(() => expandedByScope[key] ?? NO_EXPANSION, [expandedByScope, key]);
+  const visible = display?.key === key ? display : null;
+  const visibleManifest = visible?.manifest ?? null;
+  const loading = loadingKey === key || (visible === null && error === null);
 
-  const isAnyLoading = executionsLoading || diffLoading || commitDiffLoading;
-  const showInitialSkeleton = executionsLoading && executions.length === 0;
-  const showDiffSkeleton = (diffLoading || commitDiffLoading) && combinedDiff === null;
+  // Only a diff tab whose scope matches the tree's scope counts as the active file.
+  const activeDiffPath = usePanelStore((state) => {
+    const activeId = state.activePanels[sessionId];
+    const active = (state.panels[sessionId] || []).find(panel => panel.id === activeId);
+    const editor = active ? editorPanelState(active) : undefined;
+    if (!editor?.diff) return null;
+    const normalized = normalizeEditorDiffRef(editor.diff);
+    return normalized && sameScope(normalized.scope, scope) ? editor.filePath : null;
+  });
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
+  const refresh = useCallback(() => {
+    for (const [cacheKey, cached] of scopeCache.current) {
+      if (isMutableScope(cached.scope)) scopeCache.current.delete(cacheKey);
+    }
+    requestId.current += 1;
+    setRefreshNonce(value => value + 1);
   }, []);
 
-  // Save sidebar width to localStorage
+  useImperativeHandle(ref, () => ({ refresh }), [refresh]);
+
+  // Reveal the active file when it or the scope changes — not on every expansion change,
+  // so a folder the user collapses around the open file stays collapsed.
+  // Focus returning to the tree reveals explicitly, bypassing that guard.
+  const revealedFor = useRef<string | null>(null);
+  const revealActiveFile = useCallback(() => {
+    if (!activeDiffPath || !visible) return;
+    const revealed = revealPath(expanded, visible.tree, activeDiffPath);
+    if (revealed.size !== expanded.size) setExpandedByScope(previous => ({ ...previous, [key]: revealed }));
+  }, [activeDiffPath, expanded, key, visible]);
+  useEffect(() => {
+    if (!activeDiffPath || !visible) {
+      revealedFor.current = null;
+      return;
+    }
+    const token = `${key}\0${activeDiffPath}`;
+    if (revealedFor.current === token) return;
+    revealedFor.current = token;
+    revealActiveFile();
+  }, [activeDiffPath, key, revealActiveFile, visible]);
+
   useEffect(() => {
     localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  // Handle resize mouse events
   useEffect(() => {
     if (!isResizing) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
+    const handleMouseMove = (event: MouseEvent) => {
       const container = document.querySelector('.combined-diff-view');
       if (!container) return;
-      const containerRect = container.getBoundingClientRect();
-      const newWidth = e.clientX - containerRect.left;
-      const constrainedWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth));
-      setSidebarWidth(constrainedWidth);
+      const bounds = container.getBoundingClientRect();
+      const width = event.clientX - bounds.left;
+      // Never persist a width the current host cannot show beside a 240px tree.
+      const available = Math.min(MAX_SIDEBAR_WIDTH, bounds.width - 240);
+      setSidebarWidth(Math.max(MIN_SIDEBAR_WIDTH, Math.min(available, width)));
     };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
+    const handleMouseUp = () => setIsResizing(false);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-
     return () => {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
@@ -136,590 +134,196 @@ const CombinedDiffView = memo(forwardRef<CombinedDiffViewHandle, CombinedDiffVie
     };
   }, [isResizing]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleResizeStart = useCallback((event: ReactMouseEvent) => {
+    event.preventDefault();
     setIsResizing(true);
   }, []);
 
-  // Load git commands to get main branch
   useEffect(() => {
-    const loadGitCommands = async () => {
-      try {
-        const response = await API.sessions.getGitCommands(sessionId);
-        if (response.success && response.data) {
-          const baseBranch = response.data.originBranch || response.data.comparisonBaseBranch || 'main';
-          setMainBranch(baseBranch);
-          if (isMainRepo) {
-            setHistorySource(response.data.originBranch ? 'remote' : 'local');
-          }
-        }
-      } catch (err) {
-        console.error('Failed to load git commands:', err);
-      }
-    };
+    let cancelled = false;
+    void API.sessions.getGitCommands(sessionId).then(response => {
+      if (cancelled) return;
+      if (!response.success || !response.data) return;
+      const branch = response.data.originBranch || response.data.comparisonBaseBranch || 'main';
+      setMainBranch(branch);
+      if (isMainRepo) setHistorySource(response.data.originBranch ? 'remote' : 'local');
+    }).catch(cause => {
+      if (!cancelled) console.error('Failed to load git commands:', cause);
+    });
+    return () => { cancelled = true; };
+  }, [isMainRepo, sessionId]);
 
-    loadGitCommands();
-  }, [sessionId, isMainRepo]);
-
-  // Reset selection when session changes
   useEffect(() => {
-    if (sessionId !== lastSessionId) {
-      setSelectedExecutions([]);
-      setViewingCommitHash(null);
-      setLastSessionId(sessionId);
-      setCombinedDiff(null);
-      setExecutions([]);
-      setExecutionsLoading(false);
-      setDiffLoading(false);
-      setCommitDiffLoading(false);
-      setHistorySource(isMainRepo ? 'remote' : 'branch');
-      diffCacheRef.current.clear();
-      executionsRequestIdRef.current += 1;
-      combinedDiffRequestIdRef.current += 1;
-      commitDiffRequestIdRef.current += 1;
-    }
-  }, [sessionId, lastSessionId, isMainRepo]);
-
-  const getDefaultSelection = useCallback((data: ExecutionDiff[]) => {
-    const allCommitIds = data
-      .filter((exec: ExecutionDiff) => exec.id !== 0)
-      .map((exec: ExecutionDiff) => exec.id);
-
-    if (allCommitIds.length > 0) {
-      return [allCommitIds[allCommitIds.length - 1], allCommitIds[0]];
-    }
-
-    return data.map((exec: ExecutionDiff) => exec.id);
-  }, []);
-
-  const getSelectedHashes = useCallback((data: ExecutionDiff[], selection: number[]) => {
-    const executionById = new Map(data.map(exec => [exec.id, exec]));
-    return selection
-      .map(id => executionById.get(id)?.after_commit_hash)
-      .filter((hash): hash is string => Boolean(hash));
-  }, []);
-
-  const reconcileSelection = useCallback((data: ExecutionDiff[], selectedHashes: string[]) => {
-    if (selectedHashes.length === 0) {
-      return getDefaultSelection(data);
-    }
-
-    const executionByHash = new Map(data.map(exec => [exec.after_commit_hash, exec]));
-    const reconciled = selectedHashes
-      .map(hash => executionByHash.get(hash)?.id)
-      .filter((id): id is number => id !== undefined);
-
-    return reconciled.length > 0 ? reconciled : getDefaultSelection(data);
-  }, [getDefaultSelection]);
-
-  // Shared logic to process loaded executions
-  const processExecutions = useCallback((data: ExecutionDiff[]) => {
-    setError(null);
-    setExecutions(data);
-
-    if (data.length > 0) {
-      const metadata = data.find(exec => exec.comparison_branch || exec.history_source) || data[0];
-      if (metadata?.comparison_branch) {
-        setMainBranch(metadata.comparison_branch);
-      }
-      if (metadata?.history_source) {
-        setHistorySource(metadata.history_source);
-      } else {
-        setHistorySource(isMainRepo ? 'remote' : 'branch');
-      }
-    } else {
-      setHistorySource(prev => {
-        if (isMainRepo) {
-          return prev;
-        }
-        return 'branch';
-      });
-    }
-  }, [isMainRepo]);
-
-  const refreshExecutions = useCallback(async ({ preserveSelection }: { preserveSelection: boolean }) => {
     if (!isVisible) return;
+    const owned = ++executionRequestId.current;
+    setExecutionsLoading(true);
+    void API.sessions.getExecutions(sessionId).then(response => {
+      if (owned !== executionRequestId.current) return;
+      if (!response.success) throw new Error(response.error || 'Failed to load commits');
+      const data: ExecutionDiff[] = response.data ?? [];
+      setExecutions(data);
+      const metadata = data.find(execution => execution.comparison_branch || execution.history_source) ?? data[0];
+      if (metadata?.comparison_branch) setMainBranch(metadata.comparison_branch);
+      if (metadata?.history_source) setHistorySource(metadata.history_source);
+    }).catch(cause => {
+      if (owned === executionRequestId.current) setError(cause instanceof Error ? cause.message : 'Failed to load commits');
+    }).finally(() => {
+      if (owned === executionRequestId.current) setExecutionsLoading(false);
+    });
+  }, [isVisible, refreshNonce, sessionId]);
 
-    const requestId = ++executionsRequestIdRef.current;
-    const selectedHashes = getSelectedHashes(executionsRef.current, selectedExecutionsRef.current);
-    const shouldAutoSelect = selectedExecutionsRef.current.length === 0 && !viewingCommitHashRef.current;
-
-    try {
-      setExecutionsLoading(true);
-      const response = await API.sessions.getExecutions(sessionId);
-
-      if (!mountedRef.current || requestId !== executionsRequestIdRef.current) return;
-
-      if (!response.success) {
-        throw new Error(response.error || 'Failed to load executions');
-      }
-
-      const data: ExecutionDiff[] = response.data || [];
-      processExecutions(data);
-
-      if (!viewingCommitHashRef.current) {
-        if (data.length > 0) {
-          if (preserveSelection) {
-            setSelectedExecutions(reconcileSelection(data, selectedHashes));
-          } else if (shouldAutoSelect) {
-            setSelectedExecutions(getDefaultSelection(data));
-          }
-        } else {
-          setSelectedExecutions([]);
-          setCombinedDiff(null);
-        }
-      }
-    } catch (err) {
-      if (mountedRef.current && requestId === executionsRequestIdRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load executions');
-      }
-    } finally {
-      const ownsLoadingState = mountedRef.current && requestId === executionsRequestIdRef.current;
-      setExecutionsLoading(current => ownsLoadingState ? false : current);
-    }
-  }, [
-    executionsRef,
-    getDefaultSelection,
-    getSelectedHashes,
-    isVisible,
-    processExecutions,
-    reconcileSelection,
-    selectedExecutionsRef,
-    sessionId,
-    viewingCommitHashRef,
-  ]);
-
-  const triggerSoftRefresh = useCallback(() => {
-    diffCacheRef.current.clear();
-    commitDiffRequestIdRef.current += 1;
-    combinedDiffRequestIdRef.current += 1;
-    setViewingCommitHash(null);
-    setExecutionRefreshNonce(prev => prev + 1);
-  }, []);
-
-  // Expose refresh() to parent (DiffPanel) via ref.
-  // Same-session refresh keeps current diff visible while refreshed data loads.
-  useImperativeHandle(ref, () => ({
-    refresh: triggerSoftRefresh
-  }), [triggerSoftRefresh]);
-
-  // Listen for commit-click events dispatched from GitHistoryGraph via SessionView.
-  // Also check the module-level pendingViewCommit on mount — the event may have
-  // fired while this component was unmounted (non-active panels are not rendered).
   useEffect(() => {
-    // Consume any pending hash written before this component mounted
-    const pendingCommitHash = takePendingViewCommit(sessionId);
-    if (pendingCommitHash !== null) {
-      combinedDiffRequestIdRef.current += 1;
-      setViewingCommitHash(pendingCommitHash);
-      setSelectedExecutions([]);
-    }
-
+    const pending = takePendingViewCommit(sessionId);
+    if (pending !== null) setScope(pending === 'index' ? { kind: 'working-tree' } : { kind: 'commit', hash: pending });
     const handler = (event: Event) => {
-      // SAFETY: The registered DOM/custom-event source establishes this target and detail shape.
-      const { sessionId: eventSessionId, commitHash } = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
-      if (eventSessionId !== sessionId) return;
-      combinedDiffRequestIdRef.current += 1;
-      setViewingCommitHash(commitHash);
-      setSelectedExecutions([]);
+      // SAFETY: This listener is registered only for the app-owned diff:view-commit event.
+      const detail = (event as CustomEvent<{ sessionId: string; commitHash: string }>).detail;
+      if (detail.sessionId !== sessionId) return;
+      setScope(detail.commitHash === 'index' ? { kind: 'working-tree' } : { kind: 'commit', hash: detail.commitHash });
       clearPendingViewCommit();
     };
     window.addEventListener('diff:view-commit', handler);
     return () => window.removeEventListener('diff:view-commit', handler);
-  }, [sessionId]);
+  }, [sessionId, setScope]);
 
-  // Load diff when viewingCommitHash changes
-  useEffect(() => {
-    if (!viewingCommitHash) return;
-    const requestId = ++commitDiffRequestIdRef.current;
-    let cancelled = false;
-    setCommitDiffLoading(true);
-    setError(null);
-    void loadCommitDiff(sessionId, viewingCommitHash)
-      .then(result => {
-        if (cancelled || requestId !== commitDiffRequestIdRef.current) return;
-        if (result.success) {
-          setCombinedDiff(result.data);
-        } else {
-          setError(result.error);
-          setCombinedDiff(null);
-        }
-      })
-      .finally(() => {
-        const ownsLoadingState = !cancelled && requestId === commitDiffRequestIdRef.current;
-        setCommitDiffLoading(current => ownsLoadingState ? false : current);
-      });
-    return () => { cancelled = true; };
-  }, [viewingCommitHash, sessionId]);
-
-  // Load executions for the session (skip when panel is not visible)
   useEffect(() => {
     if (!isVisible) return;
+    const owned = ++requestId.current;
+    const cached = scopeCache.current.get(key);
+    if (cached) {
+      setDisplay(cached);
+      setLoadingKey(null);
+      setError(null);
+      return;
+    }
+    setLoadingKey(key);
+    setError(null);
+    void API.sessions.getDiffManifest(sessionId, scope).then(response => {
+      if (owned !== requestId.current) return;
+      if (!response.success || !response.data) throw new Error(response.error || 'Failed to load changes');
+      const loaded = loadScope(key, scope, response.data);
+      scopeCache.current.set(key, loaded);
+      const previousTree = lastTreeByKey.current.get(key);
+      lastTreeByKey.current.set(key, loaded.tree);
+      setDisplay(loaded);
+      setExpandedByScope(previous => ({
+        ...previous,
+        [key]: previous[key] ? reconcileExpanded(previous[key], loaded.tree, previousTree) : defaultExpanded(loaded.tree),
+      }));
+    }).catch(cause => {
+      if (owned === requestId.current) setError(cause instanceof Error ? cause.message : 'Failed to load changes');
+    }).finally(() => {
+      if (owned === requestId.current) setLoadingKey(null);
+    });
+  }, [isVisible, key, refreshNonce, scope, sessionId]);
 
-    const timeoutId = setTimeout(() => {
-      void refreshExecutions({ preserveSelection: selectedExecutionsRef.current.length > 0 });
-    }, 100);
+  const selection = useMemo((): { kind: 'all' } | { kind: 'ids'; ids: number[] } => {
+    if (scope.kind === 'session') return { kind: 'all' };
+    if (scope.kind === 'working-tree') return { kind: 'ids', ids: [0] };
+    const byHash = new Map(executions.map(execution => [execution.after_commit_hash, execution.id]));
+    if (scope.kind === 'commit') {
+      const match = executions.find(execution =>
+        execution.after_commit_hash === scope.hash || execution.after_commit_hash?.startsWith(scope.hash) === true,
+      );
+      return { kind: 'ids', ids: match ? [match.id] : [] };
+    }
+    if (scope.kind === 'commit-range') return { kind: 'ids', ids: [byHash.get(scope.olderHash), byHash.get(scope.newerHash)].filter((id): id is number => id !== undefined) };
+    return { kind: 'ids', ids: [0, byHash.get(scope.baseHash)].filter((id): id is number => id !== undefined) };
+  }, [executions, scope]);
 
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [executionRefreshNonce, isVisible, refreshExecutions, selectedExecutionsRef]);
+  const selectIds = useCallback((ids: number[]) => {
+    if (ids.length === 0) return;
+    const byId = new Map(executions.map(execution => [execution.id, execution]));
+    if (ids.length === 1) {
+      const id = ids[0];
+      if (id === 0) setScope({ kind: 'working-tree' });
+      else {
+        const hash = byId.get(id)?.after_commit_hash;
+        if (hash) setScope({ kind: 'commit', hash });
+      }
+      return;
+    }
+    if (ids.includes(0)) {
+      const commitId = ids.find(id => id !== 0);
+      const hash = commitId === undefined ? undefined : byId.get(commitId)?.after_commit_hash;
+      if (hash) setScope({ kind: 'working-tree-range', baseHash: hash });
+      return;
+    }
+    const olderId = Math.max(...ids);
+    const newerId = Math.min(...ids);
+    const olderHash = byId.get(olderId)?.after_commit_hash;
+    const newerHash = byId.get(newerId)?.after_commit_hash;
+    if (olderHash && newerHash) setScope({ kind: 'commit-range', olderHash, newerHash });
+  }, [executions, setScope]);
 
-  // Keep refs to avoid stale closures in event handlers
-  const executionsLengthRef = useCommittedRef(executions.length);
-
-  // Load combined diff when selection changes (with caching)
-  useEffect(() => {
-    if (viewingCommitHash) return;
-    const requestId = ++combinedDiffRequestIdRef.current;
-    let cancelled = false;
-
-    const timeoutId = setTimeout(() => {
-      const loadCombinedDiff = async () => {
-        if (selectedExecutions.length === 0) {
-          setCombinedDiff(null);
-          return;
-        }
-
-        // Check cache first
-        const cacheKey = `${sessionId}-${JSON.stringify(selectedExecutions.slice().sort((a, b) => a - b))}`;
-        const cached = diffCacheRef.current.get(cacheKey);
-        if (cached) {
-          setCombinedDiff(cached.diff);
-          setDiffLoading(false);
-          setError(null);
-          return;
-        }
-
-        try {
-          setDiffLoading(true);
-          setError(null);
-
-          let response;
-          if (selectedExecutions.length === 1) {
-            if (selectedExecutions[0] === 0) {
-              response = await API.sessions.getCombinedDiff(sessionId, [0]);
-            } else {
-              response = await API.sessions.getCombinedDiff(sessionId, [selectedExecutions[0], selectedExecutions[0]]);
-            }
-          } else if (selectedExecutions.length === executionsLengthRef.current) {
-            response = await API.sessions.getCombinedDiff(sessionId);
-          } else {
-            response = await API.sessions.getCombinedDiff(sessionId, selectedExecutions);
-          }
-
-          if (cancelled || requestId !== combinedDiffRequestIdRef.current) return;
-
-          if (!response.success) {
-            throw new Error(response.error || 'Failed to load combined diff');
-          }
-
-          const data = response.data;
-          setCombinedDiff(data);
-
-          // Store in cache
-          if (data) {
-            const parsedFiles = parseUnifiedDiffToFiles(data.diff);
-            diffCacheRef.current.set(cacheKey, { diff: data, parsedFiles });
-          }
-        } catch (err) {
-          if (!cancelled && requestId === combinedDiffRequestIdRef.current) {
-            setError(err instanceof Error ? err.message : 'Failed to load combined diff');
-          }
-        } finally {
-          const ownsLoadingState = !cancelled && requestId === combinedDiffRequestIdRef.current;
-          setDiffLoading(current => ownsLoadingState ? false : current);
-        }
-      };
-
-      loadCombinedDiff();
-    }, 100);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [executionsLengthRef, selectedExecutions, sessionId, viewingCommitHash]);
-
-  const handleSelectionChange = (newSelection: number[]) => {
-    commitDiffRequestIdRef.current += 1;
-    setViewingCommitHash(null); // exit hash mode
-    setSelectedExecutions(newSelection);
-  };
-
-  const handleManualRefresh = () => {
-    triggerSoftRefresh();
-  };
+  const handleFileOpen = useCallback((file: ChangedFileSummary, pin: boolean) => {
+    void openFileInEditor({ sessionId, filePath: file.path, pin, diff: editorDiffRefForFile(scope, file) });
+  }, [scope, sessionId]);
 
   const handleCommit = useCallback(async (message: string) => {
-    const result = await window.electronAPI.invoke('git:commit', {
-      sessionId,
-      message
-    });
-
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to commit changes');
-    }
-
-    // Invalidate cache and reload to reflect the new commit
-    triggerSoftRefresh();
-  }, [sessionId, triggerSoftRefresh]);
+    const response = await window.electronAPI.invoke('git:commit', { sessionId, message });
+    if (!response.success) throw new Error(response.error || 'Failed to commit changes');
+    refresh();
+  }, [refresh, sessionId]);
 
   const handleRevert = useCallback(async (commitHash: string) => {
-    if (!window.confirm(`Are you sure you want to revert commit ${commitHash.substring(0, 7)}? This will create a new commit that undoes the changes.`)) {
-      return;
-    }
-
-    try {
-      const result = await window.electronAPI.invoke('git:revert', {
-        sessionId,
-        commitHash
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to revert commit');
-      }
-
-      triggerSoftRefresh();
-    } catch (err) {
-      console.error('Error reverting commit:', err);
-      alert(`Failed to revert commit: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }, [sessionId, triggerSoftRefresh]);
-
-  const limitReached = useMemo(
-    () => executions.some(exec => exec.history_limit_reached),
-    [executions]
-  );
-
-  // Parse files from diff for DiffViewer
-  const parsedFiles = useMemo(() => {
-    if (!combinedDiff?.diff) return [];
-    return parseUnifiedDiffToFiles(combinedDiff.diff);
-  }, [combinedDiff]);
+    if (!window.confirm(`Revert commit ${commitHash.slice(0, 7)}?`)) return;
+    const response = await window.electronAPI.invoke('git:revert', { sessionId, commitHash });
+    if (!response.success) throw new Error(response.error || 'Failed to revert commit');
+    refresh();
+  }, [refresh, sessionId]);
 
   const handleRestore = useCallback(async () => {
-    if (!window.confirm('Are you sure you want to restore all uncommitted changes? This will discard all your local modifications.')) {
-      return;
-    }
+    if (!window.confirm('Restore all uncommitted changes?')) return;
+    const response = await window.electronAPI.invoke('git:restore', { sessionId });
+    if (!response.success) throw new Error(response.error || 'Failed to restore changes');
+    refresh();
+  }, [refresh, sessionId]);
 
-    try {
-      const result = await window.electronAPI.invoke('git:restore', {
-        sessionId
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to restore changes');
-      }
-
-      triggerSoftRefresh();
-    } catch (err) {
-      console.error('Error restoring changes:', err);
-      alert(`Failed to restore changes: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }, [sessionId, triggerSoftRefresh]);
-
-  // The diff ref the tab will re-fetch by; mirrors the request made above.
-  const currentDiffRef = useMemo<EditorDiffRef>(() => {
-    if (viewingCommitHash) return { kind: 'commit', hash: viewingCommitHash };
-    if (selectedExecutions.length === 1) {
-      return selectedExecutions[0] === 0
-        ? { kind: 'range', executionIds: [0] }
-        : { kind: 'range', executionIds: [selectedExecutions[0], selectedExecutions[0]] };
-    }
-    if (selectedExecutions.length === executions.length) return { kind: 'range' };
-    return { kind: 'range', executionIds: selectedExecutions };
-  }, [viewingCommitHash, selectedExecutions, executions.length]);
-
-  const handleFileOpen = useCallback((file: FileDiff, pin: boolean) => {
-    void openFileInEditor({ sessionId, filePath: file.path, pin, diff: currentDiffRef });
-  }, [sessionId, currentDiffRef]);
-
-  const activeDiffPath = usePanelStore((state) => {
-    const activeId = state.activePanels[sessionId];
-    const active = (state.panels[sessionId] || []).find((panel) => panel.id === activeId);
-    const editorState = active ? editorPanelState(active) : undefined;
-    return editorState?.diff ? editorState.filePath : null;
-  });
-
-  if (showInitialSkeleton) {
-    return (
-      <div className="flex flex-col h-full animate-pulse">
-        {/* Header skeleton */}
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
-          <div className="h-3 w-24 bg-surface-tertiary rounded" />
-          <div className="h-3.5 w-3.5 bg-surface-tertiary rounded" />
-        </div>
-        <div className="flex-1 flex min-h-0">
-          {/* Sidebar skeleton */}
-          <div className="w-52 border-r border-border-primary bg-surface-secondary p-2 space-y-2">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="h-10 bg-surface-tertiary rounded" />
-            ))}
-          </div>
-          {/* Diff area skeleton */}
-          <div className="flex-1 p-4 space-y-3">
-            <div className="h-4 w-48 bg-surface-tertiary rounded" />
-            <div className="h-3 w-full bg-surface-tertiary rounded" />
-            <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
-            <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
-            <div className="h-3 w-2/3 bg-surface-tertiary rounded" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error && executions.length === 0 && combinedDiff === null) {
-    return (
-      <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded">
-        <h3 className="font-medium mb-2">Error</h3>
-        <p>{error}</p>
-      </div>
-    );
-  }
+  const label = scopeLabel(scope, { ref: visibleManifest?.resolvedBase.ref });
+  const historyLabel = isMainRepo ? (historySource === 'local' ? 'Local commits' : mainBranch) : null;
+  const headerLabel = historyLabel ? `${historyLabel} · ${label}` : label;
+  const busy = loading || executionsLoading || isGitOperationRunning;
+  const historyLimitReached = executions.some(execution => execution.history_limit_reached);
+  const emptyMessage = isMainRepo && executions.length === 0
+    ? historySource === 'remote'
+      ? `No commits ahead of ${mainBranch}`
+      : 'Origin remote not found; showing recent local commits'
+    : 'No changes to review';
 
   return (
-    <div className="combined-diff-view flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-primary bg-surface-secondary">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-medium text-text-secondary truncate">
-            {isMainRepo
-              ? historySource === 'local'
-                ? 'Local commits'
-                : mainBranch
-              : 'Changes'}
-          </span>
-          {combinedDiff && (
-            <div className="flex items-center gap-2 text-xs flex-shrink-0">
-              <span className="text-status-success font-semibold">+{combinedDiff.stats.additions}</span>
-              <span className="text-status-error font-semibold">-{combinedDiff.stats.deletions}</span>
-              <span className="text-text-muted">{combinedDiff.stats.filesChanged}f</span>
-            </div>
-          )}
-          {isGitOperationRunning && (
-            <RefreshCw className="w-3 h-3 text-interactive animate-spin flex-shrink-0" />
-          )}
+    <div className="combined-diff-view flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-border-primary bg-surface-secondary px-3 py-1.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-xs font-medium text-text-secondary">{headerLabel}</span>
+          {visibleManifest && <div className="flex flex-shrink-0 items-center gap-2 text-xs"><span className="font-semibold text-status-success">+{visibleManifest.stats.additions}</span><span className="font-semibold text-status-error">-{visibleManifest.stats.deletions}</span><span className="text-text-muted">{visibleManifest.stats.filesChanged}f</span></div>}
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <button
-            onClick={handleManualRefresh}
-            className="p-1 rounded hover:bg-surface-hover transition-colors"
-            title="Refresh"
-            disabled={isAnyLoading}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 text-text-tertiary ${isAnyLoading ? 'animate-spin' : ''}`} />
-          </button>
-        </div>
+        <button type="button" onClick={refresh} disabled={busy} className="rounded p-1 hover:bg-surface-hover" title="Refresh"><RefreshCw className={`h-3.5 w-3.5 text-text-tertiary ${busy ? 'animate-spin' : ''}`} /></button>
       </div>
-
-      <div className="pane-review-split flex-1 flex min-h-0">
-        {/* Commits selection sidebar */}
-            <div
-              className="pane-review-list border-r border-border-primary bg-surface-secondary overflow-hidden flex flex-col flex-shrink-0"
-              style={{ width: sidebarWidth }}
-            >
-              {/* Execution list */}
-              <div className="h-full">
-                <ExecutionList
-                  sessionId={sessionId}
-                  executions={executions}
-                  selectedExecutions={selectedExecutions}
-                  onSelectionChange={handleSelectionChange}
-                  onCommit={() => setShowCommitDialog(true)}
-                  onRevert={handleRevert}
-                  onRestore={handleRestore}
-                  historyLimitReached={limitReached}
-                  historyLimit={HISTORY_LIMIT}
-                />
-              </div>
-            </div>
-
-            {/* Resize handle */}
-            <div
-              className="pane-review-handle w-1 cursor-col-resize flex-shrink-0 bg-transparent"
-              onMouseDown={handleResizeStart}
-              title="Drag to resize sidebar"
-            />
-        {/* Diff preview */}
-        <div className="flex-1 overflow-auto bg-bg-primary min-w-0 flex flex-col">
+      <div className="pane-review-split flex min-h-0 flex-1">
+        <div className="pane-review-list flex flex-shrink-0 flex-col overflow-hidden border-r border-border-primary bg-surface-secondary" style={{ width: sidebarWidth }}>
+          <ExecutionList sessionId={sessionId} executions={executions} selection={selection} onSelectAll={() => setScope({ kind: 'session' })} onSelectionChange={selectIds} onCommit={() => setShowCommitDialog(true)} onRevert={handleRevert} onRestore={handleRestore} historyLimitReached={historyLimitReached} historyLimit={HISTORY_LIMIT} />
+        </div>
+        <div className="pane-review-handle w-1 flex-shrink-0 cursor-col-resize bg-transparent" onMouseDown={handleResizeStart} title="Drag to resize sidebar" />
+        <div className="diff-panel flex min-w-0 flex-1 flex-col overflow-hidden bg-bg-primary">
           {isGitOperationRunning ? (
-            <div className="flex flex-col items-center justify-center h-full p-8">
-              <svg className="animate-spin h-12 w-12 text-interactive mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              <div className="text-text-secondary text-center">
+            <div className="flex h-full flex-col items-center justify-center p-8">
+              <RefreshCw className="mb-4 h-12 w-12 animate-spin text-interactive" />
+              <div className="text-center text-text-secondary">
                 <p className="font-medium">Git operation in progress</p>
-                <p className="text-sm text-text-tertiary mt-1">Please wait while the operation completes...</p>
+                <p className="mt-1 text-sm text-text-tertiary">Please wait while the operation completes...</p>
               </div>
             </div>
-          ) : showDiffSkeleton ? (
-            <div className="animate-pulse p-4 space-y-3">
-              <div className="h-4 w-48 bg-surface-tertiary rounded" />
-              <div className="h-3 w-full bg-surface-tertiary rounded" />
-              <div className="h-3 w-3/4 bg-surface-tertiary rounded" />
-              <div className="h-3 w-5/6 bg-surface-tertiary rounded" />
-            </div>
-          ) : combinedDiff ? (
-            <DiffViewer
-              files={parsedFiles}
-              sessionId={sessionId}
-              className="h-full"
-              activePath={activeDiffPath}
-              onFileOpen={handleFileOpen}
-            />
-          ) : error ? (
-            <div className="p-4 text-status-error bg-status-error/10 border border-status-error/30 rounded m-4">
-              <h3 className="font-medium mb-2">Error loading diff</h3>
-              <p>{error}</p>
-            </div>
-          ) : executions.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-text-secondary">
-              <div className="text-center space-y-2">
-                <p>
-                  {isMainRepo
-                    ? historySource === 'remote'
-                      ? `No commits ahead of ${mainBranch}`
-                      : 'Origin remote not found; showing recent local commits'
-                    : 'No changes to review'}
-                </p>
-                {isMainRepo && historySource === 'remote' && (
-                  <p className="text-sm text-text-tertiary">
-                    Create new commits to see them here.
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-32 text-text-secondary">
-              Select commits to view changes
-            </div>
-          )}
+          ) : loading && !visibleManifest ? <div className="animate-pulse p-4 text-sm text-text-secondary">Loading {label}…</div>
+            : error ? <div role="alert" className="m-4 rounded border border-status-error/30 bg-status-error/10 p-4 text-sm text-status-error">{error}</div>
+              : visible && visible.manifest.files.length > 0 ? <ChangesTree sessionId={sessionId} tree={visible.tree} scopeKey={scopeKey(scope)} activePath={activeDiffPath} expanded={expanded} onExpandedChange={next => setExpandedByScope(previous => ({ ...previous, [key]: next }))} onRevealActive={revealActiveFile} onFileOpen={handleFileOpen} />
+                : <div className="flex h-full items-center justify-center text-sm text-text-secondary"><div className="space-y-2 text-center"><p>{emptyMessage}</p>{isMainRepo && historySource === 'remote' && <p className="text-sm text-text-tertiary">Create new commits to see them here.</p>}</div></div>}
         </div>
       </div>
-
-      {/* Commit Dialog */}
-      <CommitDialog
-        isOpen={showCommitDialog}
-        onClose={() => setShowCommitDialog(false)}
-        onCommit={handleCommit}
-        fileCount={combinedDiff?.stats.filesChanged || 0}
-      />
+      <CommitDialog isOpen={showCommitDialog} onClose={() => setShowCommitDialog(false)} onCommit={handleCommit} fileCount={visibleManifest?.stats.filesChanged ?? 0} />
     </div>
   );
-}), (prevProps, nextProps) => {
-  return (
-    prevProps.sessionId === nextProps.sessionId &&
-    prevProps.isGitOperationRunning === nextProps.isGitOperationRunning &&
-    prevProps.isMainRepo === nextProps.isMainRepo &&
-    prevProps.isVisible === nextProps.isVisible &&
-    prevProps.selectedExecutions.length === nextProps.selectedExecutions.length &&
-    prevProps.selectedExecutions.every((val, idx) => val === nextProps.selectedExecutions[idx])
-  );
-});
+}));
 
 CombinedDiffView.displayName = 'CombinedDiffView';
-
 export default CombinedDiffView;

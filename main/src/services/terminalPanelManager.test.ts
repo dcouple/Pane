@@ -20,6 +20,7 @@ type TerminalUnderTest = {
     resume: ReturnType<typeof vi.fn>;
     resize: ReturnType<typeof vi.fn>;
     write: ReturnType<typeof vi.fn>;
+    kill: ReturnType<typeof vi.fn>;
   };
   isPtyHost: boolean;
   panelId: string;
@@ -93,6 +94,12 @@ type AgentSessionCaptureAccess = {
   saveTerminalState(panelId: string): Promise<void>;
 };
 
+type DestroyAllAccess = {
+  terminals: Map<string, TerminalUnderTest>;
+  destroyAllTerminals(): void;
+  flushOutputBuffer(terminal: TerminalUnderTest): void;
+};
+
 type ShellPromptSchedulerAccess = {
   scheduleAfterShellPrompt(ptyProcess: TerminalUnderTest['pty'] & {
     onData(listener: (data: string) => void): { dispose(): void };
@@ -128,6 +135,7 @@ function createTerminal(overrides: Partial<TerminalUnderTest> = {}): TerminalUnd
       resume: vi.fn(),
       resize: vi.fn(),
       write: vi.fn(),
+      kill: vi.fn(),
     },
     isPtyHost: false,
     panelId: 'panel-1',
@@ -1044,5 +1052,39 @@ describe('TerminalPanelManager agent session capture', () => {
       }),
     });
     disposeFlowControlRecord(terminal.flowControl);
+  });
+});
+
+describe('TerminalPanelManager destroyAllTerminals', () => {
+  afterEach(() => {
+    vi.mocked(panelManager.getPanel).mockReset();
+    vi.mocked(panelManager.updatePanel).mockReset();
+  });
+
+  it('kills every PTY even when one terminal fails to flush', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const manager = testAccess<DestroyAllAccess>(new TerminalPanelManager());
+    const doomed = createTerminal({ panelId: 'panel-throws' });
+    const healthy = createTerminal({ panelId: 'panel-ok' });
+    manager.terminals.set(doomed.panelId, doomed);
+    manager.terminals.set(healthy.panelId, healthy);
+    // The production event-sink fanout rethrows its first subscriber error, so
+    // one destroyed webContents is enough to make this throw during quit.
+    vi.spyOn(manager, 'flushOutputBuffer').mockImplementation((terminal) => {
+      if (terminal.panelId === doomed.panelId) throw new Error('event sink exploded');
+    });
+
+    manager.destroyAllTerminals();
+
+    // The throwing terminal must still be killed: the map is cleared straight
+    // after this loop, so a skipped kill leaves nothing able to reclaim it.
+    expect(doomed.pty.kill).toHaveBeenCalled();
+    expect(healthy.pty.kill).toHaveBeenCalled();
+    expect(manager.terminals.size).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Final output flush failed'),
+      expect.anything(),
+    );
+    warn.mockRestore();
   });
 });

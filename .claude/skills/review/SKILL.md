@@ -39,24 +39,25 @@ Before reviewing any code, write down (internally):
 Run these checks and record results:
 
 ```bash
-npm run typecheck
+pnpm typecheck
 ```
 
 ```bash
-npm run lint
+pnpm lint
 ```
 
 If either fails, include the specific errors in the review as **must-fix** items.
 
 ## Step 3: Review the Diff
 
-Read the shared review criteria at `.claude/skills/review/CRITERIA.md`. This is the single source of truth for what to check.
+Read the shared review criteria at `.claude/skills/review/CRITERIA.md`. This is the single source of truth for what to check. Start with section 0 (Discovery) to derive the project's actual floor before applying the generic sections.
 
-For each changed file, evaluate against **all 7 sections** of the criteria. Organize findings by severity:
+For each changed file, evaluate against the criteria. Organize findings by severity:
 
 - **Sections 1-2 (Must-Fix):** Bugs, correctness, security. The PR should not merge without addressing these.
-- **Sections 3-5 (Should-Fix):** Architecture, React patterns, TypeScript. Strong recommendation to fix.
-- **Sections 6-7 (Suggestion):** Tailwind/shadcn, conventions. Nice-to-have, not blocking.
+- **Sections 3-4 (Should-Fix):** React patterns, TypeScript. Strong recommendation to fix.
+- **Section 5 (Suggestion):** Conventions. Nice-to-have, not blocking.
+- **Per-repo section:** Apply the project-specific criteria (e.g. Pane) at their stated severity.
 
 ## Step 4: Check Completeness Against Issue
 

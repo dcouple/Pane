@@ -10,6 +10,7 @@ node_modules/
 .pnpm-store/
 package-lock.json
 *.egg-info/
+__pycache__/
 
 # Build outputs
 dist/

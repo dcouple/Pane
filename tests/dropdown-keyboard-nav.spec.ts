@@ -2,7 +2,9 @@ import { test, expect, Page } from '@playwright/test';
 import { installElectronApiMock } from './electronApiMock';
 
 test.beforeEach(async ({ page }) => {
-  await installElectronApiMock(page);
+  await installElectronApiMock(page, {
+    initialConfig: { theme: 'light-rounded', appearanceMode: 'fixed' },
+  });
   // Pin a known starting theme so arrow-key movement is deterministic.
   await page.addInitScript(() => {
     localStorage.setItem('theme', 'light-rounded');

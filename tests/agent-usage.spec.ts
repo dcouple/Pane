@@ -191,7 +191,7 @@ test('Settings shows the Usage tab when Codex limits exist in transcripts', asyn
   await expect(page.getByRole('heading', { name: 'Usage', exact: true })).toBeVisible();
   const widget = page.getByRole('region', { name: 'Codex usage' });
   await expect(widget).toBeVisible();
-  await expect(widget.getByText('pro_lite', { exact: true })).toBeVisible();
+  await expect(widget.getByText('· pro_lite', { exact: true })).toBeVisible();
   await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
   await capture(page, testInfo, 'codex-usage-settings.png');
 
@@ -241,6 +241,40 @@ test('Settings Usage tab shows limits from transcript-parsed data', async ({ pag
   const widget = page.getByRole('region', { name: 'Codex usage' });
   await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
   await expect(widget.getByRole('button', { name: 'Refresh usage', exact: true })).toBeVisible();
+});
+
+test('Settings manual refresh waits for transcript indexing before reloading quota', async ({ page }) => {
+  await openSettings(page, {
+    initialProjects: [project], initialSessions: [session], initialPanels: panels,
+    initialUsageReport: usageReport, activeProjectId: project.id,
+  });
+  await page.getByRole('navigation', { name: 'Settings categories' })
+    .getByRole('button', { name: 'Usage', exact: true }).click();
+  const widget = page.getByRole('region', { name: 'Codex usage' });
+  await expect(widget.getByText('58% left', { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const usage = window.electronAPI.usage;
+    const rescan = usage.rescan;
+    const getReport = usage.getReport;
+    let indexed = false;
+    usage.rescan = async () => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      indexed = true;
+      return rescan();
+    };
+    usage.getReport = async (...args) => {
+      if (!indexed) throw new Error('Report requested before indexing completed');
+      const response = await getReport(...args);
+      if (response.data) response.data.rateLimits[0].usedPercent = 80;
+      return response;
+    };
+  });
+  const refresh = widget.getByRole('button', { name: 'Refresh usage', exact: true });
+  await refresh.click();
+  await expect(refresh).toBeDisabled();
+  await expect(widget.getByText('20% left', { exact: true })).toBeVisible();
+  await expect(refresh).toBeEnabled();
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('main-repository branch detection never renders the previous repository branch', async ({ page }) => {

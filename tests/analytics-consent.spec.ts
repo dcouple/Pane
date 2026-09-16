@@ -39,15 +39,15 @@ function parsePostHogBody(bodyText: string): CapturedPostHogEvent & { batch?: Ca
   }
 }
 
-test('declining analytics sends identified consent events and discards queued usage', async ({ page }) => {
+test('undecided installs default on and Settings discloses the one-click opt-out', async ({ page }) => {
   const identity = {
-    distinctId: 'install:install_decline_e2e',
-    installId: 'install_decline_e2e',
+    distinctId: 'install:install_default_e2e',
+    installId: 'install_default_e2e',
     identitySource: 'anonymous',
     appVersion: '2.1.2-test',
     platform: 'linux',
     electronVersion: 'test-electron',
-    webDistinctId: 'web_decline_e2e',
+    webDistinctId: 'web_default_e2e',
     webAttributionPresent: true,
     isFirstLaunch: true,
     previousVersion: null,
@@ -68,6 +68,7 @@ test('declining analytics sends identified consent events and discards queued us
 
   await installElectronApiMock(page, {
     analyticsConsentShown: false,
+    initialPreferences: { analytics_default_applied: 'false' },
     analyticsIdentity: identity,
     initialConfig: {
       analytics: {
@@ -89,24 +90,29 @@ test('declining analytics sends identified consent events and discards queued us
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  await expect(page.getByRole('dialog', { name: 'Help Improve Pane' })).toBeVisible({ timeout: 10000 });
   await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toEqual(
-    expect.arrayContaining(['consent_dialog_shown', 'app_first_opened'])
+    expect.arrayContaining(['analytics_default_enabled', 'app_first_opened'])
   );
 
-  await page.getByRole('button', { name: 'No thanks' }).click();
+  await page.getByRole('button', { name: 'Settings' }).first().click();
+  await page.getByRole('button', { name: 'Privacy', exact: true }).click();
+  await expect(page.getByText('Product analytics are on by default.')).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Allow product analytics' })).toBeChecked();
+  await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toContain('analytics_settings_disclosure_viewed');
+
+  await page.getByRole('switch', { name: 'Allow product analytics' }).click();
 
   await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toEqual(
-    expect.arrayContaining(['consent_dialog_shown', 'app_first_opened', '$create_alias', 'analytics_opted_out'])
+    expect.arrayContaining(['analytics_default_enabled', 'app_first_opened', 'analytics_settings_disclosure_viewed', 'analytics_opted_out'])
   );
+  await expect(page.getByRole('switch', { name: 'Allow product analytics' })).not.toBeChecked();
 
   const events = parseCapturedEvents(requests);
-  const consentShown = events.find((event) => event.event === 'consent_dialog_shown');
+  const defaultEnabled = events.find((event) => event.event === 'analytics_default_enabled');
   const firstOpened = events.find((event) => event.event === 'app_first_opened');
   const optedOut = events.find((event) => event.event === 'analytics_opted_out');
-  const alias = events.find((event) => event.event === '$create_alias');
 
-  for (const event of [consentShown, firstOpened, optedOut]) {
+  for (const event of [defaultEnabled, firstOpened, optedOut]) {
     expect(event?.properties).toMatchObject({
       distinct_id: identity.distinctId,
       install_id: identity.installId,
@@ -127,18 +133,12 @@ test('declining analytics sends identified consent events and discards queued us
     web_attribution_present: true,
     is_first_launch: true,
   });
-  expect(alias?.properties).toMatchObject({
-    distinct_id: identity.webDistinctId,
-    alias: identity.distinctId,
-    install_id: identity.installId,
-  });
-  expect(events.some((event) => event.event === 'app_opened')).toBe(false);
 });
 
-test('accepting analytics captures opt-in before any queued usage event can flush', async ({ page }) => {
+test('an explicit existing opt-out stays disabled and receives no default-on events', async ({ page }) => {
   const identity = {
-    distinctId: 'install:install_accept_e2e',
-    installId: 'install_accept_e2e',
+    distinctId: 'install:install_existing_opt_out_e2e',
+    installId: 'install_existing_opt_out_e2e',
     identitySource: 'anonymous',
     appVersion: '2.1.2-test',
     platform: 'linux',
@@ -162,7 +162,7 @@ test('accepting analytics captures opt-in before any queued usage event can flus
   });
 
   await installElectronApiMock(page, {
-    analyticsConsentShown: false,
+    analyticsConsentShown: true,
     analyticsIdentity: identity,
     initialConfig: {
       analytics: {
@@ -184,25 +184,8 @@ test('accepting analytics captures opt-in before any queued usage event can flus
 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-  await expect(page.getByRole('dialog', { name: 'Help Improve Pane' })).toBeVisible({ timeout: 10000 });
-  await page.getByRole('button', { name: 'Enable analytics' }).click();
-
-  await expect.poll(() => parseCapturedEvents(requests).map((event) => event.event)).toContain('analytics_opted_in');
-
-  const events = parseCapturedEvents(requests);
-  const optInIndex = events.findIndex((event) => event.event === 'analytics_opted_in');
-  const appOpenedIndex = events.findIndex((event) => event.event === 'app_opened');
-  const optedIn = events[optInIndex];
-
-  expect(optInIndex).toBeGreaterThanOrEqual(0);
-  if (appOpenedIndex >= 0) {
-    expect(appOpenedIndex).toBeGreaterThan(optInIndex);
-  }
-  expect(optedIn.properties).toMatchObject({
-    distinct_id: identity.distinctId,
-    install_id: identity.installId,
-    identity_source: identity.identitySource,
-    app_version: identity.appVersion,
-    platform: identity.platform,
-  });
+  await page.waitForTimeout(250);
+  expect(parseCapturedEvents(requests).map((event) => event.event)).not.toEqual(
+    expect.arrayContaining(['analytics_default_enabled', 'app_opened'])
+  );
 });

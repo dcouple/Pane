@@ -4,7 +4,7 @@ import { createInterface } from 'node:readline/promises';
 import { boundary, decodeBoundary } from './boundaryDecoder';
 import { invokeDaemon, PaneDaemonClientError } from './daemonClient';
 import { RUNPANE_CONTRACT } from './generated/contract';
-import type { ParsedArgs, RunpaneAgent } from './commands';
+import { hasCadenceValueFlag, type ParsedArgs, type RunpaneAgent } from './commands';
 import type { BoundarySchema, JsonValue } from './boundaryDecoder';
 import { effectiveWatchHeartbeatMs, formatNonEntry, formatWaitResult, type WatchFormat } from './watchLines';
 
@@ -52,6 +52,24 @@ interface PaneCreateRequest {
   waitReady?: boolean;
   readyTimeoutMs?: number;
   concurrency?: number;
+  noFocus?: boolean;
+  focus?: boolean;
+  source?: 'user' | 'agent';
+}
+
+interface PaneAdoptRequest {
+  repo: PaneCreateRequest['repo'];
+  panes: Array<{
+    path: string;
+    name: string;
+    baseBranch?: string;
+    folder?: string;
+    pinned?: boolean;
+    tool: PaneToolSpec;
+    resume?: string;
+    launch?: boolean;
+  }>;
+  dryRun?: boolean;
   noFocus?: boolean;
   focus?: boolean;
   source?: 'user' | 'agent';
@@ -130,6 +148,7 @@ interface PaneSummary {
   createdAt?: string;
   lastActivity?: string;
   archived?: boolean;
+  ownership: 'pane' | 'external';
 }
 
 interface PaneListResult {
@@ -532,6 +551,10 @@ interface PaneCreateRequestInput {
   source?: 'user' | 'agent';
 }
 
+interface PaneAdoptRequestInput extends Omit<PaneAdoptRequest, 'panes'> {
+  panes: Array<Omit<PaneAdoptRequest['panes'][number], 'tool'> & { tool: PaneToolInput }>;
+}
+
 const agentSchema = boundary.enumeration(...RUNPANE_CONTRACT.enums.agents);
 const repoSummarySchema: BoundarySchema<RepoSummary> = boundary.object({
   id: boundary.number,
@@ -562,6 +585,7 @@ const paneSummarySchema: BoundarySchema<PaneSummary> = boundary.object({
   createdAt: boundary.optional(boundary.string),
   lastActivity: boundary.optional(boundary.string),
   archived: boundary.optional(boundary.boolean),
+  ownership: boundary.enumeration('pane', 'external'),
 });
 const panelBlockedSchema: BoundarySchema<PanelBlockedState> = boundary.object({
   kind: boundary.enumeration('codex-update', 'agent-prompt', 'submission_unverified', 'unknown'),
@@ -1015,6 +1039,23 @@ const paneCreateRequestInputSchema: BoundarySchema<PaneCreateRequestInput> = bou
   focus: boundary.optional(boundary.boolean),
   source: boundary.optional(boundary.enumeration('user', 'agent')),
 });
+const paneAdoptRequestInputSchema: BoundarySchema<PaneAdoptRequestInput> = boundary.object({
+  repo: repoSelectorSchema,
+  panes: boundary.array(boundary.object({
+    path: boundary.string,
+    name: boundary.string,
+    baseBranch: boundary.optional(boundary.string),
+    folder: boundary.optional(boundary.string),
+    pinned: boundary.optional(boundary.boolean),
+    tool: paneToolInputSchema,
+    resume: boundary.optional(boundary.string),
+    launch: boundary.optional(boundary.boolean),
+  })),
+  dryRun: boundary.optional(boundary.boolean),
+  noFocus: boundary.optional(boundary.boolean),
+  focus: boundary.optional(boundary.boolean),
+  source: boundary.optional(boundary.enumeration('user', 'agent')),
+});
 
 export async function runReposList(parsed: ParsedArgs): Promise<number> {
   const result = await invokeDaemon('runpane:repos:list', [], repoListResultSchema, {
@@ -1121,7 +1162,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
   const includeHeldInput = parsed.includeHeldInput && !parsed.noHeldInput ? true : undefined;
   const includeHeldInputPresence = defaults.includeHeldInputPresence
     && !parsed.noHeldInput && parsed.follow && format === 'lines' ? true : undefined;
-  const watchAs = parsed.watchAs ?? (parsed.follow ? process.env.PANE_PANEL_ID : undefined);
+  const cadenceValueFlagPresent = hasCadenceValueFlag(parsed);
+  // Cadence state lives in the daemon per named consumer, so an anonymous follower names itself.
+  const watchAs = parsed.watchAs
+    ?? (parsed.follow ? process.env.PANE_PANEL_ID || (cadenceValueFlagPresent ? `follow-${process.pid}` : undefined) : undefined);
   const request = {
     as: watchAs,
     since: parsed.watchSince,
@@ -1138,6 +1182,10 @@ export async function runWatch(parsed: ParsedArgs): Promise<number> {
     includeHeldInput,
     includeHeldInputPresence,
     idleAfterMs,
+    settleMs: parsed.settleMs,
+    blockedSettleMs: parsed.blockedSettleMs,
+    minIntervalMs: parsed.minIntervalMs,
+    idleBackoff: parsed.idleBackoff || undefined,
   };
 
   let armed = false;
@@ -1238,6 +1286,53 @@ export async function runPanesCreate(parsed: ParsedArgs): Promise<number> {
     printPaneCreateResult(result);
   }
 
+  return result.ok ? 0 : 1;
+}
+
+export async function runPanesAdopt(parsed: ParsedArgs): Promise<number> {
+  let request: PaneAdoptRequest;
+  if (parsed.fromJson) {
+    // SAFETY: JSON.parse returns JSON-compatible data here and decodeBoundary validates the complete shape next.
+    const payload = JSON.parse(stripUtf8Bom(readInputSource(parsed.fromJson))) as JsonValue;
+    const decoded = decodeBoundary(payload, paneAdoptRequestInputSchema);
+    if (decoded.panes.length === 0) throw new Error('--from-json payload must include at least one pane.');
+    request = {
+      ...decoded,
+      panes: decoded.panes.map((pane, index) => ({
+        ...pane,
+        tool: parsePaneToolSpecPayload(pane.tool, index),
+      })),
+    };
+  } else {
+    if (!parsed.repo || !parsed.repoPath || !parsed.name) {
+      throw new Error('runpane panes adopt requires --repo, --path, and --name.');
+    }
+    const tool = await buildToolSpec(parsed, 'panes adopt');
+    request = {
+    repo: parsed.repo,
+    panes: [{
+      path: parsed.repoPath,
+      name: parsed.name,
+      baseBranch: parsed.baseBranch,
+      folder: parsed.folder,
+      pinned: resolvePinnedOverride(parsed) ?? true,
+      tool,
+      resume: parsed.resume,
+      launch: parsed.launch || undefined,
+    }],
+    dryRun: parsed.dryRun || undefined,
+    noFocus: parsed.noFocus || undefined,
+    focus: parsed.focus || undefined,
+    source: parsed.source === 'user' || parsed.source === 'agent' ? parsed.source : undefined,
+    };
+  }
+  await confirmPaneAdopt(parsed, request);
+  const result = await invokeDaemon('runpane:panes:adopt', [request], paneCreateResultSchema, {
+    paneDir: parsed.paneDir,
+    timeoutMs: 120_000,
+  });
+  if (parsed.json) printJson(result);
+  else printPaneCreateResult(result);
   return result.ok ? 0 : 1;
 }
 
@@ -1746,6 +1841,20 @@ async function confirmPaneCreate(parsed: ParsedArgs, request: PaneCreateRequest)
     if (answer !== 'y' && answer !== 'yes') {
       throw new Error('Cancelled.');
     }
+  } finally {
+    rl.close();
+  }
+}
+
+async function confirmPaneAdopt(parsed: ParsedArgs, request: PaneAdoptRequest): Promise<void> {
+  if (parsed.dryRun || parsed.yes) return;
+  if (!isInteractiveShell()) {
+    throw new Error('runpane panes adopt mutates Pane state. Rerun with --yes in non-interactive shells.');
+  }
+  const rl = createInterface({ input, output });
+  try {
+    const answer = (await rl.question(`Adopt ${request.panes.length} existing worktree${request.panes.length === 1 ? '' : 's'}? [y/N] `)).trim().toLowerCase();
+    if (answer !== 'y' && answer !== 'yes') throw new Error('Cancelled.');
   } finally {
     rl.close();
   }

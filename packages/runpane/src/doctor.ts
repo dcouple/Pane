@@ -13,6 +13,7 @@ import {
 } from './daemonClient';
 import { resolveExistingPanePath } from './installers';
 import { detectPlatform, type PanePlatform } from './platform';
+import { RUNPANE_CONTRACT } from './generated/contract';
 import { resolveRelease } from './releases';
 import { getPaneVersion, getWrapperVersion } from './version';
 import type { BoundarySchema } from './boundaryDecoder';
@@ -179,8 +180,14 @@ interface DoctorReport {
   daemon: DoctorDaemonCheck;
   remoteDaemonService: RemoteDaemonServiceDoctorCheck;
   remoteSetup: RemoteSetupDoctorCheck;
+  watchDefaults: DoctorWatchDefaults;
   nextCommands: string[];
 }
+
+type DoctorWatchDefaults = Omit<
+  typeof RUNPANE_CONTRACT.defaults.watch,
+  'format' | 'agentsOnly' | 'includeHeldInputPresence'
+> & { kinds: 'all' };
 
 interface RemoteDaemonServiceDoctorCheck {
   paneDir: string;
@@ -451,6 +458,7 @@ async function buildDoctorReport(parsed: ParsedArgs, source: 'npm' | 'pip'): Pro
     daemon,
     remoteDaemonService,
     remoteSetup,
+    watchDefaults: watchDefaults(),
     nextCommands: [
       'runpane agent-context --json',
       'runpane agent-context --command "<command>" --json',
@@ -909,6 +917,17 @@ function resolveDaemonRecoveryCommand(endpoint: PaneDaemonEndpoint, message: str
   return 'Open Pane, then rerun runpane doctor --json';
 }
 
+export function watchDefaults(): DoctorWatchDefaults {
+  const { heartbeatSeconds, idleAfterMs, settleMs, blockedSettleMs, minIntervalMs, idleBackoff } = RUNPANE_CONTRACT.defaults.watch;
+  return { heartbeatSeconds, idleAfterMs, settleMs, blockedSettleMs, minIntervalMs, idleBackoff, kinds: 'all' };
+}
+
+export function formatWatchDefaults(defaults: DoctorWatchDefaults): string {
+  return `Watch defaults (--follow): heartbeat ${defaults.heartbeatSeconds}s, idle-after ${defaults.idleAfterMs}ms, `
+    + `settle ${defaults.settleMs}ms, blocked-settle ${defaults.blockedSettleMs}ms, min-interval ${defaults.minIntervalMs}ms, `
+    + `idle-backoff ${defaults.idleBackoff ? 'on' : 'off'}, kinds ${defaults.kinds}`;
+}
+
 function renderDoctorText(report: DoctorReport): void {
   if (report.platform) {
     console.log(`Platform: ${report.platform.os}/${report.platform.arch}`);
@@ -953,6 +972,7 @@ function renderDoctorText(report: DoctorReport): void {
     }
   }
 
+  console.log(formatWatchDefaults(report.watchDefaults));
   console.log('Agent discovery: run "runpane doctor --json" before Pane actions, then "runpane agent-context --json" for full CLI context.');
   console.log('Remote setup: run "runpane setup" for guided setup, or "runpane install daemon --label <name>" for scripting.');
 }

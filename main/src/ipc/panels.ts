@@ -10,7 +10,7 @@ import { getPaneWebviewContextMap } from '../core/runtime';
 import { panelManager } from '../services/panelManager';
 import { terminalPanelManager } from '../services/terminalPanelManager';
 import { databaseService } from '../services/database';
-import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel, type PanelLayoutNode, type ToolPanelState } from '../../../shared/types/panels';
+import { CreatePanelRequest, PanelEventType, SessionPanelLayout, ToolPanel, type PanelLayoutNode } from '../../../shared/types/panels';
 import type { AppServices } from './types';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { sanitizeTerminalOutput } from '../utils/terminalOutputSanitizer';
@@ -102,23 +102,9 @@ function resolveTerminalInitializationCwd(
   return requestedCwd;
 }
 
-type PersistedCustomState = NonNullable<ToolPanelState['customState']>;
-
-function readPersistedScrollback(customState: PersistedCustomState | undefined): string | null {
-  try {
-    const state = decodeBoundary(customState, boundary.object({
-      scrollbackBuffer: boundary.optional(boundary.union(
-        boundary.string,
-        boundary.array(boundary.string),
-      )),
-    }));
-    if (state.scrollbackBuffer === undefined) return null;
-    return Array.isArray(state.scrollbackBuffer)
-      ? state.scrollbackBuffer.join('\n')
-      : state.scrollbackBuffer;
-  } catch {
-    return null;
-  }
+/** Scrollback for a panel whose terminal is not live: read from panel_buffers, never from panel state. */
+function readPersistedScrollback(panelId: string): string | null {
+  return databaseService.getPanelBuffers(panelId)?.scrollback ?? null;
 }
 
 /**
@@ -723,8 +709,7 @@ export function registerPanelHandlers(
 
       // Fall back to persisted scrollback for lazy/inactive terminals
       if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
+        rawScrollback = readPersistedScrollback(panelId);
       }
 
       if (rawScrollback === null || rawScrollback === '') {
@@ -824,8 +809,7 @@ export function registerPanelHandlers(
       let rawScrollback = terminalPanelManager.getTerminalScrollback(panelId);
 
       if (rawScrollback === null) {
-        const panel = panelManager.getPanel(panelId);
-        rawScrollback = readPersistedScrollback(panel?.state?.customState);
+        rawScrollback = readPersistedScrollback(panelId);
       }
 
       if (rawScrollback === null || rawScrollback === '') {

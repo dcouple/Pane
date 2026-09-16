@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import type { IpcMain } from 'electron';
+import { nativeTheme, type IpcMain } from 'electron';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Project } from '../database/models';
 import type { AppServices } from './types';
@@ -12,6 +12,9 @@ import {
 } from '../services/agentContextManager';
 import { registerConfigHandlers } from './config';
 import type { PaneCommandValue } from '../daemon/commandRegistry';
+import { AppearanceValidationError, normalizeAppearance } from '../../../shared/types/appearance';
+import { applyNativeThemeSource } from '../services/appearanceService';
+import { ConfigManager } from '../services/configManager';
 
 interface TestIpcEvent { readonly sender?: { readonly id?: number } }
 type IpcHandler = (_event: TestIpcEvent, ...args: PaneCommandValue[]) => PaneCommandValue | Promise<PaneCommandValue>;
@@ -44,6 +47,19 @@ async function createTempProject(id: number): Promise<Project> {
     created_at: '',
     updated_at: '',
   };
+}
+
+async function createTempConfigManager(): Promise<ConfigManager> {
+  const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'pane-config-ipc-'));
+  tempDirs.push(configDir);
+  const previousPaneDir = process.env.PANE_DIR;
+  try {
+    process.env.PANE_DIR = configDir;
+    return new ConfigManager();
+  } finally {
+    if (previousPaneDir === undefined) delete process.env.PANE_DIR;
+    else process.env.PANE_DIR = previousPaneDir;
+  }
 }
 
 function createServicesStub(projects: Project[]): AppServices {
@@ -132,5 +148,45 @@ describe('config IPC handlers', () => {
     expect(activeContent).not.toContain(PANE_AGENT_CONTEXT_START);
     expect(inactiveContent).toBe('');
     await expect(fs.access(inactiveAgentsPath)).resolves.toBeUndefined();
+  });
+
+  it('returns the specific appearance validation error envelope', async () => {
+    const ipcMain = createIpcMainStub();
+    const services = createServicesStub([]);
+    services.configManager.updateConfig = async () => {
+      throw new AppearanceValidationError('systemLightTheme must be a light palette');
+    };
+    // SAFETY: The stub implements the IpcMain handle surface exercised by registerConfigHandlers.
+    registerConfigHandlers(ipcMain as IpcMain, services);
+    await expect(ipcMain.handlers.get('config:update')?.({}, { systemLightTheme: 'dark' })).resolves.toEqual({
+      success: false,
+      error: 'systemLightTheme must be a light palette',
+    });
+  });
+
+  it('applies the native theme source after a successful appearance update', async () => {
+    nativeTheme.themeSource = 'system';
+    const ipcMain = createIpcMainStub();
+    const configManager = await createTempConfigManager();
+    await configManager.initialize();
+    let configUpdatedCount = 0;
+    configManager.on('config-updated', (updated: AppConfig) => {
+      configUpdatedCount += 1;
+      applyNativeThemeSource(normalizeAppearance(updated).appearance);
+    });
+    const services = createServicesStub([]);
+    services.configManager = configManager;
+    registerConfigHandlers(
+      // SAFETY: The stub implements the IpcMain handle surface exercised by registerConfigHandlers.
+      ipcMain as IpcMain,
+      services,
+    );
+
+    await expect(ipcMain.handlers.get('config:update')?.({}, {
+      appearanceMode: 'fixed',
+      theme: 'forge',
+    })).resolves.toMatchObject({ success: true });
+    expect(configUpdatedCount).toBe(1);
+    expect(nativeTheme.themeSource).toBe('dark');
   });
 });

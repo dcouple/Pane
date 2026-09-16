@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { SettingsSection } from '../../ui/SettingsSection';
 import { SettingRow, SettingsPage } from '../SettingRow';
 import { ImmediateToggle } from '../SettingsControls';
@@ -17,7 +18,13 @@ import type { AnalyticsIdentity } from '../../../types/config';
 
 export function PrivacySettings({ persistence }: { persistence: SettingsPersistence }) {
   const config = persistence.config!;
-  const analytics = config.analytics ?? { enabled: false };
+  const analytics = config.analytics ?? { enabled: true };
+
+  useEffect(() => {
+    if (analytics.enabled) {
+      void captureUnconditionally('analytics_settings_disclosure_viewed', { experiment: 'analytics_default_on' });
+    }
+  }, [analytics.enabled]);
 
   const resolveIdentity = async (): Promise<AnalyticsIdentity | undefined> => {
     try {
@@ -67,15 +74,15 @@ export function PrivacySettings({ persistence }: { persistence: SettingsPersiste
   };
 
   return (
-    <SettingsPage title="Privacy" description="Control application-wide product analytics.">
+    <SettingsPage title="Privacy" description="Review and control what Pane shares.">
       <SettingsSection title="Analytics">
         <SettingRow
           settingId="analytics"
-          label="Share product analytics"
-          description="Pane collects feature usage to improve the product. Prompts, code, and file paths are not collected."
+          label="Product analytics"
+          description="Product analytics are on by default. Pane collects feature usage and may associate it with locally available GitHub or Git account details, such as a username or email. Pane never collects prompts, code, or file paths. Turn this off to stop telemetry."
           saveState={persistence.saveStates.analytics}
         >
-          <ImmediateToggle label="Share product analytics" value={analytics.enabled === true} onSave={saveAnalytics} />
+          <ImmediateToggle label="Allow product analytics" value={analytics.enabled === true} onSave={saveAnalytics} />
         </SettingRow>
       </SettingsSection>
     </SettingsPage>

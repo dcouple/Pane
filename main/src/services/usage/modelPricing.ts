@@ -34,6 +34,7 @@ const BUNDLED_PRICES: ModelPrice[] = [
   { model: 'gpt-5.1-codex', inputPerMTok: 1.25, outputPerMTok: 10, cacheReadPerMTok: 0.125, cacheWritePerMTok: 1.25 },
   { model: 'gpt-5-codex', inputPerMTok: 1.25, outputPerMTok: 10, cacheReadPerMTok: 0.125, cacheWritePerMTok: 1.25 },
   // GPT-5.6 line
+  { model: 'gpt-daybreak-blue-latest', inputPerMTok: 4, outputPerMTok: 20, cacheReadPerMTok: 0.4, cacheWritePerMTok: 5 },
   { model: 'gpt-5.6-sol', inputPerMTok: 5, outputPerMTok: 30, cacheReadPerMTok: 0.5, cacheWritePerMTok: 5 },
   { model: 'gpt-5.6-terra', inputPerMTok: 2, outputPerMTok: 12, cacheReadPerMTok: 0.2, cacheWritePerMTok: 2 },
   { model: 'gpt-5.6-luna', inputPerMTok: 0.2, outputPerMTok: 1.2, cacheReadPerMTok: 0.02, cacheWritePerMTok: 0.2 },

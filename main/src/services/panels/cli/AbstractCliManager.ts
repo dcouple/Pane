@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import * as pty from '@lydell/node-pty';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { boundary, decodeBoundary, type JsonObject, type JsonValue } from '../../../../../shared/validation/boundaryDecoder';
 import { execSync, exec } from 'child_process';
 import { promisify } from 'util';
@@ -674,6 +675,12 @@ export abstract class AbstractCliManager extends EventEmitter {
     const fullCommand = `${command} ${args.join(' ')}`;
     this.logger?.verbose(`Executing ${this.getCliToolName()} command: ${fullCommand}`);
     this.logger?.verbose(`Working directory: ${cwd}`);
+
+    // A missing cwd (e.g. a worktree removed while the session was archived)
+    // makes node-pty fail with an opaque spawn error; report it clearly instead.
+    if (!fs.existsSync(cwd)) {
+      throw new Error(`Cannot start ${this.getCliToolName()}: working directory does not exist: ${cwd}. Restore or recreate the session's worktree and try again.`);
+    }
 
     let ptyProcess: PtyLike;
     let spawnAttempt = 0;

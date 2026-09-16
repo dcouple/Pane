@@ -241,12 +241,23 @@ async function openSession(page: Page, theme: string, opts: { highContrast?: boo
     if (hc) window.localStorage.setItem('high-contrast', 'true');
   }, { themeId: theme, hc: highContrast });
   await installElectronApiMock(page, {
-    initialConfig: { theme, highContrast },
+    initialConfig: { theme, appearanceMode: 'fixed', highContrast },
     initialProjects: [project],
     initialSessions: [session, secondSession],
     initialPanels: panels,
     initialExecutions: executions,
-    initialCombinedDiff: combinedDiff,
+    diffManifests: {
+      session: {
+        scope: { kind: 'session' },
+        files: [{ path: 'frontend/src/contexts/themeContextValue.ts', kind: 'modified', additions: 41, deletions: 6, isBinary: false }],
+        resolvedBase: { kind: 'comparison-base', ref: 'origin/main', hash: '1111111111111111111111111111111111111111' },
+        resolvedTarget: { kind: 'working-tree' },
+        stats: combinedDiff.stats,
+      },
+    },
+    fileDiffs: {
+      'session:frontend/src/contexts/themeContextValue.ts': { file: { path: 'frontend/src/contexts/themeContextValue.ts', kind: 'modified', additions: 41, deletions: 6, isBinary: false }, patch: combinedDiff.diff, status: 'changed' },
+    },
     initialTerminalStates: { 'theme-terminal': { scrollbackBuffer: terminalScrollback } },
     initialUiState: { expandedProjects: [project.id] },
     activeProjectId: project.id,
@@ -267,7 +278,9 @@ async function openSession(page: Page, theme: string, opts: { highContrast?: boo
   await expect(page.locator('.pane-terminal-shell-body .xterm-screen').first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole('status', { name: 'Loading terminal' })).toHaveCount(0);
   // Open the single changed file as a diff tab so the add/remove tints are visible.
-  const openFile = page.getByRole('button', { name: /^Open diff for frontend\/src\/contexts\/themeContextValue\.ts$/ });
+  const openFile = page.getByRole('treeitem', {
+    name: /^Open diff for frontend\/src\/contexts\/themeContextValue\.ts, Modified, \+41 −6$/,
+  });
   await expect(openFile).toBeVisible({ timeout: 15_000 });
   await openFile.click();
   await expect(page.locator('.diff-tailwindcss-wrapper').first()).toBeVisible({ timeout: 15_000 });
@@ -353,7 +366,7 @@ test('appearance picker shows all 15 themes, grouped by family', async ({ page }
   await page.setViewportSize({ width: 1440, height: 1700 });
   await page.addInitScript(() => { window.localStorage.setItem('theme', 'colorblind-safe'); });
   await installElectronApiMock(page, {
-    initialConfig: { theme: 'colorblind-safe' },
+    initialConfig: { theme: 'colorblind-safe', appearanceMode: 'fixed' },
     initialProjects: [project],
     initialSessions: [session],
     initialPanels: panels,

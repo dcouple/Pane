@@ -117,7 +117,7 @@ function PaneCostCells({ pane }: { pane: UsagePaneCostSlice }) {
 
 function PaneUsageRow({ pane }: { pane: UsageByPane }) {
   return (
-    <tr className="border-b border-border-primary/60 last:border-b-0">
+    <tr className="border-b border-border-primary last:border-b-0">
       <td className="px-2 py-2" title={pane.worktreePath}>
         <span className="font-medium text-text-primary">{pane.paneName}</span>
         {pane.archived && (
@@ -775,6 +775,12 @@ export function UsageView() {
 
             <footer className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-text-muted">
               <span>{report.index.eventsIndexed.toLocaleString()} messages indexed from {report.index.filesTracked.toLocaleString()} transcripts.</span>
+              <span>Usage is checked every 4 hours; large scans may take longer. Refresh to check now.</span>
+              <span>
+                {report.index.lastScanFinishedMs === null
+                  ? 'No completed scan yet.'
+                  : `Last successful scan: ${new Date(report.index.lastScanFinishedMs).toLocaleString()}.`}
+              </span>
               <span>Agents running inside WSL write their transcripts in the distro's home and are not counted.</span>
               {report.index.missingRoots.length > 0 && (
                 <span>Not found: {report.index.missingRoots.join(', ')}</span>

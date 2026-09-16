@@ -14,7 +14,6 @@ const panel = {
   state: { isActive: true, hasBeenViewed: true, customState: { isInitialized: false } },
   metadata: { createdAt: now, lastActiveAt: now, position: 0, permanent: true },
 };
-
 test('add-tool popover supports keyboard navigation and dismissal', async ({ page }, testInfo) => {
   await installElectronApiMock(page, {
     platform: 'darwin', initialProjects: [project], initialSessions: [session], initialPanels: [panel], activeProjectId: project.id,
@@ -39,4 +38,19 @@ test('add-tool popover supports keyboard navigation and dismissal', async ({ pag
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
+});
+
+test('Explorer in the add-tool menu creates a missing panel and opens the Files inspector', async ({ page }) => {
+  await installElectronApiMock(page, {
+    platform: 'darwin', initialProjects: [project], initialSessions: [session],
+    initialPanels: [panel], activeProjectId: project.id,
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.getByRole('button', { name: /^Expand repository Popover$/ }).click();
+  await page.getByRole('button', { name: 'Tool menu', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Add tool', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Explorer', exact: false }).click();
+
+  await expect(page.getByRole('tab', { name: 'Files', exact: true })).toHaveAttribute('aria-selected', 'true');
 });

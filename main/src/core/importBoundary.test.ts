@@ -1,11 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
-import {
-  DAEMON_OWNED_CHANNEL_PREFIXES,
-  DAEMON_OWNED_EXACT_CHANNELS,
-  ELECTRON_ADAPTER_ONLY_CHANNELS,
-} from '../../../shared/types/daemon';
 
 const MAIN_SRC_ROOT = path.resolve(process.cwd(), 'src');
 
@@ -85,30 +80,13 @@ describe('daemon/client import boundary', () => {
   it('routes daemon-owned preload invokes through the runtime-safe bridge helper', () => {
     const source = readMainSrcFile('preload.ts');
 
-    expect(source).toContain('function isDaemonOwnedChannel');
-    expect(source).toContain('isDaemonOwnedChannel');
-    expect(source).not.toContain("../../shared/types/daemon");
+    expect(source).toContain("import { isDaemonOwnedChannel } from '../../shared/types/daemon'");
+    expect(source).not.toContain('function isDaemonOwnedChannel');
     expect(source).not.toContain("from './daemon/daemonChannels'");
     expect(source).toContain("ipcRenderer.invoke('daemon:invoke', channel, ...args)");
     expect(source).not.toMatch(
       /ipcRenderer\.invoke\('(sessions:|projects:|folders:|prompts:|resource-monitor:|panels:|terminal:|logs:|git:(cancel-status-for-project|clone-repo|commit|execute-project|file-status|get-github-remote|restore|revert)|permission:(getPending|respond)|file:(copy|delete|duplicate|exists|getPath|list|move|read|read-binary|read-project|readAtRevision|rename|resolveAbsolutePath|search|write|write-binary|write-project))/,
     );
-  });
-
-  it('keeps preload channel ownership literals aligned with the shared daemon contract', () => {
-    const source = readMainSrcFile('preload.ts');
-
-    for (const prefix of DAEMON_OWNED_CHANNEL_PREFIXES) {
-      expect(source).toContain(`'${prefix}'`);
-    }
-
-    for (const channel of DAEMON_OWNED_EXACT_CHANNELS) {
-      expect(source).toContain(`'${channel}'`);
-    }
-
-    for (const channel of ELECTRON_ADAPTER_ONLY_CHANNELS) {
-      expect(source).toContain(`'${channel}'`);
-    }
   });
 
   it('keeps task queue environment selection free of Electron globals', () => {

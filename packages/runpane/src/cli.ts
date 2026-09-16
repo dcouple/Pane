@@ -26,6 +26,7 @@ import {
   runPanelsSubmitComposer,
   runPanelsWait,
   runPanesArchive,
+  runPanesAdopt,
   runPanesCreate,
   runPanesCost,
   runPanesList,
@@ -133,6 +134,10 @@ async function dispatchParsedCommand(parsed: ParsedArgs, telemetryContext: Wrapp
 
   if (parsed.command === 'panes create') {
     return runPanesCreate(parsed);
+  }
+
+  if (parsed.command === 'panes adopt') {
+    return runPanesAdopt(parsed);
   }
 
   if (parsed.command === 'panes archive') {

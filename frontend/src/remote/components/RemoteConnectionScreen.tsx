@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, ClipboardPaste, Download, Monitor, Smartphone, Trash2 } from 'lucide-react';
 import type { RemotePaneConnectionProfile } from '../../../../shared/types/remoteDaemon';
+import { isNativeMobile, openNativeExternalUrl } from '../runtime/nativeMobile';
 
 type ConnectionScreenMode = 'menu' | 'connect';
 type MobileInstallPlatform = 'ios' | 'android' | 'mobile';
@@ -102,9 +103,12 @@ export function RemoteConnectionScreen({
           </div>
         </div>
 
+        {showFirstRunMenu && error && (
+          <p role="alert" className="mb-4 rounded-md border border-status-error/30 bg-status-error/10 px-3 py-2 text-sm text-status-error">{error}</p>
+        )}
         {showFirstRunMenu ? (
           <div className="space-y-4">
-            {mobileInstallPlatform && (
+            {mobileInstallPlatform && !isNativeMobile() && (
               <MobileInstallPrompt platform={mobileInstallPlatform} />
             )}
 
@@ -131,6 +135,11 @@ export function RemoteConnectionScreen({
                 href="https://runpane.com/docs/remote-daemon"
                 target="_blank"
                 rel="noreferrer"
+                onClick={event => {
+                  if (!isNativeMobile()) return;
+                  event.preventDefault();
+                  void openNativeExternalUrl('https://runpane.com/docs/remote-daemon');
+                }}
                 className="group flex min-h-36 flex-col items-start justify-between rounded-lg border border-border-primary bg-surface-primary p-4 text-left shadow-lg transition-colors hover:border-border-focus hover:bg-surface-hover"
               >
                 <div>

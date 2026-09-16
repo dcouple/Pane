@@ -312,8 +312,9 @@ export function capture(eventName: string, properties?: AnalyticsProperties): vo
  * Same network path as captureAndOptOut, just without the opt-out flip.
  *
  * Use this sparingly. The legitimate cases are funnel-completeness and
- * consent-decision events that must be captured in a strict order:
- * consent_dialog_shown, analytics_opted_in, and app_first_opened.
+ * disclosure/choice events that must be captured in a strict order:
+ * analytics_default_enabled, settings disclosure/explicit choices, and
+ * app_first_opened.
  */
 export async function captureUnconditionally(
   eventName: string,

@@ -12,6 +12,7 @@ function createPersistence(): SettingsPersistence {
     configError: null,
     fetchConfig: () => Promise.resolve({}),
     saveConfig: () => Promise.resolve(true),
+    runSave: () => Promise.resolve(true),
     saveStates: {},
     reportSaveError: () => undefined,
     preferences: DEFAULT_SETTINGS_PREFERENCES,

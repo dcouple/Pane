@@ -108,6 +108,10 @@ describe('Pane daemon shared protocol helpers', () => {
     expect(isDaemonOwnedChannel('git:commit')).toBe(true);
     expect(isDaemonOwnedChannel('file:write')).toBe(true);
     expect(isDaemonOwnedChannel('file:showInFolder')).toBe(false);
+    expect(isDaemonOwnedChannel('sessions:open-ide')).toBe(false);
+    // Active-session hints also prioritize polling on remote daemons.
+    expect(isDaemonOwnedChannel('sessions:set-active-session')).toBe(true);
+    expect(isDaemonOwnedChannel('terminal:clipboard-paste-image')).toBe(false);
     expect(isDaemonOwnedChannel('openExternal')).toBe(false);
   });
 

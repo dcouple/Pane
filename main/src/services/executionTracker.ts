@@ -39,7 +39,7 @@ export class ExecutionTracker extends EventEmitter {
       if (!ctx) {
         throw new Error(`No project context found for session ${sessionId}`);
       }
-      const beforeCommitHash = this.gitDiffManager.getCurrentCommitHash(worktreePath, ctx.commandRunner);
+      const beforeCommitHash = await this.gitDiffManager.getCurrentCommitHash(worktreePath, ctx.commandRunner);
       console.log(`[ExecutionTracker] Starting from commit: ${beforeCommitHash}, sequence: ${executionSequence}`);
       this.logger?.verbose(`Starting from commit: ${beforeCommitHash}`);
       
@@ -81,7 +81,7 @@ export class ExecutionTracker extends EventEmitter {
       if (!ctx) {
         throw new Error(`No project context found for session ${sessionId}`);
       }
-      const afterCommitHash = this.gitDiffManager.getCurrentCommitHash(context.worktreePath, ctx.commandRunner);
+      const afterCommitHash = await this.gitDiffManager.getCurrentCommitHash(context.worktreePath, ctx.commandRunner);
 
       let executionDiff: GitDiffResult;
 
@@ -103,7 +103,7 @@ export class ExecutionTracker extends EventEmitter {
       let commitMessage = '';
       if (afterCommitHash !== context.beforeCommitHash && afterCommitHash !== 'UNCOMMITTED') {
         try {
-          commitMessage = ctx.commandRunner.exec(`git log -1 --format=%s ${afterCommitHash}`, context.worktreePath).trim();
+          commitMessage = (await ctx.commandRunner.execAsync(`git log -1 --format=%s ${afterCommitHash}`, context.worktreePath)).stdout.trim();
           this.logger?.verbose(`Retrieved commit message: ${commitMessage}`);
         } catch (error) {
           this.logger?.warn(`Failed to get commit message: ${error}`);
@@ -182,41 +182,6 @@ export class ExecutionTracker extends EventEmitter {
   getExecutionContext(sessionId: string): ExecutionContext | undefined {
     return this.activeExecutions.get(sessionId);
   }
-
-  /**
-   * Get combined diff for multiple executions
-   */
-  async getCombinedDiff(sessionId: string, executionIds?: number[]): Promise<GitDiffResult> {
-    const executions = await this.sessionManager.getExecutionDiffs(sessionId);
-    
-    // Commented out verbose logging
-    // console.log(`[ExecutionTracker] getCombinedDiff for session ${sessionId}, found ${executions.length} executions`);
-    
-    let filteredExecutions = executions;
-    if (executionIds && executionIds.length > 0) {
-      filteredExecutions = executions.filter((exec: ExecutionDiff) => executionIds.includes(exec.id));
-      // console.log(`[ExecutionTracker] Filtered to ${filteredExecutions.length} executions`);
-    }
-    
-    const diffs: GitDiffResult[] = filteredExecutions
-      .filter((exec: ExecutionDiff) => exec.git_diff) // Only include executions with actual diffs
-      .map((exec: ExecutionDiff) => ({
-        diff: exec.git_diff!,
-        stats: {
-          additions: exec.stats_additions,
-          deletions: exec.stats_deletions,
-          filesChanged: exec.stats_files_changed
-        },
-        changedFiles: exec.files_changed || [],
-        beforeHash: exec.before_commit_hash,
-        afterHash: exec.after_commit_hash
-      }));
-    
-    // console.log(`[ExecutionTracker] Found ${diffs.length} diffs to combine`);
-    
-    return this.gitDiffManager.combineDiffs(diffs);
-  }
-
   async getExecutionDiffs(sessionId: string): Promise<ExecutionDiff[]> {
     const diffs = await this.sessionManager.getExecutionDiffs(sessionId);
     // Commented out verbose logging

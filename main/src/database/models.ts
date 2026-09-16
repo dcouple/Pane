@@ -73,6 +73,7 @@ export interface Session {
   permission_mode?: "approve" | "ignore";
   run_started_at?: string;
   is_main_repo?: boolean;
+  worktree_ownership?: WorktreeOwnership;
   display_order?: number;
   is_favorite?: boolean;
   favorite_pinned_at?: string | null;
@@ -83,6 +84,7 @@ export interface Session {
   pr_renamed?: boolean;
   name_manually_set?: boolean;
   is_hidden?: boolean;
+  commit_mode?: 'disabled' | 'checkpoint' | 'prompt';
 }
 
 export interface SessionOutput {
@@ -112,6 +114,7 @@ export interface CreateSessionData {
   folder_id?: string;
   permission_mode?: "approve" | "ignore";
   is_main_repo?: boolean;
+  worktree_ownership?: WorktreeOwnership;
   display_order?: number;
   tool_type?: "claude" | "none";
   base_commit?: string;
@@ -119,7 +122,10 @@ export interface CreateSessionData {
   is_favorite?: boolean;
   favorite_pinned_at?: string;
   is_hidden?: boolean;
+  commit_mode?: 'disabled' | 'checkpoint' | 'prompt';
 }
+
+type WorktreeOwnership = "pane" | "external";
 
 export interface UpdateSessionData {
   name?: string;
@@ -136,6 +142,7 @@ export interface UpdateSessionData {
   skip_continue_next?: boolean;
   pr_renamed?: boolean;
   name_manually_set?: boolean;
+  worktree_path?: string;
 }
 
 export interface PromptMarker {

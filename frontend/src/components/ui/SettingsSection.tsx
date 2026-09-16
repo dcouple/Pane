@@ -43,7 +43,7 @@ export function SettingsSection({
           )}
         </div>
       </div>
-      <div className={cn('divide-y divide-border-secondary/70', spacingClasses[spacing])}>
+      <div className={cn('divide-y divide-border-secondary', spacingClasses[spacing])}>
         {children}
       </div>
     </section>

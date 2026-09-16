@@ -1,3 +1,5 @@
+import type { DiffScope } from './gitDiff';
+
 /**
  * Panel and session types for Pane.
  * Note: "Sessions" are called "Panes" in the UI. Internally they remain
@@ -36,15 +38,15 @@ export interface TerminalPanelState {
   initialInputSentAt?: string;   // Set after initialInput has been written once
   initialInputError?: string;    // Best-effort error if initialInput could not be written
   
-  // Enhanced persistence (can be added incrementally)
+  // Terminal bytes. On the way to the database these three keys are split out
+  // of the state JSON into the bounded panel_buffers table; they only appear
+  // here on the live terminal:getState path and in write patches.
   scrollbackBuffer?: string | string[];   // Full terminal output history (string for new format, array for legacy)
   alternateScreenBuffer?: string;         // Recent TUI/alternate-screen output, kept separate from shell scrollback
   isAlternateScreen?: boolean;            // Whether the live terminal is currently in alternate-screen/TUI mode
   serializedBuffer?: string;             // xterm.js serialized terminal state (includes full visual buffer)
-  commandHistory?: string[];     // Commands entered by user
   environmentVars?: Record<string, string>; // Modified env vars
   dimensions?: { cols: number; rows: number }; // Terminal size
-  lastActiveCommand?: string;    // Command running when closed
   cursorPosition?: { x: number; y: number }; // Cursor location
   selectionText?: string;        // Any selected text
   lastActivityTime?: string;     // For "idle since" indicators
@@ -143,9 +145,11 @@ export interface ExplorerPanelState {
  * modes: a commit hash (`'index'` = uncommitted) or an execution range
  * (`[0]` = uncommitted, `[a, b]` = one commit, omitted = every commit).
  */
-export type EditorDiffRef =
+export type LegacyEditorDiffRef =
   | { kind: 'commit'; hash: string }
   | { kind: 'range'; executionIds?: number[] };
+
+export type EditorDiffRef = { kind: 'scope'; scope: DiffScope; previousPath?: string };
 
 export interface EditorPanelState {
   filePath: string;

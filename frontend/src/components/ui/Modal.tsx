@@ -123,7 +123,7 @@ export const Modal: React.FC<ModalProps> = ({
           <PortalContainerProvider value={portalContainer}>
             <div
               className={cn(
-                'relative bg-bg-primary rounded-modal shadow-modal w-full max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col',
+                'relative bg-surface-primary border border-border-primary rounded-modal shadow-modal w-full max-h-[calc(100vh-2rem)] overflow-hidden flex flex-col',
                 !instant && 'animate-modal-enter',
                 className,
               )}

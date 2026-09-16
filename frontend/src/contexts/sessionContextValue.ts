@@ -22,6 +22,7 @@ export interface SessionContextValue {
   isMerging?: boolean;
   gitCommands?: GitCommands;
   onOpenIDEWithCommand?: (command?: string) => void;
+  onOpenUrlInBrowser?: (url: string, title: string) => Promise<void>;
   onConfigureIDE?: () => void;
   onSetTracking?: () => void;
   trackingBranch?: string | null;

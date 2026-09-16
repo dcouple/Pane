@@ -6,6 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { isMac } from '../utils/platformUtils';
 import { LiveRegion } from './ui/LiveRegion';
+import type { UpdateCapabilities } from '../../../shared/types/updater';
 
 interface UpdateDialogProps {
   isOpen: boolean;
@@ -35,6 +36,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPackaged, setIsPackaged] = useState(false);
+  const [updateCapabilities, setUpdateCapabilities] = useState<UpdateCapabilities | null>(null);
   const userStartedUpdateRef = useRef(false);
   const downloadStartedRef = useRef(false);
   const installStartedRef = useRef(false);
@@ -71,7 +73,21 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
         setIsPackaged(packaged);
       });
     }
+    if (window.electronAPI?.updater?.getCapabilities) {
+      window.electronAPI.updater.getCapabilities().then((response) => {
+        if (response.success && response.data) {
+          setUpdateCapabilities(response.data);
+        } else {
+          setUpdateCapabilities({ mode: 'manual', reason: 'untrusted-signature' });
+        }
+      }).catch(() => {
+        setUpdateCapabilities({ mode: 'manual', reason: 'untrusted-signature' });
+      });
+    }
   }, []);
+
+  const canUseSeamlessUpdater = !isMac() || updateCapabilities?.mode === 'seamless';
+  const isResolvingUpdateMode = isMac() && updateCapabilities === null;
 
   const startDownloadUpdate = useCallback(async () => {
     if (!window.electronAPI?.updater) {
@@ -145,7 +161,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     cleanupFns.push(
       window.electronAPI.events.onUpdaterUpdateAvailable(() => {
         setUpdateState('available');
-        if (userStartedUpdateRef.current && !isMac()) {
+        if (userStartedUpdateRef.current && canUseSeamlessUpdater) {
           void startDownloadUpdate();
         }
       })
@@ -169,6 +185,8 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       window.electronAPI.events.onUpdaterUpdateDownloaded(() => {
         setUpdateState('downloaded');
         setDownloadProgress(null);
+        // macOS presents an explicit restart prompt; preserve the existing
+        // automatic install behavior on other platforms.
         if (userStartedUpdateRef.current && !isMac()) {
           void installDownloadedUpdate();
         }
@@ -190,7 +208,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
     return () => {
       cleanupFns.forEach(fn => fn());
     };
-  }, [clearInstallTimeout, installDownloadedUpdate, isOpen, startDownloadUpdate]);
+  }, [canUseSeamlessUpdater, clearInstallTimeout, installDownloadedUpdate, isOpen, startDownloadUpdate]);
 
   const handleStartUpdate = async () => {
     if (!window.electronAPI?.updater) {
@@ -207,7 +225,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
       setMessage(null);
       setDownloadProgress(null);
 
-      if (isPackaged && isMac()) {
+      if (isMac() && !canUseSeamlessUpdater) {
         setUpdateState('checking');
         const response = await window.electronAPI.updater.openTerminalWithCommand();
         userStartedUpdateRef.current = false;
@@ -406,27 +424,21 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                 <h3 className="text-lg font-medium text-text-primary mb-2">Update Available</h3>
                 <p className="text-text-secondary mb-4">
                   A new version of Pane is available.
-                  {isPackaged && isMac()
+                  {isPackaged && isMac() && !canUseSeamlessUpdater
                     ? ' Click below to open the installer helper.'
                     : isPackaged
                       ? ' Click below to download and install the update.'
                       : ' Auto-update is only available in the packaged app.'}
                 </p>
 
-                {/*
-                 * Temporary workaround pending Apple code signing:
-                 * On macOS, electron-updater's quitAndInstall() fails because Gatekeeper
-                 * quarantines unsigned .zip replacements. Until the builds are signed, we
-                 * skip the in-app download flow entirely on macOS and direct users to
-                 * manually download and drag-install from GitHub instead.
-                 */}
                 {isPackaged ? (
                   <Button
                     onClick={handleStartUpdate}
                     variant="primary"
                     icon={<Download className="w-4 h-4" />}
+                    disabled={isResolvingUpdateMode}
                   >
-                    Update Pane
+                    {isResolvingUpdateMode ? 'Preparing update...' : 'Update Pane'}
                   </Button>
                 ) : (
                   <Button
@@ -442,7 +454,7 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
             {updateState === 'checking' && (
               <div className="flex items-center gap-3 text-text-secondary">
                 <Loader2 className="w-5 h-5 animate-spin" />
-                <span>{isMac() ? 'Opening installer helper...' : 'Checking for update...'}</span>
+                <span>{isMac() && !canUseSeamlessUpdater ? 'Opening installer helper...' : 'Checking for update...'}</span>
               </div>
             )}
 
@@ -497,14 +509,25 @@ export function UpdateDialog({ isOpen, onClose, versionInfo }: UpdateDialogProps
                   <CheckCircle className="w-5 h-5 text-status-success mt-0.5" />
                   <div className="flex-1">
                     <h3 className="text-lg font-medium text-status-success mb-2">Update Downloaded</h3>
-                    {/* Safety guard: quitAndInstall() doesn't work on unsigned macOS builds */}
-                    {isMac() ? (
+                    {isMac() && !canUseSeamlessUpdater ? (
                       <div className="space-y-4">
                         <p className="text-text-secondary">
                           Please install the update manually to ensure it works correctly on macOS.
                         </p>
                         {renderMacUpdateActions()}
                       </div>
+                    ) : isMac() ? (
+                      <>
+                        <p className="text-text-secondary mb-4">
+                          The update is ready. Restart Pane to finish installing it.
+                        </p>
+                        <Button
+                          onClick={() => void installDownloadedUpdate()}
+                          variant="primary"
+                        >
+                          Restart now
+                        </Button>
+                      </>
                     ) : (
                       <>
                         <p className="text-text-secondary mb-4">

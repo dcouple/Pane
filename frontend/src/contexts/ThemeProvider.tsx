@@ -1,33 +1,82 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  DEFAULT_APPEARANCE,
+  isLightTheme,
+  isTheme,
+  normalizeAppearance,
+  resolveAppearanceTheme,
+  themeBase,
+  type AppearanceConfig,
+  type Theme,
+} from '../../../shared/types/appearance';
 import { useConfigStore } from '../stores/configStore';
-import { isWindowControlsOverlayEnabled, readTitleBarOverlayColors } from '../utils/titleBarOverlay';
-import { THEME_CLASSES, ThemeContext, type Theme } from './themeContextValue';
+import { readAppearanceCache, readLegacyThemeAsFixed, writeAppearanceCache } from '../utils/appearanceCache';
+import { isWindowControlsOverlayEnabled, readThemeTokenHex, readTitleBarOverlayColors } from '../utils/titleBarOverlay';
+import { THEME_CLASSES, ThemeContext } from './themeContextValue';
 
-const VALID_THEMES = new Set<string>(Object.keys(THEME_CLASSES));
-// Every class any theme can stamp — removed wholesale before applying the next theme.
 const ALL_THEME_CLASSES = [...new Set(Object.values(THEME_CLASSES).flat())];
-const isValidTheme = (theme: string): theme is Theme => VALID_THEMES.has(theme);
+const mediaQuery = (): MediaQueryList => window.matchMedia('(prefers-color-scheme: dark)');
+const initialAppearance = (): AppearanceConfig =>
+  window.electronAPI?.appearanceSnapshot
+  ?? readAppearanceCache()
+  ?? readLegacyThemeAsFixed()
+  ?? DEFAULT_APPEARANCE;
+
+function validatePatch(patch: Partial<AppearanceConfig>): void {
+  if (patch.theme !== undefined && !isTheme(patch.theme)) throw new Error('theme must be a valid palette');
+  if (patch.systemLightTheme !== undefined && !isLightTheme(patch.systemLightTheme)) {
+    throw new Error('systemLightTheme must be a light palette');
+  }
+  if (patch.systemDarkTheme !== undefined && isLightTheme(patch.systemDarkTheme)) {
+    throw new Error('systemDarkTheme must be a dark palette');
+  }
+}
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { config, updateConfig } = useConfigStore();
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('theme');
-    if (saved && isValidTheme(saved)) {
-      return saved;
-    }
-    return 'light-rounded';
-  });
-  const [highContrast, setHighContrast] = useState<boolean>(() => localStorage.getItem('high-contrast') === 'true');
+  const [appearance, setAppearanceState] = useState<AppearanceConfig>(initialAppearance);
+  const appearanceRef = useRef(appearance);
+  const deferConfigAppearanceSyncRef = useRef(false);
+  const [prefersDark, setPrefersDark] = useState(() => mediaQuery().matches);
+  const [highContrast, setHighContrast] = useState(() => localStorage.getItem('high-contrast') === 'true');
+  const resolvedTheme = resolveAppearanceTheme(appearance, prefersDark);
+  const activeSystemSlot = appearance.appearanceMode === 'system' ? (prefersDark ? 'dark' : 'light') : undefined;
+  const configAppearanceMode = config?.appearanceMode;
+  const configTheme = config?.theme;
+  const configSystemLightTheme = config?.systemLightTheme;
+  const configSystemDarkTheme = config?.systemDarkTheme;
+  const hasConfig = config !== null;
+  const configAppearance = useMemo(() => hasConfig ? {
+    appearanceMode: configAppearanceMode,
+    theme: configTheme,
+    systemLightTheme: configSystemLightTheme,
+    systemDarkTheme: configSystemDarkTheme,
+  } : undefined, [hasConfig, configAppearanceMode, configTheme, configSystemLightTheme, configSystemDarkTheme]);
 
-  // Sync theme from config when it loads
+  useEffect(() => { appearanceRef.current = appearance; }, [appearance]);
+
   useEffect(() => {
-    if (config?.theme && isValidTheme(config.theme)) {
-      setTheme(config.theme);
-      localStorage.setItem('theme', config.theme);
-    }
-  }, [config?.theme]);
+    const query = mediaQuery();
+    const refresh = (): void => {
+      if (appearanceRef.current.appearanceMode === 'system') setPrefersDark(query.matches);
+    };
+    query.addEventListener('change', refresh);
+    const unsubscribe = window.electronAPI?.events.onNativeAppearanceUpdated(({ prefersDark: next }) => {
+      if (appearanceRef.current.appearanceMode === 'system') setPrefersDark(next);
+    });
+    return () => {
+      query.removeEventListener('change', refresh);
+      unsubscribe?.();
+    };
+  }, []);
 
-  // Sync high contrast from config when it loads
+  useEffect(() => {
+    if (!configAppearance || deferConfigAppearanceSyncRef.current) return;
+    const normalized = normalizeAppearance(configAppearance).appearance;
+    setAppearanceState(normalized);
+    writeAppearanceCache(normalized);
+  }, [configAppearance]);
+
   useEffect(() => {
     if (config?.highContrast !== undefined) {
       setHighContrast(config.highContrast);
@@ -35,66 +84,107 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [config?.highContrast]);
 
-  // Layout effect (not passive): descendants read the stamped classes via
-  // getComputedStyle in their own useEffects (terminal palette, log ANSI
-  // colours), and React runs child passive effects before the parent's — a
-  // passive effect here would leave them one theme behind.
+  // Layout effect (not passive): descendants read the stamped classes and color-scheme via
+  // getComputedStyle in their own effects (terminal palette, log ANSI colours), while the
+  // passive background-colour and overlay-colour readers need current tokens; a passive
+  // effect here would leave them one theme behind.
   useLayoutEffect(() => {
     const root = document.documentElement;
     const body = document.body;
-
-    // Remove ALL theme classes from both root and body
     root.classList.remove(...ALL_THEME_CLASSES);
     body.classList.remove(...ALL_THEME_CLASSES);
+    root.classList.add(...THEME_CLASSES[resolvedTheme]);
+    body.classList.add(...THEME_CLASSES[resolvedTheme]);
+    root.style.colorScheme = themeBase(resolvedTheme);
+    root.classList.toggle('high-contrast', highContrast);
+    body.classList.toggle('high-contrast', highContrast);
+  }, [resolvedTheme, highContrast]);
 
-    const themeClasses = THEME_CLASSES[theme];
-    root.classList.add(...themeClasses);
-    body.classList.add(...themeClasses);
+  useEffect(() => {
+    const color = readThemeTokenHex('--color-bg-primary');
+    if (!color) return;
+    void window.electronAPI?.setBackgroundColor({ theme: resolvedTheme, color })
+      .then((response) => {
+        if (!response.success) {
+          console.error('Failed to apply window background colour:', response.error);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to apply window background colour:', error);
+      });
+  }, [resolvedTheme, highContrast]);
 
-    // High contrast is additive on top of the theme classes
-    root.classList.remove('high-contrast');
-    body.classList.remove('high-contrast');
-    if (highContrast) {
-      root.classList.add('high-contrast');
-      body.classList.add('high-contrast');
-    }
-
-    localStorage.setItem('theme', theme);
-
-  }, [theme, highContrast]);
-
-  // Window Controls Overlay: the OS draws the caption buttons, so they only
-  // follow the theme if we tell them to. This is the single choke point every
-  // theme and high-contrast change passes through, which is why the bridge lives
-  // here rather than in the title bar — the strip may be absent (Pane Chat, the
-  // Linux native-frame fallback) while the buttons are still on screen.
-  //
-  // Passive, and declared after the layout effect above, so the classes are
-  // already stamped when the tokens are read.
   useEffect(() => {
     if (!isWindowControlsOverlayEnabled()) return;
-
     const colors = readTitleBarOverlayColors();
     if (!colors) return;
+    void window.electronAPI?.setTitleBarOverlay(colors)
+      .then((response) => {
+        if (!response.success) {
+          console.error('Failed to apply title bar overlay colors:', response.error);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to apply title bar overlay colors:', error);
+      });
+  }, [resolvedTheme, highContrast]);
 
-    void window.electronAPI?.setTitleBarOverlay(colors).catch((error) => {
-      console.error('Failed to apply title bar overlay colors:', error);
-    });
-  }, [theme, highContrast]);
+  const setAppearance = useCallback(async (patch: Partial<AppearanceConfig>): Promise<void> => {
+    validatePatch(patch);
+    const previous = appearanceRef.current;
+    const next = { ...previous, ...patch };
+    const switchingToSystem = previous.appearanceMode === 'fixed' && patch.appearanceMode === 'system';
+    deferConfigAppearanceSyncRef.current = switchingToSystem;
+    if (!switchingToSystem) {
+      appearanceRef.current = next;
+      setAppearanceState(next);
+      writeAppearanceCache(next);
+    }
+    try {
+      await updateConfig(patch);
+      if (switchingToSystem) {
+        await new Promise<void>((resolve) => {
+          const query = mediaQuery();
+          const finish = (): void => {
+            query.removeEventListener('change', finish);
+            unsubscribeNative?.();
+            window.clearTimeout(timeout);
+            resolve();
+          };
+          query.addEventListener('change', finish);
+          const unsubscribeNative = window.electronAPI?.events.onNativeAppearanceUpdated(finish);
+          const timeout = window.setTimeout(finish, 250);
+        });
+        setPrefersDark(mediaQuery().matches);
+        appearanceRef.current = next;
+        setAppearanceState(next);
+        writeAppearanceCache(next);
+        deferConfigAppearanceSyncRef.current = false;
+      }
+    } catch (error) {
+      deferConfigAppearanceSyncRef.current = false;
+      appearanceRef.current = previous;
+      setAppearanceState(previous);
+      writeAppearanceCache(previous);
+      throw error;
+    }
+  }, [updateConfig]);
 
-  const updateTheme = (nextTheme: Theme) => {
-    const previousTheme = theme;
-    setTheme(nextTheme);
-    localStorage.setItem('theme', nextTheme);
-    void updateConfig({ theme: nextTheme }).catch((error) => {
-      console.error('Failed to save theme to config:', error);
-      setTheme(previousTheme);
-      localStorage.setItem('theme', previousTheme);
-    });
-  };
+  const setTheme = useCallback((theme: Theme): Promise<void> => {
+    if (appearanceRef.current.appearanceMode === 'fixed') return setAppearance({ theme });
+    if (prefersDark) {
+      if (isLightTheme(theme)) return Promise.reject(new Error('systemDarkTheme must be a dark palette'));
+      return setAppearance({ systemDarkTheme: theme });
+    }
+    if (!isLightTheme(theme)) return Promise.reject(new Error('systemLightTheme must be a light palette'));
+    return setAppearance({ systemLightTheme: theme });
+  }, [prefersDark, setAppearance]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme: updateTheme, highContrast }}>
+    <ThemeContext.Provider value={{
+      theme: resolvedTheme, appearance, prefersDark, activeSystemSlot,
+      setTheme, setAppearance, highContrast,
+    }}>
       {children}
     </ThemeContext.Provider>
   );

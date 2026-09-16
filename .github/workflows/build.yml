@@ -10,6 +10,13 @@ on:
         description: 'Publish to GitHub Releases'
         type: boolean
         default: false
+      release_tag:
+        description: 'Existing vX.Y.Z tag to recover (required when publishing manually)'
+        type: string
+        required: true
+
+env:
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
 
 jobs:
   build:
@@ -59,6 +66,17 @@ jobs:
 
     - run: pnpm install
 
+    - name: Patch electron-builder temporary keychain password handling
+      if: runner.os == 'macOS'
+      run: node scripts/patch-electron-builder-macos-keychain.js
+
+    - name: Verify release target
+      if: github.ref_type == 'tag' || inputs.publish == true
+      run: |
+        expected_tag="v$(node -p 'require("./package.json").version')"
+        test "$RELEASE_TAG" = "$expected_tag"
+        git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG"
+
     - name: Build and optionally publish
       run: |
         if [[ "${{ github.ref_type }}" == "tag" ]] || [[ "${{ inputs.publish }}" == "true" ]]; then
@@ -70,8 +88,13 @@ jobs:
         fi
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        CSC_DISABLE: 'true'
+        CSC_LINK: ${{ secrets.CSC_LINK }}
+        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && secrets.CSC_LINK != '' && secrets.CSC_KEY_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+        CSC_DISABLE: ${{ runner.os != 'macOS' || secrets.CSC_LINK == '' || secrets.CSC_KEY_PASSWORD == '' || secrets.APPLE_ID == '' || secrets.APPLE_TEAM_ID == '' || secrets.APPLE_APP_SPECIFIC_PASSWORD == '' }}
 
     - run: ls -la dist-electron/
 
@@ -89,25 +112,26 @@ jobs:
 
     - uses: actions/upload-artifact@v7
       with:
-        name: pane-${{ matrix.os }}-${{ github.ref_name }}
+        name: pane-${{ matrix.os }}-${{ env.RELEASE_TAG }}
         path: ${{ matrix.artifact_path }}
         if-no-files-found: error
         retention-days: 30
 
   publish-release:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     needs: [publish-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+    - uses: actions/checkout@v7
     - name: Publish GitHub Release
-      run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false --latest
+      run: bash scripts/publish-github-release.sh "${{ github.repository }}" "$RELEASE_TAG"
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   checksums:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     needs: [publish-release]
     runs-on: ubuntu-latest
     permissions:
@@ -117,7 +141,7 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        VERSION="${GITHUB_REF_NAME#v}"
+        VERSION="${RELEASE_TAG#v}"
         mkdir -p assets && cd assets
         gh release download "v${VERSION}" --repo dcouple/Pane \
           --pattern '*.exe' --pattern '*.dmg' --pattern '*.zip' \
@@ -133,12 +157,12 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        VERSION="${GITHUB_REF_NAME#v}"
+        VERSION="${RELEASE_TAG#v}"
         gh release upload "v${VERSION}" SHA256SUMS.txt \
           --repo dcouple/Pane --clobber
 
   validate-runpane-packages:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -157,7 +181,7 @@ jobs:
     - run: pnpm run test:runpane-package-smoke
 
   publish-npm:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     needs: [checksums, validate-runpane-packages]
     runs-on: ubuntu-latest
     permissions:
@@ -189,7 +213,7 @@ jobs:
       run: npm publish --access public
 
   publish-pypi:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     needs: [checksums, validate-runpane-packages]
     runs-on: ubuntu-latest
     environment:
@@ -254,7 +278,7 @@ jobs:
 
     - uses: actions/upload-artifact@v7
       with:
-        name: pane-windows-${{ matrix.arch }}-${{ github.ref_name }}
+        name: pane-windows-${{ matrix.arch }}-${{ env.RELEASE_TAG }}
         path: |
           dist-electron/*-Windows-${{ matrix.arch }}.exe
           dist-electron/*-Windows-${{ matrix.arch }}.exe.blockmap
@@ -279,12 +303,12 @@ jobs:
 
     - uses: actions/download-artifact@v7
       with:
-        name: pane-windows-x64-${{ github.ref_name }}
+        name: pane-windows-x64-${{ env.RELEASE_TAG }}
         path: windows-artifacts/x64
 
     - uses: actions/download-artifact@v7
       with:
-        name: pane-windows-arm64-${{ github.ref_name }}
+        name: pane-windows-arm64-${{ env.RELEASE_TAG }}
         path: windows-artifacts/arm64
 
     - name: Merge Windows updater metadata
@@ -303,17 +327,14 @@ jobs:
     - name: Upload Windows release assets
       run: |
         VERSION="$(node -p "require('./package.json').version")"
-        TAG="v${VERSION}"
-        if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-          TAG="${GITHUB_REF_NAME}"
-        fi
+        TAG="$RELEASE_TAG"
         gh release upload "${TAG}" windows-release/* \
           --repo "${{ github.repository }}" --clobber
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify-website:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.publish == true
     needs: [checksums]
     runs-on: ubuntu-latest
     steps:

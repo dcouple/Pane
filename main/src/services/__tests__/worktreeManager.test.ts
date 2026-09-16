@@ -70,6 +70,28 @@ describe('resolveDefaultWorktreeBase', () => {
   });
 });
 
+describe('WorktreeManager.listWorktrees', () => {
+  it('includes branch-backed and detached porcelain entries', async () => {
+    const runner = commandRunner(async () => ({
+      stdout: [
+        'worktree /repo',
+        'branch refs/heads/main',
+        '',
+        'worktree /repo/detached',
+        'HEAD abc123',
+        'detached',
+        '',
+      ].join('\n'),
+      stderr: '',
+    }));
+
+    await expect(new WorktreeManager().listWorktrees('/repo', runner)).resolves.toEqual([
+      { path: '/repo', branch: 'main' },
+      { path: '/repo/detached' },
+    ]);
+  });
+});
+
 describe('WorktreeManager.resolveWorkingDirectory', () => {
   it('creates fresh worktrees from remote bases without setting upstream tracking', async () => {
     const runner = commandRunner(async command => {

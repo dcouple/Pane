@@ -1,13 +1,12 @@
-import { EventEmitter } from 'events';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'fs';
 import { dirname } from 'path';
 import { getAppSubdirectory } from '../utils/appDirectory';
 import { GitFileWatcher } from './gitFileWatcher';
 import type { CommandRunner } from '../utils/commandRunner';
-import type { PathResolver } from '../utils/pathResolver';
 import type { SessionManager } from './sessionManager';
 import type { Logger } from '../utils/logger';
 import type { BrowserWindow } from 'electron';
+import { withLock } from '../utils/mutex';
 
 interface SpotlightState {
   sessionId: string;
@@ -18,9 +17,11 @@ interface SpotlightState {
   originalCommit: string;
   watcher: GitFileWatcher;
   commandRunner: CommandRunner;
-  pathResolver: PathResolver;
   lastSyncCommit?: string;
-  syncInProgress: boolean;
+  syncPending?: Promise<void>;
+  syncRequested?: boolean;
+  stopping?: boolean;
+  retryTimer?: NodeJS.Timeout;
 }
 
 interface PersistedSpotlightEntry {
@@ -33,22 +34,25 @@ interface PersistedSpotlightState {
   [projectId: string]: PersistedSpotlightEntry;
 }
 
-export class SpotlightManager extends EventEmitter {
+export class SpotlightManager {
   private activeSpotlights: Map<number, SpotlightState> = new Map();
   private readonly SPOTLIGHT_STATE_FILE: string;
-  private readonly SPOTLIGHT_DEBOUNCE_MS = 2500;
 
   constructor(
     private sessionManager: SessionManager,
     private logger: Logger | undefined,
     private getMainWindow: () => BrowserWindow | null
   ) {
-    super();
     this.SPOTLIGHT_STATE_FILE = getAppSubdirectory('spotlight-state.json');
-    this.setMaxListeners(100);
   }
 
-  enable(sessionId: string): void {
+  // Commands have their own deadlines. Lifecycle operations must wait for
+  // checkout completion so a lock timeout cannot skip branch restoration.
+  enable(sessionId: string): Promise<void> {
+    return withLock(this.SPOTLIGHT_STATE_FILE, () => this.enableSpotlight(sessionId), Infinity);
+  }
+
+  private async enableSpotlight(sessionId: string): Promise<void> {
     const session = this.sessionManager.getDbSession(sessionId);
     if (!session) {
       throw new Error(`Session ${sessionId} not found`);
@@ -84,29 +88,20 @@ export class SpotlightManager extends EventEmitter {
     }
 
     // Check repo clean
-    if (!this.isRepoClean(project.path, commandRunner)) {
+    if (!await this.isRepoClean(project.path, commandRunner)) {
       throw new Error(
         'Project repository has uncommitted changes. Please commit or stash changes before enabling spotlight.'
       );
     }
 
     // Save original state
-    const originalBranch = commandRunner.exec('git rev-parse --abbrev-ref HEAD', project.path, { silent: true }).trim();
-    const originalCommit = commandRunner.exec('git rev-parse HEAD', project.path, { silent: true }).trim();
+    const originalBranch = (await commandRunner.execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], project.path, { silent: true })).stdout.trim();
+    const originalCommit = (await commandRunner.execFile('git', ['rev-parse', 'HEAD'], project.path, { silent: true })).stdout.trim();
 
     this.logger?.info(`[SpotlightManager] Enabling spotlight for session ${sessionId} on project ${project.id}`);
     this.logger?.info(`[SpotlightManager] Original branch: ${originalBranch}, commit: ${originalCommit}`);
 
-    // Do initial sync
-    this.syncWorktreeToRoot(session.worktree_path, project.path, project.id);
-
-    // Create watcher with WSL-aware command execution
     const watcher = new GitFileWatcher(this.logger, commandRunner, pathResolver);
-    watcher.startWatching(sessionId, session.worktree_path);
-    watcher.on('needs-refresh', () => {
-      this.logger?.info(`[SpotlightManager] File change detected in session ${sessionId}, syncing...`);
-      this.syncWorktreeToRoot(session.worktree_path, project.path, project.id);
-    });
 
     // Store in activeSpotlights
     const state: SpotlightState = {
@@ -118,14 +113,16 @@ export class SpotlightManager extends EventEmitter {
       originalCommit,
       watcher,
       commandRunner,
-      pathResolver,
-      syncInProgress: false
     };
 
     this.activeSpotlights.set(project.id, state);
-
-    // Persist state
+    // Record the original branch before the first checkout so disable/shutdown
+    // always use the same restore path, including during initial activation.
     this.persistState();
+    await this.syncWorktreeToRoot(state);
+    if (this.activeSpotlights.get(project.id) !== state) return;
+    watcher.on('needs-refresh', () => { void this.requestSync(state); });
+    await watcher.startWatching(sessionId, session.worktree_path);
 
     // Notify frontend
     const mainWindow = this.getMainWindow();
@@ -140,133 +137,75 @@ export class SpotlightManager extends EventEmitter {
     this.logger?.info(`[SpotlightManager] Spotlight enabled for session ${sessionId}`);
   }
 
-  disable(sessionId: string): void {
-    // Find the active spotlight entry where state.sessionId === sessionId
-    let state: SpotlightState | undefined;
-    let projectId: number | undefined;
+  disable(sessionId: string): Promise<void> {
+    const active = [...this.activeSpotlights.values()].find(entry => entry.sessionId === sessionId);
+    if (active) active.stopping = true;
+    return withLock(this.SPOTLIGHT_STATE_FILE, async () => {
+      const state = [...this.activeSpotlights.values()].find(entry => entry.sessionId === sessionId);
+      if (state) await this.disableSpotlight(state);
+    }, Infinity);
+  }
 
-    for (const [pid, s] of this.activeSpotlights.entries()) {
-      if (s.sessionId === sessionId) {
-        state = s;
-        projectId = pid;
-        break;
-      }
-    }
-
-    if (!state || projectId === undefined) {
-      this.logger?.warn(`[SpotlightManager] No active spotlight found for session ${sessionId}`);
-      return;
-    }
-
-    this.logger?.info(`[SpotlightManager] Disabling spotlight for session ${sessionId}`);
-
-    // Stop watcher
-    state.watcher.stopWatching(sessionId);
+  private async disableSpotlight(state: SpotlightState): Promise<void> {
+    const { sessionId, projectId } = state;
     state.watcher.stopAll();
+    if (state.retryTimer) clearTimeout(state.retryTimer);
+    this.activeSpotlights.delete(projectId);
 
-    // Restore original state
     try {
-      if (state.originalBranch === 'HEAD') {
-        // Was detached
-        this.logger?.info(`[SpotlightManager] Restoring detached HEAD state to ${state.originalCommit}`);
-        state.commandRunner.exec(`git checkout ${state.originalCommit}`, state.projectPath, { silent: true });
-      } else {
-        // Was on a branch
-        this.logger?.info(`[SpotlightManager] Restoring branch ${state.originalBranch}`);
-        state.commandRunner.exec(`git checkout ${state.originalBranch}`, state.projectPath, { silent: true });
-      }
+      const target = state.originalBranch === 'HEAD' ? state.originalCommit : state.originalBranch;
+      await state.commandRunner.execFile('git', ['checkout', target], state.projectPath, { silent: true });
     } catch (error) {
       this.logger?.error(
         `[SpotlightManager] Failed to restore original state for session ${sessionId}:`,
-        new Error(String(error))
+        new Error(String(error)),
       );
-      // Don't throw - we still want to clean up the spotlight state
     }
 
-    // Remove from activeSpotlights
-    this.activeSpotlights.delete(projectId);
-
-    // Persist state
     this.persistState();
-
-    // Notify frontend
     const mainWindow = this.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('spotlight:status-changed', {
-        sessionId,
-        projectId,
-        active: false
-      });
+      mainWindow.webContents.send('spotlight:status-changed', { sessionId, projectId, active: false });
     }
-
-    this.logger?.info(`[SpotlightManager] Spotlight disabled for session ${sessionId}`);
   }
 
-  disableAll(): void {
-    this.logger?.info('[SpotlightManager] Disabling all spotlights...');
-
-    for (const [projectId, state] of this.activeSpotlights.entries()) {
-      // Stop watcher
-      state.watcher.stopWatching(state.sessionId);
-      state.watcher.stopAll();
-
-      // Restore original state
+  disableAll(): Promise<void> {
+    for (const state of this.activeSpotlights.values()) state.stopping = true;
+    return withLock(this.SPOTLIGHT_STATE_FILE, async () => {
+      for (const state of this.activeSpotlights.values()) await this.disableSpotlight(state);
       try {
-        if (state.originalBranch === 'HEAD') {
-          // Was detached
-          this.logger?.info(
-            `[SpotlightManager] Restoring detached HEAD state to ${state.originalCommit} for project ${projectId}`
-          );
-          state.commandRunner.exec(`git checkout ${state.originalCommit}`, state.projectPath, { silent: true });
-        } else {
-          // Was on a branch
-          this.logger?.info(
-            `[SpotlightManager] Restoring branch ${state.originalBranch} for project ${projectId}`
-          );
-          state.commandRunner.exec(`git checkout ${state.originalBranch}`, state.projectPath, { silent: true });
-        }
+        if (existsSync(this.SPOTLIGHT_STATE_FILE)) unlinkSync(this.SPOTLIGHT_STATE_FILE);
       } catch (error) {
-        this.logger?.error(
-          `[SpotlightManager] Failed to restore original state for project ${projectId}:`,
-          new Error(String(error))
-        );
-        // Continue with other spotlights
+        this.logger?.error('[SpotlightManager] Failed to delete state file:', new Error(String(error)));
       }
-    }
-
-    // Clear the map
-    this.activeSpotlights.clear();
-
-    // Delete persisted state file
-    try {
-      if (existsSync(this.SPOTLIGHT_STATE_FILE)) {
-        unlinkSync(this.SPOTLIGHT_STATE_FILE);
-      }
-    } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to delete state file:', new Error(String(error)));
-    }
-
-    this.logger?.info('[SpotlightManager] All spotlights disabled');
+    }, Infinity);
   }
 
-  private syncWorktreeToRoot(worktreePath: string, projectPath: string, projectId: number): void {
-    const state = this.activeSpotlights.get(projectId);
-    if (!state) {
-      return;
-    }
+  private requestSync(state: SpotlightState, retry = false): Promise<void> {
+    if (state.stopping) return Promise.resolve();
+    state.syncRequested = true;
+    if (state.syncPending) return state.syncPending;
+    const pending = withLock(this.SPOTLIGHT_STATE_FILE, async () => {
+      // A queued sync must never checkout after disable or after replacement.
+      while (state.syncRequested && !state.stopping && this.activeSpotlights.get(state.projectId) === state) {
+        state.syncRequested = false;
+        await this.syncWorktreeToRoot(state, retry);
+      }
+    }, Infinity).catch(error => {
+      this.logger?.error('[SpotlightManager] Failed to schedule sync:', new Error(String(error)));
+    }).finally(() => {
+      if (state.syncPending === pending) state.syncPending = undefined;
+    });
+    state.syncPending = pending;
+    return pending;
+  }
 
-    // Guard: if syncInProgress, return
-    if (state.syncInProgress) {
-      this.logger?.info(`[SpotlightManager] Sync already in progress for project ${projectId}, skipping`);
-      return;
-    }
-
-    state.syncInProgress = true;
-
+  private async syncWorktreeToRoot(state: SpotlightState, retry = false): Promise<void> {
+    const { projectId, projectPath, worktreePath } = state;
     try {
       // Tamper detection
       if (state.lastSyncCommit) {
-        const currentCommit = state.commandRunner.exec('git rev-parse HEAD', projectPath, { silent: true }).trim();
+        const currentCommit = (await state.commandRunner.execFile('git', ['rev-parse', 'HEAD'], projectPath, { silent: true })).stdout.trim();
 
         if (currentCommit !== state.lastSyncCommit) {
           this.logger?.warn(
@@ -284,13 +223,13 @@ export class SpotlightManager extends EventEmitter {
           }
 
           // Auto-disable
-          this.disable(state.sessionId);
+          await this.disableSpotlight(state);
           return;
         }
       }
 
       // Run git stash create
-      const stashHash = state.commandRunner.exec('git stash create', worktreePath, { silent: true }).trim();
+      const stashHash = (await state.commandRunner.execFile('git', ['stash', 'create'], worktreePath, { silent: true })).stdout.trim();
 
       // If empty string, no changes
       if (!stashHash) {
@@ -301,7 +240,7 @@ export class SpotlightManager extends EventEmitter {
       this.logger?.info(`[SpotlightManager] Created stash ${stashHash} for project ${projectId}`);
 
       // Checkout the stash at project root
-      state.commandRunner.exec(`git checkout ${stashHash}`, projectPath, { silent: true });
+      await state.commandRunner.execFile('git', ['checkout', stashHash], projectPath, { silent: true });
 
       // Update lastSyncCommit
       state.lastSyncCommit = stashHash;
@@ -309,16 +248,16 @@ export class SpotlightManager extends EventEmitter {
       this.logger?.info(`[SpotlightManager] Successfully synced worktree to root for project ${projectId}`);
     } catch (error) {
       // Check for lock error
-      if (String(error).includes('.lock')) {
+      if (!retry && !state.retryTimer && String(error).includes('.lock')) {
         this.logger?.warn(`[SpotlightManager] Git lock detected for project ${projectId}, retrying in 1s...`);
 
         // Retry once after 1s delay
-        setTimeout(() => {
+        state.retryTimer = setTimeout(() => {
           this.logger?.info(`[SpotlightManager] Retrying sync for project ${projectId}...`);
-          state.syncInProgress = false;
-          this.syncWorktreeToRoot(worktreePath, projectPath, projectId);
+          state.retryTimer = undefined;
+          void this.requestSync(state, true);
         }, 1000);
-        return; // Don't set syncInProgress to false yet
+        return;
       }
 
       this.logger?.error(`[SpotlightManager] Sync error for project ${projectId}:`, new Error(String(error)));
@@ -332,29 +271,16 @@ export class SpotlightManager extends EventEmitter {
           error: String(error)
         });
       }
-    } finally {
-      state.syncInProgress = false;
     }
   }
 
-  private isRepoClean(repoPath: string, commandRunner: CommandRunner): boolean {
+  private async isRepoClean(repoPath: string, commandRunner: CommandRunner): Promise<boolean> {
     try {
-      commandRunner.exec('git diff-files --quiet', repoPath, { silent: true });
-      commandRunner.exec('git diff-index --cached --quiet HEAD', repoPath, { silent: true });
+      await commandRunner.execFile('git', ['diff-files', '--quiet'], repoPath, { silent: true });
+      await commandRunner.execFile('git', ['diff-index', '--cached', '--quiet', 'HEAD'], repoPath, { silent: true });
       return true;
     } catch {
       return false;
-    }
-  }
-
-  handleSessionDeleted(sessionId: string): void {
-    // Check if this session is spotlighted
-    for (const state of this.activeSpotlights.values()) {
-      if (state.sessionId === sessionId) {
-        this.logger?.info(`[SpotlightManager] Session ${sessionId} deleted, disabling spotlight`);
-        this.disable(sessionId);
-        break;
-      }
     }
   }
 
@@ -399,20 +325,7 @@ export class SpotlightManager extends EventEmitter {
     }
   }
 
-  loadState(): void {
-    try {
-      if (existsSync(this.SPOTLIGHT_STATE_FILE)) {
-        const contents = readFileSync(this.SPOTLIGHT_STATE_FILE, 'utf8');
-        // We just read it for validation, actual restore happens in restoreAll
-        JSON.parse(contents);
-        this.logger?.info('[SpotlightManager] State file loaded successfully');
-      }
-    } catch (error) {
-      this.logger?.error('[SpotlightManager] Failed to load state file:', new Error(String(error)));
-    }
-  }
-
-  restoreAll(): void {
+  async restoreAll(): Promise<void> {
     try {
       if (!existsSync(this.SPOTLIGHT_STATE_FILE)) {
         this.logger?.info('[SpotlightManager] No state file to restore');
@@ -447,7 +360,7 @@ export class SpotlightManager extends EventEmitter {
 
           // Re-enable spotlight
           this.logger?.info(`[SpotlightManager] Restoring spotlight for session ${entry.sessionId}`);
-          this.enable(entry.sessionId);
+          await this.enable(entry.sessionId);
         } catch (error) {
           this.logger?.error(
             `[SpotlightManager] Failed to restore spotlight for project ${projectIdStr}:`,

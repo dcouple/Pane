@@ -92,6 +92,7 @@ export interface Session {
   permissionMode?: 'approve' | 'ignore';
   runStartedAt?: string;
   isMainRepo?: boolean;
+  worktreeOwnership?: 'pane' | 'external';
   displayOrder?: number;
   isFavorite?: boolean;
   favoritePinnedAt?: string;
@@ -103,7 +104,7 @@ export interface Session {
   baseBranch?: string;
   nameManuallySet?: boolean;
   activateOnCreate?: boolean;
-  autoCreateTerminal?: boolean;
+  createDefaultTerminalOnCreate?: boolean;
 }
 
 export interface GitStatus {

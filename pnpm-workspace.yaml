@@ -1,11 +1,21 @@
 packages:
   - 'frontend'
   - 'main'
+  - 'mobile'
   - 'packages/runpane'
   - 'shared'
 minimumReleaseAge: 10080
 minimumReleaseAgeExclude:
   - electron
+  # Capacitor's core/platform packages must stay in one tested release family.
+  - '@capacitor/android'
+  - '@capacitor/app'
+  - '@capacitor/browser'
+  - '@capacitor/cli'
+  - '@capacitor/core'
+  - '@capacitor/ios'
+  - '@capacitor/keyboard'
+  - '@capacitor/push-notifications'
 supportedArchitectures:
   os:
     - current

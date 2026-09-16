@@ -31,7 +31,7 @@ export const InterceptorToast: React.FC<InterceptorToastProps> = ({
       className={cn(
         'absolute bottom-4 left-1/2 -translate-x-1/2 z-[10002]',
         'px-4 py-2 bg-surface-primary/95 backdrop-blur-md',
-        'border border-border-primary/60 rounded-lg shadow-dropdown-elevated',
+        'border border-border-primary rounded-lg shadow-dropdown-elevated',
         'text-[13px] text-text-primary pointer-events-none',
         'will-change-[transform,opacity]',
         mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-1',

@@ -81,6 +81,7 @@ type DatabaseSession = {
   worktree_path?: string | null;
   project_id?: number | null;
   is_main_repo?: boolean | number | null;
+  worktree_ownership?: 'pane' | 'external' | null;
   created_at?: string | null;
 };
 
@@ -120,7 +121,7 @@ export function registerSessionHandlers(
       const worktreeName = dbSession.worktree_name || '';
       const projectId = dbSession.project_id;
       const worktreePath = dbSession.worktree_path || '';
-      if (worktreeName && projectId && !dbSession.is_main_repo && worktreePath) {
+      if (worktreeName && projectId && !dbSession.is_main_repo && dbSession.worktree_ownership !== 'external' && worktreePath) {
         const project = databaseService.getProject(projectId);
         const ctx = sessionManager.getProjectContextByProjectId(projectId);
         if (project && ctx) {
@@ -362,7 +363,7 @@ export function registerSessionHandlers(
       // Disable spotlight if this session is spotlighted
       try {
         if (spotlightManager.isSpotlightActive(sessionId)) {
-          spotlightManager.disable(sessionId);
+          await spotlightManager.disable(sessionId);
           console.log(`[Session IPC] Disabled spotlight for archived session ${sessionId}`);
         }
       } catch (spotlightError) {
@@ -428,7 +429,7 @@ export function registerSessionHandlers(
         }
 
         // Clean up the worktree if session has one (but not for main repo sessions)
-        if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo) {
+        if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo && dbSession.worktree_ownership !== 'external') {
           const project = databaseService.getProject(dbSession.project_id);
           if (project) {
             const ctx = sessionManager.getProjectContextByProjectId(dbSession.project_id);
@@ -576,7 +577,7 @@ export function registerSessionHandlers(
       };
 
       // Queue the cleanup task if we have worktree cleanup to do
-      if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo) {
+      if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo && dbSession.worktree_ownership !== 'external') {
         const project = databaseService.getProject(dbSession.project_id);
         if (project && archiveProgressManager) {
           console.log(`[ArchiveCleanup] archive_queued sessionId=${sessionId} sessionName=${JSON.stringify(dbSession.name)} worktreeName=${JSON.stringify(dbSession.worktree_name)} projectName=${JSON.stringify(project.name)}`);
@@ -1571,6 +1572,45 @@ export function registerSessionHandlers(
 
   commandRegistry.register('sessions:restore', async (sessionId: string) => {
     try {
+      const dbSession = databaseService.getSession(sessionId);
+      if (!dbSession || !dbSession.archived) {
+        return { success: false, error: 'Session not found or already active' };
+      }
+
+      // Archiving removes the worktree directory on disk (see the archive
+      // cleanup callback above), so restoring only the `archived` flag leaves
+      // `worktree_path` dangling and every panel spawn fails with ENOENT.
+      // Recreate the worktree before un-archiving; if that fails, leave the
+      // session archived and report why.
+      if (dbSession.worktree_name && dbSession.project_id && !dbSession.is_main_repo && dbSession.worktree_ownership !== 'external' && !existsSync(dbSession.worktree_path)) {
+        const project = databaseService.getProject(dbSession.project_id);
+        const ctx = project ? sessionManager.getProjectContextByProjectId(dbSession.project_id) : null;
+        if (!project || !ctx) {
+          return { success: false, error: 'Cannot restore session: its project is no longer available' };
+        }
+        try {
+          console.log(`[WorktreeAudit] create_requested source="session-restore" sessionId=${JSON.stringify(sessionId)} projectId=${dbSession.project_id} worktreeName=${JSON.stringify(dbSession.worktree_name)} worktreePath=${JSON.stringify(dbSession.worktree_path)}`);
+          // `createWorktree` reuses the session's branch when it still exists and
+          // otherwise recreates it from the recorded base branch.
+          const { worktreePath } = await worktreeManager.createWorktree(
+            project.path,
+            dbSession.worktree_name,
+            undefined,
+            dbSession.base_branch || undefined,
+            project.worktree_folder || undefined,
+            ctx.pathResolver,
+            ctx.commandRunner,
+          );
+          if (worktreePath !== dbSession.worktree_path) {
+            databaseService.updateSession(sessionId, { worktree_path: worktreePath });
+          }
+        } catch (worktreeError) {
+          const message = worktreeError instanceof Error ? worktreeError.message : String(worktreeError);
+          console.error(`[Session IPC] Failed to recreate worktree while restoring session ${sessionId}:`, worktreeError);
+          return { success: false, error: `Failed to recreate worktree for session: ${message}` };
+        }
+      }
+
       const restored = databaseService.restoreSession(sessionId);
       if (!restored) {
         return { success: false, error: 'Session not found or already active' };

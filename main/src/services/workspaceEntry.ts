@@ -192,7 +192,7 @@ async function runAttempt(
       signal,
       launchPreset.title,
       () => services.sessionManager.getOrCreateMainRepoSessionAnnounced(projectId, {
-        autoCreateTerminal: false,
+        createDefaultTerminalOnCreate: false,
       }),
     );
     sessionId = session.id;

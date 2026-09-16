@@ -63,7 +63,13 @@ describe('findModelPrice', () => {
       'OpenRouter · 2026-08-26',
     );
 
-    expect(findModelPrice('claude-haiku-4-5')?.model).toBe('claude-haiku-4-5');
+    expect(findModelPrice('gpt-daybreak-blue-latest')).toEqual({
+      model: 'gpt-daybreak-blue-latest',
+      inputPerMTok: 4,
+      outputPerMTok: 20,
+      cacheReadPerMTok: 0.4,
+      cacheWritePerMTok: 5,
+    });
   });
 });
 

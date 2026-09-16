@@ -16,6 +16,7 @@ export interface Session {
   permissionMode?: 'approve' | 'ignore';
   runStartedAt?: string;
   isMainRepo?: boolean;
+  worktreeOwnership?: 'pane' | 'external';
   displayOrder?: number;
   projectId?: number;
   folderId?: string;
@@ -31,7 +32,7 @@ export interface Session {
   pr_renamed?: boolean;
   nameManuallySet?: boolean;
   activateOnCreate?: boolean;
-  autoCreateTerminal?: boolean;
+  createDefaultTerminalOnCreate?: boolean;
 }
 
 export interface GitStatus {
