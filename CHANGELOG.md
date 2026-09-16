@@ -18,10 +18,12 @@ All notable changes to Pane will be documented in this file.
 ### Changed
 - Custom-command keyboard shortcuts moved from `mod+alt+5..9` to `mod+alt+6..9` to make room for the Cursor slot.
 - Cursor Agent is now available inside WSL repositories.
+- Repository main panes now show the default shell in the bottom dock. The dock defaults to expanded in both main and worktree panes, while preserving saved collapse preferences.
 - `runpane watch` defaults are unchanged and stay responsive: no settle, no batching, all event kinds, IDLE every 10 minutes, HEARTBEAT every 60 seconds under `--follow`.
 - The Pane Chat orchestrator's Liveness Contract now arms the cadence flags above, filters HEARTBEAT out of its monitor, and judges a dead watch by a non-zero exit or a `WATCH ERROR` line rather than by silence.
 
 ### Fixed
+- Agent terminals remain in working tabs after deleting the default shell and switching panes. Closing the dock also repairs tab selection when another shell takes its place.
 - `runpane watch` no longer reports STUCK for the grey prompt suggestion Claude Code shows in an empty composer. STUCK now means real unsubmitted composer text.
 
 ## [1.1.123] - 2026-04-25

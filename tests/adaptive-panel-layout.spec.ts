@@ -97,7 +97,7 @@ async function setImmersiveMode(page: Page, immersive: boolean): Promise<void> {
 }
 
 test('all worktree surfaces use container bounds, accessible resizing, and durable intent', async ({ page }, testInfo) => {
-  await installFixture(page);
+  await installFixture(page, { 'pane-terminal-collapsed': 'true' });
   await openWorktree(page);
 
   const inspector = page.locator('.pane-detail-panel-vertical');
@@ -779,7 +779,7 @@ test('a terminal arriving after the default branch renders switches the branch a
 });
 
 test('an observed active terminal resize debounces through the existing xterm refit path', async ({ page }) => {
-  await installFixture(page);
+  await installFixture(page, { 'pane-terminal-collapsed': 'true' });
   await openWorktree(page);
 
   await page.evaluate(() => {

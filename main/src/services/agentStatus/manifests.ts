@@ -14,8 +14,8 @@
 
 import type { AgentManifest } from './manifestEngine';
 
-/** Braille spinner glyphs Claude/Codex animate in their OSC title / status line. */
-const SPINNER_TITLE = /^[\u{2800}-\u{28FF}] /u;
+/** Observed working-title glyphs, including older braille animation. */
+const SPINNER_TITLE = /^[◐◑◒◓\u{2800}-\u{28FF}] /u;
 const CODEX_SPINNER = /(?:^| )[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏](?: |$)/u;
 
 export const CLAUDE_MANIFEST: AgentManifest = {
@@ -24,10 +24,27 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'osc_title_working',
       state: 'working',
-      priority: 1100,
+      priority: 990,
       region: 'osc_title',
       visibleWorking: true,
       regex: [SPINNER_TITLE],
+    },
+    {
+      id: 'folder_trust_prompt',
+      state: 'blocked',
+      priority: 1100,
+      region: 'after_last_horizontal_rule',
+      visibleBlocker: true,
+      contains: ['quick safety check:', 'yes, i trust this folder', 'enter to confirm', 'esc to cancel'],
+      lineRegex: [/^\s*❯?\s*No, exit\s*$/i],
+    },
+    {
+      id: 'spinner_status_line',
+      state: 'working',
+      priority: 974,
+      region: 'bottom_non_empty_lines(8)',
+      visibleWorking: true,
+      lineRegex: [/^\s*[·✶✻✽✢✳]\s+[\p{L} -]+…(?:\s+\([^)]*\))?\s*$/u],
     },
     {
       id: 'btw_overlay_working',
@@ -73,7 +90,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'live_blocked_form',
       state: 'blocked',
-      priority: 980,
+      priority: 1100,
       region: 'after_last_horizontal_rule',
       visibleBlocker: true,
       contains: ['enter to select', 'esc to cancel'],
@@ -88,8 +105,8 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'dynamic_workflow_prompt',
       state: 'blocked',
-      priority: 980,
-      region: 'whole_recent',
+      priority: 1100,
+      region: 'after_last_horizontal_rule',
       visibleBlocker: true,
       contains: ['run a dynamic workflow?', 'esc to cancel'],
     },
@@ -98,7 +115,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
       state: 'idle',
       priority: 950,
       region: 'prompt_box_body',
-      visibleIdle: true,
+      // The composer remains visible mid-turn; it is not completion evidence.
       lineRegex: [/^\s*❯/],
       not: [
         { contains: ['enter to select'] },
@@ -120,8 +137,8 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'bash_permission_prompt',
       state: 'blocked',
-      priority: 850,
-      region: 'whole_recent',
+      priority: 1100,
+      region: 'after_last_horizontal_rule',
       visibleBlocker: true,
       contains: ['do you want to proceed?'],
       any: [
@@ -144,7 +161,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'generic_permission_prompt',
       state: 'blocked',
-      priority: 840,
+      priority: 1100,
       region: 'after_last_horizontal_rule',
       visibleBlocker: true,
       contains: ['do you want to proceed?', 'esc to cancel'],
@@ -180,7 +197,7 @@ export const CLAUDE_MANIFEST: AgentManifest = {
     {
       id: 'osc_title_idle',
       state: 'idle',
-      priority: 250,
+      priority: 960,
       region: 'osc_title',
       visibleIdle: true,
       regex: [/^\u{2733} /u],
@@ -220,8 +237,11 @@ export const CODEX_MANIFEST: AgentManifest = {
       priority: 1000,
       region: 'after_last_prompt_marker',
       skipStateUpdate: true,
-      contains: ['↑/↓ to scroll', 'pgup/pgdn to', 'home/end to jump', 'q to quit'],
-      any: [{ contains: ['esc to edit prev'] }, { contains: ['esc/← to edit prev'] }],
+      contains: ['↑/↓ to scroll', 'pgup/pgdn to', 'home/end to jump'],
+      all: [
+        { any: [{ contains: ['q to quit'] }, { contains: ['q close'] }] },
+        { any: [{ contains: ['esc to edit prev'] }, { contains: ['esc/← to edit prev'] }] },
+      ],
     },
     {
       id: 'live_strong_blocker',
@@ -240,21 +260,17 @@ export const CODEX_MANIFEST: AgentManifest = {
       id: 'weak_blocker',
       state: 'blocked',
       priority: 600,
-      region: 'whole_recent',
-      any: [
-        { contains: ['[y/n]'] },
-        { contains: ['yes (y)'] },
-        { contains: ['do you want to'], any: [{ contains: ['yes'] }, { contains: ['❯'] }] },
-        { contains: ['would you like to'], any: [{ contains: ['yes'] }, { contains: ['❯'] }] },
-      ],
+      region: 'after_last_prompt_marker',
+      visibleBlocker: true,
+      regex: [/(?:^|\n)[^\n]*\?\s*(?:\[y\/n[^\]]*\]|yes \(y\))\s*:?\s*$/i],
     },
     {
       id: 'screen_working_fallback',
       state: 'working',
       priority: 500,
-      region: 'bottom_non_empty_lines(3)',
+      region: 'bottom_non_empty_lines(6)',
       visibleWorking: true,
-      lineRegex: [/^[•◦]\s+Working \([^)]*esc to interrupt\)(?: · .*)?$/],
+      regex: [/^\s*[•◦]\s+Working \([^)]*esc\s+to\s+interrupt\)(?: · [^\n]*)?\s*$/m],
       not: [{ contains: ['■ Conversation interrupted'] }],
     },
     {
