@@ -1,3 +1,5 @@
+![Pane — a pixel-art terminal workshop with separate agent workspaces](docs/assets/pane-banner.png)
+
 <p align="center">
   <img src="frontend/src/assets/pane-logo.png" alt="Pane" width="120" height="120">
 </p>
@@ -234,6 +236,8 @@ See [Runpane CLI Contract](docs/RUNPANE_CLI_CONTRACT.md) for the full schema and
 ---
 
 ## How It Works
+
+![A saved repository opens into a Pane with a worktree and branch; terminal panels in that Pane share the worktree](docs/assets/pane-workspaces.png)
 
 Two primitives: **panes** and **tabs**. One pane per feature, one worktree each. Inside every pane, everything lives in tabs — agents, diff viewer, file explorer, git tree, logs, multiple terminals. Create a pane, get an isolated workspace. Delete a pane, everything cleans up. Your agents never step on each other, and every tab persists across restarts.
 

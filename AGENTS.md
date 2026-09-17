@@ -103,3 +103,7 @@ Common commands:
 
 WSL note: if `runpane doctor --json` cannot find `/tmp/pane-daemon.../daemon.sock` or `runpane` resolves to a broken Windows shim, Pane may be running on Windows. Try `powershell.exe -NoProfile -Command 'Set-Location $env:TEMP; runpane doctor --json'`, then create Panes through the same PowerShell form using the saved WSL repo name or id. Use `runpane agents doctor --agent <agent> --repo <selector> --json` to diagnose the repo environment Pane will actually use.
 <!-- pane-agent-context:end -->
+
+## README artwork
+
+Follow `docs/assets/visual-style.md` for README illustrations. Use this repository's banner as the image reference, preserving the shared dcouple pixel-art language and the project-specific setting and colors.
