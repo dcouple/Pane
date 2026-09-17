@@ -15,7 +15,10 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { cn } from '../utils/cn';
 import { LiveRegion } from './ui/LiveRegion';
-import { useOrchestrationSessionStore } from '../stores/orchestrationSessionStore';
+import {
+  isArchivedOrchestrationSession,
+  useOrchestrationSessionStore,
+} from '../stores/orchestrationSessionStore';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 
@@ -37,10 +40,17 @@ export function PaneChatView() {
   const [statusAnnouncement, setStatusAnnouncement] = useState('');
   const requestGeneration = useRef(0);
   const agentReloadKey = useRef<string | null>(null);
+  const lastSelectedSessionId = useRef<string | undefined>(undefined);
+  const pendingSessionId = useRef<string | undefined>(undefined);
 
   const availability = useOrchestrationSessionStore(state => state.availability);
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
-  const selectedSessionRecord = useOrchestrationSessionStore(state => state.sessions.find(session => session.id === state.selectedSessionId));
+  const selectedSessionRecord = useOrchestrationSessionStore(state => state.sessions.find(
+    session => session.id === state.selectedSessionId && !isArchivedOrchestrationSession(session),
+  ));
+  const hasActiveSessions = useOrchestrationSessionStore(state => state.sessions.some(
+    session => !isArchivedOrchestrationSession(session),
+  ));
   const loadSessions = useOrchestrationSessionStore(state => state.load);
   const updateSession = useOrchestrationSessionStore(state => state.update);
   const selectSession = useOrchestrationSessionStore(state => state.select);
@@ -71,21 +81,44 @@ export function PaneChatView() {
       const current = useOrchestrationSessionStore.getState();
       if (current.availability === 'error') throw new Error(current.error || 'Sessions could not be loaded');
       if (sessionId && current.selectedSessionId && sessionId !== current.selectedSessionId) return;
-      const targetId = sessionId ?? current.selectedSessionId ?? current.sessions[0]?.id;
-      if (!targetId) throw new Error('No Sessions have been created yet');
+      const requestedSession = sessionId
+        ? current.sessions.find(session => session.id === sessionId)
+        : undefined;
+      if (sessionId && (!requestedSession || isArchivedOrchestrationSession(requestedSession))) {
+        throw new Error('This Session is archived. Restore it from Archived Sessions to reopen it.');
+      }
+      const targetId = sessionId
+        ?? current.selectedSessionId
+        ?? current.sessions.find(session => !isArchivedOrchestrationSession(session))?.id;
+      if (!targetId) {
+        setNamedView(null);
+        setLegacyState(null);
+        setError(null);
+        return;
+      }
+      pendingSessionId.current = targetId;
       if (targetId !== current.selectedSessionId) {
         await selectSession({ sessionId: targetId });
         if (generation !== requestGeneration.current) return;
       }
       const response = await API.orchestrationSessions.get({ sessionId: targetId });
+      const stateAfterLoad = useOrchestrationSessionStore.getState();
+      const selectedAfterLoad = stateAfterLoad.selectedSessionId;
+      const activeRecordAfterLoad = stateAfterLoad.sessions.find(session => session.id === targetId);
+      if (
+        generation !== requestGeneration.current
+        || selectedAfterLoad !== targetId
+        || !activeRecordAfterLoad
+        || isArchivedOrchestrationSession(activeRecordAfterLoad)
+      ) return;
       const responseFailure = responseError(response, 'Failed to open Session');
       if (responseFailure || !response.data) throw responseFailure ?? new Error('Failed to open Session');
-      const selectedAfterLoad = useOrchestrationSessionStore.getState().selectedSessionId;
-      if (generation !== requestGeneration.current || (selectedAfterLoad && selectedAfterLoad !== targetId)) return;
+      pendingSessionId.current = undefined;
       setNamedView(response.data);
       setLegacyState(null);
     } catch (cause) {
       if (generation !== requestGeneration.current) return;
+      pendingSessionId.current = undefined;
       setError(cause instanceof Error ? cause.message : 'Failed to open Session');
       setNamedView(null);
       setLegacyState(null);
@@ -108,6 +141,26 @@ export function PaneChatView() {
     if (namedView?.session.id === selectedSessionId) return;
     void loadNamedSession(selectedSessionId);
   }, [loadNamedSession, namedView?.session.id, selectedSessionId]);
+
+  useEffect(() => {
+    if (!window.electronAPI?.orchestrationSessions) return;
+    if (selectedSessionId) {
+      lastSelectedSessionId.current = selectedSessionId;
+      return;
+    }
+    if (!lastSelectedSessionId.current && !pendingSessionId.current && !namedView) return;
+    requestGeneration.current += 1;
+    lastSelectedSessionId.current = undefined;
+    pendingSessionId.current = undefined;
+    if (!namedView) {
+      setIsLoading(false);
+      return;
+    }
+    setNamedView(null);
+    setLegacyState(null);
+    setError(null);
+    setIsLoading(false);
+  }, [namedView, selectedSessionId]);
 
   useEffect(() => {
     if (!namedView || !selectedSessionRecord || namedView.session.id !== selectedSessionRecord.id) return;
@@ -168,18 +221,31 @@ export function PaneChatView() {
       <div className="flex-1 flex items-center justify-center bg-bg-primary p-6">
         <div className="max-w-md text-center">
           <Terminal className="mx-auto mb-3 h-8 w-8 text-text-tertiary" />
-          <h2 className="text-base font-semibold text-text-primary">Sessions did not open</h2>
-          <p role="alert" className="mt-2 text-sm text-text-secondary">{error ?? 'No Session is selected.'}</p>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            className="mt-4"
-            icon={<RefreshCw className="h-4 w-4" />}
-            onClick={() => void loadNamedSession()}
-          >
-            Retry
-          </Button>
+          {error ? (
+            <>
+              <h2 className="text-base font-semibold text-text-primary">Sessions did not open</h2>
+              <p role="alert" className="mt-2 text-sm text-text-secondary">{error}</p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-4"
+                icon={<RefreshCw className="h-4 w-4" />}
+                onClick={() => void loadNamedSession()}
+              >
+                Retry
+              </Button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-base font-semibold text-text-primary">Choose a Session</h2>
+              <p className="mt-2 text-sm text-text-secondary">
+                {hasActiveSessions
+                  ? 'Choose a Session from the sidebar to open its chat.'
+                  : 'Create a new Session or restore one from Archived to start a chat.'}
+              </p>
+            </>
+          )}
         </div>
       </div>
     );

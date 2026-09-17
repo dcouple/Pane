@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, ChevronRight, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { Archive, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { usePanelStore } from '../stores/panelStore';
 import { useConfigStore } from '../stores/configStore';
 import {
+  isArchivedOrchestrationSession,
   useOrchestrationSessionStore,
   type OrchestrationSessionAvailability,
 } from '../stores/orchestrationSessionStore';
 import type { OrchestrationSessionRecord } from '../../../shared/types/orchestrationSession';
+import type { OrchestrationSessionUpdateInput } from '../../../shared/types/orchestrationSession';
 import { DEFAULT_PANE_CHAT_AGENT, type PaneChatAgent } from '../../../shared/types/paneChat';
 import { LEGACY_ORCHESTRATION_SESSION_ID } from '../../../shared/types/orchestrationSession';
 import { Modal, ModalBody, ModalFooter, ModalHeader } from './ui/Modal';
@@ -16,6 +18,7 @@ import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Tooltip } from './ui/Tooltip';
 import { AgentStatusDot } from './ui/AgentStatusDot';
+import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
 import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import { cn } from '../utils/cn';
@@ -26,6 +29,13 @@ interface OrchestrationSessionNavProps {
   availablePaneIds?: ReadonlySet<string>;
   /** Renders an associated Pane with the existing Pane row experience. */
   renderPane?: (paneId: string, parentSessionId: string, index: number) => ReactNode | null;
+}
+
+interface SessionContextMenuState {
+  sessionId: string;
+  sessionName: string;
+  x: number;
+  y: number;
 }
 
 function statusLabel(session: OrchestrationSessionRecord): string {
@@ -66,7 +76,7 @@ function nextSessionName(sessions: readonly OrchestrationSessionRecord[]): strin
 
 function useAggregateSessionStatus(sessions: OrchestrationSessionRecord[]) {
   return usePanelStore(state => rollupAgentDisplayStatus(
-    sessions.map(session => {
+    sessions.filter(session => !isArchivedOrchestrationSession(session)).map(session => {
       if (session.blockers.length > 0) return 'blocked';
       return toAgentDisplayStatus(
         rollupSessionAgentState(state.agentStatus, state.agentStatusSession, session.internalSessionId),
@@ -109,6 +119,10 @@ export function OrchestrationSessionShortcut() {
 
 export function OrchestrationSessionNav({ compact = false, availablePaneIds, renderPane }: OrchestrationSessionNavProps) {
   const sessions = useOrchestrationSessionStore(state => state.sessions);
+  const activeSessions = useMemo(
+    () => sessions.filter(session => !isArchivedOrchestrationSession(session)),
+    [sessions],
+  );
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
   const availability = useOrchestrationSessionStore(state => state.availability);
   const error = useOrchestrationSessionStore(state => state.error);
@@ -116,11 +130,14 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const refresh = useOrchestrationSessionStore(state => state.refresh);
   const select = useOrchestrationSessionStore(state => state.select);
   const create = useOrchestrationSessionStore(state => state.create);
+  const update = useOrchestrationSessionStore(state => state.update);
   const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
   const activeView = useNavigationStore(state => state.activeView);
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
+  const [sessionMenu, setSessionMenu] = useState<SessionContextMenuState | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const createSession = useCallback(async (agent: PaneChatAgent, requestedName?: string) => {
     await load();
@@ -137,8 +154,11 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
 
   useEffect(() => {
     const handleSessionsChanged = (event: Event) => {
-      const adoptServerSelection = event instanceof CustomEvent
-        && event.detail?.kind === 'selected';
+      // SAFETY: Pane's orchestration event contract supplies this detail shape.
+      const detail = event instanceof CustomEvent
+        ? event.detail as { kind?: string; selectionChanged?: boolean }
+        : undefined;
+      const adoptServerSelection = detail?.kind === 'selected' || detail?.selectionChanged === true;
       void refresh({ adoptServerSelection });
     };
     window.addEventListener('orchestration-sessions-changed', handleSessionsChanged);
@@ -146,15 +166,57 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   }, [refresh]);
 
   const openSession = useCallback(async (sessionId: string) => {
+    setActionError(null);
     try {
       await select({ sessionId });
       setActiveSession(null);
       navigateToPaneChat();
-    } catch {
-      // The navigation store retains the last known record; the next load
-      // exposes the daemon error in the navigation surface.
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : 'Failed to open Session');
     }
   }, [navigateToPaneChat, select, setActiveSession]);
+
+  const toggleSessionExpanded = useCallback((sessionId: string) => {
+    setCollapsedSessionIds(current => {
+      const next = new Set(current);
+      if (next.has(sessionId)) next.delete(sessionId);
+      else next.add(sessionId);
+      return next;
+    });
+  }, []);
+
+  const openSessionMenu = useCallback((sessionId: string, sessionName: string, x: number, y: number) => {
+    setSessionMenu({ sessionId, sessionName, x, y });
+  }, []);
+
+  const handleSessionContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>, session: OrchestrationSessionRecord) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openSessionMenu(session.id, session.name || 'Pane Chat', event.clientX, event.clientY);
+  }, [openSessionMenu]);
+
+  const handleSessionKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>, session: OrchestrationSessionRecord) => {
+    if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    openSessionMenu(session.id, session.name || 'Pane Chat', bounds.left, bounds.bottom);
+  }, [openSessionMenu]);
+
+  const archiveSession = useCallback(async () => {
+    if (!sessionMenu) return;
+    const { sessionId } = sessionMenu;
+    setSessionMenu(null);
+    setActionError(null);
+    try {
+      await update(
+        { sessionId },
+        { archived: true } satisfies OrchestrationSessionUpdateInput,
+      );
+      await refresh({ adoptServerSelection: true });
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : 'Failed to archive Session');
+    }
+  }, [refresh, sessionMenu, update]);
 
   if (!availabilityIsVisible(availability)) return null;
 
@@ -193,7 +255,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             <Plus className="h-4 w-4" />
           </button>
         </Tooltip>
-        {sessions.map(session => (
+        {activeSessions.map(session => (
           <Tooltip key={session.id} content={`${session.name} · ${statusLabel(session)}`} side="right">
             <button
               type="button"
@@ -202,6 +264,8 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
               aria-label={session.id === LEGACY_ORCHESTRATION_SESSION_ID ? 'Pane Chat' : `Open Session ${session.name}`}
               title={session.name}
               onClick={() => void openSession(session.id)}
+              onContextMenu={event => handleSessionContextMenu(event, session)}
+              onKeyDown={event => handleSessionKeyDown(event, session)}
               className={cn(
                 'flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-interactive',
                 session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
@@ -225,6 +289,12 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             </button>
           </Tooltip>
         )}
+        {actionError && (
+          <Tooltip content={actionError} side="right">
+            <span role="alert" aria-label={actionError} className="flex h-9 w-9 items-center justify-center rounded text-status-error">!</span>
+          </Tooltip>
+        )}
+        <SessionContextMenu menu={sessionMenu} onClose={() => setSessionMenu(null)} onArchive={() => void archiveSession()} />
         <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
       </div>
     );
@@ -261,10 +331,15 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             <button type="button" className="mt-1 underline" onClick={() => void load()}>Retry</button>
           </div>
         )}
-        {availability === 'ready' && sessions.length === 0 && (
+        {actionError && (
+          <div className="mx-3 mb-1 rounded border border-status-error/40 bg-status-error/10 px-2 py-1.5 text-[11px] text-status-error" role="alert">
+            {actionError}
+          </div>
+        )}
+        {availability === 'ready' && activeSessions.length === 0 && (
           <p className="px-4 py-1 text-[11px] text-text-muted">Create a Session to keep intent and discussion together.</p>
         )}
-        {sessions.map(session => {
+        {activeSessions.map(session => {
           const visibleAssociations = session.associations.filter(association => (
             !availablePaneIds || availablePaneIds.has(association.paneId)
           ));
@@ -280,43 +355,33 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
           return (
             <div key={session.id} className="group/orchestration-session">
               <div className={cn(
-                'flex h-8 w-full items-center gap-0.5 text-[13px] transition-colors',
+                'flex h-8 w-full items-center text-[13px] transition-colors',
                 activeView === 'pane-chat' && session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
               )}>
-                {paneRows.length > 0 ? (
-                  <button
-                    type="button"
-                    data-testid={`orchestration-session-toggle-${session.id}`}
-                    aria-label={`${expanded ? 'Collapse' : 'Expand'} Session ${label}`}
-                    aria-expanded={expanded}
-                    aria-controls={`orchestration-session-panes-${session.id}`}
-                    onClick={() => setCollapsedSessionIds(current => {
-                      const next = new Set(current);
-                      if (next.has(session.id)) next.delete(session.id);
-                      else next.add(session.id);
-                      return next;
-                    })}
-                    className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
-                  >
-                    {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </button>
-                ) : (
-                  <span aria-hidden="true" className="inline-flex h-6 w-6 flex-shrink-0" />
-                )}
                 <button
                   type="button"
                   data-testid={isLegacy ? 'orchestration-pane-chat' : `orchestration-session-${session.id}`}
                   aria-label={isLegacy ? label : `Open Session ${session.name}`}
-                  onClick={() => void openSession(session.id)}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+                  aria-expanded={paneRows.length > 0 ? expanded : undefined}
+                  aria-controls={paneRows.length > 0 ? `orchestration-session-panes-${session.id}` : undefined}
+                  onClick={() => {
+                    toggleSessionExpanded(session.id);
+                    void openSession(session.id);
+                  }}
+                  onContextMenu={event => handleSessionContextMenu(event, session)}
+                  onKeyDown={event => handleSessionKeyDown(event, session)}
+                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-3 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
                 >
                   <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
                   <span className="min-w-0 flex-1 truncate">{label}</span>
                   {paneRows.length > 0 && <span className="pr-1 text-[10px] tabular-nums text-text-muted">{paneRows.length}</span>}
                 </button>
               </div>
-              {expanded && paneRows.length > 0 && (
-                <div id={`orchestration-session-panes-${session.id}`} className="ml-8 border-l border-border-primary">
+              {paneRows.length > 0 && (
+                <div
+                  id={`orchestration-session-panes-${session.id}`}
+                  className={cn('ml-8 border-l border-border-primary', !expanded && 'hidden')}
+                >
                   {paneRows}
                 </div>
               )}
@@ -324,8 +389,35 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
           );
         })}
       </div>
+      <SessionContextMenu menu={sessionMenu} onClose={() => setSessionMenu(null)} onArchive={() => void archiveSession()} />
       <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
     </>
+  );
+}
+
+interface SessionContextMenuProps {
+  menu: SessionContextMenuState | null;
+  onClose: () => void;
+  onArchive: () => void;
+}
+
+function SessionContextMenu({ menu, onClose, onArchive }: SessionContextMenuProps) {
+  return (
+    <TerminalPopover
+      visible={menu !== null}
+      x={menu?.x ?? 0}
+      y={menu?.y ?? 0}
+      onClose={onClose}
+    >
+      <div role="menu" aria-label={`Session actions for ${menu?.sessionName ?? 'Session'}`}>
+        <PopoverButton role="menuitem" variant="danger" onClick={onArchive}>
+          <span className="flex items-center gap-2">
+            <Archive className="h-4 w-4" />
+            Archive Session
+          </span>
+        </PopoverButton>
+      </div>
+    </TerminalPopover>
   );
 }
 

@@ -20,7 +20,10 @@ import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
 import { usePanelStore } from '../stores/panelStore';
 import { OrchestrationSessionNav, OrchestrationSessionShortcut } from './OrchestrationSessionNav';
-import { useOrchestrationSessionStore } from '../stores/orchestrationSessionStore';
+import {
+  isArchivedOrchestrationSession,
+  useOrchestrationSessionStore,
+} from '../stores/orchestrationSessionStore';
 import type { SidebarNavigationScope } from '../stores/navigationStore';
 import {
   createProjectById,
@@ -891,14 +894,28 @@ export function ArchivedSessions() {
   const [expandedArchivedProjects, setExpandedArchivedProjects] = useState<Set<number>>(new Set());
   const [isLoadingArchived, setIsLoadingArchived] = useState(false);
   const [hasLoadedArchived, setHasLoadedArchived] = useState(false);
+  const [orchestrationRestoreError, setOrchestrationRestoreError] = useState<string | null>(null);
 
   const setActiveSession = useSessionStore(s => s.setActiveSession);
   const activeSessionId = useSessionStore(s => s.activeSessionId);
   const navigateToSessions = useNavigationStore(s => s.navigateToSessions);
-  const archivedSessionCount = useMemo(
+  const orchestrationSessions = useOrchestrationSessionStore(s => s.sessions);
+  const orchestrationAvailability = useOrchestrationSessionStore(s => s.availability);
+  const refreshOrchestrationSessions = useOrchestrationSessionStore(s => s.refresh);
+  const updateOrchestrationSession = useOrchestrationSessionStore(s => s.update);
+  const archivedOrchestrationSessions = useMemo(
+    () => orchestrationSessions
+      .filter(session => isArchivedOrchestrationSession(session))
+      .slice()
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    [orchestrationSessions],
+  );
+  const archivedPaneCount = useMemo(
     () => archivedProjects.reduce((sum, project) => sum + project.sessions.length, 0),
     [archivedProjects],
   );
+  const archivedSessionCount = archivedPaneCount + archivedOrchestrationSessions.length;
+  const hasLoadedAnyArchived = hasLoadedArchived || orchestrationAvailability === 'ready';
 
   const loadArchivedSessions = useCallback(async () => {
     try {
@@ -921,8 +938,11 @@ export function ArchivedSessions() {
     if (next && !hasLoadedArchived) {
       void loadArchivedSessions();
     }
+    if (next && orchestrationAvailability !== 'unavailable') {
+      void refreshOrchestrationSessions();
+    }
     setShowArchived(next);
-  }, [hasLoadedArchived, loadArchivedSessions, showArchived]);
+  }, [hasLoadedArchived, loadArchivedSessions, orchestrationAvailability, refreshOrchestrationSessions, showArchived]);
 
   const toggleArchivedProject = (id: number) => {
     setExpandedArchivedProjects(prev => {
@@ -939,6 +959,22 @@ export function ArchivedSessions() {
       loadArchivedSessions();
     } catch (e) {
       console.error('Failed to restore session:', e);
+    }
+  };
+
+  const handleRestoreOrchestrationSession = async (sessionId: string) => {
+    setOrchestrationRestoreError(null);
+    try {
+      await updateOrchestrationSession(
+        { sessionId },
+        { archived: false },
+      );
+      // Keep the current chat selected when a historical Session is restored.
+      await refreshOrchestrationSessions();
+    } catch (cause) {
+      setOrchestrationRestoreError(
+        cause instanceof Error ? cause.message : 'Failed to restore Session',
+      );
     }
   };
 
@@ -966,10 +1002,10 @@ export function ArchivedSessions() {
   };
 
   const handlePermanentDeleteAllArchived = async () => {
-    if (archivedSessionCount === 0) return;
+    if (archivedPaneCount === 0) return;
 
     const confirmed = window.confirm(
-      `Permanently delete all ${archivedSessionCount} archived panes?\n\nThis removes them from Pane history and cannot be undone.`,
+      `Permanently delete all ${archivedPaneCount} archived panes?\n\nThis removes them from Pane history and cannot be undone.`,
     );
     if (!confirmed) return;
 
@@ -1015,7 +1051,7 @@ export function ArchivedSessions() {
           <Archive className="w-3 h-3 flex-shrink-0" />
           <span>Archived</span>
         </button>
-        {hasLoadedArchived && archivedSessionCount > 0 && (
+        {hasLoadedAnyArchived && archivedPaneCount > 0 && (
           <button
             type="button"
             onClick={handlePermanentDeleteAllArchived}
@@ -1026,12 +1062,15 @@ export function ArchivedSessions() {
             <Trash2 className="w-3 h-3" />
           </button>
         )}
-        {hasLoadedArchived && archivedSessionCount > 0 && (
+        {hasLoadedAnyArchived && archivedSessionCount > 0 && (
           <span className="w-8 pr-3 text-right text-[10px] text-text-muted font-normal tabular-nums">
             {archivedSessionCount}
           </span>
         )}
       </div>
+      {orchestrationRestoreError && (
+        <p role="alert" className="mx-4 py-1 text-xs text-status-error">{orchestrationRestoreError}</p>
+      )}
 
       {showArchived && (
         <div id={archivedContentId} className="pb-2 max-h-[40vh] overflow-y-auto">
@@ -1041,72 +1080,100 @@ export function ArchivedSessions() {
                 <div key={i} className="h-7 bg-surface-tertiary rounded" />
               ))}
             </div>
-          ) : archivedProjects.length === 0 ? (
+          ) : archivedProjects.length === 0 && archivedOrchestrationSessions.length === 0 ? (
             <div className="px-5 py-3 text-xs text-text-tertiary">
               No archived panes
             </div>
           ) : (
-            archivedProjects.map(project => {
-              const isExpanded = expandedArchivedProjects.has(project.id);
-              return (
-                <div key={`archived-${project.id}`}>
-                  <button
-                    type="button"
-                    onClick={() => toggleArchivedProject(project.id)}
-                    aria-expanded={isExpanded}
-                    aria-controls={`archived-project-${project.id}`}
-                    className="w-full flex items-center gap-2 pl-5 pr-4 py-1.5 text-xs text-text-tertiary hover:text-text-secondary hover:bg-surface-hover transition-colors"
-                  >
-                    {isExpanded ? (
-                      <ChevronDown className="w-3 h-3 flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                    )}
-                    <span className="truncate">{project.name}</span>
-                    <span className="ml-auto text-text-muted text-[10px]">{project.sessions.length}</span>
-                  </button>
-                  {isExpanded && <div id={`archived-project-${project.id}`}>{project.sessions.map(session => (
+            <>
+              {archivedOrchestrationSessions.length > 0 && (
+                <div data-testid="archived-orchestration-sessions" className="pb-1">
+                  <p className="px-5 py-1 text-[10px] font-semibold uppercase tracking-wide text-text-muted">Archived Sessions</p>
+                  {archivedOrchestrationSessions.map(session => (
                     <div
-                      key={session.id}
-                      className="group/archived relative flex items-center gap-1 pl-8 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
+                      key={`archived-orchestration-${session.id}`}
+                      data-testid={`archived-orchestration-session-${session.id}`}
+                      className="group/archived relative flex items-center gap-2 pl-8 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
                     >
+                      <Archive className="h-3 w-3 flex-shrink-0 text-text-muted" />
+                      <span className="min-w-0 flex-1 truncate text-xs text-text-tertiary">
+                        {session.name || 'Untitled'}
+                      </span>
                       <button
                         type="button"
-                        onClick={() => handleSessionClick(session.id)}
-                        aria-label={`Open archived pane ${session.name || 'Untitled'}`}
-                        className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
-                      />
-                      <div className="relative z-10 pointer-events-none flex-1 text-left min-w-0">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Archive className="w-3 h-3 flex-shrink-0 text-text-muted" />
-                          <span className="text-xs text-text-tertiary truncate">
-                            {session.name || 'Untitled'}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleRestoreSession(session.id); }}
-                        className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-success hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
-                        title={`Restore ${session.name || 'Untitled'}`}
-                        aria-label={`Restore ${session.name || 'Untitled'}`}
+                        onClick={() => void handleRestoreOrchestrationSession(session.id)}
+                        className="relative z-10 flex-shrink-0 rounded p-1 text-text-muted hover:bg-surface-hover hover:text-status-success transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
+                        title={`Restore Session ${session.name || 'Untitled'}`}
+                        aria-label={`Restore Session ${session.name || 'Untitled'}`}
                       >
-                        <ArchiveRestore className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handlePermanentDeleteSession(session); }}
-                        className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
-                        title={`Permanently delete ${session.name || 'Untitled'}`}
-                        aria-label={`Permanently delete ${session.name || 'Untitled'}`}
-                      >
-                        <Trash2 className="w-3 h-3" />
+                        <ArchiveRestore className="h-3 w-3" />
                       </button>
                     </div>
-                  ))}</div>}
+                  ))}
                 </div>
-              );
-            })
+              )}
+              {archivedProjects.map(project => {
+                const isExpanded = expandedArchivedProjects.has(project.id);
+                return (
+                  <div key={`archived-${project.id}`}>
+                    <button
+                      type="button"
+                      onClick={() => toggleArchivedProject(project.id)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`archived-project-${project.id}`}
+                      className="w-full flex items-center gap-2 pl-5 pr-4 py-1.5 text-xs text-text-tertiary hover:text-text-secondary hover:bg-surface-hover transition-colors"
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                      )}
+                      <span className="truncate">{project.name}</span>
+                      <span className="ml-auto text-text-muted text-[10px]">{project.sessions.length}</span>
+                    </button>
+                    {isExpanded && <div id={`archived-project-${project.id}`}>{project.sessions.map(session => (
+                      <div
+                        key={session.id}
+                        className="group/archived relative flex items-center gap-1 pl-8 pr-1 py-1.5 hover:bg-surface-hover transition-colors"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleSessionClick(session.id)}
+                          aria-label={`Open archived pane ${session.name || 'Untitled'}`}
+                          className="absolute inset-0 z-0 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+                        />
+                        <div className="relative z-10 pointer-events-none flex-1 text-left min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Archive className="w-3 h-3 flex-shrink-0 text-text-muted" />
+                            <span className="text-xs text-text-tertiary truncate">
+                              {session.name || 'Untitled'}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleRestoreSession(session.id); }}
+                          className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-success hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
+                          title={`Restore ${session.name || 'Untitled'}`}
+                          aria-label={`Restore ${session.name || 'Untitled'}`}
+                        >
+                          <ArchiveRestore className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handlePermanentDeleteSession(session); }}
+                          className="relative z-10 flex-shrink-0 p-1 rounded text-text-muted hover:text-status-error hover:bg-surface-hover transition-all opacity-0 group-hover/archived:opacity-100 group-focus-within/archived:opacity-100"
+                          title={`Permanently delete ${session.name || 'Untitled'}`}
+                          aria-label={`Permanently delete ${session.name || 'Untitled'}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}</div>}
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       )}

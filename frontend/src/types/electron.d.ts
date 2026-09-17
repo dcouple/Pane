@@ -411,7 +411,7 @@ interface ElectronAPI {
     onSessionLog: (callback: (data: { sessionId: string; entry: LogEntry }) => void) => () => void;
     onSessionLogsCleared: (callback: (data: { sessionId: string }) => void) => () => void;
     onSessionOutputAvailable: (callback: (info: { sessionId: string; hasNewOutput: boolean }) => void) => () => void;
-    onOrchestrationSessionsChanged?: (callback: (change: { sessionId: string; kind: string }) => void) => () => void;
+    onOrchestrationSessionsChanged?: (callback: (change: { sessionId: string; kind: string; selectionChanged?: boolean }) => void) => () => void;
     onOrchestrationSessionsOverviewUpdated?: (callback: (change: { panelId: string; sessionId?: string; state: string }) => void) => () => void;
     onGitStatusUpdated: (callback: (data: { sessionId: string; gitStatus: GitStatus }) => void) => () => void;
     onGitStatusLoading: (callback: (data: { sessionId: string }) => void) => () => void;

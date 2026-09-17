@@ -10,6 +10,10 @@ import type {
 } from '../../../shared/types/orchestrationSession';
 import type { Session } from '../types/session';
 
+export function isArchivedOrchestrationSession(session: OrchestrationSessionRecord): boolean {
+  return session.archived === true;
+}
+
 export type OrchestrationSessionAvailability = 'idle' | 'loading' | 'ready' | 'unavailable' | 'error';
 
 interface OrchestrationSessionState {
@@ -39,10 +43,19 @@ function ensureSuccess<T>(response: { success: boolean; data?: T; error?: string
   return response.data;
 }
 
+function activeSessionIdFromList(
+  sessions: OrchestrationSessionRecord[],
+  selectedSessionId: string | undefined,
+): string | undefined {
+  if (!selectedSessionId) return undefined;
+  const selected = sessions.find(session => session.id === selectedSessionId);
+  return selected && !isArchivedOrchestrationSession(selected) ? selected.id : undefined;
+}
+
 function applyList(data: OrchestrationSessionListResult): void {
   useOrchestrationSessionStore.setState({
     sessions: data.sessions,
-    selectedSessionId: data.selectedSessionId,
+    selectedSessionId: activeSessionIdFromList(data.sessions, data.selectedSessionId),
     availability: 'ready',
     error: null,
   });
@@ -93,14 +106,11 @@ export const useOrchestrationSessionStore = create<OrchestrationSessionState>((s
       if (generation !== operationGeneration || sequence !== refreshSequence) return;
       set((state) => {
         const selectedSessionId = options?.adoptServerSelection
-          ? data.selectedSessionId
-          : state.selectedSessionId;
-        const selectedStillExists = selectedSessionId
-          ? data.sessions.some(session => session.id === selectedSessionId)
-          : false;
+          ? activeSessionIdFromList(data.sessions, data.selectedSessionId)
+          : activeSessionIdFromList(data.sessions, state.selectedSessionId);
         return {
           sessions: data.sessions,
-          selectedSessionId: selectedStillExists ? selectedSessionId : data.selectedSessionId,
+          selectedSessionId,
           availability: state.availability === 'idle' ? 'ready' : state.availability,
           error: null,
         };
@@ -152,6 +162,9 @@ export const useOrchestrationSessionStore = create<OrchestrationSessionState>((s
     if (generation !== operationGeneration) return record;
     set((state) => ({
       sessions: state.sessions.map(session => session.id === record.id ? record : session),
+      selectedSessionId: state.selectedSessionId === record.id && isArchivedOrchestrationSession(record)
+        ? undefined
+        : state.selectedSessionId,
       error: null,
     }));
     return record;
