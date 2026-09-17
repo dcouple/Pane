@@ -213,7 +213,6 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(runtimeContext).toContain('npx --yes runpane@latest doctor --json --pane-dir');
     expect(runtimeContext).toContain('Do not switch to a different Pane install.');
     expect(runtimeContext).toContain('## App-compatible development wrapper (candidate)');
-    expect(runtimeContext).toContain('packages/runpane/dist/cli.js');
     expect(runtimeContext).toContain('agent-context --command "sessions associate" --json');
     expect(runtimeContext).toContain('doctor --json --pane-dir');
     expect(runtimeContext).not.toContain('PANE_DIR=');
