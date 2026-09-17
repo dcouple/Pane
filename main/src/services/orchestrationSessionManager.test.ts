@@ -796,9 +796,11 @@ describe('OrchestrationSessionManager', () => {
   });
 
   it('does not unarchive an archived legacy Session during startup migration', async () => {
+    await seedLegacyPanel('claude', 'archived-legacy-claude-history');
     const legacy = {
       ...orchestrationRecord(LEGACY_ORCHESTRATION_SESSION_ID, 'Pane Chat'),
       archived: true,
+      agent: 'codex',
       internalSessionId: PANE_CHAT_SESSION_ID,
       panelIds: {
         claude: getPaneChatPanelId('claude'),
@@ -815,6 +817,7 @@ describe('OrchestrationSessionManager', () => {
     await fixture.manager.initialize();
     const listed = await fixture.manager.list();
     expect(listed.sessions.find(session => session.id === legacy.id)?.archived).toBe(true);
+    expect(listed.sessions.find(session => session.id === `${legacy.id}-claude`)).toMatchObject({ archived: true });
     expect(listed.selectedSessionId).toBeUndefined();
     expect(fixture.paneChatManager.getOrCreate).not.toHaveBeenCalled();
   });

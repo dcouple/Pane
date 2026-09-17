@@ -522,7 +522,7 @@ export class OrchestrationSessionManager extends EventEmitter {
     return {
       id,
       name: uniqueLegacyAgentName(legacy.name, agent, sessions),
-      archived: false,
+      archived: legacy.archived === true,
       agent,
       internalSessionId: legacy.internalSessionId,
       panelIds: legacyAgentPanelIdsForOwner(id, agent),
