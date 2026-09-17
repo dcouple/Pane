@@ -513,9 +513,11 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
+  const firstSessionRow = page.getByTestId('orchestration-session-alpha');
+  await expect(firstSessionRow).toBeVisible({ timeout: 10_000 });
+  await firstSessionRow.click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   const sessionsHeader = page.getByTestId('sessions-section-header');
-  const firstSessionRow = page.getByTestId('orchestration-session-alpha');
   const beforeHeaderBox = await layoutBox(sessionsHeader);
   const beforeFirstRowBox = await layoutBox(firstSessionRow);
   await page.evaluate(() => {
@@ -538,7 +540,7 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
     // SAFETY: installSessionsFixture adds these controls before the app loads.
     const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
     return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
-  })).toBe(0);
+  })).toBe(1);
 
   await page.evaluate(() => {
     // SAFETY: installSessionsFixture adds these controls before the app loads.
@@ -567,7 +569,7 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
     // SAFETY: installSessionsFixture adds these controls before the app loads.
     const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationSelectCalls: () => number } };
     return mockWindow.__paneTestElectronMock.getOrchestrationSelectCalls();
-  })).toBe(1);
+  })).toBe(2);
 });
 
 test('Session view follows an external agent switch without selecting again or reloading on event bursts', async ({ page }) => {
@@ -579,6 +581,9 @@ test('Session view follows an external agent switch without selecting again or r
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
+  const alphaRow = page.getByTestId('orchestration-session-alpha');
+  await expect(alphaRow).toBeVisible({ timeout: 10_000 });
+  await alphaRow.click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Claude');
   const initialViewRequests = await page.evaluate(() => {
@@ -781,10 +786,13 @@ test('Session rows archive and restore without losing selection or associated Pa
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
+  const alphaRow = page.getByTestId('orchestration-session-alpha');
+  await expect(alphaRow).toBeVisible({ timeout: 10_000 });
+  await alphaRow.click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
+  await alphaRow.click();
   await expect(page.getByRole('button', { name: 'Associated Alpha Pane', exact: true })).toBeVisible();
 
-  const alphaRow = page.getByTestId('orchestration-session-alpha');
   await alphaRow.click({ button: 'right' });
   await expect(page.getByRole('menuitem', { name: 'Archive Session', exact: true })).toBeVisible();
   await page.getByRole('menuitem', { name: 'Archive Session', exact: true }).click();
@@ -827,6 +835,9 @@ test('Archiving a Session during a delayed chat load cannot reinstall its view',
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
+  const alphaRow = page.getByTestId('orchestration-session-alpha');
+  await expect(alphaRow).toBeVisible({ timeout: 10_000 });
+  await alphaRow.click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   const initialViewRequestCount = await page.evaluate(() => {
     // SAFETY: installSessionsFixture adds this control before the app loads.
@@ -892,6 +903,9 @@ test('Session overview refreshes for associated Pane activity without reacting t
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
+  const trackedSessionRow = page.getByTestId('orchestration-session-tracked-session');
+  await expect(trackedSessionRow).toBeVisible({ timeout: 10_000 });
+  await trackedSessionRow.click();
   await expect(page.getByRole('heading', { name: 'Tracked Session', exact: true })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Show overview', exact: true }).click();
   const overview = page.getByRole('complementary', { name: 'Session overview', exact: true });
